@@ -1477,6 +1477,7 @@ async function togglePlanClinic(id){
 // ---- WEEKLY / MONTHLY VISIT PLANNER ----
 let planViewMode = 'week';
 let planViewAnchor = todayStr();
+let planViewRep = null;
 function localDateStr(d){
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
@@ -1498,9 +1499,12 @@ function getMonthDates(anchor){
 function openWeekMonthPlan(){
   planViewMode = 'week';
   planViewAnchor = todayStr();
+  planViewRep = currentUser.role==='supervisor' ? (planViewRep || currentUser.name) : currentUser.name;
   showModal(`
     <h3 style="margin-top:0;">Visit plan</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Plan clinics ahead by day, with notes.</p>
+    ${currentUser.role==='supervisor' ? `<label>Viewing schedule for</label>
+    <div class="chip-row" id="pvRepChips" style="margin-bottom:14px;">${[currentUser.name, ...REPS.filter(r=>r!==currentUser.name)].map(r=>`<div class="chip small ${planViewRep===r?'on':''}" data-rep="${esc(r)}" onclick="setPlanViewRep('${esc(r)}')">${esc(r)}</div>`).join('')}</div>` : ''}
     <div class="toggle-row" style="margin-bottom:14px;">
       <div class="chip on" id="pvModeWeek" onclick="setPlanViewMode('week')">Weekly</div>
       <div class="chip" id="pvModeMonth" onclick="setPlanViewMode('month')">Monthly</div>
@@ -1513,6 +1517,11 @@ function openWeekMonthPlan(){
     <div id="pvBody"></div>
     <button class="btn secondary" onclick="closeModal(); renderPlanList();">Close</button>
   `);
+  renderWeekMonthPlan();
+}
+function setPlanViewRep(rep){
+  planViewRep = rep;
+  document.querySelectorAll('#pvRepChips .chip').forEach(c=>c.classList.toggle('on', c.dataset.rep===rep));
   renderWeekMonthPlan();
 }
 function setPlanViewMode(mode){
@@ -1536,7 +1545,7 @@ function renderWeekMonthPlan(){
   const el = document.getElementById('pvBody');
   el.innerHTML = dates.map(d=>{
     const dayObj = dayPlans[d] || {};
-    const mine = dayObj[currentUser.name] || [];
+    const mine = dayObj[planViewRep] || [];
     const dow = new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'short'});
     const dnum = new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
     const isToday = d===todayStr();
@@ -1552,21 +1561,23 @@ function renderWeekMonthPlan(){
   }).join('');
 }
 function openDatePlanner(dateStr){
+  const rep = planViewRep || currentUser.name;
   const dayObj = dayPlans[dateStr] || {};
-  const mine = (dayObj[currentUser.name] || []).map(e => typeof e==='string' ? {id:e, note:''} : {...e});
-  const myClinics = clinics.filter(c=>c.rep===currentUser.name && c.cls!=='Closed').sort((a,b)=>a.name.localeCompare(b.name));
+  const mine = (dayObj[rep] || []).map(e => typeof e==='string' ? {id:e, note:''} : {...e});
+  const repClinics = clinics.filter(c=>c.rep===rep && c.cls!=='Closed').sort((a,b)=>a.name.localeCompare(b.name));
   showModal(`
-    <h3 style="margin-top:0;">${fmtDate(dateStr)} plan</h3>
+    <h3 style="margin-top:0;">${fmtDate(dateStr)} plan${currentUser.role==='supervisor'?' — '+esc(rep):''}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Tap a clinic to add it, then add an optional note.</p>
-    <input type="text" id="dpSearch" placeholder="Search your clinics..." oninput="renderDatePlanPicker()" style="margin-bottom:10px;">
+    <input type="text" id="dpSearch" placeholder="Search clinics..." oninput="renderDatePlanPicker()" style="margin-bottom:10px;">
     <div class="chip-row" id="dpPicker"></div>
     <div class="section-title" style="margin-top:18px;">Planned</div>
     <div id="dpSelected"></div>
     <button class="btn" onclick="closeModal(); renderPlanList(); renderWeekMonthPlan();">Done</button>
   `);
   window._dpDate = dateStr;
+  window._dpRep = rep;
   window._dpMine = mine;
-  window._dpClinics = myClinics;
+  window._dpClinics = repClinics;
   renderDatePlanPicker();
   renderDatePlanSelected();
 }
@@ -1580,7 +1591,7 @@ function renderDatePlanPicker(){
 async function saveDatePlan(){
   const d = window._dpDate;
   dayPlans[d] = dayPlans[d] || {};
-  dayPlans[d][currentUser.name] = window._dpMine;
+  dayPlans[d][window._dpRep] = window._dpMine;
   await persist('dayPlans');
 }
 async function addDatePlanClinic(id){
