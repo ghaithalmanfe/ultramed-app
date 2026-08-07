@@ -505,7 +505,7 @@
       <div class="eyebrow" id="dateLabel" style="margin-top:6px;">Loading...</div>
       <h1 id="greeting">Field Ops</h1>
     </div>
-    <div class="userchip" onclick="switchUser()">
+    <div class="userchip" onclick="openAccountMenu()">
       <div class="stamp" id="headerStamp">•••<div class="dot" id="headerDot"></div></div>
     </div>
   </header>
@@ -1007,6 +1007,51 @@ function switchUser(){
   document.getElementById('app').style.display = 'none';
   document.getElementById('bottomNav').style.display = 'none';
 }
+function openAccountMenu(){
+  const email = (USERS[currentUser.name]||{}).email || '';
+  showModal(`
+    <h3 style="margin-top:0;">${esc(currentUser.name)}</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(email)}</p>
+    ${FIREBASE_ENABLED ? `<button class="btn secondary" onclick="openChangePassword()">🔒 Change password</button>` : ''}
+    <button class="btn ghost" onclick="closeModal(); switchUser();">Sign out</button>
+  `);
+}
+function openChangePassword(){
+  showModal(`
+    <h3 style="margin-top:0;">Change password</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your current password to confirm it's you.</p>
+    <label>Current password</label>
+    <input type="password" id="cpCurrent" autocomplete="current-password">
+    <label>New password</label>
+    <input type="password" id="cpNew" autocomplete="new-password" placeholder="At least 6 characters">
+    <label>Confirm new password</label>
+    <input type="password" id="cpConfirm" autocomplete="new-password">
+    <button class="btn" onclick="submitChangePassword()">Update password</button>
+  `);
+}
+async function submitChangePassword(){
+  const current = document.getElementById('cpCurrent').value;
+  const next = document.getElementById('cpNew').value;
+  const confirm = document.getElementById('cpConfirm').value;
+  if(!current){ showToast('Enter your current password'); return; }
+  if(next.length<6){ showToast('New password must be at least 6 characters'); return; }
+  if(next!==confirm){ showToast('New passwords don’t match'); return; }
+  const user = firebase.auth().currentUser;
+  const email = (USERS[currentUser.name]||{}).email;
+  if(!user || !email){ showToast('Not signed in'); return; }
+  try{
+    const cred = firebase.auth.EmailAuthProvider.credential(email, current);
+    await user.reauthenticateWithCredential(cred);
+    await user.updatePassword(next);
+    closeModal();
+    showToast('✅ Password updated');
+  }catch(e){
+    if(e.code==='auth/wrong-password') showToast('Current password is incorrect');
+    else if(e.code==='auth/weak-password') showToast('Choose a stronger password');
+    else if(e.code==='auth/too-many-requests') showToast('Too many attempts — try again later');
+    else showToast('Could not update password');
+  }
+}
 function renderGate(){
   const el = document.getElementById('gateGrid');
   if(!el) return;
@@ -1286,7 +1331,7 @@ function renderToday(){
     dueList.innerHTML = `<div class="empty"><div class="big">✅ All caught up</div>Zero overdue follow-ups. That is discipline — well done.</div>`;
   } else {
     dueList.innerHTML = due.map(c => `
-      <div class="card clickable" onclick="quickLogFrom('${c.id}')">
+      <div class="card clickable" onclick="confirmFollowUp('${c.id}')">
         <div class="row-between">
           <div class="row-between" style="gap:10px;">
             <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -1331,12 +1376,16 @@ function renderTasks(){
     list.innerHTML = `<div style="color:var(--muted); font-size:13.5px; padding:6px 0;">✨ Clear head, clear road. No open tasks.</div>`;
     return;
   }
-  list.innerHTML = ordered.map(t=>`
+  list.innerHTML = ordered.map(t=>{
+    const dueBadge = (t.dueDate && !t.done) ? `<span class="badge ${followStatus(t.dueDate)}" style="margin-left:6px;">${statusLabel(t.dueDate).split('·')[0].trim()}</span>` : '';
+    const clickable = t.kind==='followup' && t.clinicId;
+    return `
     <div class="task-item" style="padding:7px 0;">
       <div class="task-check ${t.done?'checked':''}" onclick="toggleTask('${t.id}')">${t.done?'✓':''}</div>
-      <div class="task-text ${t.done?'done':''}">${t.source==='email'?'<span style="color:var(--purple);">✉ </span>':''}${esc(t.text)}${currentUser.role==='supervisor' && t.rep!=='Team' ? ' <span style=\"color:var(--muted); font-weight:500;\">— '+esc(t.rep)+'</span>' : ''}</div>
+      <div class="task-text ${t.done?'done':''}" ${clickable?`style="cursor:pointer;" onclick="confirmFollowUp('${t.clinicId}')"`:''}>${t.source==='email'?'<span style="color:var(--purple);">✉ </span>':''}${esc(t.text)}${dueBadge}${currentUser.role==='supervisor' && t.rep!=='Team' ? ' <span style=\"color:var(--muted); font-weight:500;\">— '+esc(t.rep)+'</span>' : ''}</div>
       <button class="del" onclick="deleteTask('${t.id}')">&times;</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function addTask(){
@@ -1940,9 +1989,83 @@ async function saveVisit(){
   if(clinic){ clinic.lastVisit = todayStr(); clinic.nextFollowUp = followUp; }
 
   await Promise.all([persist('visits'), persist('clinics')]);
+  if(clinic) await scheduleFollowUp(clinic, followUp, rep);
   showToast(visitSavedMsg());
   renderAll();
   switchView('today');
+}
+
+// ---- FOLLOW-UP AUTOMATION: auto-task + auto-schedule ----
+const AUTO_FOLLOWUP_NOTE = '📅 Follow-up due';
+async function scheduleFollowUp(clinic, dateStr, rep){
+  // Clear out any previous auto-scheduled entry for this clinic (only ones we
+  // created — manually-planned entries for the same clinic are left alone).
+  Object.keys(dayPlans).forEach(d=>{
+    const dayObj = dayPlans[d];
+    if(dayObj && dayObj[rep]){
+      dayObj[rep] = dayObj[rep].filter(e => !(planEntryId(e)===clinic.id && planEntryNote(e)===AUTO_FOLLOWUP_NOTE));
+    }
+  });
+  tasks = tasks.filter(t => !(t.kind==='followup' && t.clinicId===clinic.id && t.rep===rep && !t.done));
+  if(dateStr){
+    dayPlans[dateStr] = dayPlans[dateStr] || {};
+    dayPlans[dateStr][rep] = dayPlans[dateStr][rep] || [];
+    const already = dayPlans[dateStr][rep].some(e=>planEntryId(e)===clinic.id);
+    if(!already) dayPlans[dateStr][rep].push({id: clinic.id, note: AUTO_FOLLOWUP_NOTE});
+    tasks.push({id:uid(), text:'Follow up: '+clinic.name, done:false, created:todayStr(), rep, dueDate:dateStr, clinicId:clinic.id, kind:'followup'});
+  }
+  await Promise.all([persist('tasks'), persist('dayPlans')]);
+}
+function confirmFollowUp(clinicId){
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c) return;
+  showModal(`
+    <h3 style="margin-top:0;">${esc(c.name)}</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${statusLabel(c.nextFollowUp)}. What's the next step?</p>
+    <button class="btn" onclick="closeModal(); quickLogFrom('${c.id}')">✅ Log the visit now</button>
+    <button class="btn secondary" onclick="openRescheduleFollowUp('${c.id}')">📅 Not yet — reschedule</button>
+    <button class="btn ghost" onclick="clearFollowUp('${c.id}')">Clear — no longer needed</button>
+  `);
+}
+function openRescheduleFollowUp(clinicId){
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c) return;
+  showModal(`
+    <h3 style="margin-top:0;">Reschedule follow-up</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c.name)}</p>
+    <div class="quickdate" id="rfQuickDates">
+      ${[{l:'+3 days',d:3},{l:'+1 week',d:7},{l:'+2 weeks',d:14},{l:'+1 month',d:30}].map(o=>`<button data-days="${o.d}" onclick="pickRescheduleDate(${o.d})">${o.l}</button>`).join('')}
+    </div>
+    <input type="date" id="rfDate">
+    <button class="btn" onclick="saveReschedule('${clinicId}')">Save new date</button>
+  `);
+}
+function pickRescheduleDate(days){
+  document.querySelectorAll('#rfQuickDates button').forEach(b=>b.classList.toggle('on', parseInt(b.dataset.days)===days));
+  const d = new Date(); d.setDate(d.getDate()+days);
+  document.getElementById('rfDate').value = localDateStr(d);
+}
+async function saveReschedule(clinicId){
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c) return;
+  const val = document.getElementById('rfDate').value;
+  if(!val){ showToast('Pick a date'); return; }
+  c.nextFollowUp = val;
+  await persist('clinics');
+  await scheduleFollowUp(c, val, c.rep);
+  closeModal();
+  showToast('Follow-up rescheduled');
+  renderAll();
+}
+async function clearFollowUp(clinicId){
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c) return;
+  c.nextFollowUp = null;
+  await persist('clinics');
+  await scheduleFollowUp(c, null, c.rep);
+  closeModal();
+  showToast('Follow-up cleared');
+  renderAll();
 }
 
 // ---- CLINICS ----
