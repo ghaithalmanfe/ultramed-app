@@ -1,0 +1,294 @@
+const { test, describe } = require('node:test');
+const assert = require('node:assert/strict');
+const core = require('../www/js/core.js');
+
+// ---------- formatting / small helpers ----------
+
+describe('money', () => {
+  test('formats with 2 decimals and KD suffix', () => {
+    assert.equal(core.money(12.5), '12.50 KD');
+    assert.equal(core.money(0), '0.00 KD');
+  });
+  test('treats null/undefined as zero', () => {
+    assert.equal(core.money(null), '0.00 KD');
+    assert.equal(core.money(undefined), '0.00 KD');
+  });
+});
+
+describe('esc (HTML escaping)', () => {
+  test('escapes all dangerous characters', () => {
+    assert.equal(core.esc(`<img src=x onerror="alert('1')">&`),
+      '&lt;img src=x onerror=&quot;alert(&#39;1&#39;)&quot;&gt;&amp;');
+  });
+  test('handles null/undefined/empty', () => {
+    assert.equal(core.esc(null), '');
+    assert.equal(core.esc(undefined), '');
+    assert.equal(core.esc(''), '');
+  });
+  test('leaves safe text untouched', () => {
+    assert.equal(core.esc('Dr. Ahmed - Salmiya Clinic'), 'Dr. Ahmed - Salmiya Clinic');
+  });
+});
+
+describe('safeUrl', () => {
+  test('allows http and https', () => {
+    assert.equal(core.safeUrl('https://example.com/x'), 'https://example.com/x');
+    assert.equal(core.safeUrl('  http://a.b  '), 'http://a.b');
+  });
+  test('blocks javascript:, data: and everything else', () => {
+    assert.equal(core.safeUrl('javascript:alert(1)'), '');
+    assert.equal(core.safeUrl('data:text/html;base64,xx'), '');
+    assert.equal(core.safeUrl('example.com'), '');
+    assert.equal(core.safeUrl(null), '');
+  });
+});
+
+describe('initials / slugify / uid', () => {
+  test('initials takes first letters of first two words', () => {
+    assert.equal(core.initials('Mariam Ali'), 'MA');
+    assert.equal(core.initials('Renova'), 'R');
+    assert.equal(core.initials('a b c'), 'AB');
+  });
+  test('slugify lowercases and collapses non-alphanumerics', () => {
+    assert.equal(core.slugify('Ultra Med  X-2!'), 'ultra-med-x-2-');
+  });
+  test('uid returns non-empty unique-ish strings', () => {
+    const a = core.uid(), b = core.uid();
+    assert.ok(a.length > 5);
+    assert.notEqual(a, b);
+  });
+});
+
+// ---------- dates ----------
+
+describe('dates', () => {
+  test('localDateStr pads month and day', () => {
+    assert.equal(core.localDateStr(new Date(2026, 0, 5)), '2026-01-05');
+    assert.equal(core.localDateStr(new Date(2026, 11, 31)), '2026-12-31');
+  });
+  test('todayStr uses the LOCAL calendar date (UTC bug regression)', () => {
+    // Computed two ways around the call so the test can't flake at midnight.
+    const before = core.localDateStr(new Date());
+    const today = core.todayStr();
+    const after = core.localDateStr(new Date());
+    assert.ok([before, after].includes(today),
+      `todayStr()=${today} should match the local date (${before}/${after}), not the UTC date`);
+  });
+  test('daysBetween counts calendar days', () => {
+    assert.equal(core.daysBetween('2026-08-01', '2026-08-07'), 6);
+    assert.equal(core.daysBetween('2026-08-07', '2026-08-01'), -6);
+    assert.equal(core.daysBetween('2026-08-07', '2026-08-07'), 0);
+    // across a month boundary and a leap day
+    assert.equal(core.daysBetween('2024-02-28', '2024-03-01'), 2);
+  });
+  test('getWeekDates returns Sunday-to-Saturday containing the anchor', () => {
+    const week = core.getWeekDates('2026-08-05'); // a Wednesday
+    assert.equal(week.length, 7);
+    assert.equal(week[0], '2026-08-02'); // Sunday
+    assert.equal(week[6], '2026-08-08'); // Saturday
+    assert.ok(week.includes('2026-08-05'));
+  });
+  test('getMonthDates handles leap February and month lengths', () => {
+    const feb24 = core.getMonthDates('2024-02-10');
+    assert.equal(feb24.length, 29);
+    assert.equal(feb24[0], '2024-02-01');
+    assert.equal(feb24[28], '2024-02-29');
+    assert.equal(core.getMonthDates('2026-02-01').length, 28);
+    assert.equal(core.getMonthDates('2026-08-15').length, 31);
+  });
+});
+
+describe('followStatus', () => {
+  const today = '2026-08-07';
+  test('classifies overdue / today / upcoming / none', () => {
+    assert.equal(core.followStatus('2026-08-01', today), 'overdue');
+    assert.equal(core.followStatus('2026-08-07', today), 'today');
+    assert.equal(core.followStatus('2026-08-08', today), 'upcoming');
+    assert.equal(core.followStatus(null, today), 'none');
+    assert.equal(core.followStatus('', today), 'none');
+  });
+});
+
+// ---------- persistence ----------
+
+describe('safeParse', () => {
+  test('parses valid JSON', () => {
+    assert.deepEqual(core.safeParse('[1,2]', []), [1, 2]);
+    assert.deepEqual(core.safeParse('{"a":1}', {}), { a: 1 });
+  });
+  test('returns the fallback for corrupt JSON instead of throwing', () => {
+    assert.deepEqual(core.safeParse('{broken', ['fallback']), ['fallback']);
+    assert.equal(core.safeParse('', null), null);
+  });
+  test('returns the fallback for missing values', () => {
+    assert.equal(core.safeParse(null, 'x'), 'x');
+    assert.equal(core.safeParse(undefined, 'x'), 'x');
+  });
+});
+
+// ---------- CSV ----------
+
+describe('csvEscape', () => {
+  test('plain values pass through', () => {
+    assert.equal(core.csvEscape('hello'), 'hello');
+    assert.equal(core.csvEscape(12.5), '12.5');
+  });
+  test('null/undefined become empty', () => {
+    assert.equal(core.csvEscape(null), '');
+    assert.equal(core.csvEscape(undefined), '');
+  });
+  test('quotes values containing commas, quotes, newlines', () => {
+    assert.equal(core.csvEscape('a,b'), '"a,b"');
+    assert.equal(core.csvEscape('say "hi"'), '"say ""hi"""');
+    assert.equal(core.csvEscape('line1\nline2'), '"line1\nline2"');
+  });
+  test('neutralizes spreadsheet formula injection', () => {
+    assert.equal(core.csvEscape('=CMD()'), "'=CMD()");
+    assert.equal(core.csvEscape('@SUM(A1)'), "'@SUM(A1)");
+    assert.equal(core.csvEscape('=1+1,x'), '"\'=1+1,x"');
+    assert.equal(core.csvEscape('+cmd|payload'), "'+cmd|payload");
+  });
+  test('leaves plain signed numbers (e.g. phone numbers) untouched', () => {
+    assert.equal(core.csvEscape('+96512345678'), '+96512345678');
+    assert.equal(core.csvEscape('-5.5'), '-5.5');
+  });
+});
+
+// ---------- order math ----------
+
+const PRODUCTS = [
+  { id: 'p1', name: 'Gel A', price: 2.5 },
+  { id: 'p2', name: 'Cream B', price: 10 },
+  { id: 'p3', name: 'Sample C', price: null }, // price not set
+  { id: 'p4', _key: 'k4', name: 'Serum D', price: 4 },
+];
+
+describe('orderGross / orderNet', () => {
+  test('sums price x quantity', () => {
+    const o = { qty: { p1: 2, p2: 1 }, discountPct: 0 };
+    assert.equal(core.orderGross(o, PRODUCTS), 15);
+    assert.equal(core.orderNet(o, PRODUCTS), 15);
+  });
+  test('ignores products with no price and unknown products', () => {
+    const o = { qty: { p1: 1, p3: 5, ghost: 9 }, discountPct: 0 };
+    assert.equal(core.orderGross(o, PRODUCTS), 2.5);
+  });
+  test('applies percentage discount with 2-decimal rounding', () => {
+    const o = { qty: { p2: 1 }, discountPct: 15 };
+    assert.equal(core.orderNet(o, PRODUCTS), 8.5);
+    // Pins current float behavior: 2.5 * 0.67 computes as 1.67499999...,
+    // so the half-fils case rounds DOWN. If rounding policy ever changes
+    // (e.g. to always round half up), update this expectation deliberately.
+    const o2 = { qty: { p1: 1 }, discountPct: 33 };
+    assert.equal(core.orderNet(o2, PRODUCTS), 1.67);
+  });
+  test('handles 100% discount and missing discountPct', () => {
+    assert.equal(core.orderNet({ qty: { p2: 2 }, discountPct: 100 }, PRODUCTS), 0);
+    assert.equal(core.orderNet({ qty: { p2: 2 } }, PRODUCTS), 20);
+  });
+  test('empty order totals zero', () => {
+    assert.equal(core.orderGross({ qty: {} }, PRODUCTS), 0);
+    assert.equal(core.orderNet({ qty: {} }, PRODUCTS), 0);
+  });
+});
+
+describe('orderTotals (standalone orders)', () => {
+  test('returns rounded gross, discount and net', () => {
+    const t = core.orderTotals({ p1: 3, p2: 1 }, 10, PRODUCTS); // gross 17.5
+    assert.deepEqual(t, { gross: 17.5, disc: 1.75, net: 15.75 });
+  });
+  test('no discount', () => {
+    assert.deepEqual(core.orderTotals({ p2: 2 }, 0, PRODUCTS), { gross: 20, disc: 0, net: 20 });
+  });
+  test('finds products by _key like the app does', () => {
+    const t = core.orderTotals({ k4: 2 }, 0, PRODUCTS);
+    assert.equal(t.gross, 8);
+  });
+  test('rounding stays consistent: disc + net equals gross to the fils', () => {
+    const t = core.orderTotals({ p1: 1 }, 33, PRODUCTS); // 2.5 gross
+    assert.equal(Math.round((t.disc + t.net) * 100) / 100, t.gross);
+  });
+});
+
+// ---------- rep scoring ----------
+
+const CLINICS = [
+  { id: 'c1', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-01' }, // overdue
+  { id: 'c2', rep: 'Mariam', cls: 'B', nextFollowUp: '2026-08-20' },
+  { id: 'c3', rep: 'Mariam', cls: 'C', nextFollowUp: null },
+  { id: 'c4', rep: 'Mariam', cls: 'Closed', nextFollowUp: '2026-01-01' }, // ignored
+  { id: 'c5', rep: 'Renova', cls: 'A', nextFollowUp: null },
+];
+const VISITS = [
+  { rep: 'Mariam', clinicId: 'c1', orderTaken: true, orderTotal: 100 },
+  { rep: 'Mariam', clinicId: 'c1', orderTaken: false },
+  { rep: 'Mariam', clinicId: 'c3', orderTaken: true, orderTotal: 50.5 },
+  { rep: 'Renova', clinicId: 'c5', orderTaken: false },
+];
+const TASKS = [
+  { rep: 'Mariam', done: true },
+  { rep: 'Mariam', done: false },
+  { rep: 'Renova', done: false },
+];
+
+describe('computeScoreForVisits', () => {
+  test('computes visits, orders, revenue, coverage and priority coverage', () => {
+    const s = core.computeScoreForVisits('Mariam', VISITS, CLINICS);
+    assert.equal(s.visits, 3);
+    assert.equal(s.orders, 2);
+    assert.equal(s.revenue, 150.5);
+    assert.equal(s.conversion, 67); // 2/3 rounded
+    assert.equal(s.assignedCount, 3); // Closed clinic excluded
+    assert.equal(s.covered, 2); // c1, c3
+    assert.equal(s.coveragePct, 67);
+    assert.equal(s.priorityAssignedCount, 2); // A + B
+    assert.equal(s.priorityCovered, 1); // only c1
+    assert.equal(s.priorityPct, 50);
+  });
+  test('a rep with no visits and no clinics gets zeros, not NaN', () => {
+    const s = core.computeScoreForVisits('Nobody', VISITS, CLINICS);
+    assert.equal(s.visits, 0);
+    assert.equal(s.conversion, 0);
+    assert.equal(s.coveragePct, 0);
+    assert.equal(s.priorityPct, 0);
+  });
+});
+
+describe('computeRepScore', () => {
+  test('adds overdue follow-ups and task completion', () => {
+    const s = core.computeRepScore('Mariam', { visits: VISITS, clinics: CLINICS, tasks: TASKS, today: '2026-08-07' });
+    assert.equal(s.rep, 'Mariam');
+    assert.equal(s.overdue, 1); // c1 overdue; c4 is Closed so ignored
+    assert.equal(s.tasksTotal, 2);
+    assert.equal(s.tasksDone, 1);
+    assert.equal(s.taskPct, 50);
+    assert.equal(s.visits, 3); // score fields carried through
+  });
+  test('rep with no tasks gets 0% not NaN', () => {
+    const s = core.computeRepScore('Nobody', { visits: [], clinics: [], tasks: [], today: '2026-08-07' });
+    assert.equal(s.taskPct, 0);
+    assert.equal(s.overdue, 0);
+  });
+});
+
+describe('calcStreak', () => {
+  const today = '2026-08-07';
+  test('counts consecutive days ending today', () => {
+    assert.equal(core.calcStreak(['2026-08-07', '2026-08-06', '2026-08-05'], today), 3);
+  });
+  test("today not yet logged doesn't break yesterday's streak", () => {
+    assert.equal(core.calcStreak(['2026-08-06', '2026-08-05'], today), 2);
+  });
+  test('a gap ends the streak', () => {
+    assert.equal(core.calcStreak(['2026-08-07', '2026-08-05', '2026-08-04'], today), 1);
+  });
+  test('streak broken more than one day ago counts as zero', () => {
+    assert.equal(core.calcStreak(['2026-08-04', '2026-08-03'], today), 0);
+  });
+  test('no visits means no streak', () => {
+    assert.equal(core.calcStreak([], today), 0);
+  });
+  test('streak counting crosses month boundaries', () => {
+    assert.equal(core.calcStreak(['2026-08-01', '2026-07-31', '2026-07-30'], '2026-08-01'), 3);
+  });
+});
