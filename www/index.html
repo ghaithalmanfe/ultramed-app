@@ -4590,7 +4590,12 @@ function closeModal(){ document.getElementById('modalBack').classList.remove('sh
 function closeModalBg(e){ if(e.target.id==='modalBack') closeModal(); }
 
 if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW register failed', e)); });
+  // Registering on window 'load' misses the event entirely on this page: the
+  // blocking Firebase SDK <script> tags in <head> can delay this inline
+  // script past the point 'load' already fired, so the listener never runs.
+  const registerSW = () => navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW register failed', e));
+  if(document.readyState === 'complete') registerSW();
+  else window.addEventListener('load', registerSW);
 }
 if(FIREBASE_ENABLED){
   // Poll for changes made by other reps/devices so data stays reasonably fresh
