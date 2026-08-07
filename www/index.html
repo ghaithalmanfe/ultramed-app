@@ -553,7 +553,7 @@
       <div id="taskList"></div>
     </div>
 
-    <div class="section-title">Recent visits <span><span class="link" onclick="openStandaloneOrder()">+ Add order</span> <span class="link" onclick="openVisitLog()" style="margin-left:10px;">See all</span></span></div>
+    <div class="section-title">Recent visits <span><span class="link" onclick="openCallLog()">📞 Log a call</span> <span class="link" onclick="openStandaloneOrder()" style="margin-left:10px;">+ Add order</span> <span class="link" onclick="openVisitLog()" style="margin-left:10px;">See all</span></span></div>
     <div id="recentVisits"></div>
   </div>
 
@@ -1292,7 +1292,7 @@ function visibleVisits(){
 }
 // Records flagged orderOnly are phone/remote orders, not field visits.
 // They count toward revenue but must not inflate visit counts.
-function isFieldVisit(v){ return !v.orderOnly; }
+function isFieldVisit(v){ return !v.orderOnly && !v.callOnly; }
 function visibleFieldVisits(){ return visibleVisits().filter(isFieldVisit); }
 
 function renderToday(){
@@ -1357,7 +1357,7 @@ function renderToday(){
       return `<div class="card">
         <div class="row-between">
           <div>
-            <div class="clinic-name">${esc(clinic ? clinic.name : 'Unknown')}</div>
+            <div class="clinic-name">${v.callOnly?(CHANNEL_LABELS[v.channel]||'📞')+' ':''}${esc(clinic ? clinic.name : 'Unknown')}</div>
             <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken ? ' · '+money(v.orderTotal) : ''}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}</div>
           </div>
         </div>
@@ -2318,6 +2318,7 @@ function openClinicDetail(id){
     <button class="btn" onclick="quickLogFrom('${c.id}'); closeModal();">Log a visit here</button>
     <div class="chip-row" style="margin-top:10px;">
       <div class="chip small" onclick="openStandaloneOrder('${c.id}')">🛒 Order only</div>
+      <div class="chip small" onclick="openCallLog('${c.id}')">📞 Log a call</div>
       ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">📅 Today's plan</div>` : ''}
       ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">✏️ Edit</div>` : ''}
     </div>
@@ -2337,7 +2338,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
-      cVisits.map(v=>`<div class="visit-hist"><strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
+      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
         ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c.name)}')">`).join('')}</div>`:''}
       </div>`).join('')}
   `);
@@ -2778,6 +2779,101 @@ async function saveStandaloneOrder(){
   renderAll();
 }
 
+// ---- CALL / REMOTE FOLLOW-UP LOG ----
+// Phone calls, WhatsApp, anything that isn't a field visit but is still
+// real work — gives it a place to be recorded and counted, instead of
+// being invisible just because it didn't happen at a clinic.
+let clClinicId = null, clDoctorId = null;
+function openCallLog(prefillClinicId){
+  clClinicId = prefillClinicId || null;
+  clDoctorId = null;
+  showModal(`
+    <h3 style="margin-top:0;">📞 Log a call / follow-up</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone calls, WhatsApp, or anything that isn't a field visit — counted as real work, not a clinic visit.</p>
+    <label>Channel</label>
+    <div class="chip-row" id="clChannelChips">
+      ${[['call','📞 Call'],['whatsapp','💬 WhatsApp'],['email','✉️ Email'],['other','💭 Other']].map(([k,l],i)=>`<div class="chip small ${i===0?'on':''}" data-ch="${k}" onclick="pickModalCls(this)">${l}</div>`).join('')}
+    </div>
+    <label>Clinic</label>
+    <input type="text" id="clClinicSearch" placeholder="🔍 Search clinics..." oninput="renderClClinics()" style="margin-bottom:8px;">
+    <div id="clClinicPick"></div>
+    <div id="clDoctorWrap"></div>
+    <label>Who did you speak with?</label>
+    <input type="text" id="clContactName" placeholder="Name (doctor, receptionist, procurement...)">
+    <div class="row-between" style="gap:10px; margin-top:8px;">
+      <input type="text" id="clContactRole" placeholder="Their role (optional)">
+      <input type="tel" id="clContactPhone" placeholder="Phone (optional)">
+    </div>
+    <label>What happened?</label>
+    <textarea id="clNotes" placeholder="e.g. Called to confirm delivery date, followed up on a pending order..."></textarea>
+    <label>Next follow-up (optional)</label>
+    <div class="quickdate" id="clQuickDates">
+      ${[{l:'+3 days',d:3},{l:'+1 week',d:7},{l:'+2 weeks',d:14},{l:'+1 month',d:30}].map(o=>`<button data-days="${o.d}" onclick="pickClQuickDate(${o.d})">${o.l}</button>`).join('')}
+    </div>
+    <input type="date" id="clFollowUp">
+    <button class="btn" onclick="saveCallLog()">Save</button>
+  `);
+  renderClClinics();
+}
+function renderClClinics(){
+  const q = (document.getElementById('clClinicSearch')?.value||'').toLowerCase().trim();
+  const el = document.getElementById('clClinicPick');
+  if(clClinicId){
+    const c = clinics.find(x=>x.id===clClinicId);
+    if(c){
+      el.innerHTML = `<div class="card" style="border-left:4px solid ${clsColor(c.cls)};">
+        <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
+        <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();">&times;</button></div></div>`;
+      renderClDoctors();
+      return;
+    }
+  }
+  let pool = clinics.filter(c=>c.cls!=='Closed');
+  if(currentUser.role!=='supervisor') pool = pool.filter(c=>c.rep===currentUser.name);
+  if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
+  pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
+  el.innerHTML = pool.length ? pool.map(c=>`
+    <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(c.cls)};" onclick="clClinicId='${c.id}'; renderClClinics();">
+      <div class="clinic-name">${esc(c.name)}</div>
+      <div class="clinic-sub">${esc(c.rep||'')}</div>
+    </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
+  document.getElementById('clDoctorWrap').innerHTML = '';
+}
+function renderClDoctors(){
+  const wrap = document.getElementById('clDoctorWrap');
+  const c = clinics.find(x=>x.id===clClinicId);
+  if(!c || !(c.doctors||[]).length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = `<label>Doctor (optional)</label><div class="chip-row">${c.doctors.map(d=>`<div class="chip small ${clDoctorId===d.id?'on':''}" onclick="clDoctorId=(clDoctorId==='${d.id}'?null:'${d.id}'); renderClDoctors();">${esc(d.name)}</div>`).join('')}</div>`;
+}
+function pickClQuickDate(days){
+  document.querySelectorAll('#clQuickDates button').forEach(b=>b.classList.toggle('on', parseInt(b.dataset.days)===days));
+  const d = new Date(); d.setDate(d.getDate()+days);
+  document.getElementById('clFollowUp').value = localDateStr(d);
+}
+const CHANNEL_LABELS = {call:'📞 Call', whatsapp:'💬 WhatsApp', email:'✉️ Email', other:'💭 Other'};
+async function saveCallLog(){
+  if(!clClinicId){ showToast('Pick a clinic first'); return; }
+  const notes = document.getElementById('clNotes').value.trim();
+  if(!notes){ showToast('Add a quick note about the call'); return; }
+  const clinic = clinics.find(c=>c.id===clClinicId);
+  const rep = currentUser.role==='supervisor' ? (clinic?clinic.rep:currentUser.name) : currentUser.name;
+  const followUp = document.getElementById('clFollowUp').value || null;
+  const channelEl = document.querySelector('#clChannelChips .chip.on');
+  const channel = channelEl ? channelEl.dataset.ch : 'call';
+  const contactName = document.getElementById('clContactName').value.trim();
+  const contactRole = document.getElementById('clContactRole').value.trim();
+  const contactPhone = document.getElementById('clContactPhone').value.trim();
+  visits.push({id:uid(), clinicId:clClinicId, rep, date:todayStr(), ts:Date.now(), callOnly:true, channel, doctorId:clDoctorId||null,
+    contactName: contactName||null, contactRole: contactRole||null, contactPhone: contactPhone||null,
+    notes, nextFollowUp:followUp});
+  if(clinic && followUp) clinic.nextFollowUp = followUp;
+  await Promise.all([persist('visits'), clinic ? persist('clinics') : Promise.resolve()]);
+  if(clinic && followUp) await scheduleFollowUp(clinic, followUp, rep);
+  closeModal();
+  showToast(CHANNEL_LABELS[channel]+' logged');
+  renderAll();
+}
+
 // ---- EDIT A LOGGED VISIT ----
 function openEditVisit(visitId){
   const v = visits.find(x=>x.id===visitId);
@@ -3196,6 +3292,7 @@ function renderVisitLog(){
   const rows = visitLogRows();
   const fieldVisits = rows.filter(isFieldVisit);
   const orderOnly = rows.filter(v=>v.orderOnly);
+  const calls = rows.filter(v=>v.callOnly);
   const orders = rows.filter(v=>v.orderTaken);
   const revenue = rows.reduce((s,v)=>s+(v.orderTotal||0),0);
   const uniqueClinics = new Set(rows.map(v=>v.clinicId)).size;
@@ -3203,6 +3300,7 @@ function renderVisitLog(){
     <div class="card" style="background:var(--teal-dim); margin-bottom:12px;">
       <div class="row-between"><span style="font-size:13px;">Field visits</span><strong>${fieldVisits.length}</strong></div>
       ${orderOnly.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Phone/remote orders</span><span>${orderOnly.length}</span></div>`:''}
+      ${calls.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>📞 Calls logged</span><span>${calls.length}</span></div>`:''}
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Revenue</span><span>${money(revenue)}</span></div>
@@ -3225,8 +3323,8 @@ function renderVisitLog(){
     html += `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c?c.cls:null)};">
       <div class="row-between">
         <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
-          <div class="clinic-name">${esc(c?c.name:'Unknown clinic')}${v.orderOnly?' <span class="rep-tag">order only</span>':''}</div>
-          <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):'Visit only'}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}</div>
+          <div class="clinic-name">${esc(c?c.name:'Unknown clinic')}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
+          <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}</div>
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
         </div>
