@@ -50,8 +50,10 @@
   .stat .n{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif; letter-spacing:-0.02em; font-size:22px; font-weight:700; line-height:1;}
   .stat .l{font-size:10.5px; color:var(--muted); margin-top:4px; font-weight:600;}
   .stat.alert .n{color:var(--coral);}
-  .section-title{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:rgba(255,255,255,.55); margin:22px 0 10px; display:flex; justify-content:space-between; align-items:center;}
-  .section-title .link{font-size:11.5px; text-transform:none; letter-spacing:0; color:var(--green-soft); cursor:pointer; font-weight:700;}
+  .section-title{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:22px 0 10px; display:flex; justify-content:space-between; align-items:center;}
+  .section-title .link{font-size:11.5px; text-transform:none; letter-spacing:0; color:var(--teal); cursor:pointer; font-weight:700;}
+  .view > .section-title{color:rgba(255,255,255,.55);}
+  .view > .section-title .link{color:var(--green-soft);}
   .card{background:var(--card); border:none; border-radius:var(--radius); padding:16px 18px; margin-bottom:10px; box-shadow:0 1px 2px rgba(0,0,0,.04);}
   .card.clickable{cursor:pointer;}
   .card.dim{opacity:.55;}
@@ -71,8 +73,10 @@
   .cls-D{background:#EEEDE7; color:var(--muted);}
   .cls-F{background:var(--coral-dim); color:var(--coral);}
   .cls-Closed{background:#EEEDE7; color:var(--muted); text-decoration:line-through;}
-  .empty{text-align:center; padding:36px 20px; color:rgba(255,255,255,.55); font-size:14px; background:rgba(255,255,255,.05); border-radius:var(--radius);}
-  .empty .big{font-size:15px; color:#fff; font-weight:600; margin-bottom:4px;}
+  .empty{text-align:center; padding:36px 20px; color:var(--muted); font-size:14px;}
+  .empty .big{font-size:15px; color:var(--ink); font-weight:600; margin-bottom:4px;}
+  .view .empty{color:rgba(255,255,255,.55); background:rgba(255,255,255,.05); border-radius:var(--radius);}
+  .view .empty .big{color:#fff;}
   label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin:14px 0 6px;}
   label:first-child{margin-top:0;}
   input[type=text], input[type=tel], input[type=date], input[type=number], textarea, select{width:100%; padding:13px 14px; border:none; border-radius:12px; font-size:16px; font-family:inherit; background:var(--paper); color:var(--ink); outline:none; -webkit-appearance:none;}
@@ -163,6 +167,12 @@
   .compare-row{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:13px;}
   .compare-row .h{font-weight:700; color:var(--muted); font-size:11px; text-transform:uppercase;}
   .score-card{margin-bottom:12px;}
+  .guidance-block{margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
+  .guidance-head{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px;}
+  .focus-card{background:var(--green-dim); border-left:4px solid var(--coral); border-radius:0 var(--radius) var(--radius) 0; padding:14px 16px; margin-bottom:18px;}
+  .focus-label{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--green-dark);}
+  .focus-text{font-size:14.5px; font-weight:600; color:var(--ink); line-height:1.4; margin-top:4px;}
+  .focus-action{font-size:13px; color:var(--green-dark); margin-top:5px; font-weight:600;}
   .score-head{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
   .score-head .stamp{width:36px; height:36px; font-size:12px;}
   .score-head .name{font-weight:700; font-size:15.5px;}
@@ -189,8 +199,9 @@
   .doc-row:last-child{border-bottom:none;}
   .doc-row .dname{font-weight:700;}
   .doc-row .dsub{color:var(--muted); font-size:12px;}
-  .doc-group-head{font-weight:700; font-size:13.5px; margin:14px 0 4px; color:var(--green-soft);}
+  .doc-group-head{font-weight:700; font-size:13.5px; margin:14px 0 4px; color:var(--teal);}
   .doc-group-head:first-child{margin-top:0;}
+  .view .doc-group-head{color:var(--green-soft);}
   .mini-input-row{display:flex; gap:8px; margin-top:8px;}
   .mini-input-row input{flex:1;}
   .plan-check{width:22px; height:22px; border-radius:50%; border:2px solid var(--line); flex-shrink:0; display:flex; align-items:center; justify-content:center; cursor:pointer;}
@@ -498,6 +509,7 @@
   <div class="view active" id="view-today">
     <div id="welcomeCard"></div>
     <div class="hero" id="heroCard"></div>
+    <div id="focusCard"></div>
     <div id="streakCard"></div>
     <div class="section-title">Your achievements <span class="link" onclick="openAchievements()">See all</span></div>
     <div class="badge-strip" id="badgeStrip"></div>
@@ -1105,7 +1117,7 @@ function normalizeClinic(c){
 }
 async function loadAll(){
   try{
-    const [c,p,v,t,dp,st,rb] = await Promise.all([
+    const [c,p,v,t,dp,st,rb,bm] = await Promise.all([
       window.storage.get('clinics', true).catch(()=>null),
       window.storage.get('products', true).catch(()=>null),
       window.storage.get('visits', true).catch(()=>null),
@@ -1113,6 +1125,7 @@ async function loadAll(){
       window.storage.get('dayPlans', true).catch(()=>null),
       window.storage.get('staff', true).catch(()=>null),
       window.storage.get('recycleBin', true).catch(()=>null),
+      window.storage.get('benchmarks', true).catch(()=>null),
     ]);
     clinics = (c ? JSON.parse(c.value) : CLINICS_SEED.map(x=>({...x}))).map(normalizeClinic);
     products = p ? JSON.parse(p.value) : PRODUCTS_SEED;
@@ -1122,10 +1135,12 @@ async function loadAll(){
     dayPlans = dp ? JSON.parse(dp.value) : {};
     if(st){ staff = JSON.parse(st.value); refreshStaff(); }
     if(rb){ recycleBin = Object.assign({clinics:[],products:[],visits:[]}, JSON.parse(rb.value)); }
+    if(bm){ BENCHMARKS = Object.assign({}, BENCHMARKS, JSON.parse(bm.value)); }
     await loadTeam();
     if(!c) await persist('clinics');
     if(!p) await persist('products');
     if(!st) await persist('staff');
+    if(!bm) await persist('benchmarks');
   }catch(e){
     console.error('load error', e);
     clinics = CLINICS_SEED.map(x=>normalizeClinic({...x}));
@@ -1136,7 +1151,7 @@ async function loadAll(){
   renderAll();
 }
 async function persist(key){
-  const map = {clinics, products, visits, tasks, dayPlans, staff, recycleBin};
+  const map = {clinics, products, visits, tasks, dayPlans, staff, recycleBin, benchmarks: BENCHMARKS};
   try{
     const res = await window.storage.set(key, JSON.stringify(map[key]), true);
     if(!res){ showToast('Save failed, try again'); }
@@ -1256,6 +1271,7 @@ function renderToday(){
   document.getElementById('navDotToday').classList.toggle('show', hasAlerts);
 
   renderWelcome();
+  renderFocusCard();
   renderStreak();
   renderBadges();
   renderPlanList();
@@ -2720,7 +2736,32 @@ function setAdminTab(tab){
 // -- Team tab (performance + roster management in one place) --
 function adminTeamHTML(){
   return `<div id="apStaffList"></div>
-    <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>`;
+    <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>
+    <div class="section-title">Evaluation targets</div>
+    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">These targets drive every rep's scorecard, the coaching guidance under it, and the professional report — set them once here and they apply team-wide.</p>
+    <div class="card">
+      <label>Clinic coverage target (%)</label>
+      <input type="number" min="0" max="100" id="bmCoverage" value="${BENCHMARKS.coverage}">
+      <label>Priority (A/B) clinic coverage target (%)</label>
+      <input type="number" min="0" max="100" id="bmPriority" value="${BENCHMARKS.priority}">
+      <label>Conversion rate target (%)</label>
+      <input type="number" min="0" max="100" id="bmConversion" value="${BENCHMARKS.conversion}">
+      <label>Task completion target (%)</label>
+      <input type="number" min="0" max="100" id="bmTasks" value="${BENCHMARKS.tasks}">
+      <button class="btn secondary small" onclick="saveBenchmarks()">Save targets</button>
+    </div>`;
+}
+async function saveBenchmarks(){
+  const clamp = v => Math.max(0, Math.min(100, parseInt(v)||0));
+  BENCHMARKS = {
+    coverage: clamp(document.getElementById('bmCoverage').value),
+    priority: clamp(document.getElementById('bmPriority').value),
+    conversion: clamp(document.getElementById('bmConversion').value),
+    tasks: clamp(document.getElementById('bmTasks').value),
+  };
+  await persist('benchmarks');
+  showToast('✅ Evaluation targets updated');
+  if(document.getElementById('scorecards')) renderScorecards();
 }
 function renderAdminStaff(){
   const el = document.getElementById('apStaffList');
@@ -3933,8 +3974,41 @@ function renderScorecards(){
         <div class="bar-label"><span>Task completion</span><span>${s.tasksDone}/${s.tasksTotal} (${s.taskPct}%)</span></div>
         <div class="bar-track"><div class="bar-fill ${s.overdue>0?'coral':''}" style="width:${s.taskPct}%;"></div></div>
       </div>
+      ${renderGuidanceBlock(r, s)}
     </div>`;
   }).join('');
+}
+function renderFocusCard(){
+  const el = document.getElementById('focusCard');
+  if(!el) return;
+  const reps = currentUser.role==='supervisor' ? REPS : [currentUser.name];
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-30);
+  const recentVisits = visits.filter(v=>new Date(v.date)>=cutoff);
+  const candidates = reps.map(r=>{
+    const s = computeScoreForVisits(r, recentVisits);
+    const n = buildNarrative(r, s, null);
+    return {rep:r, top: n.opportunities[0] || null};
+  }).filter(c=>c.top);
+  candidates.sort((a,b)=>(a.top.label==='Overdue follow-ups'?-1:0) - (b.top.label==='Overdue follow-ups'?-1:0));
+  const best = candidates[0];
+  if(!best){ el.innerHTML=''; return; }
+  const prefix = currentUser.role==='supervisor' && REPS.length>1 ? `${esc(best.rep)} — ` : '';
+  el.innerHTML = `<div class="focus-card">
+    <div class="focus-label">🎯 ${currentUser.role==='supervisor' ? 'Team focus' : 'Your focus today'}</div>
+    <div class="focus-text">${prefix}${best.top.opp}</div>
+    ${best.top.action?`<div class="focus-action">→ ${best.top.action}</div>`:''}
+  </div>`;
+}
+function renderGuidanceBlock(rep, s){
+  const prev = computePrevPeriodScore(rep);
+  const n = buildNarrative(rep, s, prev);
+  const items = [...n.opportunities, ...n.strengths];
+  if(!items.length) return '';
+  return `<div class="guidance-block">
+    <div class="guidance-head">${currentUser.role==='supervisor' ? '🎯 Coaching guidance' : '🎯 Your focus this period'}</div>
+    ${n.opportunities.slice(0,3).map(x=>`<div class="pr-list-item"><div class="pr-icon opp">!</div><div>${x.opp}${x.action?`<div class="pr-action">→ ${x.action}</div>`:''}</div></div>`).join('')}
+    ${n.opportunities.length===0 ? `<div class="pr-list-item"><div class="pr-icon good">✓</div><div>Every tracked metric is at or above target this period — excellent, consistent work.</div></div>` : ''}
+  </div>`;
 }
 
 // ---- EMAIL → TASKS ----
@@ -4005,7 +4079,7 @@ async function addManualEmailTask(){
 }
 
 // ---- PROFESSIONAL REPORT ----
-const BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
+let BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
 function periodLabel(){ return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time'; }
 function computeScoreForVisits(repName, visitList){
   const base = visitList.filter(v=>v.rep===repName);
