@@ -3,8 +3,12 @@
 ## What's in this folder
 
 - `www/` — the app itself (this is what runs in the browser or inside the Android app)
+  - `www/js/core.js` — the app's calculations (order totals, rep scores, dates, CSV) as
+    plain functions, shared with the automated tests
 - `android/` — the native Android project (built with Capacitor), produces the installable APK
 - `capacitor.config.json` — links the web app to the native shell
+- `tests/` — automated tests. Run them with `npm test` (needs Node.js, no installs).
+  They also run automatically on GitHub for every change (see the "Actions" tab).
 
 ## 1. Turn on cross-device sync (Firebase)
 
