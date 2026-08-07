@@ -460,25 +460,8 @@
     <div class="gate-tag">Field Ops</div>
     <div class="gate-sub">Tap your profile to start</div>
 
-    <div class="gate-grid">
-      <div class="gate-tile" onclick="selectUser('Mariam','rep')">
-        <div class="gate-av" style="background:linear-gradient(140deg,#B8DC7A,#7FB33F);">M</div>
-        <div class="gate-name">Mariam</div>
-        <div class="gate-role">🦷 Sales Rep</div>
-      </div>
-      <div class="gate-tile" onclick="selectUser('Renova','rep')">
-        <div class="gate-av" style="background:linear-gradient(140deg,#8FD4E8,#3E9BC4);">R</div>
-        <div class="gate-name">Renova</div>
-        <div class="gate-role">🦷 Sales Rep</div>
-      </div>
-      <div class="gate-tile wide" onclick="selectUser('Dr. Ghaith','supervisor')">
-        <div class="gate-av" style="background:linear-gradient(140deg,#B0AEF5,#5E5CE6);">DG</div>
-        <div>
-          <div class="gate-name">Dr. Ghaith</div>
-          <div class="gate-role">⭐ Supervisor &amp; Sales Rep</div>
-        </div>
-      </div>
-    </div>
+    <div class="gate-grid" id="gateGrid"></div>
+    <div id="gateOther" style="margin-top:2px;"><span class="link" style="font-size:12.5px;" onclick="openEmailLogin()">Sign in with email instead</span></div>
 
     <div class="gate-badges">
       <div class="gate-badge"><div class="bi">🏥</div>Clinics</div>
@@ -517,7 +500,7 @@
       <div class="stat"><div class="n" id="statTasks">0</div><div class="l">Open tasks</div></div>
     </div>
 
-    <div class="section-title">Today's plan <span class="link" onclick="openPlanDay()" id="planLink">Plan today</span></div>
+    <div class="section-title">Today's plan <span><span class="link" onclick="openPlanDay()" id="planLink">Plan today</span> <span class="link" onclick="openWeekMonthPlan()" style="margin-left:10px;">Weekly/Monthly</span></span></div>
     <div id="planList"></div>
 
     <div class="tile-grid" style="margin-bottom:6px;">
@@ -545,7 +528,7 @@
       <div id="taskList"></div>
     </div>
 
-    <div class="section-title">Recent visits</div>
+    <div class="section-title">Recent visits <span><span class="link" onclick="openStandaloneOrder()">+ Add order</span> <span class="link" onclick="openVisitLog()" style="margin-left:10px;">See all</span></span></div>
     <div id="recentVisits"></div>
   </div>
 
@@ -687,6 +670,7 @@
     <div class="chip-row" style="margin-bottom:16px;">
       <div class="chip on" id="repWeek" onclick="setReportRange(7)">This week</div>
       <div class="chip" id="repMonth" onclick="setReportRange(30)">This month</div>
+      <div class="chip" id="repQuarter" onclick="setReportRange(90)">This quarter</div>
       <div class="chip" id="repAll" onclick="setReportRange(9999)">All time</div>
     </div>
     <div class="card">
@@ -713,6 +697,7 @@
     <button class="btn secondary" onclick="copyReport()">Copy report as text</button>
     <button class="btn" onclick="openExport()">Export &amp; backups</button>
     <button class="btn secondary" onclick="showProReport()">Generate professional report</button>
+    <button class="btn" id="adminPanelBtn" style="display:none; background:var(--purple);" onclick="openAdminPanel()">⚙️ Admin panel</button>
   </div>
 </div>
 
@@ -775,12 +760,12 @@
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
+  authDomain: "ultramed-field-ops.firebaseapp.com",
+  projectId: "ultramed-field-ops",
+  storageBucket: "ultramed-field-ops.firebasestorage.app",
+  messagingSenderId: "562076174140",
+  appId: "1:562076174140:web:c90047e64c220b83a38039"
 };
 const FIREBASE_ENABLED = !!(FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith('YOUR_'));
 
@@ -788,7 +773,9 @@ if(!window.storage){
   if(FIREBASE_ENABLED && window.firebase){
     firebase.initializeApp(FIREBASE_CONFIG);
     const db = firebase.firestore();
-    const authReady = firebase.auth().signInAnonymously().catch(e=>console.error('firebase auth error', e));
+    const authReady = new Promise((resolve) => {
+      firebase.auth().onAuthStateChanged(user => { if(user) resolve(user); });
+    });
     window.storage = {
       async get(key){
         await authReady;
@@ -845,7 +832,34 @@ if(!window.storage){
 }
 const PRODUCTS_SEED = [{"name":"3-Pin Charger for Waterpik Cordless Plus Water Flosser","brand":"Waterpik","price":4.0,"cat":"Water Flosser Accessories","stock":false,"id":"WP-450ME","barcode":"73950271028","case":"1","age":"13+ Years","desc":"• Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas In 3 Seconds • Up to 50% more effective than string floss • Cleans deep between teeth and below the gumline • 360-Degree Tip Rotation, and Reservoir Capacity Of 45+ Seconds • Dual pressure control system (low for sensitive gums & high for deep cleaning) • Perfect For Travel","img":"https://drive.google.com/thumbnail?id=1BLxVhPKiWQMAJUti0Mce19hByd2iYWnD&sz=w600"},{"name":"Aligner & Retainer Case","brand":"Shenzhen","price":6.9,"cat":"Aligner & Retainer Case","stock":true,"id":"XS037_Black","barcode":"99606920","case":"1","age":"8+years","desc":"• Aligner & Retainer Case - Black outside & Blue inside • Slim Retainer Case , Light & easy on the go for preserving your standard aligners and retainers • Safe For Your Mouth & Your Aligner: Aligner case is made of medical-grade thermoplastic material that will not leach hazardous chemicals into your aligners; Safe for sensitive mouths, retainer holder does not contain natural rubber latex. • Ideal Retainer Container: this case features a compact design and built-in magnetic closure for easy on-the-go storage • Security & Peace Of Mind: Whether you're at home or on the road, our retainer cases protect your aligner or retainer from accidental damage when they're not being worn"},{"name":"Aligner Cleaner + Whitening Foam","brand":"FLASH","price":8.9,"cat":"Ortho Care","stock":false,"id":"HR-AF01","barcode":"6974041280483","case":"1","age":"Not Specified","desc":"FLASH ALIGNER FOAM & CLEANER FOR ALIGNERS & RETAINERS Cleaner + Whitening Freshens Breath Whitens Teeth Kills 99.9% of Bacteria Mild Mint Flavor - 50 ML"},{"name":"Clean Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20101807","barcode":"697029058770","case":"12","age":"7+","desc":"Oral Rinse for Healthy Gums , Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1bEQghWgOyW-M-Ad5tKWVRDtFU9co5rp3&sz=w600"},{"name":"Coconut Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40002-CW","barcode":"93568623","case":"6","age":"7+","desc":"Love for coconut? Flavour shipped straight to your bathroom from an idyllic island paradise; Coconut Whip will have your mouth diving teeth-first through the surf before you’re even close to rinsing. It's just like that once-in-a-lifetime vacation you've always dreamt of...only now you get to go twice a day. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Compact Tuft Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"432368-002446","barcode":"7317400002446","case":"25","age":"7+ years","desc":"Special Brushes TePe Compact Tuft is a single-tuft brush with a dome-shaped brush head for precision cleaning of hard-to-reach areas, such as implants, attachments for overdentures, fixed braces, or along the gum line.","img":"https://drive.google.com/thumbnail?id=1-87b9g3iY7gJIHHdXyPGHsZevjlVFIbc&sz=w600"},{"name":"Cordless Express Water Flosser","brand":"Waterpik","price":24.9,"cat":"Water Flosser","stock":false,"id":"WF-02ME011","barcode":"73950270991","case":"1","age":"13+ Years","desc":"• Reservoir capacity is 150 mL (5 oz) • Pressure range is 45 to 75 psi • Dual Pressure Control • Waterproof and May Be Used in The Shower • No Charging Required • Perfect For Travel And Small Bathrooms • Portable And Lightweight","img":"https://drive.google.com/thumbnail?id=1IAp_xS35198n9DuA5N3_CeTMSCvoBnVo&sz=w600"},{"name":"Cordless Freedom Water Flosser","brand":"Waterpik","price":32.9,"cat":"Water Flosser","stock":true,"id":"WF-03ME012","barcode":"0073950304368","case":"1","age":"13+ Years","desc":"Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas و Up to 50% more effective than string floss Up to 3x as affective for removing Plaque around braces vs. string floss Great for travel . Dual pressure control system Water Resistant"},{"name":"Cordless Plus Water Flosser","brand":"Waterpik","price":35.0,"cat":"Water Flosser","stock":true,"id":"WP-450ME","barcode":"73950271028","case":"1","age":"13+ Years","desc":"• Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas In 3 Seconds • Up to 50% more effective than string floss • Cleans deep between teeth and below the gumline • 360-Degree Tip Rotation, and Reservoir Capacity Of 45+ Seconds • Dual pressure control system (low for sensitive gums & high for deep cleaning) • Perfect For Travel","img":"https://drive.google.com/thumbnail?id=1BLxVhPKiWQMAJUti0Mce19hByd2iYWnD&sz=w600"},{"name":"Cordless Plus Water Reservoir","brand":"Waterpik","price":3.5,"cat":"Water Flosser Accessories","stock":false,"id":"WP-450ME","barcode":"73950271028","case":"1","age":"13+ Years","desc":"• Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas In 3 Seconds • Up to 50% more effective than string floss • Cleans deep between teeth and below the gumline • 360-Degree Tip Rotation, and Reservoir Capacity Of 45+ Seconds • Dual pressure control system (low for sensitive gums & high for deep cleaning) • Perfect For Travel","img":"https://drive.google.com/thumbnail?id=1BLxVhPKiWQMAJUti0Mce19hByd2iYWnD&sz=w600"},{"name":"Cordless Select Water Flosser","brand":"Waterpik","price":49.0,"cat":"Water Flosser","stock":true,"id":"WF-10ME010","barcode":"0073950304009","case":"1","age":"13+ Years","desc":"Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas و Up to 50% more effective than string floss Up to 3x as affective for removing Plaque around braces vs. string floss Up to 2x as effective for Improving gum health around implants vs. string floss Waterproof , can be Used in Shower"},{"name":"Countertop Bullet Ice Maker with Handle","brand":"Silonn","price":45.0,"cat":"Ice Maker","stock":false,"id":"SLIM21B","barcode":"5070002067863","case":"1","age":"Not Specified","desc":"Fast Ice Maker 4 liter Capacity - Color Black Up to 26 lbs of ice per day. Takes 6-7 minutes to make 9 bullet shaped ice cubes 1.2L water tank. Two Size Of Ice Cubes Make two different sizes of ice cubes. CONVENIENT PORTABLE DESIGN The scoop attaches to the basket for convenient storage. Intelligent sensing of ice full and water shortage. Self-Cleaning&Portable Automatic self-cleaning cycle."},{"name":"Deep Undo","brand":"UNDO","price":11.8,"cat":"Skin Treatments","stock":true,"id":"WEB-DEEPUNDO"},{"name":"Dr. Mubarak Alsaeed - The Full Fledged Smile Kit","brand":"Ultramed","price":99.0,"cat":"Bundles","stock":true,"id":"WEB-DRMUBARAKALSAEED"},{"name":"Dr. Waleed Al Yaseen - Your Smile Deserves It Kit","brand":"Ultramed","price":39.9,"cat":"Bundles","stock":true,"id":"WEB-DRWALEEDALYASEEN"},{"name":"Dr. Mohammad Al Mazedi - Smile Makeover Care Kit","brand":"Ultramed","price":99.0,"cat":"Bundles","stock":true,"id":"WEB-DRMOHAMMADALMAZE"},{"name":"Dr. Rawan Khwaiteem - The 10/10 for Kids Kit","brand":"Ultramed","price":19.9,"cat":"Bundles","stock":true,"id":"WEB-DRRAWANKHWAITEEM"},{"name":"Eco-Friendly Dental Floss for Kids","brand":"FLASH","price":1.9,"cat":"Dental Floss","stock":true,"id":"HR-AF02","barcode":"071221740021","case":"30","age":"3+","desc":"FLASH Kids - Dental Floss Enhance your Child’s daily dental Care Routine Use the Dental Floss from FLASH daily for cleaning between the teeth. Removes excess Food between the teeth & protects from cavities. Easy to use - Distinctive handle design - made of environmentally friendly polypropylene material For 3+ 30 Pcs"},{"name":"Extra Soft Interdental Brush Mixed Pack","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"122699-013299","barcode":"7317400013299","case":"10","age":"13+ Years","desc":"Interdental Brushes An interdental brush is the most efficient, user-friendly device for plaque removal between teeth. It's designed to clean the gaps between the teeth, where a regular toothbrush is unable to reach. This interdental brush has extra soft filaments for sensitive gums and teeth. Use daily to keep gums and teeth healthy and fresh.","img":"https://drive.google.com/thumbnail?id=1TtZ6RhuXqW4VMxIi4RM50TPFDN0_vZAY&sz=w600"},{"name":"Flash Kids Flosser - Sea Animal Shapes","brand":"FLASH","price":1.9,"cat":"Dental Floss","stock":true,"id":"WEB-FLASHKIDSFLOSSER"},{"name":"Glostik Tooth Gloss","brand":"HiSmile","price":14.9,"cat":"Teeth Whitener","stock":false,"id":"10028-TG","barcode":"93571692","case":"6","age":"Not Specified","desc":"Glostik The instant whitening wand Glostik is a pearlescent tooth gloss designed to make your teeth instantly whiter for a picture-perfect glow. How does Glostik work? Similar to lip gloss, tooth gloss works by reflecting light to make your teeth appear whiter and give your smile the glow it deserves. The pearlescent glossing formula that covers your teeth creates an instant whitening effect."},{"name":"Icy Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20509733","barcode":"697029393888","case":"12","age":"7+","desc":"Oral Rinse for Fresh Breath, Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1Ye99mfo9b2_YHccZp7cJa-bevTwQVcb-&sz=w600"},{"name":"Implant Denture Water Flosser Tip","brand":"Waterpik","price":6.0,"cat":"Water Flosser Tips","stock":true,"id":"DT-100E","barcode":"73950278119","case":"1","desc":"The Implant Denture Tip is specifically designed to access areas that are unreachable with other tips to clean fixed implant bridges and dentures.For best results, use with waterpik flossers, which allow for more precise tip placement.Replace every 6 months2 color-coded Water Flosser replacement tips per package (color of tips may vary)"},{"name":"Mango Sorbet Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40003-MS","barcode":"93568654","case":"6","age":"7+","desc":"Mad for mango? Brushing your teeth is hardly the most exotic. But dollop a scoop of mango into your routine and it won’t be long until the party’s started. Outrageously fresh flavour quickly transcends into a carnival of colour, treating your mouth to a stunning spectacle of tongue-tingling taste. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Mild Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20509732","barcode":"697029041260","case":"12","age":"7+","desc":"Oral Rinse for Fresh Breath , Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1DxFJG4QlrYiC0L6fVLWlB770joZwQqZ3&sz=w600"},{"name":"Mini Fridge","brand":"Silonn","price":25.0,"cat":"Refrigerator","stock":false,"id":"SLRE01B","barcode":"5070002067887","case":"1","age":"Not Specified","desc":"Capacity 4 Liters / 6 cans Rated voltage/frequency : 220- 240 V /50-60 H Defrost Automatic Door Hinges Left 1 Drawer Annual Energy Consumption 40 Watts Colors BLACK Dimensions DxWxH 24.5 x 18.8 x 27.3 cm Refrigerant Thermo Electric Cooling system Weight 7.5 KG No Batteries Required"},{"name":"Ortho Chews with Removal Tool","brand":"EverSmile","price":5.5,"cat":"Orthodontic Tool","stock":true,"id":"ESOCW2HD2PE003","barcode":"810055330058","case":"1","age":"13+ Years","desc":"OrthoChews help keep your dental treatment on track by alleviating pain associated with new aligners and letting you wear your aligners for longer. Each pack of OrthoChews comes with two sticks — one hard orange chew designed for seating new dental aligners and relieving quadrant pain and one soft blue chew designed for relieving pressure in trouble spots. Depending on what's most comfortable, you may want to use the hard or soft options for all purposes."},{"name":"Orthodontic Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"PAP+ Whitening Powder","brand":"HiSmile","price":10.75,"cat":"Teeth Whitener","stock":true,"id":"10019-WP","barcode":"0744109218996","case":"6","age":"Not Specified","desc":"Activate your everyday toothpaste Our groundbreaking PAP+ Whitening Powder transforms your existing favourite toothpaste into an effective, daily whitening treatment, that effectively oxidises stains. Turn any toothpaste into a whitening toothpaste Formulated at the Hismile Research Centre Safe for enamel and gums"},{"name":"PAP+ Whitening Toothpaste","brand":"HiSmile","price":7.5,"cat":"Toothpaste","stock":false,"id":"10016-WT","barcode":"93571142","case":"6","age":"7+","desc":"Powerful and effective daily whitening. A fluoride-free everyday whitening toothpaste designed to gently lift stains for an overall brighter smile. Daily whitening & maintenance Fluoride-free toothpaste Stain prevention"},{"name":"Peach Iced Tea Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40001-PT","barcode":"93568593","case":"6","age":"7+","desc":"Passionate about peach? Cooler than a summer breeze, this light and refreshing toothpaste is the perfect tonic, and just the breath of fresh care your smile is craving. Simply brush for two minutes and your mouth will feel like it’s spent a day with its feet up on the deck. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Perfect White Black Remineralisation Repair Whitening Charcoal Toothpaste","brand":"Beverly Hills Formula","price":2.7,"cat":"Toothpaste","stock":true,"id":"WEB-PERFECTWHITEBLAC"},{"name":"Perfect White Extreme White Teeth Whitening Toothpaste","brand":"Beverly Hills Formula","price":2.4,"cat":"Toothpaste","stock":true,"id":"WEB-PERFECTWHITEEXTR"},{"name":"Perfect White Gold with Hyaluronic Acid Teeth Whitening Toothpaste","brand":"Beverly Hills Formula","price":2.4,"cat":"Toothpaste","stock":true,"id":"10BPWG","barcode":"5020105002834","case":"10","age":"13+ Years","desc":"Contains REAL Gold particles! Renowned for its anti-bacterial, anti-inflammatory and blood flow regulating properties, Gold Whitening Toothpaste helps fight stains whilst boosting holistic oral care.","img":"https://drive.google.com/thumbnail?id=1nZIMwEYN71lYROrpgZtTT3xX3XN89j9X&sz=w600"},{"name":"Perfect White Sensitive Teeth Whitening Toothpaste","brand":"Beverly Hills Formula","price":2.4,"cat":"Toothpaste","stock":true,"id":"10BPWS1","barcode":"5020105004340","case":"10","age":"13+ Years","desc":"Perfect White Sensitive Toothpaste 100ML A Natural Whitening Purple Toothpaste that has added brightness colour corrector and sensitivity protection, ensuring that people with sensitive teeth can still receive the Beverly Hills Formula benefits. It does whiten teeth without damaging the enamel and causing sensitivity or pain. This toothpaste is carefully formulated with Hydroxyapatite to help repair tooth enamel."},{"name":"Philips One by Sonicare Battery Toothbrush","brand":"Philips","price":9.9,"cat":"Electric Toothbrush","stock":true,"id":"HY1100/01","barcode":"8710103997955","case":"4","age":"4+ Years","desc":"PhilipsOne Battery Toothbrush by Sonicare, Miami Coral, 90 days battery duration, with microvibrations, 2 mins timer and quadpacer, travel case and AAA Battery included. Think of PhilipsOne like a manual toothbrush that works harder and faster. 13,000 microvibrations per minute and contoured bristles gently clean your teeth for a whiter, brighter smile."},{"name":"Philips One by Sonicare Brush Heads","brand":"Philips","price":4.0,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare 1100 Series","brand":"Philips","price":12.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare 2100 Series","brand":"Philips","price":16.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare 9900 Prestige","brand":"Philips","price":129.0,"cat":"Electric Toothbrush","stock":true,"id":"HX9992/22","barcode":"8710103968665","case":"1","age":"Adults","desc":"Sonicare Prestige, SenseIQ Premium MIDNIGHT BLUE SenseIQ technology senses adapts and cares As you brush, SenseIQ technology senses pressure, motion, coverage, and more up to 100 times per second. It then adapts the intensity if you push too hard. The intelligence of SenseIQ takes the guesswork out of brushing modes, so you can experience effortless care and better brushing over time.","img":"https://drive.google.com/thumbnail?id=1oLmBAgQ2kGCT-5RZBODgH0o516FS-teT&sz=w600"},{"name":"Philips Sonicare A3 Premium All-in-One","brand":"Philips","price":14.9,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX9092/67","barcode":"8710103972297","case":"1","age":"Adults","desc":"A3 Premium All-in-One brush head is the only one you need to achieve cleaner, whiter teeth & healthier gums. This brush head results in 20x more plaque removal, up to 100% stain reduction & up to 15x healthier gums in just 2 weeks","img":"https://drive.google.com/thumbnail?id=1oUcD-_V4hRkpnGYipKQmDkVqXSVOe5En&sz=w600"},{"name":"Philips Sonicare C1 ProResults","brand":"Philips","price":6.99,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare C3 Premium Plaque Defense","brand":"Philips","price":11.5,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX9042/96","barcode":"8710103897521","case":"1","age":"13+ Years","desc":"Get a clean as unique as your smile. Our C3 Premium Plaque Defence adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean.","img":"https://drive.google.com/thumbnail?id=1n0rq3qBDmBPGsCm5ZLUA5w8UDu1S5qUy&sz=w600"},{"name":"Philips Sonicare Compact Flosser 1000 - Blue","brand":"Philips","price":34.9,"cat":"Water Flosser","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare Compact Flosser 1000 - Purple","brand":"Philips","price":34.9,"cat":"Water Flosser","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare Compact Flosser Replacement Nozzle (Standard & Comfort)","brand":"Philips","price":5.9,"cat":"Water Flosser Tips","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare Cordless Power Flosser 2000","brand":"Philips","price":37.9,"cat":"Water Flosser","stock":true,"id":"HX3822/11","barcode":"8720689011051","case":"1","age":"13+ Years","desc":"Philips Sonicare Cordless Power Flosser 2000 Oral Irrigator, Mid range"},{"name":"Philips Sonicare Cordless Power Flosser 3000","brand":"Philips","price":44.9,"cat":"Water Flosser","stock":true,"id":"HX3826/31","barcode":"8720689011129","case":"1","age":"Adults","desc":"Powerful and gentle for a thorough clean Designed to remove plaque and food debris even from hard-to-reach areas. Leave your mouth feeling fresh and clean without the hassle of string flossing. Cordless, compact design makes flossing simple Compact, ergonomic design offers a convenient solution for everyday flossing. Cordless handle allows for easy portability and flossing anywhere. 360° rotation for hard-to-reach spots Access those hard-to-reach areas with a nozzle that rotates 360 degrees, so that you can use the device in any orientation. 3 intensity settings to suit your needs Choose the clean that suits your smile. Adjustable intensity settings adapt for comfort and cleaning power. Easy","img":"https://drive.google.com/thumbnail?id=1iL6vYQkWDj7gSg9a61316qflqS8Qv-h2&sz=w600"},{"name":"Philips Sonicare Diamond Clean 9000 Series Special Edition - Blue","brand":"Philips","price":69.0,"cat":"Electric Toothbrush","stock":true,"id":"HX9911/92","barcode":"8720689031363","case":"1","age":"Adults","desc":"An effortlessly white smile.Whiter teeth in just 3 days*.Start every day in style with advanced Sonicare technology for whiter teeth andoral health. Gentle on gums with a connected app for coaching and tracking. Choose from 4 modes and 3 intensities for a personalized brushing experience.Adapts to your needs.Pressure sensor lets you know if you're pressing too hard.BrushSync automatically selects the best mode for you. 4 modes &amp; 3 intensities for personalized brushing experience .Stay on track with a personalized progress report.Sonicare app for coaching and progress reports, Stylish, user-friendly design Stylish design for a premium brushing experience Whiter teeth improved oral health "},{"name":"Philips Sonicare Diamond Clean 9000 Series Special Edition - Purple","brand":"Philips","price":69.0,"cat":"Electric Toothbrush","stock":true,"id":"HX9911/92","barcode":"8720689031363","case":"1","age":"Adults","desc":"An effortlessly white smile.Whiter teeth in just 3 days*.Start every day in style with advanced Sonicare technology for whiter teeth andoral health. Gentle on gums with a connected app for coaching and tracking. Choose from 4 modes and 3 intensities for a personalized brushing experience.Adapts to your needs.Pressure sensor lets you know if you're pressing too hard.BrushSync automatically selects the best mode for you. 4 modes &amp; 3 intensities for personalized brushing experience .Stay on track with a personalized progress report.Sonicare app for coaching and progress reports, Stylish, user-friendly design Stylish design for a premium brushing experience Whiter teeth improved oral health "},{"name":"Philips Sonicare DiamondClean 9000","brand":"Philips","price":81.0,"cat":"Electric Toothbrush","stock":true,"id":"WEB-PHILIPSSONICARED"},{"name":"Philips Sonicare F1 Standard Nozzle","brand":"Philips","price":11.9,"cat":"Water Flosser Tips","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare F3 Quad Stream Nozzle","brand":"Philips","price":11.9,"cat":"Water Flosser Tips","stock":true,"id":"HX3062/00","barcode":"8710103953241","case":"1","age":"7+ years","desc":"For maximum coverage and an extra thorough clean, use the Quad Stream nozzle to concentrate water into four wide streams between teeth and along the gum line. The soft rubber guide is gentle on gums and every nozzle simply clicks on and off / Items included F3 Quad Stream nozzle: 2 pcs"},{"name":"Philips Sonicare ProtectiveClean 4300","brand":"Philips","price":34.9,"cat":"Electric Toothbrush","stock":true,"id":"HX6803/26","barcode":"8710103940593","case":"1","age":"13+ Years","desc":"Built-in pressure sensor.1 x BrushSync feature.1 cleaning mode.Up to 62000 brush movement/min.Helps reduce cavities.Whitens teeth in 1 week.Vibrates handle to alert user.SmarTimer and Quadpacer."},{"name":"Philips Sonicare Rechargeable Toothbrush 1100 Series","brand":"Philips","price":9.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3641/01","barcode":"8710103985426","case":"1","age":"10+ Years","desc":"Sonic technology combined with our brush action gently removes plaque up to 3x better* than a manual toothbrush.Ergonomic design makes the toothbrush easy to hold and use 14-day long lasting battery life. Easy transition to Sonicare"},{"name":"Philips Sonicare Rechargeable Toothbrush 2100 Series","brand":"Philips","price":13.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3651/12","barcode":"8710103985495","case":"1","age":"13+ Years","desc":"The Sonicare electric toothbrush with advanced sonic technology is clinically proven to remove plaque up to 3X better than a manual toothbrush. It removes plaque from your teeth and along the gum line while protecting your gums. 14-day long lasting battery life"},{"name":"Philips Sonicare Rechargeable Toothbrush 5300 Series","brand":"Philips","price":36.9,"cat":"Electric Toothbrush","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare S2 Sensitive","brand":"Philips","price":10.99,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX6052/93","barcode":"8720689021050","case":"1","age":"13+ Years","desc":"The Philips Sonicare S Sensitive toothbrush head is perfect for those who seek relief from painfully sensitive teeth and gums. You'll get an effective clean that's easy on your gums."},{"name":"Philips Sonicare W2 Optimal White","brand":"Philips","price":11.5,"cat":"Toothbrush Replacement Head","stock":true,"id":"WEB-PHILIPSSONICAREW"},{"name":"Philips Tooth Brush - Travel Case","brand":"Philips","price":4.9,"cat":"Toothbrush Accessories","stock":false,"id":"WEB-PHILIPSTOOTHBRUS"},{"name":"Pik Pocket Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"PP-100E","barcode":"073950290524","case":"1","age":"13+ Years","desc":"For periodontal pockets and furcations. A soft rubber tip designed for gentle, low-pressure delivery of therapeutic rinses below the gumline. Clinically proven to access 90% of a 6mm pocket.","img":"https://drive.google.com/thumbnail?id=1q7B-qw6OTElff4ny1uxzGjqPoelyoOSF&sz=w600"},{"name":"Plaque Seeker Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"PS-100E","barcode":"1073950122350","case":"1","age":"13+ Years","desc":"For implants, crowns, bridges, and other restorations. Clinically proven 2X as effective as string floss for implant patients, the Plaque Seeker™ Tip is designed to provide the benefits of pulsating water.","img":"https://drive.google.com/thumbnail?id=1ydbBH72XA8pwpZLkyR59zc564z8tSUs1&sz=w600"},{"name":"Precision (Classic) Handheld Cordless Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":false,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"Precision (Classic) Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":false,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"Red Velvet Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40006-RV","barcode":"93571074","case":"6","age":"7+","desc":"Revel in Red Velvet Indulging in the rich flavour of Red Velvet is an experience like no other. Each bite transports your senses through layer upon layer of opulent extravagance, on a journey of the purest pleasure. Forget about waiting all day for something sweet. Start with dessert. You deserve it. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Sparkle Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20510308","barcode":"697029995204","case":"12","age":"7+","desc":"Oral Rinse for Healthy Smile , Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1bgI5dTIx4Wo9ZRxaJipD6f083fNmcXIg&sz=w600"},{"name":"Special Care Ultra Soft Speciality Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"452357-000718","barcode":"7317400000718","case":"25","age":"7+ years","desc":"For patients with extremely sore and delicate tissues, e.g. as a result of trauma, radiotherapy treatment or after oral surgery. • 12,000 (Regular) and 9,000 (Compact) ultra soft bristles for delicate cleaning. • First brush stage after oral surgery.*","img":"https://drive.google.com/thumbnail?id=1SM1SgmhH8hK_3LIWN396uREVp168HhJH&sz=w600"},{"name":"Teeth Whitening Strips","brand":"FLASH","price":13.9,"cat":"Teeth Whitener","stock":true,"id":"HR-AF03","barcode":"6939548131119","case":"1","age":"18+","desc":"Intensive Whitening Strong Adhesion Soft & comfortable No Residueson Teeth Surface Use any time anywhere 28 Strips for Upper & lower teeth – 14 treatments"},{"name":"TePe Angle Mixed Pack","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"154699-011653","barcode":"7317400011653","case":"10","age":"13+ Years","desc":"Tepe's wide selection of interdental brushes offers an option for every need. Whether you prefer a short or longer handle, an angled or straight brush head or original or extra soft filaments, you will find a brush that suits you. The most common oral diseases start between the teeth, but both gum disease and caries can be successfully prevented by daily use of an interdental brush. Tepe's user-friendly interdental brushes are available in several colour coded sizes, all with plastic coated wire. The ergonomic handle enables cleaning with steady and controlled movements.6 Different sized angled Interdental Brushes","img":"https://drive.google.com/thumbnail?id=1t56Rw7n-89sN1bR0bxXZuXUA4YgCg973&sz=w600"},{"name":"TePe Choice Toothbrush","brand":"TePe","price":1.95,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"TePe Colour Soft Toothbrush Pack Of 3","brand":"TePe","price":2.2,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"Tepe Dental Floss Waxed Mint","brand":"TePe","price":1.38,"cat":"Dental Floss","stock":true,"id":"642230-254695","barcode":"7350121254695","case":"10","age":"13+ Years","desc":"Easy access to narrow interdental spaces – The cleverly designed backing plate helps to gently insert the dental floss using the jawbone. The elongated handle fits comfortably in the hand"},{"name":"TePe EasyFit - M/L","brand":"TePe","price":2.75,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEEASYFITML"},{"name":"TePe EasyFit - S/M","brand":"TePe","price":2.75,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEEASYFITSM"},{"name":"TePe EasyPick Orange (XS/S) Toothpick","brand":"TePe","price":2.2,"cat":"Toothpicks","stock":true,"id":"242310-015811","barcode":"7317400015811","case":"10","age":"13+ Years","desc":"An easy to use cleaning option for tight interdental spaces","img":"https://drive.google.com/thumbnail?id=1kDfepplpSnRRXwi6j8Z2tPoU3PigKVTn&sz=w600"},{"name":"TePe GOOD Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"306684-022390","barcode":"7317400022390","case":"14","age":"7+ Years","desc":"TePe GOOD™ Regular soft toothbrush is part of the unique TePe GOOD™ range made from bio-based plastic – without compromising on product quality, efficiency or design. The TePe GOOD™ toothbrush is a user-friendly toothbrush suitable for older children and adults. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. # Made from 96% bio-based plastic # Tapered brush head for easy access # ​End-rounded filaments for gentle and efficient cleaning","img":"https://drive.google.com/thumbnail?id=1V8dBgL-xhRp2F-Les2RHMTg6vNi1w1mE&sz=w600"},{"name":"TePe Implant Care Kit","brand":"TePe","price":9.9,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEIMPLANTCAREK"},{"name":"TePe Kids X-soft Toothbrush","brand":"TePe","price":1.43,"cat":"Manual Toothbrush","stock":true,"id":"339691-008219","barcode":"7317400008219","case":"14","age":"3+ Years","desc":"TePe Kids X-soft is a toothbrush for children from the age of 3 years. The toothbrush has a colourful print and a smaller, user-friendly handle. The tapered brush head improves access and the end-rounded filaments ensure a gentle cleaning. TePe Kids is also available with soft filaments","img":"https://drive.google.com/thumbnail?id=1PSbiPi_4PLYuEZ5HAsiATLqUpZ0eZW-4&sz=w600"},{"name":"TePe Mini Flosser","brand":"TePe","price":2.4,"cat":"Dental Floss","stock":true,"id":"622156-257139","barcode":"7350121257139","case":"15","age":"13+ Years","desc":"The Mini Flosser Tepe Good is a preloaded dental floss holder for efficient and convenient use. It contains PFAA-free dental floss that glides easily through tight interdental spaces"},{"name":"TePe Mini X-soft Toothbrush","brand":"TePe","price":1.43,"cat":"Manual Toothbrush","stock":true,"id":"382687-010434","barcode":"7317400010434","case":"14","age":"3+ Years","desc":"The TePe Mini™ extra soft toothbrush is developed for use from the first tooth to the age of 3 years. The tapered mini brush head has extra soft filaments for a gentle cleaning. The handle provides a stable grip for the adult brushing the child’s teeth but fits just as well in the small hand.","img":"https://drive.google.com/thumbnail?id=1iQ5Z9o3mynqKM_VlkOMgtXN8nqKV9zJa&sz=w600"},{"name":"TePe Nova Toothbrush - Soft - Pack of 3 (2+1 Free)","brand":"TePe","price":3.52,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Nova Toothbrush - X Soft - Pack of 3 (2+1 Free)","brand":"TePe","price":3.52,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Nova Soft - Sustainable Toothbrush","brand":"TePe","price":1.76,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Nova X-soft - Sustainable Toothbrush","brand":"TePe","price":1.76,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Original Black (1.5 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALBLAC"},{"name":"TePe Original Blue (0.6 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALBLUE"},{"name":"TePe Original Grey (1.3 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALGREY"},{"name":"TePe Original Interdental Brush Mixed Pack","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"122699-013299","barcode":"7317400013299","case":"10","age":"13+ Years","desc":"Interdental Brushes An interdental brush is the most efficient, user-friendly device for plaque removal between teeth. It's designed to clean the gaps between the teeth, where a regular toothbrush is unable to reach. This interdental brush has extra soft filaments for sensitive gums and teeth. Use daily to keep gums and teeth healthy and fresh.","img":"https://drive.google.com/thumbnail?id=1TtZ6RhuXqW4VMxIi4RM50TPFDN0_vZAY&sz=w600"},{"name":"TePe Original Orange (0.45 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALORAN"},{"name":"TePe Original Pink (0.4 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALPINK"},{"name":"TePe Original Red (0.5 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALRED0"},{"name":"TePe Original Yellow (0.7 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALYELL"},{"name":"TePe Orthodontic Kit","brand":"TePe","price":4.0,"cat":"Orthodontic Kit","stock":true,"id":"WEB-TEPEORTHODONTICK"},{"name":"TePe Supreme - Soft - Toothbrush Pack of 3 (2+1 Free)","brand":"TePe","price":3.96,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"TePe Supreme Soft - Sustainable Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"TePe Tongue Cleaner","brand":"TePe","price":2.48,"cat":"Tongue Scraper","stock":true,"id":"942385-022178","barcode":"7317400022178","case":"14","age":"13+ Years","desc":"TePe GOOD™ Tongue Cleaner is designed to remove bacteria on the tongue to improve oral health and prevent bad breath. The design corresponds to the natural shape of the tongue, which reduces the gag reflex and makes it easier to reach far back in the mouth. The three, slightly raised cleaning blades give a triple-effect, meaning that bacteria is removed in one stroke. The tongue cleaner is dishwasher safe.","img":"https://drive.google.com/thumbnail?id=1AmnHpAlL-vYuJ3-kb3uSfvCNHmiaTyWD&sz=w600"},{"name":"Tongue Cleaner Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"TC-100E","barcode":"073950102025","case":"1","age":"13+ Years","desc":"For fresh breath. With a gentle scraping and flushing action, the Waterpik® Tongue Cleaner removes bacteria and sulfur compounds that reside on the tongue and cause bad breath. Daily use can help prevent halitosis.","img":"https://drive.google.com/thumbnail?id=1kxHLxbenPnn8sihPfZl0p07jjDs4I0AX&sz=w600"},{"name":"Tongue Scraper with Travel Pouch","brand":"FLASH","price":4.5,"cat":"Tongue Scraper","stock":true,"id":"FTBP","barcode":"7256892558683","case":"12","age":"13+ Years","desc":"This tongue scraper is a practical tool made from Ergonomic advanced stainless steel that removes bacteria ,food particles, and dead cells from the tongue's surface for a fresh breath all day. 1.Reduces bad breath 2. Removes Plaque and Bacteria Build-up 3. Enhances Oral Hygiene 4. Improves taste sensation 5. 100% High Grade stainless steel"},{"name":"Toothbrush Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"Ultra Professional Water Flosser","brand":"Waterpik","price":65.0,"cat":"Water Flosser","stock":true,"id":"WP-660ME","barcode":"073950210195","case":"1","age":"13+ Years","desc":"Product Features : 7 flossing tips 360-degree rotating tip handle Advanced pressure control system with 10 settings Reservoir capacity of 90+ seconds On/Off water control on handle 2 flossing modes - Floss and Hydro-Pulse Massage 1-minute timer with 30-second pacer LED information panel"},{"name":"Ultramed Gift Box - For Packaging","brand":"Ultramed","price":3.5,"cat":"Toothbrush Accessories","stock":true,"id":"WEB-ULTRAMEDGIFTBOXF"},{"name":"Undo Microneedle Pimple Patches","brand":"UNDO","price":7.5,"cat":"Skin Treatments","stock":true,"id":"UMP02","barcode":"071221740020","case":"150","desc":"2. Microneedle Pimple patches: 18 Pimple Patches Directions: • Clean and dry skin. • Apply a patch to the affected area. • Press firmly for a few seconds. • Wear for 4+ hours, or overnight. • The patch may turn white as it absorbs oil and gunk. • Replace patch as necessary until you achieve the desired results. • Note: To ensure proper adhesion, do not use other skincare products under or around the patch."},{"name":"Undo Nose Patches","brand":"UNDO","price":7.9,"cat":"Skin Treatments","stock":true,"id":"WEB-UNDONOSEPATCHES"},{"name":"Undo Pimple Patches","brand":"UNDO","price":3.9,"cat":"Skin Treatments","stock":true,"id":"UMP02","barcode":"071221740020","case":"150","desc":"2. Microneedle Pimple patches: 18 Pimple Patches Directions: • Clean and dry skin. • Apply a patch to the affected area. • Press firmly for a few seconds. • Wear for 4+ hours, or overnight. • The patch may turn white as it absorbs oil and gunk. • Replace patch as necessary until you achieve the desired results. • Note: To ensure proper adhesion, do not use other skincare products under or around the patch."},{"name":"Undo Skin Essentials Bag","brand":"UNDO","price":5.0,"cat":"Skin Treatments","stock":true,"id":"WEB-UNDOSKINESSENTIA"},{"name":"V34 Color Corrector Foam","brand":"HiSmile","price":12.5,"cat":"Teeth Whitener","stock":false,"id":"10046-CF","barcode":"0754590176842","case":"6","age":"Not Specified","desc":"V34 works to brighten teeth by utilising colour correcting technology. It conceals everyday stains on your teeth to instantly improve brightness for the day. Use 2 pumps & swish for 15 seconds Utilises colour correcting technology Non-invasive brightening treatment"},{"name":"V34 Colour Corrector Serum","brand":"HiSmile","price":14.5,"cat":"Teeth Whitener","stock":false,"id":"100018-CC","barcode":"0744109218965","case":"6","age":"Not Specified","desc":"V34 works to brighten teeth by utilising colour correcting technology. By counter-balancing the different hues in your teeth, V34 conceals stains and improves brightness. Utilises colour correcting technology Non-invasive brightening treatment Highest concentration of V34 in our range"},{"name":"Watermelon Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40005-WM","barcode":"93568609","case":"6","age":"7+","desc":"Wild about watermelon? From the second it melts in your mouth; a wave of watermelon will sweep you upwards towards the highest heights of hydration. So, grab a slice, strap yourself in and look forward to flavour in full flow. You’ll wonder how you ever went without. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Whitening Bundle 1","brand":"Ultramed","price":63.0,"cat":"Bundles","stock":true,"id":"WEB-WHITENINGBUNDLE1"},{"name":"Whitening Bundle 2","brand":"Ultramed","price":63.0,"cat":"Bundles","stock":true,"id":"WEB-WHITENINGBUNDLE2"},{"id":"UNIVET-GAL-25","name":"Univet Galilean Loupes 2.5x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Galilean magnification 2.5x. Tailor-made or ready-made, Italian build with optimal weight distribution for prolonged use. Entry magnification for general dentistry and hygiene.","age":"Professional"},{"id":"UNIVET-GAL-30","name":"Univet Galilean Loupes 3.0x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Galilean magnification 3.0x, built to the practitioner’s working distance and interpupillary distance. Popular step-up for restorative work.","age":"Professional"},{"id":"UNIVET-GAL-35","name":"Univet Galilean Loupes 3.5x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Galilean magnification 3.5x. Higher magnification in a lightweight frame; detailed restorative and prosthetic work.","age":"Professional"},{"id":"UNIVET-PRI-40","name":"Univet Prismatic Loupes 4.0x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"ULTRA-HD Prismatic optics 4.0x. Greater clarity and wider depth of field than Galilean. Endodontics and microsurgery.","age":"Professional"},{"id":"UNIVET-PRI-45","name":"Univet Prismatic Loupes 4.5x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"ULTRA-HD Prismatic optics 4.5x. For endodontics, periodontal microsurgery and implantology.","age":"Professional"},{"id":"UNIVET-PRI-60","name":"Univet Prismatic Loupes 6.0x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"ULTRA-HD Prismatic optics 6.0x — maximum magnification in the Univet range for the most detailed microsurgical work.","age":"Professional"},{"id":"UNIVET-ERGO","name":"Univet Ergo Loupes","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Ergo variant with steeper declination angle so the practitioner works upright — reduces neck strain over long procedures.","age":"Professional"},{"id":"UNIVET-HEADLIGHT","name":"Univet LED Headlight","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"LED headlight to pair with Univet loupes for operating-field illumination. Wireless models offer gesture control.","age":"Professional"}];
 const CLINICS_SEED = [{"name":"32 Dental Clinic","rep":"Mariam","cls":"C","market":"A","notes":"","id":"c-32-dental-clinic"},{"name":"3lagy Pharmacy","rep":"Renova","cls":"B","market":"D","notes":"","id":"c-3lagy-pharmacy"},{"name":"Afia Specialized Clinic","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-afia-specialized-clinic"},{"name":"Afnan Dental center","rep":"Mariam","cls":"D","market":"D","notes":"","id":"c-afnan-dental-center"},{"name":"Aknan Clinic","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-aknan-clinic"},{"name":"Al Fozan Clinic","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-al-fozan-clinic"},{"name":"Al Hekma Dental Center","rep":"Mariam","cls":"D","market":"D","notes":"","id":"c-al-hekma-dental-center"},{"name":"Al Orf Hospital","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-al-orf-hospital"},{"name":"Al Salam Hospital","rep":"Mariam","cls":"C","market":"A","notes":"","id":"c-al-salam-hospital"},{"name":"Al Seef Hospital","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-al-seef-hospital"},{"name":"Aline Dental Center Jahra","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-aline-dental-center-jahra"},{"name":"Al-Turki International Pharmacy","rep":"Mariam","cls":"A","market":"B","notes":"","id":"c-al-turki-international-pharmac"},{"name":"Apex Dental Center","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-apex-dental-center"},{"name":"AsnanCo","rep":"Renova","cls":"C","market":"D","notes":"","id":"c-asnanco"},{"name":"Asnaniq App (N A P International Group )","rep":"Renova","cls":"C","market":"C","notes":"","id":"c-asnaniq-app-n-a-p-internationa"},{"name":"Balsam Dental Care Center","rep":"Mariam","cls":"D","market":"D","notes":"","id":"c-balsam-dental-care-center"},{"name":"Basma Clinic ( Bneid Al Gar)","rep":"Renova","cls":"A","market":"B","notes":"","id":"c-basma-clinic-bneid-al-gar"},{"name":"Bayan Dental Center","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-bayan-dental-center"},{"name":"Boston Dental Group","rep":"Mariam","cls":"F","market":"D","notes":"","id":"c-boston-dental-group"},{"name":"Clinica Dental Center (Dr. Mohamed Al Saffi )","rep":"Mariam","cls":"B","market":"B","notes":"Stock move","id":"c-clinica-dental-center-dr-moham"},{"name":"Crown Dental Center","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-crown-dental-center"},{"name":"Crystal Dental Centre","rep":"Mariam","cls":"F","market":"B","notes":"Potential","id":"c-crystal-dental-centre"},{"name":"Al Bayraq Pharmacy","rep":"Renova","cls":"C","market":"D","notes":"","id":"c-al-bayraq-pharmacy"},{"name":"Asnank Dental","rep":"Mariam","cls":"Closed","market":"Closed","notes":"","id":"c-asnank-dental"},{"name":"Dar Al Baraa Pharmacy","rep":"Mariam","cls":"F","market":"C","notes":"","id":"c-dar-al-baraa-pharmacy"},{"name":"Dar Al Shifa Clinics","rep":"Mariam","cls":"F","market":"C","notes":"","id":"c-dar-al-shifa-clinics"},{"name":"Dasman Dental Center","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-dasman-dental-center"},{"name":"Dental 8 Clinic","rep":"Mariam","cls":"F","market":"D","notes":"","id":"c-dental-8-clinic"},{"name":"Dental Zone Center Sabah Al Salem","rep":"Mariam","cls":"F","market":"D","notes":"Potential","id":"c-dental-zone-center-sabah-al-sa"},{"name":"Dentica Dental Center","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-dentica-dental-center"},{"name":"Doctor Smile Dental Center","rep":"Mariam","cls":"B","market":"D","notes":"","id":"c-doctor-smile-dental-center"},{"name":"Dr. Firas Alshikfeh","rep":"Mariam","cls":"C","market":"D","notes":"","id":"c-dr-firas-alshikfeh"},{"name":"Dr. Nael Al Hazeem Dental Center - Sharq","rep":"Mariam","cls":"C","market":"A","notes":"","id":"c-dr-nael-al-hazeem-dental-cente"},{"name":"Dr. Nael Al Hazeem Pharmacy ( Al Soor )","rep":"Mariam","cls":"B","market":"A","notes":"","id":"c-dr-nael-al-hazeem-pharmacy-al-"},{"name":"Dr. Teeth Dental Care, Mangaf","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-dr-teeth-dental-care-mangaf"},{"name":"Ebtasim Dental Centre","rep":"Renova","cls":"C","market":"C","notes":"Potential","id":"c-ebtasim-dental-centre"},{"name":"Ebtisama Clinic-Salmiya","rep":"Mariam","cls":"D","market":"C","notes":"","id":"c-ebtisama-clinic-salmiya"},{"name":"Elaj Medical Services (Taiba Hospital)","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-elaj-medical-services-taiba-ho"},{"name":"Empire Dental Centre(dr.fahed Al Husainy)","rep":"Renova","cls":"F","market":"D","notes":"Potential","id":"c-empire-dental-centre-dr-fahed-"},{"name":"Gulf Clinic","rep":"Mariam","cls":"D","market":"C","notes":"Potential","id":"c-gulf-clinic"},{"name":"Gulf Medical Service","rep":"Renova","cls":"F","market":"B","notes":"Ours but John takes all orders","id":"c-gulf-medical-service"},{"name":"Hadi Clinic, Jabriya","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-hadi-clinic-jabriya"},{"name":"IC Medical Group K.S.C.C","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-ic-medical-group-k-s-c-c"},{"name":"Inaya Medical PH","rep":"Renova","cls":"B","market":"C","notes":"","id":"c-inaya-medical-ph"},{"name":"International Hospital","rep":"Renova","cls":"F","market":"B","notes":"Working on reactivation","id":"c-international-hospital"},{"name":"Jibla Dental Center","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-jibla-dental-center"},{"name":"Joury Clinic","rep":"Renova","cls":"C","market":"D","notes":"","id":"c-joury-clinic"},{"name":"kayaan Company","rep":"Renova","cls":"D","market":"D","notes":"Potential","id":"c-kayaan-company"},{"name":"Kayan Dental Center","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-kayan-dental-center"},{"name":"Kidz Smile-Fintas","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-kidz-smile-fintas"},{"name":"Kidz Smile-Jabriya","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-kidz-smile-jabriya"},{"name":"LaBeaute Clinic","rep":"Mariam","cls":"F","market":"C","notes":"Potential","id":"c-labeaute-clinic"},{"name":"Life Care Pharmacy","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-life-care-pharmacy"},{"name":"Light Dental ( Dr. Noor Al Ramadan )","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-light-dental-dr-noor-al-ramada"},{"name":"Maidan Clinic","rep":"Mariam","cls":"F","market":"D","notes":"Prescription","id":"c-maidan-clinic"},{"name":"Marafie Pharmacy","rep":"Mariam","cls":"C","market":"C","notes":"","id":"c-marafie-pharmacy"},{"name":"Max Quality Dental Center","rep":"Mariam","cls":"F","market":"B","notes":"Potential + projects","id":"c-max-quality-dental-center"},{"name":"Medica Energy(Asnan Dental)","rep":"Renova","cls":"B","market":"A","notes":"","id":"c-medica-energy-asnan-dental"},{"name":"Medico Denta Company","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-medico-denta-company"},{"name":"Orlando Clinic","rep":"Renova","cls":"Closed","market":"Closed","notes":"Closed","id":"c-orlando-clinic"},{"name":"Pharmacy plus","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-pharmacy-plus"},{"name":"Royale Hayat Hospital","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-royale-hayat-hospital"},{"name":"Shine Dental Center","rep":"Renova","cls":"F","market":"F","notes":"Potential","id":"c-shine-dental-center"},{"name":"SN Jabriya","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-sn-jabriya"},{"name":"Skydental Centre","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-skydental-centre"},{"name":"Smart Dental Center","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-smart-dental-center"},{"name":"Smile Design Clinic","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-smile-design-clinic"},{"name":"Smile Gallery Dental Center (Dr. Bashar)","rep":"Mariam","cls":"F","market":"D","notes":"Prices problem","id":"c-smile-gallery-dental-center-dr"},{"name":"SN Clinic 360","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-sn-clinic-360"},{"name":"Taqweem Clinic (Dr. Salem Al Qabandi)","rep":"Mariam","cls":"D","market":"B","notes":"","id":"c-taqweem-clinic-dr-salem-al-qab"},{"name":"To Glow Clinic","rep":"Mariam","cls":"F","market":"D","notes":"","id":"c-to-glow-clinic"},{"name":"Trust Dental Center","rep":"Renova","cls":"D","market":"B","notes":"","id":"c-trust-dental-center"},{"name":"Meena Dental","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-meena-dental"},{"name":"Blue Dental","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-blue-dental"}];
-const REPS = ['Mariam','Renova','Dr. Ghaith'];
+// Team roster lives in storage so it can be managed from the admin panel
+// without touching code. REPS/USERS are derived views kept in sync with it.
+const AVATARS = [
+  'linear-gradient(140deg,#B8DC7A,#7FB33F)','linear-gradient(140deg,#8FD4E8,#3E9BC4)',
+  'linear-gradient(140deg,#B0AEF5,#5E5CE6)','linear-gradient(140deg,#F7C08A,#E8873F)',
+  'linear-gradient(140deg,#F2A2C0,#D65C8E)','linear-gradient(140deg,#9FE3C8,#3FAE86)'
+];
+const STAFF_SEED = [
+  {name:'Mariam',     role:'rep',        email:'mariam@ultramed-kw.com',  av:AVATARS[0]},
+  {name:'Renova',     role:'rep',        email:'r.ayman@ultramed-kw.com', av:AVATARS[1]},
+  {name:'Dr. Ghaith', role:'supervisor', email:'drgaith@ultramed-kw.com', av:AVATARS[2]}
+];
+let staff = STAFF_SEED.map(s=>({...s}));
+let REPS = [];
+let USERS = {};
+function refreshStaff(){
+  REPS = staff.map(s=>s.name);
+  USERS = {};
+  staff.forEach(s=>{ USERS[s.name] = {role:s.role, email:s.email}; });
+  // The login screen renders before anyone is authenticated, so the roster must
+  // also live locally — otherwise a newly added member could never sign in.
+  try{ localStorage.setItem('ultramed_staff_cache', JSON.stringify(staff)); }catch(e){}
+}
+try{
+  const cached = localStorage.getItem('ultramed_staff_cache');
+  if(cached){ const parsed = JSON.parse(cached); if(Array.isArray(parsed) && parsed.length) staff = parsed; }
+}catch(e){}
+refreshStaff();
 
 const SPECIALTY_PLAYBOOK = {
  'General Dentist': {icon:'\u{1FAB7}', color:'#57B85D',
@@ -933,6 +947,7 @@ let clinicRepFilter = 'mine';
 let reportRepFilter = 'mine';
 let logAsRep = null;
 let currentUser = null;
+let recycleBin = {clinics:[], products:[], visits:[]};
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
@@ -942,13 +957,17 @@ const SAVE_MSGS = ['\u2705 Visit logged \u2014 momentum','\u{1F4AA} Logged. Onto
 function visitSavedMsg(){ return SAVE_MSGS[Math.floor(Math.random()*SAVE_MSGS.length)]; }
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1800); }
 function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+// Only http(s) links are ever rendered as href — blocks javascript:/data: URI injection via saved fields.
+function safeUrl(u){ u=(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
 function initials(n){ return n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
 function money(n){ return (n||0).toFixed(2)+' KD'; }
 
 // ---- GATE / USER ----
 async function selectUser(name, role){
   currentUser = {name, role};
-  try{ await window.storage.set('currentUser', JSON.stringify(currentUser), false); }catch(e){}
+  if(!FIREBASE_ENABLED){
+    try{ await window.storage.set('currentUser', JSON.stringify(currentUser), false); }catch(e){}
+  }
   document.getElementById('gate').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('bottomNav').style.display = 'flex';
@@ -956,11 +975,105 @@ async function selectUser(name, role){
   await loadAll();
 }
 function switchUser(){
+  if(FIREBASE_ENABLED){ firebase.auth().signOut().catch(()=>{}); }
+  currentUser = null;
+  renderGate();
   document.getElementById('gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('bottomNav').style.display = 'none';
 }
+function renderGate(){
+  const el = document.getElementById('gateGrid');
+  if(!el) return;
+  const reps = staff.filter(s=>s.role==='rep');
+  const sups = staff.filter(s=>s.role!=='rep');
+  const tile = (s, wide) => `
+    <div class="gate-tile${wide?' wide':''}" onclick="gateTap('${esc(s.name)}')">
+      <div class="gate-av" style="background:${s.av||AVATARS[0]};">${initials(s.name)}</div>
+      <div>
+        <div class="gate-name">${esc(s.name)}</div>
+        <div class="gate-role">${s.role==='rep'?'🦷 Sales Rep':'⭐ Supervisor'}</div>
+      </div>
+    </div>`;
+  // Odd rep out gets a full-width tile so the grid never leaves a gap
+  let html = reps.map((s,i)=> tile(s, reps.length%2===1 && i===reps.length-1 && sups.length===0)).join('');
+  html += sups.map(s=> tile(s, true)).join('');
+  el.innerHTML = html || `<div style="color:var(--muted); font-size:13px;">No team members yet.</div>`;
+}
+function gateTap(name){
+  if(!FIREBASE_ENABLED){ selectUser(name, USERS[name].role); return; }
+  showModal(`
+    <h3 style="margin-top:0;">${esc(name)}</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your password to continue.</p>
+    <input type="password" id="gatePassword" placeholder="Password">
+    <button class="btn" onclick="submitGateLogin('${name}')">Log in</button>
+  `);
+  setTimeout(()=>{
+    const el = document.getElementById('gatePassword');
+    if(el){ el.focus(); el.onkeydown = (e)=>{ if(e.key==='Enter') submitGateLogin(name); }; }
+  }, 80);
+}
+function openEmailLogin(){
+  if(!FIREBASE_ENABLED){ showToast('Offline mode — tap your name'); return; }
+  showModal(`
+    <h3 style="margin-top:0;">Sign in</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Use your work email and password.</p>
+    <input type="email" id="elEmail" placeholder="name@ultramed-kw.com" autocomplete="username">
+    <input type="password" id="elPwd" placeholder="Password" style="margin-top:8px;" autocomplete="current-password">
+    <button class="btn" onclick="submitEmailLogin()">Log in</button>
+  `);
+  setTimeout(()=>{
+    const el = document.getElementById('elPwd');
+    if(el) el.onkeydown = e => { if(e.key==='Enter') submitEmailLogin(); };
+  }, 80);
+}
+async function submitEmailLogin(){
+  const email = (document.getElementById('elEmail').value||'').trim().toLowerCase();
+  const pwd = document.getElementById('elPwd').value;
+  if(!email || !pwd){ showToast('Enter email and password'); return; }
+  try{
+    await firebase.auth().signInWithEmailAndPassword(email, pwd);
+    closeModal();
+  }catch(e){
+    showToast('Wrong email or password');
+  }
+}
+async function submitGateLogin(name){
+  const pwd = document.getElementById('gatePassword').value;
+  if(!pwd){ showToast('Enter your password'); return; }
+  try{
+    await firebase.auth().signInWithEmailAndPassword(USERS[name].email, pwd);
+    closeModal();
+  }catch(e){
+    showToast('Wrong password, try again');
+  }
+}
 async function tryAutoLogin(){
+  if(FIREBASE_ENABLED){
+    firebase.auth().onAuthStateChanged(async (user)=>{
+      if(!user || !user.email) return;
+      const email = user.email.toLowerCase();
+      let found = Object.entries(USERS).find(([n,u])=>(u.email||'').toLowerCase()===email);
+      if(!found){
+        // Roster may be stale on this device — we can read it now that we're
+        // authenticated, so refresh and look again before giving up.
+        try{
+          const st = await window.storage.get('staff', true);
+          if(st){
+            staff = JSON.parse(st.value); refreshStaff();
+            found = Object.entries(USERS).find(([n,u])=>(u.email||'').toLowerCase()===email);
+          }
+        }catch(e){}
+      }
+      if(!found){
+        showToast('This login is not on the team list');
+        await firebase.auth().signOut().catch(()=>{});
+        return;
+      }
+      if(!currentUser || currentUser.name!==found[0]) await selectUser(found[0], found[1].role);
+    });
+    return;
+  }
   try{
     const res = await window.storage.get('currentUser', false);
     if(res && res.value){
@@ -984,21 +1097,27 @@ function normalizeClinic(c){
 }
 async function loadAll(){
   try{
-    const [c,p,v,t,dp] = await Promise.all([
+    const [c,p,v,t,dp,st,rb] = await Promise.all([
       window.storage.get('clinics', true).catch(()=>null),
       window.storage.get('products', true).catch(()=>null),
       window.storage.get('visits', true).catch(()=>null),
       window.storage.get('tasks', true).catch(()=>null),
       window.storage.get('dayPlans', true).catch(()=>null),
+      window.storage.get('staff', true).catch(()=>null),
+      window.storage.get('recycleBin', true).catch(()=>null),
     ]);
     clinics = (c ? JSON.parse(c.value) : CLINICS_SEED.map(x=>({...x}))).map(normalizeClinic);
     products = p ? JSON.parse(p.value) : PRODUCTS_SEED;
+    assignProductKeys();
     visits = v ? JSON.parse(v.value) : [];
     tasks = t ? JSON.parse(t.value) : [];
     dayPlans = dp ? JSON.parse(dp.value) : {};
+    if(st){ staff = JSON.parse(st.value); refreshStaff(); }
+    if(rb){ recycleBin = Object.assign({clinics:[],products:[],visits:[]}, JSON.parse(rb.value)); }
     await loadTeam();
     if(!c) await persist('clinics');
     if(!p) await persist('products');
+    if(!st) await persist('staff');
   }catch(e){
     console.error('load error', e);
     clinics = CLINICS_SEED.map(x=>normalizeClinic({...x}));
@@ -1009,7 +1128,7 @@ async function loadAll(){
   renderAll();
 }
 async function persist(key){
-  const map = {clinics, products, visits, tasks, dayPlans};
+  const map = {clinics, products, visits, tasks, dayPlans, staff, recycleBin};
   try{
     const res = await window.storage.set(key, JSON.stringify(map[key]), true);
     if(!res){ showToast('Save failed, try again'); }
@@ -1067,10 +1186,12 @@ function renderAll(){
   const stamp = document.getElementById('headerStamp');
   stamp.childNodes[0].textContent = initials(currentUser.name);
   stamp.classList.toggle('sup', currentUser.role==='supervisor');
+  const adminBtn = document.getElementById('adminPanelBtn');
+  if(adminBtn) adminBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
 
   const chipsFor = (containerId, current, setter) => {
     const el = document.getElementById(containerId);
-    const opts = currentUser.role==='supervisor' ? ['all', ...REPS] : [currentUser.name, 'all', ...REPS.filter(r=>r!==currentUser.name)];
+    const opts = currentUser.role==='supervisor' ? ['all', ...REPS] : [currentUser.name];
     const seen = new Set();
     el.innerHTML = opts.filter(o=>{ if(seen.has(o)) return false; seen.add(o); return true; })
       .map(o=>`<div class="chip small ${current===o?'on':''}" onclick="${setter}('${o}')">${o==='all'?'All':o}</div>`).join('');
@@ -1096,12 +1217,16 @@ function visibleVisits(){
   if(currentUser.role==='supervisor') return visits;
   return visits.filter(v=>v.rep===currentUser.name);
 }
+// Records flagged orderOnly are phone/remote orders, not field visits.
+// They count toward revenue but must not inflate visit counts.
+function isFieldVisit(v){ return !v.orderOnly; }
+function visibleFieldVisits(){ return visibleVisits().filter(isFieldVisit); }
 
 function renderToday(){
   const due = visibleDueClinics();
   document.getElementById('statDue').textContent = due.length;
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
-  const weekVisits = visibleVisits().filter(v => new Date(v.date) >= weekAgo);
+  const weekVisits = visibleFieldVisits().filter(v => new Date(v.date) >= weekAgo);
   document.getElementById('statVisitsWeek').textContent = weekVisits.length;
   document.getElementById('statTasks').textContent = visibleTasks().filter(t=>!t.done).length;
   const wk = visibleVisits().filter(v=>new Date(v.date)>=weekAgo);
@@ -1199,6 +1324,8 @@ async function deleteTask(id){ tasks = tasks.filter(x=>x.id!==id); await persist
 
 // ---- TODAY'S PLAN ----
 function repsForPlan(){ return currentUser.role==='supervisor' ? [currentUser.name, ...REPS.filter(r=>r!==currentUser.name)] : [currentUser.name]; }
+function planEntryId(e){ return typeof e==='string' ? e : e.id; }
+function planEntryNote(e){ return typeof e==='string' ? '' : (e.note||''); }
 function renderPlanList(){
   const el = document.getElementById('planList');
   const today = todayStr();
@@ -1206,10 +1333,12 @@ function renderPlanList(){
   const repsToShow = repsForPlan();
   let html = '';
   repsToShow.forEach(r=>{
-    const ids = dayObj[r] || [];
-    if(ids.length===0) return;
+    const entries = dayObj[r] || [];
+    if(entries.length===0) return;
     if(currentUser.role==='supervisor') html += `<div class="doc-group-head">${esc(r)}</div>`;
-    ids.forEach(cid=>{
+    entries.forEach(entry=>{
+      const cid = planEntryId(entry);
+      const note = planEntryNote(entry);
       const c = clinics.find(x=>x.id===cid);
       if(!c) return;
       const visitedToday = visits.some(v=>v.clinicId===cid && v.rep===r && v.date===today);
@@ -1219,7 +1348,7 @@ function renderPlanList(){
             <div class="plan-check ${visitedToday?'done':''}">${visitedToday?'✓':''}</div>
             <div>
               <div class="clinic-name">${esc(c.name)}</div>
-              <div class="clinic-sub">${visitedToday?'Visited today':'Tap to log visit'}</div>
+              <div class="clinic-sub">${visitedToday?'Visited today':(note?esc(note):'Tap to log visit')}</div>
             </div>
           </div>
           <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -1265,6 +1394,148 @@ async function togglePlanClinic(id){
   dayPlans[today][currentUser.name] = [...window._planMine];
   await persist('dayPlans');
   renderPlanPicker();
+}
+
+// ---- WEEKLY / MONTHLY VISIT PLANNER ----
+let planViewMode = 'week';
+let planViewAnchor = todayStr();
+function localDateStr(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function getWeekDates(anchor){
+  const d = new Date(anchor+'T00:00:00');
+  const start = new Date(d); start.setDate(d.getDate()-d.getDay());
+  const dates = [];
+  for(let i=0;i<7;i++){ const x=new Date(start); x.setDate(start.getDate()+i); dates.push(localDateStr(x)); }
+  return dates;
+}
+function getMonthDates(anchor){
+  const d = new Date(anchor+'T00:00:00');
+  const year = d.getFullYear(), month = d.getMonth();
+  const lastDay = new Date(year, month+1, 0).getDate();
+  const dates = [];
+  for(let i=1;i<=lastDay;i++){ dates.push(localDateStr(new Date(year, month, i))); }
+  return dates;
+}
+function openWeekMonthPlan(){
+  planViewMode = 'week';
+  planViewAnchor = todayStr();
+  showModal(`
+    <h3 style="margin-top:0;">Visit plan</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Plan clinics ahead by day, with notes.</p>
+    <div class="toggle-row" style="margin-bottom:14px;">
+      <div class="chip on" id="pvModeWeek" onclick="setPlanViewMode('week')">Weekly</div>
+      <div class="chip" id="pvModeMonth" onclick="setPlanViewMode('month')">Monthly</div>
+    </div>
+    <div class="row-between" style="margin-bottom:12px;">
+      <button class="btn ghost small" style="margin:0; padding:8px 14px;" onclick="shiftPlanView(-1)">&larr;</button>
+      <div id="pvRangeLabel" style="font-weight:700; font-size:14.5px;"></div>
+      <button class="btn ghost small" style="margin:0; padding:8px 14px;" onclick="shiftPlanView(1)">&rarr;</button>
+    </div>
+    <div id="pvBody"></div>
+    <button class="btn secondary" onclick="closeModal(); renderPlanList();">Close</button>
+  `);
+  renderWeekMonthPlan();
+}
+function setPlanViewMode(mode){
+  planViewMode = mode;
+  document.getElementById('pvModeWeek').classList.toggle('on', mode==='week');
+  document.getElementById('pvModeMonth').classList.toggle('on', mode==='month');
+  renderWeekMonthPlan();
+}
+function shiftPlanView(dir){
+  const d = new Date(planViewAnchor+'T00:00:00');
+  if(planViewMode==='week') d.setDate(d.getDate()+dir*7); else d.setMonth(d.getMonth()+dir);
+  planViewAnchor = localDateStr(d);
+  renderWeekMonthPlan();
+}
+function renderWeekMonthPlan(){
+  const dates = planViewMode==='week' ? getWeekDates(planViewAnchor) : getMonthDates(planViewAnchor);
+  const first = new Date(dates[0]+'T00:00:00'), last = new Date(dates[dates.length-1]+'T00:00:00');
+  document.getElementById('pvRangeLabel').textContent = planViewMode==='week'
+    ? `${first.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${last.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`
+    : first.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+  const el = document.getElementById('pvBody');
+  el.innerHTML = dates.map(d=>{
+    const dayObj = dayPlans[d] || {};
+    const mine = dayObj[currentUser.name] || [];
+    const dow = new Date(d+'T00:00:00').toLocaleDateString('en-US',{weekday:'short'});
+    const dnum = new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const isToday = d===todayStr();
+    return `<div class="card clickable" onclick="openDatePlanner('${d}')" style="${isToday?'border-color:var(--teal); border-width:1.5px;':''} margin-bottom:8px;">
+      <div class="row-between">
+        <div>
+          <div class="clinic-name">${dow}, ${dnum}${isToday?' · Today':''}</div>
+          <div class="clinic-sub">${mine.length ? mine.length+' clinic'+(mine.length===1?'':'s')+' planned' : 'No visits planned'}</div>
+        </div>
+        <span class="badge ${mine.length?'upcoming':'none'}">${mine.length||''}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+function openDatePlanner(dateStr){
+  const dayObj = dayPlans[dateStr] || {};
+  const mine = (dayObj[currentUser.name] || []).map(e => typeof e==='string' ? {id:e, note:''} : {...e});
+  const myClinics = clinics.filter(c=>c.rep===currentUser.name && c.cls!=='Closed').sort((a,b)=>a.name.localeCompare(b.name));
+  showModal(`
+    <h3 style="margin-top:0;">${fmtDate(dateStr)} plan</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Tap a clinic to add it, then add an optional note.</p>
+    <input type="text" id="dpSearch" placeholder="Search your clinics..." oninput="renderDatePlanPicker()" style="margin-bottom:10px;">
+    <div class="chip-row" id="dpPicker"></div>
+    <div class="section-title" style="margin-top:18px;">Planned</div>
+    <div id="dpSelected"></div>
+    <button class="btn" onclick="closeModal(); renderPlanList(); renderWeekMonthPlan();">Done</button>
+  `);
+  window._dpDate = dateStr;
+  window._dpMine = mine;
+  window._dpClinics = myClinics;
+  renderDatePlanPicker();
+  renderDatePlanSelected();
+}
+function renderDatePlanPicker(){
+  const q = (document.getElementById('dpSearch').value||'').toLowerCase();
+  const el = document.getElementById('dpPicker');
+  const mineIds = new Set(window._dpMine.map(e=>e.id));
+  const list = window._dpClinics.filter(c=>c.name.toLowerCase().includes(q) && !mineIds.has(c.id));
+  el.innerHTML = list.map(c=>`<div class="chip small" onclick="addDatePlanClinic('${c.id}')">${esc(c.name)}</div>`).join('') || `<div style="color:var(--muted); font-size:13px;">No more clinics match.</div>`;
+}
+async function saveDatePlan(){
+  const d = window._dpDate;
+  dayPlans[d] = dayPlans[d] || {};
+  dayPlans[d][currentUser.name] = window._dpMine;
+  await persist('dayPlans');
+}
+async function addDatePlanClinic(id){
+  window._dpMine.push({id, note:''});
+  await saveDatePlan();
+  renderDatePlanPicker();
+  renderDatePlanSelected();
+}
+async function removeDatePlanClinic(id){
+  window._dpMine = window._dpMine.filter(e=>e.id!==id);
+  await saveDatePlan();
+  renderDatePlanPicker();
+  renderDatePlanSelected();
+}
+async function updateDatePlanNote(id, note){
+  const e = window._dpMine.find(e=>e.id===id);
+  if(e) e.note = note;
+  await saveDatePlan();
+}
+function renderDatePlanSelected(){
+  const el = document.getElementById('dpSelected');
+  if(!window._dpMine.length){ el.innerHTML = `<div style="color:var(--muted); font-size:13px;">No clinics planned yet.</div>`; return; }
+  el.innerHTML = window._dpMine.map(e=>{
+    const c = clinics.find(x=>x.id===e.id);
+    if(!c) return '';
+    return `<div class="card" style="margin-bottom:8px;">
+      <div class="row-between">
+        <div class="clinic-name">${esc(c.name)}</div>
+        <button class="del" onclick="removeDatePlanClinic('${e.id}')">&times;</button>
+      </div>
+      <input type="text" placeholder="Note (optional) — e.g. discuss new order" value="${esc(e.note)}" onchange="updateDatePlanNote('${e.id}', this.value)" style="margin-top:8px; font-size:13px;">
+    </div>`;
+  }).join('');
 }
 
 // ---- LOG VISIT ----
@@ -1860,8 +2131,11 @@ function openClinicDetail(id){
       <div class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp)}</div>
     </div>
     <button class="btn" onclick="quickLogFrom('${c.id}'); closeModal();">Log a visit here</button>
-    ${canPlan ? `<button class="btn secondary" onclick="addToPlan('${c.id}')">Add to today's plan</button>` : ''}
-    <button class="btn ghost" onclick="deleteClinic('${c.id}')">Remove clinic</button>
+    <div class="chip-row" style="margin-top:10px;">
+      <div class="chip small" onclick="openStandaloneOrder('${c.id}')">🛒 Order only</div>
+      ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">📅 Today's plan</div>` : ''}
+      <div class="chip small" onclick="openEditClinic('${c.id}')">✏️ Edit</div>
+    </div>
 
     <div class="section-title" style="margin-top:20px;">Clinic profile notes</div>
     <textarea id="profileNotesEdit" placeholder="Preferences, competitor products in use, best time to visit...">${esc(c.profileNotes)}</textarea>
@@ -1905,6 +2179,837 @@ function renderClinicOrders(clinicId){
       </div>`;
     }).join('');
 }
+// The product catalog contains some repeated product codes (different items sharing
+// an id). Resolving by id alone silently picks the wrong item and misprices orders,
+// so prefer a unique row key when we have one and fall back to id.
+function findProduct(key){
+  return products.find(p => (p._key || p.id) === key) || products.find(p => p.id === key) || null;
+}
+function productKey(p){ return p._key || p.id; }
+function assignProductKeys(){
+  const seen = {};
+  products.forEach((p,i)=>{
+    seen[p.id] = (seen[p.id]||0) + 1;
+    p._key = seen[p.id] === 1 ? p.id : `${p.id}#${seen[p.id]}`;
+  });
+}
+
+// ---- EDIT CLINIC ----
+function openEditClinic(id){
+  const c = clinics.find(x=>x.id===id);
+  if(!c) return;
+  showModal(`
+    <h3 style="margin-top:0;">Edit clinic</h3>
+    <label>Clinic name</label>
+    <input type="text" id="ecName" value="${esc(c.name)}">
+    <label>Assigned rep</label>
+    <div class="chip-row" id="ecRep">${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>
+    <label>Class</label>
+    <div class="chip-row" id="ecCls">${['A','B','C','D','F'].map(x=>`<div class="chip small ${c.cls===x?'on':''}" data-cls="${x}" onclick="pickModalCls(this)">${x}</div>`).join('')}</div>
+    <label>Account type</label>
+    <div class="chip-row" id="ecAcct">${ACCOUNT_TYPES.map(a=>`<div class="chip small ${c.account===a?'on':''}" data-acct="${esc(a)}" onclick="pickModalCls(this)">${esc(a)}</div>`).join('')}</div>
+    <label>Contact person</label>
+    <input type="text" id="ecContact" value="${esc(c.contact||'')}" placeholder="Optional">
+    <label>Phone</label>
+    <input type="tel" id="ecPhone" value="${esc(c.phone||'')}" placeholder="Optional">
+    <label>Status</label>
+    <div class="chip-row" id="ecStatus">
+      <div class="chip small ${c.cls!=='Closed'?'on':''}" data-st="open" onclick="pickModalCls(this)">Active</div>
+      <div class="chip small ${c.cls==='Closed'?'on':''}" data-st="closed" onclick="pickModalCls(this)">Closed</div>
+    </div>
+    <button class="btn" onclick="saveEditClinic('${c.id}')">Save changes</button>
+    <button class="btn ghost" onclick="deleteClinic('${c.id}')">Remove clinic</button>
+  `);
+}
+async function saveEditClinic(id){
+  const c = clinics.find(x=>x.id===id);
+  if(!c) return;
+  const name = document.getElementById('ecName').value.trim();
+  if(!name){ showToast('Enter a clinic name'); return; }
+  const dup = clinics.find(x=>x.id!==id && x.name.toLowerCase()===name.toLowerCase());
+  if(dup){ showToast('Another clinic already has that name'); return; }
+  const repEl = document.querySelector('#ecRep .chip.on');
+  const clsEl = document.querySelector('#ecCls .chip.on');
+  const acctEl = document.querySelector('#ecAcct .chip.on');
+  const stEl = document.querySelector('#ecStatus .chip.on');
+  const closed = stEl && stEl.dataset.st==='closed';
+  c.name = name;
+  if(repEl) c.rep = repEl.dataset.rep;
+  c.cls = closed ? 'Closed' : (clsEl ? clsEl.dataset.cls : null);
+  c.account = acctEl ? acctEl.dataset.acct : null;
+  c.contact = document.getElementById('ecContact').value.trim();
+  c.phone = document.getElementById('ecPhone').value.trim();
+  await persist('clinics');
+  closeModal();
+  showToast('✅ Clinic updated');
+  renderAll();
+  if(document.getElementById('clinicList')) renderClinics();
+}
+
+// ---- EDIT PRODUCT ----
+function openEditProduct(key){
+  const p = findProduct(key);
+  if(!p) return;
+  const sharing = products.filter(x=>x.id===p.id).length;
+  const mySpecs = new Set(p.specialties||[]);
+  showModal(`
+    <h3 style="margin-top:0;">Edit product</h3>
+    <label>Product name</label>
+    <input type="text" id="epName" value="${esc(p.name)}">
+    <label>Brand</label>
+    <input type="text" id="epBrand" value="${esc(p.brand||'')}">
+    <label>Product code</label>
+    <input type="text" id="epCode" value="${esc(p.id)}">
+    ${sharing>1?`<p style="color:var(--coral); font-size:12.5px; margin-top:6px;">⚠️ ${sharing} products share this code. Giving each a unique code prevents pricing mistakes.</p>`:''}
+    <label>Price (KD)</label>
+    <input type="number" step="0.01" min="0" id="epPrice" value="${p.price!=null?p.price:''}">
+    <label>Description</label>
+    <textarea id="epDesc" placeholder="Short product description shown to the whole team">${esc(p.desc||'')}</textarea>
+    <label>Recommend for these doctor specialties</label>
+    <p style="color:var(--muted); font-size:12px; margin:-4px 0 8px;">Tag the specialties this product is a good fit for — it'll show up under "Lead with these products" in that specialty's playbook.</p>
+    <div class="chip-row" id="epSpecialtyChips">${SPECIALTIES.map(t=>`<div class="chip small ${mySpecs.has(t)?'on':''}" data-spec="${esc(t)}" onclick="this.classList.toggle('on')">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
+    <button class="btn" onclick="saveEditProduct('${esc(key)}')">Save changes</button>
+    <button class="btn ghost" onclick="removeProduct('${esc(key)}')">Remove product</button>
+  `);
+}
+async function saveEditProduct(key){
+  const p = findProduct(key);
+  if(!p) return;
+  const name = document.getElementById('epName').value.trim();
+  if(!name){ showToast('Enter a product name'); return; }
+  const code = document.getElementById('epCode').value.trim();
+  if(!code){ showToast('Enter a product code'); return; }
+  const priceRaw = document.getElementById('epPrice').value;
+  const price = priceRaw==='' ? null : parseFloat(priceRaw);
+  if(price!==null && (isNaN(price) || price<0)){ showToast('Enter a valid price'); return; }
+  p.name = name;
+  p.brand = document.getElementById('epBrand').value.trim() || 'Other';
+  p.id = code;
+  p.price = price===null ? null : Math.round(price*100)/100;
+  p.desc = document.getElementById('epDesc').value.trim();
+  p.specialties = Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec);
+  assignProductKeys();
+  await persist('products');
+  closeModal();
+  showToast('✅ Product updated');
+  if(document.getElementById('productListWrap')) renderProducts();
+  if(document.getElementById('apPriceBody')) renderAdminPrices();
+}
+
+// ---- RECYCLE BIN (soft delete) ----
+const BIN_DAYS = 30;
+async function moveToBin(kind, item, label){
+  recycleBin[kind] = recycleBin[kind] || [];
+  recycleBin[kind].push({...item, _deletedAt: Date.now(), _label: label});
+  await persist('recycleBin');
+}
+function pruneBin(){
+  const cutoff = Date.now() - BIN_DAYS*86400000;
+  let changed = false;
+  ['clinics','products','visits'].forEach(k=>{
+    const before = (recycleBin[k]||[]).length;
+    recycleBin[k] = (recycleBin[k]||[]).filter(x=>(x._deletedAt||0) > cutoff);
+    if(recycleBin[k].length !== before) changed = true;
+  });
+  return changed;
+}
+function binCount(){ return ['clinics','products','visits'].reduce((s,k)=>s+(recycleBin[k]||[]).length,0); }
+async function removeProduct(key){
+  const p = findProduct(key);
+  if(!p) return;
+  const idx = products.indexOf(p);
+  if(idx<0) return;
+  const copy = {...p}; delete copy._key;
+  products.splice(idx,1);
+  assignProductKeys();
+  await moveToBin('products', copy, p.name);
+  await persist('products');
+  closeModal();
+  showToast('Moved to recycle bin');
+  if(document.getElementById('productListWrap')) renderProducts();
+}
+async function restoreFromBin(kind, idx){
+  const item = (recycleBin[kind]||[])[idx];
+  if(!item) return;
+  const clean = {...item}; delete clean._deletedAt; delete clean._label;
+  if(kind==='clinics') clinics.push(normalizeClinic(clean));
+  if(kind==='products'){ delete clean._key; products.push(clean); assignProductKeys(); }
+  if(kind==='visits') visits.push(clean);
+  recycleBin[kind].splice(idx,1);
+  await Promise.all([persist(kind), persist('recycleBin')]);
+  showToast('✅ Restored');
+  renderAll();
+  setAdminTab('data'); setDataSub('bin');
+}
+async function purgeFromBin(kind, idx){
+  if(!(recycleBin[kind]||[])[idx]) return;
+  recycleBin[kind].splice(idx,1);
+  await persist('recycleBin');
+  showToast('Permanently deleted');
+  setAdminTab('data'); setDataSub('bin');
+}
+function adminBinHTML(){
+  pruneBin();
+  const total = binCount();
+  if(!total) return `<div class="empty"><div class="big">🗑 Recycle bin is empty</div>Deleted items appear here for ${BIN_DAYS} days.</div>`;
+  const labels = {clinics:'Clinic', products:'Product', visits:'Visit'};
+  let html = `<p style="color:var(--muted); font-size:12.5px; margin-top:0;">Items are kept for ${BIN_DAYS} days, then removed automatically.</p>`;
+  ['clinics','products','visits'].forEach(kind=>{
+    (recycleBin[kind]||[]).forEach((item,i)=>{
+      const days = Math.max(0, BIN_DAYS - Math.floor((Date.now()-(item._deletedAt||0))/86400000));
+      html += `<div class="card" style="margin-bottom:8px;">
+        <div class="row-between">
+          <div style="flex:1;">
+            <div class="clinic-name">${esc(item._label || item.name || labels[kind])}</div>
+            <div class="clinic-sub">${labels[kind]} · ${days} day${days===1?'':'s'} left</div>
+          </div>
+          <div style="display:flex; gap:6px; flex-shrink:0;">
+            <button class="chip small" onclick="restoreFromBin('${kind}',${i})">Restore</button>
+            <button class="del" onclick="purgeFromBin('${kind}',${i})">&times;</button>
+          </div>
+        </div>
+      </div>`;
+    });
+  });
+  return html;
+}
+
+// ---- TEAM MANAGEMENT ----
+function openStaffForm(idx){
+  const editing = idx!==undefined && staff[idx];
+  const s = editing ? staff[idx] : {name:'', role:'rep', email:'', av:AVATARS[staff.length % AVATARS.length]};
+  showModal(`
+    <h3 style="margin-top:0;">${editing?'Edit':'Add'} team member</h3>
+    <label>Name (as shown in the app)</label>
+    <input type="text" id="sfName" value="${esc(s.name)}" placeholder="e.g. Sara">
+    <label>Login email</label>
+    <input type="email" id="sfEmail" value="${esc(s.email)}" placeholder="name@ultramed-kw.com">
+    <label>Role</label>
+    <div class="chip-row" id="sfRole">
+      <div class="chip small ${s.role==='rep'?'on':''}" data-role="rep" onclick="pickModalCls(this)">🦷 Sales Rep</div>
+      <div class="chip small ${s.role==='supervisor'?'on':''}" data-role="supervisor" onclick="pickModalCls(this)">⭐ Supervisor</div>
+    </div>
+    <button class="btn" onclick="saveStaff(${editing?idx:-1})">Save</button>
+    ${editing?`<button class="btn ghost" onclick="removeStaff(${idx})">Remove from team</button>`:''}
+  `);
+}
+async function saveStaff(idx){
+  const name = document.getElementById('sfName').value.trim();
+  const email = document.getElementById('sfEmail').value.trim().toLowerCase();
+  const roleEl = document.querySelector('#sfRole .chip.on');
+  const role = roleEl ? roleEl.dataset.role : 'rep';
+  if(!name){ showToast('Enter a name'); return; }
+  if(!email || !email.includes('@')){ showToast('Enter a valid email'); return; }
+  const clash = staff.find((s,i)=>i!==idx && (s.name.toLowerCase()===name.toLowerCase() || s.email===email));
+  if(clash){ showToast('That name or email is already used'); return; }
+  if(idx>=0){
+    const prevName = staff[idx].name;
+    staff[idx] = {...staff[idx], name, email, role};
+    if(prevName !== name){
+      // Keep existing records pointing at this person
+      clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; });
+      visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
+      tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
+      Object.keys(dayPlans).forEach(d=>{
+        if(dayPlans[d] && dayPlans[d][prevName]){ dayPlans[d][name] = dayPlans[d][prevName]; delete dayPlans[d][prevName]; }
+      });
+      await Promise.all([persist('clinics'), persist('visits'), persist('tasks'), persist('dayPlans')]);
+    }
+  } else {
+    staff.push({name, email, role, av:AVATARS[staff.length % AVATARS.length]});
+  }
+  refreshStaff();
+  await persist('staff');
+  closeModal();
+  showToast('✅ Team updated');
+  renderGate();
+  renderAll();
+  openAdminPanel(); setAdminTab('staff');
+}
+async function removeStaff(idx){
+  const s = staff[idx];
+  if(!s) return;
+  if(staff.filter(x=>x.role==='supervisor').length===1 && s.role==='supervisor'){
+    showToast('Keep at least one supervisor'); return;
+  }
+  const cCount = clinics.filter(c=>c.rep===s.name).length;
+  showModal(`
+    <h3 style="margin-top:0;">Remove ${esc(s.name)}?</h3>
+    ${cCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;"><strong>${cCount}</strong> clinic${cCount===1?'':'s'} assigned to ${esc(s.name)} will become unassigned. Reassign them from the Territory tab afterwards.</div>`:''}
+    <p style="color:var(--muted); font-size:13px;">Their past visits stay in the records. Their login must be removed separately in Firebase.</p>
+    <button class="btn" style="background:var(--coral);" onclick="confirmRemoveStaff(${idx})">Yes, remove</button>
+    <button class="btn secondary" onclick="openStaffForm(${idx})">Cancel</button>
+  `);
+}
+async function confirmRemoveStaff(idx){
+  const s = staff[idx];
+  if(!s) return;
+  staff.splice(idx,1);
+  refreshStaff();
+  await persist('staff');
+  closeModal();
+  showToast(`${s.name} removed`);
+  renderGate();
+  renderAll();
+  openAdminPanel(); setAdminTab('staff');
+}
+
+// ---- STANDALONE ORDER (no field visit) ----
+let soClinicId = null, soItems = {}, soDiscount = 0;
+function openStandaloneOrder(prefillClinicId){
+  soClinicId = prefillClinicId || null;
+  soItems = {}; soDiscount = 0;
+  showModal(`
+    <h3 style="margin-top:0;">🛒 Add order</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone or remote orders — recorded as revenue, not as a field visit.</p>
+    <label>Clinic</label>
+    <input type="text" id="soClinicSearch" placeholder="🔍 Search clinics..." oninput="renderSoClinics()" style="margin-bottom:8px;">
+    <div id="soClinicPick"></div>
+    <label>Date</label>
+    <input type="date" id="soDate" value="${todayStr()}" max="${todayStr()}">
+    <label>Products</label>
+    <input type="text" id="soProdSearch" placeholder="🔍 Search products..." oninput="renderSoProducts()" style="margin-bottom:8px;">
+    <div class="chip-row" id="soProdChips" style="max-height:160px; overflow-y:auto;"></div>
+    <div id="soQtyWrap"></div>
+    <label>Discount</label>
+    <div class="chip-row" id="soDiscChips">
+      ${[0,5,10,15,20,25,30].map(d=>`<div class="chip small ${d===0?'on':''}" onclick="setSoDiscount(this,${d})">${d===0?'None':d+'%'}</div>`).join('')}
+    </div>
+    <div id="soTotal" class="card" style="background:var(--teal-dim); margin-top:12px;"></div>
+    <label>Notes</label>
+    <textarea id="soNotes" placeholder="PO number, delivery instructions, who called..."></textarea>
+    <button class="btn" onclick="saveStandaloneOrder()">Save order</button>
+  `);
+  renderSoClinics(); renderSoProducts(); renderSoQty();
+}
+function renderSoClinics(){
+  const q = (document.getElementById('soClinicSearch')?.value||'').toLowerCase().trim();
+  const el = document.getElementById('soClinicPick');
+  if(soClinicId){
+    const c = clinics.find(x=>x.id===soClinicId);
+    if(c){
+      el.innerHTML = `<div class="card" style="border-left:4px solid ${clsColor(c.cls)};">
+        <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
+        <button class="del" onclick="soClinicId=null; renderSoClinics();">&times;</button></div></div>`;
+      return;
+    }
+  }
+  let pool = clinics.filter(c=>c.cls!=='Closed');
+  if(currentUser.role!=='supervisor') pool = pool.filter(c=>c.rep===currentUser.name);
+  if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
+  pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
+  el.innerHTML = pool.length ? pool.map(c=>`
+    <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(c.cls)};" onclick="soClinicId='${c.id}'; renderSoClinics();">
+      <div class="clinic-name">${esc(c.name)}</div>
+      <div class="clinic-sub">${esc(c.rep||'')}</div>
+    </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
+}
+function renderSoProducts(){
+  const q = (document.getElementById('soProdSearch')?.value||'').toLowerCase().trim();
+  let list = products;
+  if(q) list = list.filter(p=>p.name.toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q));
+  list = list.slice(0, q?40:14);
+  document.getElementById('soProdChips').innerHTML = list.map(p=>
+    `<div class="chip small ${soItems[productKey(p)]?'on':''}" onclick="toggleSoProduct('${esc(productKey(p))}')">${esc(p.name)}</div>`).join('');
+}
+function toggleSoProduct(id){
+  if(soItems[id]) delete soItems[id]; else soItems[id] = 1;
+  renderSoProducts(); renderSoQty();
+}
+function renderSoQty(){
+  const ids = Object.keys(soItems);
+  const wrap = document.getElementById('soQtyWrap');
+  wrap.innerHTML = ids.length ? `<label>Quantities</label><div class="card">` + ids.map(id=>{
+    const p = findProduct(id);
+    if(!p) return '';
+    return `<div class="qty-row">
+      <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${p.price!=null?money(p.price)+' each':'no price'}</span></div>
+      <input type="number" min="1" value="${soItems[id]}" oninput="setSoQty('${esc(id)}', this.value)">
+    </div>`;
+  }).join('') + `</div>` : '';
+  renderSoTotal();
+}
+function setSoQty(id, val){
+  const n = Math.max(0, parseInt(val)||0);
+  if(n===0) delete soItems[id]; else soItems[id] = n;
+  renderSoTotal();
+}
+function setSoDiscount(el, d){
+  soDiscount = d;
+  el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+  renderSoTotal();
+}
+function soTotals(){
+  let gross = 0;
+  Object.keys(soItems).forEach(id=>{
+    const p = findProduct(id);
+    if(p && p.price!=null) gross += p.price*soItems[id];
+  });
+  const net = gross*(1-soDiscount/100);
+  return {gross:Math.round(gross*100)/100, disc:Math.round((gross-net)*100)/100, net:Math.round(net*100)/100};
+}
+function renderSoTotal(){
+  const el = document.getElementById('soTotal');
+  if(!el) return;
+  const t = soTotals();
+  el.innerHTML = `
+    <div class="row-between" style="font-size:13px;"><span>Subtotal</span><span>${money(t.gross)}</span></div>
+    ${soDiscount?`<div class="row-between" style="font-size:12.5px; color:var(--coral); margin-top:4px;"><span>Discount (${soDiscount}%)</span><span>− ${money(t.disc)}</span></div>`:''}
+    <div class="row-between" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-weight:700;"><span>Order total</span><span>${money(t.net)}</span></div>`;
+}
+async function saveStandaloneOrder(){
+  if(!soClinicId){ showToast('Pick a clinic first'); return; }
+  // Snapshot name and unit price so the order keeps its true value even if the
+  // catalog price changes later.
+  const items = Object.keys(soItems).filter(id=>soItems[id]>0).map(id=>{
+    const p = findProduct(id);
+    return {productId:id, qty:soItems[id], unitPrice: p&&p.price!=null ? p.price : null, name: p?p.name:''};
+  });
+  if(!items.length){ showToast('Add at least one product'); return; }
+  const date = document.getElementById('soDate').value || todayStr();
+  const notes = document.getElementById('soNotes').value.trim();
+  const t = soTotals();
+  const clinic = clinics.find(c=>c.id===soClinicId);
+  const rep = currentUser.role==='supervisor' ? (clinic?clinic.rep:currentUser.name) : currentUser.name;
+  const order = {id:uid(), items, discountPct:soDiscount, gross:t.gross, discountAmount:t.disc, total:t.net, notes};
+  visits.push({
+    id:uid(), clinicId:soClinicId, rep, date, orderOnly:true,
+    products:items.map(i=>i.productId), orderTaken:true, orders:[order], orderItems:items,
+    orderGross:t.gross, orderDiscount:t.disc, orderTotal:t.net,
+    nextFollowUp:null, notes
+  });
+  await persist('visits');
+  closeModal();
+  showToast(`🛒 Order saved — ${money(t.net)}`);
+  renderAll();
+}
+
+// ---- EDIT A LOGGED VISIT ----
+function openEditVisit(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  if(!v){ showToast('Visit not found'); return; }
+  if(currentUser.role!=='supervisor' && v.rep!==currentUser.name){ showToast('You can only edit your own visits'); return; }
+  const c = clinics.find(x=>x.id===v.clinicId);
+  showModal(`
+    <h3 style="margin-top:0;">Edit ${v.orderOnly?'order':'visit'}</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:'Unknown clinic')}</p>
+    <label>Date</label>
+    <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
+    <label>Next follow-up</label>
+    <input type="date" id="evFollow" value="${v.nextFollowUp||''}">
+    <label>Notes</label>
+    <textarea id="evNotes" placeholder="What happened on this visit...">${esc(v.notes||'')}</textarea>
+    ${v.orderTaken?`
+      <label>Order total (KD)</label>
+      <input type="number" step="0.01" min="0" id="evTotal" value="${v.orderTotal||0}">
+      <p style="color:var(--muted); font-size:12px; margin-top:6px;">Adjusts the recorded value. To change line items, delete and re-enter the order.</p>
+    `:''}
+    <button class="btn" onclick="saveEditVisit('${v.id}')">Save changes</button>
+    <button class="btn ghost" onclick="confirmDeleteVisit('${v.id}')">Delete this ${v.orderOnly?'order':'visit'}</button>
+  `);
+}
+async function saveEditVisit(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  if(!v) return;
+  if(currentUser.role!=='supervisor' && v.rep!==currentUser.name){ showToast('Not allowed'); return; }
+  const newDate = document.getElementById('evDate').value;
+  if(!newDate){ showToast('Pick a date'); return; }
+  v.date = newDate;
+  v.nextFollowUp = document.getElementById('evFollow').value || null;
+  v.notes = document.getElementById('evNotes').value.trim();
+  const totalEl = document.getElementById('evTotal');
+  if(totalEl){
+    const n = parseFloat(totalEl.value);
+    if(!isNaN(n) && n>=0){
+      v.orderTotal = Math.round(n*100)/100;
+      if(v.orders && v.orders.length===1) v.orders[0].total = v.orderTotal;
+    }
+  }
+  // Keep the clinic's rollup fields consistent with its remaining visits
+  const clinic = clinics.find(c=>c.id===v.clinicId);
+  if(clinic){
+    const cv = visits.filter(x=>x.clinicId===clinic.id && isFieldVisit(x));
+    clinic.lastVisit = cv.length ? cv.map(x=>x.date).sort().slice(-1)[0] : null;
+    if(v.nextFollowUp) clinic.nextFollowUp = v.nextFollowUp;
+  }
+  await Promise.all([persist('visits'), persist('clinics')]);
+  closeModal();
+  showToast('✅ Changes saved');
+  renderAll();
+  if(document.getElementById('vlBody')) renderVisitLog();
+}
+function confirmDeleteVisit(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  if(!v) return;
+  const c = clinics.find(x=>x.id===v.clinicId);
+  showModal(`
+    <h3 style="margin-top:0;">Delete this ${v.orderOnly?'order':'visit'}?</h3>
+    <div class="card" style="border-left:4px solid var(--coral); margin-bottom:14px;">
+      <div class="clinic-name">${esc(c?c.name:'Unknown clinic')}</div>
+      <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}</div>
+      ${v.notes?`<div style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
+    </div>
+    <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
+    <button class="btn" style="background:var(--coral);" onclick="deleteVisit('${v.id}')">Yes, delete it</button>
+    <button class="btn secondary" onclick="openEditVisit('${v.id}')">Cancel</button>
+  `);
+}
+async function deleteVisit(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  if(!v) return;
+  if(currentUser.role!=='supervisor' && v.rep!==currentUser.name){ showToast('Not allowed'); return; }
+  const clinicId = v.clinicId;
+  const c = clinics.find(x=>x.id===clinicId);
+  await moveToBin('visits', v, `${c?c.name:'Visit'} — ${fmtDate(v.date)}`);
+  visits = visits.filter(x=>x.id!==visitId);
+  const clinic = clinics.find(x=>x.id===clinicId);
+  if(clinic){
+    const cv = visits.filter(x=>x.clinicId===clinicId && isFieldVisit(x));
+    clinic.lastVisit = cv.length ? cv.map(x=>x.date).sort().slice(-1)[0] : null;
+  }
+  await Promise.all([persist('visits'), persist('clinics')]);
+  closeModal();
+  showToast('Moved to recycle bin');
+  renderAll();
+}
+
+// ---- ADMIN PANEL (supervisor only) ----
+function requireAdmin(){
+  if(!currentUser || currentUser.role!=='supervisor'){ showToast('Supervisor only'); return false; }
+  return true;
+}
+function openAdminPanel(){
+  if(!requireAdmin()) return;
+  showModal(`
+    <h3 style="margin-top:0;">⚙️ Admin panel</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Supervisor tools — team oversight and data management.</p>
+    <div class="chip-row" style="margin-bottom:14px;">
+      <div class="chip small on" id="apTabTeam" onclick="setAdminTab('team')">Team</div>
+      <div class="chip small" id="apTabTerritory" onclick="setAdminTab('territory')">Territory</div>
+      <div class="chip small" id="apTabPrices" onclick="setAdminTab('prices')">Catalog</div>
+      <div class="chip small" id="apTabData" onclick="setAdminTab('data')">Data</div>
+    </div>
+    <div id="apBody"></div>
+    <button class="btn secondary" onclick="closeModal(); openExport();">Export &amp; backups</button>
+    <button class="btn" onclick="closeModal()">Done</button>
+  `);
+  setAdminTab('team');
+}
+function setAdminTab(tab){
+  if(tab==='staff' || tab==='bin') tab = tab==='staff' ? 'team' : 'data';
+  ['team','territory','prices','data'].forEach(t=>{
+    const el = document.getElementById('apTab'+t.charAt(0).toUpperCase()+t.slice(1));
+    if(el) el.classList.toggle('on', t===tab);
+  });
+  const body = document.getElementById('apBody');
+  if(!body) return;
+  if(tab==='team'){ body.innerHTML = adminTeamHTML(); renderAdminStaff(); }
+  if(tab==='territory'){ body.innerHTML = adminTerritoryHTML(); renderAdminTerritory(); }
+  if(tab==='prices'){ body.innerHTML = adminPricesHTML(); renderAdminPrices(); }
+  if(tab==='data'){ body.innerHTML = adminDataHTML(); }
+}
+// -- Team tab (performance + roster management in one place) --
+function adminTeamHTML(){
+  return `<div id="apStaffList"></div>
+    <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>`;
+}
+function renderAdminStaff(){
+  const el = document.getElementById('apStaffList');
+  if(!el) return;
+  el.innerHTML = adminTeamStatsHTML();
+}
+function adminTeamStatsHTML(){
+  const today = todayStr();
+  const wk = new Date(); wk.setDate(wk.getDate()-7);
+  const mo = new Date(); mo.setDate(mo.getDate()-30);
+  let html = '';
+  REPS.forEach((r,ri)=>{
+    const rVisits = visits.filter(v=>v.rep===r);
+    const wkV = rVisits.filter(v=>new Date(v.date+'T00:00:00')>=wk);
+    const moV = rVisits.filter(v=>new Date(v.date+'T00:00:00')>=mo);
+    const moRev = moV.reduce((s,v)=>s+(v.orderTotal||0),0);
+    const myClinics = clinics.filter(c=>c.rep===r && c.cls!=='Closed');
+    const covered = new Set(moV.map(v=>v.clinicId)).size;
+    const coverage = myClinics.length ? Math.round(covered/myClinics.length*100) : 0;
+    const overdue = myClinics.filter(c=>followStatus(c.nextFollowUp)==='overdue').length;
+    const openTasks = tasks.filter(t=>t.rep===r && !t.done).length;
+    const last = rVisits.length ? rVisits.map(v=>v.date).sort().slice(-1)[0] : null;
+    const daysSince = last ? daysBetween(last, today) : null;
+    const stale = daysSince===null || daysSince>3;
+    const person = staff.find(s=>s.name===r);
+    html += `<div class="card" style="margin-bottom:10px; border-left:4px solid ${stale?'var(--coral)':'var(--sage)'};">
+      <div class="row-between" style="margin-bottom:4px;">
+        <div class="clinic-name">${esc(r)}${person&&person.role==='supervisor'?' <span class="rep-tag">supervisor</span>':''}</div>
+        <button class="chip small" style="flex-shrink:0;" onclick="openStaffForm(${staff.indexOf(person)})">Edit</button>
+      </div>
+      <div class="row-between" style="margin-bottom:10px;">
+        <span class="clinic-sub">${person?esc(person.email):''}</span>
+        <span class="badge ${stale?'overdue':'done'}">${last?('Last visit '+fmtDate(last)):'No visits yet'}</span>
+      </div>
+      <div class="kpi-grid" style="margin-bottom:0;">
+        <div class="kpi"><div class="n">${wkV.length}</div><div class="l">Visits this week</div></div>
+        <div class="kpi"><div class="n">${moV.length}</div><div class="l">Visits 30 days</div></div>
+        <div class="kpi"><div class="n">${money(moRev)}</div><div class="l">Revenue 30 days</div></div>
+        <div class="kpi"><div class="n">${coverage}%</div><div class="l">Coverage 30 days</div></div>
+        <div class="kpi"><div class="n">${myClinics.length}</div><div class="l">Clinics assigned</div></div>
+        <div class="kpi"><div class="n" style="${overdue?'color:var(--coral);':''}">${overdue}</div><div class="l">Overdue follow-ups</div></div>
+      </div>
+      ${openTasks?`<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">${openTasks} open task${openTasks===1?'':'s'}</div>`:''}
+    </div>`;
+  });
+  const unassigned = clinics.filter(c=>!c.rep || !REPS.includes(c.rep)).length;
+  if(unassigned) html += `<div class="card" style="background:var(--amber-dim);"><strong>${unassigned}</strong> clinic${unassigned===1?'':'s'} not assigned to any rep — see Territory tab.</div>`;
+  return html;
+}
+// -- Territory tab (reassign clinics between reps) --
+function adminTerritoryHTML(){
+  return `
+    <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Move a clinic to a different rep. Visit history stays with the clinic.</p>
+    <input type="text" id="apTerrSearch" placeholder="🔍 Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
+    <div class="chip-row" style="margin-bottom:10px;" id="apTerrFilter">
+      <div class="chip small on" data-f="all" onclick="setTerrFilter(this,'all')">All</div>
+      ${REPS.map(r=>`<div class="chip small" data-f="${esc(r)}" onclick="setTerrFilter(this,'${esc(r)}')">${esc(r)}</div>`).join('')}
+      <div class="chip small" data-f="__none" onclick="setTerrFilter(this,'__none')">Unassigned</div>
+    </div>
+    <div id="apTerrBody"></div>`;
+}
+let terrFilter = 'all';
+function setTerrFilter(el, val){
+  terrFilter = val;
+  el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+  renderAdminTerritory();
+}
+function renderAdminTerritory(){
+  const q = (document.getElementById('apTerrSearch')?.value||'').toLowerCase().trim();
+  let list = clinics.filter(c=>c.cls!=='Closed');
+  if(terrFilter==='__none') list = list.filter(c=>!c.rep || !REPS.includes(c.rep));
+  else if(terrFilter!=='all') list = list.filter(c=>c.rep===terrFilter);
+  if(q) list = list.filter(c=>c.name.toLowerCase().includes(q));
+  list = list.sort((a,b)=>a.name.localeCompare(b.name)).slice(0,40);
+  const el = document.getElementById('apTerrBody');
+  if(!list.length){ el.innerHTML = `<div class="empty">No clinics match.</div>`; return; }
+  el.innerHTML = list.map(c=>{
+    const vCount = visits.filter(v=>v.clinicId===c.id).length;
+    return `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c.cls)};">
+      <div class="clinic-name">${esc(c.name)}</div>
+      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral);">unassigned</span>'}</div>
+      <div class="chip-row">
+        ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
+      </div>
+    </div>`;
+  }).join('') + (clinics.filter(c=>c.cls!=='Closed').length>40 && !q ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Search to narrow down</div>` : '');
+}
+async function reassignClinic(clinicId, newRep){
+  if(!requireAdmin()) return;
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c || c.rep===newRep) return;
+  const prev = c.rep;
+  c.rep = newRep;
+  await persist('clinics');
+  showToast(`${c.name} → ${newRep}`);
+  renderAdminTerritory();
+  renderAll();
+}
+// -- Data tab = health checks + recycle bin --
+function adminDataHTML(){
+  const n = binCount();
+  return `
+    <div class="chip-row" style="margin-bottom:12px;">
+      <div class="chip small on" id="apDataHealth" onclick="setDataSub('health')">Health checks</div>
+      <div class="chip small" id="apDataBin" onclick="setDataSub('bin')">Recycle bin${n?' ('+n+')':''}</div>
+    </div>
+    <div id="apDataBody">${adminHealthHTML()}</div>`;
+}
+function setDataSub(sub){
+  const h = document.getElementById('apDataHealth'), b = document.getElementById('apDataBin');
+  if(h) h.classList.toggle('on', sub==='health');
+  if(b) b.classList.toggle('on', sub==='bin');
+  const body = document.getElementById('apDataBody');
+  if(body) body.innerHTML = sub==='health' ? adminHealthHTML() : adminBinHTML();
+}
+function dupProductIds(){
+  const counts = {};
+  products.forEach(p=>{ counts[p.id]=(counts[p.id]||0)+1; });
+  return Object.entries(counts).filter(([id,n])=>n>1).map(([id,n])=>`${id} (×${n})`);
+}
+function adminHealthHTML(){
+  const active = clinics.filter(c=>c.cls!=='Closed');
+  const never = active.filter(c=>!visits.some(v=>v.clinicId===c.id));
+  const noFollow = active.filter(c=>!c.nextFollowUp);
+  const overdue = active.filter(c=>followStatus(c.nextFollowUp)==='overdue');
+  const noClass = active.filter(c=>!c.cls);
+  const noContact = active.filter(c=>!c.contact && !c.phone && !(c.doctors||[]).length);
+  const dupes = [];
+  const seen = {};
+  active.forEach(c=>{
+    const k = c.name.toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(seen[k]) dupes.push(c.name+' / '+seen[k]); else seen[k]=c.name;
+  });
+  const row = (label, items, color) => {
+    const n = items.length;
+    return `<div class="card" style="margin-bottom:8px; ${n?'border-left:4px solid '+color+';':''}">
+      <div class="row-between">
+        <div style="flex:1;">
+          <div class="clinic-name">${label}</div>
+          ${n?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(items.slice(0,4).map(x=>typeof x==='string'?x:x.name).join(', '))}${n>4?' +'+(n-4)+' more':''}</div>`:'<div class="clinic-sub">All good ✅</div>'}
+        </div>
+        <strong style="${n?'color:'+color+';':'color:var(--sage);'} font-size:19px;">${n}</strong>
+      </div>
+    </div>`;
+  };
+  return `
+    <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Gaps worth fixing. Numbers count active clinics only.</p>
+    ${row('Never visited', never, 'var(--coral)')}
+    ${row('Overdue follow-ups', overdue, 'var(--coral)')}
+    ${row('No follow-up date set', noFollow, 'var(--amber)')}
+    ${row('No class assigned (A–F)', noClass, 'var(--amber)')}
+    ${row('No contact or doctor on file', noContact, 'var(--amber)')}
+    ${row('Possible duplicate clinics', dupes, 'var(--amber)')}
+    ${row('Products sharing a product code', dupProductIds(), 'var(--coral)')}
+    <div class="card" style="background:var(--teal-dim); margin-top:10px;">
+      <div class="row-between"><span style="font-size:13px;">Active clinics</span><strong>${active.length}</strong></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Closed</span><span>${clinics.length-active.length}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Total visits logged</span><span>${visits.length}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Products in catalog</span><span>${products.length}</span></div>
+    </div>`;
+}
+// -- Prices tab --
+function adminPricesHTML(){
+  return `
+    <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Update a price and it applies to all future orders. Past orders keep their original value.</p>
+    <input type="text" id="apPriceSearch" placeholder="🔍 Search product or brand..." oninput="renderAdminPrices()" style="margin-bottom:10px;">
+    <div id="apPriceBody"></div>`;
+}
+function renderAdminPrices(){
+  const q = (document.getElementById('apPriceSearch')?.value||'').toLowerCase().trim();
+  let list = products;
+  if(q) list = list.filter(p=>p.name.toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q));
+  list = list.slice(0, q?60:25);
+  const el = document.getElementById('apPriceBody');
+  if(!list.length){ el.innerHTML = `<div class="empty">No products match.</div>`; return; }
+  el.innerHTML = list.map(p=>`
+    <div class="qty-row">
+      <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')} · ${esc(p.id)}</span></div>
+      <input type="number" step="0.01" min="0" value="${p.price!=null?p.price:''}" onchange="updateProductPrice('${esc(p.id)}', this.value)" style="width:82px;">
+    </div>`).join('') + (!q && products.length>25 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:8px;">Showing 25 of ${products.length} — search to find others</div>` : '');
+}
+async function updateProductPrice(id, val){
+  if(!requireAdmin()) return;
+  const p = products.find(x=>x.id===id);
+  if(!p) return;
+  const n = parseFloat(val);
+  if(isNaN(n) || n<0){ showToast('Enter a valid price'); return; }
+  p.price = Math.round(n*100)/100;
+  await persist('products');
+  showToast(`${p.name.slice(0,28)} → ${money(p.price)}`);
+}
+
+// ---- FULL VISIT LOG ----
+let visitLogRange = 30;
+function openVisitLog(){
+  visitLogRange = 30;
+  showModal(`
+    <h3 style="margin-top:0;">${currentUser.role==='supervisor'?'Team visit log':'My visit log'}</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Every visit you've logged, newest first.</p>
+    <div class="chip-row" style="margin-bottom:12px;">
+      <div class="chip small" id="vlWeek" onclick="setVisitLogRange(7)">This week</div>
+      <div class="chip small on" id="vlMonth" onclick="setVisitLogRange(30)">This month</div>
+      <div class="chip small" id="vlQuarter" onclick="setVisitLogRange(90)">Quarter</div>
+      <div class="chip small" id="vlAll" onclick="setVisitLogRange(9999)">All time</div>
+    </div>
+    <input type="text" id="vlSearch" placeholder="🔍 Search clinic or notes..." oninput="renderVisitLog()" style="margin-bottom:12px;">
+    <div id="vlSummary"></div>
+    <div id="vlBody"></div>
+    <button class="btn secondary" onclick="copyVisitLog()">Copy log as text</button>
+    <button class="btn" onclick="closeModal()">Done</button>
+  `);
+  renderVisitLog();
+}
+function setVisitLogRange(days){
+  visitLogRange = days;
+  ['vlWeek','vlMonth','vlQuarter','vlAll'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.remove('on');
+  });
+  const map = {7:'vlWeek',30:'vlMonth',90:'vlQuarter',9999:'vlAll'};
+  const active = document.getElementById(map[days]);
+  if(active) active.classList.add('on');
+  renderVisitLog();
+}
+function visitLogRows(){
+  let rows = visibleVisits();
+  if(visitLogRange!==9999){
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-visitLogRange);
+    rows = rows.filter(v=>new Date(v.date+'T00:00:00') >= cutoff);
+  }
+  const q = (document.getElementById('vlSearch')?.value||'').toLowerCase().trim();
+  if(q){
+    rows = rows.filter(v=>{
+      const c = clinics.find(x=>x.id===v.clinicId);
+      return (c && c.name.toLowerCase().includes(q)) || (v.notes||'').toLowerCase().includes(q);
+    });
+  }
+  return rows.sort((a,b)=>b.date.localeCompare(a.date));
+}
+function renderVisitLog(){
+  const rows = visitLogRows();
+  const fieldVisits = rows.filter(isFieldVisit);
+  const orderOnly = rows.filter(v=>v.orderOnly);
+  const orders = rows.filter(v=>v.orderTaken);
+  const revenue = rows.reduce((s,v)=>s+(v.orderTotal||0),0);
+  const uniqueClinics = new Set(rows.map(v=>v.clinicId)).size;
+  document.getElementById('vlSummary').innerHTML = `
+    <div class="card" style="background:var(--teal-dim); margin-bottom:12px;">
+      <div class="row-between"><span style="font-size:13px;">Field visits</span><strong>${fieldVisits.length}</strong></div>
+      ${orderOnly.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Phone/remote orders</span><span>${orderOnly.length}</span></div>`:''}
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Revenue</span><span>${money(revenue)}</span></div>
+    </div>`;
+  const el = document.getElementById('vlBody');
+  if(rows.length===0){
+    el.innerHTML = `<div class="empty">No visits in this period.</div>`;
+    return;
+  }
+  let html = '', lastDate = '';
+  rows.forEach(v=>{
+    if(v.date !== lastDate){
+      lastDate = v.date;
+      const d = new Date(v.date+'T00:00:00');
+      html += `<div class="doc-group-head">${d.toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>`;
+    }
+    const c = clinics.find(x=>x.id===v.clinicId);
+    const prods = (v.products||[]).map(id=>{ const p=products.find(x=>x.id===id); return p?p.name:null; }).filter(Boolean);
+    const canEdit = currentUser.role==='supervisor' || v.rep===currentUser.name;
+    html += `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c?c.cls:null)};">
+      <div class="row-between">
+        <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
+          <div class="clinic-name">${esc(c?c.name:'Unknown clinic')}${v.orderOnly?' <span class="rep-tag">order only</span>':''}</div>
+          <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):'Visit only'}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}</div>
+          ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
+          ${v.notes?`<div style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
+        </div>
+        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-left:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+function copyVisitLog(){
+  const rows = visitLogRows();
+  const label = visitLogRange===7?'This week':visitLogRange===30?'This month':visitLogRange===90?'This quarter':'All time';
+  let text = `UltraMed Visit Log — ${label} — ${currentUser.role==='supervisor'?'Team':currentUser.name}\n\n`;
+  rows.forEach(v=>{
+    const c = clinics.find(x=>x.id===v.clinicId);
+    text += `${v.date} · ${c?c.name:'Unknown'}${v.orderTaken?' · '+money(v.orderTotal):''}${currentUser.role==='supervisor'?' · '+v.rep:''}\n`;
+    if(v.notes) text += `   ${v.notes}\n`;
+  });
+  text += `\nTotal: ${rows.length} visits · ${money(rows.reduce((s,v)=>s+(v.orderTotal||0),0))}`;
+  navigator.clipboard.writeText(text).then(()=>showToast('📋 Log copied')).catch(()=>showToast('Could not copy'));
+}
+
 function renderDoctorRows(c){
   if(!c.doctors.length) return `<div style="color:var(--muted); font-size:13px;">No doctors added yet.</div>`;
   return c.doctors.map(d=>{
@@ -1957,7 +3062,29 @@ async function addToPlan(clinicId){
   renderPlanList();
   showToast('Added to today\'s plan');
 }
-async function deleteClinic(id){ clinics = clinics.filter(c=>c.id!==id); await persist('clinics'); closeModal(); renderClinics(); showToast('Clinic removed'); }
+async function deleteClinic(id){
+  const c = clinics.find(x=>x.id===id);
+  if(!c) return;
+  const vCount = visits.filter(v=>v.clinicId===id).length;
+  showModal(`
+    <h3 style="margin-top:0;">Remove ${esc(c.name)}?</h3>
+    ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
+    <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
+    <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${id}')">Yes, remove</button>
+    <button class="btn secondary" onclick="openClinicDetail('${id}')">Cancel</button>
+  `);
+}
+async function confirmDeleteClinic(id){
+  const c = clinics.find(x=>x.id===id);
+  if(!c) return;
+  await moveToBin('clinics', c, c.name);
+  clinics = clinics.filter(x=>x.id!==id);
+  await persist('clinics');
+  closeModal();
+  renderAll();
+  if(document.getElementById('clinicList')) renderClinics();
+  showToast('Moved to recycle bin');
+}
 
 // ---- DOCTORS DIRECTORY ----
 function openDoctorsDirectory(){
@@ -2003,7 +3130,7 @@ function renderProducts(){
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
       <div class="brand-body ${open?'open':''}" id="brand-${slugify(b)}">
-        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${p.id}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -2092,6 +3219,12 @@ function openPlaybook(sp){
     <div class="section-title">Lead with these products</div>
     <div class="card">${pb.lead.map((x,i)=>`<div class="pb-item"><div class="pb-bullet">${i+1}</div><div>${esc(x)}</div></div>`).join('')}</div>
 
+    ${(()=>{ const tagged = products.filter(p=>(p.specialties||[]).includes(sp));
+      return tagged.length ? `<div class="section-title">From our catalog</div>
+        <div class="card">${tagged.map(p=>`<div class="qty-row" style="cursor:pointer;" onclick="closeModal(); openProductDetail('${esc(productKey(p))}')">
+          <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
+        </div>`).join('')}</div>` : ''; })()}
+
     <div class="section-title">Tips &amp; tricks</div>
     <div class="card">${pb.hooks.map(x=>`<div class="pb-item"><div class="pb-bullet">\u2713</div><div>${esc(x)}</div></div>`).join('')}</div>
 
@@ -2108,16 +3241,24 @@ function openPlaybook(sp){
 
 // ---- PRODUCT DETAIL ----
 function openProductDetail(pid){
-  const p = products.find(x=>x.id===pid);
+  const p = findProduct(pid);
   if(!p) return;
-  const timesDiscussed = visits.filter(v=>(v.products||[]).includes(pid)).length;
+  const keys = [pid, p.id, productKey(p)];
+  const timesDiscussed = visits.filter(v=>(v.products||[]).some(x=>keys.includes(x))).length;
   let unitsSold = 0, revenue = 0;
   visits.forEach(v=>(v.orders||[]).forEach(o=>o.items.forEach(it=>{
-    if(it.productId===pid){ unitsSold += it.qty; if(p.price!=null) revenue += p.price*it.qty*(1-(o.discountPct||0)/100); }
+    if(keys.includes(it.productId)){
+      unitsSold += it.qty;
+      const unit = it.unitPrice!=null ? it.unitPrice : (p.price!=null ? p.price : 0);
+      revenue += unit*it.qty*(1-(o.discountPct||0)/100);
+    }
   })));
   showModal(`
     ${p.img?`<img class="pbig" src="${p.img}" alt="" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
-    <h3 style="margin:0 0 4px;">${esc(p.name)}</h3>
+    <div class="row-between" style="margin:0 0 4px;">
+      <h3 style="margin:0;">${esc(p.name)}</h3>
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">✏️ Edit</button>`:''}
+    </div>
     <div style="color:var(--muted); font-size:13.5px; margin-bottom:16px;">${esc(p.brand||'')}</div>
 
     <div class="section-title" style="margin-top:0;">Technical data</div>
@@ -2134,12 +3275,19 @@ function openProductDetail(pid){
     ${p.desc?`<div class="section-title">Product description</div>
       <div class="card" style="font-size:13.5px; line-height:1.6;">${esc(p.desc)}</div>`:''}
 
+    ${(p.specialties&&p.specialties.length)?`<div class="section-title">Best fit for</div>
+      <div class="chip-row">${p.specialties.map(sp=>SPECIALTY_PLAYBOOK[sp]?`<div class="chip small" onclick="closeModal(); openPlaybook('${esc(sp)}')">${SPECIALTY_PLAYBOOK[sp].icon} ${esc(sp)}</div>`:'').join('')}</div>`:''}
+
     <div class="section-title">Sales notes &amp; materials</div>
     <div class="card">
-      <textarea id="pNotesEdit" placeholder="Key selling points, clinical claims, competitor comparison...">${esc(p.salesNotes||'')}</textarea>
-      <input type="text" id="pDocEdit" placeholder="Link to brochure / PDF / presentation" value="${esc(p.docUrl||'')}" style="margin-top:8px;">
-      <button class="btn secondary small" onclick="saveProductNotes('${p.id}')">Save</button>
-      ${p.docUrl?`<a href="${esc(p.docUrl)}" target="_blank" rel="noopener" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:8px;">📄 Open material</a>`:''}
+      ${currentUser.role==='supervisor' ? `
+        <textarea id="pNotesEdit" placeholder="Key selling points, clinical claims, competitor comparison...">${esc(p.salesNotes||'')}</textarea>
+        <input type="text" id="pDocEdit" placeholder="Link to brochure / PDF / presentation (https://...)" value="${esc(p.docUrl||'')}" style="margin-top:8px;">
+        <button class="btn secondary small" onclick="saveProductNotes('${esc(productKey(p))}')">Save</button>
+      ` : `
+        ${p.salesNotes?`<div style="font-size:13.5px; line-height:1.6; white-space:pre-wrap;">${esc(p.salesNotes)}</div>`:`<div style="color:var(--muted); font-size:13px;">No sales notes yet.</div>`}
+      `}
+      ${safeUrl(p.docUrl)?`<a href="${esc(safeUrl(p.docUrl))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:8px;">📄 Open material</a>`:''}
     </div>
 
     <div class="section-title">Your performance with this product</div>
@@ -2152,9 +3300,12 @@ function openProductDetail(pid){
 }
 
 async function saveProductNotes(pid){
-  const p = products.find(x=>x.id===pid); if(!p) return;
+  if(currentUser.role!=='supervisor'){ showToast('Only a supervisor can edit sales materials'); return; }
+  const p = findProduct(pid); if(!p) return;
+  const rawUrl = document.getElementById('pDocEdit').value.trim();
+  if(rawUrl && !safeUrl(rawUrl)){ showToast('Link must start with http:// or https://'); return; }
   p.salesNotes = document.getElementById('pNotesEdit').value.trim();
-  p.docUrl = document.getElementById('pDocEdit').value.trim();
+  p.docUrl = safeUrl(rawUrl);
   await persist('products');
   showToast('Saved');
 }
@@ -2164,6 +3315,7 @@ function setReportRange(days){
   reportRange = days;
   document.getElementById('repWeek').classList.toggle('on', days===7);
   document.getElementById('repMonth').classList.toggle('on', days===30);
+  document.getElementById('repQuarter').classList.toggle('on', days===90);
   document.getElementById('repAll').classList.toggle('on', days===9999);
   renderReports();
 }
@@ -2175,7 +3327,7 @@ function reportVisitsBase(){
 function renderReports(){
   let rv = reportVisitsBase();
   if(reportRepFilter !== 'all') rv = rv.filter(v=>v.rep===reportRepFilter);
-  document.getElementById('repVisits').textContent = rv.length;
+  document.getElementById('repVisits').textContent = rv.filter(isFieldVisit).length;
   document.getElementById('repOrders').textContent = rv.filter(v=>v.orderTaken).length;
   document.getElementById('repRevenue').textContent = money(rv.reduce((s,v)=>s+(v.orderTotal||0),0));
   document.getElementById('repDiscount').textContent = money(rv.reduce((s,v)=>s+(v.orderDiscount||0),0));
@@ -2667,7 +3819,7 @@ function renderCharts(){
   const wrap = document.getElementById('chartsWrap');
 
   // 1) revenue trend
-  const buckets = reportRange===9999?8:(reportRange===30?6:7);
+  const buckets = reportRange===9999?8:(reportRange===90?9:(reportRange===30?6:7));
   const spanDays = reportRange===9999?null:reportRange;
   const pts=[];
   if(spanDays){
@@ -2846,7 +3998,7 @@ async function addManualEmailTask(){
 
 // ---- PROFESSIONAL REPORT ----
 const BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
-function periodLabel(){ return reportRange===7?'This Week':reportRange===30?'This Month':'All Time'; }
+function periodLabel(){ return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time'; }
 function computeScoreForVisits(repName, visitList){
   const base = visitList.filter(v=>v.rep===repName);
   const assigned = clinics.filter(c=>c.rep===repName && c.cls!=='Closed');
@@ -3165,7 +4317,7 @@ async function restoreSnapshot(dateStr){
 function copyReport(){
   let rv = reportVisitsBase();
   if(reportRepFilter !== 'all') rv = rv.filter(v=>v.rep===reportRepFilter);
-  const rangeLabel = reportRange===7?'This week':reportRange===30?'This month':'All time';
+  const rangeLabel = reportRange===7?'This week':reportRange===30?'This month':reportRange===90?'This quarter':'All time';
   let text = `UltraMed Visit Report — ${rangeLabel}${reportRepFilter!=='all' ? ' — '+reportRepFilter : ' — Team'}\n`;
   text += `Visits logged: ${rv.length}\n`;
   text += `Orders taken: ${rv.filter(v=>v.orderTaken).length}\n`;
@@ -3193,6 +4345,7 @@ if(FIREBASE_ENABLED){
   // without a full realtime-listener rewrite of every render call.
   setInterval(()=>{ if(currentUser && document.visibilityState==='visible') loadAll(); }, 20000);
 }
+renderGate();
 tryAutoLogin();
 </script>
 </body>
