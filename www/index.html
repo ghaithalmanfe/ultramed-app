@@ -1231,7 +1231,7 @@ function switchView(name){
   if(name==='clinics') setClinicMode(clinicMode);
   if(name==='products') renderProducts();
   if(name==='playbook') renderPlaybookGrid();
-  if(name==='team'){ setTeamTab(teamTab); }
+  if(name==='team'){ setTeamTab(teamTab); loadTeam().then(()=>{ if(teamTab==='mem') renderMemories(); else renderChat(); }); }
   if(name==='reports') renderReports();
 }
 
@@ -3625,7 +3625,15 @@ function pickImage(cb, useCamera){
     if(!f) return;
     showToast('\u{1F5BC} Processing photo...');
     try{
-      const full = await compressImage(f, PHOTO_MAX, 0.72);
+      // Firestore caps a document at 1MB; base64 adds ~33% over the binary
+      // size, so keep re-compressing smaller/lower-quality until it clears
+      // a safe margin instead of only discovering the failure on save.
+      const attempts = [[PHOTO_MAX,0.72],[700,0.6],[500,0.5],[380,0.4]];
+      let full;
+      for(const [edge,q] of attempts){
+        full = await compressImage(f, edge, q);
+        if(full.length < 700000) break;
+      }
       const thumb = await compressImage(f, THUMB_MAX, 0.6);
       cb({full, thumb});
     }catch(e){ console.error(e); showToast('Could not read that image'); }
@@ -4600,7 +4608,12 @@ if('serviceWorker' in navigator){
 if(FIREBASE_ENABLED){
   // Poll for changes made by other reps/devices so data stays reasonably fresh
   // without a full realtime-listener rewrite of every render call.
-  setInterval(()=>{ if(currentUser && document.visibilityState==='visible') loadAll(); }, 20000);
+  setInterval(async ()=>{
+    if(currentUser && document.visibilityState==='visible'){
+      await loadAll();
+      if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
+    }
+  }, 20000);
 }
 renderGate();
 tryAutoLogin();
