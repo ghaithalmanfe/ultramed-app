@@ -161,7 +161,7 @@
         planned.push({ rep, clinicId: entry.id, note: entry.note || '' });
       });
     });
-    const visits = (data.visits || []).filter(v => v.date === dateStr && wantRep(v.rep));
+    const visits = (data.visits || []).filter(v => v.date === dateStr && (wantRep(v.rep) || wantRep(v.withRep)));
     const followUps = (data.clinics || []).filter(c =>
       c.nextFollowUp === dateStr && c.cls !== 'Closed' && wantRep(c.rep));
     const tasks = (data.tasks || []).filter(t =>
@@ -232,6 +232,30 @@
     if(!prev) return cur > 0 ? 100 : 0;
     return Math.round((cur - prev) / prev * 100);
   }
+  // Planned visits whose day has passed with no matching visit logged by that
+  // rep at that clinic on that day. Looks back `daysBack` days (default 14).
+  // Returns [{date, rep, clinicId, note}], oldest first.
+  function missedPlans(dayPlans, visits, today, opts){
+    const daysBack = (opts && opts.daysBack) || 14;
+    const floor = new Date(today + 'T00:00:00');
+    floor.setDate(floor.getDate() - daysBack);
+    const floorStr = localDateStr(floor);
+    const visited = new Set((visits || []).map(v => v.date + '|' + v.rep + '|' + v.clinicId));
+    const out = [];
+    Object.keys(dayPlans || {}).forEach(d => {
+      if(d >= today || d < floorStr) return;
+      const dayObj = dayPlans[d];
+      Object.keys(dayObj || {}).forEach(rep => {
+        (dayObj[rep] || []).forEach(e => {
+          const clinicId = typeof e === 'string' ? e : e.id;
+          const note = typeof e === 'string' ? '' : (e.note || '');
+          if(!visited.has(d + '|' + rep + '|' + clinicId)) out.push({ date: d, rep, clinicId, note });
+        });
+      });
+    });
+    return out.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  }
+
   // Priority clinics that haven't seen any activity for `days`+ days (or ever).
   // Never-visited clinics rank first, then longest-quiet first.
   function dormantClinics(clinics, visits, today, opts){
@@ -256,6 +280,6 @@
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
-    inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics
+    inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans
   };
 });
