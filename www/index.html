@@ -780,6 +780,7 @@
 
 <div id="toast"></div>
 
+<script src="js/core.js"></script>
 <script>
 // ---- STORAGE BACKEND ----
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
@@ -975,18 +976,19 @@ let logAsRep = null;
 let currentUser = null;
 let recycleBin = {clinics:[], products:[], visits:[]};
 
-function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
-function fmtDate(d){ const dt = new Date(d + 'T00:00:00'); return dt.toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
-function daysBetween(a,b){ return Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000); }
+// Shared pure helpers live in js/core.js (UMCore) so automated tests can
+// exercise them; these thin wrappers keep the existing call sites working.
+function uid(){ return UMCore.uid(); }
+function todayStr(){ return UMCore.todayStr(); }
+function fmtDate(d){ return UMCore.fmtDate(d); }
+function daysBetween(a,b){ return UMCore.daysBetween(a,b); }
 const SAVE_MSGS = ['\u2705 Visit logged \u2014 momentum','\u{1F4AA} Logged. Onto the next one','\u{1F525} Another one in the books','\u2728 Saved \u2014 consistency wins','\u{1F680} Logged. Keep rolling','\u{1F3AF} Visit captured \u2014 nice work'];
 function visitSavedMsg(){ return SAVE_MSGS[Math.floor(Math.random()*SAVE_MSGS.length)]; }
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1800); }
-function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-// Only http(s) links are ever rendered as href — blocks javascript:/data: URI injection via saved fields.
-function safeUrl(u){ u=(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
-function initials(n){ return n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
-function money(n){ return (n||0).toFixed(2)+' KD'; }
+function esc(s){ return UMCore.esc(s); }
+function safeUrl(u){ return UMCore.safeUrl(u); }
+function initials(n){ return UMCore.initials(n); }
+function money(n){ return UMCore.money(n); }
 
 // ---- GATE / USER ----
 async function selectUser(name, role){
@@ -1178,15 +1180,20 @@ async function loadAll(){
       window.storage.get('recycleBin', true).catch(()=>null),
       window.storage.get('benchmarks', true).catch(()=>null),
     ]);
-    clinics = (c ? JSON.parse(c.value) : CLINICS_SEED.map(x=>({...x}))).map(normalizeClinic);
-    products = p ? JSON.parse(p.value) : PRODUCTS_SEED;
+    // Each key parses independently: one corrupt entry falls back alone instead
+    // of throwing and resetting every collection to seed data.
+    clinics = (UMCore.safeParse(c && c.value, null) || CLINICS_SEED.map(x=>({...x}))).map(normalizeClinic);
+    products = UMCore.safeParse(p && p.value, null) || PRODUCTS_SEED;
     assignProductKeys();
-    visits = v ? JSON.parse(v.value) : [];
-    tasks = t ? JSON.parse(t.value) : [];
-    dayPlans = dp ? JSON.parse(dp.value) : {};
-    if(st){ staff = JSON.parse(st.value); refreshStaff(); }
-    if(rb){ recycleBin = Object.assign({clinics:[],products:[],visits:[]}, JSON.parse(rb.value)); }
-    if(bm){ BENCHMARKS = Object.assign({}, BENCHMARKS, JSON.parse(bm.value)); }
+    visits = UMCore.safeParse(v && v.value, []);
+    tasks = UMCore.safeParse(t && t.value, []);
+    dayPlans = UMCore.safeParse(dp && dp.value, {});
+    const stVal = UMCore.safeParse(st && st.value, null);
+    if(stVal){ staff = stVal; refreshStaff(); }
+    const rbVal = UMCore.safeParse(rb && rb.value, null);
+    if(rbVal){ recycleBin = Object.assign({clinics:[],products:[],visits:[]}, rbVal); }
+    const bmVal = UMCore.safeParse(bm && bm.value, null);
+    if(bmVal){ BENCHMARKS = Object.assign({}, BENCHMARKS, bmVal); }
     await loadTeam();
     if(!c) await persist('clinics');
     if(!p) await persist('products');
@@ -1236,13 +1243,7 @@ function switchView(name){
   if(name==='reports') renderReports();
 }
 
-function followStatus(dateStr){
-  if(!dateStr) return 'none';
-  const diff = daysBetween(todayStr(), dateStr);
-  if(diff < 0) return 'overdue';
-  if(diff === 0) return 'today';
-  return 'upcoming';
-}
+function followStatus(dateStr){ return UMCore.followStatus(dateStr, todayStr()); }
 function statusLabel(dateStr){
   const s = followStatus(dateStr);
   if(s==='none') return 'No follow-up set';
@@ -1479,24 +1480,9 @@ async function togglePlanClinic(id){
 let planViewMode = 'week';
 let planViewAnchor = todayStr();
 let planViewRep = null;
-function localDateStr(d){
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-}
-function getWeekDates(anchor){
-  const d = new Date(anchor+'T00:00:00');
-  const start = new Date(d); start.setDate(d.getDate()-d.getDay());
-  const dates = [];
-  for(let i=0;i<7;i++){ const x=new Date(start); x.setDate(start.getDate()+i); dates.push(localDateStr(x)); }
-  return dates;
-}
-function getMonthDates(anchor){
-  const d = new Date(anchor+'T00:00:00');
-  const year = d.getFullYear(), month = d.getMonth();
-  const lastDay = new Date(year, month+1, 0).getDate();
-  const dates = [];
-  for(let i=1;i<=lastDay;i++){ dates.push(localDateStr(new Date(year, month, i))); }
-  return dates;
-}
+function localDateStr(d){ return UMCore.localDateStr(d); }
+function getWeekDates(anchor){ return UMCore.getWeekDates(anchor); }
+function getMonthDates(anchor){ return UMCore.getMonthDates(anchor); }
 function openWeekMonthPlan(){
   planViewMode = 'week';
   planViewAnchor = todayStr();
@@ -1844,19 +1830,8 @@ function removeDraftOrder(oid){
   if(draftOrders.length===0) draftOrders = [newDraftOrder()];
   renderOrders();
 }
-function orderGross(o){
-  let g = 0;
-  Object.keys(o.qty).forEach(pid=>{
-    const p = products.find(x=>x.id===pid);
-    const q = o.qty[pid]||0;
-    if(p && p.price!=null) g += p.price*q;
-  });
-  return g;
-}
-function orderNet(o){
-  const g = orderGross(o);
-  return Math.round(g*(1-(o.discountPct||0)/100)*100)/100;
-}
+function orderGross(o){ return UMCore.orderGross(o, products); }
+function orderNet(o){ return UMCore.orderNet(o, products); }
 function renderOrders(){
   const wrap = document.getElementById('ordersContainer');
   if(selectedProducts.length===0){
@@ -1951,7 +1926,7 @@ function updateOrderTotalDisplay(){
 function pickQuickDate(days){
   document.querySelectorAll('#quickDates button').forEach(b=>b.classList.toggle('on', parseInt(b.dataset.days)===days));
   const d = new Date(); d.setDate(d.getDate()+days);
-  document.getElementById('followUpDate').value = d.toISOString().slice(0,10);
+  document.getElementById('followUpDate').value = localDateStr(d);
 }
 
 async function saveVisit(){
@@ -2735,15 +2710,7 @@ function setSoDiscount(el, d){
   el.classList.add('on');
   renderSoTotal();
 }
-function soTotals(){
-  let gross = 0;
-  Object.keys(soItems).forEach(id=>{
-    const p = findProduct(id);
-    if(p && p.price!=null) gross += p.price*soItems[id];
-  });
-  const net = gross*(1-soDiscount/100);
-  return {gross:Math.round(gross*100)/100, disc:Math.round((gross-net)*100)/100, net:Math.round(net*100)/100};
-}
+function soTotals(){ return UMCore.orderTotals(soItems, soDiscount, products); }
 function renderSoTotal(){
   const el = document.getElementById('soTotal');
   if(!el) return;
@@ -3495,7 +3462,7 @@ function imgFallback(el){
   d.textContent = el.dataset.fbl;
   if(el.parentNode) el.parentNode.replaceChild(d, el);
 }
-function slugify(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-'); }
+function slugify(s){ return UMCore.slugify(s); }
 function toggleBrand(b){ if(openBrands.has(b)) openBrands.delete(b); else openBrands.add(b); renderProducts(); }
 function openAddProduct(){
   showModal(`
@@ -4011,16 +3978,7 @@ function dismissWelcome(){ welcomeDismissed = true; renderWelcome(); }
 
 // --- streak: consecutive days with at least one logged visit ---
 function calcStreak(rep){
-  const days = new Set(visits.filter(v=>v.rep===rep).map(v=>v.date));
-  if(!days.size) return 0;
-  let streak=0; const d=new Date();
-  for(let i=0;i<365;i++){
-    const key=d.toISOString().slice(0,10);
-    if(days.has(key)){ streak++; }
-    else if(i>0 || !days.has(key)){ if(i===0){ d.setDate(d.getDate()-1); continue; } break; }
-    d.setDate(d.getDate()-1);
-  }
-  return streak;
+  return UMCore.calcStreak(visits.filter(v=>v.rep===rep).map(v=>v.date), todayStr());
 }
 function renderStreak(){
   const el = document.getElementById('streakCard');
@@ -4236,27 +4194,7 @@ function renderCharts(){
 
 // ---- EVALUATION SCORECARDS ----
 function computeRepScore(repName){
-  const base = reportVisitsBase().filter(v=>v.rep===repName);
-  const assigned = clinics.filter(c=>c.rep===repName && c.cls!=='Closed');
-  const priorityAssigned = assigned.filter(c=>c.cls==='A'||c.cls==='B');
-  const coveredIds = new Set(base.map(v=>v.clinicId));
-  const priorityIds = new Set(priorityAssigned.map(c=>c.id));
-  const priorityCovered = [...coveredIds].filter(id=>priorityIds.has(id)).length;
-  const orders = base.filter(v=>v.orderTaken).length;
-  const revenue = base.reduce((s,v)=>s+(v.orderTotal||0),0);
-  const overdue = clinics.filter(c=>c.rep===repName && c.cls!=='Closed' && followStatus(c.nextFollowUp)==='overdue').length;
-  const repTasks = tasks.filter(t=>t.rep===repName);
-  const tasksDone = repTasks.filter(t=>t.done).length;
-  return {
-    rep: repName, visits: base.length, orders, revenue,
-    conversion: base.length ? Math.round(orders/base.length*100) : 0,
-    assignedCount: assigned.length, covered: coveredIds.size,
-    coveragePct: assigned.length ? Math.round(coveredIds.size/assigned.length*100) : 0,
-    priorityAssignedCount: priorityAssigned.length, priorityCovered,
-    priorityPct: priorityAssigned.length ? Math.round(priorityCovered/priorityAssigned.length*100) : 0,
-    overdue, tasksTotal: repTasks.length, tasksDone,
-    taskPct: repTasks.length ? Math.round(tasksDone/repTasks.length*100) : 0
-  };
+  return UMCore.computeRepScore(repName, {visits: reportVisitsBase(), clinics, tasks, today: todayStr()});
 }
 function renderScorecards(){
   const wrap = document.getElementById('scorecards');
@@ -4394,24 +4332,7 @@ async function addManualEmailTask(){
 // ---- PROFESSIONAL REPORT ----
 let BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
 function periodLabel(){ return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time'; }
-function computeScoreForVisits(repName, visitList){
-  const base = visitList.filter(v=>v.rep===repName);
-  const assigned = clinics.filter(c=>c.rep===repName && c.cls!=='Closed');
-  const priorityAssigned = assigned.filter(c=>c.cls==='A'||c.cls==='B');
-  const coveredIds = new Set(base.map(v=>v.clinicId));
-  const priorityIds = new Set(priorityAssigned.map(c=>c.id));
-  const priorityCovered = [...coveredIds].filter(id=>priorityIds.has(id)).length;
-  const orders = base.filter(v=>v.orderTaken).length;
-  const revenue = base.reduce((s,v)=>s+(v.orderTotal||0),0);
-  return {
-    visits: base.length, orders, revenue,
-    conversion: base.length ? Math.round(orders/base.length*100) : 0,
-    assignedCount: assigned.length, covered: coveredIds.size,
-    coveragePct: assigned.length ? Math.round(coveredIds.size/assigned.length*100) : 0,
-    priorityAssignedCount: priorityAssigned.length, priorityCovered,
-    priorityPct: priorityAssigned.length ? Math.round(priorityCovered/priorityAssigned.length*100) : 0,
-  };
-}
+function computeScoreForVisits(repName, visitList){ return UMCore.computeScoreForVisits(repName, visitList, clinics); }
 function computePrevPeriodScore(repName){
   if(reportRange===9999) return null;
   const now = new Date();
@@ -4546,12 +4467,7 @@ function hideProReport(){
 }
 
 
-function csvEscape(v){
-  if(v===null||v===undefined) return '';
-  const s = String(v);
-  if(s.includes(',')||s.includes('"')||s.includes('\n')) return '"'+s.replace(/"/g,'""')+'"';
-  return s;
-}
+function csvEscape(v){ return UMCore.csvEscape(v); }
 function buildVisitsCSV(){
   const rows = [['Date','Rep','Clinic','Class','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
   [...visits].sort((a,b)=>a.date.localeCompare(b.date)).forEach(v=>{
