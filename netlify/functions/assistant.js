@@ -2,7 +2,8 @@
 // Keeps the Anthropic API key server-side: the app POSTs the conversation plus
 // a snapshot of its own data, and this function relays it to Claude.
 // Requires the ANTHROPIC_API_KEY environment variable (Netlify site settings).
-const Anthropic = require('@anthropic-ai/sdk');
+// Deliberately dependency-free (global fetch, Node 18+) so the Netlify build
+// needs no package installation to bundle it.
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -44,20 +45,32 @@ exports.handler = async (event) => {
   }
 
   const context = JSON.stringify(payload.context || {}).slice(0, 60000);
-  const client = new Anthropic();
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-opus-5',
-      max_tokens: 1000,
-      output_config: { effort: 'low' },
-      system: SYSTEM + '\n\nLive app data (JSON):\n' + context,
-      messages,
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-5',
+        max_tokens: 1000,
+        output_config: { effort: 'low' },
+        system: SYSTEM + '\n\nLive app data (JSON):\n' + context,
+        messages,
+      }),
     });
-    if (response.stop_reason === 'refusal') {
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) {
+      const detail = data && data.error && data.error.message ? data.error.message.slice(0, 200) : 'HTTP ' + res.status;
+      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: 'UPSTREAM', detail }) };
+    }
+    if (data.stop_reason === 'refusal') {
       return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify({ reply: "Sorry — I can't help with that request." }) };
     }
-    const reply = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    const reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
     return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: JSON.stringify({ reply }) };
   } catch (e) {
     return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: 'UPSTREAM', detail: String((e && e.message) || e).slice(0, 200) }) };
