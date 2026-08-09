@@ -729,6 +729,23 @@
     </div>
     <div class="section-title" style="margin-top:18px;" id="calAgendaTitle">Selected day</div>
     <div id="calAgenda"></div>
+
+    <div class="section-title" style="margin-top:20px;">Insights for any date range</div>
+    <div class="card">
+      <p style="color:var(--muted); font-size:12.5px; margin:0 0 8px;">Pick two dates to see everything that happened (and is planned) in between.</p>
+      <div class="chip-row" style="margin-bottom:8px;">
+        <div class="chip small" onclick="calRangePreset('week')">This week</div>
+        <div class="chip small" onclick="calRangePreset('month')">This month</div>
+        <div class="chip small" onclick="calRangePreset('lastmonth')">Last month</div>
+        <div class="chip small" onclick="calRangePreset('next7')">Next 7 days</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="calFrom"></div>
+        <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="calTo"></div>
+      </div>
+      <button class="btn" style="margin-top:10px; padding:11px;" onclick="renderCalRangeSummary()">Show insights</button>
+      <div id="calRangeResult" style="margin-top:4px;"></div>
+    </div>
   </div>
 
   <div class="view" id="view-playbook">
@@ -746,6 +763,14 @@
       <div class="chip" id="repMonth" onclick="setReportRange(30)">This month</div>
       <div class="chip" id="repQuarter" onclick="setReportRange(90)">This quarter</div>
       <div class="chip" id="repAll" onclick="setReportRange(9999)">All time</div>
+      <div class="chip" id="repCustom" onclick="toggleReportCustom()">📅 Pick dates</div>
+    </div>
+    <div id="repCustomRow" style="display:none; margin-bottom:16px;" class="card">
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="repFrom"></div>
+        <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="repTo"></div>
+      </div>
+      <button class="btn" style="margin-top:10px; padding:11px;" onclick="applyReportCustomRange()">Show this period</button>
     </div>
     <div class="card">
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
@@ -1022,6 +1047,7 @@ let selectedProducts = [];
 let draftOrders = [];
 let orderTaken = false;
 let reportRange = 7;
+let reportCustom = null; // {from, to} when a custom date range is active
 let clinicRepFilter = 'mine';
 let reportRepFilter = 'mine';
 let logAsRep = null;
@@ -1434,6 +1460,61 @@ function renderCalAgenda(){
       </div>
       ${rows.join('') || `<div style="color:var(--muted); font-size:13px; text-align:center; padding:8px 0 2px;">Nothing scheduled this day yet.</div>`}
     </div>`;
+}
+function calRangePreset(kind){
+  const today = todayStr();
+  let from, to;
+  if(kind==='week'){ const w = getWeekDates(today); from = w[0]; to = w[6]; }
+  else if(kind==='month'){ const m = getMonthDates(today); from = m[0]; to = m[m.length-1]; }
+  else if(kind==='lastmonth'){
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1);
+    const m = getMonthDates(localDateStr(d)); from = m[0]; to = m[m.length-1];
+  }
+  else{ // next7
+    from = today;
+    const d = new Date(); d.setDate(d.getDate()+6); to = localDateStr(d);
+  }
+  document.getElementById('calFrom').value = from;
+  document.getElementById('calTo').value = to;
+  renderCalRangeSummary();
+}
+function renderCalRangeSummary(){
+  const from = document.getElementById('calFrom').value;
+  const to = document.getElementById('calTo').value;
+  const el = document.getElementById('calRangeResult');
+  if(!from || !to){ showToast('Pick both dates'); return; }
+  if(from > to){ showToast('"From" must be before "To"'); return; }
+  const s = UMCore.rangeSummary(from, to, calRepFilter, {visits, clinics, tasks, events, dayPlans});
+  const tile = (n, l) => `<div style="background:var(--paper); border-radius:10px; padding:10px 6px; text-align:center;">
+    <div style="font-size:19px; font-weight:800; color:var(--green);">${n}</div>
+    <div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${l}</div></div>`;
+  const repRows = (calRepFilter==='all' && s.perRep.length>1)
+    ? `<div style="margin-top:10px;">${s.perRep.map(r=>`
+        <div class="row-between" style="font-size:12.5px; padding:5px 0; border-bottom:1px solid var(--line);">
+          <span style="font-weight:600;">${esc(r.rep)}</span>
+          <span style="color:var(--muted);">${r.visits} visit${r.visits===1?'':'s'} · ${r.orders} order${r.orders===1?'':'s'} · ${money(r.revenue)}</span>
+        </div>`).join('')}</div>`
+    : '';
+  el.innerHTML = `
+    <div style="font-weight:700; font-size:13px; margin:10px 0 8px;">${fmtDate(from)} – ${fmtDate(to)}${calRepFilter!=='all' ? ' · '+esc(calRepFilter) : ' · Whole team'}</div>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+      ${tile(s.fieldVisits, 'Visits')}
+      ${tile(s.orders, 'Orders')}
+      ${tile(money(s.revenue), 'Revenue')}
+      ${tile(s.conversion+'%', 'Conversion')}
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:6px;">
+      ${tile(s.clinicsCovered, 'Clinics covered')}
+      ${tile(s.calls, 'Calls')}
+      ${tile(s.planned, 'Planned visits')}
+      ${tile(s.events, 'Events')}
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-top:6px;">
+      ${tile(s.followUpsDue, 'Follow-ups due in range')}
+      ${tile(s.tasksDue, 'Open tasks due in range')}
+    </div>
+    ${repRows}
+    <button class="btn secondary" style="margin-top:12px; padding:11px;" onclick="openReportForRange('${from}','${to}')">Open this period in Report →</button>`;
 }
 async function calDoneTask(id){
   const t = tasks.find(x=>x.id===id);
@@ -3890,13 +3971,46 @@ async function saveProductNotes(pid){
 // ---- REPORTS ----
 function setReportRange(days){
   reportRange = days;
+  reportCustom = null;
+  document.getElementById('repCustomRow').style.display = 'none';
   document.getElementById('repWeek').classList.toggle('on', days===7);
   document.getElementById('repMonth').classList.toggle('on', days===30);
   document.getElementById('repQuarter').classList.toggle('on', days===90);
   document.getElementById('repAll').classList.toggle('on', days===9999);
+  document.getElementById('repCustom').classList.remove('on');
   renderReports();
 }
+function toggleReportCustom(){
+  const row = document.getElementById('repCustomRow');
+  const show = row.style.display === 'none';
+  row.style.display = show ? 'block' : 'none';
+  if(show && !document.getElementById('repFrom').value){
+    const d = new Date(); d.setDate(d.getDate()-30);
+    document.getElementById('repFrom').value = localDateStr(d);
+    document.getElementById('repTo').value = todayStr();
+  }
+}
+function applyReportCustomRange(){
+  const from = document.getElementById('repFrom').value;
+  const to = document.getElementById('repTo').value;
+  if(!from || !to){ showToast('Pick both dates'); return; }
+  if(from > to){ showToast('"From" must be before "To"'); return; }
+  reportCustom = {from, to};
+  ['repWeek','repMonth','repQuarter','repAll'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  document.getElementById('repCustom').classList.add('on');
+  renderReports();
+  showToast(`Showing ${fmtDate(from)} – ${fmtDate(to)}`);
+}
+// Called from the calendar's range summary: jump to Reports pre-filtered to the same dates.
+function openReportForRange(from, to){
+  document.getElementById('repFrom').value = from;
+  document.getElementById('repTo').value = to;
+  document.getElementById('repCustomRow').style.display = 'block';
+  switchView('reports');
+  applyReportCustomRange();
+}
 function reportVisitsBase(){
+  if(reportCustom) return UMCore.filterVisitsByRange(visits, reportCustom.from, reportCustom.to);
   if(reportRange===9999) return visits;
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-reportRange);
   return visits.filter(v=>new Date(v.date) >= cutoff);
@@ -4409,14 +4523,16 @@ function renderCharts(){
   if(reportRepFilter!=='all') rv = rv.filter(v=>v.rep===reportRepFilter);
   const wrap = document.getElementById('chartsWrap');
 
-  // 1) revenue trend
-  const buckets = reportRange===9999?8:(reportRange===90?9:(reportRange===30?6:7));
-  const spanDays = reportRange===9999?null:reportRange;
+  // 1) revenue trend — buckets anchor on "now", or on the custom range's end date
+  const customSpan = reportCustom ? daysBetween(reportCustom.from, reportCustom.to)+1 : null;
+  const buckets = reportCustom ? Math.max(4, Math.min(9, customSpan)) : (reportRange===9999?8:(reportRange===90?9:(reportRange===30?6:7)));
+  const spanDays = reportCustom ? customSpan : (reportRange===9999?null:reportRange);
+  const anchor = reportCustom ? new Date(reportCustom.to+'T00:00:00') : new Date();
   const pts=[];
   if(spanDays){
     const per = spanDays/buckets;
     for(let i=0;i<buckets;i++){
-      const end=new Date(); end.setDate(end.getDate()-Math.round(per*(buckets-1-i)));
+      const end=new Date(anchor); end.setDate(end.getDate()-Math.round(per*(buckets-1-i)));
       const start=new Date(end); start.setDate(start.getDate()-Math.round(per)+1);
       const vs=rv.filter(v=>{const d=new Date(v.date); return d>=start&&d<=end;});
       pts.push({l:end.toLocaleDateString('en-US',{month:'short',day:'numeric'}), v:vs.reduce((a,v)=>a+(v.orderTotal||0),0), t:''});
@@ -4602,9 +4718,20 @@ async function addManualEmailTask(){
 
 // ---- PROFESSIONAL REPORT ----
 let BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
-function periodLabel(){ return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time'; }
+function periodLabel(){
+  if(reportCustom) return `${fmtDate(reportCustom.from)} – ${fmtDate(reportCustom.to)}`;
+  return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time';
+}
 function computeScoreForVisits(repName, visitList){ return UMCore.computeScoreForVisits(repName, visitList, clinics); }
 function computePrevPeriodScore(repName){
+  if(reportCustom){
+    // Compare against the window of the same length immediately before "from".
+    const len = daysBetween(reportCustom.from, reportCustom.to) + 1;
+    const prevEnd = new Date(reportCustom.from+'T00:00:00'); prevEnd.setDate(prevEnd.getDate()-1);
+    const prevStart = new Date(prevEnd); prevStart.setDate(prevStart.getDate()-len+1);
+    const prevVisits = UMCore.filterVisitsByRange(visits, localDateStr(prevStart), localDateStr(prevEnd));
+    return computeScoreForVisits(repName, prevVisits);
+  }
   if(reportRange===9999) return null;
   const now = new Date();
   const curStart = new Date(); curStart.setDate(now.getDate()-reportRange);
@@ -4739,9 +4866,10 @@ function hideProReport(){
 
 
 function csvEscape(v){ return UMCore.csvEscape(v); }
-function buildVisitsCSV(){
+function buildVisitsCSV(range){
   const rows = [['Date','Rep','Clinic','Class','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
-  [...visits].sort((a,b)=>a.date.localeCompare(b.date)).forEach(v=>{
+  const list = range ? UMCore.filterVisitsByRange(visits, range.from, range.to) : visits;
+  [...list].sort((a,b)=>a.date.localeCompare(b.date)).forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
     const prodNames = (v.products||[]).map(pid=>{ const p=products.find(x=>x.id===pid); return p?p.name:''; }).filter(Boolean).join('; ');
     const orders = v.orders||[];
@@ -4764,15 +4892,19 @@ function buildClinicsCSV(){
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
-function buildTasksCSV(){
-  const rows = [['Task','Rep','Status','Created']];
-  tasks.forEach(t=>{ rows.push([t.text, t.rep||'', t.done?'Done':'Open', t.created||'']); });
+function buildTasksCSV(range){
+  const rows = [['Task','Rep','Status','Created','Due']];
+  let list = tasks;
+  if(range) list = tasks.filter(t=>UMCore.inRange(t.created, range.from, range.to) || UMCore.inRange(t.dueDate, range.from, range.to));
+  list.forEach(t=>{ rows.push([t.text, t.rep||'', t.done?'Done':'Open', t.created||'', t.dueDate||'']); });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
-function buildScorecardCSV(){
+function buildScorecardCSV(range){
   const rows = [['Rep','Visits','Orders','Revenue (KD)','Conversion %','Clinics Covered','Assigned Clinics','Coverage %','Priority Covered','Priority Assigned','Priority Coverage %','Overdue Follow-ups','Tasks Done','Tasks Total']];
   REPS.forEach(r=>{
-    const s = computeRepScore(r);
+    const s = range
+      ? UMCore.computeRepScore(r, {visits: UMCore.filterVisitsByRange(visits, range.from, range.to), clinics, tasks, today: todayStr()})
+      : computeRepScore(r);
     rows.push([s.rep, s.visits, s.orders, s.revenue.toFixed(2), s.conversion, s.covered, s.assignedCount, s.coveragePct, s.priorityCovered, s.priorityAssignedCount, s.priorityPct, s.overdue, s.tasksDone, s.tasksTotal]);
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
@@ -4795,16 +4927,50 @@ function tryDownload(filename, content){
     return true;
   }catch(e){ console.error('download failed', e); return false; }
 }
+function exportRange(){
+  const from = document.getElementById('expFrom')?.value || '';
+  const to = document.getElementById('expTo')?.value || '';
+  if(!from && !to) return null;
+  return {from: from || null, to: to || null};
+}
+function exportSuffix(){
+  const r = exportRange();
+  return r ? `-${r.from||'start'}-to-${r.to||'today'}` : '';
+}
+function setExportPreset(days){
+  const to = todayStr();
+  if(days===0){ document.getElementById('expFrom').value=''; document.getElementById('expTo').value=''; }
+  else{
+    const d = new Date(); d.setDate(d.getDate()-days+1);
+    document.getElementById('expFrom').value = localDateStr(d);
+    document.getElementById('expTo').value = to;
+  }
+}
 function openExport(){
   showModal(`
     <h3 style="margin-top:0;">Export &amp; backups</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Downloads as CSV for Excel/Sheets or email. If a download doesn't start, use "Copy instead."</p>
 
+    <div class="card" style="margin-bottom:14px;">
+      <div style="font-weight:700; font-size:13.5px; margin-bottom:6px;">📅 Date range for exports</div>
+      <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Applies to Visits, Scorecard and Tasks. Leave empty to export everything.</p>
+      <div class="chip-row" style="margin-bottom:8px;">
+        <div class="chip small" onclick="setExportPreset(7)">Last 7 days</div>
+        <div class="chip small" onclick="setExportPreset(30)">Last 30 days</div>
+        <div class="chip small" onclick="setExportPreset(90)">Last 90 days</div>
+        <div class="chip small" onclick="setExportPreset(0)">Everything</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="expFrom"></div>
+        <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="expTo"></div>
+      </div>
+    </div>
+
     <div class="export-section">
       <h4>Visits (full log, with order values)</h4>
       <div class="export-actions">
-        <button class="btn secondary" onclick="tryDownload('ultramed-visits.csv', buildVisitsCSV()); showToast('Downloading visits.csv')">Download CSV</button>
-        <button class="btn secondary" onclick="showExportText('visitsExportText', buildVisitsCSV())">Copy instead</button>
+        <button class="btn secondary" onclick="tryDownload('ultramed-visits'+exportSuffix()+'.csv', buildVisitsCSV(exportRange())); showToast('Downloading visits CSV')">Download CSV</button>
+        <button class="btn secondary" onclick="showExportText('visitsExportText', buildVisitsCSV(exportRange()))">Copy instead</button>
       </div>
       <textarea class="export-textarea" id="visitsExportText" readonly></textarea>
     </div>
@@ -4830,8 +4996,8 @@ function openExport(){
     <div class="export-section">
       <h4>Performance scorecard</h4>
       <div class="export-actions">
-        <button class="btn secondary" onclick="tryDownload('ultramed-scorecard.csv', buildScorecardCSV()); showToast('Downloading scorecard.csv')">Download CSV</button>
-        <button class="btn secondary" onclick="showExportText('scoreExportText', buildScorecardCSV())">Copy instead</button>
+        <button class="btn secondary" onclick="tryDownload('ultramed-scorecard'+exportSuffix()+'.csv', buildScorecardCSV(exportRange())); showToast('Downloading scorecard CSV')">Download CSV</button>
+        <button class="btn secondary" onclick="showExportText('scoreExportText', buildScorecardCSV(exportRange()))">Copy instead</button>
       </div>
       <textarea class="export-textarea" id="scoreExportText" readonly></textarea>
     </div>
@@ -4839,8 +5005,8 @@ function openExport(){
     <div class="export-section">
       <h4>Tasks</h4>
       <div class="export-actions">
-        <button class="btn secondary" onclick="tryDownload('ultramed-tasks.csv', buildTasksCSV()); showToast('Downloading tasks.csv')">Download CSV</button>
-        <button class="btn secondary" onclick="showExportText('tasksExportText', buildTasksCSV())">Copy instead</button>
+        <button class="btn secondary" onclick="tryDownload('ultramed-tasks'+exportSuffix()+'.csv', buildTasksCSV(exportRange())); showToast('Downloading tasks CSV')">Download CSV</button>
+        <button class="btn secondary" onclick="showExportText('tasksExportText', buildTasksCSV(exportRange()))">Copy instead</button>
       </div>
       <textarea class="export-textarea" id="tasksExportText" readonly></textarea>
     </div>
@@ -4899,7 +5065,7 @@ async function restoreSnapshot(dateStr){
 function copyReport(){
   let rv = reportVisitsBase();
   if(reportRepFilter !== 'all') rv = rv.filter(v=>v.rep===reportRepFilter);
-  const rangeLabel = reportRange===7?'This week':reportRange===30?'This month':reportRange===90?'This quarter':'All time';
+  const rangeLabel = periodLabel();
   let text = `UltraMed Visit Report — ${rangeLabel}${reportRepFilter!=='all' ? ' — '+reportRepFilter : ' — Team'}\n`;
   text += `Visits logged: ${rv.length}\n`;
   text += `Orders taken: ${rv.filter(v=>v.orderTaken).length}\n`;
