@@ -407,6 +407,55 @@ describe('rangeSummary', () => {
   });
 });
 
+describe('pctDelta', () => {
+  test('normal percentage changes', () => {
+    assert.equal(core.pctDelta(150, 100), 50);
+    assert.equal(core.pctDelta(75, 100), -25);
+    assert.equal(core.pctDelta(100, 100), 0);
+  });
+  test('zero baseline never divides by zero', () => {
+    assert.equal(core.pctDelta(50, 0), 100);
+    assert.equal(core.pctDelta(0, 0), 0);
+  });
+});
+
+describe('dormantClinics', () => {
+  const CLINICS = [
+    { id: 'c1', name: 'Alpha', rep: 'Mariam', cls: 'A' },
+    { id: 'c2', name: 'Beta', rep: 'Mariam', cls: 'B' },
+    { id: 'c3', name: 'Gamma', rep: 'Renova', cls: 'C' },     // C class → not priority
+    { id: 'c4', name: 'Delta', rep: 'Renova', cls: 'A' },
+    { id: 'c5', name: 'Closed1', rep: 'Mariam', cls: 'Closed' }, // closed → excluded
+  ];
+  const VISITS = [
+    { clinicId: 'c1', date: '2026-06-01' }, // 67 days before "today"
+    { clinicId: 'c1', date: '2026-08-05' }, // most recent visit wins → fresh
+    { clinicId: 'c2', date: '2026-06-20' }, // 48 days → dormant
+    { clinicId: 'c3', date: '2026-01-01' }, // dormant but class C → excluded
+  ];
+  const today = '2026-08-07';
+  test('finds quiet priority clinics, never-visited first', () => {
+    const list = core.dormantClinics(CLINICS, VISITS, today, { days: 30 });
+    assert.deepEqual(list.map(c => c.id), ['c4', 'c2']); // c4 never visited → first
+    assert.equal(list[0].lastVisit, null);
+    assert.equal(list[0].daysSince, null);
+    assert.equal(list[1].daysSince, 48);
+  });
+  test('a recent visit resets the clock', () => {
+    const list = core.dormantClinics(CLINICS, VISITS, today, { days: 30 });
+    assert.ok(!list.some(c => c.id === 'c1')); // visited 2 days ago
+  });
+  test('threshold is configurable', () => {
+    const list = core.dormantClinics(CLINICS, VISITS, today, { days: 60 });
+    assert.deepEqual(list.map(c => c.id), ['c4']); // 48-day c2 no longer counts
+  });
+  test('closed and non-priority clinics never appear', () => {
+    const list = core.dormantClinics(CLINICS, [], today, { days: 30 });
+    assert.ok(!list.some(c => c.id === 'c3' || c.id === 'c5'));
+    assert.equal(list.length, 3); // c1, c2, c4 all never-visited
+  });
+});
+
 describe('calcStreak', () => {
   const today = '2026-08-07';
   test('counts consecutive days ending today', () => {
