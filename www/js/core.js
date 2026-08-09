@@ -144,10 +144,40 @@
     return streak;
   }
 
+  // ---- calendar ----
+  // Everything happening on one date, filtered by rep ('all' = everyone).
+  // data: {visits, clinics, tasks, events, dayPlans}
+  //  - dayPlans[date][repName] = [{id: clinicId, note}] (legacy entries may be bare id strings)
+  //  - events: {id, title, date, time, type, notes, rep} where rep 'all' = whole team
+  // Returns {planned, visits, followUps, tasks, events, total}.
+  function calendarDayItems(dateStr, repFilter, data){
+    const wantRep = r => repFilter === 'all' || r === repFilter;
+    const dayObj = (data.dayPlans || {})[dateStr] || {};
+    const planned = [];
+    Object.keys(dayObj).forEach(rep => {
+      if(!wantRep(rep)) return;
+      (dayObj[rep] || []).forEach(e => {
+        const entry = typeof e === 'string' ? { id: e, note: '' } : e;
+        planned.push({ rep, clinicId: entry.id, note: entry.note || '' });
+      });
+    });
+    const visits = (data.visits || []).filter(v => v.date === dateStr && wantRep(v.rep));
+    const followUps = (data.clinics || []).filter(c =>
+      c.nextFollowUp === dateStr && c.cls !== 'Closed' && wantRep(c.rep));
+    const tasks = (data.tasks || []).filter(t =>
+      t.dueDate === dateStr && !t.done && (wantRep(t.rep) || t.rep === 'Team'));
+    const events = (data.events || []).filter(ev =>
+      ev.date === dateStr && (ev.rep === 'all' || wantRep(ev.rep)));
+    return {
+      planned, visits, followUps, tasks, events,
+      total: planned.length + visits.length + followUps.length + tasks.length + events.length
+    };
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
-    computeScoreForVisits, computeRepScore, calcStreak
+    computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems
   };
 });
