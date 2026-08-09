@@ -271,6 +271,63 @@ describe('computeRepScore', () => {
   });
 });
 
+describe('calendarDayItems', () => {
+  const DATA = {
+    dayPlans: {
+      '2026-08-10': {
+        Mariam: [{ id: 'c1', note: 'bring samples' }, 'c2'], // legacy bare-string entry
+        Renova: [{ id: 'c5', note: '' }],
+      },
+    },
+    visits: [
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-10', orderTaken: true, orderTotal: 40 },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-11' },
+    ],
+    clinics: [
+      { id: 'c1', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-10' },
+      { id: 'c9', rep: 'Mariam', cls: 'Closed', nextFollowUp: '2026-08-10' }, // closed → hidden
+      { id: 'c5', rep: 'Renova', cls: 'B', nextFollowUp: '2026-08-12' },
+    ],
+    tasks: [
+      { id: 't1', rep: 'Mariam', dueDate: '2026-08-10', done: false, text: 'call back' },
+      { id: 't2', rep: 'Mariam', dueDate: '2026-08-10', done: true, text: 'done already' },
+      { id: 't3', rep: 'Team', dueDate: '2026-08-10', done: false, text: 'team task' },
+    ],
+    events: [
+      { id: 'e1', title: 'Dental conf', date: '2026-08-10', rep: 'all' },
+      { id: 'e2', title: 'Renova 1:1', date: '2026-08-10', rep: 'Renova' },
+    ],
+  };
+  test('aggregates everything for a day with rep=all', () => {
+    const r = core.calendarDayItems('2026-08-10', 'all', DATA);
+    assert.equal(r.planned.length, 3);
+    assert.equal(r.visits.length, 1);
+    assert.equal(r.followUps.length, 1); // closed clinic excluded
+    assert.equal(r.tasks.length, 2); // done task excluded
+    assert.equal(r.events.length, 2);
+    assert.equal(r.total, 9);
+  });
+  test('filters by rep, keeping whole-team items visible', () => {
+    const r = core.calendarDayItems('2026-08-10', 'Mariam', DATA);
+    assert.equal(r.planned.length, 2);
+    assert.deepEqual(r.planned.map(p => p.clinicId), ['c1', 'c2']);
+    assert.equal(r.planned[1].note, ''); // legacy string entry normalized
+    assert.equal(r.visits.length, 1);
+    assert.equal(r.followUps.length, 1);
+    assert.equal(r.tasks.length, 2); // own + Team task
+    assert.equal(r.events.length, 1); // team-wide event only, not Renova's
+    assert.equal(r.events[0].id, 'e1');
+  });
+  test('an empty day returns zero total, not errors', () => {
+    const r = core.calendarDayItems('2026-08-20', 'all', DATA);
+    assert.equal(r.total, 0);
+  });
+  test('tolerates missing collections', () => {
+    const r = core.calendarDayItems('2026-08-10', 'all', {});
+    assert.equal(r.total, 0);
+  });
+});
+
 describe('calcStreak', () => {
   const today = '2026-08-07';
   test('counts consecutive days ending today', () => {
