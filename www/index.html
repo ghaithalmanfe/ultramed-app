@@ -107,6 +107,7 @@
   nav.bottom button{flex:1; background:none; border:none; padding:10px 2px 8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--muted); font-family:inherit; font-size:9.5px; font-weight:600; position:relative; letter-spacing:-.01em;}
   nav.bottom button.active{color:var(--green-dark);}
   nav.bottom svg{width:19px; height:19px;}
+  .ai-fab{position:fixed; bottom:88px; right:16px; width:52px; height:52px; border-radius:50%; background:var(--green); color:#fff; border:none; font-size:21px; z-index:9; box-shadow:0 6px 18px rgba(2,41,23,.4); cursor:pointer; display:flex; align-items:center; justify-content:center;}
   /* calendar */
   .cal-nav{width:32px; height:32px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-size:18px; line-height:1; cursor:pointer; font-family:inherit; font-weight:600;}
   .cal-dow{display:grid; grid-template-columns:repeat(7,1fr); text-align:center; font-size:10.5px; font-weight:700; color:var(--muted); margin-bottom:4px;}
@@ -488,7 +489,7 @@
     .proreport, .proreport *{visibility:visible;}
     .proreport{position:absolute; left:0; top:0; width:100%;}
     .pr-toolbar{display:none;}
-    nav.bottom, .gate, #toast{display:none !important;}
+    nav.bottom, .gate, #toast, .ai-fab{display:none !important;}
   }
 </style>
 </head>
@@ -532,6 +533,7 @@
     <div id="welcomeCard"></div>
     <div class="hero" id="heroCard"></div>
     <div id="focusCard"></div>
+    <div id="targetCard"></div>
     <div id="streakCard"></div>
     <div class="section-title">Your achievements <span class="link" onclick="openAchievements()">See all</span></div>
     <div class="badge-strip" id="badgeStrip"></div>
@@ -560,6 +562,9 @@
 
     <div class="section-title">Follow-ups due</div>
     <div id="dueList"></div>
+
+    <div class="section-title" id="dormantTitle" style="display:none;">😴 Clinics going quiet</div>
+    <div id="dormantList"></div>
 
     <div class="section-title">Tasks <span class="link" onclick="openEmailImport()">Import from email</span></div>
     <div class="card">
@@ -772,6 +777,9 @@
       </div>
       <button class="btn" style="margin-top:10px; padding:11px;" onclick="applyReportCustomRange()">Show this period</button>
     </div>
+    <div style="margin-bottom:16px;">
+      <button class="btn secondary" style="padding:12px;" onclick="openCompare()">🆚 Compare two periods</button>
+    </div>
     <div class="card">
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
       <div class="report-line"><span>Orders taken</span><span class="v" id="repOrders">0</span></div>
@@ -856,6 +864,7 @@
 </div>
 
 <div id="toast"></div>
+<button class="ai-fab" id="aiFab" style="display:none;" onclick="openAssistant()" aria-label="AI Assistant">✨</button>
 
 <script src="js/core.js"></script>
 <script>
@@ -1054,6 +1063,7 @@ let logAsRep = null;
 let currentUser = null;
 let recycleBin = {clinics:[], products:[], visits:[]};
 let events = [];
+let targets = {}; // {repName: {revenue: KD, visits: N}} — monthly targets
 let calMode = 'month';
 let calAnchor = null;   // set on first render
 let calSelected = null;
@@ -1253,7 +1263,7 @@ function normalizeClinic(c){
 }
 async function loadAll(){
   try{
-    const [c,p,v,t,dp,st,rb,bm,ev] = await Promise.all([
+    const [c,p,v,t,dp,st,rb,bm,ev,tg] = await Promise.all([
       window.storage.get('clinics', true).catch(()=>null),
       window.storage.get('products', true).catch(()=>null),
       window.storage.get('visits', true).catch(()=>null),
@@ -1263,6 +1273,7 @@ async function loadAll(){
       window.storage.get('recycleBin', true).catch(()=>null),
       window.storage.get('benchmarks', true).catch(()=>null),
       window.storage.get('events', true).catch(()=>null),
+      window.storage.get('targets', true).catch(()=>null),
     ]);
     // Each key parses independently: one corrupt entry falls back alone instead
     // of throwing and resetting every collection to seed data.
@@ -1273,6 +1284,7 @@ async function loadAll(){
     tasks = UMCore.safeParse(t && t.value, []);
     dayPlans = UMCore.safeParse(dp && dp.value, {});
     events = UMCore.safeParse(ev && ev.value, []);
+    targets = UMCore.safeParse(tg && tg.value, {});
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
     const rbVal = UMCore.safeParse(rb && rb.value, null);
@@ -1295,7 +1307,7 @@ async function loadAll(){
   renderAll();
 }
 async function persist(key){
-  const map = {clinics, products, visits, tasks, dayPlans, events, staff, recycleBin, benchmarks: BENCHMARKS};
+  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS};
   try{
     const res = await window.storage.set(key, JSON.stringify(map[key]), true);
     if(!res){ showToast('Save failed, try again'); }
@@ -1614,6 +1626,8 @@ function renderAll(){
   stamp.classList.toggle('sup', currentUser.role==='supervisor');
   const adminBtn = document.getElementById('adminPanelBtn');
   if(adminBtn) adminBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
+  const fab = document.getElementById('aiFab');
+  if(fab) fab.style.display = 'flex';
 
   const chipsFor = (containerId, current, setter) => {
     const el = document.getElementById(containerId);
@@ -1649,6 +1663,64 @@ function visibleVisits(){
 function isFieldVisit(v){ return !v.orderOnly && !v.callOnly; }
 function visibleFieldVisits(){ return visibleVisits().filter(isFieldVisit); }
 
+// ---- MONTHLY TARGETS ----
+function renderTargetCard(){
+  const el = document.getElementById('targetCard');
+  if(!el) return;
+  const reps = currentUser.role==='supervisor' ? REPS : [currentUser.name];
+  const withTargets = reps.filter(r=>{ const t=targets[r]; return t && (t.revenue>0 || t.visits>0); });
+  if(withTargets.length===0){
+    el.innerHTML = currentUser.role==='supervisor'
+      ? `<div class="card clickable" onclick="openAdminPanel()" style="margin-bottom:14px;">
+          <div style="font-weight:700; font-size:14px;">🎯 Monthly targets</div>
+          <div style="color:var(--muted); font-size:12.5px; margin-top:2px;">Set revenue and visit targets per rep in the admin panel to see live progress here.</div>
+        </div>` : '';
+    return;
+  }
+  const m = getMonthDates(todayStr());
+  const monthName = new Date(todayStr()+'T00:00:00').toLocaleDateString('en-US',{month:'long'});
+  const bar = (label, valueText, pct) => `
+    <div class="bar-row">
+      <div class="bar-label"><span>${label}</span><span>${valueText} (${pct}%)</span></div>
+      <div class="bar-track"><div class="bar-fill ${pct>=100?'':''}" style="width:${Math.min(100,pct)}%; ${pct>=100?'background:var(--sage);':''}"></div></div>
+    </div>`;
+  el.innerHTML = `<div class="card" style="margin-bottom:14px;">
+    <div style="font-weight:700; font-size:14px; margin-bottom:8px;">🎯 ${monthName} targets</div>
+    ${withTargets.map(r=>{
+      const t = targets[r];
+      const s = UMCore.rangeSummary(m[0], m[m.length-1], r, {visits, clinics, tasks, events, dayPlans});
+      const bars = [];
+      if(t.revenue>0) bars.push(bar('Revenue', `${money(s.revenue)} / ${money(t.revenue)}`, Math.round(s.revenue/t.revenue*100)));
+      if(t.visits>0) bars.push(bar('Visits', `${s.fieldVisits} / ${t.visits}`, Math.round(s.fieldVisits/t.visits*100)));
+      return `${currentUser.role==='supervisor'?`<div style="font-size:13px; font-weight:700; margin:${bars.length?'10px':'0'} 0 2px;">${esc(r)}</div>`:''}${bars.join('')}`;
+    }).join('')}
+  </div>`;
+}
+
+// ---- DORMANT CLINICS ----
+function renderDormant(){
+  const el = document.getElementById('dormantList');
+  const title = document.getElementById('dormantTitle');
+  if(!el || !title) return;
+  let list = UMCore.dormantClinics(clinics, visits, todayStr(), {days:30});
+  if(currentUser.role!=='supervisor') list = list.filter(c=>c.rep===currentUser.name);
+  const total = list.length;
+  list = list.slice(0,6);
+  if(list.length===0){ title.style.display='none'; el.innerHTML=''; return; }
+  title.style.display='';
+  el.innerHTML = list.map(c=>`
+    <div class="card clickable" onclick="openClinicDetail('${c.id}')" style="margin-bottom:8px;">
+      <div class="row-between">
+        <div>
+          <div class="clinic-name">${esc(c.name)}</div>
+          <div class="clinic-sub">Class ${esc(c.cls)}${currentUser.role==='supervisor'?' · '+esc(c.rep):''} · ${c.lastVisit ? c.daysSince+' days since last visit' : 'Never visited'}</div>
+        </div>
+        <span class="badge overdue">${c.lastVisit ? c.daysSince+'d' : 'new'}</span>
+      </div>
+    </div>`).join('')
+    + (total>6 ? `<div style="color:var(--muted); font-size:12px; text-align:center; padding:4px 0;">+ ${total-6} more priority clinic${total-6===1?'':'s'} going quiet</div>` : '');
+}
+
 function renderToday(){
   const due = visibleDueClinics();
   document.getElementById('statDue').textContent = due.length;
@@ -1676,6 +1748,8 @@ function renderToday(){
 
   renderWelcome();
   renderFocusCard();
+  renderTargetCard();
+  renderDormant();
   renderStreak();
   renderBadges();
   renderPlanList();
@@ -3355,7 +3429,32 @@ function adminTeamHTML(){
       <label>Task completion target (%)</label>
       <input type="number" min="0" max="100" id="bmTasks" value="${BENCHMARKS.tasks}">
       <button class="btn secondary small" onclick="saveBenchmarks()">Save targets</button>
+    </div>
+    <div class="section-title">Monthly targets per rep</div>
+    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">Set a monthly revenue and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
+    <div class="card">
+      ${REPS.map((r,i)=>{
+        const t = targets[r] || {};
+        return `<div style="font-weight:700; font-size:13.5px; margin:${i?'14px':'0'} 0 4px;">${esc(r)}</div>
+        <div style="display:flex; gap:10px;">
+          <div style="flex:1;"><label style="font-size:12px;">Revenue (KD)</label><input type="number" min="0" id="tgRev${i}" value="${t.revenue||0}"></div>
+          <div style="flex:1;"><label style="font-size:12px;">Visits</label><input type="number" min="0" id="tgVis${i}" value="${t.visits||0}"></div>
+        </div>`;
+      }).join('')}
+      <button class="btn secondary small" style="margin-top:12px;" onclick="saveTargets()">Save monthly targets</button>
     </div>`;
+}
+async function saveTargets(){
+  const clamp = v => Math.max(0, parseFloat(v)||0);
+  REPS.forEach((r,i)=>{
+    targets[r] = {
+      revenue: clamp(document.getElementById('tgRev'+i).value),
+      visits: Math.round(clamp(document.getElementById('tgVis'+i).value)),
+    };
+  });
+  await persist('targets');
+  showToast('🎯 Monthly targets saved');
+  renderTargetCard();
 }
 async function saveBenchmarks(){
   const clamp = v => Math.max(0, Math.min(100, parseInt(v)||0));
@@ -4008,6 +4107,171 @@ function openReportForRange(from, to){
   document.getElementById('repCustomRow').style.display = 'block';
   switchView('reports');
   applyReportCustomRange();
+}
+// ---- AI ASSISTANT ----
+// Calls go through a small Netlify Function so the AI key never lives in this
+// page. Absolute URL so the installed Android/PWA app reaches it too.
+const AI_ENDPOINT = 'https://resonant-granita-6e6cce.netlify.app/.netlify/functions/assistant';
+let aiMsgs = [];
+let aiBusy = false;
+function openAssistant(){
+  showModal(`
+    <h3 style="margin-top:0;">✨ Assistant</h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Ask anything about your clinics, visits, products or plans — in Arabic or English. It only sees this app's data.</p>
+    <div id="aiThread" style="max-height:45vh; overflow-y:auto; margin-bottom:10px;"></div>
+    <div style="display:flex; gap:8px;">
+      <input type="text" id="aiInput" placeholder="e.g. What should I focus on this week?" onkeydown="if(event.key==='Enter') sendAssistant()">
+      <button class="btn" style="width:auto; padding:0 18px;" id="aiSendBtn" onclick="sendAssistant()">Send</button>
+    </div>`);
+  renderAiThread();
+  const inp = document.getElementById('aiInput');
+  if(inp) inp.focus();
+}
+function renderAiThread(){
+  const el = document.getElementById('aiThread');
+  if(!el) return;
+  el.innerHTML = aiMsgs.length ? aiMsgs.map(m=>`
+    <div style="margin-bottom:8px; ${m.role==='user'?'text-align:right;':''}">
+      <div style="display:inline-block; max-width:88%; text-align:left; padding:9px 12px; border-radius:12px; font-size:13.5px; line-height:1.55; white-space:pre-wrap; ${m.role==='user'?'background:var(--green); color:#fff;':'background:var(--paper);'}">${esc(m.content)}</div>
+    </div>`).join('')
+    : `<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:12px 0;">Try: “Summarize my month so far” · “لخص لي عيادة قبل زيارتي” · “Write a follow-up WhatsApp message”</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function buildAssistantContext(){
+  const me = currentUser;
+  const mine = r => me.role==='supervisor' || r===me.name;
+  const cname = id => { const c = clinics.find(x=>x.id===id); return c ? c.name : 'Unknown'; };
+  const m = getMonthDates(todayStr());
+  const data = {visits, clinics, tasks, events, dayPlans};
+  return {
+    today: todayStr(),
+    user: {name: me.name, role: me.role},
+    monthSummary: UMCore.rangeSummary(m[0], m[m.length-1], me.role==='supervisor'?'all':me.name, data),
+    monthlyTargets: targets,
+    clinics: clinics.filter(c=>mine(c.rep)).map(c=>({name:c.name, cls:c.cls, rep:c.rep, area:c.area||'', phone:c.phone||'', nextFollowUp:c.nextFollowUp||null, notes:(c.notes||'').slice(0,150), doctors:(c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).slice(0,6)})),
+    recentVisits: [...visits].sort((a,b)=>(b.ts||0)-(a.ts||0)).filter(v=>mine(v.rep)).slice(0,40)
+      .map(v=>({date:v.date, rep:v.rep, clinic:cname(v.clinicId), order:!!v.orderTaken, totalKD:v.orderTotal||0, call:!!v.callOnly, notes:(v.notes||'').slice(0,120)})),
+    openTasks: tasks.filter(t=>!t.done && (mine(t.rep)||t.rep==='Team')).slice(0,25).map(t=>({text:t.text, due:t.dueDate||null, rep:t.rep})),
+    upcomingEvents: events.filter(e=>e.date>=todayStr()).slice(0,15).map(e=>({title:e.title, date:e.date, time:e.time||'', type:e.type, rep:e.rep, notes:e.notes||''})),
+    dormantClinics: UMCore.dormantClinics(clinics, visits, todayStr(), {days:30}).filter(c=>mine(c.rep)).slice(0,12),
+    productCatalog: products.slice(0,200).map(p=>({name:p.name, brand:p.brand, priceKD:p.price})),
+  };
+}
+async function sendAssistant(){
+  if(aiBusy) return;
+  const inp = document.getElementById('aiInput');
+  const q = (inp.value||'').trim();
+  if(!q) return;
+  inp.value = '';
+  aiBusy = true;
+  aiMsgs.push({role:'user', content:q});
+  aiMsgs.push({role:'assistant', content:'Thinking…', pending:true});
+  renderAiThread();
+  try{
+    const res = await fetch(AI_ENDPOINT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: aiMsgs.filter(m=>!m.pending).map(m=>({role:m.role, content:m.content})),
+        context: buildAssistantContext(),
+      }),
+    });
+    const data = await res.json().catch(()=>({}));
+    aiMsgs = aiMsgs.filter(m=>!m.pending);
+    if(res.ok && data.reply){
+      aiMsgs.push({role:'assistant', content:data.reply});
+    } else if(data.error==='NO_KEY'){
+      aiMsgs.push({role:'assistant', content:'The assistant isn\'t activated yet. The supervisor needs to add the AI key once in Netlify: Site settings → Environment variables → add ANTHROPIC_API_KEY, then redeploy.'});
+    } else {
+      aiMsgs.push({role:'assistant', content:'Something went wrong reaching the assistant — please try again in a moment.'});
+    }
+  }catch(e){
+    aiMsgs = aiMsgs.filter(m=>!m.pending);
+    aiMsgs.push({role:'assistant', content:'Couldn\'t reach the assistant service. Check your internet connection and try again.'});
+  }
+  aiBusy = false;
+  renderAiThread();
+}
+
+// ---- PERIOD COMPARISON ----
+function openCompare(){
+  const repOpts = currentUser.role==='supervisor'
+    ? ['all', ...REPS].map(r=>`<option value="${esc(r)}">${r==='all'?'Whole team':esc(r)}</option>`).join('')
+    : `<option value="${esc(currentUser.name)}">${esc(currentUser.name)}</option>`;
+  showModal(`
+    <h3 style="margin-top:0;">Compare two periods</h3>
+    <div class="chip-row" style="margin-bottom:10px;">
+      <div class="chip small" onclick="cmpPreset('month')">This vs last month</div>
+      <div class="chip small" onclick="cmpPreset('week')">This vs last week</div>
+      <div class="chip small" onclick="cmpPreset('quarter')">Last 90 vs previous 90</div>
+    </div>
+    <label>Who</label>
+    <select id="cmpRep">${repOpts}</select>
+    <div style="font-weight:700; font-size:13px; margin:12px 0 4px; color:var(--green);">Period A</div>
+    <div style="display:flex; gap:10px;">
+      <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="cmpAF"></div>
+      <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="cmpAT"></div>
+    </div>
+    <div style="font-weight:700; font-size:13px; margin:12px 0 4px; color:var(--muted);">Period B (to compare against)</div>
+    <div style="display:flex; gap:10px;">
+      <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="cmpBF"></div>
+      <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="cmpBT"></div>
+    </div>
+    <button class="btn" style="margin-top:12px;" onclick="renderCompare()">Compare</button>
+    <div id="cmpResult"></div>
+  `);
+  cmpPreset('month');
+}
+function cmpPreset(kind){
+  const today = todayStr();
+  let aF, aT, bF, bT;
+  if(kind==='month'){
+    const m = getMonthDates(today); aF=m[0]; aT=m[m.length-1];
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1);
+    const pm = getMonthDates(localDateStr(d)); bF=pm[0]; bT=pm[pm.length-1];
+  } else if(kind==='week'){
+    const w = getWeekDates(today); aF=w[0]; aT=w[6];
+    const d = new Date(w[0]+'T00:00:00'); d.setDate(d.getDate()-7);
+    const pw = getWeekDates(localDateStr(d)); bF=pw[0]; bT=pw[6];
+  } else {
+    const d = new Date(); aT=today;
+    d.setDate(d.getDate()-89); aF=localDateStr(d);
+    const e = new Date(aF+'T00:00:00'); e.setDate(e.getDate()-1); bT=localDateStr(e);
+    const s = new Date(e); s.setDate(s.getDate()-89); bF=localDateStr(s);
+  }
+  document.getElementById('cmpAF').value=aF; document.getElementById('cmpAT').value=aT;
+  document.getElementById('cmpBF').value=bF; document.getElementById('cmpBT').value=bT;
+  renderCompare();
+}
+function renderCompare(){
+  const aF=document.getElementById('cmpAF').value, aT=document.getElementById('cmpAT').value;
+  const bF=document.getElementById('cmpBF').value, bT=document.getElementById('cmpBT').value;
+  const rep=document.getElementById('cmpRep').value;
+  const el=document.getElementById('cmpResult');
+  if(!aF||!aT||!bF||!bT){ showToast('Fill in all four dates'); return; }
+  const data = {visits, clinics, tasks, events, dayPlans};
+  const A = UMCore.rangeSummary(aF, aT, rep, data);
+  const B = UMCore.rangeSummary(bF, bT, rep, data);
+  const fmtRow = (label, a, b, isMoney) => {
+    const d = UMCore.pctDelta(a, b);
+    const arrow = d>0 ? `<span style="color:var(--sage); font-weight:700;">▲ +${d}%</span>`
+      : d<0 ? `<span style="color:var(--coral); font-weight:700;">▼ ${d}%</span>`
+      : `<span style="color:var(--muted);">—</span>`;
+    const show = v => isMoney ? money(v) : v;
+    return `<div style="display:grid; grid-template-columns:1.2fr 1fr 1fr .8fr; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px; align-items:center;">
+      <span style="font-weight:600;">${label}</span><span>${show(a)}</span><span style="color:var(--muted);">${show(b)}</span><span style="text-align:left;">${arrow}</span>
+    </div>`;
+  };
+  el.innerHTML = `
+    <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr .8fr; gap:6px; padding:10px 0 6px; font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase;">
+      <span></span><span>${fmtDate(aF)}–${fmtDate(aT)}</span><span>${fmtDate(bF)}–${fmtDate(bT)}</span><span>Change</span>
+    </div>
+    ${fmtRow('Visits', A.fieldVisits, B.fieldVisits)}
+    ${fmtRow('Calls', A.calls, B.calls)}
+    ${fmtRow('Orders', A.orders, B.orders)}
+    ${fmtRow('Revenue', A.revenue, B.revenue, true)}
+    ${fmtRow('Conversion %', A.conversion, B.conversion)}
+    ${fmtRow('Clinics covered', A.clinicsCovered, B.clinicsCovered)}
+    ${fmtRow('Events', A.events, B.events)}`;
 }
 function reportVisitsBase(){
   if(reportCustom) return UMCore.filterVisitsByRange(visits, reportCustom.from, reportCustom.to);
