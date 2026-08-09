@@ -144,10 +144,92 @@
     return streak;
   }
 
+  // ---- calendar ----
+  // Everything happening on one date, filtered by rep ('all' = everyone).
+  // data: {visits, clinics, tasks, events, dayPlans}
+  //  - dayPlans[date][repName] = [{id: clinicId, note}] (legacy entries may be bare id strings)
+  //  - events: {id, title, date, time, type, notes, rep} where rep 'all' = whole team
+  // Returns {planned, visits, followUps, tasks, events, total}.
+  function calendarDayItems(dateStr, repFilter, data){
+    const wantRep = r => repFilter === 'all' || r === repFilter;
+    const dayObj = (data.dayPlans || {})[dateStr] || {};
+    const planned = [];
+    Object.keys(dayObj).forEach(rep => {
+      if(!wantRep(rep)) return;
+      (dayObj[rep] || []).forEach(e => {
+        const entry = typeof e === 'string' ? { id: e, note: '' } : e;
+        planned.push({ rep, clinicId: entry.id, note: entry.note || '' });
+      });
+    });
+    const visits = (data.visits || []).filter(v => v.date === dateStr && wantRep(v.rep));
+    const followUps = (data.clinics || []).filter(c =>
+      c.nextFollowUp === dateStr && c.cls !== 'Closed' && wantRep(c.rep));
+    const tasks = (data.tasks || []).filter(t =>
+      t.dueDate === dateStr && !t.done && (wantRep(t.rep) || t.rep === 'Team'));
+    const events = (data.events || []).filter(ev =>
+      ev.date === dateStr && (ev.rep === 'all' || wantRep(ev.rep)));
+    return {
+      planned, visits, followUps, tasks, events,
+      total: planned.length + visits.length + followUps.length + tasks.length + events.length
+    };
+  }
+
+  // ---- date-range analytics ----
+  // from/to are inclusive 'YYYY-MM-DD' strings; lexicographic compare is safe.
+  function inRange(dateStr, from, to){
+    if(!dateStr) return false;
+    if(from && dateStr < from) return false;
+    if(to && dateStr > to) return false;
+    return true;
+  }
+  function filterVisitsByRange(visits, from, to){
+    return (visits || []).filter(v => inRange(v.date, from, to));
+  }
+  // Everything that happened (or is scheduled) between two dates, filtered by
+  // rep ('all' = everyone). data: {visits, clinics, tasks, events, dayPlans}
+  function rangeSummary(from, to, repFilter, data){
+    const wantRep = r => repFilter === 'all' || r === repFilter;
+    const vis = filterVisitsByRange(data.visits, from, to).filter(v => wantRep(v.rep));
+    const fieldVisits = vis.filter(v => !v.orderOnly && !v.callOnly);
+    const calls = vis.filter(v => v.callOnly);
+    const orders = vis.filter(v => v.orderTaken);
+    const revenue = vis.reduce((s, v) => s + (v.orderTotal || 0), 0);
+    const discount = vis.reduce((s, v) => s + (v.orderDiscount || 0), 0);
+    const clinicsCovered = new Set(vis.map(v => v.clinicId)).size;
+    let planned = 0;
+    Object.keys(data.dayPlans || {}).forEach(d => {
+      if(!inRange(d, from, to)) return;
+      const dayObj = data.dayPlans[d];
+      Object.keys(dayObj).forEach(rep => { if(wantRep(rep)) planned += (dayObj[rep] || []).length; });
+    });
+    const events = (data.events || []).filter(ev =>
+      inRange(ev.date, from, to) && (ev.rep === 'all' || wantRep(ev.rep)));
+    const followUpsDue = (data.clinics || []).filter(c =>
+      c.cls !== 'Closed' && inRange(c.nextFollowUp, from, to) && wantRep(c.rep));
+    const tasksDue = (data.tasks || []).filter(t =>
+      !t.done && inRange(t.dueDate, from, to) && (wantRep(t.rep) || t.rep === 'Team'));
+    // per-rep breakdown from the visits in range
+    const byRep = {};
+    vis.forEach(v => {
+      const r = byRep[v.rep] || (byRep[v.rep] = { rep: v.rep, visits: 0, orders: 0, revenue: 0 });
+      r.visits++;
+      if(v.orderTaken) r.orders++;
+      r.revenue += v.orderTotal || 0;
+    });
+    return {
+      totalActivity: vis.length, fieldVisits: fieldVisits.length, calls: calls.length,
+      orders: orders.length, revenue, discount, clinicsCovered,
+      conversion: fieldVisits.length ? Math.round(orders.length / fieldVisits.length * 100) : 0,
+      planned, events: events.length, followUpsDue: followUpsDue.length, tasksDue: tasksDue.length,
+      perRep: Object.values(byRep).sort((a, b) => b.revenue - a.revenue),
+    };
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
-    computeScoreForVisits, computeRepScore, calcStreak
+    computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
+    inRange, filterVisitsByRange, rangeSummary
   };
 });
