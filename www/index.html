@@ -563,6 +563,9 @@
     <div class="section-title">Follow-ups due</div>
     <div id="dueList"></div>
 
+    <div class="section-title" id="missedTitle" style="display:none;">⏰ Missed planned visits</div>
+    <div id="missedList"></div>
+
     <div class="section-title" id="dormantTitle" style="display:none;">😴 Clinics going quiet</div>
     <div id="dormantList"></div>
 
@@ -587,6 +590,9 @@
       <label>Logging as</label>
       <div class="chip-row" id="logAsChips"></div>
     </div>
+
+    <label>Joint visit with <span style="color:var(--muted); font-weight:400; text-transform:none;">(optional — a colleague who was with you)</span></label>
+    <div class="chip-row" id="jointChips" style="margin-bottom:14px;"></div>
 
     <label>Clinic</label>
     <input type="text" id="clinicSearchLog" placeholder="🔍 Search clinics..." oninput="renderClinicSelect()" style="margin-bottom:10px;">
@@ -1060,6 +1066,7 @@ let reportCustom = null; // {from, to} when a custom date range is active
 let clinicRepFilter = 'mine';
 let reportRepFilter = 'mine';
 let logAsRep = null;
+let jointRep = null; // second team member on a joint (double) visit
 let currentUser = null;
 let recycleBin = {clinics:[], products:[], visits:[]};
 let events = [];
@@ -1450,8 +1457,9 @@ function renderCalAgenda(){
     rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${v.clinicId}')">
       <span class="tag" style="background:var(--sage-dim); color:var(--sage);">${kind}</span>
       <div style="flex:1;">
-        <div style="font-size:14px; font-weight:600;">${esc(cname(v.clinicId))}${repTag(v.rep)}</div>
+        <div style="font-size:14px; font-weight:600;">${esc(cname(v.clinicId))}${repTag(v.rep)}${jointTag(v)}</div>
         <div style="font-size:12px; color:var(--muted);">${v.orderTaken?'Order taken · '+money(v.orderTotal||0):(v.callOnly?'Remote follow-up':'No order')}</div>
+        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(cname(v.clinicId))}')">`).join('')}</div>`:''}
       </div>
     </div>`);
   });
@@ -1656,8 +1664,13 @@ function visibleTasks(){
 }
 function visibleVisits(){
   if(currentUser.role==='supervisor') return visits;
-  return visits.filter(v=>v.rep===currentUser.name);
+  return visits.filter(v=>v.rep===currentUser.name || v.withRep===currentUser.name);
 }
+// Both participants of a joint visit (and the supervisor) may edit it.
+function canEditVisit(v){
+  return currentUser.role==='supervisor' || v.rep===currentUser.name || v.withRep===currentUser.name;
+}
+function jointTag(v){ return v.withRep ? ` <span style="color:var(--muted);">🤝 with ${esc(v.withRep)}</span>` : ''; }
 // Records flagged orderOnly are phone/remote orders, not field visits.
 // They count toward revenue but must not inflate visit counts.
 function isFieldVisit(v){ return !v.orderOnly && !v.callOnly; }
@@ -1695,6 +1708,75 @@ function renderTargetCard(){
       return `${currentUser.role==='supervisor'?`<div style="font-size:13px; font-weight:700; margin:${bars.length?'10px':'0'} 0 2px;">${esc(r)}</div>`:''}${bars.join('')}`;
     }).join('')}
   </div>`;
+}
+
+// ---- MISSED PLANNED VISITS ----
+function renderMissedPlans(){
+  const el = document.getElementById('missedList');
+  const title = document.getElementById('missedTitle');
+  if(!el || !title) return;
+  let list = UMCore.missedPlans(dayPlans, visits, todayStr(), {daysBack:14});
+  if(currentUser.role!=='supervisor') list = list.filter(m=>m.rep===currentUser.name);
+  list = list.slice(0,8);
+  if(list.length===0){ title.style.display='none'; el.innerHTML=''; return; }
+  title.style.display='';
+  const cname = id => { const c = clinics.find(x=>x.id===id); return c ? c.name : 'Unknown clinic'; };
+  el.innerHTML = list.map(m=>`
+    <div class="card" style="margin-bottom:8px;">
+      <div class="row-between">
+        <div style="flex:1; cursor:pointer;" onclick="openClinicDetail('${m.clinicId}')">
+          <div class="clinic-name">${esc(cname(m.clinicId))}</div>
+          <div class="clinic-sub">Planned ${fmtDate(m.date)}${currentUser.role==='supervisor'?' · '+esc(m.rep):''}${m.note?' · '+esc(m.note):''} · not visited</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
+          <button class="chip small" onclick="openReschedulePlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">📅 Reschedule</button>
+          <button class="chip small" onclick="removeMissedPlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">✕</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function openReschedulePlan(date, rep, clinicId){
+  const c = clinics.find(x=>x.id===clinicId);
+  const d = new Date(); d.setDate(d.getDate()+1);
+  showModal(`
+    <h3 style="margin-top:0;">Reschedule planned visit</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:'Clinic')} — was planned for ${fmtDate(date)}.</p>
+    <label>New date</label>
+    <input type="date" id="rsDate" value="${localDateStr(d)}" min="${todayStr()}">
+    <button class="btn" onclick="saveReschedulePlan('${date}','${esc(rep)}','${clinicId}')">Move visit</button>
+  `);
+}
+async function saveReschedulePlan(oldDate, rep, clinicId){
+  const newDate = document.getElementById('rsDate').value;
+  if(!newDate){ showToast('Pick a date'); return; }
+  const dayObj = dayPlans[oldDate];
+  if(!dayObj || !dayObj[rep]) { closeModal(); return; }
+  const entry = dayObj[rep].find(e=>planEntryId(e)===clinicId);
+  dayObj[rep] = dayObj[rep].filter(e=>planEntryId(e)!==clinicId);
+  if(dayObj[rep].length===0) delete dayObj[rep];
+  if(Object.keys(dayObj).length===0) delete dayPlans[oldDate];
+  dayPlans[newDate] = dayPlans[newDate] || {};
+  dayPlans[newDate][rep] = dayPlans[newDate][rep] || [];
+  if(!dayPlans[newDate][rep].some(e=>planEntryId(e)===clinicId)){
+    dayPlans[newDate][rep].push(typeof entry==='string' ? {id:clinicId, note:''} : (entry || {id:clinicId, note:''}));
+  }
+  await persist('dayPlans');
+  closeModal();
+  showToast(`📅 Moved to ${fmtDate(newDate)}`);
+  renderMissedPlans();
+  renderPlanList();
+  renderCalendar();
+}
+async function removeMissedPlan(date, rep, clinicId){
+  const dayObj = dayPlans[date];
+  if(dayObj && dayObj[rep]){
+    dayObj[rep] = dayObj[rep].filter(e=>planEntryId(e)!==clinicId);
+    if(dayObj[rep].length===0) delete dayObj[rep];
+    if(Object.keys(dayObj).length===0) delete dayPlans[date];
+    await persist('dayPlans');
+  }
+  renderMissedPlans();
+  renderCalendar();
 }
 
 // ---- DORMANT CLINICS ----
@@ -1749,6 +1831,7 @@ function renderToday(){
   renderWelcome();
   renderFocusCard();
   renderTargetCard();
+  renderMissedPlans();
   renderDormant();
   renderStreak();
   renderBadges();
@@ -2050,6 +2133,8 @@ function prepLogView(qClinicId){
   } else {
     wrap.style.display = 'none';
   }
+  jointRep = null;
+  renderJointChips();
   selectedClinicId = qClinicId || null;
   selectedDoctorId = null;
   newClinicMode = false;
@@ -2077,7 +2162,22 @@ function prepLogView(qClinicId){
   qd.innerHTML = opts.map(o=>`<button data-days="${o.d}" onclick="pickQuickDate(${o.d})">${o.l}</button>`).join('');
   document.getElementById('followUpDate').value='';
 }
-function setLogAsRep(r){ logAsRep = r; renderClinicSelect(); document.getElementById('logAsChips').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c.textContent===r)); }
+function setLogAsRep(r){
+  logAsRep = r;
+  if(jointRep===r) jointRep = null;
+  renderClinicSelect();
+  document.getElementById('logAsChips').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c.textContent===r));
+  renderJointChips();
+}
+// ---- JOINT (DOUBLE) VISITS ----
+function renderJointChips(){
+  const el = document.getElementById('jointChips');
+  if(!el) return;
+  const options = REPS.filter(r=>r!==logAsRep);
+  el.innerHTML = `<div class="chip small ${!jointRep?'on':''}" onclick="setJointRep(null)">Solo</div>`
+    + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${esc(r)}')">🤝 ${esc(r)}</div>`).join('');
+}
+function setJointRep(r){ jointRep = r; renderJointChips(); }
 function renderClinicSelect(qClinicId){
   if(qClinicId!==undefined && qClinicId!==null) selectedClinicId = qClinicId;
   const q = (document.getElementById('clinicSearchLog').value||'').toLowerCase().trim();
@@ -2390,7 +2490,7 @@ async function saveVisit(){
     });
   }
   const allItems = savedOrders.flatMap(o=>o.items);
-  const visit = {id:uid(), clinicId, rep, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorId||null, nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
+  const visit = {id:uid(), clinicId, rep, withRep: (jointRep && jointRep!==rep) ? jointRep : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorId||null, nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
     noOrderReason: (savedOrders.length===0) ? (noOrderReason || document.getElementById('noOrderOther').value.trim() || null) : null};
   if(visitPhotos.length){
     const ids=[];
@@ -2740,7 +2840,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
-      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
+      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
         ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c.name)}')">`).join('')}</div>`:''}
       </div>`).join('')}
   `);
@@ -3272,17 +3372,26 @@ async function saveCallLog(){
 function openEditVisit(visitId){
   const v = visits.find(x=>x.id===visitId);
   if(!v){ showToast('Visit not found'); return; }
-  if(currentUser.role!=='supervisor' && v.rep!==currentUser.name){ showToast('You can only edit your own visits'); return; }
+  if(!canEditVisit(v)){ showToast('You can only edit your own visits'); return; }
   const c = clinics.find(x=>x.id===v.clinicId);
   showModal(`
     <h3 style="margin-top:0;">Edit ${v.orderOnly?'order':'visit'}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:'Unknown clinic')}</p>
     <label>Date</label>
     <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
+    ${!v.orderOnly && !v.callOnly ? `
+    <label>Joint visit with</label>
+    <select id="evJoint">
+      <option value="">Solo visit</option>
+      ${REPS.filter(r=>r!==v.rep).map(r=>`<option value="${esc(r)}" ${v.withRep===r?'selected':''}>🤝 ${esc(r)}</option>`).join('')}
+    </select>` : ''}
     <label>Next follow-up</label>
     <input type="date" id="evFollow" value="${v.nextFollowUp||''}">
     <label>Notes</label>
     <textarea id="evNotes" placeholder="What happened on this visit...">${esc(v.notes||'')}</textarea>
+    ${!v.orderOnly && !v.callOnly ? `
+    <label>Photos</label>
+    <div class="photo-row" id="editPhotoRow"></div>` : ''}
     ${v.orderTaken?`
       <label>Order total (KD)</label>
       <input type="number" step="0.01" min="0" id="evTotal" value="${v.orderTotal||0}">
@@ -3291,22 +3400,58 @@ function openEditVisit(visitId){
     <button class="btn" onclick="saveEditVisit('${v.id}')">Save changes</button>
     <button class="btn ghost" onclick="confirmDeleteVisit('${v.id}')">Delete this ${v.orderOnly?'order':'visit'}</button>
   `);
+  if(!v.orderOnly && !v.callOnly) renderEditPhotos(visitId);
+}
+function renderEditPhotos(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  const el = document.getElementById('editPhotoRow');
+  if(!v || !el) return;
+  el.innerHTML = (v.photos||[]).map(p=>`<div class="ph-wrap">
+      <img class="photo-thumb" src="${p.thumb}" onclick="showLightbox('${p.id}','Visit photo')">
+      <button class="ph-del" onclick="removeEditPhoto('${visitId}','${p.id}')">&times;</button>
+    </div>`).join('') +
+    `<div class="photo-add" onclick="addEditPhoto('${visitId}')">\u{1F4F7}<span>ADD</span></div>`;
+}
+function addEditPhoto(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  if(!v || !canEditVisit(v)) return;
+  pickImage(async ({full, thumb})=>{
+    const id = uid();
+    if(await savePhotoBlob(id, full)){
+      v.photos = v.photos || [];
+      v.photos.push({id, thumb});
+      await persist('visits');
+      renderEditPhotos(visitId);
+      showToast('\u{1F4F8} Photo added');
+    }
+  }, true);
+}
+async function removeEditPhoto(visitId, photoId){
+  const v = visits.find(x=>x.id===visitId);
+  if(!v || !canEditVisit(v)) return;
+  v.photos = (v.photos||[]).filter(p=>p.id!==photoId);
+  try{ await window.storage.delete('photo:'+photoId, true); }catch(e){}
+  await persist('visits');
+  renderEditPhotos(visitId);
 }
 async function saveEditVisit(visitId){
   const v = visits.find(x=>x.id===visitId);
   if(!v) return;
-  if(currentUser.role!=='supervisor' && v.rep!==currentUser.name){ showToast('Not allowed'); return; }
+  if(!canEditVisit(v)){ showToast('Not allowed'); return; }
   const newDate = document.getElementById('evDate').value;
   if(!newDate){ showToast('Pick a date'); return; }
   const newNotes = document.getElementById('evNotes').value.trim();
   const newFollow = document.getElementById('evFollow').value || null;
   const totalEl = document.getElementById('evTotal');
   const newTotal = totalEl ? parseFloat(totalEl.value) : null;
-  const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
+  const jointEl = document.getElementById('evJoint');
+  const newJoint = jointEl ? (jointEl.value || null) : (v.withRep || null);
+  const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
   if(changed){
     v.editHistory = v.editHistory || [];
     v.editHistory.push({editedBy:currentUser.name, editedAt:Date.now(), prevDate:v.date, prevNotes:v.notes||'', prevFollowUp:v.nextFollowUp||null, prevTotal:v.orderTotal});
   }
+  if(jointEl) v.withRep = newJoint===v.rep ? null : newJoint;
   v.date = newDate;
   v.nextFollowUp = newFollow;
   v.notes = newNotes;
@@ -3676,6 +3821,7 @@ function openVisitLog(){
     <input type="text" id="vlSearch" placeholder="🔍 Search clinic or notes..." oninput="renderVisitLog()" style="margin-bottom:12px;">
     <div id="vlSummary"></div>
     <div id="vlBody"></div>
+    <button class="btn secondary" onclick="openPhotoGallery()">📸 Photo gallery</button>
     <button class="btn secondary" onclick="copyVisitLog()">Copy log as text</button>
     <button class="btn" onclick="closeModal()">Done</button>
   `);
@@ -3738,20 +3884,39 @@ function renderVisitLog(){
     }
     const c = clinics.find(x=>x.id===v.clinicId);
     const prods = (v.products||[]).map(id=>{ const p=products.find(x=>x.id===id); return p?p.name:null; }).filter(Boolean);
-    const canEdit = currentUser.role==='supervisor' || v.rep===currentUser.name;
+    const canEdit = canEditVisit(v);
     html += `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c?c.cls:null)};">
       <div class="row-between">
         <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
           <div class="clinic-name">${esc(c?c.name:'Unknown clinic')}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
-          <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}</div>
+          <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
         </div>
         ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-left:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
       </div>
     </div>`;
   });
   el.innerHTML = html;
+}
+// ---- PHOTO GALLERY ----
+function openPhotoGallery(){
+  const withPhotos = visibleVisits().filter(v=>v.photos && v.photos.length).sort((a,b)=>b.date.localeCompare(a.date));
+  const cname = id => { const c = clinics.find(x=>x.id===id); return c ? c.name : 'Unknown clinic'; };
+  showModal(`
+    <h3 style="margin-top:0;">📸 Visit photos</h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${withPhotos.reduce((s,v)=>s+v.photos.length,0)} photo${withPhotos.reduce((s,v)=>s+v.photos.length,0)===1?'':'s'} across ${withPhotos.length} visit${withPhotos.length===1?'':'s'}. Tap any photo to view it full size.</p>
+    ${withPhotos.length===0 ? '<div class="empty">No photos yet — attach them when logging a visit.</div>' :
+      withPhotos.map(v=>`
+        <div style="margin-bottom:14px;">
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;">${fmtDate(v.date)} · ${esc(cname(v.clinicId))}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+            ${v.photos.map(ph=>`<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" onclick="showLightbox('${ph.id}','${esc(cname(v.clinicId))} · ${fmtDate(v.date)}')">`).join('')}
+          </div>
+        </div>`).join('')}
+    <button class="btn" onclick="closeModal()">Done</button>
+  `);
 }
 function copyVisitLog(){
   const rows = visitLogRows();
@@ -4039,12 +4204,18 @@ function openProductDetail(pid){
     <div class="card">
       ${currentUser.role==='supervisor' ? `
         <textarea id="pNotesEdit" placeholder="Key selling points, clinical claims, competitor comparison...">${esc(p.salesNotes||'')}</textarea>
-        <input type="text" id="pDocEdit" placeholder="Link to brochure / PDF / presentation (https://...)" value="${esc(p.docUrl||'')}" style="margin-top:8px;">
-        <button class="btn secondary small" onclick="saveProductNotes('${esc(productKey(p))}')">Save</button>
+        <button class="btn secondary small" onclick="saveProductNotes('${esc(productKey(p))}')">Save notes</button>
       ` : `
         ${p.salesNotes?`<div style="font-size:13.5px; line-height:1.6; white-space:pre-wrap;">${esc(p.salesNotes)}</div>`:`<div style="color:var(--muted); font-size:13px;">No sales notes yet.</div>`}
       `}
-      ${safeUrl(p.docUrl)?`<a href="${esc(safeUrl(p.docUrl))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:8px;">📄 Open material</a>`:''}
+      <div id="pMaterials" style="margin-top:10px;"></div>
+      ${currentUser.role==='supervisor' ? `
+        <div style="border-top:1px solid var(--line); margin-top:10px; padding-top:10px;">
+          <input type="text" id="pMatTitle" placeholder="Material name (e.g. Brochure, Price list, Video)">
+          <input type="text" id="pMatUrl" placeholder="Link (https://...)" style="margin-top:8px;">
+          <button class="btn secondary small" style="margin-top:8px;" onclick="addProductMaterial('${esc(productKey(p))}')">+ Add material</button>
+        </div>
+      ` : ''}
     </div>
 
     <div class="section-title">Your performance with this product</div>
@@ -4054,17 +4225,58 @@ function openProductDetail(pid){
       <div class="spec-row"><span class="k">Revenue generated</span><span class="v">${money(revenue)}</span></div>
     </div>
   `);
+  renderProductMaterials(pid);
 }
 
 async function saveProductNotes(pid){
   if(currentUser.role!=='supervisor'){ showToast('Only a supervisor can edit sales materials'); return; }
   const p = findProduct(pid); if(!p) return;
-  const rawUrl = document.getElementById('pDocEdit').value.trim();
-  if(rawUrl && !safeUrl(rawUrl)){ showToast('Link must start with http:// or https://'); return; }
   p.salesNotes = document.getElementById('pNotesEdit').value.trim();
-  p.docUrl = safeUrl(rawUrl);
   await persist('products');
   showToast('Saved');
+}
+// ---- PRODUCT MATERIALS (multiple links per product) ----
+// Legacy single-link docUrl entries are folded into the materials list on read.
+function productMaterials(p){
+  const mats = (p.materials||[]).slice();
+  if(p.docUrl && safeUrl(p.docUrl) && !mats.some(m=>m.url===p.docUrl)) mats.unshift({title:'Material', url:p.docUrl, legacy:true});
+  return mats;
+}
+function renderProductMaterials(pid){
+  const el = document.getElementById('pMaterials');
+  const p = findProduct(pid);
+  if(!el || !p) return;
+  const mats = productMaterials(p);
+  if(!mats.length){ el.innerHTML = `<div style="color:var(--muted); font-size:12.5px;">No materials attached yet.</div>`; return; }
+  el.innerHTML = mats.map((m,i)=>`
+    <div class="row-between" style="gap:8px; margin-top:6px;">
+      <a href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="flex:1; display:block; text-align:center; text-decoration:none;">📄 ${esc(m.title||'Material')}</a>
+      ${currentUser.role==='supervisor'?`<button class="chip small" onclick="removeProductMaterial('${esc(productKey(p))}',${i})">✕</button>`:''}
+    </div>`).join('');
+}
+async function addProductMaterial(pid){
+  if(currentUser.role!=='supervisor') return;
+  const p = findProduct(pid); if(!p) return;
+  const title = document.getElementById('pMatTitle').value.trim();
+  const rawUrl = document.getElementById('pMatUrl').value.trim();
+  if(!rawUrl || !safeUrl(rawUrl)){ showToast('Link must start with http:// or https://'); return; }
+  p.materials = productMaterials(p).map(m=>({title:m.title, url:m.url}));
+  p.materials.push({title: title || 'Material', url: safeUrl(rawUrl)});
+  delete p.docUrl;
+  document.getElementById('pMatTitle').value='';
+  document.getElementById('pMatUrl').value='';
+  await persist('products');
+  renderProductMaterials(pid);
+  showToast('📄 Material added');
+}
+async function removeProductMaterial(pid, idx){
+  if(currentUser.role!=='supervisor') return;
+  const p = findProduct(pid); if(!p) return;
+  p.materials = productMaterials(p).map(m=>({title:m.title, url:m.url}));
+  p.materials.splice(idx, 1);
+  delete p.docUrl;
+  await persist('products');
+  renderProductMaterials(pid);
 }
 
 // ---- REPORTS ----
@@ -4149,8 +4361,8 @@ function buildAssistantContext(){
     monthSummary: UMCore.rangeSummary(m[0], m[m.length-1], me.role==='supervisor'?'all':me.name, data),
     monthlyTargets: targets,
     clinics: clinics.filter(c=>mine(c.rep)).map(c=>({name:c.name, cls:c.cls, rep:c.rep, area:c.area||'', phone:c.phone||'', nextFollowUp:c.nextFollowUp||null, notes:(c.notes||'').slice(0,150), doctors:(c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).slice(0,6)})),
-    recentVisits: [...visits].sort((a,b)=>(b.ts||0)-(a.ts||0)).filter(v=>mine(v.rep)).slice(0,40)
-      .map(v=>({date:v.date, rep:v.rep, clinic:cname(v.clinicId), order:!!v.orderTaken, totalKD:v.orderTotal||0, call:!!v.callOnly, notes:(v.notes||'').slice(0,120)})),
+    recentVisits: [...visits].sort((a,b)=>(b.ts||0)-(a.ts||0)).filter(v=>mine(v.rep)||mine(v.withRep)).slice(0,40)
+      .map(v=>({date:v.date, rep:v.rep, jointWith:v.withRep||null, clinic:cname(v.clinicId), order:!!v.orderTaken, totalKD:v.orderTotal||0, call:!!v.callOnly, notes:(v.notes||'').slice(0,120)})),
     openTasks: tasks.filter(t=>!t.done && (mine(t.rep)||t.rep==='Team')).slice(0,25).map(t=>({text:t.text, due:t.dueDate||null, rep:t.rep})),
     upcomingEvents: events.filter(e=>e.date>=todayStr()).slice(0,15).map(e=>({title:e.title, date:e.date, time:e.time||'', type:e.type, rep:e.rep, notes:e.notes||''})),
     dormantClinics: UMCore.dormantClinics(clinics, visits, todayStr(), {days:30}).filter(c=>mine(c.rep)).slice(0,12),
