@@ -328,6 +328,85 @@ describe('calendarDayItems', () => {
   });
 });
 
+describe('inRange / filterVisitsByRange', () => {
+  test('inclusive on both ends, lexicographic-safe', () => {
+    assert.equal(core.inRange('2026-08-05', '2026-08-01', '2026-08-10'), true);
+    assert.equal(core.inRange('2026-08-01', '2026-08-01', '2026-08-10'), true);
+    assert.equal(core.inRange('2026-08-10', '2026-08-01', '2026-08-10'), true);
+    assert.equal(core.inRange('2026-07-31', '2026-08-01', '2026-08-10'), false);
+    assert.equal(core.inRange('2026-08-11', '2026-08-01', '2026-08-10'), false);
+  });
+  test('open-ended bounds: null from or to means unbounded', () => {
+    assert.equal(core.inRange('2020-01-01', null, '2026-08-10'), true);
+    assert.equal(core.inRange('2030-01-01', '2026-08-01', null), true);
+    assert.equal(core.inRange('', '2026-08-01', null), false); // missing date never matches
+  });
+  test('filterVisitsByRange keeps only in-range visits', () => {
+    const vs = [{ date: '2026-08-01' }, { date: '2026-08-05' }, { date: '2026-08-20' }];
+    assert.deepEqual(core.filterVisitsByRange(vs, '2026-08-02', '2026-08-10').map(v => v.date), ['2026-08-05']);
+    assert.equal(core.filterVisitsByRange(vs, null, null).length, 3);
+  });
+});
+
+describe('rangeSummary', () => {
+  const DATA = {
+    visits: [
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-03', orderTaken: true, orderTotal: 100, orderDiscount: 5 },
+      { rep: 'Mariam', clinicId: 'c2', date: '2026-08-04' },
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-05', callOnly: true },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-05', orderTaken: true, orderTotal: 50 },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-20', orderTaken: true, orderTotal: 999 }, // outside range
+    ],
+    clinics: [
+      { id: 'c1', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-06' },
+      { id: 'c5', rep: 'Renova', cls: 'B', nextFollowUp: '2026-09-01' }, // outside range
+      { id: 'c9', rep: 'Mariam', cls: 'Closed', nextFollowUp: '2026-08-06' }, // closed → excluded
+    ],
+    tasks: [
+      { rep: 'Mariam', done: false, dueDate: '2026-08-04', text: 'x' },
+      { rep: 'Mariam', done: true, dueDate: '2026-08-04', text: 'done' },
+    ],
+    events: [
+      { id: 'e1', title: 'Conf', date: '2026-08-05', rep: 'all' },
+      { id: 'e2', title: 'Later', date: '2026-09-09', rep: 'all' },
+    ],
+    dayPlans: {
+      '2026-08-03': { Mariam: [{ id: 'c1', note: '' }, { id: 'c2', note: '' }] },
+      '2026-08-25': { Mariam: [{ id: 'c1', note: '' }] }, // outside range
+    },
+  };
+  test('aggregates a whole-team range correctly', () => {
+    const s = core.rangeSummary('2026-08-01', '2026-08-07', 'all', DATA);
+    assert.equal(s.totalActivity, 4);
+    assert.equal(s.fieldVisits, 3); // call excluded
+    assert.equal(s.calls, 1);
+    assert.equal(s.orders, 2);
+    assert.equal(s.revenue, 150);
+    assert.equal(s.discount, 5);
+    assert.equal(s.clinicsCovered, 3); // c1, c2, c5
+    assert.equal(s.conversion, 67); // 2 orders / 3 field visits
+    assert.equal(s.planned, 2);
+    assert.equal(s.events, 1);
+    assert.equal(s.followUpsDue, 1); // closed clinic excluded
+    assert.equal(s.tasksDue, 1); // done task excluded
+    assert.equal(s.perRep.length, 2);
+    assert.equal(s.perRep[0].rep, 'Mariam'); // sorted by revenue desc
+  });
+  test('filters by a single rep', () => {
+    const s = core.rangeSummary('2026-08-01', '2026-08-07', 'Renova', DATA);
+    assert.equal(s.totalActivity, 1);
+    assert.equal(s.revenue, 50);
+    assert.equal(s.events, 1); // team-wide event still visible
+    assert.equal(s.planned, 0);
+  });
+  test('empty range returns zeros, not NaN', () => {
+    const s = core.rangeSummary('2025-01-01', '2025-01-31', 'all', DATA);
+    assert.equal(s.totalActivity, 0);
+    assert.equal(s.conversion, 0);
+    assert.equal(s.perRep.length, 0);
+  });
+});
+
 describe('calcStreak', () => {
   const today = '2026-08-07';
   test('counts consecutive days ending today', () => {
