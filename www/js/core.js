@@ -225,11 +225,37 @@
     };
   }
 
+  // ---- period comparison / targets / dormant clinics ----
+  // Percentage change from prev to cur; a zero baseline reports 100% when
+  // anything appeared (and 0% when both are zero) rather than dividing by zero.
+  function pctDelta(cur, prev){
+    if(!prev) return cur > 0 ? 100 : 0;
+    return Math.round((cur - prev) / prev * 100);
+  }
+  // Priority clinics that haven't seen any activity for `days`+ days (or ever).
+  // Never-visited clinics rank first, then longest-quiet first.
+  function dormantClinics(clinics, visits, today, opts){
+    const days = (opts && opts.days) || 30;
+    const classes = (opts && opts.classes) || ['A', 'B'];
+    const lastByClinic = {};
+    (visits || []).forEach(v => {
+      if(v.date && (!lastByClinic[v.clinicId] || v.date > lastByClinic[v.clinicId])) lastByClinic[v.clinicId] = v.date;
+    });
+    return (clinics || [])
+      .filter(c => c.cls !== 'Closed' && classes.includes(c.cls))
+      .map(c => {
+        const last = lastByClinic[c.id] || null;
+        return { id: c.id, name: c.name, rep: c.rep, cls: c.cls, lastVisit: last, daysSince: last ? daysBetween(last, today) : null };
+      })
+      .filter(x => x.lastVisit === null || x.daysSince >= days)
+      .sort((a, b) => (b.daysSince === null ? 99999 : b.daysSince) - (a.daysSince === null ? 99999 : a.daysSince));
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
-    inRange, filterVisitsByRange, rangeSummary
+    inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics
   };
 });
