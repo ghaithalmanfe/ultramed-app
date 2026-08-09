@@ -407,6 +407,46 @@ describe('rangeSummary', () => {
   });
 });
 
+describe('missedPlans', () => {
+  const today = '2026-08-07';
+  const dayPlans = {
+    '2026-08-04': { Mariam: [{ id: 'c1', note: 'samples' }, 'c2'], Renova: [{ id: 'c5', note: '' }] },
+    '2026-08-07': { Mariam: [{ id: 'c3', note: '' }] },   // today → not missed yet
+    '2026-08-20': { Mariam: [{ id: 'c4', note: '' }] },   // future → not missed
+    '2026-07-01': { Mariam: [{ id: 'c9', note: '' }] },   // older than 14 days → ignored
+  };
+  const visits = [
+    { rep: 'Mariam', clinicId: 'c1', date: '2026-08-04' }, // done as planned
+    { rep: 'Renova', clinicId: 'c5', date: '2026-08-05' }, // done, but a day late → still missed for the 4th
+  ];
+  test('finds planned entries with no matching same-day visit', () => {
+    const list = core.missedPlans(dayPlans, visits, today, { daysBack: 14 });
+    assert.deepEqual(list.map(m => m.rep + ':' + m.clinicId), ['Mariam:c2', 'Renova:c5']);
+    assert.equal(list[0].date, '2026-08-04');
+    assert.equal(list[0].note, ''); // legacy string entry normalized
+  });
+  test('today, future, and too-old plans are excluded', () => {
+    const list = core.missedPlans(dayPlans, visits, today, { daysBack: 14 });
+    assert.ok(!list.some(m => ['c3', 'c4', 'c9'].includes(m.clinicId)));
+  });
+  test('empty inputs are safe', () => {
+    assert.deepEqual(core.missedPlans({}, [], today, {}), []);
+    assert.deepEqual(core.missedPlans(null, null, today, null), []);
+  });
+});
+
+describe('calendarDayItems joint visits', () => {
+  test('a joint visit appears for both participants', () => {
+    const data = {
+      visits: [{ rep: 'Mariam', withRep: 'Renova', clinicId: 'c1', date: '2026-08-10' }],
+      clinics: [], tasks: [], events: [], dayPlans: {},
+    };
+    assert.equal(core.calendarDayItems('2026-08-10', 'Mariam', data).visits.length, 1);
+    assert.equal(core.calendarDayItems('2026-08-10', 'Renova', data).visits.length, 1);
+    assert.equal(core.calendarDayItems('2026-08-10', 'Nobody', data).visits.length, 0);
+  });
+});
+
 describe('pctDelta', () => {
   test('normal percentage changes', () => {
     assert.equal(core.pctDelta(150, 100), 50);
