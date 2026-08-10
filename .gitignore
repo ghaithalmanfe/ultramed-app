@@ -6,3 +6,4 @@ android/app/build/
 android/captures/
 android/.idea/
 *.log
+.netlify/
