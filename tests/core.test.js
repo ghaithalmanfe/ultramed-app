@@ -543,3 +543,76 @@ describe('calcStreak', () => {
     assert.equal(core.calcStreak(['2026-08-01', '2026-07-31', '2026-07-30'], '2026-08-01'), 3);
   });
 });
+
+describe('coachInsights', () => {
+  const today = '2026-08-12';
+  const range = { from: '2026-08-01', to: '2026-08-12' };
+  // Mariam: 6 field visits, 1 order, 0 contacts, 4 fruitless visits to c3.
+  // Renova: 6 field visits, 5 orders (500 KD, all at c5), a doctor met each time.
+  const DATA = {
+    clinics: [
+      { id: 'c1', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-05' }, // overdue
+      { id: 'c2', name: 'Beta Clinic', rep: 'Renova', cls: 'B' },                              // never visited → dormant
+      { id: 'c3', name: 'Gamma Center', rep: 'Mariam', cls: 'C' },
+      { id: 'c5', name: 'Delta Smiles', rep: 'Renova', cls: 'B' },
+    ],
+    visits: [
+      { rep: 'Mariam', clinicId: 'c3', date: '2026-08-03' },
+      { rep: 'Mariam', clinicId: 'c3', date: '2026-08-04' },
+      { rep: 'Mariam', clinicId: 'c3', date: '2026-08-05' },
+      { rep: 'Mariam', clinicId: 'c3', date: '2026-08-06' },
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-07' },
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-10', orderTaken: true, orderTotal: 100 },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-03', orderTaken: true, orderTotal: 100, doctorId: 'd1' },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-04', orderTaken: true, orderTotal: 100, doctorId: 'd1' },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-05', orderTaken: true, orderTotal: 100, doctorId: 'd1' },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-06', orderTaken: true, orderTotal: 100, doctorId: 'd1' },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-07', orderTaken: true, orderTotal: 100, doctorId: 'd1' },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-10', doctorId: 'd1' },
+    ],
+    targets: { Mariam: { revenue: 1000 }, Renova: { revenue: 400 } },
+    dayPlans: { '2026-08-10': { Mariam: [{ id: 'c9', note: '' }] } },
+  };
+  const teamOpts = { ...range, today, repFilter: 'all', ...DATA };
+
+  test('flags the whole playbook on the team view', () => {
+    const keys = core.coachInsights(teamOpts).map(i => i.key);
+    ['followups', 'dormant', 'missed', 'target-Mariam', 'stuck', 'concentration', 'jointcoach', 'contacts']
+      .forEach(k => assert.ok(keys.includes(k), 'missing ' + k));
+  });
+  test('urgent items always come before watch and good items', () => {
+    const out = core.coachInsights(teamOpts);
+    const rank = { act: 0, watch: 1, good: 2 };
+    for(let i = 1; i < out.length; i++) assert.ok(rank[out[i].level] >= rank[out[i - 1].level]);
+  });
+  test('a rep behind the monthly target is an act item with the daily rate', () => {
+    const t = core.coachInsights(teamOpts).find(i => i.key === 'target-Mariam');
+    assert.equal(t.level, 'act');
+    assert.match(t.detail, /KD\/day/);
+  });
+  test('a rep past the monthly target is celebrated', () => {
+    const t = core.coachInsights(teamOpts).find(i => i.key === 'target-Renova');
+    assert.equal(t.level, 'good');
+    assert.equal(t.icon, '🏆');
+  });
+  test('the joint-visit pairing names coach and trainee correctly', () => {
+    const j = core.coachInsights(teamOpts).find(i => i.key === 'jointcoach');
+    assert.ok(j.detail.indexOf('Renova watches') === -1); // Renova is the top rep here
+    assert.match(j.detail, /Mariam watches how Renova/);
+  });
+  test('filtering to one rep drops the other rep and team-only insights', () => {
+    const out = core.coachInsights({ ...teamOpts, repFilter: 'Mariam' });
+    const keys = out.map(i => i.key);
+    assert.ok(keys.includes('conversion')); // 1 order / 6 visits = 17% < 30%
+    assert.equal(out.find(i => i.key === 'conversion').level, 'act');
+    assert.ok(!keys.includes('jointcoach'));
+    assert.ok(!keys.includes('target-Renova'));
+  });
+  test('quiet data still returns one reassuring insight', () => {
+    const out = core.coachInsights({ from: null, to: null, today, repFilter: 'all',
+      visits: [], clinics: [], targets: {}, dayPlans: {} });
+    assert.equal(out.length, 1);
+    assert.equal(out[0].key, 'allgood');
+    assert.equal(out[0].level, 'good');
+  });
+});
