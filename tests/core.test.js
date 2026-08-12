@@ -351,10 +351,10 @@ describe('inRange / filterVisitsByRange', () => {
 describe('rangeSummary', () => {
   const DATA = {
     visits: [
-      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-03', orderTaken: true, orderTotal: 100, orderDiscount: 5 },
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-03', orderTaken: true, orderTotal: 100, orderDiscount: 5, doctorIds: ['d1', 'd2'] },
       { rep: 'Mariam', clinicId: 'c2', date: '2026-08-04' },
-      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-05', callOnly: true },
-      { rep: 'Renova', clinicId: 'c5', date: '2026-08-05', orderTaken: true, orderTotal: 50 },
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-05', callOnly: true, contactName: 'Dr. Sara' },
+      { rep: 'Renova', clinicId: 'c5', date: '2026-08-05', orderTaken: true, orderTotal: 50, doctorId: 'd9' },
       { rep: 'Renova', clinicId: 'c5', date: '2026-08-20', orderTaken: true, orderTotal: 999 }, // outside range
     ],
     clinics: [
@@ -391,10 +391,14 @@ describe('rangeSummary', () => {
     assert.equal(s.tasksDue, 1); // done task excluded
     assert.equal(s.perRep.length, 2);
     assert.equal(s.perRep[0].rep, 'Mariam'); // sorted by revenue desc
+    assert.equal(s.contacts, 4); // 2 doctors + 1 phone contact + 1 doctor
+    assert.equal(s.perRep.find(r => r.rep === 'Mariam').contacts, 3);
+    assert.equal(s.perRep.find(r => r.rep === 'Renova').contacts, 1);
   });
   test('filters by a single rep', () => {
     const s = core.rangeSummary('2026-08-01', '2026-08-07', 'Renova', DATA);
     assert.equal(s.totalActivity, 1);
+    assert.equal(s.contacts, 1);
     assert.equal(s.revenue, 50);
     assert.equal(s.events, 1); // team-wide event still visible
     assert.equal(s.planned, 0);
@@ -404,6 +408,28 @@ describe('rangeSummary', () => {
     assert.equal(s.totalActivity, 0);
     assert.equal(s.conversion, 0);
     assert.equal(s.perRep.length, 0);
+  });
+});
+
+describe('contactCount', () => {
+  test('multi-doctor visit counts every doctor seen', () => {
+    assert.equal(core.contactCount({ doctorIds: ['d1', 'd2', 'd3'] }), 3);
+  });
+  test('doctorIds wins over legacy doctorId when both exist', () => {
+    assert.equal(core.contactCount({ doctorIds: ['d1', 'd2'], doctorId: 'd1' }), 2);
+  });
+  test('legacy single-doctor visit counts as one contact', () => {
+    assert.equal(core.contactCount({ doctorId: 'd1' }), 1);
+  });
+  test('an empty doctorIds array falls back to legacy doctorId', () => {
+    assert.equal(core.contactCount({ doctorIds: [], doctorId: 'd1' }), 1);
+  });
+  test('a phone call with a named contact counts as one contact', () => {
+    assert.equal(core.contactCount({ callOnly: true, contactName: 'Dr. Sara' }), 1);
+  });
+  test('a visit with nobody recorded counts zero contacts', () => {
+    assert.equal(core.contactCount({}), 0);
+    assert.equal(core.contactCount({ callOnly: true }), 0);
   });
 });
 

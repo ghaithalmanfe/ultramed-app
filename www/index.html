@@ -611,7 +611,7 @@
     </div>
 
     <div id="doctorPickWrap" style="display:none;">
-      <label>Who did you meet?</label>
+      <label>Who did you meet? <span style="color:var(--muted); font-weight:400; text-transform:none;">(tap everyone you saw — each counts as a contact)</span></label>
       <div class="chip-row" id="doctorPickChips"></div>
       <div id="docTipLink"></div>
     </div>
@@ -679,6 +679,7 @@
       <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddProduct()">+</button>
     </div>
     <div class="nudge" style="margin-bottom:12px;">📦 118 products, 13 brands. Know three of them cold and you can solve most conversations.</div>
+    <button class="btn secondary small" style="margin-bottom:10px;" onclick="openCategoryGuides()">📚 Selling guides — how to sell every category</button>
     <input type="text" class="search-box" id="productSearch" placeholder="Search products or brand..." oninput="renderProducts()">
     <div id="productListWrap"></div>
   </div>
@@ -788,6 +789,7 @@
     </div>
     <div class="card">
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
+      <div class="report-line"><span>Contacts seen</span><span class="v" id="repContacts">0</span></div>
       <div class="report-line"><span>Orders taken</span><span class="v" id="repOrders">0</span></div>
       <div class="report-line"><span>Revenue</span><span class="v" id="repRevenue">0.00 KD</span></div>
       <div class="report-line"><span>Discount given</span><span class="v" id="repDiscount">0.00 KD</span></div>
@@ -951,6 +953,201 @@ if(!window.storage){
 }
 const PRODUCTS_SEED = [{"name":"3-Pin Charger for Waterpik Cordless Plus Water Flosser","brand":"Waterpik","price":4.0,"cat":"Water Flosser Accessories","stock":false,"id":"WP-450ME","barcode":"73950271028","case":"1","age":"13+ Years","desc":"• Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas In 3 Seconds • Up to 50% more effective than string floss • Cleans deep between teeth and below the gumline • 360-Degree Tip Rotation, and Reservoir Capacity Of 45+ Seconds • Dual pressure control system (low for sensitive gums & high for deep cleaning) • Perfect For Travel","img":"https://drive.google.com/thumbnail?id=1BLxVhPKiWQMAJUti0Mce19hByd2iYWnD&sz=w600"},{"name":"Aligner & Retainer Case","brand":"Shenzhen","price":6.9,"cat":"Aligner & Retainer Case","stock":true,"id":"XS037_Black","barcode":"99606920","case":"1","age":"8+years","desc":"• Aligner & Retainer Case - Black outside & Blue inside • Slim Retainer Case , Light & easy on the go for preserving your standard aligners and retainers • Safe For Your Mouth & Your Aligner: Aligner case is made of medical-grade thermoplastic material that will not leach hazardous chemicals into your aligners; Safe for sensitive mouths, retainer holder does not contain natural rubber latex. • Ideal Retainer Container: this case features a compact design and built-in magnetic closure for easy on-the-go storage • Security & Peace Of Mind: Whether you're at home or on the road, our retainer cases protect your aligner or retainer from accidental damage when they're not being worn"},{"name":"Aligner Cleaner + Whitening Foam","brand":"FLASH","price":8.9,"cat":"Ortho Care","stock":false,"id":"HR-AF01","barcode":"6974041280483","case":"1","age":"Not Specified","desc":"FLASH ALIGNER FOAM & CLEANER FOR ALIGNERS & RETAINERS Cleaner + Whitening Freshens Breath Whitens Teeth Kills 99.9% of Bacteria Mild Mint Flavor - 50 ML"},{"name":"Clean Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20101807","barcode":"697029058770","case":"12","age":"7+","desc":"Oral Rinse for Healthy Gums , Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1bEQghWgOyW-M-Ad5tKWVRDtFU9co5rp3&sz=w600"},{"name":"Coconut Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40002-CW","barcode":"93568623","case":"6","age":"7+","desc":"Love for coconut? Flavour shipped straight to your bathroom from an idyllic island paradise; Coconut Whip will have your mouth diving teeth-first through the surf before you’re even close to rinsing. It's just like that once-in-a-lifetime vacation you've always dreamt of...only now you get to go twice a day. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Compact Tuft Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"432368-002446","barcode":"7317400002446","case":"25","age":"7+ years","desc":"Special Brushes TePe Compact Tuft is a single-tuft brush with a dome-shaped brush head for precision cleaning of hard-to-reach areas, such as implants, attachments for overdentures, fixed braces, or along the gum line.","img":"https://drive.google.com/thumbnail?id=1-87b9g3iY7gJIHHdXyPGHsZevjlVFIbc&sz=w600"},{"name":"Cordless Express Water Flosser","brand":"Waterpik","price":24.9,"cat":"Water Flosser","stock":false,"id":"WF-02ME011","barcode":"73950270991","case":"1","age":"13+ Years","desc":"• Reservoir capacity is 150 mL (5 oz) • Pressure range is 45 to 75 psi • Dual Pressure Control • Waterproof and May Be Used in The Shower • No Charging Required • Perfect For Travel And Small Bathrooms • Portable And Lightweight","img":"https://drive.google.com/thumbnail?id=1IAp_xS35198n9DuA5N3_CeTMSCvoBnVo&sz=w600"},{"name":"Cordless Freedom Water Flosser","brand":"Waterpik","price":32.9,"cat":"Water Flosser","stock":true,"id":"WF-03ME012","barcode":"0073950304368","case":"1","age":"13+ Years","desc":"Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas و Up to 50% more effective than string floss Up to 3x as affective for removing Plaque around braces vs. string floss Great for travel . Dual pressure control system Water Resistant"},{"name":"Cordless Plus Water Flosser","brand":"Waterpik","price":35.0,"cat":"Water Flosser","stock":true,"id":"WP-450ME","barcode":"73950271028","case":"1","age":"13+ Years","desc":"• Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas In 3 Seconds • Up to 50% more effective than string floss • Cleans deep between teeth and below the gumline • 360-Degree Tip Rotation, and Reservoir Capacity Of 45+ Seconds • Dual pressure control system (low for sensitive gums & high for deep cleaning) • Perfect For Travel","img":"https://drive.google.com/thumbnail?id=1BLxVhPKiWQMAJUti0Mce19hByd2iYWnD&sz=w600"},{"name":"Cordless Plus Water Reservoir","brand":"Waterpik","price":3.5,"cat":"Water Flosser Accessories","stock":false,"id":"WP-450ME","barcode":"73950271028","case":"1","age":"13+ Years","desc":"• Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas In 3 Seconds • Up to 50% more effective than string floss • Cleans deep between teeth and below the gumline • 360-Degree Tip Rotation, and Reservoir Capacity Of 45+ Seconds • Dual pressure control system (low for sensitive gums & high for deep cleaning) • Perfect For Travel","img":"https://drive.google.com/thumbnail?id=1BLxVhPKiWQMAJUti0Mce19hByd2iYWnD&sz=w600"},{"name":"Cordless Select Water Flosser","brand":"Waterpik","price":49.0,"cat":"Water Flosser","stock":true,"id":"WF-10ME010","barcode":"0073950304009","case":"1","age":"13+ Years","desc":"Effective Plaque Removal Clinically Proven To Remove Up To 99.9% Of Plaque From Treated Areas و Up to 50% more effective than string floss Up to 3x as affective for removing Plaque around braces vs. string floss Up to 2x as effective for Improving gum health around implants vs. string floss Waterproof , can be Used in Shower"},{"name":"Countertop Bullet Ice Maker with Handle","brand":"Silonn","price":45.0,"cat":"Ice Maker","stock":false,"id":"SLIM21B","barcode":"5070002067863","case":"1","age":"Not Specified","desc":"Fast Ice Maker 4 liter Capacity - Color Black Up to 26 lbs of ice per day. Takes 6-7 minutes to make 9 bullet shaped ice cubes 1.2L water tank. Two Size Of Ice Cubes Make two different sizes of ice cubes. CONVENIENT PORTABLE DESIGN The scoop attaches to the basket for convenient storage. Intelligent sensing of ice full and water shortage. Self-Cleaning&Portable Automatic self-cleaning cycle."},{"name":"Deep Undo","brand":"UNDO","price":11.8,"cat":"Skin Treatments","stock":true,"id":"WEB-DEEPUNDO"},{"name":"Dr. Mubarak Alsaeed - The Full Fledged Smile Kit","brand":"Ultramed","price":99.0,"cat":"Bundles","stock":true,"id":"WEB-DRMUBARAKALSAEED"},{"name":"Dr. Waleed Al Yaseen - Your Smile Deserves It Kit","brand":"Ultramed","price":39.9,"cat":"Bundles","stock":true,"id":"WEB-DRWALEEDALYASEEN"},{"name":"Dr. Mohammad Al Mazedi - Smile Makeover Care Kit","brand":"Ultramed","price":99.0,"cat":"Bundles","stock":true,"id":"WEB-DRMOHAMMADALMAZE"},{"name":"Dr. Rawan Khwaiteem - The 10/10 for Kids Kit","brand":"Ultramed","price":19.9,"cat":"Bundles","stock":true,"id":"WEB-DRRAWANKHWAITEEM"},{"name":"Eco-Friendly Dental Floss for Kids","brand":"FLASH","price":1.9,"cat":"Dental Floss","stock":true,"id":"HR-AF02","barcode":"071221740021","case":"30","age":"3+","desc":"FLASH Kids - Dental Floss Enhance your Child’s daily dental Care Routine Use the Dental Floss from FLASH daily for cleaning between the teeth. Removes excess Food between the teeth & protects from cavities. Easy to use - Distinctive handle design - made of environmentally friendly polypropylene material For 3+ 30 Pcs"},{"name":"Extra Soft Interdental Brush Mixed Pack","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"122699-013299","barcode":"7317400013299","case":"10","age":"13+ Years","desc":"Interdental Brushes An interdental brush is the most efficient, user-friendly device for plaque removal between teeth. It's designed to clean the gaps between the teeth, where a regular toothbrush is unable to reach. This interdental brush has extra soft filaments for sensitive gums and teeth. Use daily to keep gums and teeth healthy and fresh.","img":"https://drive.google.com/thumbnail?id=1TtZ6RhuXqW4VMxIi4RM50TPFDN0_vZAY&sz=w600"},{"name":"Flash Kids Flosser - Sea Animal Shapes","brand":"FLASH","price":1.9,"cat":"Dental Floss","stock":true,"id":"WEB-FLASHKIDSFLOSSER"},{"name":"Glostik Tooth Gloss","brand":"HiSmile","price":14.9,"cat":"Teeth Whitener","stock":false,"id":"10028-TG","barcode":"93571692","case":"6","age":"Not Specified","desc":"Glostik The instant whitening wand Glostik is a pearlescent tooth gloss designed to make your teeth instantly whiter for a picture-perfect glow. How does Glostik work? Similar to lip gloss, tooth gloss works by reflecting light to make your teeth appear whiter and give your smile the glow it deserves. The pearlescent glossing formula that covers your teeth creates an instant whitening effect."},{"name":"Icy Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20509733","barcode":"697029393888","case":"12","age":"7+","desc":"Oral Rinse for Fresh Breath, Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1Ye99mfo9b2_YHccZp7cJa-bevTwQVcb-&sz=w600"},{"name":"Implant Denture Water Flosser Tip","brand":"Waterpik","price":6.0,"cat":"Water Flosser Tips","stock":true,"id":"DT-100E","barcode":"73950278119","case":"1","desc":"The Implant Denture Tip is specifically designed to access areas that are unreachable with other tips to clean fixed implant bridges and dentures.For best results, use with waterpik flossers, which allow for more precise tip placement.Replace every 6 months2 color-coded Water Flosser replacement tips per package (color of tips may vary)"},{"name":"Mango Sorbet Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40003-MS","barcode":"93568654","case":"6","age":"7+","desc":"Mad for mango? Brushing your teeth is hardly the most exotic. But dollop a scoop of mango into your routine and it won’t be long until the party’s started. Outrageously fresh flavour quickly transcends into a carnival of colour, treating your mouth to a stunning spectacle of tongue-tingling taste. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Mild Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20509732","barcode":"697029041260","case":"12","age":"7+","desc":"Oral Rinse for Fresh Breath , Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1DxFJG4QlrYiC0L6fVLWlB770joZwQqZ3&sz=w600"},{"name":"Mini Fridge","brand":"Silonn","price":25.0,"cat":"Refrigerator","stock":false,"id":"SLRE01B","barcode":"5070002067887","case":"1","age":"Not Specified","desc":"Capacity 4 Liters / 6 cans Rated voltage/frequency : 220- 240 V /50-60 H Defrost Automatic Door Hinges Left 1 Drawer Annual Energy Consumption 40 Watts Colors BLACK Dimensions DxWxH 24.5 x 18.8 x 27.3 cm Refrigerant Thermo Electric Cooling system Weight 7.5 KG No Batteries Required"},{"name":"Ortho Chews with Removal Tool","brand":"EverSmile","price":5.5,"cat":"Orthodontic Tool","stock":true,"id":"ESOCW2HD2PE003","barcode":"810055330058","case":"1","age":"13+ Years","desc":"OrthoChews help keep your dental treatment on track by alleviating pain associated with new aligners and letting you wear your aligners for longer. Each pack of OrthoChews comes with two sticks — one hard orange chew designed for seating new dental aligners and relieving quadrant pain and one soft blue chew designed for relieving pressure in trouble spots. Depending on what's most comfortable, you may want to use the hard or soft options for all purposes."},{"name":"Orthodontic Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"PAP+ Whitening Powder","brand":"HiSmile","price":10.75,"cat":"Teeth Whitener","stock":true,"id":"10019-WP","barcode":"0744109218996","case":"6","age":"Not Specified","desc":"Activate your everyday toothpaste Our groundbreaking PAP+ Whitening Powder transforms your existing favourite toothpaste into an effective, daily whitening treatment, that effectively oxidises stains. Turn any toothpaste into a whitening toothpaste Formulated at the Hismile Research Centre Safe for enamel and gums"},{"name":"PAP+ Whitening Toothpaste","brand":"HiSmile","price":7.5,"cat":"Toothpaste","stock":false,"id":"10016-WT","barcode":"93571142","case":"6","age":"7+","desc":"Powerful and effective daily whitening. A fluoride-free everyday whitening toothpaste designed to gently lift stains for an overall brighter smile. Daily whitening & maintenance Fluoride-free toothpaste Stain prevention"},{"name":"Peach Iced Tea Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40001-PT","barcode":"93568593","case":"6","age":"7+","desc":"Passionate about peach? Cooler than a summer breeze, this light and refreshing toothpaste is the perfect tonic, and just the breath of fresh care your smile is craving. Simply brush for two minutes and your mouth will feel like it’s spent a day with its feet up on the deck. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Perfect White Black Remineralisation Repair Whitening Charcoal Toothpaste","brand":"Beverly Hills Formula","price":2.7,"cat":"Toothpaste","stock":true,"id":"WEB-PERFECTWHITEBLAC"},{"name":"Perfect White Extreme White Teeth Whitening Toothpaste","brand":"Beverly Hills Formula","price":2.4,"cat":"Toothpaste","stock":true,"id":"WEB-PERFECTWHITEEXTR"},{"name":"Perfect White Gold with Hyaluronic Acid Teeth Whitening Toothpaste","brand":"Beverly Hills Formula","price":2.4,"cat":"Toothpaste","stock":true,"id":"10BPWG","barcode":"5020105002834","case":"10","age":"13+ Years","desc":"Contains REAL Gold particles! Renowned for its anti-bacterial, anti-inflammatory and blood flow regulating properties, Gold Whitening Toothpaste helps fight stains whilst boosting holistic oral care.","img":"https://drive.google.com/thumbnail?id=1nZIMwEYN71lYROrpgZtTT3xX3XN89j9X&sz=w600"},{"name":"Perfect White Sensitive Teeth Whitening Toothpaste","brand":"Beverly Hills Formula","price":2.4,"cat":"Toothpaste","stock":true,"id":"10BPWS1","barcode":"5020105004340","case":"10","age":"13+ Years","desc":"Perfect White Sensitive Toothpaste 100ML A Natural Whitening Purple Toothpaste that has added brightness colour corrector and sensitivity protection, ensuring that people with sensitive teeth can still receive the Beverly Hills Formula benefits. It does whiten teeth without damaging the enamel and causing sensitivity or pain. This toothpaste is carefully formulated with Hydroxyapatite to help repair tooth enamel."},{"name":"Philips One by Sonicare Battery Toothbrush","brand":"Philips","price":9.9,"cat":"Electric Toothbrush","stock":true,"id":"HY1100/01","barcode":"8710103997955","case":"4","age":"4+ Years","desc":"PhilipsOne Battery Toothbrush by Sonicare, Miami Coral, 90 days battery duration, with microvibrations, 2 mins timer and quadpacer, travel case and AAA Battery included. Think of PhilipsOne like a manual toothbrush that works harder and faster. 13,000 microvibrations per minute and contoured bristles gently clean your teeth for a whiter, brighter smile."},{"name":"Philips One by Sonicare Brush Heads","brand":"Philips","price":4.0,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare 1100 Series","brand":"Philips","price":12.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare 2100 Series","brand":"Philips","price":16.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare 9900 Prestige","brand":"Philips","price":129.0,"cat":"Electric Toothbrush","stock":true,"id":"HX9992/22","barcode":"8710103968665","case":"1","age":"Adults","desc":"Sonicare Prestige, SenseIQ Premium MIDNIGHT BLUE SenseIQ technology senses adapts and cares As you brush, SenseIQ technology senses pressure, motion, coverage, and more up to 100 times per second. It then adapts the intensity if you push too hard. The intelligence of SenseIQ takes the guesswork out of brushing modes, so you can experience effortless care and better brushing over time.","img":"https://drive.google.com/thumbnail?id=1oLmBAgQ2kGCT-5RZBODgH0o516FS-teT&sz=w600"},{"name":"Philips Sonicare A3 Premium All-in-One","brand":"Philips","price":14.9,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX9092/67","barcode":"8710103972297","case":"1","age":"Adults","desc":"A3 Premium All-in-One brush head is the only one you need to achieve cleaner, whiter teeth & healthier gums. This brush head results in 20x more plaque removal, up to 100% stain reduction & up to 15x healthier gums in just 2 weeks","img":"https://drive.google.com/thumbnail?id=1oUcD-_V4hRkpnGYipKQmDkVqXSVOe5En&sz=w600"},{"name":"Philips Sonicare C1 ProResults","brand":"Philips","price":6.99,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare C3 Premium Plaque Defense","brand":"Philips","price":11.5,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX9042/96","barcode":"8710103897521","case":"1","age":"13+ Years","desc":"Get a clean as unique as your smile. Our C3 Premium Plaque Defence adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean.","img":"https://drive.google.com/thumbnail?id=1n0rq3qBDmBPGsCm5ZLUA5w8UDu1S5qUy&sz=w600"},{"name":"Philips Sonicare Compact Flosser 1000 - Blue","brand":"Philips","price":34.9,"cat":"Water Flosser","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare Compact Flosser 1000 - Purple","brand":"Philips","price":34.9,"cat":"Water Flosser","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare Compact Flosser Replacement Nozzle (Standard & Comfort)","brand":"Philips","price":5.9,"cat":"Water Flosser Tips","stock":true,"id":"HX3333/23","barcode":"\t\n8720689046985","case":"1","age":"13+ Years","desc":"Effective ossing in just 60 seconds Removes up to 99.9% of plaque in treated areas The Philips Sonicare Compact Flosser is fast, effective, and ready to take anywhere. The osser removes up to 99.9% of plaque from between your teeth and along your gumline in just 60 seconds. Compact for on-the-go Collapsible 200ml reservoir for easy storage and travel 14 days of battery life between charges 2-in-1 nozzle-storage and lling port The easy way to start ossing Enjoy Pulse, Clean or Sensitive mode Two nozzles for gentle and effective cleaning Clean every quadrant, never miss a spot IPX7 water-resistant Two ways you can add water"},{"name":"Philips Sonicare Cordless Power Flosser 2000","brand":"Philips","price":37.9,"cat":"Water Flosser","stock":true,"id":"HX3822/11","barcode":"8720689011051","case":"1","age":"13+ Years","desc":"Philips Sonicare Cordless Power Flosser 2000 Oral Irrigator, Mid range"},{"name":"Philips Sonicare Cordless Power Flosser 3000","brand":"Philips","price":44.9,"cat":"Water Flosser","stock":true,"id":"HX3826/31","barcode":"8720689011129","case":"1","age":"Adults","desc":"Powerful and gentle for a thorough clean Designed to remove plaque and food debris even from hard-to-reach areas. Leave your mouth feeling fresh and clean without the hassle of string flossing. Cordless, compact design makes flossing simple Compact, ergonomic design offers a convenient solution for everyday flossing. Cordless handle allows for easy portability and flossing anywhere. 360° rotation for hard-to-reach spots Access those hard-to-reach areas with a nozzle that rotates 360 degrees, so that you can use the device in any orientation. 3 intensity settings to suit your needs Choose the clean that suits your smile. Adjustable intensity settings adapt for comfort and cleaning power. Easy","img":"https://drive.google.com/thumbnail?id=1iL6vYQkWDj7gSg9a61316qflqS8Qv-h2&sz=w600"},{"name":"Philips Sonicare Diamond Clean 9000 Series Special Edition - Blue","brand":"Philips","price":69.0,"cat":"Electric Toothbrush","stock":true,"id":"HX9911/92","barcode":"8720689031363","case":"1","age":"Adults","desc":"An effortlessly white smile.Whiter teeth in just 3 days*.Start every day in style with advanced Sonicare technology for whiter teeth andoral health. Gentle on gums with a connected app for coaching and tracking. Choose from 4 modes and 3 intensities for a personalized brushing experience.Adapts to your needs.Pressure sensor lets you know if you're pressing too hard.BrushSync automatically selects the best mode for you. 4 modes &amp; 3 intensities for personalized brushing experience .Stay on track with a personalized progress report.Sonicare app for coaching and progress reports, Stylish, user-friendly design Stylish design for a premium brushing experience Whiter teeth improved oral health "},{"name":"Philips Sonicare Diamond Clean 9000 Series Special Edition - Purple","brand":"Philips","price":69.0,"cat":"Electric Toothbrush","stock":true,"id":"HX9911/92","barcode":"8720689031363","case":"1","age":"Adults","desc":"An effortlessly white smile.Whiter teeth in just 3 days*.Start every day in style with advanced Sonicare technology for whiter teeth andoral health. Gentle on gums with a connected app for coaching and tracking. Choose from 4 modes and 3 intensities for a personalized brushing experience.Adapts to your needs.Pressure sensor lets you know if you're pressing too hard.BrushSync automatically selects the best mode for you. 4 modes &amp; 3 intensities for personalized brushing experience .Stay on track with a personalized progress report.Sonicare app for coaching and progress reports, Stylish, user-friendly design Stylish design for a premium brushing experience Whiter teeth improved oral health "},{"name":"Philips Sonicare DiamondClean 9000","brand":"Philips","price":81.0,"cat":"Electric Toothbrush","stock":true,"id":"WEB-PHILIPSSONICARED"},{"name":"Philips Sonicare F1 Standard Nozzle","brand":"Philips","price":11.9,"cat":"Water Flosser Tips","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare F3 Quad Stream Nozzle","brand":"Philips","price":11.9,"cat":"Water Flosser Tips","stock":true,"id":"HX3062/00","barcode":"8710103953241","case":"1","age":"7+ years","desc":"For maximum coverage and an extra thorough clean, use the Quad Stream nozzle to concentrate water into four wide streams between teeth and along the gum line. The soft rubber guide is gentle on gums and every nozzle simply clicks on and off / Items included F3 Quad Stream nozzle: 2 pcs"},{"name":"Philips Sonicare ProtectiveClean 4300","brand":"Philips","price":34.9,"cat":"Electric Toothbrush","stock":true,"id":"HX6803/26","barcode":"8710103940593","case":"1","age":"13+ Years","desc":"Built-in pressure sensor.1 x BrushSync feature.1 cleaning mode.Up to 62000 brush movement/min.Helps reduce cavities.Whitens teeth in 1 week.Vibrates handle to alert user.SmarTimer and Quadpacer."},{"name":"Philips Sonicare Rechargeable Toothbrush 1100 Series","brand":"Philips","price":9.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3641/01","barcode":"8710103985426","case":"1","age":"10+ Years","desc":"Sonic technology combined with our brush action gently removes plaque up to 3x better* than a manual toothbrush.Ergonomic design makes the toothbrush easy to hold and use 14-day long lasting battery life. Easy transition to Sonicare"},{"name":"Philips Sonicare Rechargeable Toothbrush 2100 Series","brand":"Philips","price":13.9,"cat":"Electric Toothbrush","stock":true,"id":"HX3651/12","barcode":"8710103985495","case":"1","age":"13+ Years","desc":"The Sonicare electric toothbrush with advanced sonic technology is clinically proven to remove plaque up to 3X better than a manual toothbrush. It removes plaque from your teeth and along the gum line while protecting your gums. 14-day long lasting battery life"},{"name":"Philips Sonicare Rechargeable Toothbrush 5300 Series","brand":"Philips","price":36.9,"cat":"Electric Toothbrush","stock":true,"id":"HX6012/07","barcode":"8710103786856","case":"1","age":"7+ years","desc":"Get a clean as unique as your smile. Our C1 Pro Results adapts to the contours of your teeth and gums thanks to soft, flexing sides that give you 4x more surface contact than a regular brush head** for a comfortable, deep clean."},{"name":"Philips Sonicare S2 Sensitive","brand":"Philips","price":10.99,"cat":"Toothbrush Replacement Head","stock":true,"id":"HX6052/93","barcode":"8720689021050","case":"1","age":"13+ Years","desc":"The Philips Sonicare S Sensitive toothbrush head is perfect for those who seek relief from painfully sensitive teeth and gums. You'll get an effective clean that's easy on your gums."},{"name":"Philips Sonicare W2 Optimal White","brand":"Philips","price":11.5,"cat":"Toothbrush Replacement Head","stock":true,"id":"WEB-PHILIPSSONICAREW"},{"name":"Philips Tooth Brush - Travel Case","brand":"Philips","price":4.9,"cat":"Toothbrush Accessories","stock":false,"id":"WEB-PHILIPSTOOTHBRUS"},{"name":"Pik Pocket Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"PP-100E","barcode":"073950290524","case":"1","age":"13+ Years","desc":"For periodontal pockets and furcations. A soft rubber tip designed for gentle, low-pressure delivery of therapeutic rinses below the gumline. Clinically proven to access 90% of a 6mm pocket.","img":"https://drive.google.com/thumbnail?id=1q7B-qw6OTElff4ny1uxzGjqPoelyoOSF&sz=w600"},{"name":"Plaque Seeker Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"PS-100E","barcode":"1073950122350","case":"1","age":"13+ Years","desc":"For implants, crowns, bridges, and other restorations. Clinically proven 2X as effective as string floss for implant patients, the Plaque Seeker™ Tip is designed to provide the benefits of pulsating water.","img":"https://drive.google.com/thumbnail?id=1ydbBH72XA8pwpZLkyR59zc564z8tSUs1&sz=w600"},{"name":"Precision (Classic) Handheld Cordless Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":false,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"Precision (Classic) Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":false,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"Red Velvet Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40006-RV","barcode":"93571074","case":"6","age":"7+","desc":"Revel in Red Velvet Indulging in the rich flavour of Red Velvet is an experience like no other. Each bite transports your senses through layer upon layer of opulent extravagance, on a journey of the purest pleasure. Forget about waiting all day for something sweet. Start with dessert. You deserve it. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Sparkle Mint Oral Rinse","brand":"The Breath Co","price":7.27,"cat":"Mouthwash","stock":true,"id":"20510308","barcode":"697029995204","case":"12","age":"7+","desc":"Oral Rinse for Healthy Smile , Fights Bad Breath for 12 Hours Works Instantly Help Relieve Dry Mouth No Alcohol, No Artificial Flavours nor Colors None Burning","img":"https://drive.google.com/thumbnail?id=1bgI5dTIx4Wo9ZRxaJipD6f083fNmcXIg&sz=w600"},{"name":"Special Care Ultra Soft Speciality Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"452357-000718","barcode":"7317400000718","case":"25","age":"7+ years","desc":"For patients with extremely sore and delicate tissues, e.g. as a result of trauma, radiotherapy treatment or after oral surgery. • 12,000 (Regular) and 9,000 (Compact) ultra soft bristles for delicate cleaning. • First brush stage after oral surgery.*","img":"https://drive.google.com/thumbnail?id=1SM1SgmhH8hK_3LIWN396uREVp168HhJH&sz=w600"},{"name":"Teeth Whitening Strips","brand":"FLASH","price":13.9,"cat":"Teeth Whitener","stock":true,"id":"HR-AF03","barcode":"6939548131119","case":"1","age":"18+","desc":"Intensive Whitening Strong Adhesion Soft & comfortable No Residueson Teeth Surface Use any time anywhere 28 Strips for Upper & lower teeth – 14 treatments"},{"name":"TePe Angle Mixed Pack","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"154699-011653","barcode":"7317400011653","case":"10","age":"13+ Years","desc":"Tepe's wide selection of interdental brushes offers an option for every need. Whether you prefer a short or longer handle, an angled or straight brush head or original or extra soft filaments, you will find a brush that suits you. The most common oral diseases start between the teeth, but both gum disease and caries can be successfully prevented by daily use of an interdental brush. Tepe's user-friendly interdental brushes are available in several colour coded sizes, all with plastic coated wire. The ergonomic handle enables cleaning with steady and controlled movements.6 Different sized angled Interdental Brushes","img":"https://drive.google.com/thumbnail?id=1t56Rw7n-89sN1bR0bxXZuXUA4YgCg973&sz=w600"},{"name":"TePe Choice Toothbrush","brand":"TePe","price":1.95,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"TePe Colour Soft Toothbrush Pack Of 3","brand":"TePe","price":2.2,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"Tepe Dental Floss Waxed Mint","brand":"TePe","price":1.38,"cat":"Dental Floss","stock":true,"id":"642230-254695","barcode":"7350121254695","case":"10","age":"13+ Years","desc":"Easy access to narrow interdental spaces – The cleverly designed backing plate helps to gently insert the dental floss using the jawbone. The elongated handle fits comfortably in the hand"},{"name":"TePe EasyFit - M/L","brand":"TePe","price":2.75,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEEASYFITML"},{"name":"TePe EasyFit - S/M","brand":"TePe","price":2.75,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEEASYFITSM"},{"name":"TePe EasyPick Orange (XS/S) Toothpick","brand":"TePe","price":2.2,"cat":"Toothpicks","stock":true,"id":"242310-015811","barcode":"7317400015811","case":"10","age":"13+ Years","desc":"An easy to use cleaning option for tight interdental spaces","img":"https://drive.google.com/thumbnail?id=1kDfepplpSnRRXwi6j8Z2tPoU3PigKVTn&sz=w600"},{"name":"TePe GOOD Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"306684-022390","barcode":"7317400022390","case":"14","age":"7+ Years","desc":"TePe GOOD™ Regular soft toothbrush is part of the unique TePe GOOD™ range made from bio-based plastic – without compromising on product quality, efficiency or design. The TePe GOOD™ toothbrush is a user-friendly toothbrush suitable for older children and adults. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. # Made from 96% bio-based plastic # Tapered brush head for easy access # ​End-rounded filaments for gentle and efficient cleaning","img":"https://drive.google.com/thumbnail?id=1V8dBgL-xhRp2F-Les2RHMTg6vNi1w1mE&sz=w600"},{"name":"TePe Implant Care Kit","brand":"TePe","price":9.9,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEIMPLANTCAREK"},{"name":"TePe Kids X-soft Toothbrush","brand":"TePe","price":1.43,"cat":"Manual Toothbrush","stock":true,"id":"339691-008219","barcode":"7317400008219","case":"14","age":"3+ Years","desc":"TePe Kids X-soft is a toothbrush for children from the age of 3 years. The toothbrush has a colourful print and a smaller, user-friendly handle. The tapered brush head improves access and the end-rounded filaments ensure a gentle cleaning. TePe Kids is also available with soft filaments","img":"https://drive.google.com/thumbnail?id=1PSbiPi_4PLYuEZ5HAsiATLqUpZ0eZW-4&sz=w600"},{"name":"TePe Mini Flosser","brand":"TePe","price":2.4,"cat":"Dental Floss","stock":true,"id":"622156-257139","barcode":"7350121257139","case":"15","age":"13+ Years","desc":"The Mini Flosser Tepe Good is a preloaded dental floss holder for efficient and convenient use. It contains PFAA-free dental floss that glides easily through tight interdental spaces"},{"name":"TePe Mini X-soft Toothbrush","brand":"TePe","price":1.43,"cat":"Manual Toothbrush","stock":true,"id":"382687-010434","barcode":"7317400010434","case":"14","age":"3+ Years","desc":"The TePe Mini™ extra soft toothbrush is developed for use from the first tooth to the age of 3 years. The tapered mini brush head has extra soft filaments for a gentle cleaning. The handle provides a stable grip for the adult brushing the child’s teeth but fits just as well in the small hand.","img":"https://drive.google.com/thumbnail?id=1iQ5Z9o3mynqKM_VlkOMgtXN8nqKV9zJa&sz=w600"},{"name":"TePe Nova Toothbrush - Soft - Pack of 3 (2+1 Free)","brand":"TePe","price":3.52,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Nova Toothbrush - X Soft - Pack of 3 (2+1 Free)","brand":"TePe","price":3.52,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Nova Soft - Sustainable Toothbrush","brand":"TePe","price":1.76,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Nova X-soft - Sustainable Toothbrush","brand":"TePe","price":1.76,"cat":"Manual Toothbrush","stock":true,"id":"312697-250932","barcode":"7350121250932","case":"14","age":"13+ Years","desc":"The TePe Nova toothbrush has a tapered brush head with a special tip for increased access in difficult to reach areas, especially around the posterior teeth. End-rounded filaments ensure gentle cleaning. Is has an ergonomic, non-slip handle. The toothbrush neck can be angled without heating.","img":"https://drive.google.com/thumbnail?id=13rcfP4oaDnm7SAdUFItSsGAFHZrOY0G9&sz=w600"},{"name":"TePe Original Black (1.5 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALBLAC"},{"name":"TePe Original Blue (0.6 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALBLUE"},{"name":"TePe Original Grey (1.3 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALGREY"},{"name":"TePe Original Interdental Brush Mixed Pack","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"122699-013299","barcode":"7317400013299","case":"10","age":"13+ Years","desc":"Interdental Brushes An interdental brush is the most efficient, user-friendly device for plaque removal between teeth. It's designed to clean the gaps between the teeth, where a regular toothbrush is unable to reach. This interdental brush has extra soft filaments for sensitive gums and teeth. Use daily to keep gums and teeth healthy and fresh.","img":"https://drive.google.com/thumbnail?id=1TtZ6RhuXqW4VMxIi4RM50TPFDN0_vZAY&sz=w600"},{"name":"TePe Original Orange (0.45 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALORAN"},{"name":"TePe Original Pink (0.4 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALPINK"},{"name":"TePe Original Red (0.5 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALRED0"},{"name":"TePe Original Yellow (0.7 mm) Interdental Brush","brand":"TePe","price":2.2,"cat":"Interdental Toothbrush","stock":true,"id":"WEB-TEPEORIGINALYELL"},{"name":"TePe Orthodontic Kit","brand":"TePe","price":4.0,"cat":"Orthodontic Kit","stock":true,"id":"WEB-TEPEORTHODONTICK"},{"name":"TePe Supreme - Soft - Toothbrush Pack of 3 (2+1 Free)","brand":"TePe","price":3.96,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"TePe Supreme Soft - Sustainable Toothbrush","brand":"TePe","price":1.98,"cat":"Manual Toothbrush","stock":true,"id":"322383-028347","barcode":"7317400028347","case":"16","age":"7+ Years","desc":"TePe Colour™ is part of the TePe Select line - high-quality toothbrushes with a user-friendly handle, a tapered brush head for improved access, and end-rounded filaments for gentle cleaning. The Colour™ toothbrush is a good value, user-friendly toothbrush by TePe. The tapered brush head improves access and the end-rounded filaments ensure gentle cleaning. The neck of TePe Colour™ can be angled after heating in hot water","img":"https://drive.google.com/thumbnail?id=1OcAPsF8vW46rq4BRHU2r9XQkGy6iRCKO&sz=w600"},{"name":"TePe Tongue Cleaner","brand":"TePe","price":2.48,"cat":"Tongue Scraper","stock":true,"id":"942385-022178","barcode":"7317400022178","case":"14","age":"13+ Years","desc":"TePe GOOD™ Tongue Cleaner is designed to remove bacteria on the tongue to improve oral health and prevent bad breath. The design corresponds to the natural shape of the tongue, which reduces the gag reflex and makes it easier to reach far back in the mouth. The three, slightly raised cleaning blades give a triple-effect, meaning that bacteria is removed in one stroke. The tongue cleaner is dishwasher safe.","img":"https://drive.google.com/thumbnail?id=1AmnHpAlL-vYuJ3-kb3uSfvCNHmiaTyWD&sz=w600"},{"name":"Tongue Cleaner Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"TC-100E","barcode":"073950102025","case":"1","age":"13+ Years","desc":"For fresh breath. With a gentle scraping and flushing action, the Waterpik® Tongue Cleaner removes bacteria and sulfur compounds that reside on the tongue and cause bad breath. Daily use can help prevent halitosis.","img":"https://drive.google.com/thumbnail?id=1kxHLxbenPnn8sihPfZl0p07jjDs4I0AX&sz=w600"},{"name":"Tongue Scraper with Travel Pouch","brand":"FLASH","price":4.5,"cat":"Tongue Scraper","stock":true,"id":"FTBP","barcode":"7256892558683","case":"12","age":"13+ Years","desc":"This tongue scraper is a practical tool made from Ergonomic advanced stainless steel that removes bacteria ,food particles, and dead cells from the tongue's surface for a fresh breath all day. 1.Reduces bad breath 2. Removes Plaque and Bacteria Build-up 3. Enhances Oral Hygiene 4. Improves taste sensation 5. 100% High Grade stainless steel"},{"name":"Toothbrush Water Flosser Tip","brand":"Waterpik","price":4.5,"cat":"Water Flosser Tips","stock":true,"id":"TB-100E","barcode":"073950111218","case":"1","age":"13+ Years","desc":"Stationary toothbrush tip allows water to pulsate through the brush to clean and rinse the tooth surface. Designed to let you brush and water floss at the same time. Use with or without toothpaste.","img":"https://drive.google.com/thumbnail?id=1TaklF6UdemkRrUuWDDsQAczj3CDVwkr6&sz=w600"},{"name":"Ultra Professional Water Flosser","brand":"Waterpik","price":65.0,"cat":"Water Flosser","stock":true,"id":"WP-660ME","barcode":"073950210195","case":"1","age":"13+ Years","desc":"Product Features : 7 flossing tips 360-degree rotating tip handle Advanced pressure control system with 10 settings Reservoir capacity of 90+ seconds On/Off water control on handle 2 flossing modes - Floss and Hydro-Pulse Massage 1-minute timer with 30-second pacer LED information panel"},{"name":"Ultramed Gift Box - For Packaging","brand":"Ultramed","price":3.5,"cat":"Toothbrush Accessories","stock":true,"id":"WEB-ULTRAMEDGIFTBOXF"},{"name":"Undo Microneedle Pimple Patches","brand":"UNDO","price":7.5,"cat":"Skin Treatments","stock":true,"id":"UMP02","barcode":"071221740020","case":"150","desc":"2. Microneedle Pimple patches: 18 Pimple Patches Directions: • Clean and dry skin. • Apply a patch to the affected area. • Press firmly for a few seconds. • Wear for 4+ hours, or overnight. • The patch may turn white as it absorbs oil and gunk. • Replace patch as necessary until you achieve the desired results. • Note: To ensure proper adhesion, do not use other skincare products under or around the patch."},{"name":"Undo Nose Patches","brand":"UNDO","price":7.9,"cat":"Skin Treatments","stock":true,"id":"WEB-UNDONOSEPATCHES"},{"name":"Undo Pimple Patches","brand":"UNDO","price":3.9,"cat":"Skin Treatments","stock":true,"id":"UMP02","barcode":"071221740020","case":"150","desc":"2. Microneedle Pimple patches: 18 Pimple Patches Directions: • Clean and dry skin. • Apply a patch to the affected area. • Press firmly for a few seconds. • Wear for 4+ hours, or overnight. • The patch may turn white as it absorbs oil and gunk. • Replace patch as necessary until you achieve the desired results. • Note: To ensure proper adhesion, do not use other skincare products under or around the patch."},{"name":"Undo Skin Essentials Bag","brand":"UNDO","price":5.0,"cat":"Skin Treatments","stock":true,"id":"WEB-UNDOSKINESSENTIA"},{"name":"V34 Color Corrector Foam","brand":"HiSmile","price":12.5,"cat":"Teeth Whitener","stock":false,"id":"10046-CF","barcode":"0754590176842","case":"6","age":"Not Specified","desc":"V34 works to brighten teeth by utilising colour correcting technology. It conceals everyday stains on your teeth to instantly improve brightness for the day. Use 2 pumps & swish for 15 seconds Utilises colour correcting technology Non-invasive brightening treatment"},{"name":"V34 Colour Corrector Serum","brand":"HiSmile","price":14.5,"cat":"Teeth Whitener","stock":false,"id":"100018-CC","barcode":"0744109218965","case":"6","age":"Not Specified","desc":"V34 works to brighten teeth by utilising colour correcting technology. By counter-balancing the different hues in your teeth, V34 conceals stains and improves brightness. Utilises colour correcting technology Non-invasive brightening treatment Highest concentration of V34 in our range"},{"name":"Watermelon Toothpaste","brand":"HiSmile","price":4.9,"cat":"Toothpaste","stock":true,"id":"40005-WM","barcode":"93568609","case":"6","age":"7+","desc":"Wild about watermelon? From the second it melts in your mouth; a wave of watermelon will sweep you upwards towards the highest heights of hydration. So, grab a slice, strap yourself in and look forward to flavour in full flow. You’ll wonder how you ever went without. Flavour with a burst of freshness Fluoride+ formula for a superior clean Long-lasting oral health benefits"},{"name":"Whitening Bundle 1","brand":"Ultramed","price":63.0,"cat":"Bundles","stock":true,"id":"WEB-WHITENINGBUNDLE1"},{"name":"Whitening Bundle 2","brand":"Ultramed","price":63.0,"cat":"Bundles","stock":true,"id":"WEB-WHITENINGBUNDLE2"},{"id":"UNIVET-GAL-25","name":"Univet Galilean Loupes 2.5x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Galilean magnification 2.5x. Tailor-made or ready-made, Italian build with optimal weight distribution for prolonged use. Entry magnification for general dentistry and hygiene.","age":"Professional"},{"id":"UNIVET-GAL-30","name":"Univet Galilean Loupes 3.0x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Galilean magnification 3.0x, built to the practitioner’s working distance and interpupillary distance. Popular step-up for restorative work.","age":"Professional"},{"id":"UNIVET-GAL-35","name":"Univet Galilean Loupes 3.5x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Galilean magnification 3.5x. Higher magnification in a lightweight frame; detailed restorative and prosthetic work.","age":"Professional"},{"id":"UNIVET-PRI-40","name":"Univet Prismatic Loupes 4.0x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"ULTRA-HD Prismatic optics 4.0x. Greater clarity and wider depth of field than Galilean. Endodontics and microsurgery.","age":"Professional"},{"id":"UNIVET-PRI-45","name":"Univet Prismatic Loupes 4.5x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"ULTRA-HD Prismatic optics 4.5x. For endodontics, periodontal microsurgery and implantology.","age":"Professional"},{"id":"UNIVET-PRI-60","name":"Univet Prismatic Loupes 6.0x","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"ULTRA-HD Prismatic optics 6.0x — maximum magnification in the Univet range for the most detailed microsurgical work.","age":"Professional"},{"id":"UNIVET-ERGO","name":"Univet Ergo Loupes","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"Ergo variant with steeper declination angle so the practitioner works upright — reduces neck strain over long procedures.","age":"Professional"},{"id":"UNIVET-HEADLIGHT","name":"Univet LED Headlight","brand":"Univet","price":null,"cat":"Loupes & Optics","stock":true,"desc":"LED headlight to pair with Univet loupes for operating-field illumination. Wireless models offer gesture control.","age":"Professional"}];
 const CLINICS_SEED = [{"name":"32 Dental Clinic","rep":"Mariam","cls":"C","market":"A","notes":"","id":"c-32-dental-clinic"},{"name":"3lagy Pharmacy","rep":"Renova","cls":"B","market":"D","notes":"","id":"c-3lagy-pharmacy"},{"name":"Afia Specialized Clinic","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-afia-specialized-clinic"},{"name":"Afnan Dental center","rep":"Mariam","cls":"D","market":"D","notes":"","id":"c-afnan-dental-center"},{"name":"Aknan Clinic","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-aknan-clinic"},{"name":"Al Fozan Clinic","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-al-fozan-clinic"},{"name":"Al Hekma Dental Center","rep":"Mariam","cls":"D","market":"D","notes":"","id":"c-al-hekma-dental-center"},{"name":"Al Orf Hospital","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-al-orf-hospital"},{"name":"Al Salam Hospital","rep":"Mariam","cls":"C","market":"A","notes":"","id":"c-al-salam-hospital"},{"name":"Al Seef Hospital","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-al-seef-hospital"},{"name":"Aline Dental Center Jahra","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-aline-dental-center-jahra"},{"name":"Al-Turki International Pharmacy","rep":"Mariam","cls":"A","market":"B","notes":"","id":"c-al-turki-international-pharmac"},{"name":"Apex Dental Center","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-apex-dental-center"},{"name":"AsnanCo","rep":"Renova","cls":"C","market":"D","notes":"","id":"c-asnanco"},{"name":"Asnaniq App (N A P International Group )","rep":"Renova","cls":"C","market":"C","notes":"","id":"c-asnaniq-app-n-a-p-internationa"},{"name":"Balsam Dental Care Center","rep":"Mariam","cls":"D","market":"D","notes":"","id":"c-balsam-dental-care-center"},{"name":"Basma Clinic ( Bneid Al Gar)","rep":"Renova","cls":"A","market":"B","notes":"","id":"c-basma-clinic-bneid-al-gar"},{"name":"Bayan Dental Center","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-bayan-dental-center"},{"name":"Boston Dental Group","rep":"Mariam","cls":"F","market":"D","notes":"","id":"c-boston-dental-group"},{"name":"Clinica Dental Center (Dr. Mohamed Al Saffi )","rep":"Mariam","cls":"B","market":"B","notes":"Stock move","id":"c-clinica-dental-center-dr-moham"},{"name":"Crown Dental Center","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-crown-dental-center"},{"name":"Crystal Dental Centre","rep":"Mariam","cls":"F","market":"B","notes":"Potential","id":"c-crystal-dental-centre"},{"name":"Al Bayraq Pharmacy","rep":"Renova","cls":"C","market":"D","notes":"","id":"c-al-bayraq-pharmacy"},{"name":"Asnank Dental","rep":"Mariam","cls":"Closed","market":"Closed","notes":"","id":"c-asnank-dental"},{"name":"Dar Al Baraa Pharmacy","rep":"Mariam","cls":"F","market":"C","notes":"","id":"c-dar-al-baraa-pharmacy"},{"name":"Dar Al Shifa Clinics","rep":"Mariam","cls":"F","market":"C","notes":"","id":"c-dar-al-shifa-clinics"},{"name":"Dasman Dental Center","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-dasman-dental-center"},{"name":"Dental 8 Clinic","rep":"Mariam","cls":"F","market":"D","notes":"","id":"c-dental-8-clinic"},{"name":"Dental Zone Center Sabah Al Salem","rep":"Mariam","cls":"F","market":"D","notes":"Potential","id":"c-dental-zone-center-sabah-al-sa"},{"name":"Dentica Dental Center","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-dentica-dental-center"},{"name":"Doctor Smile Dental Center","rep":"Mariam","cls":"B","market":"D","notes":"","id":"c-doctor-smile-dental-center"},{"name":"Dr. Firas Alshikfeh","rep":"Mariam","cls":"C","market":"D","notes":"","id":"c-dr-firas-alshikfeh"},{"name":"Dr. Nael Al Hazeem Dental Center - Sharq","rep":"Mariam","cls":"C","market":"A","notes":"","id":"c-dr-nael-al-hazeem-dental-cente"},{"name":"Dr. Nael Al Hazeem Pharmacy ( Al Soor )","rep":"Mariam","cls":"B","market":"A","notes":"","id":"c-dr-nael-al-hazeem-pharmacy-al-"},{"name":"Dr. Teeth Dental Care, Mangaf","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-dr-teeth-dental-care-mangaf"},{"name":"Ebtasim Dental Centre","rep":"Renova","cls":"C","market":"C","notes":"Potential","id":"c-ebtasim-dental-centre"},{"name":"Ebtisama Clinic-Salmiya","rep":"Mariam","cls":"D","market":"C","notes":"","id":"c-ebtisama-clinic-salmiya"},{"name":"Elaj Medical Services (Taiba Hospital)","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-elaj-medical-services-taiba-ho"},{"name":"Empire Dental Centre(dr.fahed Al Husainy)","rep":"Renova","cls":"F","market":"D","notes":"Potential","id":"c-empire-dental-centre-dr-fahed-"},{"name":"Gulf Clinic","rep":"Mariam","cls":"D","market":"C","notes":"Potential","id":"c-gulf-clinic"},{"name":"Gulf Medical Service","rep":"Renova","cls":"F","market":"B","notes":"Ours but John takes all orders","id":"c-gulf-medical-service"},{"name":"Hadi Clinic, Jabriya","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-hadi-clinic-jabriya"},{"name":"IC Medical Group K.S.C.C","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-ic-medical-group-k-s-c-c"},{"name":"Inaya Medical PH","rep":"Renova","cls":"B","market":"C","notes":"","id":"c-inaya-medical-ph"},{"name":"International Hospital","rep":"Renova","cls":"F","market":"B","notes":"Working on reactivation","id":"c-international-hospital"},{"name":"Jibla Dental Center","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-jibla-dental-center"},{"name":"Joury Clinic","rep":"Renova","cls":"C","market":"D","notes":"","id":"c-joury-clinic"},{"name":"kayaan Company","rep":"Renova","cls":"D","market":"D","notes":"Potential","id":"c-kayaan-company"},{"name":"Kayan Dental Center","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-kayan-dental-center"},{"name":"Kidz Smile-Fintas","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-kidz-smile-fintas"},{"name":"Kidz Smile-Jabriya","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-kidz-smile-jabriya"},{"name":"LaBeaute Clinic","rep":"Mariam","cls":"F","market":"C","notes":"Potential","id":"c-labeaute-clinic"},{"name":"Life Care Pharmacy","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-life-care-pharmacy"},{"name":"Light Dental ( Dr. Noor Al Ramadan )","rep":"Mariam","cls":"B","market":"B","notes":"","id":"c-light-dental-dr-noor-al-ramada"},{"name":"Maidan Clinic","rep":"Mariam","cls":"F","market":"D","notes":"Prescription","id":"c-maidan-clinic"},{"name":"Marafie Pharmacy","rep":"Mariam","cls":"C","market":"C","notes":"","id":"c-marafie-pharmacy"},{"name":"Max Quality Dental Center","rep":"Mariam","cls":"F","market":"B","notes":"Potential + projects","id":"c-max-quality-dental-center"},{"name":"Medica Energy(Asnan Dental)","rep":"Renova","cls":"B","market":"A","notes":"","id":"c-medica-energy-asnan-dental"},{"name":"Medico Denta Company","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-medico-denta-company"},{"name":"Orlando Clinic","rep":"Renova","cls":"Closed","market":"Closed","notes":"Closed","id":"c-orlando-clinic"},{"name":"Pharmacy plus","rep":"Renova","cls":"A","market":"A","notes":"","id":"c-pharmacy-plus"},{"name":"Royale Hayat Hospital","rep":"Renova","cls":"B","market":"B","notes":"","id":"c-royale-hayat-hospital"},{"name":"Shine Dental Center","rep":"Renova","cls":"F","market":"F","notes":"Potential","id":"c-shine-dental-center"},{"name":"SN Jabriya","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-sn-jabriya"},{"name":"Skydental Centre","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-skydental-centre"},{"name":"Smart Dental Center","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-smart-dental-center"},{"name":"Smile Design Clinic","rep":"Renova","cls":"D","market":"D","notes":"","id":"c-smile-design-clinic"},{"name":"Smile Gallery Dental Center (Dr. Bashar)","rep":"Mariam","cls":"F","market":"D","notes":"Prices problem","id":"c-smile-gallery-dental-center-dr"},{"name":"SN Clinic 360","rep":"Mariam","cls":"A","market":"A","notes":"","id":"c-sn-clinic-360"},{"name":"Taqweem Clinic (Dr. Salem Al Qabandi)","rep":"Mariam","cls":"D","market":"B","notes":"","id":"c-taqweem-clinic-dr-salem-al-qab"},{"name":"To Glow Clinic","rep":"Mariam","cls":"F","market":"D","notes":"","id":"c-to-glow-clinic"},{"name":"Trust Dental Center","rep":"Renova","cls":"D","market":"B","notes":"","id":"c-trust-dental-center"},{"name":"Meena Dental","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-meena-dental"},{"name":"Blue Dental","rep":"Renova","cls":"D","market":"C","notes":"","id":"c-blue-dental"}];
+// Category selling guides: how to sell each product category, seeded from
+// brand/clinical research and editable by the supervisor in the app.
+// Shape per category: {sell, how, objections, links:[{title,url}]}
+const CATEGORY_GUIDES_SEED = {
+"Electric Toothbrush": {
+  sell: "• Philips Sonicare sonic action: up to 62,000 brush movements per minute — far beyond any manual brush.\n• Removes up to 7x more plaque than a manual toothbrush (with premium brush heads).\n• Clinically shown to improve gum health vs manual brushing, including in patients with early gum disease.\n• Built-in 2-minute timer and pressure sensor train correct brushing habits automatically.",
+  how: "1. Ask about the patient type: bleeding gums, braces, or heavy coffee/tea stains — each has a matching model.\n2. Let the doctor feel the sonic vibration on a fingernail — the demo sells itself.\n3. Anchor on cost per day: a 2-3 year lifespan makes it cheaper than one filling.\n4. Always mention replacement heads (every 3 months) — it builds repeat business for the clinic too.",
+  objections: "“Manual brushing is enough” — Clinical studies show sonic brushes remove significantly more plaque and reduce gum bleeding; the timer alone fixes the #1 problem (people brush 45 seconds, not 2 minutes).\n“Too expensive” — Compare with the price of one dental treatment; the brush costs less per day than a cup of coffee.",
+  links: [
+    {title:"Philips Sonicare range (Kuwait)", url:"https://www.philips.com.kw/c-m-pe/electric-toothbrushes"}
+  ]
+},
+"Manual Toothbrush": {
+  sell: "• TePe brushes are developed with dental experts in Sweden and used in dental clinics worldwide.\n• Soft / x-soft bristles clean effectively without damaging gums or enamel — what dentists actually recommend.\n• Tapered brush heads reach back molars; comfortable grip for good technique.",
+  how: "1. Sell technique with the brush: 2 minutes, twice a day, soft pressure at a 45° angle to the gumline.\n2. Remind that brushes must be replaced every 3 months (or after illness) — offer multi-packs.\n3. For families, match sizes: compact heads for kids, x-soft for sensitive gums, after-surgery brushes for perio patients.",
+  objections: "“A cheap brush does the same job” — Bristle quality is the difference: rounded, gum-safe filaments vs sharp-cut bristles that scratch enamel and gums. Damaged gums cost far more than a good brush.",
+  links: [
+    {title:"TePe toothbrushes (official)", url:"https://www.tepe.com/global/toothbrushes"}
+  ]
+},
+"Interdental Toothbrush": {
+  sell: "• Cleans the 40% of tooth surfaces a toothbrush never touches — between the teeth.\n• Daily use removes up to 40% more plaque than toothbrushing alone.\n• First choice of periodontists for patients with gum inflammation, implants and bridges.\n• TePe color-coded sizes (9 sizes) fit every gap; studies show interdental brushes beat floss on plaque and bleeding in open spaces.",
+  how: "1. Sell the size, not the brush: the right diameter should fill the gap snugly without forcing. Start patients with a mixed pack.\n2. Best pitch moment: right after a hygienist cleaning or perio treatment — the clinic can recommend a size per patient.\n3. Explain the routine: once daily before brushing, no toothpaste needed, rinse and reuse until bristles wear.",
+  objections: "“I already floss” — For anything wider than a tight contact point, an interdental brush cleans better than floss and is easier to use, so patients actually keep the habit.",
+  links: [
+    {title:"TePe interdental brushes (official)", url:"https://www.tepe.com/global/interdental-cleaning/interdental-brushes"}
+  ]
+},
+"Water Flosser": {
+  sell: "• Waterpik is the FIRST water flosser to earn the American Dental Association (ADA) Seal of Acceptance.\n• Backed by 80+ published clinical studies.\n• Up to 2x as effective as string floss at reducing gum bleeding, and significantly better at reducing gingivitis.\n• Up to 3x as effective at removing plaque around braces.\n• The answer for the majority of patients who hate string floss and simply don't floss.",
+  how: "1. Target the four golden segments: braces/ortho patients, implant patients, gum-disease patients, and “I never floss” confessors.\n2. Lead with the ADA Seal — it answers the trust question before it's asked.\n3. Demo with water pressure settings: start low, show the massage mode for sensitive gums.\n4. Cross-sell the right tips (ortho tip, plaque seeker for implants) with every unit.",
+  objections: "“Is it a gimmick?” — 80+ clinical studies and an ADA Seal say otherwise; hand them the clinical research summary link.\n“String floss is cheaper” — The best floss is the one the patient will actually use every day. Compliance beats price.",
+  links: [
+    {title:"Why Waterpik (official)", url:"https://www.waterpik.com/why-waterpik/"},
+    {title:"Waterpik clinical research summary (PDF)", url:"https://www.waterpik.com/pro/clinical-research/waterpik-clinical-research-abstracts.pdf"},
+    {title:"ADA Seal — Waterpik cordless", url:"https://www.ada.org/resources/research/science/ada-seal-of-acceptance/product-search/a065e000007A372AAC/waterpik-cordless-water-flossers"}
+  ]
+},
+"Water Flosser Tips": {
+  sell: "• The tip turns one Waterpik into a specialist tool: Classic for daily care, Orthodontic tip for braces, Plaque Seeker for implants/bridges, Pik Pocket for deep gum pockets.\n• Tips should be replaced every 3-6 months for hygiene and performance — recurring revenue.",
+  how: "1. Ask every existing Waterpik owner “which tip are you using?” — most only know the classic one.\n2. Match tip to treatment: patient just got an implant, bridge or braces? That's a tip sale.\n3. Attach a spare tip pack to every water flosser sale — families share the unit but never the tip.",
+  objections: "“The original tip still works” — Like a toothbrush, tips wear and collect bacteria; 3-6 months is the hygienic replacement cycle.",
+  links: [
+    {title:"Why Waterpik (official)", url:"https://www.waterpik.com/why-waterpik/"}
+  ]
+},
+"Water Flosser Accessories": {
+  sell: "• Chargers and reservoirs keep an existing Waterpik alive instead of being thrown away — cheap fix, loyal customer.\n• A lost charger is the #1 reason a water flosser sits unused in a drawer.",
+  how: "1. Use accessories as a door-opener: “how is your Waterpik doing?” restarts the conversation with any past buyer.\n2. Stock-check with clinics: front desks love having spare chargers/reservoirs to solve patient complaints on the spot.",
+  objections: "“I'll just buy a new unit” — Great — but if budget is the blocker, a 4 KD part beats abandoning the habit.",
+  links: [
+    {title:"Why Waterpik (official)", url:"https://www.waterpik.com/why-waterpik/"}
+  ]
+},
+"Toothbrush Replacement Head": {
+  sell: "• Worn bristles clean dramatically worse — heads must change every 3 months, so every Sonicare owner needs 4 heads a year.\n• Philips reminder bristles fade to tell the user it's time — the product sells its own refill.\n• Different heads target different goals: plaque control, gum care, whitening.",
+  how: "1. Ask every Sonicare owner when they last changed the head — most are overdue.\n2. Sell in multi-packs: a year of heads in one purchase.\n3. Match the head to the patient's goal (gum care head for bleeding gums, white head for stain removal).",
+  objections: "“Original heads are pricey” — Fake/generic heads have uncontrolled bristle quality and can damage gums; the original head is the cheap part of protecting the brush investment.",
+  links: [
+    {title:"Philips Sonicare range (Kuwait)", url:"https://www.philips.com.kw/c-m-pe/electric-toothbrushes"}
+  ]
+},
+"Toothpaste": {
+  sell: "• Beverly Hills Formula Perfect White: whitening with LOW abrasion (RDA around 90-100, below the abrasive threshold) — removes over 90% of surface stains without scratching enamel.\n• HiSmile toothpastes carry the PAP+ whitening story: whiter teeth with no peroxide sensitivity.\n• Specialty pastes (gold, charcoal/black remineralising) give the shelf a premium story.",
+  how: "1. Sell whitening toothpaste as the safe daily maintenance layer between whitening treatments.\n2. Use the RDA/low-abrasion argument with dentists — they worry about enamel wear from whitening pastes; this answers it.\n3. Pair: whitening toothpaste + whitening powder/pen = a routine, not a product.",
+  objections: "“Whitening toothpastes damage enamel” — That's true of high-RDA pastes; Beverly Hills Formula is formulated low-abrasion (below RDA 100), which is exactly the point of the brand.",
+  links: [
+    {title:"Beverly Hills Formula (official)", url:"https://beverlyhillsformula.com/"},
+    {title:"HiSmile (official)", url:"https://hismileteeth.com/"}
+  ]
+},
+"Mouthwash": {
+  sell: "• The Breath Co: dentist-formulated (Dr. Harold Katz), clinically shown to neutralise bad breath for up to 12 hours.\n• Oxygenating formula (OXYD-8): bad-breath bacteria are anaerobic — they cannot survive oxygen. Attacks the cause, not the smell.\n• Alcohol-free and pH-balanced: no burn, no dry mouth — unlike mainstream mouthwashes.",
+  how: "1. Target the embarrassing problem nobody mentions: ask clinics about their halitosis complainers — this is the referral product.\n2. Differentiate from supermarket mouthwash: masking mint vs eliminating the bacteria.\n3. Bundle with a tongue scraper for a complete “fresh breath kit”.",
+  objections: "“Any mouthwash does this” — Alcohol-based washes dry the mouth, which makes bad breath WORSE after the mint fades. Oxygenating + alcohol-free is a different mechanism.",
+  links: [
+    {title:"The science behind oxygenating rinses (TheraBreath)", url:"https://www.therabreath.com/blogs/oral-health/how-therabreath-works"}
+  ]
+},
+"Dental Floss": {
+  sell: "• Daily interdental cleaning is half of oral hygiene — floss covers the tight contacts interdental brushes can't enter.\n• TePe Mini Flosser: pre-loaded handle makes flossing possible for beginners and kids.\n• FLASH kids flossers (sea animal shapes): turns the habit into a game — parents buy the fun, kids keep the habit.",
+  how: "1. Sell by household: waxed floss for adults, mini flossers for starters, animal flossers for kids.\n2. Pitch to pediatric clinics: a fun flosser at the front desk is an easy add-on for every child visit.\n3. Position vs interdental brushes honestly: tight contacts → floss; open gaps → interdental brush. Many patients need both.",
+  objections: "“Flossing makes my gums bleed” — Bleeding is the sign gums NEED cleaning; it stops within about a week of daily flossing. Persistent bleeding = see the dentist.",
+  links: [
+    {title:"TePe Mini Flosser (official)", url:"https://www.tepe.com/global/interdental-cleaning/mini-flosser"}
+  ]
+},
+"Toothpicks": {
+  sell: "• TePe EasyPick: a gentle, reusable silicone-coated pick — the “on the go” interdental clean after meals.\n• No splinters, gum-safe, comes with a travel case — lives in the car, desk or pocket.",
+  how: "1. Sell as the entry drug to interdental cleaning: easier than floss, no technique needed.\n2. Restaurant/after-lunch story: wooden toothpicks damage gums; EasyPick massages them.\n3. Great counter/checkout item for pharmacies — small price, everyone understands it instantly.",
+  objections: "“Wooden toothpicks are free” — Wood splinters and stabs gums; EasyPick is designed for gums, reusable, and costs a coffee.",
+  links: [
+    {title:"TePe EasyPick (official)", url:"https://www.tepe.com/global/easypick-and-dental-sticks/easypick"}
+  ]
+},
+"Tongue Scraper": {
+  sell: "• Most bad-breath gases (volatile sulfur compounds) come from bacteria on the tongue — studies show scraping can cut them by up to ~67%.\n• More effective at cleaning the tongue than brushing it.\n• 10-second daily habit, lifetime tool, tiny price.",
+  how: "1. Never sell alone — attach to every mouthwash/fresh-breath conversation as the mechanical half of the solution.\n2. Teach the routine in one line: after brushing, scrape gently back-to-front 2-3 times, rinse, done.\n3. Perfect impulse item at the counter next to The Breath Co.",
+  objections: "“I brush my tongue” — A scraper's edge lifts the bacterial coating a brush just moves around; that's why studies favour scrapers for breath.",
+  links: [
+    {title:"Harvard Health on tongue scraping", url:"https://www.health.harvard.edu/healthy-aging-and-longevity/can-tongue-scraping-improve-bad-breath"}
+  ]
+},
+"Teeth Whitener": {
+  sell: "• HiSmile PAP+ whitens WITHOUT peroxide: PAP oxidises stain molecules without releasing free radicals — so no enamel damage and no sensitivity.\n• Formula adds hydroxyapatite (remineralises enamel) and potassium citrate (soothes nerves) — whitening that also protects.\n• No gum barrier needed — safe for home use, unlike peroxide trays.",
+  how: "1. Target the huge refused-whitening market: everyone who tried peroxide once and quit from sensitivity.\n2. Sell the routine: powder or strips for the treatment phase, pen for touch-ups, PAP+ toothpaste for maintenance.\n3. For clinics: a retail whitening shelf captures patients who won't book in-chair whitening.",
+  objections: "“Does peroxide-free actually whiten?” — PAP is a clinically studied whitening acid used across the industry now; it oxidises the same stains, just without the free radicals that cause sensitivity.\n“Why not just in-chair whitening?” — Different budget, different customer; PAP+ is the entry point and the maintenance plan after in-chair treatment.",
+  links: [
+    {title:"HiSmile (official)", url:"https://hismileteeth.com/"},
+    {title:"HiSmile PAP+ powder — Ultramed store", url:"https://ultramedgcc.com/products/hismile-pap-whitening-powder"}
+  ]
+},
+"Skin Treatments": {
+  sell: "• UNDO patches (hydrocolloid / microneedle): absorb impurities from a pimple overnight and physically stop picking and touching — which is what actually causes scars.\n• Nose patches target blackheads; microneedle patches push actives into deeper, early-stage spots.\n• Visible result in hours — the patch turns white as it absorbs. Customers see it work.",
+  how: "1. Perfect counter/impulse item at pharmacies: small price, instant understanding, strong repeat purchase.\n2. Sell the Skin Essentials Bag as the trial pack — one of everything.\n3. Target derma clinics' front desks: patches are the safe “don't touch it” advice made into a product.",
+  objections: "“Creams are enough” — A patch protects the spot from bacteria and picking while it treats — a cream can't do the mechanical part.",
+  links: [
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+},
+"Loupes & Optics": {
+  sell: "• Univet: Italian-made, tailor-made dental loupes — precision optics with custom fitting per doctor.\n• Magnification = better dentistry: earlier caries detection, cleaner margins, finer work.\n• Ergonomics is the real story: studies link loupes to significantly less neck, shoulder and back pain — musculoskeletal damage is what shortens dental careers.\n• Lightweight frames with optimal weight distribution stay comfortable across a full clinic day.",
+  how: "1. This is a career-investment sale to the DOCTOR, not a product sale: ask about end-of-day neck and back pain first.\n2. Offer a fitting/demo session — tailor-made measurement is the differentiator vs cheap online loupes.\n3. Talk lifespan: a loupe is a 5-10 year tool; divide the price by working days.",
+  objections: "“Cheap loupes online do the same” — Wrong working distance or declination angle CAUSES the neck pain loupes should prevent. Tailor-made measurement is the whole point.\n“I'm used to working without them” — So was every dentist who now can't work without them; suggest a demo day.",
+  links: [
+    {title:"Univet loupes (official)", url:"https://www.univetloupes.com/"}
+  ]
+},
+"Bundles": {
+  sell: "• Doctor-endorsed kits (Dr. Mubarak, Dr. Waleed, Dr. Mohammad, Dr. Rawan) — the doctor's name is the trust, the kit is the routine.\n• One purchase = complete routine: no decisions for the customer, higher basket for us.\n• Whitening bundles package the treatment + maintenance story in one box. Gift-ready.",
+  how: "1. Sell bundles when a customer asks “what do I need?” — the kit IS the answer.\n2. Push the endorsing doctor's kit inside that doctor's own clinic — it converts like a prescription.\n3. Seasonal angle: gift boxes for Eid, National Day, back-to-school (kids kit).",
+  objections: "“Bundle price is high” — Compare with items bought separately; the kit is cheaper and complete. Split-payment or per-item math wins this.",
+  links: [
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+},
+"Ortho Care": {
+  sell: "• FLASH Aligner Cleaner + Whitening Foam: cleans aligners while they're worn — kills bacteria, kills the smell, and gently whitens teeth under the aligner.\n• No tablets, no soaking tools, works anywhere — solves the #1 aligner complaint (odour and cloudy trays) in seconds.",
+  how: "1. Sell where aligners are handed out: every clinic starting a clear-aligner case should hand this with tray #1.\n2. The demo line: “smell your aligner” — the problem sells the product.\n3. Bundle with chewies + case for a complete aligner starter kit.",
+  objections: "“I clean trays with toothpaste” — Toothpaste is abrasive and scratches trays; scratches turn cloudy and trap MORE bacteria. Foam is designed for the plastic.",
+  links: [
+    {title:"EverSmile (aligner care science)", url:"https://eversmilewhite.com/"},
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+},
+"Orthodontic Kit": {
+  sell: "• TePe Orthodontic Kit: everything a braces patient needs in one pack — ortho toothbrush, interdental brushes, and cleaning tools designed around brackets and wires.\n• Braces without proper cleaning = white spots and gum inflammation at debonding — the kit prevents the heartbreak photo.",
+  how: "1. Sell to orthodontists as the “bonding-day kit”: handed to every patient the day braces go on.\n2. Parents are the buyer: pitch it as protecting the (expensive) orthodontic investment.\n3. Refill opportunity: interdental brushes inside the kit run out — bring the patient back.",
+  objections: "“A normal brush is fine with braces” — Brackets create plaque traps a flat brush can't reach; that's how patients end up with permanent white-spot scars after braces.",
+  links: [
+    {title:"TePe (official)", url:"https://www.tepe.com/global/toothbrushes"}
+  ]
+},
+"Orthodontic Tool": {
+  sell: "• EverSmile Ortho Chews + removal tool: chewing seats aligners FULLY onto teeth — badly seated trays slow the treatment.\n• The removal tool saves nails and prevents bending/cracking trays when taking them out.",
+  how: "1. Attach to every aligner conversation: cleaner (hygiene) + chews (fit) + case (safety) is the full basket.\n2. Explain the treatment link: better tray fit = teeth track to plan = fewer refinement rounds. Orthodontists love this pitch.",
+  objections: "“I can push trays in with my fingers” — Fingers seat the front; chews seat the molars, where tracking usually fails.",
+  links: [
+    {title:"EverSmile (official)", url:"https://eversmilewhite.com/"}
+  ]
+},
+"Aligner & Retainer Case": {
+  sell: "• The #1 way aligners die: wrapped in a tissue at lunch and thrown away. A case is the cheapest insurance in dentistry.\n• Ventilated case lets trays dry — stops bacteria growth and smell.",
+  how: "1. Never sell an aligner product without offering the case — it's the natural add-on.\n2. Suggest two: one at home, one in the bag/car.\n3. Front-desk item for every clinic doing aligners or retainers.",
+  objections: "“I keep the original box” — Until the day it's not in the pocket. A replacement aligner costs 50x the case.",
+  links: [
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+},
+"Toothbrush Accessories": {
+  sell: "• Philips travel case: protects the Sonicare and its head in luggage — hygiene + protection for a premium device.\n• Ultramed Gift Box: turns any product selection into a ready gift — supports the bundle/gifting strategy.",
+  how: "1. Attach the travel case to every Sonicare sale — one question: “do you travel?”\n2. Use gift boxes to upsell during seasons (Eid, graduations) and for corporate gifting to clinics.",
+  objections: "“I'll wrap it in a bag” — A bathroom bag is the dirtiest place in the suitcase; the case exists for hygiene, not luxury.",
+  links: [
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+},
+"Ice Maker": {
+  sell: "• Silonn countertop bullet ice maker: fresh ice in minutes, no plumbing — plug in, add water, done.\n• Soft-chewable bullet ice; compact footprint fits clinic staff rooms, offices and home kitchens.",
+  how: "1. Sell to clinics/offices as a staff-room upgrade: no more ice runs or empty freezer trays.\n2. Demo the speed: first ice in ~6-10 minutes is the wow moment.\n3. Summer season item in Kuwait — lead with it in hot months.",
+  objections: "“The freezer makes ice” — Trays make a handful of cubes in hours; this makes a continuous supply all day for guests, staff and patients.",
+  links: [
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+},
+"Refrigerator": {
+  sell: "• Silonn mini fridge: compact, quiet, low-power cooling — for clinic rooms, offices, bedrooms.\n• Ideal where materials, drinks or skincare need cooling near the point of use.",
+  how: "1. Sell to clinics for the treatment room or reception: cold water for patients is hospitality that costs nothing daily.\n2. Pair with the ice maker for the full staff-room pitch.",
+  objections: "“There's a big fridge in the kitchen” — The point is proximity: cooling where the work happens, without walking across the clinic.",
+  links: [
+    {title:"Ultramed store", url:"https://ultramedgcc.com/"}
+  ]
+}
+};
+
 // Team roster lives in storage so it can be managed from the admin panel
 // without touching code. REPS/USERS are derived views kept in sync with it.
 const AVATARS = [
@@ -1048,7 +1245,7 @@ const SPECIALTIES = Object.keys(SPECIALTY_PLAYBOOK);
 const NO_ORDER_REASONS = ['Still has stock','Price too high','Prefers competitor','Decision maker away','Needs samples first','Budget/approval pending','Just introducing','Payment issue pending','Not interested'];
 let noOrderReason = null;
 let selectedClinicId = null;
-let selectedDoctorId = null;
+let selectedDoctorIds = []; // contacts met during the visit (multi-select)
 let newClinicMode = false;
 let welcomeDismissed = false;
 const ACCOUNT_TYPES = ['Credit account','Cash based'];
@@ -1071,6 +1268,7 @@ let currentUser = null;
 let recycleBin = {clinics:[], products:[], visits:[]};
 let events = [];
 let targets = {}; // {repName: {revenue: KD, visits: N}} — monthly targets
+let categoryGuides = {}; // {catName: {sell, how, objections, links[]}} — selling guides
 let calMode = 'month';
 let calAnchor = null;   // set on first render
 let calSelected = null;
@@ -1270,7 +1468,7 @@ function normalizeClinic(c){
 }
 async function loadAll(){
   try{
-    const [c,p,v,t,dp,st,rb,bm,ev,tg] = await Promise.all([
+    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg] = await Promise.all([
       window.storage.get('clinics', true).catch(()=>null),
       window.storage.get('products', true).catch(()=>null),
       window.storage.get('visits', true).catch(()=>null),
@@ -1281,6 +1479,7 @@ async function loadAll(){
       window.storage.get('benchmarks', true).catch(()=>null),
       window.storage.get('events', true).catch(()=>null),
       window.storage.get('targets', true).catch(()=>null),
+      window.storage.get('categoryGuides', true).catch(()=>null),
     ]);
     // Each key parses independently: one corrupt entry falls back alone instead
     // of throwing and resetting every collection to seed data.
@@ -1292,6 +1491,10 @@ async function loadAll(){
     dayPlans = UMCore.safeParse(dp && dp.value, {});
     events = UMCore.safeParse(ev && ev.value, []);
     targets = UMCore.safeParse(tg && tg.value, {});
+    // Merge so newly seeded categories appear even for users with a saved copy,
+    // while supervisor edits to existing categories win over the seed.
+    const cgVal = UMCore.safeParse(cg && cg.value, null);
+    categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), cgVal || {});
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
     const rbVal = UMCore.safeParse(rb && rb.value, null);
@@ -1303,10 +1506,12 @@ async function loadAll(){
     if(!p) await persist('products');
     if(!st) await persist('staff');
     if(!bm) await persist('benchmarks');
+    if(!cg) await persist('categoryGuides');
   }catch(e){
     console.error('load error', e);
     clinics = CLINICS_SEED.map(x=>normalizeClinic({...x}));
     products = PRODUCTS_SEED; visits = []; tasks = []; dayPlans = {};
+    categoryGuides = JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED));
   }
   clinicRepFilter = currentUser.role==='rep' ? currentUser.name : 'all';
   reportRepFilter = currentUser.role==='rep' ? currentUser.name : 'all';
@@ -1314,7 +1519,7 @@ async function loadAll(){
   renderAll();
 }
 async function persist(key){
-  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS};
+  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides};
   try{
     const res = await window.storage.set(key, JSON.stringify(map[key]), true);
     if(!res){ showToast('Save failed, try again'); }
@@ -1512,7 +1717,7 @@ function renderCalRangeSummary(){
     ? `<div style="margin-top:10px;">${s.perRep.map(r=>`
         <div class="row-between" style="font-size:12.5px; padding:5px 0; border-bottom:1px solid var(--line);">
           <span style="font-weight:600;">${esc(r.rep)}</span>
-          <span style="color:var(--muted);">${r.visits} visit${r.visits===1?'':'s'} · ${r.orders} order${r.orders===1?'':'s'} · ${money(r.revenue)}</span>
+          <span style="color:var(--muted);">${r.visits} visit${r.visits===1?'':'s'} · ${r.contacts} contact${r.contacts===1?'':'s'} · ${r.orders} order${r.orders===1?'':'s'} · ${money(r.revenue)}</span>
         </div>`).join('')}</div>`
     : '';
   el.innerHTML = `
@@ -1524,14 +1729,15 @@ function renderCalRangeSummary(){
       ${tile(s.conversion+'%', 'Conversion')}
     </div>
     <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:6px;">
+      ${tile(s.contacts, 'Contacts seen')}
       ${tile(s.clinicsCovered, 'Clinics covered')}
       ${tile(s.calls, 'Calls')}
       ${tile(s.planned, 'Planned visits')}
-      ${tile(s.events, 'Events')}
     </div>
-    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-top:6px;">
-      ${tile(s.followUpsDue, 'Follow-ups due in range')}
-      ${tile(s.tasksDue, 'Open tasks due in range')}
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:6px;">
+      ${tile(s.events, 'Events')}
+      ${tile(s.followUpsDue, 'Follow-ups due')}
+      ${tile(s.tasksDue, 'Open tasks due')}
     </div>
     ${repRows}
     <button class="btn secondary" style="margin-top:12px; padding:11px;" onclick="openReportForRange('${from}','${to}')">Open this period in Report →</button>`;
@@ -1671,6 +1877,12 @@ function canEditVisit(v){
   return currentUser.role==='supervisor' || v.rep===currentUser.name || v.withRep===currentUser.name;
 }
 function jointTag(v){ return v.withRep ? ` <span style="color:var(--muted);">🤝 with ${esc(v.withRep)}</span>` : ''; }
+function contactNames(v, clinic){
+  const ids = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
+  if(!ids.length) return '';
+  const docs = (clinic && clinic.doctors) || [];
+  return ids.map(id=>{ const d = docs.find(x=>x.id===id); return d ? d.name : null; }).filter(Boolean).join(', ');
+}
 // Records flagged orderOnly are phone/remote orders, not field visits.
 // They count toward revenue but must not inflate visit counts.
 function isFieldVisit(v){ return !v.orderOnly && !v.callOnly; }
@@ -2136,7 +2348,7 @@ function prepLogView(qClinicId){
   jointRep = null;
   renderJointChips();
   selectedClinicId = qClinicId || null;
-  selectedDoctorId = null;
+  selectedDoctorIds = [];
   newClinicMode = false;
   document.getElementById('clinicSearchLog').value='';
   document.getElementById('newClinicFields').style.display='none';
@@ -2246,7 +2458,7 @@ function pickClinic(id){
 }
 function clearClinicPick(){
   selectedClinicId = null;
-  selectedDoctorId = null;
+  selectedDoctorIds = [];
   document.getElementById('clinicSearchLog').value='';
   renderClinicSelect();
 }
@@ -2272,9 +2484,9 @@ function renderDoctorPick(c){
   const docs = c.doctors||[];
   chips.innerHTML = docs.map(d=>{
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    return `<div class="chip small ${selectedDoctorId===d.id?'on':''}" onclick="pickDoctorSeen('${d.id}')">${pb?pb.icon+' ':''}${esc(d.name)}</div>`;
+    return `<div class="chip small ${selectedDoctorIds.includes(d.id)?'on':''}" onclick="pickDoctorSeen('${d.id}')">${pb?pb.icon+' ':''}${esc(d.name)}</div>`;
   }).join('') + `<div class="chip small" onclick="openQuickAddDoctor('${c.id}')">+ Add doctor</div>`;
-  const d = docs.find(x=>x.id===selectedDoctorId);
+  const d = docs.find(x=>x.id===selectedDoctorIds[selectedDoctorIds.length-1]);
   if(d && d.title && SPECIALTY_PLAYBOOK[d.title]){
     const pb = SPECIALTY_PLAYBOOK[d.title];
     tip.innerHTML = `<div class="card clickable" style="margin-top:10px; background:${pb.color}14; border-left:4px solid ${pb.color};" onclick="openPlaybook('${d.title}')">
@@ -2285,7 +2497,8 @@ function renderDoctorPick(c){
   } else { tip.innerHTML=''; }
 }
 function pickDoctorSeen(id){
-  selectedDoctorId = (selectedDoctorId===id)?null:id;
+  if(selectedDoctorIds.includes(id)) selectedDoctorIds = selectedDoctorIds.filter(x=>x!==id);
+  else selectedDoctorIds.push(id);
   const c = clinics.find(x=>x.id===selectedClinicId);
   if(c) renderDoctorPick(c);
 }
@@ -2490,7 +2703,7 @@ async function saveVisit(){
     });
   }
   const allItems = savedOrders.flatMap(o=>o.items);
-  const visit = {id:uid(), clinicId, rep, withRep: (jointRep && jointRep!==rep) ? jointRep : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorId||null, nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
+  const visit = {id:uid(), clinicId, rep, withRep: (jointRep && jointRep!==rep) ? jointRep : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorIds[0]||null, doctorIds: selectedDoctorIds.slice(), nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
     noOrderReason: (savedOrders.length===0) ? (noOrderReason || document.getElementById('noOrderOther').value.trim() || null) : null};
   if(visitPhotos.length){
     const ids=[];
@@ -2840,7 +3053,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
-      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
+      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
         ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c.name)}')">`).join('')}</div>`:''}
       </div>`).join('')}
   `);
@@ -3390,6 +3603,8 @@ function openEditVisit(visitId){
     <label>Notes</label>
     <textarea id="evNotes" placeholder="What happened on this visit...">${esc(v.notes||'')}</textarea>
     ${!v.orderOnly && !v.callOnly ? `
+    <label>Who did you meet?</label>
+    <div class="chip-row" id="editDocChips"></div>
     <label>Photos</label>
     <div class="photo-row" id="editPhotoRow"></div>` : ''}
     ${v.orderTaken?`
@@ -3400,7 +3615,26 @@ function openEditVisit(visitId){
     <button class="btn" onclick="saveEditVisit('${v.id}')">Save changes</button>
     <button class="btn ghost" onclick="confirmDeleteVisit('${v.id}')">Delete this ${v.orderOnly?'order':'visit'}</button>
   `);
-  if(!v.orderOnly && !v.callOnly) renderEditPhotos(visitId);
+  if(!v.orderOnly && !v.callOnly){
+    window._editDocIds = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds.slice() : (v.doctorId ? [v.doctorId] : []);
+    renderEditDocChips(visitId);
+    renderEditPhotos(visitId);
+  }
+}
+function renderEditDocChips(visitId){
+  const v = visits.find(x=>x.id===visitId);
+  const el = document.getElementById('editDocChips');
+  if(!v || !el) return;
+  const c = clinics.find(x=>x.id===v.clinicId);
+  const docs = (c && c.doctors) || [];
+  el.innerHTML = docs.length
+    ? docs.map(d=>`<div class="chip small ${window._editDocIds.includes(d.id)?'on':''}" onclick="toggleEditDoc('${visitId}','${d.id}')">${esc(d.name)}</div>`).join('')
+    : '<div style="color:var(--muted); font-size:12.5px;">No doctors on this clinic\'s profile yet — add them from the clinic page.</div>';
+}
+function toggleEditDoc(visitId, docId){
+  if(window._editDocIds.includes(docId)) window._editDocIds = window._editDocIds.filter(x=>x!==docId);
+  else window._editDocIds.push(docId);
+  renderEditDocChips(visitId);
 }
 function renderEditPhotos(visitId){
   const v = visits.find(x=>x.id===visitId);
@@ -3446,12 +3680,16 @@ async function saveEditVisit(visitId){
   const newTotal = totalEl ? parseFloat(totalEl.value) : null;
   const jointEl = document.getElementById('evJoint');
   const newJoint = jointEl ? (jointEl.value || null) : (v.withRep || null);
-  const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
+  const docsEl = document.getElementById('editDocChips');
+  const prevDocIds = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
+  const docsChanged = docsEl && JSON.stringify(window._editDocIds) !== JSON.stringify(prevDocIds);
+  const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || docsChanged || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
   if(changed){
     v.editHistory = v.editHistory || [];
     v.editHistory.push({editedBy:currentUser.name, editedAt:Date.now(), prevDate:v.date, prevNotes:v.notes||'', prevFollowUp:v.nextFollowUp||null, prevTotal:v.orderTotal});
   }
   if(jointEl) v.withRep = newJoint===v.rep ? null : newJoint;
+  if(docsEl){ v.doctorIds = window._editDocIds.slice(); v.doctorId = v.doctorIds[0] || null; }
   v.date = newDate;
   v.nextFollowUp = newFollow;
   v.notes = newNotes;
@@ -3866,6 +4104,7 @@ function renderVisitLog(){
       <div class="row-between"><span style="font-size:13px;">Field visits</span><strong>${fieldVisits.length}</strong></div>
       ${orderOnly.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Phone/remote orders</span><span>${orderOnly.length}</span></div>`:''}
       ${calls.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>📞 Calls logged</span><span>${calls.length}</span></div>`:''}
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Contacts seen</span><span>${rows.reduce((s,v)=>s+UMCore.contactCount(v),0)}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Revenue</span><span>${money(revenue)}</span></div>
@@ -3890,6 +4129,7 @@ function renderVisitLog(){
         <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
           <div class="clinic-name">${esc(c?c.name:'Unknown clinic')}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
           <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
+          ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
           ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
@@ -4218,6 +4458,8 @@ function openProductDetail(pid){
       ` : ''}
     </div>
 
+    ${categoryGuideCardHTML(p.cat)}
+
     <div class="section-title">Your performance with this product</div>
     <div class="card">
       <div class="spec-row"><span class="k">Times discussed</span><span class="v">${timesDiscussed}</span></div>
@@ -4277,6 +4519,130 @@ async function removeProductMaterial(pid, idx){
   delete p.docUrl;
   await persist('products');
   renderProductMaterials(pid);
+}
+
+// ---- CATEGORY SELLING GUIDES ----
+function guideLinks(g){
+  return (g && Array.isArray(g.links) ? g.links : []).filter(l=>l && safeUrl(l.url));
+}
+function guideBlock(title, icon, text){
+  if(!text) return '';
+  return `<div style="margin-top:10px;"><div style="font-weight:700; font-size:12.5px; margin-bottom:4px;">${icon} ${esc(title)}</div>
+    <div style="font-size:13px; line-height:1.65; white-space:pre-wrap;">${esc(text)}</div></div>`;
+}
+function categoryGuideCardHTML(cat){
+  if(!cat) return '';
+  const g = categoryGuides[cat];
+  if(!g) return '';
+  return `
+    <div class="section-title">📚 How to sell: ${esc(cat)}</div>
+    <div class="card">
+      ${guideBlock('Why it sells', '💡', g.sell)}
+      ${guideBlock('How to sell it', '🎯', g.how)}
+      ${guideBlock('Objections & answers', '🛡️', g.objections)}
+      ${guideLinks(g).length?`<div style="margin-top:10px;">${guideLinks(g).map(l=>`
+        <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:6px;">🔗 ${esc(l.title||'Link')}</a>`).join('')}</div>`:''}
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="margin-top:10px;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">✏️ Edit this guide</button>`:''}
+    </div>`;
+}
+function openCategoryGuides(){
+  const cats = {};
+  products.forEach(p=>{ if(p.cat) cats[p.cat] = (cats[p.cat]||0)+1; });
+  Object.keys(categoryGuides).forEach(c=>{ if(!(c in cats)) cats[c] = 0; });
+  const names = Object.keys(cats).sort((a,b)=>cats[b]-cats[a] || a.localeCompare(b));
+  showModal(`
+    <h3 style="margin-top:0;">📚 Selling guides</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:12px;">How to sell every category: key claims, pitch steps, objection answers and official materials. Also shown inside each product's page.</div>
+    ${names.map(c=>{
+      const g = categoryGuides[c];
+      return `<div class="card" style="cursor:pointer; padding:12px 14px; margin-bottom:8px;" onclick="openCategoryGuide('${esc(c).replace(/'/g,"\\'")}')">
+        <div class="row-between">
+          <div style="font-weight:700; font-size:14px;">${esc(c)}</div>
+          <div style="color:var(--muted); font-size:12px; flex-shrink:0;">${cats[c]} product${cats[c]===1?'':'s'} ›</div>
+        </div>
+        ${g?'':'<div style="color:var(--coral); font-size:12px; margin-top:2px;">No guide yet</div>'}
+      </div>`;
+    }).join('')}
+  `);
+}
+function openCategoryGuide(cat){
+  const g = categoryGuides[cat];
+  const catProds = products.filter(p=>p.cat===cat);
+  showModal(`
+    <div class="row-between" style="margin:0 0 4px;">
+      <h3 style="margin:0;">📚 ${esc(cat)}</h3>
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">✏️ Edit</button>`:''}
+    </div>
+    <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">${catProds.length} product${catProds.length===1?'':'s'} in this category</div>
+    ${g?`<div class="card">
+      ${guideBlock('Why it sells', '💡', g.sell)}
+      ${guideBlock('How to sell it', '🎯', g.how)}
+      ${guideBlock('Objections & answers', '🛡️', g.objections)}
+      ${guideLinks(g).length?`<div style="margin-top:10px;">${guideLinks(g).map(l=>`
+        <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:6px;">🔗 ${esc(l.title||'Link')}</a>`).join('')}</div>`:''}
+    </div>`:`<div class="empty">No guide for this category yet.${currentUser.role==='supervisor'?' Tap ✏️ Edit to write one.':''}</div>`}
+    ${catProds.length?`<div class="section-title">Products in this category</div>
+      <div class="card">${catProds.map(p=>`<div class="qty-row" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">
+        <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
+        <span style="color:var(--muted);">›</span></div>`).join('')}</div>`:''}
+    <button class="btn secondary" style="margin-top:12px;" onclick="openCategoryGuides()">‹ All guides</button>
+  `);
+}
+function openEditCategoryGuide(cat){
+  if(currentUser.role!=='supervisor'){ showToast('Only a supervisor can edit guides'); return; }
+  const g = categoryGuides[cat] || {sell:'', how:'', objections:'', links:[]};
+  window._guideLinks = guideLinks(g).map(l=>({title:l.title, url:l.url}));
+  showModal(`
+    <h3 style="margin-top:0;">✏️ Edit guide — ${esc(cat)}</h3>
+    <label>💡 Why it sells (key claims)</label>
+    <textarea id="cgSell" style="min-height:110px;">${esc(g.sell||'')}</textarea>
+    <label>🎯 How to sell it (pitch steps)</label>
+    <textarea id="cgHow" style="min-height:110px;">${esc(g.how||'')}</textarea>
+    <label>🛡️ Objections &amp; answers</label>
+    <textarea id="cgObj" style="min-height:90px;">${esc(g.objections||'')}</textarea>
+    <label>🔗 Official links &amp; materials</label>
+    <div id="cgLinks"></div>
+    <input type="text" id="cgLinkTitle" placeholder="Link name (e.g. Clinical studies)" style="margin-top:8px;">
+    <input type="text" id="cgLinkUrl" placeholder="https://..." style="margin-top:8px;">
+    <button class="btn secondary small" style="margin-top:8px;" onclick="addGuideLink()">+ Add link</button>
+    <button class="btn" style="margin-top:14px;" onclick="saveCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">Save guide</button>
+  `);
+  renderGuideLinks();
+}
+function renderGuideLinks(){
+  const el = document.getElementById('cgLinks');
+  if(!el) return;
+  const links = window._guideLinks || [];
+  el.innerHTML = links.length ? links.map((l,i)=>`
+    <div class="row-between" style="gap:8px; margin-top:6px;">
+      <div style="flex:1; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🔗 ${esc(l.title||'Link')} <span style="color:var(--muted);">${esc(l.url)}</span></div>
+      <button class="chip small" onclick="removeGuideLink(${i})">✕</button>
+    </div>`).join('') : `<div style="color:var(--muted); font-size:12.5px;">No links yet.</div>`;
+}
+function addGuideLink(){
+  const title = document.getElementById('cgLinkTitle').value.trim();
+  const rawUrl = document.getElementById('cgLinkUrl').value.trim();
+  if(!rawUrl || !safeUrl(rawUrl)){ showToast('Link must start with http:// or https://'); return; }
+  (window._guideLinks = window._guideLinks || []).push({title: title || 'Link', url: safeUrl(rawUrl)});
+  document.getElementById('cgLinkTitle').value='';
+  document.getElementById('cgLinkUrl').value='';
+  renderGuideLinks();
+}
+function removeGuideLink(i){
+  (window._guideLinks||[]).splice(i,1);
+  renderGuideLinks();
+}
+async function saveCategoryGuide(cat){
+  if(currentUser.role!=='supervisor') return;
+  categoryGuides[cat] = {
+    sell: document.getElementById('cgSell').value.trim(),
+    how: document.getElementById('cgHow').value.trim(),
+    objections: document.getElementById('cgObj').value.trim(),
+    links: (window._guideLinks||[]).map(l=>({title:l.title, url:l.url})),
+  };
+  await persist('categoryGuides');
+  showToast('📚 Guide saved');
+  openCategoryGuide(cat);
 }
 
 // ---- REPORTS ----
@@ -4362,7 +4728,7 @@ function buildAssistantContext(){
     monthlyTargets: targets,
     clinics: clinics.filter(c=>mine(c.rep)).map(c=>({name:c.name, cls:c.cls, rep:c.rep, area:c.area||'', phone:c.phone||'', nextFollowUp:c.nextFollowUp||null, notes:(c.notes||'').slice(0,150), doctors:(c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).slice(0,6)})),
     recentVisits: [...visits].sort((a,b)=>(b.ts||0)-(a.ts||0)).filter(v=>mine(v.rep)||mine(v.withRep)).slice(0,40)
-      .map(v=>({date:v.date, rep:v.rep, jointWith:v.withRep||null, clinic:cname(v.clinicId), order:!!v.orderTaken, totalKD:v.orderTotal||0, call:!!v.callOnly, notes:(v.notes||'').slice(0,120)})),
+      .map(v=>({date:v.date, rep:v.rep, jointWith:v.withRep||null, clinic:cname(v.clinicId), contacts:UMCore.contactCount(v), order:!!v.orderTaken, totalKD:v.orderTotal||0, call:!!v.callOnly, notes:(v.notes||'').slice(0,120)})),
     openTasks: tasks.filter(t=>!t.done && (mine(t.rep)||t.rep==='Team')).slice(0,25).map(t=>({text:t.text, due:t.dueDate||null, rep:t.rep})),
     upcomingEvents: events.filter(e=>e.date>=todayStr()).slice(0,15).map(e=>({title:e.title, date:e.date, time:e.time||'', type:e.type, rep:e.rep, notes:e.notes||''})),
     dormantClinics: UMCore.dormantClinics(clinics, visits, todayStr(), {days:30}).filter(c=>mine(c.rep)).slice(0,12),
@@ -4478,6 +4844,7 @@ function renderCompare(){
       <span></span><span>${fmtDate(aF)}–${fmtDate(aT)}</span><span>${fmtDate(bF)}–${fmtDate(bT)}</span><span>Change</span>
     </div>
     ${fmtRow('Visits', A.fieldVisits, B.fieldVisits)}
+    ${fmtRow('Contacts', A.contacts, B.contacts)}
     ${fmtRow('Calls', A.calls, B.calls)}
     ${fmtRow('Orders', A.orders, B.orders)}
     ${fmtRow('Revenue', A.revenue, B.revenue, true)}
@@ -4495,6 +4862,7 @@ function renderReports(){
   let rv = reportVisitsBase();
   if(reportRepFilter !== 'all') rv = rv.filter(v=>v.rep===reportRepFilter);
   document.getElementById('repVisits').textContent = rv.filter(isFieldVisit).length;
+  document.getElementById('repContacts').textContent = rv.reduce((s,v)=>s+UMCore.contactCount(v),0);
   document.getElementById('repOrders').textContent = rv.filter(v=>v.orderTaken).length;
   document.getElementById('repRevenue').textContent = money(rv.reduce((s,v)=>s+(v.orderTotal||0),0));
   document.getElementById('repDiscount').textContent = money(rv.reduce((s,v)=>s+(v.orderDiscount||0),0));
@@ -5343,18 +5711,19 @@ function hideProReport(){
 
 function csvEscape(v){ return UMCore.csvEscape(v); }
 function buildVisitsCSV(range){
-  const rows = [['Date','Rep','Clinic','Class','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
+  const rows = [['Date','Rep','Clinic','Class','Contacts Seen','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
   const list = range ? UMCore.filterVisitsByRange(visits, range.from, range.to) : visits;
   [...list].sort((a,b)=>a.date.localeCompare(b.date)).forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
+    const seen = contactNames(v,c);
     const prodNames = (v.products||[]).map(pid=>{ const p=products.find(x=>x.id===pid); return p?p.name:''; }).filter(Boolean).join('; ');
     const orders = v.orders||[];
     if(orders.length===0){
-      rows.push([v.date, v.rep, c?c.name:'Unknown', c?c.cls||'':'', '', prodNames, '', '', '', '', '0.00', '', v.noOrderReason||'', v.nextFollowUp||'', v.notes||'']);
+      rows.push([v.date, v.rep, c?c.name:'Unknown', c?c.cls||'':'', seen, '', prodNames, '', '', '', '', '0.00', '', v.noOrderReason||'', v.nextFollowUp||'', v.notes||'']);
     } else {
       orders.forEach((o,i)=>{
         const items = o.items.map(it=>{ const p=products.find(x=>x.id===it.productId); return (p?p.name:'')+' x'+it.qty; }).join('; ');
-        rows.push([v.date, v.rep, c?c.name:'Unknown', c?c.cls||'':'', i+1, i===0?prodNames:'', items, (o.gross||0).toFixed(2), o.discountPct||0, (o.discountAmount||0).toFixed(2), (o.total||0).toFixed(2), o.notes||'', '', i===0?(v.nextFollowUp||''):'', i===0?(v.notes||''):'']);
+        rows.push([v.date, v.rep, c?c.name:'Unknown', c?c.cls||'':'', i===0?seen:'', i+1, i===0?prodNames:'', items, (o.gross||0).toFixed(2), o.discountPct||0, (o.discountAmount||0).toFixed(2), (o.total||0).toFixed(2), o.notes||'', '', i===0?(v.nextFollowUp||''):'', i===0?(v.notes||''):'']);
       });
     }
   });
@@ -5544,6 +5913,7 @@ function copyReport(){
   const rangeLabel = periodLabel();
   let text = `UltraMed Visit Report — ${rangeLabel}${reportRepFilter!=='all' ? ' — '+reportRepFilter : ' — Team'}\n`;
   text += `Visits logged: ${rv.length}\n`;
+  text += `Contacts seen: ${rv.reduce((s,v)=>s+UMCore.contactCount(v),0)}\n`;
   text += `Orders taken: ${rv.filter(v=>v.orderTaken).length}\n`;
   text += `Revenue: ${money(rv.reduce((s,v)=>s+(v.orderTotal||0),0))}\n`;
   text += `Clinics covered: ${new Set(rv.map(v=>v.clinicId)).size}\n\n`;
