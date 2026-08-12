@@ -98,6 +98,16 @@
     return {gross:Math.round(gross*100)/100, disc:Math.round((gross-net)*100)/100, net:Math.round(net*100)/100};
   }
 
+  // ---- contacts ----
+  // Healthcare professionals met during a visit. New visits record doctorIds
+  // (multi-select); older ones carry a single doctorId; call logs a contactName.
+  function contactCount(v){
+    if(Array.isArray(v.doctorIds) && v.doctorIds.length) return v.doctorIds.length;
+    if(v.doctorId) return 1;
+    if(v.callOnly && v.contactName) return 1;
+    return 0;
+  }
+
   // ---- rep scoring ----
   function computeScoreForVisits(repName, visitList, clinics){
     const base = visitList.filter(v=>v.rep===repName);
@@ -108,8 +118,9 @@
     const priorityCovered = [...coveredIds].filter(id=>priorityIds.has(id)).length;
     const orders = base.filter(v=>v.orderTaken).length;
     const revenue = base.reduce((s,v)=>s+(v.orderTotal||0),0);
+    const contacts = base.reduce((s,v)=>s+contactCount(v),0);
     return {
-      visits: base.length, orders, revenue,
+      visits: base.length, orders, revenue, contacts,
       conversion: base.length ? Math.round(orders/base.length*100) : 0,
       assignedCount: assigned.length, covered: coveredIds.size,
       coveragePct: assigned.length ? Math.round(coveredIds.size/assigned.length*100) : 0,
@@ -195,6 +206,7 @@
     const orders = vis.filter(v => v.orderTaken);
     const revenue = vis.reduce((s, v) => s + (v.orderTotal || 0), 0);
     const discount = vis.reduce((s, v) => s + (v.orderDiscount || 0), 0);
+    const contacts = vis.reduce((s, v) => s + contactCount(v), 0);
     const clinicsCovered = new Set(vis.map(v => v.clinicId)).size;
     let planned = 0;
     Object.keys(data.dayPlans || {}).forEach(d => {
@@ -211,14 +223,15 @@
     // per-rep breakdown from the visits in range
     const byRep = {};
     vis.forEach(v => {
-      const r = byRep[v.rep] || (byRep[v.rep] = { rep: v.rep, visits: 0, orders: 0, revenue: 0 });
+      const r = byRep[v.rep] || (byRep[v.rep] = { rep: v.rep, visits: 0, orders: 0, revenue: 0, contacts: 0 });
       r.visits++;
       if(v.orderTaken) r.orders++;
       r.revenue += v.orderTotal || 0;
+      r.contacts += contactCount(v);
     });
     return {
       totalActivity: vis.length, fieldVisits: fieldVisits.length, calls: calls.length,
-      orders: orders.length, revenue, discount, clinicsCovered,
+      orders: orders.length, revenue, discount, contacts, clinicsCovered,
       conversion: fieldVisits.length ? Math.round(orders.length / fieldVisits.length * 100) : 0,
       planned, events: events.length, followUpsDue: followUpsDue.length, tasksDue: tasksDue.length,
       perRep: Object.values(byRep).sort((a, b) => b.revenue - a.revenue),
@@ -280,6 +293,7 @@
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
-    inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans
+    inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,
+    contactCount
   };
 });
