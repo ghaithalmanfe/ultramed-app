@@ -336,25 +336,33 @@
     const daysInMonth = new Date(+today.slice(0, 4), +today.slice(5, 7), 0).getDate();
     const dayOfMonth = +today.slice(8, 10);
     Object.keys(targets).filter(r => wantRep(r) && targets[r] && targets[r].revenue > 0).sort().forEach(rep => {
-      const goal = targets[rep].revenue;
-      const mtd = visits.filter(v => v.rep === rep && v.date >= mStart && v.date <= today)
-        .reduce(function(sum, v){ return sum + (v.orderTotal || 0); }, 0);
-      const expected = goal * dayOfMonth / daysInMonth;
-      const daysLeft = daysInMonth - dayOfMonth;
+      const t = targets[rep];
+      const goal = t.revenue;
+      // Prefer the official achieved figure from the DSR when it covers this
+      // month; fall back to visit-logged revenue. Pace math uses the as-of day
+      // so a mid-month DSR isn't judged against today's calendar.
+      const official = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
+      const mtd = official ? t.achieved
+        : visits.filter(v => v.rep === rep && v.date >= mStart && v.date <= today)
+          .reduce(function(sum, v){ return sum + (v.orderTotal || 0); }, 0);
+      const dayRef = official ? +t.achievedAsOf.slice(8, 10) : dayOfMonth;
+      const src = official ? ' (official DSR figure)' : '';
+      const expected = goal * dayRef / daysInMonth;
+      const daysLeft = daysInMonth - dayRef;
       if(mtd >= goal){
         out.push({ level: 'good', icon: '🏆', key: 'target-' + rep,
           title: rep + ' already hit the monthly target',
-          detail: money(mtd) + ' against a ' + money(goal) + ' goal. Everything from here is upside — a great week to push new products.' });
+          detail: money(mtd) + src + ' against a ' + money(goal) + ' goal. Everything from here is upside — a great week to push new products.' });
       } else if(mtd < expected * 0.9){
         const perDay = daysLeft > 0 ? Math.ceil((goal - mtd) / daysLeft) : Math.ceil(goal - mtd);
         out.push({ level: 'act', icon: '🎯', key: 'target-' + rep,
           title: rep + ' is behind the monthly target',
-          detail: money(mtd) + ' of ' + money(goal) + ' so far. Needs about ' + perDay + ' KD/day for the remaining ' + daysLeft +
+          detail: money(mtd) + src + ' of ' + money(goal) + ' so far. Needs about ' + perDay + ' KD/day for the remaining ' + daysLeft +
             ' day' + (daysLeft === 1 ? '' : 's') + ' — steer the visits toward clinics that already order.' });
       } else {
         out.push({ level: 'good', icon: '🎯', key: 'target-' + rep,
           title: rep + ' is on pace for the monthly target',
-          detail: money(mtd) + ' of ' + money(goal) + '. Keep the current rhythm and the target lands on its own.' });
+          detail: money(mtd) + src + ' of ' + money(goal) + '. Keep the current rhythm and the target lands on its own.' });
       }
     });
 
@@ -455,7 +463,7 @@
     if(typeof s === 'number') return s;
     s = String(s == null ? '' : s).replace(/,/g, '').trim();
     if(!s) return 0;
-    var neg = s.charAt(0) === '(' || /-\)?$/.test(s);
+    var neg = s.charAt(0) === '(' || s.charAt(0) === '-' || /-\)?$/.test(s);
     s = s.replace(/[()\-]/g, '');
     var v = parseFloat(s);
     if(isNaN(v)) return 0;
@@ -887,21 +895,24 @@
   // Parses the DSR targets workbook: blocks of rows per salesman (name in the
   // first column once, then one row per brand target, closed by a "<name>
   // Total" row carrying the overall target).
-  function parseDsrTargets(sheets, reps){
+  function parseDsrTargets(sheets, reps, opts){
+    var asOf = (opts && opts.asOf) || null;
     var out = { targets: {}, matched: [], unmatched: [], error: null };
     var found = {};
     (sheets || []).forEach(function(sheet){
       var rows = sheet.rows || [];
-      var hIdx = -1, cName = -1, cBrand = -1, cTarget = -1;
+      var hIdx = -1, cName = -1, cBrand = -1, cTarget = -1, cAch = -1;
       for(var i = 0; i < Math.min(rows.length, 15); i++){
-        var r = rows[i] || [], nc = -1, bc = -1, tc = -1;
+        var r = rows[i] || [], nc = -1, bc = -1, tc = -1, ac = -1;
         for(var j = 0; j < r.length; j++){
           var h = String(r[j] || '').toLowerCase().trim();
           if(nc < 0 && /salesman|sales\s*person|name|rep\b|employee/.test(h)) nc = j;
           if(bc < 0 && /^brand/.test(h)) bc = j;
           if(tc < 0 && /^target/.test(h)) tc = j;
+          // Achieved column ("MTD Sales 26") — never the "Achieved vs. Target" ratio.
+          if(ac < 0 && (/mtd/.test(h) || (/achiev|actual/.test(h) && !/vs|%|ratio/.test(h)))) ac = j;
         }
-        if(nc >= 0 && tc >= 0){ hIdx = i; cName = nc; cBrand = bc; cTarget = tc; break; }
+        if(nc >= 0 && tc >= 0){ hIdx = i; cName = nc; cBrand = bc; cTarget = tc; cAch = ac; break; }
       }
       if(hIdx < 0) return;
       var current = null;
@@ -910,14 +921,21 @@
         var name = String(row[cName] || '').trim();
         var brand = cBrand >= 0 ? String(row[cBrand] || '').trim() : '';
         var target = erpNum(row[cTarget]);
+        var ach = cAch >= 0 ? erpNum(row[cAch]) : 0;
         if(name && /total\s*$/i.test(name)){
           var base = name.replace(/\s*total\s*$/i, '').trim();
-          if(found[base] && target > 0) found[base].total = target;
+          if(found[base]){
+            if(target > 0) found[base].total = target;
+            if(ach !== 0) found[base].achievedTotal = ach;
+          }
           current = null;
           continue;
         }
-        if(name){ current = name; found[current] = found[current] || { total: 0, brands: {} }; }
-        if(current && brand && target > 0) found[current].brands[brand] = Math.round(target * 100) / 100;
+        if(name){ current = name; found[current] = found[current] || { total: 0, achievedTotal: null, brands: {}, achievedBrands: {} }; }
+        if(current && brand){
+          if(target > 0) found[current].brands[brand] = Math.round(target * 100) / 100;
+          if(ach !== 0) found[current].achievedBrands[brand] = Math.round(ach * 1000) / 1000;
+        }
       }
     });
     var names = Object.keys(found);
@@ -929,8 +947,16 @@
       total = Math.round(total * 100) / 100;
       if(!map[nm]){ if(total > 0) out.unmatched.push(nm); return; }
       if(!(total > 0)) return;
-      out.targets[map[nm]] = { revenue: total, brands: f.brands };
-      out.matched.push({ name: nm, rep: map[nm], revenue: total, brandCount: Object.keys(f.brands).length });
+      var achieved = f.achievedTotal != null ? f.achievedTotal
+        : Object.keys(f.achievedBrands).reduce(function(s, b){ return s + f.achievedBrands[b]; }, 0);
+      achieved = Math.round(achieved * 1000) / 1000;
+      var entry = { revenue: total, brands: f.brands };
+      entry.achieved = achieved;
+      entry.achievedBrands = f.achievedBrands;
+      if(asOf) entry.achievedAsOf = asOf;
+      out.targets[map[nm]] = entry;
+      out.matched.push({ name: nm, rep: map[nm], revenue: total, achieved: achieved,
+        brandCount: Object.keys(f.brands).length });
     });
     if(!out.matched.length){ out.error = 'NO_MATCH'; return out; }
     return out;

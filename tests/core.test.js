@@ -969,3 +969,46 @@ describe('normBrand', () => {
     assert.equal(core.normBrand('Some New Brand'), 'some new brand');
   });
 });
+
+describe('DSR achieved sales (MTD)', () => {
+  const fs = require('fs');
+  const DSR = '/root/.claude/uploads/e7014514-068b-5bb6-b42f-579bf8c47791/089d4563-DSR_11.08.26_.xlsx';
+  const available = fs.existsSync(DSR);
+  test('erpNum reads leading-minus negatives (regression)', () => {
+    assert.equal(core.erpNum('-78.4'), -78.4);
+    assert.equal(core.erpNum('-0.005'), -0.005);
+    assert.equal(core.erpNum('78.4'), 78.4);
+  });
+  test('extracts official achieved totals and per-brand MTD from the real file', { skip: !available }, async () => {
+    const sheets = await core.readXlsx(fs.readFileSync(DSR));
+    const tg = core.parseDsrTargets(sheets, ['Renova', 'Mariam'], { asOf: '2026-08-11' });
+    assert.equal(tg.targets.Mariam.achieved, 803.88);
+    assert.equal(tg.targets.Renova.achieved, 3567.981);
+    assert.equal(tg.targets.Mariam.achievedAsOf, '2026-08-11');
+    assert.equal(tg.targets.Mariam.achievedBrands['Intensiv'], 420);
+    assert.equal(tg.targets.Renova.achievedBrands['UNIVET'], 600);
+    // targets from the previous behavior are unchanged
+    assert.equal(tg.targets.Mariam.revenue, 11621.92);
+    assert.equal(tg.targets.Renova.revenue, 12563.08);
+  });
+  test('coach prefers the official achieved figure with as-of pacing', () => {
+    const today = '2026-08-25';
+    const base = { from: '2026-08-01', to: today, today, repFilter: 'all',
+      visits: [], clinics: [], dayPlans: {} };
+    // No official figure: 0 logged revenue → far behind.
+    const plain = core.coachInsights({ ...base, targets: { Mariam: { revenue: 1000 } } })
+      .find(i => i.key === 'target-Mariam');
+    assert.equal(plain.level, 'act');
+    // Official figure says she already passed the prorated pace at its as-of date.
+    const official = core.coachInsights({ ...base, targets: {
+      Mariam: { revenue: 1000, achieved: 500, achievedAsOf: '2026-08-11' } } })
+      .find(i => i.key === 'target-Mariam');
+    assert.equal(official.level, 'good'); // 500 ≥ 1000*11/31≈355
+    assert.match(official.detail, /official DSR figure/);
+    // A stale as-of (previous month) is ignored.
+    const stale = core.coachInsights({ ...base, targets: {
+      Mariam: { revenue: 1000, achieved: 500, achievedAsOf: '2026-07-11' } } })
+      .find(i => i.key === 'target-Mariam');
+    assert.equal(stale.level, 'act');
+  });
+});
