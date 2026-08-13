@@ -771,6 +771,92 @@
     return out;
   }
 
+  // ==== COVERAGE BOARD ====
+  // One picture of a period: which clinics were visited (with a visit summary
+  // each) and which still need a visit — with machine-readable reasons the UI
+  // turns into advice. opts: {from, to, today, repFilter, visits, clinics, dayPlans}
+  function clinicCoverage(opts){
+    var wantRep = function(r){ return opts.repFilter === 'all' || r === opts.repFilter; };
+    var pool = (opts.clinics || []).filter(function(c){ return c.cls !== 'Closed' && wantRep(c.rep); });
+    var vis = filterVisitsByRange(opts.visits, opts.from, opts.to)
+      .filter(function(v){ return wantRep(v.rep) || wantRep(v.withRep); });
+    var today = opts.today;
+    var byClinic = {};
+    vis.forEach(function(v){ (byClinic[v.clinicId] = byClinic[v.clinicId] || []).push(v); });
+    var lastEver = {};
+    (opts.visits || []).forEach(function(v){
+      if(v.date && (!lastEver[v.clinicId] || v.date > lastEver[v.clinicId])) lastEver[v.clinicId] = v.date;
+    });
+
+    var visited = pool.filter(function(c){ return byClinic[c.id]; }).map(function(c){
+      var list = byClinic[c.id].slice().sort(function(a, b){ return b.date < a.date ? -1 : b.date > a.date ? 1 : 0; });
+      return {
+        id: c.id, name: c.name, rep: c.rep, cls: c.cls,
+        visits: list.length,
+        lastDate: list[0].date,
+        calls: list.filter(function(v){ return v.callOnly; }).length,
+        orders: list.filter(function(v){ return v.orderTaken; }).length,
+        revenue: Math.round(list.reduce(function(s, v){ return s + (v.orderTotal || 0); }, 0) * 100) / 100,
+        contacts: list.reduce(function(s, v){ return s + contactCount(v); }, 0),
+        nextFollowUp: c.nextFollowUp || null,
+        detail: list.map(function(v){
+          return { date: v.date, rep: v.rep, withRep: v.withRep || null, callOnly: !!v.callOnly,
+            orderTaken: !!v.orderTaken, orderTotal: v.orderTotal || 0,
+            doctorIds: (v.doctorIds || []).slice(), notes: v.notes || '', noOrderReason: v.noOrderReason || '' };
+        }),
+      };
+    }).sort(function(a, b){ return b.revenue - a.revenue || b.visits - a.visits; });
+
+    // Reasons a clinic still needs attention, most urgent first (lowest weight wins):
+    // 0 overdue follow-up · 1 due today · 2 missed plan · 3 never visited ·
+    // 4 dormant 30+ days · 5 follow-up due within a week
+    var dorm = dormantClinics(opts.clinics, opts.visits, today, { days: 30 });
+    var missed = missedPlans(opts.dayPlans, opts.visits, today, { daysBack: 14 })
+      .filter(function(m){ return wantRep(m.rep); });
+    var missedByClinic = {};
+    missed.forEach(function(m){ (missedByClinic[m.clinicId] = missedByClinic[m.clinicId] || []).push(m); });
+    var soon = new Date(today + 'T00:00:00'); soon.setDate(soon.getDate() + 7);
+    var soonStr = localDateStr(soon);
+
+    var needsVisit = [];
+    pool.forEach(function(c){
+      if(byClinic[c.id]) return; // being handled this period
+      var reasons = [];
+      var fs = followStatus(c.nextFollowUp, today);
+      if(fs === 'overdue') reasons.push({ key: 'overdue', weight: 0, date: c.nextFollowUp });
+      if(fs === 'today') reasons.push({ key: 'due-today', weight: 1, date: c.nextFollowUp });
+      if(missedByClinic[c.id]) reasons.push({ key: 'missed-plan', weight: 2, count: missedByClinic[c.id].length, date: missedByClinic[c.id][0].date });
+      var d = null;
+      for(var i = 0; i < dorm.length; i++) if(dorm[i].id === c.id){ d = dorm[i]; break; }
+      if(d) reasons.push(d.lastVisit === null
+        ? { key: 'never-visited', weight: 3 }
+        : { key: 'dormant', weight: 4, days: d.daysSince });
+      if(fs === 'upcoming' && c.nextFollowUp <= soonStr) reasons.push({ key: 'due-soon', weight: 5, date: c.nextFollowUp });
+      if(!reasons.length) return;
+      reasons.sort(function(a, b){ return a.weight - b.weight; });
+      needsVisit.push({ id: c.id, name: c.name, rep: c.rep, cls: c.cls,
+        reasons: reasons, weight: reasons[0].weight,
+        lastVisit: lastEver[c.id] || null, nextFollowUp: c.nextFollowUp || null });
+    });
+    needsVisit.sort(function(a, b){
+      return a.weight - b.weight || String(a.cls || 'Z').localeCompare(String(b.cls || 'Z')) || a.name.localeCompare(b.name);
+    });
+
+    return {
+      visited: visited,
+      needsVisit: needsVisit,
+      stats: {
+        totalClinics: pool.length,
+        visitedCount: visited.length,
+        coveragePct: pool.length ? Math.round(visited.length / pool.length * 100) : 0,
+        needsCount: needsVisit.length,
+        orders: visited.reduce(function(s, c){ return s + c.orders; }, 0),
+        revenue: Math.round(visited.reduce(function(s, c){ return s + c.revenue; }, 0) * 100) / 100,
+        contacts: visited.reduce(function(s, c){ return s + c.contacts; }, 0),
+      },
+    };
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
@@ -780,6 +866,6 @@
     contactCount, coachInsights,
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, dedupeVisits, erpTotals, reconcileErp
+    matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage
   };
 });
