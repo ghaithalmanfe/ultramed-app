@@ -188,6 +188,7 @@
   .gate-option .name{font-weight:700; font-size:16px;}
   .gate-option .role{font-size:12.5px; color:var(--muted); margin-top:2px;}
   .compare-row{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:13px;}
+  .compare-row.c4{grid-template-columns:1.2fr 0.7fr 1fr 1fr;}
   .compare-row .h{font-weight:700; color:var(--muted); font-size:11px; text-transform:uppercase;}
   .score-card{margin-bottom:12px;}
   .guidance-block{margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
@@ -801,7 +802,8 @@
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
       <div class="report-line"><span>Contacts seen</span><span class="v" id="repContacts">0</span></div>
       <div class="report-line"><span>Orders taken</span><span class="v" id="repOrders">0</span></div>
-      <div class="report-line"><span>Revenue</span><span class="v" id="repRevenue">0.00 KD</span></div>
+      <div class="report-line"><span>Revenue (app-logged)</span><span class="v" id="repRevenue">0.00 KD</span></div>
+      <div class="report-line" id="repErpRow" style="display:none;"><span>💠 Revenue (ERP invoices)</span><span class="v" id="repErpRevenue">0.00 KD</span></div>
       <div class="report-line"><span>Discount given</span><span class="v" id="repDiscount">0.00 KD</span></div>
       <div class="report-line"><span>Clinics covered</span><span class="v" id="repClinics">0</span></div>
       <div class="report-line"><span>Overdue follow-ups</span><span class="v" id="repOverdue">0</span></div>
@@ -1937,7 +1939,10 @@ function renderTargetCard(){
       const t = targets[r];
       const s = UMCore.rangeSummary(m[0], m[m.length-1], r, {visits, clinics, tasks, events, dayPlans});
       const bars = [];
-      if(t.revenue>0) bars.push(bar('Revenue', `${money(s.revenue)} / ${money(t.revenue)}`, Math.round(s.revenue/t.revenue*100)));
+      if(t.revenue>0){
+        const bm = bestMonthRevenue(r);
+        bars.push(bar(`Revenue (${bm.src})`, `${money(bm.amount)} / ${money(t.revenue)}`, Math.round(bm.amount/t.revenue*100)));
+      }
       if(t.visits>0) bars.push(bar('Visits', `${s.fieldVisits} / ${t.visits}`, Math.round(s.fieldVisits/t.visits*100)));
       return `${currentUser.role==='supervisor'?`<div style="font-size:13px; font-weight:700; margin:${bars.length?'10px':'0'} 0 2px;">${esc(r)}</div>`:''}${bars.join('')}`;
     }).join('')}
@@ -2048,10 +2053,14 @@ function renderToday(){
   const wk = visibleVisits().filter(v=>new Date(v.date)>=weekAgo);
   const wkRev = wk.reduce((a,v)=>a+(v.orderTotal||0),0);
   const wkOrders = wk.filter(v=>v.orderTaken).length;
+  // ERP-verified revenue is the real number when an imported period covers
+  // this week; the app-logged figure drops to the subtitle for comparison.
+  const erpWk = erpRevenueForRange(UMCore.localDateStr(weekAgo), todayStr(),
+    currentUser.role==='rep' ? currentUser.name : 'all');
   document.getElementById('heroCard').innerHTML = `
-    <div class="htitle">Revenue this week</div>
-    <div class="hbig">${money(wkRev)}</div>
-    <div class="hsub">${wk.length} visit${wk.length===1?'':'s'} · ${wkOrders} order${wkOrders===1?'':'s'}</div>
+    <div class="htitle">Revenue this week${erpWk!=null?' (ERP-verified)':''}</div>
+    <div class="hbig">${money(erpWk!=null?erpWk:wkRev)}</div>
+    <div class="hsub">${wk.length} visit${wk.length===1?'':'s'} · ${wkOrders} order${wkOrders===1?'':'s'}${erpWk!=null?` · ${money(wkRev)} logged in app`:''}</div>
     <div class="hero-stats">
       <div><div class="n">${due.length}</div><div class="l">DUE</div></div>
       <div><div class="n">${wk.length?Math.round(wkOrders/wk.length*100):0}%</div><div class="l">CONVERSION</div></div>
@@ -4802,6 +4811,34 @@ function erpPeriods(){ return (erpSales && Array.isArray(erpSales.periods)) ? er
 function packErpRows(rows){ return rows.map(r=>[r.date,r.doc,r.type==='return'?1:0,r.product,r.qty,r.gross,r.net,r.sret,r.salesman,r.brand,r.customer,r.cls]); }
 function unpackErpRows(packed){ return (packed||[]).map(a=>({date:a[0],doc:a[1],type:a[2]?'return':'invoice',product:a[3],qty:a[4],gross:a[5],net:a[6],sret:a[7],salesman:a[8],brand:a[9],customer:a[10],cls:a[11]})); }
 
+// Sums imported ERP net for a range/rep. Returns null when no imported
+// period overlaps the range, so callers can fall back to app-logged numbers.
+function erpRevenueForRange(from, to, repFilter){
+  const ps = erpPeriods().filter(p => (!from || p.to >= from) && (!to || p.from <= to));
+  if(!ps.length) return null;
+  let sum = 0;
+  ps.forEach(p => unpackErpRows(p.rows).forEach(r => {
+    if(!UMCore.inRange(r.date, from, to)) return;
+    const rep = (p.repMap||{})[r.salesman];
+    if(!rep) return;
+    if(repFilter !== 'all' && rep !== repFilter) return;
+    sum += r.net;
+  }));
+  return Math.round(sum * 100) / 100;
+}
+// Best month-to-date revenue for a rep, most authoritative source first:
+// official DSR achieved → ERP invoices → app-logged orders.
+function bestMonthRevenue(rep){
+  const m = getMonthDates(todayStr());
+  const t = targets[rep] || {};
+  if(t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === todayStr().slice(0,7))
+    return { amount: t.achieved, src: 'DSR official' };
+  const erp = erpRevenueForRange(m[0], m[m.length-1], rep);
+  if(erp != null) return { amount: erp, src: 'ERP invoices' };
+  const s = UMCore.rangeSummary(m[0], m[m.length-1], rep, {visits, clinics, tasks, events, dayPlans});
+  return { amount: s.revenue, src: 'app-logged' };
+}
+
 function openErpImport(){
   if(currentUser.role!=='supervisor'){ showToast('Supervisor only'); return; }
   const periods = erpPeriods().slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
@@ -5387,6 +5424,13 @@ function renderReports(){
   document.getElementById('repContacts').textContent = rv.reduce((s,v)=>s+UMCore.contactCount(v),0);
   document.getElementById('repOrders').textContent = rv.filter(v=>v.orderTaken).length;
   document.getElementById('repRevenue').textContent = money(rv.reduce((s,v)=>s+(v.orderTotal||0),0));
+  const bounds = reportRangeBounds();
+  const erpRev = erpRevenueForRange(bounds.from, bounds.to, reportRepFilter);
+  const erpRow = document.getElementById('repErpRow');
+  if(erpRow){
+    erpRow.style.display = erpRev != null ? '' : 'none';
+    if(erpRev != null) document.getElementById('repErpRevenue').textContent = money(erpRev);
+  }
   document.getElementById('repDiscount').textContent = money(rv.reduce((s,v)=>s+(v.orderDiscount||0),0));
   document.getElementById('repClinics').textContent = new Set(rv.map(v=>v.clinicId)).size;
   let overdueClinics = clinics.filter(c=>c.cls!=='Closed' && followStatus(c.nextFollowUp)==='overdue');
@@ -5398,15 +5442,19 @@ function renderReports(){
   if(currentUser.role==='supervisor'){
     compareTitle.style.display='flex'; compareCard.style.display='block';
     const base = reportVisitsBase();
+    const cmpBounds = reportRangeBounds();
     const rows = REPS.map(r=>{
       const rvr = base.filter(v=>v.rep===r);
-      return {rep:r, visits:rvr.length, revenue:rvr.reduce((s,v)=>s+(v.orderTotal||0),0)};
+      return {rep:r, visits:rvr.length, revenue:rvr.reduce((s,v)=>s+(v.orderTotal||0),0),
+        erp: erpRevenueForRange(cmpBounds.from, cmpBounds.to, r)};
     });
+    const anyErp = rows.some(r=>r.erp != null);
+    const rowCls = anyErp ? 'compare-row c4' : 'compare-row';
     compareCard.innerHTML = `
-      <div class="compare-row" style="margin-bottom:8px;">
-        <div class="h">Rep</div><div class="h">Visits</div><div class="h">Revenue</div>
+      <div class="${rowCls}" style="margin-bottom:8px;">
+        <div class="h">Rep</div><div class="h">Visits</div><div class="h">Logged</div>${anyErp?'<div class="h">ERP</div>':''}
       </div>
-      ${rows.map(r=>`<div class="compare-row" style="padding:6px 0; border-top:1px solid var(--line);"><div>${esc(r.rep)}</div><div>${r.visits}</div><div>${money(r.revenue)}</div></div>`).join('')}
+      ${rows.map(r=>`<div class="${rowCls}" style="padding:6px 0; border-top:1px solid var(--line);"><div>${esc(r.rep)}</div><div>${r.visits}</div><div>${money(r.revenue)}</div>${anyErp?`<div>${r.erp!=null?money(r.erp):'—'}</div>`:''}</div>`).join('')}
     `;
   } else {
     compareTitle.style.display='none'; compareCard.style.display='none';

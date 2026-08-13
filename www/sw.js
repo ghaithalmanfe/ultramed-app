@@ -1,4 +1,4 @@
-const CACHE = 'ultramed-field-ops-v15';
+const CACHE = 'ultramed-field-ops-v16';
 const SHELL = ['./', './index.html', './js/core.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
