@@ -851,3 +851,34 @@ describe('clinicCoverage', () => {
     assert.ok(!cov.needsVisit.some(c => c.id === 'c3'));
   });
 });
+
+describe('erpWeeklyTrend', () => {
+  const repMap = { 'Ranova Ayman Mohammed': 'Renova', 'Mariam Zohair': 'Mariam' };
+  const rows = [
+    { date: '2026-08-03', net: 100, salesman: 'Ranova Ayman Mohammed' }, // week Aug 2–8
+    { date: '2026-08-05', net: 50, salesman: 'Mariam Zohair' },
+    { date: '2026-08-10', net: 200, salesman: 'Ranova Ayman Mohammed' }, // week Aug 9–15
+    { date: '2026-08-12', net: -20, salesman: 'Ranova Ayman Mohammed' }, // a return
+    { date: '2026-08-11', net: 999, salesman: 'Mr. Sundeep Kohli' },     // unmapped → skipped
+  ];
+  test('groups net by Sun–Sat week and by rep, skipping unmapped salesmen', () => {
+    const t = core.erpWeeklyTrend(rows, repMap);
+    assert.equal(t.length, 2);
+    assert.equal(t[0].from, '2026-08-02');
+    assert.equal(t[0].to, '2026-08-08');
+    assert.equal(t[0].byRep.Renova, 100);
+    assert.equal(t[0].byRep.Mariam, 50);
+    assert.equal(t[0].total, 150);
+    assert.equal(t[1].byRep.Renova, 180); // 200 - 20 return
+    assert.equal(t[1].total, 180);
+    assert.ok(!('Mariam' in t[1].byRep));
+  });
+  test('weeks come out in chronological order', () => {
+    const t = core.erpWeeklyTrend(rows.slice().reverse(), repMap);
+    assert.ok(t[0].from < t[1].from);
+  });
+  test('empty input gives an empty trend', () => {
+    assert.deepEqual(core.erpWeeklyTrend([], repMap), []);
+    assert.deepEqual(core.erpWeeklyTrend(rows, {}), []);
+  });
+});
