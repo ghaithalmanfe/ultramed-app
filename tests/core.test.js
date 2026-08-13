@@ -911,3 +911,61 @@ describe('parseTargetsFile', () => {
     assert.equal(core.parseTargetsFile('total garbage without numbers', REPS).error, 'NO_TARGETS');
   });
 });
+
+// ---------- XLSX reading & DSR targets (validated on the real DSR file) ----------
+
+describe('readXlsx + parseDsrTargets (real DSR workbook)', () => {
+  const fs = require('fs');
+  const DSR = '/root/.claude/uploads/e7014514-068b-5bb6-b42f-579bf8c47791/089d4563-DSR_11.08.26_.xlsx';
+  const available = fs.existsSync(DSR);
+  test('reads the workbook sheets and cells', { skip: !available }, async () => {
+    const sheets = await core.readXlsx(fs.readFileSync(DSR));
+    assert.equal(sheets.length, 2);
+    assert.ok(sheets[1].rows.some(r => (r || []).includes('Mariam Zohair')));
+  });
+  test('extracts per-rep totals and brand targets', { skip: !available }, async () => {
+    const sheets = await core.readXlsx(fs.readFileSync(DSR));
+    const tg = core.parseDsrTargets(sheets, ['Renova', 'Mariam']);
+    assert.equal(tg.error, null);
+    assert.equal(tg.targets.Mariam.revenue, 11621.92);
+    assert.equal(tg.targets.Renova.revenue, 12563.08);
+    assert.equal(tg.targets.Mariam.brands['Intensiv'], 4700);
+    assert.equal(tg.targets.Renova.brands['UNIVET'], 2533);
+    // channel blocks (not people) are skipped, not force-matched
+    assert.ok(tg.unmatched.includes('Pharmacy'));
+    assert.ok(!('Pharmacy' in tg.targets));
+  });
+});
+
+describe('parseDsrTargets (synthetic block layout)', () => {
+  const sheets = [{ name: 'S', rows: [
+    ['Salesman ', 'Brand', 'Target', 'MTD'],
+    ['Mariam Zohair', 'Intensiv', '4700', ''],
+    ['', 'Tepe', '138', ''],
+    ['Mariam Zohair Total', '', '4838', ''],
+    ['Ranova Ayman', 'UNIVET', '2533', ''],
+    ['Ranova Ayman Total', '', '', ''], // empty total → falls back to brand sum
+  ]}];
+  test('closes blocks on Total rows and sums when the total is missing', () => {
+    const tg = core.parseDsrTargets(sheets, ['Renova', 'Mariam']);
+    assert.equal(tg.targets.Mariam.revenue, 4838);
+    assert.equal(tg.targets.Mariam.brands['Tepe'], 138);
+    assert.equal(tg.targets.Renova.revenue, 2533);
+  });
+  test('empty sheets error cleanly', () => {
+    assert.equal(core.parseDsrTargets([{ name: 'S', rows: [] }], ['Mariam']).error, 'NO_TARGETS');
+  });
+});
+
+describe('normBrand', () => {
+  test('unifies DSR and ERP brand spellings', () => {
+    assert.equal(core.normBrand('Philips Sonicare'), core.normBrand('Philips Export BV'));
+    assert.equal(core.normBrand('BHF'), core.normBrand('Beverly Hills'));
+    assert.equal(core.normBrand('Shenzen'), core.normBrand('Shenzhen'));
+    assert.equal(core.normBrand('Tepe'), core.normBrand('TEPE'));
+    assert.equal(core.normBrand('EverBrands'), core.normBrand('EverSmile'));
+  });
+  test('unknown brands pass through lowercased', () => {
+    assert.equal(core.normBrand('Some New Brand'), 'some new brand');
+  });
+});
