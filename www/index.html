@@ -547,6 +547,7 @@
       <div class="stat"><div class="n" id="statTasks">0</div><div class="l">Open tasks</div></div>
     </div>
     <button class="btn secondary" style="margin-bottom:6px;" onclick="openCoverageBoard()">📋 Coverage review — done &amp; still needed</button>
+    <div id="erpNudge" style="display:none;"></div>
 
     <div class="section-title">Today's plan <span><span class="link" onclick="openPlanDay()" id="planLink">Plan today</span> <span class="link" onclick="openWeekMonthPlan()" style="margin-left:10px;">Weekly/Monthly</span></span></div>
     <div id="planList"></div>
@@ -2037,6 +2038,7 @@ function renderDormant(){
 }
 
 function renderToday(){
+  renderErpNudge();
   const due = visibleDueClinics();
   document.getElementById('statDue').textContent = due.length;
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
@@ -4775,6 +4777,24 @@ function renderCoverageBoard(){
   `);
 }
 
+// Weekly rhythm: nudge the supervisor when the sales data is getting stale.
+function renderErpNudge(){
+  const el = document.getElementById('erpNudge');
+  if(!el) return;
+  if(currentUser.role !== 'supervisor'){ el.style.display = 'none'; return; }
+  const latest = erpPeriods().slice().sort((a,b)=>(b.to||'').localeCompare(a.to||''))[0];
+  const staleDays = latest ? UMCore.daysBetween(latest.to, todayStr()) : null;
+  const stale = !latest || staleDays >= 7;
+  el.style.display = stale ? 'block' : 'none';
+  if(!stale){ el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="card clickable" style="border-left:4px solid var(--purple); margin-bottom:6px;" onclick="openErpImport()">
+    <div style="font-weight:700; font-size:13.5px;">📥 Weekly sales file due</div>
+    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">
+      ${latest ? `Latest ERP data covers up to ${fmtDate(latest.to)} (${staleDays} days ago).` : 'No ERP sales file imported yet.'}
+      Import this week's file to keep coaching based on real invoices. Tap to import →</div>
+  </div>`;
+}
+
 // ---- ERP IMPORT & RECONCILIATION (supervisor only) ----
 let _erpParsed = null;      // parse result held between the parse and save steps
 let _erpUnmatched = [];     // customer names awaiting a mapping choice
@@ -4858,7 +4878,12 @@ async function erpSavePeriod(){
     repMap[sm] = sel && sel.value ? sel.value : null;
   });
   const t = _erpParsed.totals;
-  erpSales.periods = erpPeriods().filter(p=>!(p.from===t.from && p.to===t.to)); // re-import replaces
+  // A new file replaces any saved period its date range overlaps — so weekly
+  // cumulative exports (1st→today) never pile up as duplicates.
+  const before = erpPeriods().length;
+  erpSales.periods = erpPeriods().filter(p => !(p.from <= t.to && p.to >= t.from));
+  const replaced = before - erpSales.periods.length;
+  if(replaced) showToast(`Replacing ${replaced} older overlapping period${replaced===1?'':'s'}`);
   const period = { id: uid(), from: t.from, to: t.to, net: Math.round(t.net*1000)/1000,
     rowCount: t.lines, importedAt: new Date().toISOString(), repMap, rows: packErpRows(_erpParsed.rows) };
   erpSales.periods.push(period);
@@ -4936,6 +4961,31 @@ function openErpRecon(id){
     <h3 style="margin-top:0;">📊 ERP reconciliation</h3>
     <div style="color:var(--muted); font-size:13px; margin-bottom:10px;">${fmtDate(p.from)} – ${fmtDate(p.to)} · ERP invoices vs visits logged in this app</div>
     ${rec.dupRows?`<div class="nudge" style="margin-bottom:10px;">🧹 ${rec.dupRows} duplicate visit row${rec.dupRows===1?'':'s'} detected and ignored in these numbers.</div>`:''}
+    ${(()=>{ // week-by-week direction: is each rep speeding up or slowing down?
+      const trend = UMCore.erpWeeklyTrend(rows, p.repMap||{});
+      if(trend.length < 2) return '';
+      const trendReps = [...new Set(trend.flatMap(w=>Object.keys(w.byRep)))].sort();
+      const arrow = (cur, prev) => prev==null ? '' :
+        cur > prev ? ` <span style="color:var(--sage); font-size:11px;">▲${UMCore.pctDelta(cur, prev)}%</span>` :
+        cur < prev ? ` <span style="color:var(--coral); font-size:11px;">▼${Math.abs(UMCore.pctDelta(cur, prev))}%</span>` : '';
+      return `<div class="section-title" style="margin-top:0;">📈 Week by week</div>
+      <div class="card" style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <tr><th style="text-align:left; padding:5px 6px; color:var(--muted);">Week</th>
+            ${trendReps.map(r=>`<th style="text-align:right; padding:5px 6px; color:var(--muted);">${esc(r)}</th>`).join('')}
+            <th style="text-align:right; padding:5px 6px; color:var(--muted);">Total</th></tr>
+          ${trend.map((w,i)=>{
+            const prev = i>0 ? trend[i-1] : null;
+            return `<tr style="border-top:1px solid var(--line);">
+              <td style="padding:6px;">${fmtDate(w.from)}–${fmtDate(w.to)}</td>
+              ${trendReps.map(r=>`<td style="text-align:right; padding:6px; white-space:nowrap;">${(w.byRep[r]||0).toFixed(2)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
+              <td style="text-align:right; padding:6px; font-weight:700; white-space:nowrap;">${w.total.toFixed(2)}${arrow(w.total, prev?prev.total:null)}</td>
+            </tr>`;
+          }).join('')}
+        </table>
+        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">KD net per week (Sun–Sat). Arrows compare with the week before — the fastest way to see who is accelerating and who needs a push.</div>
+      </div>`;
+    })()}
     ${rec.perRep.length?rec.perRep.map(repCard).join(''):'<div class="empty">No rows map to your team — check the salesman mapping when importing.</div>'}
     ${_erpUnmatched.length?`<div class="section-title">🔗 Unrecognized customer names</div>
     <div class="card">
