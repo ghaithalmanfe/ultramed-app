@@ -1012,3 +1012,40 @@ describe('DSR achieved sales (MTD)', () => {
     assert.equal(stale.level, 'act');
   });
 });
+
+describe('report helpers: forecast, returns, coach data payloads', () => {
+  test('forecastMonthEnd projects straight-line pace', () => {
+    assert.equal(core.forecastMonthEnd(1000, 10, 31), 3100);
+    assert.equal(core.forecastMonthEnd(0, 10, 31), 0);
+    assert.equal(core.forecastMonthEnd(500, 0, 31), 0); // day zero → no projection
+  });
+  test('returnsAnalysis groups returned value by brand and customer', () => {
+    const rows = [
+      { sret: 100, brand: 'Hismile', customer: 'Trolley' },
+      { sret: 50, brand: 'Hismile', customer: 'Lulu' },
+      { sret: 30, brand: 'FLASH', customer: 'Trolley' },
+      { sret: 0, brand: 'TEPE', customer: 'X' }, // not a return
+    ];
+    const r = core.returnsAnalysis(rows);
+    assert.equal(r.total, 180);
+    assert.equal(r.count, 3);
+    assert.deepEqual(r.byBrand[0], { name: 'Hismile', amount: 150 });
+    assert.deepEqual(r.byCustomer[0], { name: 'Trolley', amount: 130 });
+  });
+  test('coach insights now carry structured data for localization', () => {
+    const today = '2026-08-12';
+    const out = core.coachInsights({
+      from: '2026-08-01', to: today, today, repFilter: 'all',
+      visits: [], dayPlans: {},
+      clinics: [{ id: 'c1', name: 'Alpha', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-05' }],
+      targets: { Mariam: { revenue: 1000 } },
+    });
+    const fu = out.find(i => i.key === 'followups');
+    assert.equal(fu.data.count, 1);
+    assert.deepEqual(fu.data.names, ['Alpha']);
+    const tg = out.find(i => i.key === 'target-Mariam');
+    assert.equal(tg.data.state, 'behind');
+    assert.equal(tg.data.goal, 1000);
+    assert.ok(tg.data.perDay > 0);
+  });
+});
