@@ -771,6 +771,55 @@
     return out;
   }
 
+  // Parses a targets file: a CSV with name + target columns, or plain
+  // "Renova 12000" lines. Names are fuzzy-matched to app reps.
+  // Returns {targets: {rep:{revenue[,visits]}}, matched:[], unmatched:[], error}
+  function parseTargetsFile(text, reps){
+    var out = { targets: {}, matched: [], unmatched: [], error: null };
+    var candidates = [];
+    var all = parseCsvText(String(text || ''));
+    var headerAt = -1, nameCol = -1, targetCol = -1, visitsCol = -1;
+    for(var i = 0; i < Math.min(all.length, 25); i++){
+      var row = all[i], nc = -1, tc = -1, vc = -1;
+      for(var j = 0; j < row.length; j++){
+        var h = String(row[j] || '').toLowerCase();
+        if(nc < 0 && /name|salesman|sales\s*person|rep\b|employee/.test(h)) nc = j;
+        if(tc < 0 && /target|goal|quota|budget|required/.test(h) && !/visit/.test(h)) tc = j;
+        if(vc < 0 && /visit/.test(h) && /target|goal|quota|required|count|no\b|#/.test(h)) vc = j;
+      }
+      if(nc >= 0 && tc >= 0){ headerAt = i; nameCol = nc; targetCol = tc; visitsCol = vc; break; }
+    }
+    if(headerAt >= 0){
+      for(var r = headerAt + 1; r < all.length; r++){
+        var name = String(all[r][nameCol] || '').trim();
+        var rev = erpNum(all[r][targetCol]);
+        if(!name || !(rev > 0)) continue;
+        candidates.push({ name: name, revenue: rev, visits: visitsCol >= 0 ? erpNum(all[r][visitsCol]) : 0 });
+      }
+    } else {
+      // Plain lines: "Renova 12000" / "Renova: 12,000.500"
+      var lines = String(text || '').split(/\r?\n/);
+      for(var L = 0; L < lines.length; L++){
+        var m = lines[L].trim().match(/^([A-Za-z؀-ۿ][A-Za-z؀-ۿ .\-]*?)[\s:,\t]+([\d,]+(?:\.\d+)?)\s*$/);
+        if(m && erpNum(m[2]) > 0) candidates.push({ name: m[1].trim(), revenue: erpNum(m[2]), visits: 0 });
+      }
+      // A wall of matching lines is almost certainly not a targets file.
+      if(candidates.length > 12){ out.error = 'AMBIGUOUS'; return out; }
+    }
+    if(!candidates.length){ out.error = 'NO_TARGETS'; return out; }
+    var map = guessRepMap(candidates.map(function(c){ return c.name; }), reps);
+    candidates.forEach(function(c){
+      var rep = map[c.name];
+      if(rep){
+        out.targets[rep] = { revenue: c.revenue };
+        if(c.visits > 0) out.targets[rep].visits = c.visits;
+        out.matched.push({ name: c.name, rep: rep, revenue: c.revenue, visits: c.visits || 0 });
+      } else out.unmatched.push(c.name);
+    });
+    if(!out.matched.length) out.error = 'NO_MATCH';
+    return out;
+  }
+
   // Week-by-week net per app rep from one imported file (weeks run Sun–Sat,
   // matching the app's planner). Rows with no rep mapping are skipped.
   function erpWeeklyTrend(rows, repMap){
@@ -886,6 +935,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend
+    matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
+    parseTargetsFile
   };
 });

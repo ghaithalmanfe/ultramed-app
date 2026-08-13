@@ -4806,14 +4806,15 @@ function openErpImport(){
   if(currentUser.role!=='supervisor'){ showToast('Supervisor only'); return; }
   const periods = erpPeriods().slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
   showModal(`
-    <h3 style="margin-top:0;">📥 ERP sales import</h3>
+    <h3 style="margin-top:0;">📥 Import — fully automatic</h3>
     <div style="color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px;">
-      Upload the EXceed sales-detail export. <b>CSV is best</b> (in Excel: File → Save As → CSV).
-      Or open the PDF report, Select All (Ctrl+A), Copy, and paste the text below.</div>
+      Drop the <b>sales-detail export</b> or the <b>targets file</b> — I detect which is which and enter it
+      by myself. CSV is best (Excel: File → Save As → CSV); PDF text pasted below also works.
+      Sales files import with zero clicks once I know who is who (I ask only the first time).</div>
     <input type="file" id="erpFile" accept=".csv,.txt,text/csv,text/plain" onchange="erpHandleFile(this)">
     <label style="margin-top:10px;">…or paste the report text here</label>
-    <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows or the PDF report text"></textarea>
-    <button class="btn secondary small" style="margin-top:8px;" onclick="erpParse(document.getElementById('erpPaste').value)">Read pasted text</button>
+    <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows, PDF report text, or target lines like: Renova 12000"></textarea>
+    <button class="btn secondary small" style="margin-top:8px;" onclick="erpAutoImport(document.getElementById('erpPaste').value)">Read pasted text</button>
     ${periods.length?`<div class="section-title">Saved sales periods</div>
       ${periods.map(p=>`<div class="card" style="padding:12px 14px; margin-bottom:8px;">
         <div class="row-between">
@@ -4831,9 +4832,68 @@ function erpHandleFile(input){
   const f = input.files && input.files[0];
   if(!f) return;
   const reader = new FileReader();
-  reader.onload = () => erpParse(String(reader.result||''));
+  reader.onload = () => erpAutoImport(String(reader.result||''));
   reader.onerror = () => showToast('Could not read the file');
   reader.readAsText(f);
+}
+// One entry point, zero-touch: detect sales vs targets and enter the data.
+// Sales files auto-save when every ERP salesman is already known (stored
+// mapping from a previous import, or a confident fuzzy guess).
+function erpAutoImport(text){
+  if(!text || !text.trim()){ showToast('Nothing to read yet'); return; }
+  const sales = UMCore.parseErpFile(text);
+  if(!sales.error){
+    const totals = UMCore.erpTotals(sales.rows);
+    const salesmen = Object.keys(totals.bySalesman);
+    const stored = erpSales.repMapGlobal || {};
+    const guess = UMCore.guessRepMap(salesmen, REPS);
+    const known = sm => Object.prototype.hasOwnProperty.call(stored, sm) || !!guess[sm];
+    if(salesmen.every(known)){
+      const repMap = {};
+      salesmen.forEach(sm => { repMap[sm] = Object.prototype.hasOwnProperty.call(stored, sm) ? stored[sm] : guess[sm]; });
+      _erpParsed = { rows: sales.rows, totals, guess: repMap };
+      erpAutoSave(repMap);
+      return;
+    }
+    erpParse(text); // a brand-new salesman name → verify once, remembered after
+    return;
+  }
+  const tg = UMCore.parseTargetsFile(text, REPS);
+  if(!tg.error){ applyTargetsFile(tg); return; }
+  showToast('Could not recognize this file — export the sales detail or the targets as CSV');
+}
+async function erpAutoSave(repMap){
+  if(!_erpParsed) return;
+  const t = _erpParsed.totals;
+  const before = erpPeriods().length;
+  erpSales.periods = erpPeriods().filter(p => !(p.from <= t.to && p.to >= t.from));
+  const replaced = before - erpSales.periods.length;
+  const period = { id: uid(), from: t.from, to: t.to, net: Math.round(t.net*1000)/1000,
+    rowCount: t.lines, importedAt: new Date().toISOString(), repMap, rows: packErpRows(_erpParsed.rows) };
+  erpSales.periods.push(period);
+  erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
+  await persist('erpSales');
+  _erpParsed = null;
+  renderErpNudge();
+  showToast(`✅ Auto-imported ${fmtDate(period.from)}–${fmtDate(period.to)} · ${money(period.net)}${replaced?` (replaced ${replaced} older)`:''}`);
+  openErpRecon(period.id);
+}
+async function applyTargetsFile(tg){
+  Object.keys(tg.targets).forEach(rep => {
+    targets[rep] = Object.assign({}, targets[rep], tg.targets[rep]);
+  });
+  await persist('targets');
+  renderToday();
+  if(document.getElementById('coachCard')) renderCoach();
+  showModal(`
+    <h3 style="margin-top:0;">🎯 Targets entered automatically</h3>
+    <div class="card">
+      ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.visits?` · ${m.visits} visits`:''}</span></div>`).join('')}
+    </div>
+    ${tg.unmatched.length?`<div class="nudge" style="margin-top:10px;">Skipped (not on your team): ${tg.unmatched.map(esc).join(', ')}</div>`:''}
+    <div style="color:var(--muted); font-size:12.5px; margin-top:10px;">The sales coach and target bars now track these numbers automatically.</div>
+    <button class="btn" style="margin-top:12px;" onclick="closeModal()">Done</button>
+  `);
 }
 function erpParse(text){
   if(!text || !text.trim()){ showToast('Nothing to read yet'); return; }
@@ -4887,9 +4947,12 @@ async function erpSavePeriod(){
   const period = { id: uid(), from: t.from, to: t.to, net: Math.round(t.net*1000)/1000,
     rowCount: t.lines, importedAt: new Date().toISOString(), repMap, rows: packErpRows(_erpParsed.rows) };
   erpSales.periods.push(period);
+  // Remember who-is-who forever, so every later import is zero-touch.
+  erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   await persist('erpSales');
   _erpParsed = null;
-  showToast('📥 Sales period saved');
+  renderErpNudge();
+  showToast('📥 Sales period saved — future imports of these names are automatic');
   openErpRecon(period.id);
 }
 async function deleteErpPeriod(id){
