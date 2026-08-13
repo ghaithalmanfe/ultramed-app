@@ -461,6 +461,9 @@
   .pr-letterhead .meta{color:var(--muted); font-size:13px;}
   .pr-team-box{background:var(--green); color:#FFFFFF; border-radius:16px; padding:20px 22px; margin-bottom:32px;}
   .pr-team-box .kpi-grid{margin-bottom:0;}
+  .pr-tbl{width:100%; border-collapse:collapse; font-size:12.5px; margin:6px 0 4px;}
+  .pr-tbl th, .pr-tbl td{border:1px solid #e4e2dd; padding:7px 9px; text-align:left; vertical-align:top;}
+  .pr-tbl th{background:#f6f5f2; font-weight:700; white-space:nowrap;}
   .pr-team-box .kpi{background:rgba(255,255,255,.55);}
   .pr-team-box .kpi .n,.pr-team-box .kpi .l{color:#FFFFFF;}
   .pr-rep-section{margin-bottom:44px; page-break-inside:avoid;}
@@ -816,6 +819,8 @@
     <button class="btn secondary" onclick="copyReport()">Copy report as text</button>
     <button class="btn" onclick="openExport()">Export &amp; backups</button>
     <button class="btn secondary" onclick="showProReport()">Generate professional report</button>
+    <button class="btn secondary" onclick="downloadReportFile()">⬇️ Save report as a file (no printing)</button>
+    <button class="btn secondary" onclick="shareReportFile()">📤 Share report (WhatsApp / email)</button>
     <button class="btn" id="adminPanelBtn" style="display:none; background:var(--purple);" onclick="openAdminPanel()">⚙️ Admin panel</button>
   </div>
 </div>
@@ -824,6 +829,8 @@
   <div class="pr-toolbar">
     <button class="back" onclick="hideProReport()">&larr; Back to app</button>
     <button class="print" onclick="window.print()">Print / Save as PDF</button>
+    <button class="print" onclick="downloadReportFile()">⬇️ Save file</button>
+    <button class="print" onclick="shareReportFile()">📤 Share</button>
   </div>
   <div class="pr-doc" id="prDoc"></div>
 </div>
@@ -4838,7 +4845,9 @@ function openErpRecon(id){
           </select>
         </div>`).join('')}
     </div>`:''}
-    <button class="btn secondary" style="margin-top:12px;" onclick="openErpImport()">‹ Back to imports</button>
+    <button class="btn" style="margin-top:12px;" onclick="downloadErpReconFile('${esc(p.id)}')">⬇️ Save this report as a file</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${esc(p.id)}')">📤 Share (WhatsApp / email)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="openErpImport()">‹ Back to imports</button>
   `);
 }
 
@@ -5940,9 +5949,134 @@ function renderProDoc(){
         </div>`).join('')}
       </div>`;
     })()}
+    ${(()=>{ // Top products discussed in this period — what the field is actually pitching
+      const base = reportVisitsBase(); const counts = {};
+      base.forEach(v=>(v.products||[]).forEach(pid=>{ counts[pid]=(counts[pid]||0)+1; }));
+      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+      return top.length?`<div style="margin:18px 0;">
+        <h2 style="font-size:15px; margin:0 0 8px;">Top products discussed</h2>
+        <table class="pr-tbl"><tr><th>Product</th><th>Times discussed</th></tr>
+        ${top.map(([pid,n])=>{ const p=products.find(x=>x.id===pid);
+          return `<tr><td>${esc(p?p.name:'Unknown')}</td><td>${n}</td></tr>`; }).join('')}</table>
+      </div>`:'';
+    })()}
+    ${(()=>{ // ERP-verified figures when an imported sales period overlaps this report
+      const b = reportRangeBounds();
+      const p = erpPeriods().find(x=> b.from ? (x.to >= b.from && (!b.to || x.from <= b.to)) : true);
+      if(!p) return '';
+      const rec = UMCore.reconcileErp({rows: unpackErpRows(p.rows), visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to});
+      if(!rec.perRep.length) return '';
+      return `<div style="margin:18px 0;">
+        <h2 style="font-size:15px; margin:0 0 8px;">ERP-verified sales (${fmtDate(p.from)} – ${fmtDate(p.to)})</h2>
+        <table class="pr-tbl"><tr><th>Rep</th><th>ERP net</th><th>Invoices</th><th>Returned</th><th>Visit→invoice link</th></tr>
+        ${rec.perRep.map(r=>`<tr><td>${esc(r.rep)}</td><td>${money(r.erp.net)}</td><td>${r.erp.invoices}</td><td>${money(r.erp.returns)}</td><td>${r.linkagePct}%</td></tr>`).join('')}</table>
+        <div style="color:#8a8a85; font-size:11.5px; margin-top:4px;">Source: EXceed ERP sales detail, reconciled against visits logged in UltraMed Field Ops.</div>
+      </div>`;
+    })()}
     ${repsToShow.map(renderRepReportSection).join('')}
     <div class="pr-footer">Prepared from live UltraMed Field Ops data · ${dateStr}</div>
   `;
+}
+
+// ---- REPORT FILE EXPORT: save & share without printing ----
+// Collects the :root palette and every pr-/kpi-/stamp rule from the page's own
+// stylesheet, so the exported file looks exactly like the on-screen document.
+function collectReportCss(){
+  let out = '';
+  const want = sel => /\.pr|\.proreport|\.kpi|\.stamp/.test(sel) || sel.trim() === ':root';
+  for(const sheet of document.styleSheets){
+    let rules; try{ rules = sheet.cssRules; }catch(e){ continue; }
+    if(!rules) continue;
+    for(const r of rules){ if(r.selectorText && want(r.selectorText)) out += r.cssText + '\n'; }
+  }
+  return out;
+}
+function wrapReportDoc(title, bodyHtml){
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<style>
+body{margin:0; padding:0; background:#fff; color:#1A1A18; font-family:'Avenir Next','Segoe UI',system-ui,-apple-system,sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+${collectReportCss()}
+.proreport{display:block; background:#fff;}
+@media print{ .pr-doc{padding:0;} }
+</style></head><body><div class="proreport active"><div class="pr-doc">${bodyHtml}</div></div></body></html>`;
+}
+function reportFileName(prefix){
+  const b = reportRangeBounds();
+  const range = b.from ? `${b.from}_to_${b.to || todayStr()}` : 'all-time';
+  return `${prefix}-${range}.html`;
+}
+function buildReportFileHtml(){
+  renderProDoc(); // regenerate so the file always carries the latest, complete report
+  return wrapReportDoc('UltraMed Field Performance Report', document.getElementById('prDoc').innerHTML);
+}
+function downloadReportFile(){
+  const ok = tryDownload(reportFileName('UltraMed-Report'), buildReportFileHtml(), 'text/html;charset=utf-8;');
+  showToast(ok ? '⬇️ Report saved — opens in any browser' : 'Could not save the file');
+}
+async function shareReportFile(){
+  await shareHtmlFile(reportFileName('UltraMed-Report'), buildReportFileHtml(), 'UltraMed Field Performance Report');
+}
+async function shareHtmlFile(filename, html, title){
+  try{
+    const file = new File([html], filename, {type: 'text/html'});
+    if(navigator.canShare && navigator.canShare({files: [file]})){
+      await navigator.share({files: [file], title});
+      return;
+    }
+  }catch(e){ if(e && e.name === 'AbortError') return; }
+  const ok = tryDownload(filename, html, 'text/html;charset=utf-8;');
+  showToast(ok ? 'Sharing not available here — saved as a file instead' : 'Could not share or save');
+}
+function buildErpReconFileHtml(id){
+  const p = erpPeriods().find(x=>x.id===id);
+  if(!p) return null;
+  const rec = UMCore.reconcileErp({rows: unpackErpRows(p.rows), visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to});
+  const dateStr = new Date().toLocaleDateString('en-US',{year:'numeric', month:'long', day:'numeric'});
+  const sec = r => `
+  <div class="pr-rep-section">
+    <div class="pr-rep-head"><div class="stamp">${initials(r.rep)}</div>
+      <div><h2>${esc(r.rep)}</h2><div class="sub">ERP reconciliation — ${fmtDate(p.from)} – ${fmtDate(p.to)}</div></div></div>
+    <table class="pr-tbl">
+      <tr><th>ERP net sales</th><td>${money(r.erp.net)}</td></tr>
+      <tr><th>— from clinics / customers</th><td>${money(r.erp.clinicNet)}</td></tr>
+      <tr><th>— from online / channels</th><td>${money(r.erp.channelNet)}</td></tr>
+      <tr><th>Invoices</th><td>${r.erp.invoices}</td></tr>
+      <tr><th>Returned value</th><td>${money(r.erp.returns)}</td></tr>
+      <tr><th>Visits logged (deduped)</th><td>${r.app.visits}</td></tr>
+      <tr><th>Visit→invoice linkage</th><td>${r.linkagePct}%</td></tr>
+    </table>
+    ${r.matched.length?`<div class="pr-block-title">✅ Visited AND invoiced</div>
+      <table class="pr-tbl"><tr><th>Clinic</th><th>Visits</th><th>Net</th></tr>
+      ${r.matched.map(m=>`<tr><td>${esc(m.clinicName)}</td><td>${m.visits}</td><td>${money(m.net)}</td></tr>`).join('')}</table>`:''}
+    ${r.visitedNoInvoice.length?`<div class="pr-block-title">🕓 Visited, no invoice yet (pipeline)</div>
+      <table class="pr-tbl"><tr><th>Clinic</th><th>Visits</th></tr>
+      ${r.visitedNoInvoice.map(m=>`<tr><td>${esc(m.clinicName)}</td><td>${m.visits}</td></tr>`).join('')}</table>`:''}
+    ${r.invoicedNoVisit.length?`<div class="pr-block-title">⚠️ Invoiced with no logged visit</div>
+      <table class="pr-tbl"><tr><th>Customer</th><th>Net</th></tr>
+      ${r.invoicedNoVisit.map(m=>`<tr><td>${esc(m.customer)}</td><td>${money(m.net)}</td></tr>`).join('')}</table>`:''}
+  </div>`;
+  const body = `
+    <div class="pr-letterhead"><div class="brand">UltraMed</div>
+      <h1>Sales Reconciliation Report</h1>
+      <div class="meta">${fmtDate(p.from)} – ${fmtDate(p.to)} · ERP invoices vs field visits · Generated ${dateStr}</div></div>
+    ${rec.perRep.map(sec).join('') || '<div class="empty">No team rows in this period.</div>'}
+    <div class="pr-footer">Prepared from EXceed ERP data reconciled with UltraMed Field Ops · ${dateStr}</div>`;
+  return wrapReportDoc('UltraMed Sales Reconciliation', body);
+}
+function downloadErpReconFile(id){
+  const p = erpPeriods().find(x=>x.id===id);
+  const html = buildErpReconFileHtml(id);
+  if(!p || !html) return;
+  const ok = tryDownload(`UltraMed-Reconciliation-${p.from}_to_${p.to}.html`, html, 'text/html;charset=utf-8;');
+  showToast(ok ? '⬇️ Reconciliation report saved' : 'Could not save the file');
+}
+async function shareErpReconFile(id){
+  const p = erpPeriods().find(x=>x.id===id);
+  const html = buildErpReconFileHtml(id);
+  if(!p || !html) return;
+  await shareHtmlFile(`UltraMed-Reconciliation-${p.from}_to_${p.to}.html`, html, 'UltraMed Sales Reconciliation');
 }
 function showProReport(){
   renderProDoc();
@@ -6008,9 +6142,9 @@ function buildDoctorsCSV(){
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
-function tryDownload(filename, content){
+function tryDownload(filename, content, mime){
   try{
-    const blob = new Blob([content], {type:'text/csv;charset=utf-8;'});
+    const blob = new Blob([content], {type: mime || 'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename;
