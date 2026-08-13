@@ -771,6 +771,26 @@
     return out;
   }
 
+  // Week-by-week net per app rep from one imported file (weeks run Sun–Sat,
+  // matching the app's planner). Rows with no rep mapping are skipped.
+  function erpWeeklyTrend(rows, repMap){
+    var weeks = {};
+    (rows || []).forEach(function(r){
+      var rep = (repMap || {})[r.salesman];
+      if(!rep || !r.date) return;
+      var span = getWeekDates(r.date);
+      var w = weeks[span[0]] || (weeks[span[0]] = { from: span[0], to: span[6], byRep: {}, total: 0 });
+      w.byRep[rep] = (w.byRep[rep] || 0) + r.net;
+      w.total += r.net;
+    });
+    return Object.keys(weeks).sort().map(function(k){
+      var w = weeks[k];
+      Object.keys(w.byRep).forEach(function(rep){ w.byRep[rep] = Math.round(w.byRep[rep] * 1000) / 1000; });
+      w.total = Math.round(w.total * 1000) / 1000;
+      return w;
+    });
+  }
+
   // ==== COVERAGE BOARD ====
   // One picture of a period: which clinics were visited (with a visit summary
   // each) and which still need a visit — with machine-readable reasons the UI
@@ -866,6 +886,6 @@
     contactCount, coachInsights,
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage
+    matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend
   };
 });
