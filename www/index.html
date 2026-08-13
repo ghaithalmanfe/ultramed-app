@@ -534,46 +534,22 @@
 
   <!-- TODAY -->
   <div class="view active" id="view-today">
-    <div id="welcomeCard"></div>
+    <!-- The Today screen answers one question: what do I do today? -->
     <div class="hero" id="heroCard"></div>
-    <div id="focusCard"></div>
-    <div id="targetCard"></div>
-    <div id="streakCard"></div>
-    <div class="section-title">Your achievements <span class="link" onclick="openAchievements()">See all</span></div>
-    <div class="badge-strip" id="badgeStrip"></div>
-    <div id="nudgeCard"></div>
+    <div id="erpNudge" style="display:none;"></div>
     <div class="stat-row">
       <div class="stat alert"><div class="n" id="statDue">0</div><div class="l">Follow-ups due</div></div>
       <div class="stat"><div class="n" id="statVisitsWeek">0</div><div class="l">Visits this week</div></div>
       <div class="stat"><div class="n" id="statTasks">0</div><div class="l">Open tasks</div></div>
     </div>
     <button class="btn secondary" style="margin-bottom:6px;" onclick="openCoverageBoard()">📋 Coverage review — done &amp; still needed</button>
-    <div id="erpNudge" style="display:none;"></div>
+    <div id="targetCard"></div>
 
     <div class="section-title">Today's plan <span><span class="link" onclick="openPlanDay()" id="planLink">Plan today</span> <span class="link" onclick="openWeekMonthPlan()" style="margin-left:10px;">Weekly/Monthly</span></span></div>
     <div id="planList"></div>
 
-    <div class="tile-grid" style="margin-bottom:6px;">
-      <div class="tile" onclick="switchView('playbook')">
-        <div class="ic">📖</div>
-        <div class="tname">Selling Playbook</div>
-        <div class="tsub">Tips per specialty</div>
-      </div>
-      <div class="tile" onclick="switchView('team')">
-        <div class="ic">📸</div>
-        <div class="tname">Team &amp; Memories</div>
-        <div class="tsub" id="tileTeamSub">Chat and photos</div>
-      </div>
-    </div>
-
     <div class="section-title">Follow-ups due</div>
     <div id="dueList"></div>
-
-    <div class="section-title" id="missedTitle" style="display:none;">⏰ Missed planned visits</div>
-    <div id="missedList"></div>
-
-    <div class="section-title" id="dormantTitle" style="display:none;">😴 Clinics going quiet</div>
-    <div id="dormantList"></div>
 
     <div class="section-title">Tasks <span class="link" onclick="openEmailImport()">Import from email</span></div>
     <div class="card">
@@ -586,6 +562,33 @@
 
     <div class="section-title">Recent visits <span><span class="link" onclick="openCallLog()">📞 Log a call</span> <span class="link" onclick="openStandaloneOrder()" style="margin-left:10px;">+ Add order</span> <span class="link" onclick="openVisitLog()" style="margin-left:10px;">See all</span></span></div>
     <div id="recentVisits"></div>
+
+    <!-- Everything motivational or secondary lives folded away, one tap when wanted -->
+    <details class="card" style="margin-top:14px; padding:12px 14px;">
+      <summary style="cursor:pointer; list-style:none; font-weight:700; font-size:13.5px;">✨ More — achievements, alerts &amp; extras ▾</summary>
+      <div id="welcomeCard"></div>
+      <div id="focusCard"></div>
+      <div id="streakCard"></div>
+      <div class="section-title">Your achievements <span class="link" onclick="openAchievements()">See all</span></div>
+      <div class="badge-strip" id="badgeStrip"></div>
+      <div id="nudgeCard"></div>
+      <div class="tile-grid" style="margin:10px 0 6px;">
+        <div class="tile" onclick="switchView('playbook')">
+          <div class="ic">📖</div>
+          <div class="tname">Selling Playbook</div>
+          <div class="tsub">Tips per specialty</div>
+        </div>
+        <div class="tile" onclick="switchView('team')">
+          <div class="ic">📸</div>
+          <div class="tname">Team &amp; Memories</div>
+          <div class="tsub" id="tileTeamSub">Chat and photos</div>
+        </div>
+      </div>
+      <div class="section-title" id="missedTitle" style="display:none;">⏰ Missed planned visits <span class="link" onclick="openCoverageBoard()">Open Coverage</span></div>
+      <div id="missedList"></div>
+      <div class="section-title" id="dormantTitle" style="display:none;">😴 Clinics going quiet <span class="link" onclick="openCoverageBoard()">Open Coverage</span></div>
+      <div id="dormantList"></div>
+    </details>
   </div>
 
   <!-- LOG VISIT -->
@@ -790,10 +793,11 @@
       </div>
       <button class="btn" style="margin-top:10px; padding:11px;" onclick="applyReportCustomRange()">Show this period</button>
     </div>
-    <div style="margin-bottom:16px;">
-      <button class="btn secondary" style="padding:12px;" onclick="openCompare()">🆚 Compare two periods</button>
-      <button class="btn secondary" style="padding:12px; margin-top:8px;" onclick="openCoverageBoard()">📋 Coverage review — done &amp; still needed</button>
-      <button class="btn secondary" id="erpImportBtn" style="display:none; padding:12px; margin-top:8px;" onclick="openErpImport()">📥 ERP sales import &amp; reconciliation</button>
+    <div class="chip-row" style="margin-bottom:16px;">
+      <div class="chip small" id="erpImportBtn" style="display:none;" onclick="openErpImport()">📥 Import</div>
+      <div class="chip small" onclick="openReportTools()">📤 Export &amp; share</div>
+      <div class="chip small" onclick="openCompare()">🆚 Compare</div>
+      <div class="chip small" onclick="openCoverageBoard()">📋 Coverage</div>
     </div>
     <div class="section-title" style="margin-top:0;">🧭 Sales coach — read this first</div>
     <div class="nudge" style="margin-bottom:10px;">The numbers below are summarized here as actions: red = do now, orange = keep an eye, green = working, do more of it.</div>
@@ -802,8 +806,8 @@
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
       <div class="report-line"><span>Contacts seen</span><span class="v" id="repContacts">0</span></div>
       <div class="report-line"><span>Orders taken</span><span class="v" id="repOrders">0</span></div>
-      <div class="report-line"><span>Revenue (app-logged)</span><span class="v" id="repRevenue">0.00 KD</span></div>
-      <div class="report-line" id="repErpRow" style="display:none;"><span>💠 Revenue (ERP invoices)</span><span class="v" id="repErpRevenue">0.00 KD</span></div>
+      <div class="report-line"><span id="repRevenueLabel">Revenue</span><span class="v" id="repRevenue">0.00 KD</span></div>
+      <div id="repErpRow" style="display:none; color:var(--muted); font-size:12px; padding:2px 0 6px;"><span id="repErpRevenue"></span></div>
       <div class="report-line"><span>Discount given</span><span class="v" id="repDiscount">0.00 KD</span></div>
       <div class="report-line"><span>Clinics covered</span><span class="v" id="repClinics">0</span></div>
       <div class="report-line"><span>Overdue follow-ups</span><span class="v" id="repOverdue">0</span></div>
@@ -821,11 +825,7 @@
     <div class="nudge" style="margin-bottom:12px;">📈 Numbers aren’t a verdict — they’re a map. Every metric below is something you can move this week.</div>
     <div id="scorecards"></div>
 
-    <button class="btn secondary" onclick="copyReport()">Copy report as text</button>
-    <button class="btn" onclick="openExport()">Export &amp; backups</button>
-    <button class="btn secondary" onclick="showProReport()">Generate professional report</button>
-    <button class="btn secondary" onclick="downloadReportFile()">⬇️ Save report as a file (no printing)</button>
-    <button class="btn secondary" onclick="shareReportFile()">📤 Share report (WhatsApp / email)</button>
+    <button class="btn secondary" onclick="openReportTools()">📤 Export &amp; share this report</button>
     <button class="btn" id="adminPanelBtn" style="display:none; background:var(--purple);" onclick="openAdminPanel()">⚙️ Admin panel</button>
   </div>
 </div>
@@ -1863,7 +1863,7 @@ function renderAll(){
   const adminBtn = document.getElementById('adminPanelBtn');
   if(adminBtn) adminBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
   const erpBtn = document.getElementById('erpImportBtn');
-  if(erpBtn) erpBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
+  if(erpBtn) erpBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
   const fab = document.getElementById('aiFab');
   if(fab) fab.style.display = 'flex';
 
@@ -5408,6 +5408,18 @@ function reportVisitsBase(){
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-reportRange);
   return visits.filter(v=>new Date(v.date) >= cutoff);
 }
+// One home for every way a report can leave the system.
+function openReportTools(){
+  showModal(`
+    <h3 style="margin-top:0;">📤 Export &amp; share</h3>
+    <div style="color:var(--muted); font-size:12.5px; margin-bottom:12px;">Everything uses the period and rep currently selected on the Report tab.</div>
+    <button class="btn" onclick="closeModal(); shareReportFile()">📤 Share report (WhatsApp / email)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">⬇️ Save report as a file</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">🖨️ On-screen report (view / print / PDF)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); copyReport()">📋 Copy as text (paste anywhere)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); openExport()">🗂 Data exports &amp; backups (CSV)</button>
+  `);
+}
 function reportRangeBounds(){
   if(reportCustom) return {from: reportCustom.from, to: reportCustom.to};
   if(reportRange===9999) return {from: null, to: null};
@@ -5448,13 +5460,17 @@ function renderReports(){
   document.getElementById('repVisits').textContent = rv.filter(isFieldVisit).length;
   document.getElementById('repContacts').textContent = rv.reduce((s,v)=>s+UMCore.contactCount(v),0);
   document.getElementById('repOrders').textContent = rv.filter(v=>v.orderTaken).length;
-  document.getElementById('repRevenue').textContent = money(rv.reduce((s,v)=>s+(v.orderTotal||0),0));
+  // One authoritative revenue number: ERP invoices when a period covers this
+  // range, app-logged otherwise. The other source drops to a small note.
+  const loggedRev = rv.reduce((s,v)=>s+(v.orderTotal||0),0);
   const bounds = reportRangeBounds();
   const erpRev = erpRevenueForRange(bounds.from, bounds.to, reportRepFilter);
+  document.getElementById('repRevenue').textContent = money(erpRev != null ? erpRev : loggedRev);
+  document.getElementById('repRevenueLabel').textContent = erpRev != null ? 'Revenue (ERP-verified)' : 'Revenue';
   const erpRow = document.getElementById('repErpRow');
   if(erpRow){
     erpRow.style.display = erpRev != null ? '' : 'none';
-    if(erpRev != null) document.getElementById('repErpRevenue').textContent = money(erpRev);
+    if(erpRev != null) document.getElementById('repErpRevenue').textContent = `logged in app for the same period: ${money(loggedRev)}`;
   }
   document.getElementById('repDiscount').textContent = money(rv.reduce((s,v)=>s+(v.orderDiscount||0),0));
   document.getElementById('repClinics').textContent = new Set(rv.map(v=>v.clinicId)).size;
