@@ -465,6 +465,7 @@
   .pr-letterhead .meta{color:var(--muted); font-size:13px;}
   .pr-team-box{background:var(--green); color:#FFFFFF; border-radius:16px; padding:20px 22px; margin-bottom:32px;}
   .pr-team-box .kpi-grid{margin-bottom:0;}
+  .pr-toolbar .print.off{opacity:.45;}
   .pr-tbl{width:100%; border-collapse:collapse; font-size:12.5px; margin:6px 0 4px;}
   .pr-tbl th, .pr-tbl td{border:1px solid #e4e2dd; padding:7px 9px; text-align:left; vertical-align:top;}
   .pr-tbl th{background:#f6f5f2; font-weight:700; white-space:nowrap;}
@@ -834,9 +835,10 @@
 <div class="proreport" id="proreport">
   <div class="pr-toolbar">
     <button class="back" onclick="hideProReport()">&larr; Back to app</button>
-    <button class="print" onclick="window.print()">Print / Save as PDF</button>
-    <button class="print" onclick="downloadReportFile()">⬇️ Save file</button>
-    <button class="print" onclick="shareReportFile()">📤 Share</button>
+    <span id="prLangBtns"></span>
+    <button class="print" onclick="window.print()">🖨 PDF</button>
+    <button class="print" onclick="downloadReportFile()">⬇️</button>
+    <button class="print" onclick="shareReportFile()">📤</button>
   </div>
   <div class="pr-doc" id="prDoc"></div>
 </div>
@@ -5419,11 +5421,21 @@ function reportVisitsBase(){
 function openReportTools(){
   showModal(`
     <h3 style="margin-top:0;">📤 Export &amp; share</h3>
-    <div style="color:var(--muted); font-size:12.5px; margin-bottom:12px;">Everything uses the period and rep currently selected on the Report tab.</div>
-    <button class="btn" onclick="closeModal(); shareReportFile()">📤 Share report (WhatsApp / email)</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">⬇️ Save report as a file</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">🖨️ On-screen report (view / print / PDF)</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); copyReport()">📋 Copy as text (paste anywhere)</button>
+    <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">Uses the period and rep selected on the Report tab.</div>
+    <label>Language / اللغة</label>
+    <div class="chip-row" style="margin-bottom:8px;">
+      <div class="chip small ${reportLang==='en'?'on':''}" onclick="reportLang='en'; openReportTools()">English</div>
+      <div class="chip small ${reportLang==='ar'?'on':''}" onclick="reportLang='ar'; openReportTools()">العربية</div>
+    </div>
+    <label>Format</label>
+    <div class="chip-row" style="margin-bottom:12px;">
+      <div class="chip small ${reportFormat==='full'?'on':''}" onclick="reportFormat='full'; openReportTools()">Full report · كامل</div>
+      <div class="chip small ${reportFormat==='summary'?'on':''}" onclick="reportFormat='summary'; openReportTools()">One-pager · صفحة واحدة</div>
+    </div>
+    <button class="btn" onclick="closeModal(); shareReportFile()">📤 Share (WhatsApp / email)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">⬇️ Save as a file</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">🖨️ View on screen / print / PDF</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); copyReport()">📋 Copy as text</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); openExport()">🗂 Data exports &amp; backups (CSV)</button>
   `);
 }
@@ -6383,11 +6395,277 @@ ${collectReportCss()}
 function reportFileName(prefix){
   const b = reportRangeBounds();
   const range = b.from ? `${b.from}_to_${b.to || todayStr()}` : 'all-time';
-  return `${prefix}-${range}.html`;
+  return `${prefix}-${range}-${reportLang.toUpperCase()}${reportFormat==='summary'?'-1page':''}.html`;
 }
+// ==== MASTER MANAGEMENT REPORT (bilingual EN/AR, full + one-pager) ====
+let reportLang = 'en';       // 'en' | 'ar'
+let reportFormat = 'full';   // 'full' | 'summary'
+
+const REPORT_I18N = {
+en: {
+  title:'Field Performance Report', brandName:'UltraMed', confidential:'Confidential — for internal management use only',
+  preparedBy:'Prepared by', generated:'Generated', period:'Period', team:'Whole team',
+  s_exec:'Executive summary', s_chart:'Revenue week by week', s_targets:'Targets & month-end forecast',
+  s_brands:'Brand performance', s_recon:'Visits ↔ invoices reconciliation', s_returns:'Returns analysis',
+  s_coverage:'Field coverage', s_reco:'Recommendations', s_plan:'Plan for the coming period',
+  rep:'Rep', target:'Target', achieved:'Achieved', pace:'Pace', forecast:'Month-end forecast', status:'Status',
+  st_hit:'Target achieved', st_on:'On pace', st_behind:'Behind', brandCol:'Brand', invoiced:'Invoiced', ach:'Ach.',
+  officialNote:'Achieved figures are the official DSR numbers where available; otherwise ERP invoices.',
+  linkage:'Visit→invoice linkage', matched:'Visited & invoiced', pipeline:'Visited, awaiting invoice',
+  noVisit:'Invoiced with no logged visit', retTotal:'Total returned', retCount:'return lines',
+  byBrand:'By brand', byCustomer:'By customer', covered:'Clinics covered', needVisit:'Still need a visit',
+  overdue:'Overdue follow-ups', doNow:'Do now', watch:'Keep an eye', working:'Working — keep it up',
+  planIntro:'Auto-drafted from the most urgent findings — edit in the meeting and assign owners:',
+  noData:'No data available for this period.', kd:'KD', week:'Week', total:'Total',
+  execTeam:(ach,goal,pct,fc)=>`The team has delivered <b>${ach}</b> of the <b>${goal}</b> monthly target (<b>${pct}%</b>). At the current pace the month is projected to close at <b>${fc}</b>.`,
+  execStar:(rep,amt)=>`Standout performer: <b>${rep}</b> with ${amt}.`,
+  execRisk:(txt)=>`Main risk to address: ${txt}`,
+},
+ar: {
+  title:'تقرير الأداء الميداني', brandName:'ألترا ميد — UltraMed', confidential:'سرّي — للاستخدام الإداري الداخلي فقط',
+  preparedBy:'إعداد', generated:'تاريخ الإصدار', period:'الفترة', team:'كامل الفريق',
+  s_exec:'الملخص التنفيذي', s_chart:'الإيراد أسبوعاً بأسبوع', s_targets:'الأهداف وتوقع نهاية الشهر',
+  s_brands:'أداء البراندات', s_recon:'مطابقة الزيارات مع الفواتير', s_returns:'تحليل المرتجعات',
+  s_coverage:'التغطية الميدانية', s_reco:'التوصيات', s_plan:'خطة الفترة القادمة',
+  rep:'المندوبة', target:'الهدف', achieved:'المحقق', pace:'الوتيرة', forecast:'توقع نهاية الشهر', status:'الحالة',
+  st_hit:'حققت الهدف', st_on:'على الوتيرة', st_behind:'متأخرة', brandCol:'البراند', invoiced:'المفوتر', ach:'التحقيق',
+  officialNote:'أرقام المحقق هي الأرقام الرسمية من ملف DSR حيثما توفرت، وإلا فمن فواتير ERP.',
+  linkage:'ربط الزيارات بالفواتير', matched:'زارت وفوترت', pipeline:'زارت وتنتظر الفاتورة',
+  noVisit:'فواتير بدون زيارة مسجلة', retTotal:'إجمالي المرتجع', retCount:'سطر مرتجعات',
+  byBrand:'حسب البراند', byCustomer:'حسب العميل', covered:'عيادات مغطاة', needVisit:'تحتاج زيارة',
+  overdue:'متابعات متأخرة', doNow:'نفّذ الآن', watch:'راقب', working:'يعمل جيداً — استمروا',
+  planIntro:'مسودة آلية من أكثر النتائج إلحاحاً — تُناقش في الاجتماع ويُحدد مسؤول لكل بند:',
+  noData:'لا تتوفر بيانات لهذه الفترة.', kd:'د.ك', week:'الأسبوع', total:'الإجمالي',
+  execTeam:(ach,goal,pct,fc)=>`حقق الفريق <b>${ach}</b> من الهدف الشهري البالغ <b>${goal}</b> (بنسبة <b>${pct}%</b>). وبالوتيرة الحالية يُتوقع إقفال الشهر عند <b>${fc}</b>.`,
+  execStar:(rep,amt)=>`الأداء الأبرز: <b>${rep}</b> بمبيعات ${amt}.`,
+  execRisk:(txt)=>`أهم خطر يجب معالجته: ${txt}`,
+},
+};
+function mrMoney(n, lang){
+  const v = (Math.round((n||0)*100)/100).toFixed(2);
+  return lang==='ar' ? `<span class="num">${v}</span> د.ك` : `${v} KD`;
+}
+// Localized coach sentences rebuilt from each insight's structured data.
+const AR_COACH = {
+  followups: d=>`${d.count} متابعة متأخرة (${(d.names||[]).join('، ')}) — الزيارة الموعودة أسهل بيعة، احجزوها أولاً.`,
+  dormant: d=>`${d.count} عيادة مهمة ساكنة أكثر من 30 يوماً (${(d.names||[]).join('، ')}) — أدخلوها خطة الأسبوع.`,
+  missed: d=>`${d.count} زيارة مخططة لم تُنفذ خلال آخر أسبوعين — أعيدوا جدولتها.`,
+  target: d=> d.state==='hit' ? `${d.rep} حققت الهدف الشهري (${d.mtd.toFixed(2)} من ${d.goal.toFixed(2)} د.ك) — وقت مثالي لدفع منتجات جديدة.`
+    : d.state==='behind' ? `${d.rep} متأخرة عن الهدف: ${d.mtd.toFixed(2)} من ${d.goal.toFixed(2)} د.ك — تحتاج ≈${d.perDay} د.ك يومياً لبقية ${d.daysLeft} يوماً.`
+    : `${d.rep} على وتيرة الهدف (${d.mtd.toFixed(2)} من ${d.goal.toFixed(2)} د.ك) — الاستمرار كافٍ.`,
+  conversion: d=> d.state==='low' ? `نسبة إغلاق منخفضة: ${d.pct}% فقط من الزيارات تنتهي بطلب — راجعوا أدلة البيع واطلبوا الطلب قبل المغادرة.`
+    : `إغلاق قوي: ${d.pct}% من الزيارات بطلب — الطريق الأسرع للنمو الآن هو زيادة عدد الزيارات.`,
+  contacts: d=> d.state==='low' ? `متوسط ${d.perVisit} جهة اتصال في الزيارة — كل طبيب إضافي في نفس العيادة عميل مجاني؛ الهدف 2+.`
+    : `تغطية ممتازة: ${d.perVisit} جهة اتصال في الزيارة الواحدة.`,
+  stuck: d=>`${d.count} عيادة زيرت 3 مرات أو أكثر بلا أي طلب (${(d.names||[]).join('، ')}) — غيّروا الأسلوب أو رتبوا زيارة مشتركة.`,
+  concentration: d=>`${d.share}% من الإيراد من عميل واحد (${d.name}) — نمّوا 2-3 حسابات إضافية لتوزيع المخاطر.`,
+  jointcoach: d=>`${d.top} تغلق بنسبة ${d.topPct}% مقابل ${d.lowPct}% لـ${d.low} — رتبوا زيارات مشتركة بينهما للتعلم المباشر.`,
+  allgood: ()=>`لا مؤشرات خطر في هذه الفترة — استمروا بنفس الإيقاع مع رفع عدد الزيارات وجهات الاتصال.`,
+};
+function mrCoachText(i, lang){
+  if(lang !== 'ar') return i.title + (i.detail ? ' — ' + i.detail : '');
+  const k = i.key && i.key.indexOf('target-') === 0 ? 'target' : i.key;
+  const f = AR_COACH[k];
+  return f ? f(i.data || {}) : (i.title + (i.detail ? ' — ' + i.detail : ''));
+}
+const MASTER_REPORT_CSS = `
+.mr-doc{max-width:760px; margin:0 auto; padding:34px 30px 60px; background:#fff; color:#1C231E;
+  font-family:'Avenir Next','Segoe UI','SF Arabic','Noto Kufi Arabic',Tahoma,system-ui,sans-serif; font-size:13.5px; line-height:1.7;}
+.mr-doc .num{direction:ltr; unicode-bidi:embed;}
+.mr-cover{text-align:center; border-bottom:3px solid #0B3D22; padding-bottom:22px; margin-bottom:26px;}
+.mr-cover .b{font-size:12px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:#0B6E4F;}
+.mr-cover h1{font-family:Georgia,'Times New Roman',serif; font-size:30px; margin:8px 0 6px; color:#12241A;}
+.mr-cover .meta{color:#6E7A70; font-size:13px;}
+.mr-conf{font-size:10.5px; color:#9AA49C; letter-spacing:.06em; margin-top:8px; text-transform:uppercase;}
+.mr-sec{margin:26px 0 10px; display:flex; align-items:baseline; gap:10px; page-break-after:avoid;}
+.mr-sec .no{font-family:Georgia,serif; font-size:15px; color:#0B6E4F; font-weight:700; min-width:22px;}
+.mr-sec h2{font-family:Georgia,serif; font-size:18px; margin:0; color:#12241A;}
+.mr-exec{background:#F4F7F4; border-inline-start:4px solid #0B3D22; border-radius:8px; padding:14px 18px; font-size:14px;}
+.mr-tbl{width:100%; border-collapse:collapse; font-size:12.5px; margin:8px 0 4px;}
+.mr-tbl th{background:#EFF3EF; color:#3C4A40; font-weight:700; text-align:start; padding:8px 10px; border:1px solid #DFE5DF; white-space:nowrap;}
+.mr-tbl td{padding:7px 10px; border:1px solid #E7EBE7; vertical-align:top;}
+.mr-pill{display:inline-block; border-radius:999px; padding:1px 10px; font-size:11px; font-weight:700;}
+.mr-pill.g{background:#DFF1E4; color:#186A3B;} .mr-pill.o{background:#FBEDD3; color:#8A5A00;} .mr-pill.r{background:#FADDD7; color:#A93226;}
+.mr-note{color:#7C877E; font-size:11.5px; margin:4px 0 0;}
+.mr-reco{border:1px solid #E7EBE7; border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:13px;}
+.mr-reco.act{border-inline-start:4px solid #C0392B;} .mr-reco.watch{border-inline-start:4px solid #B9770E;} .mr-reco.good{border-inline-start:4px solid #1E8449;}
+.mr-reco .lv{font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;}
+.mr-reco.act .lv{color:#C0392B;} .mr-reco.watch .lv{color:#B9770E;} .mr-reco.good .lv{color:#1E8449;}
+.mr-plan li{margin-bottom:7px;}
+.mr-chart{direction:ltr;}
+.mr-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:10px 0;}
+.mr-kpi{background:#F4F7F4; border-radius:8px; padding:10px 8px; text-align:center;}
+.mr-kpi .n{font-size:18px; font-weight:800; color:#0B3D22;}
+.mr-kpi .l{font-size:10.5px; color:#6E7A70;}
+.mr-foot{margin-top:34px; border-top:1px solid #DFE5DF; padding-top:10px; color:#9AA49C; font-size:11px; display:flex; justify-content:space-between; gap:10px;}
+@media print{ .mr-doc{padding:0;} .mr-sec{page-break-after:avoid;} .mr-tbl{page-break-inside:avoid;} }
+`;
+function mrChartSvg(trend, lang){
+  if(!trend.length) return '';
+  const repsList = [...new Set(trend.flatMap(w=>Object.keys(w.byRep)))].sort();
+  if(!repsList.length) return '';
+  const colors = ['#0B3D22','#C98A1E','#5E5CE6','#A93226'];
+  const W=660, H=230, padL=46, padB=34, padT=16;
+  const max = Math.max(1, ...trend.map(w=>Math.max(...repsList.map(r=>w.byRep[r]||0))));
+  const iw = (W-padL-10)/trend.length;
+  const bw = Math.min(26, (iw-14)/repsList.length);
+  let bars='', labels='', grid='';
+  for(let g=0; g<=3; g++){
+    const val = max*g/3, y = H-padB-(H-padB-padT)*g/3;
+    grid += `<line x1="${padL}" y1="${y}" x2="${W-6}" y2="${y}" stroke="#E7EBE7"/>`+
+      `<text x="${padL-6}" y="${y+4}" font-size="9" fill="#8A948C" text-anchor="end">${Math.round(val)}</text>`;
+  }
+  trend.forEach((w,i)=>{
+    const x0 = padL + i*iw + (iw - bw*repsList.length)/2;
+    repsList.forEach((r,j)=>{
+      const v = w.byRep[r]||0;
+      const h = Math.max(0, (H-padB-padT)*v/max);
+      bars += `<rect x="${x0+j*bw}" y="${H-padB-h}" width="${bw-3}" height="${h}" rx="2" fill="${colors[j%colors.length]}"/>`;
+    });
+    const lbl = w.from.slice(8,10)+'/'+w.from.slice(5,7);
+    labels += `<text x="${padL+i*iw+iw/2}" y="${H-padB+14}" font-size="9.5" fill="#6E7A70" text-anchor="middle">${lbl}</text>`;
+  });
+  const legend = repsList.map((r,j)=>`<rect x="${padL+j*110}" y="${H-10}" width="9" height="9" rx="2" fill="${colors[j%colors.length]}"/><text x="${padL+j*110+13}" y="${H-2}" font-size="10" fill="#3C4A40">${esc(r)}</text>`).join('');
+  return `<div class="mr-chart"><svg viewBox="0 0 ${W} ${H+6}" style="width:100%; height:auto;">${grid}${bars}${labels}${legend}</svg></div>`;
+}
+function buildMasterReportBody(lang, format){
+  const L = REPORT_I18N[lang] || REPORT_I18N.en;
+  const rtl = lang === 'ar';
+  const b = reportRangeBounds();
+  const today = todayStr();
+  const m = getMonthDates(today);
+  const daysInMonth = m.length;
+  const repFilter = currentUser.role === 'supervisor' ? reportRepFilter : currentUser.name;
+  const repsList = repFilter === 'all' ? REPS.slice() : [repFilter];
+  const p = erpPeriods().find(x => b.from ? (x.to >= b.from && (!b.to || x.from <= b.to)) : true) || null;
+  const allRows = p ? unpackErpRows(p.rows) : [];
+  const rows = allRows.filter(r => UMCore.inRange(r.date, b.from, b.to) && repsList.includes((p.repMap||{})[r.salesman]));
+  const rec = p ? UMCore.reconcileErp({rows: allRows, visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to}) : null;
+  const trend = p ? UMCore.erpWeeklyTrend(rows, p.repMap||{}) : [];
+  const coach = UMCore.coachInsights({from: b.from, to: b.to, today, repFilter, visits, clinics, targets, dayPlans});
+  const cov = UMCore.clinicCoverage({from: b.from || m[0], to: b.to || today, today, repFilter, visits, clinics, dayPlans});
+  const returns = UMCore.returnsAnalysis(rows);
+  const dateStr = new Date().toLocaleDateString(rtl ? 'ar' : 'en-US', {year:'numeric', month:'long', day:'numeric'});
+  const AR_PERIODS = {'This Week':'هذا الأسبوع','This Month':'هذا الشهر','This Quarter':'هذا الربع','All Time':'كل الفترة'};
+  const periodTxt = rtl ? (AR_PERIODS[periodLabel()] || periodLabel()) : periodLabel();
+  let secNo = 0;
+  const sec = (title) => `<div class="mr-sec"><span class="no">${(++secNo)}</span><h2>${title}</h2></div>`;
+
+  // Per-rep target math, shared by exec summary and the targets table.
+  const tstats = repsList.map(rep => {
+    const t = targets[rep] || {};
+    if(!(t.revenue > 0)) return null;
+    const bm = bestMonthRevenue(rep);
+    const dayRef = (t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === today.slice(0,7))
+      ? +t.achievedAsOf.slice(8,10) : +today.slice(8,10);
+    const fc = UMCore.forecastMonthEnd(bm.amount, dayRef, daysInMonth);
+    const pace = Math.round(bm.amount / (t.revenue * dayRef / daysInMonth) * 100);
+    const state = bm.amount >= t.revenue ? 'hit' : pace >= 90 ? 'on' : 'behind';
+    return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, fc, pace, state };
+  }).filter(Boolean);
+
+  // 1 — executive summary
+  let exec = '';
+  if(tstats.length){
+    const goal = tstats.reduce((s,x)=>s+x.goal,0), ach = tstats.reduce((s,x)=>s+x.ach,0), fc = tstats.reduce((s,x)=>s+x.fc,0);
+    exec += `<p style="margin:0 0 6px;">${L.execTeam(mrMoney(ach,lang), mrMoney(goal,lang), goal?Math.round(ach/goal*100):0, mrMoney(fc,lang))}</p>`;
+    const star = tstats.slice().sort((a,b)=>b.ach-a.ach)[0];
+    if(star && star.ach > 0) exec += `<p style="margin:0 0 6px;">${L.execStar(esc(star.rep), mrMoney(star.ach,lang))}</p>`;
+  }
+  const risk = coach.find(i=>i.level==='act');
+  if(risk) exec += `<p style="margin:0;">${L.execRisk(esc(mrCoachText(risk, lang)))}</p>`;
+  if(!exec) exec = `<p style="margin:0;">${L.noData}</p>`;
+
+  const targetsTbl = tstats.length ? `<table class="mr-tbl"><tr><th>${L.rep}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.pace}</th><th>${L.forecast}</th><th>${L.status}</th></tr>
+    ${tstats.map(x=>`<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td>${mrMoney(x.ach,lang)}</td><td><span class="num">${x.pace}%</span></td><td>${mrMoney(x.fc,lang)}</td>
+      <td><span class="mr-pill ${x.state==='hit'?'g':x.state==='on'?'g':'r'}">${x.state==='hit'?L.st_hit:x.state==='on'?L.st_on:L.st_behind}</span></td></tr>`).join('')}
+    </table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
+
+  const brandSec = repsList.map(rep=>{
+    const t = targets[rep]||{}; const bt = t.brands||{}; const ab = t.achievedBrands||{};
+    const items = Object.entries(bt).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+    if(!items.length) return '';
+    return `<h3 style="font-size:14px; margin:12px 0 4px;">${esc(rep)}</h3><table class="mr-tbl">
+      <tr><th>${L.brandCol}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.ach}</th></tr>
+      ${items.map(([br,tg])=>{
+        const a = ab[br]!=null?ab[br]:0; const pct = Math.round(a/tg*100);
+        return `<tr><td>${esc(br)}</td><td><span class="num">${tg.toFixed(0)}</span></td><td><span class="num">${a.toFixed(2)}</span></td>
+          <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
+      }).join('')}</table>`;
+  }).join('');
+
+  const reconSec = rec && rec.perRep.length ? `<table class="mr-tbl">
+    <tr><th>${L.rep}</th><th>${L.linkage}</th><th>${L.matched}</th><th>${L.pipeline}</th><th>${L.noVisit}</th></tr>
+    ${rec.perRep.filter(r=>repsList.includes(r.rep)).map(r=>`<tr><td><b>${esc(r.rep)}</b></td>
+      <td><span class="num">${r.linkagePct}%</span></td><td><span class="num">${r.matched.length}</span></td>
+      <td><span class="num">${r.visitedNoInvoice.length}</span></td>
+      <td><span class="num">${r.invoicedNoVisit.length}</span> (${mrMoney(r.invoicedNoVisit.reduce((s,x)=>s+x.net,0),lang)})</td></tr>`).join('')}
+    </table>` : `<p class="mr-note">${L.noData}</p>`;
+
+  const retSec = returns.count ? `<p style="margin:4px 0;">${L.retTotal}: <b>${mrMoney(returns.total,lang)}</b> (<span class="num">${returns.count}</span> ${L.retCount})</p>
+    <table class="mr-tbl"><tr><th>${L.byBrand}</th><th></th><th>${L.byCustomer}</th><th></th></tr>
+    ${[0,1,2,3,4].map(i=>{
+      const bb = returns.byBrand[i], bc = returns.byCustomer[i];
+      if(!bb && !bc) return '';
+      return `<tr><td>${bb?esc(bb.name):''}</td><td>${bb?mrMoney(bb.amount,lang):''}</td><td>${bc?esc(bc.name):''}</td><td>${bc?mrMoney(bc.amount,lang):''}</td></tr>`;
+    }).join('')}</table>` : `<p class="mr-note">${L.noData}</p>`;
+
+  const covSec = `<div class="mr-kpis">
+    <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.visitedCount}/${cov.stats.totalClinics}</span></div><div class="l">${L.covered} (<span class="num">${cov.stats.coveragePct}%</span>)</div></div>
+    <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.needsCount}</span></div><div class="l">${L.needVisit}</div></div>
+    <div class="mr-kpi"><div class="n"><span class="num">${cov.needsVisit.filter(c=>c.weight===0).length}</span></div><div class="l">${L.overdue}</div></div>
+    <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.contacts}</span></div><div class="l">👥</div></div>
+  </div>`;
+
+  const recoSec = coach.map(i=>`<div class="mr-reco ${i.level}"><span class="lv">${i.level==='act'?L.doNow:i.level==='watch'?L.watch:L.working}</span><br>${i.icon} ${esc(mrCoachText(i, lang))}</div>`).join('');
+  const planItems = coach.filter(i=>i.level!=='good');
+  const planSec = planItems.length ? `<p class="mr-note" style="margin-bottom:8px;">${L.planIntro}</p>
+    <ol class="mr-plan">${planItems.map(i=>`<li>☐ ${esc(mrCoachText(i, lang))}</li>`).join('')}</ol>` : `<p class="mr-note">${L.noData}</p>`;
+
+  const cover = `<div class="mr-cover">
+    <div class="b">${L.brandName}</div><h1>${L.title}</h1>
+    <div class="meta">${L.period}: ${periodTxt}${repFilter!=='all'?' · '+esc(repFilter):' · '+L.team} &nbsp;·&nbsp; ${L.generated}: ${dateStr} &nbsp;·&nbsp; ${L.preparedBy}: ${esc(currentUser.name||'')}</div>
+    <div class="mr-conf">${L.confidential}</div></div>`;
+  const foot = `<div class="mr-foot"><span>${L.brandName} · UltraMed Field Ops</span><span>${L.confidential}</span></div>`;
+
+  if(format === 'summary'){
+    return `<div class="mr-doc" dir="${rtl?'rtl':'ltr'}">${cover}
+      ${sec(L.s_exec)}<div class="mr-exec">${exec}</div>
+      ${trend.length>1?sec(L.s_chart)+mrChartSvg(trend,lang):''}
+      ${sec(L.s_targets)}${targetsTbl}
+      ${sec(L.s_reco)}${coach.filter(i=>i.level==='act').slice(0,3).map(i=>`<div class="mr-reco act"><span class="lv">${L.doNow}</span><br>${i.icon} ${esc(mrCoachText(i,lang))}</div>`).join('') || `<p class="mr-note">${L.noData}</p>`}
+      ${foot}</div>`;
+  }
+  return `<div class="mr-doc" dir="${rtl?'rtl':'ltr'}">${cover}
+    ${sec(L.s_exec)}<div class="mr-exec">${exec}</div>
+    ${trend.length>1?sec(L.s_chart)+mrChartSvg(trend,lang):''}
+    ${sec(L.s_targets)}${targetsTbl}
+    ${brandSec?sec(L.s_brands)+brandSec:''}
+    ${sec(L.s_recon)}${reconSec}
+    ${sec(L.s_returns)}${retSec}
+    ${sec(L.s_coverage)}${covSec}
+    ${sec(L.s_reco)}${recoSec}
+    ${sec(L.s_plan)}${planSec}
+    ${foot}</div>`;
+}
+function buildMasterReportHtml(lang, format){
+  const L = REPORT_I18N[lang] || REPORT_I18N.en;
+  return `<!doctype html><html lang="${lang}" dir="${lang==='ar'?'rtl':'ltr'}"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>${L.title} — UltraMed</title>
+<style>body{margin:0; background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact;}${MASTER_REPORT_CSS}</style>
+</head><body>${buildMasterReportBody(lang, format)}</body></html>`;
+}
+function ensureMrCss(){
+  if(document.getElementById('mrCss')) return;
+  const st = document.createElement('style');
+  st.id = 'mrCss';
+  st.textContent = MASTER_REPORT_CSS;
+  document.head.appendChild(st);
+}
+function setMrLang(l){ reportLang = l; if(document.getElementById('proreport').classList.contains('active')) showProReport(); }
+function setMrFormat(f){ reportFormat = f; if(document.getElementById('proreport').classList.contains('active')) showProReport(); }
 function buildReportFileHtml(){
-  renderProDoc(); // regenerate so the file always carries the latest, complete report
-  return wrapReportDoc('UltraMed Field Performance Report', document.getElementById('prDoc').innerHTML);
+  return buildMasterReportHtml(reportLang, reportFormat);
 }
 function downloadReportFile(){
   const ok = tryDownload(reportFileName('UltraMed-Report'), buildReportFileHtml(), 'text/html;charset=utf-8;');
@@ -6457,7 +6735,14 @@ async function shareErpReconFile(id){
   await shareHtmlFile(`UltraMed-Reconciliation-${p.from}_to_${p.to}.html`, html, 'UltraMed Sales Reconciliation');
 }
 function showProReport(){
-  renderProDoc();
+  ensureMrCss();
+  document.getElementById('prDoc').innerHTML = buildMasterReportBody(reportLang, reportFormat);
+  const langBtns = document.getElementById('prLangBtns');
+  if(langBtns) langBtns.innerHTML = `
+    <button class="print ${reportLang==='en'?'':'off'}" onclick="setMrLang('en')">EN</button>
+    <button class="print ${reportLang==='ar'?'':'off'}" onclick="setMrLang('ar')">عربي</button>
+    <button class="print ${reportFormat==='full'?'':'off'}" onclick="setMrFormat('full')">${reportLang==='ar'?'كامل':'Full'}</button>
+    <button class="print ${reportFormat==='summary'?'':'off'}" onclick="setMrFormat('summary')">${reportLang==='ar'?'صفحة واحدة':'1-page'}</button>`;
   document.getElementById('proreport').classList.add('active');
   document.getElementById('bottomNav').style.display = 'none';
   window.scrollTo(0,0);

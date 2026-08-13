@@ -308,7 +308,7 @@
     // 1. Overdue follow-ups: promised visits are the easiest sales in the pipeline.
     const overdue = clinics.filter(c => c.cls !== 'Closed' && wantRep(c.rep) && c.nextFollowUp && c.nextFollowUp < today);
     if(overdue.length){
-      out.push({ level: 'act', icon: '⏰', key: 'followups',
+      out.push({ level: 'act', icon: '⏰', key: 'followups', data: { count: overdue.length, names: overdue.slice(0, 3).map(function(c){ return c.name; }) },
         title: overdue.length + ' overdue follow-up' + (overdue.length === 1 ? '' : 's'),
         detail: 'Visits already promised to: ' + listNames(overdue.map(c => c.name), 3) +
           '. A promised visit is the easiest sale — book these first.' });
@@ -317,7 +317,7 @@
     // 2. Best clinics going quiet = revenue quietly leaking.
     const dorm = dormantClinics(clinics, visits, today, { days: 30 }).filter(c => wantRep(c.rep));
     if(dorm.length){
-      out.push({ level: 'act', icon: '😴', key: 'dormant',
+      out.push({ level: 'act', icon: '😴', key: 'dormant', data: { count: dorm.length, names: dorm.slice(0, 3).map(function(c){ return c.name; }) },
         title: dorm.length + ' top clinic' + (dorm.length === 1 ? '' : 's') + ' quiet for 30+ days',
         detail: listNames(dorm.map(c => c.name + ' (' + (c.daysSince === null ? 'never visited' : c.daysSince + 'd') + ')'), 3) +
           '. Class A/B clinics buy the most — put them in next week’s plan.' });
@@ -326,7 +326,7 @@
     // 3. Plans that never became visits.
     const missed = missedPlans(dayPlans, visits, today, { daysBack: 14 }).filter(m => wantRep(m.rep));
     if(missed.length){
-      out.push({ level: missed.length >= 3 ? 'act' : 'watch', icon: '📅', key: 'missed',
+      out.push({ level: missed.length >= 3 ? 'act' : 'watch', icon: '📅', key: 'missed', data: { count: missed.length },
         title: missed.length + ' planned visit' + (missed.length === 1 ? '' : 's') + ' never happened',
         detail: 'Planned in the last 14 days but never logged. Reschedule them from the Today screen so the plan stays real.' });
     }
@@ -350,17 +350,17 @@
       const expected = goal * dayRef / daysInMonth;
       const daysLeft = daysInMonth - dayRef;
       if(mtd >= goal){
-        out.push({ level: 'good', icon: '🏆', key: 'target-' + rep,
+        out.push({ level: 'good', icon: '🏆', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, state: 'hit', official: official },
           title: rep + ' already hit the monthly target',
           detail: money(mtd) + src + ' against a ' + money(goal) + ' goal. Everything from here is upside — a great week to push new products.' });
       } else if(mtd < expected * 0.9){
         const perDay = daysLeft > 0 ? Math.ceil((goal - mtd) / daysLeft) : Math.ceil(goal - mtd);
-        out.push({ level: 'act', icon: '🎯', key: 'target-' + rep,
+        out.push({ level: 'act', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, perDay: perDay, daysLeft: daysLeft, state: 'behind', official: official },
           title: rep + ' is behind the monthly target',
           detail: money(mtd) + src + ' of ' + money(goal) + ' so far. Needs about ' + perDay + ' KD/day for the remaining ' + daysLeft +
             ' day' + (daysLeft === 1 ? '' : 's') + ' — steer the visits toward clinics that already order.' });
       } else {
-        out.push({ level: 'good', icon: '🎯', key: 'target-' + rep,
+        out.push({ level: 'good', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, state: 'pace', official: official },
           title: rep + ' is on pace for the monthly target',
           detail: money(mtd) + src + ' of ' + money(goal) + '. Keep the current rhythm and the target lands on its own.' });
       }
@@ -369,11 +369,11 @@
     // 5. Conversion coaching — only once there are enough visits to mean anything.
     if(s.fieldVisits >= 5){
       if(s.conversion < 30){
-        out.push({ level: 'act', icon: '🛒', key: 'conversion',
+        out.push({ level: 'act', icon: '🛒', key: 'conversion', data: { pct: s.conversion, state: 'low' },
           title: 'Low conversion: ' + s.conversion + '% of visits end with an order',
           detail: 'Lots of walking, little closing. Open the category selling guides before each visit and always ask for the order before leaving.' });
       } else if(s.conversion >= 60){
-        out.push({ level: 'good', icon: '🛒', key: 'conversion',
+        out.push({ level: 'good', icon: '🛒', key: 'conversion', data: { pct: s.conversion, state: 'strong' },
           title: 'Strong closing: ' + s.conversion + '% of visits take an order',
           detail: 'The pitch works. The straightest line to more sales now is simply more visits to the same kind of clinics.' });
       }
@@ -383,11 +383,11 @@
     if(s.fieldVisits >= 5){
       const perVisit = Math.round(s.contacts / s.fieldVisits * 10) / 10;
       if(perVisit < 1){
-        out.push({ level: 'watch', icon: '👥', key: 'contacts',
+        out.push({ level: 'watch', icon: '👥', key: 'contacts', data: { perVisit: perVisit, state: 'low' },
           title: 'Only ' + perVisit + ' contact' + (perVisit === 1 ? '' : 's') + ' met per visit',
           detail: 'Every extra doctor met in the same clinic is a free lead. Ask reception who else is in today — aim for 2+ per visit.' });
       } else if(perVisit >= 2){
-        out.push({ level: 'good', icon: '👥', key: 'contacts',
+        out.push({ level: 'good', icon: '👥', key: 'contacts', data: { perVisit: perVisit, state: 'strong' },
           title: perVisit + ' contacts met per visit — excellent coverage',
           detail: 'Meeting more people per clinic multiplies orders without extra driving. Keep it up.' });
       }
@@ -402,7 +402,7 @@
     const stuckIds = Object.keys(byClinic).filter(id => byClinic[id].n >= 3 && byClinic[id].orders === 0);
     if(stuckIds.length){
       const names = stuckIds.map(id => { const c = clinics.find(x => x.id === id); return c ? c.name : id; });
-      out.push({ level: 'watch', icon: '🔁', key: 'stuck',
+      out.push({ level: 'watch', icon: '🔁', key: 'stuck', data: { count: stuckIds.length, names: names.slice(0, 3) },
         title: stuckIds.length + ' clinic' + (stuckIds.length === 1 ? '' : 's') + ' visited 3+ times with no order',
         detail: listNames(names, 3) + '. Change the approach: different products, a different doctor, or a joint visit with the supervisor.' });
     }
@@ -415,7 +415,7 @@
       const share = Math.round(revByClinic[ids[0]] / s.revenue * 100);
       if(share >= 60 && ids.length > 1){
         const c = clinics.find(x => x.id === ids[0]);
-        out.push({ level: 'watch', icon: '🥚', key: 'concentration',
+        out.push({ level: 'watch', icon: '🥚', key: 'concentration', data: { share: share, name: c ? c.name : '' },
           title: share + '% of revenue comes from one clinic',
           detail: (c ? c.name : 'One clinic') + ' carries this period. Great account — but grow 2-3 more A/B clinics so one slow month there can’t sink the numbers.' });
       }
@@ -429,7 +429,7 @@
         const sorted = enough.slice().sort((a, b) => conv(b) - conv(a));
         const top = sorted[0], low = sorted[sorted.length - 1];
         if(conv(top) - conv(low) >= 25){
-          out.push({ level: 'watch', icon: '🤝', key: 'jointcoach',
+          out.push({ level: 'watch', icon: '🤝', key: 'jointcoach', data: { top: top.rep, low: low.rep, topPct: conv(top), lowPct: conv(low) },
             title: top.rep + ' converts at ' + conv(top) + '%, ' + low.rep + ' at ' + conv(low) + '%',
             detail: 'Send them on 2-3 joint visits: ' + low.rep + ' watches how ' + top.rep + ' asks for the order. Log them as joint visits so both get credit.' });
         }
@@ -437,7 +437,7 @@
     }
 
     if(!out.length){
-      out.push({ level: 'good', icon: '✅', key: 'allgood',
+      out.push({ level: 'good', icon: '✅', key: 'allgood', data: {},
         title: 'No red flags in this period',
         detail: 'Follow-ups done and top clinics covered. To grow from here: more visits, and 2+ contacts met per visit.' });
     }
@@ -1031,6 +1031,26 @@
     });
   }
 
+  // Straight-line month-end projection from the pace so far.
+  function forecastMonthEnd(achieved, asOfDay, daysInMonth){
+    if(!(asOfDay > 0) || !(daysInMonth > 0)) return 0;
+    return Math.round((achieved / asOfDay) * daysInMonth * 100) / 100;
+  }
+  // Groups returned value by brand and by customer, largest first.
+  function returnsAnalysis(rows){
+    var ret = (rows || []).filter(function(r){ return r.sret > 0; });
+    var agg = function(key){
+      var d = {};
+      ret.forEach(function(r){ var k = r[key] || '—'; d[k] = (d[k] || 0) + r.sret; });
+      return Object.keys(d).map(function(k){ return { name: k, amount: Math.round(d[k] * 1000) / 1000 }; })
+        .sort(function(a, b){ return b.amount - a.amount; });
+    };
+    return {
+      total: Math.round(ret.reduce(function(s, r){ return s + r.sret; }, 0) * 1000) / 1000,
+      count: ret.length, byBrand: agg('brand'), byCustomer: agg('customer'),
+    };
+  }
+
   // ==== COVERAGE BOARD ====
   // One picture of a period: which clinics were visited (with a visit summary
   // each) and which still need a visit — with machine-readable reasons the UI
@@ -1127,6 +1147,7 @@
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
-    parseTargetsFile, readXlsx, parseDsrTargets, normBrand
+    parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
+    forecastMonthEnd, returnsAnalysis
   };
 });
