@@ -616,3 +616,169 @@ describe('coachInsights', () => {
     assert.equal(out[0].level, 'good');
   });
 });
+
+// ---------- ERP import & reconciliation ----------
+
+describe('ERP parsing helpers', () => {
+  test('erpNum handles ERP number formats', () => {
+    assert.equal(core.erpNum('1,234.500'), 1234.5);
+    assert.equal(core.erpNum('(6.763-)'), -6.763);
+    assert.equal(core.erpNum('(1.00-)'), -1);
+    assert.equal(core.erpNum('98.700'), 98.7);
+    assert.equal(core.erpNum(''), 0);
+    assert.equal(core.erpNum('abc'), 0);
+  });
+  test('erpDate normalizes dd-mm-yyyy and passes ISO through', () => {
+    assert.equal(core.erpDate('01-08-2026'), '2026-08-01');
+    assert.equal(core.erpDate('1/8/2026'), '2026-08-01');
+    assert.equal(core.erpDate('2026-08-13'), '2026-08-13');
+    assert.equal(core.erpDate('nonsense'), null);
+  });
+  test('parseCsvText honors quoted commas and newlines', () => {
+    const rows = core.parseCsvText('a,"b,c","line1\nline2"\nd,e,f');
+    assert.deepEqual(rows[0], ['a', 'b,c', 'line1\nline2']);
+    assert.deepEqual(rows[1], ['d', 'e', 'f']);
+  });
+});
+
+describe('parseErpCsv', () => {
+  const CSV = [
+    'Some Report Title,,,,,,,,,,',
+    'Date,Invoice#,Product,Quantity,Sales Gross,Name,Sales Return Amount,Net Sales,Brand,Customer,Class',
+    '01-08-2026,SINV0075029,Waterpik Cordless Plus BLACK,1.00,35.000,Ranova Ayman Mohammed,0.000,28.000,WATERPIK,My Fatoorah,Online Customers',
+    '01-08-2026,SINV0075032,Mini Flosser INT,11.00,26.400,Mr. Sundeep Kohli,0.000,15.840,TEPE,"Trolley General Trading Company W.L.L",Hypermarkets and Supermarkets',
+    '13-08-2026,SRT0009253,Pap+ Toothpaste,(1.00-),0.000,Mr. Sundeep Kohli,7.500,(6.763-),Hismile,"Lulu Trading & Contracting Co. W.L.L",Hypermarkets and Supermarkets',
+    ',,,,,,,,,,',
+  ].join('\n');
+  test('detects the header row and parses data rows', () => {
+    const res = core.parseErpCsv(CSV);
+    assert.equal(res.error, null);
+    assert.equal(res.rows.length, 3);
+    const [a, , c] = res.rows;
+    assert.equal(a.date, '2026-08-01');
+    assert.equal(a.doc, 'SINV0075029');
+    assert.equal(a.net, 28);
+    assert.equal(a.salesman, 'Ranova Ayman Mohammed');
+    assert.equal(a.customer, 'My Fatoorah');
+    assert.equal(c.type, 'return');
+    assert.equal(c.net, -6.763);
+    assert.equal(c.sret, 7.5);
+  });
+  test('rejects text with no recognizable header', () => {
+    assert.equal(core.parseErpCsv('hello,world\n1,2').error, 'NO_HEADER');
+  });
+});
+
+describe('parseErpPdfText', () => {
+  // Verbatim text as extracted from the real EXceed PDF report.
+  const PDF_TEXT = `Date Invoice# Account Product Quantity Sales Gross Discount Sales Sales Amount NameSales Return
+Amount
+01-08-2026 SINV0075029 080042 Waterpik Cordless Plus
+BLACK 1.00 35.000 7.000 28.000 Ranova Ayman Mohammed0.000 0.000 28.000 WATERPIKMy Fatoorah WP-462ME 05/0032Online CustomersSalesInvoice Credit 01-08-2026 MIV0052005
+13-08-2026 SRT0009253 060011 Pap+ Toothpaste (1.00-) 0.000 0.000 0.000 Mr. Sundeep Kohli7.500 0.737 (6.763-) HismileLulu Trading & Contracting
+Co. W.L.L (Sup# 11050963) 10016-WT 73/0011Hypermarkets and
+SupermarketsSalesReturn
+Credit`;
+  test('parses invoice and return lines from PDF-extracted text', () => {
+    const res = core.parseErpPdfText(PDF_TEXT);
+    assert.equal(res.error, null);
+    assert.equal(res.rows.length, 2);
+    const [inv, ret] = res.rows;
+    assert.equal(inv.date, '2026-08-01');
+    assert.equal(inv.doc, 'SINV0075029');
+    assert.equal(inv.net, 28);
+    assert.equal(inv.salesman, 'Ranova Ayman Mohammed');
+    assert.equal(inv.brand, 'WATERPIK');
+    assert.equal(inv.customer, 'My Fatoorah');
+    assert.equal(inv.cls, 'Online Customers');
+    assert.equal(ret.type, 'return');
+    assert.equal(ret.net, -6.763);
+    assert.equal(ret.sret, 7.5);
+    assert.equal(ret.brand, 'Hismile');
+  });
+  test('parseErpFile falls back from CSV to PDF text', () => {
+    assert.equal(core.parseErpFile(PDF_TEXT).rows.length, 2);
+    assert.equal(core.parseErpFile('garbage').error, 'UNRECOGNIZED');
+  });
+});
+
+describe('rep and customer matching', () => {
+  test('guessRepMap maps ERP salesman names to app reps (fuzzy)', () => {
+    const map = core.guessRepMap(
+      ['Ranova Ayman Mohammed', 'Mariam Zohair', 'Mr. Sundeep Kohli'],
+      ['Renova', 'Mariam']);
+    assert.equal(map['Ranova Ayman Mohammed'], 'Renova'); // 1 edit away
+    assert.equal(map['Mariam Zohair'], 'Mariam');
+    assert.equal(map['Mr. Sundeep Kohli'], null); // not on the field team
+  });
+  test('matchCustomer: channels, fuzzy clinic names, manual overrides', () => {
+    const clinics = [
+      { id: 'c1', name: 'Dr. Nael Al Hazeem Pharmacy ( Al Soor )' },
+      { id: 'c2', name: 'Bayan Dental Center' },
+    ];
+    assert.equal(core.matchCustomer('My Fatoorah HX', clinics, {}).channel, true);
+    assert.equal(core.matchCustomer('Dr. Nael Al Hazeem Pharmacy ( Al Soor ) WF', clinics, {}).clinicId, 'c1');
+    assert.equal(core.matchCustomer('Bayan Dental Center', clinics, {}).clinicId, 'c2');
+    assert.equal(core.matchCustomer('Totally Unknown Co', clinics, {}).clinicId, null);
+    assert.equal(core.matchCustomer('X', clinics, { 'X': 'c2' }).clinicId, 'c2');
+    assert.equal(core.matchCustomer('X', clinics, { 'X': '@channel' }).channel, true);
+    assert.equal(core.matchCustomer('X', clinics, { 'X': '@ignore' }).ignored, true);
+  });
+  test('dedupeVisits collapses identical double-saves', () => {
+    const v = { date: '2026-08-10', rep: 'Mariam', clinicId: 'c2', orderTotal: 0, notes: '' };
+    const res = core.dedupeVisits([v, { ...v }, { ...v }, { ...v, clinicId: 'c1' }]);
+    assert.equal(res.unique.length, 2);
+    assert.equal(res.dupCount, 2);
+  });
+});
+
+describe('reconcileErp', () => {
+  const clinics = [
+    { id: 'c1', name: 'Bayan Dental Center', rep: 'Mariam', cls: 'A' },
+    { id: 'c2', name: 'Pharmacy Plus', rep: 'Renova', cls: 'A' },
+    { id: 'c3', name: 'Light Dental', rep: 'Mariam', cls: 'B' },
+  ];
+  const rows = [
+    { date: '2026-08-10', doc: 'SINV1', type: 'invoice', net: 100, sret: 0, salesman: 'Mariam Zohair', customer: 'Bayan Dental Center', brand: 'TEPE', cls: 'Clinics' },
+    { date: '2026-08-11', doc: 'SINV2', type: 'invoice', net: 260, sret: 0, salesman: 'Mariam Zohair', customer: 'Light Dental ( Dr. Noor )', brand: 'Intensiv', cls: 'Clinics' },
+    { date: '2026-08-11', doc: 'SINV3', type: 'invoice', net: 500, sret: 0, salesman: 'Ranova Ayman Mohammed', customer: 'My Fatoorah', brand: 'Univet', cls: 'Online Customers' },
+    { date: '2026-08-12', doc: 'SRT1', type: 'return', net: -30, sret: 30, salesman: 'Ranova Ayman Mohammed', customer: 'Joury Clinic', brand: 'FLASH', cls: 'Clinics' },
+  ];
+  const visits = [
+    { date: '2026-08-10', rep: 'Mariam', clinicId: 'c1', orderTaken: true, orderTotal: 95 },
+    { date: '2026-08-10', rep: 'Mariam', clinicId: 'c1', orderTaken: true, orderTotal: 95 }, // duplicate save
+    { date: '2026-08-11', rep: 'Renova', clinicId: 'c2', orderTaken: false },
+  ];
+  const repMap = { 'Mariam Zohair': 'Mariam', 'Ranova Ayman Mohammed': 'Renova' };
+  const opts = { rows, visits, clinics, erpMap: {}, repMap, from: '2026-08-06', to: '2026-08-13' };
+
+  test('matches visited+invoiced clinics and computes linkage', () => {
+    const rec = core.reconcileErp(opts);
+    const mariam = rec.perRep.find(r => r.rep === 'Mariam');
+    assert.equal(mariam.erp.net, 360);
+    // Bayan: visited AND invoiced → matched.
+    assert.equal(mariam.matched.length, 1);
+    assert.equal(mariam.matched[0].clinicId, 'c1');
+    assert.equal(mariam.matched[0].net, 100);
+    // Light Dental: invoiced (fuzzy-matched to c3) but never visited.
+    assert.ok(mariam.invoicedNoVisit.some(x => x.clinicId === 'c3' && x.net === 260));
+    assert.equal(rec.dupRows, 1);
+  });
+  test('channel sales are separated, not counted as unmatched clinics', () => {
+    const rec = core.reconcileErp(opts);
+    const renova = rec.perRep.find(r => r.rep === 'Renova');
+    assert.equal(renova.erp.channelNet, 500);
+    assert.equal(renova.erp.net, 470); // 500 - 30 return
+    assert.ok(rec.unmatchedCustomers.includes('Joury Clinic'));
+    assert.ok(!rec.unmatchedCustomers.includes('My Fatoorah'));
+  });
+  test('visited clinics with no invoice are listed as pipeline', () => {
+    const rec = core.reconcileErp(opts);
+    const renova = rec.perRep.find(r => r.rep === 'Renova');
+    assert.ok(renova.visitedNoInvoice.some(x => x.clinicId === 'c2'));
+  });
+  test('manual @ignore mapping removes a customer from the reckoning', () => {
+    const rec = core.reconcileErp({ ...opts, erpMap: { 'Joury Clinic': '@ignore' } });
+    assert.ok(!rec.unmatchedCustomers.includes('Joury Clinic'));
+  });
+});

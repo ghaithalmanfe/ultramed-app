@@ -786,6 +786,7 @@
     </div>
     <div style="margin-bottom:16px;">
       <button class="btn secondary" style="padding:12px;" onclick="openCompare()">🆚 Compare two periods</button>
+      <button class="btn secondary" id="erpImportBtn" style="display:none; padding:12px; margin-top:8px;" onclick="openErpImport()">📥 ERP sales import &amp; reconciliation</button>
     </div>
     <div class="section-title" style="margin-top:0;">🧭 Sales coach — read this first</div>
     <div class="nudge" style="margin-bottom:10px;">The numbers below are summarized here as actions: red = do now, orange = keep an eye, green = working, do more of it.</div>
@@ -1272,6 +1273,8 @@ let recycleBin = {clinics:[], products:[], visits:[]};
 let events = [];
 let targets = {}; // {repName: {revenue: KD, visits: N}} — monthly targets
 let categoryGuides = {}; // {catName: {sell, how, objections, links[]}} — selling guides
+let erpSales = {periods: []}; // imported ERP sales periods (supervisor)
+let erpMap = {}; // {erpCustomerName: clinicId | '@channel' | '@ignore'}
 let calMode = 'month';
 let calAnchor = null;   // set on first render
 let calSelected = null;
@@ -1471,7 +1474,7 @@ function normalizeClinic(c){
 }
 async function loadAll(){
   try{
-    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg] = await Promise.all([
+    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em] = await Promise.all([
       window.storage.get('clinics', true).catch(()=>null),
       window.storage.get('products', true).catch(()=>null),
       window.storage.get('visits', true).catch(()=>null),
@@ -1483,6 +1486,8 @@ async function loadAll(){
       window.storage.get('events', true).catch(()=>null),
       window.storage.get('targets', true).catch(()=>null),
       window.storage.get('categoryGuides', true).catch(()=>null),
+      window.storage.get('erpSales', true).catch(()=>null),
+      window.storage.get('erpMap', true).catch(()=>null),
     ]);
     // Each key parses independently: one corrupt entry falls back alone instead
     // of throwing and resetting every collection to seed data.
@@ -1498,6 +1503,8 @@ async function loadAll(){
     // while supervisor edits to existing categories win over the seed.
     const cgVal = UMCore.safeParse(cg && cg.value, null);
     categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), cgVal || {});
+    erpSales = Object.assign({periods: []}, UMCore.safeParse(es && es.value, null) || {});
+    erpMap = UMCore.safeParse(em && em.value, {}) || {};
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
     const rbVal = UMCore.safeParse(rb && rb.value, null);
@@ -1522,7 +1529,7 @@ async function loadAll(){
   renderAll();
 }
 async function persist(key){
-  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides};
+  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap};
   try{
     const res = await window.storage.set(key, JSON.stringify(map[key]), true);
     if(!res){ showToast('Save failed, try again'); }
@@ -1843,6 +1850,8 @@ function renderAll(){
   stamp.classList.toggle('sup', currentUser.role==='supervisor');
   const adminBtn = document.getElementById('adminPanelBtn');
   if(adminBtn) adminBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
+  const erpBtn = document.getElementById('erpImportBtn');
+  if(erpBtn) erpBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
   const fab = document.getElementById('aiFab');
   if(fab) fab.style.display = 'flex';
 
@@ -2672,6 +2681,11 @@ function pickQuickDate(days){
 }
 
 async function saveVisit(){
+  // Double-tap guard: repeated saves within a few seconds created duplicate
+  // visit rows in the field (verified against real exported data).
+  const now = Date.now();
+  if(window._lastVisitSaveAt && now - window._lastVisitSaveAt < 4000){ showToast('Already saving…'); return; }
+  window._lastVisitSaveAt = now;
   let clinicId = selectedClinicId;
   const rep = logAsRep;
   if(newClinicMode){
@@ -4646,6 +4660,186 @@ async function saveCategoryGuide(cat){
   await persist('categoryGuides');
   showToast('📚 Guide saved');
   openCategoryGuide(cat);
+}
+
+// ---- ERP IMPORT & RECONCILIATION (supervisor only) ----
+let _erpParsed = null;      // parse result held between the parse and save steps
+let _erpUnmatched = [];     // customer names awaiting a mapping choice
+function erpPeriods(){ return (erpSales && Array.isArray(erpSales.periods)) ? erpSales.periods : []; }
+function packErpRows(rows){ return rows.map(r=>[r.date,r.doc,r.type==='return'?1:0,r.product,r.qty,r.gross,r.net,r.sret,r.salesman,r.brand,r.customer,r.cls]); }
+function unpackErpRows(packed){ return (packed||[]).map(a=>({date:a[0],doc:a[1],type:a[2]?'return':'invoice',product:a[3],qty:a[4],gross:a[5],net:a[6],sret:a[7],salesman:a[8],brand:a[9],customer:a[10],cls:a[11]})); }
+
+function openErpImport(){
+  if(currentUser.role!=='supervisor'){ showToast('Supervisor only'); return; }
+  const periods = erpPeriods().slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
+  showModal(`
+    <h3 style="margin-top:0;">📥 ERP sales import</h3>
+    <div style="color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px;">
+      Upload the EXceed sales-detail export. <b>CSV is best</b> (in Excel: File → Save As → CSV).
+      Or open the PDF report, Select All (Ctrl+A), Copy, and paste the text below.</div>
+    <input type="file" id="erpFile" accept=".csv,.txt,text/csv,text/plain" onchange="erpHandleFile(this)">
+    <label style="margin-top:10px;">…or paste the report text here</label>
+    <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows or the PDF report text"></textarea>
+    <button class="btn secondary small" style="margin-top:8px;" onclick="erpParse(document.getElementById('erpPaste').value)">Read pasted text</button>
+    ${periods.length?`<div class="section-title">Saved sales periods</div>
+      ${periods.map(p=>`<div class="card" style="padding:12px 14px; margin-bottom:8px;">
+        <div class="row-between">
+          <div><div style="font-weight:700; font-size:13.5px;">${fmtDate(p.from)} – ${fmtDate(p.to)}</div>
+          <div style="color:var(--muted); font-size:12px;">${money(p.net)} net · ${p.rowCount} lines</div></div>
+          <div style="display:flex; gap:6px; flex-shrink:0;">
+            <button class="chip small" onclick="openErpRecon('${p.id}')">📊 Report</button>
+            <button class="chip small" onclick="deleteErpPeriod('${p.id}')">🗑</button>
+          </div>
+        </div>
+      </div>`).join('')}`:''}
+  `);
+}
+function erpHandleFile(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = () => erpParse(String(reader.result||''));
+  reader.onerror = () => showToast('Could not read the file');
+  reader.readAsText(f);
+}
+function erpParse(text){
+  if(!text || !text.trim()){ showToast('Nothing to read yet'); return; }
+  const res = UMCore.parseErpFile(text);
+  if(res.error){
+    showToast(res.error==='UNRECOGNIZED' ? 'File format not recognized — export as CSV and try again' : 'No data rows found in the file');
+    return;
+  }
+  const totals = UMCore.erpTotals(res.rows);
+  const guess = UMCore.guessRepMap(Object.keys(totals.bySalesman), REPS);
+  _erpParsed = { rows: res.rows, totals, guess };
+  showModal(`
+    <h3 style="margin-top:0;">✅ File recognized — verify before saving</h3>
+    <div class="card">
+      <div class="spec-row"><span class="k">Period found</span><span class="v">${fmtDate(totals.from)} – ${fmtDate(totals.to)}</span></div>
+      <div class="spec-row"><span class="k">Lines</span><span class="v">${totals.lines}${res.skipped?` (+${res.skipped} skipped)`:''}</span></div>
+      <div class="spec-row"><span class="k">Invoices / returns</span><span class="v">${totals.invoiceCount} / ${totals.returnCount}</span></div>
+      <div class="spec-row"><span class="k">Net sales</span><span class="v">${money(totals.net)}</span></div>
+      <div class="spec-row"><span class="k">Returned value</span><span class="v">${money(totals.sret)}</span></div>
+    </div>
+    <div style="color:var(--muted); font-size:12.5px; margin:8px 0;">Check the net total against the report footer — if it matches, the file was read correctly.</div>
+    <div class="section-title">Who is who? (ERP name → your rep)</div>
+    <div class="card">
+      ${Object.keys(totals.bySalesman).map((sm,i)=>`
+        <div class="row-between" style="gap:8px; padding:6px 0; ${i?'border-top:1px solid var(--line);':''}">
+          <div style="flex:1; font-size:13px;">${esc(sm)}<br><span style="color:var(--muted); font-size:11.5px;">${money(totals.bySalesman[sm].net)} net</span></div>
+          <select id="erpRep-${i}" style="width:150px;">
+            <option value="">— not my team —</option>
+            ${REPS.map(r=>`<option value="${esc(r)}" ${_erpParsed.guess[sm]===r?'selected':''}>${esc(r)}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+    </div>
+    <button class="btn" style="margin-top:12px;" onclick="erpSavePeriod()">💾 Save & analyze</button>
+  `);
+}
+async function erpSavePeriod(){
+  if(!_erpParsed) return;
+  const salesmen = Object.keys(_erpParsed.totals.bySalesman);
+  const repMap = {};
+  salesmen.forEach((sm,i)=>{
+    const sel = document.getElementById('erpRep-'+i);
+    repMap[sm] = sel && sel.value ? sel.value : null;
+  });
+  const t = _erpParsed.totals;
+  erpSales.periods = erpPeriods().filter(p=>!(p.from===t.from && p.to===t.to)); // re-import replaces
+  const period = { id: uid(), from: t.from, to: t.to, net: Math.round(t.net*1000)/1000,
+    rowCount: t.lines, importedAt: new Date().toISOString(), repMap, rows: packErpRows(_erpParsed.rows) };
+  erpSales.periods.push(period);
+  await persist('erpSales');
+  _erpParsed = null;
+  showToast('📥 Sales period saved');
+  openErpRecon(period.id);
+}
+async function deleteErpPeriod(id){
+  erpSales.periods = erpPeriods().filter(p=>p.id!==id);
+  await persist('erpSales');
+  showToast('Deleted');
+  openErpImport();
+}
+async function saveErpCustMap(idx, value, periodId){
+  const cust = _erpUnmatched[idx];
+  if(!cust) return;
+  if(value) erpMap[cust] = value; else delete erpMap[cust];
+  await persist('erpMap');
+  openErpRecon(periodId);
+}
+function erpClinicOptions(){
+  return clinics.filter(c=>c.cls!=='Closed').slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+}
+function openErpRecon(id){
+  const p = erpPeriods().find(x=>x.id===id);
+  if(!p){ showToast('Period not found'); return; }
+  const rows = unpackErpRows(p.rows);
+  const rec = UMCore.reconcileErp({ rows, visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to });
+  _erpUnmatched = rec.unmatchedCustomers.slice();
+  const kdRow = (label, val, color) => `<div class="report-line"><span>${label}</span><span class="v" ${color?`style="color:${color};"`:''}>${val}</span></div>`;
+  const monthPrefix = todayStr().slice(0,7);
+  const repCard = r => {
+    const t = targets[r.rep] || {};
+    const inThisMonth = (p.from||'').slice(0,7) === monthPrefix;
+    const targetBar = (t.revenue > 0 && inThisMonth) ? (()=>{
+      const pct = Math.min(100, Math.round(r.erp.net / t.revenue * 100));
+      return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)</div>
+        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${pct>=100?'var(--sage)':pct>=60?'#FF9500':'var(--coral)'};"></div></div>`;
+    })() : '';
+    return `
+    <div class="section-title">👤 ${esc(r.rep)}</div>
+    <div class="card">
+      ${kdRow('ERP net sales', money(r.erp.net))}
+      ${kdRow('— from clinics/customers', money(r.erp.clinicNet))}
+      ${kdRow('— from online/channels', money(r.erp.channelNet))}
+      ${kdRow('Invoices', r.erp.invoices)}
+      ${r.erp.returns>0.005?kdRow('Returned value', money(r.erp.returns), 'var(--coral)'):''}
+      ${kdRow('Visits logged (deduped)', r.app.visits)}
+      ${kdRow('Orders logged in app', r.app.orders + ' (' + money(r.app.logged) + ')')}
+      ${kdRow('Visit→invoice linkage', r.linkagePct + '%', r.linkagePct>=50?'var(--sage)':'#FF9500')}
+      ${targetBar}
+    </div>
+    ${r.matched.length?`<div class="card" style="border-left:4px solid var(--sage);">
+      <div style="font-weight:700; font-size:13px; margin-bottom:6px;">✅ Visited AND invoiced</div>
+      ${r.matched.map(m=>`<div class="report-line"><span>${esc(m.clinicName)} <span style="color:var(--muted);">(${m.visits} visit${m.visits===1?'':'s'})</span></span><span class="v">${money(m.net)}</span></div>`).join('')}
+    </div>`:''}
+    ${r.visitedNoInvoice.length?`<div class="card" style="border-left:4px solid #FF9500;">
+      <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🕓 Visited, no invoice yet (pipeline)</div>
+      ${r.visitedNoInvoice.map(m=>`<div class="report-line"><span>${esc(m.clinicName)}</span><span class="v">${m.visits} visit${m.visits===1?'':'s'}</span></div>`).join('')}
+    </div>`:''}
+    ${r.invoicedNoVisit.length?`<div class="card" style="border-left:4px solid var(--coral);">
+      <div style="font-weight:700; font-size:13px; margin-bottom:6px;">⚠️ Invoiced with NO logged visit</div>
+      <div style="color:var(--muted); font-size:12px; margin-bottom:6px;">Phone sales, or visits that were never logged — worth asking about.</div>
+      ${r.invoicedNoVisit.map(m=>`<div class="report-line"><span>${esc(m.customer)}</span><span class="v">${money(m.net)}</span></div>`).join('')}
+    </div>`:''}
+    ${(r.app.unknownClinic||r.app.zeroOrders)?`<div class="card">
+      <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🧹 Logging quality</div>
+      ${r.app.unknownClinic?kdRow('Visits without a picked clinic', r.app.unknownClinic, '#FF9500'):''}
+      ${r.app.zeroOrders?kdRow('Orders saved with 0.00 value', r.app.zeroOrders, '#FF9500'):''}
+    </div>`:''}`;
+  };
+  showModal(`
+    <h3 style="margin-top:0;">📊 ERP reconciliation</h3>
+    <div style="color:var(--muted); font-size:13px; margin-bottom:10px;">${fmtDate(p.from)} – ${fmtDate(p.to)} · ERP invoices vs visits logged in this app</div>
+    ${rec.dupRows?`<div class="nudge" style="margin-bottom:10px;">🧹 ${rec.dupRows} duplicate visit row${rec.dupRows===1?'':'s'} detected and ignored in these numbers.</div>`:''}
+    ${rec.perRep.length?rec.perRep.map(repCard).join(''):'<div class="empty">No rows map to your team — check the salesman mapping when importing.</div>'}
+    ${_erpUnmatched.length?`<div class="section-title">🔗 Unrecognized customer names</div>
+    <div class="card">
+      <div style="color:var(--muted); font-size:12.5px; margin-bottom:8px;">Tell me once who these ERP customers are — I'll remember forever.</div>
+      ${_erpUnmatched.map((cust,i)=>`
+        <div style="padding:6px 0; ${i?'border-top:1px solid var(--line);':''}">
+          <div style="font-size:13px; margin-bottom:4px;">${esc(cust)}</div>
+          <select onchange="saveErpCustMap(${i}, this.value, '${esc(p.id)}')" style="width:100%;">
+            <option value="">— match to… —</option>
+            <option value="@channel">🌐 Online / channel sale (not a clinic)</option>
+            <option value="@ignore">🚫 Ignore this customer</option>
+            ${erpClinicOptions()}
+          </select>
+        </div>`).join('')}
+    </div>`:''}
+    <button class="btn secondary" style="margin-top:12px;" onclick="openErpImport()">‹ Back to imports</button>
+  `);
 }
 
 // ---- REPORTS ----
