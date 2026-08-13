@@ -771,6 +771,171 @@
     return out;
   }
 
+  // ---- Minimal XLSX reader (no libraries) ----
+  // .xlsx is a ZIP of XML files; browsers and Node both ship the pieces we
+  // need (DataView + DecompressionStream). Returns [{name, rows[][]}].
+  function xmlUnescape(s){
+    return String(s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+  }
+  async function inflateRaw(bytes){
+    var ds = new DecompressionStream('deflate-raw');
+    var stream = new Blob([bytes]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  async function readXlsx(buffer){
+    var u8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    var dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    var eocd = -1;
+    for(var i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65536); i--){
+      if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+    }
+    if(eocd < 0) throw new Error('NOT_ZIP');
+    var count = dv.getUint16(eocd + 10, true);
+    var p = dv.getUint32(eocd + 16, true);
+    var entries = {};
+    var td = new TextDecoder();
+    for(var f = 0; f < count; f++){
+      if(dv.getUint32(p, true) !== 0x02014b50) break;
+      var method = dv.getUint16(p + 10, true);
+      var csize = dv.getUint32(p + 20, true);
+      var nlen = dv.getUint16(p + 28, true);
+      var elen = dv.getUint16(p + 30, true);
+      var clen = dv.getUint16(p + 32, true);
+      var lho = dv.getUint32(p + 42, true);
+      entries[td.decode(u8.subarray(p + 46, p + 46 + nlen))] = { method: method, csize: csize, lho: lho };
+      p += 46 + nlen + elen + clen;
+    }
+    async function readEntry(name){
+      var e = entries[name];
+      if(!e || dv.getUint32(e.lho, true) !== 0x04034b50) return null;
+      var start = e.lho + 30 + dv.getUint16(e.lho + 26, true) + dv.getUint16(e.lho + 28, true);
+      var data = u8.subarray(start, start + e.csize);
+      return td.decode(e.method === 0 ? data : await inflateRaw(data));
+    }
+    var shared = [];
+    var ss = await readEntry('xl/sharedStrings.xml');
+    if(ss){
+      (ss.match(/<si[\s>][\s\S]*?<\/si>/g) || []).forEach(function(si){
+        shared.push(xmlUnescape((si.match(/<t[^>]*>([\s\S]*?)<\/t>/g) || [])
+          .map(function(t){ return t.replace(/<t[^>]*>/, '').replace('</t>', ''); }).join('')));
+      });
+    }
+    var wb = (await readEntry('xl/workbook.xml')) || '';
+    var relXml = (await readEntry('xl/_rels/workbook.xml.rels')) || '';
+    var rels = {};
+    (relXml.match(/<Relationship\b[^>]*\/?>/g) || []).forEach(function(r){
+      var id = (r.match(/Id="([^"]+)"/) || [])[1];
+      var tg = (r.match(/Target="([^"]+)"/) || [])[1];
+      if(id && tg) rels[id] = (tg.charAt(0) === '/' ? tg.slice(1) : 'xl/' + tg.replace(/^xl\//, ''));
+    });
+    var sheets = [];
+    var tags = wb.match(/<sheet\b[^>]*\/?>/g) || [];
+    for(var s = 0; s < tags.length; s++){
+      var nm = xmlUnescape((tags[s].match(/name="([^"]+)"/) || [])[1] || ('Sheet' + (s + 1)));
+      var rid = (tags[s].match(/r:id="([^"]+)"/) || [])[1];
+      var xml = await readEntry(rels[rid] || ('xl/worksheets/sheet' + (s + 1) + '.xml'));
+      if(!xml) continue;
+      var rows = [];
+      var cellRe = /<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+      var m;
+      while((m = cellRe.exec(xml))){
+        var attrs = m[1], body = m[2] || '';
+        var ref = (attrs.match(/r="([A-Z]+)(\d+)"/) || []);
+        if(!ref[1]) continue;
+        var col = 0;
+        for(var L = 0; L < ref[1].length; L++) col = col * 26 + (ref[1].charCodeAt(L) - 64);
+        var rowIdx = parseInt(ref[2], 10) - 1;
+        var t = (attrs.match(/t="([^"]+)"/) || [])[1] || '';
+        var val = '';
+        if(t === 'inlineStr'){
+          var it = body.match(/<t[^>]*>([\s\S]*?)<\/t>/);
+          val = it ? xmlUnescape(it[1]) : '';
+        } else {
+          var vm = body.match(/<v>([\s\S]*?)<\/v>/);
+          if(vm) val = t === 's' ? (shared[parseInt(vm[1], 10)] || '') : xmlUnescape(vm[1]);
+        }
+        (rows[rowIdx] = rows[rowIdx] || [])[col - 1] = val;
+      }
+      for(var rI = 0; rI < rows.length; rI++){
+        if(!rows[rI]){ rows[rI] = []; continue; }
+        for(var cI = 0; cI < rows[rI].length; cI++) if(rows[rI][cI] == null) rows[rI][cI] = '';
+      }
+      sheets.push({ name: nm, rows: rows });
+    }
+    return sheets;
+  }
+
+  // Brand names differ between the DSR targets sheet and the ERP sales detail
+  // ("Philips Sonicare" vs "Philips Export BV", "BHF" vs "Beverly Hills"...).
+  var BRAND_ALIASES = {
+    philipssonicare: 'philips', philipsexportbv: 'philips', philips: 'philips',
+    bhf: 'beverly hills', beverlyhillsformula: 'beverly hills', beverlyhills: 'beverly hills',
+    shenzen: 'shenzhen', shenzhen: 'shenzhen',
+    everbrands: 'eversmile', eversmile: 'eversmile',
+    combobundlekit: 'bundles', ultramed: 'bundles',
+    tepemarketing: 'tepe', tepe: 'tepe',
+    thebreathco: 'the breath co', waterpik: 'waterpik', univet: 'univet',
+    hismile: 'hismile', flash: 'flash', undo: 'undo', silonn: 'silonn',
+    intensiv: 'intensiv', blbiotech: 'b&l biotech',
+  };
+  function normBrand(s){
+    var key = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return BRAND_ALIASES[key] || String(s || '').toLowerCase().trim();
+  }
+
+  // Parses the DSR targets workbook: blocks of rows per salesman (name in the
+  // first column once, then one row per brand target, closed by a "<name>
+  // Total" row carrying the overall target).
+  function parseDsrTargets(sheets, reps){
+    var out = { targets: {}, matched: [], unmatched: [], error: null };
+    var found = {};
+    (sheets || []).forEach(function(sheet){
+      var rows = sheet.rows || [];
+      var hIdx = -1, cName = -1, cBrand = -1, cTarget = -1;
+      for(var i = 0; i < Math.min(rows.length, 15); i++){
+        var r = rows[i] || [], nc = -1, bc = -1, tc = -1;
+        for(var j = 0; j < r.length; j++){
+          var h = String(r[j] || '').toLowerCase().trim();
+          if(nc < 0 && /salesman|sales\s*person|name|rep\b|employee/.test(h)) nc = j;
+          if(bc < 0 && /^brand/.test(h)) bc = j;
+          if(tc < 0 && /^target/.test(h)) tc = j;
+        }
+        if(nc >= 0 && tc >= 0){ hIdx = i; cName = nc; cBrand = bc; cTarget = tc; break; }
+      }
+      if(hIdx < 0) return;
+      var current = null;
+      for(var r2 = hIdx + 1; r2 < rows.length; r2++){
+        var row = rows[r2] || [];
+        var name = String(row[cName] || '').trim();
+        var brand = cBrand >= 0 ? String(row[cBrand] || '').trim() : '';
+        var target = erpNum(row[cTarget]);
+        if(name && /total\s*$/i.test(name)){
+          var base = name.replace(/\s*total\s*$/i, '').trim();
+          if(found[base] && target > 0) found[base].total = target;
+          current = null;
+          continue;
+        }
+        if(name){ current = name; found[current] = found[current] || { total: 0, brands: {} }; }
+        if(current && brand && target > 0) found[current].brands[brand] = Math.round(target * 100) / 100;
+      }
+    });
+    var names = Object.keys(found);
+    if(!names.length){ out.error = 'NO_TARGETS'; return out; }
+    var map = guessRepMap(names, reps);
+    names.forEach(function(nm){
+      var f = found[nm];
+      var total = f.total || Object.keys(f.brands).reduce(function(s, b){ return s + f.brands[b]; }, 0);
+      total = Math.round(total * 100) / 100;
+      if(!map[nm]){ if(total > 0) out.unmatched.push(nm); return; }
+      if(!(total > 0)) return;
+      out.targets[map[nm]] = { revenue: total, brands: f.brands };
+      out.matched.push({ name: nm, rep: map[nm], revenue: total, brandCount: Object.keys(f.brands).length });
+    });
+    if(!out.matched.length){ out.error = 'NO_MATCH'; return out; }
+    return out;
+  }
+
   // Parses a targets file: a CSV with name + target columns, or plain
   // "Renova 12000" lines. Names are fuzzy-matched to app reps.
   // Returns {targets: {rep:{revenue[,visits]}}, matched:[], unmatched:[], error}
@@ -936,6 +1101,6 @@
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
-    parseTargetsFile
+    parseTargetsFile, readXlsx, parseDsrTargets, normBrand
   };
 });
