@@ -437,12 +437,349 @@
     return out.sort((a, b) => rank[a.level] - rank[b.level]);
   }
 
+  // ==== ERP IMPORT & RECONCILIATION ====
+  // Parses EXceed ERP sales-detail exports (CSV export, or text copied/extracted
+  // from the PDF report) into normalized line items, then reconciles them
+  // against the visits logged in this app.
+
+  var ERP_BRANDS = ['WATERPIK', 'FLASH', 'Philips Export BV', 'The Breath Co.', 'TEPE',
+    'Hismile', 'UNDO', 'Univet', 'Beverly Hills Formula', 'Beverly Hills', 'Silonn',
+    'EverSmile', 'Ultramed', 'Maintenance', 'Shenzhen', 'B&L Biotech', 'Intensiv',
+    'Tepe - Marketing', 'Curasept', 'Spotlight'];
+  // ERP "customers" that are sales channels, not clinics we visit.
+  var ERP_CHANNELS = ['my fatoorah', 'individual - customers', 'customers -univet',
+    'customers - univet', 'online customers', 'cash customer'];
+
+  // "1,234.500" → 1234.5 · "(6.763-)" / "6.763-" / "(1.00-)" → negative · '' → 0
+  function erpNum(s){
+    if(typeof s === 'number') return s;
+    s = String(s == null ? '' : s).replace(/,/g, '').trim();
+    if(!s) return 0;
+    var neg = s.charAt(0) === '(' || /-\)?$/.test(s);
+    s = s.replace(/[()\-]/g, '');
+    var v = parseFloat(s);
+    if(isNaN(v)) return 0;
+    return neg ? -v : v;
+  }
+  // Accepts dd-mm-yyyy, dd/mm/yyyy or yyyy-mm-dd → ISO yyyy-mm-dd (or null).
+  function erpDate(s){
+    s = String(s || '').trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(m) return s;
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if(m) return m[3] + '-' + ('0'+m[2]).slice(-2) + '-' + ('0'+m[1]).slice(-2);
+    return null;
+  }
+  // Minimal CSV parser that honors quoted fields (embedded commas/newlines).
+  function parseCsvText(text){
+    var rows = [], row = [], cur = '', inQ = false;
+    for(var i = 0; i < text.length; i++){
+      var ch = text[i];
+      if(inQ){
+        if(ch === '"'){ if(text[i+1] === '"'){ cur += '"'; i++; } else inQ = false; }
+        else cur += ch;
+      } else if(ch === '"') inQ = true;
+      else if(ch === ','){ row.push(cur); cur = ''; }
+      else if(ch === '\n' || ch === '\r'){
+        if(ch === '\r' && text[i+1] === '\n') i++;
+        row.push(cur); cur = '';
+        if(row.length > 1 || row[0] !== '') rows.push(row);
+        row = [];
+      } else cur += ch;
+    }
+    if(cur !== '' || row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
+  // Finds which column is which by header keywords; tolerant of naming drift.
+  function detectErpColumns(header){
+    var idx = {};
+    var find = function(res, avoid){
+      for(var i = 0; i < header.length; i++){
+        var h = String(header[i] || '').toLowerCase().trim();
+        if(!h) continue;
+        if(avoid && avoid.test(h)) continue;
+        for(var j = 0; j < res.length; j++) if(res[j].test(h)) return i;
+      }
+      return -1;
+    };
+    idx.date = find([/^date$/, /invoice date/, /^date\b/], /stock|issue/);
+    idx.doc = find([/invoice\s*#/, /^invoice/, /voucher/, /doc/]);
+    idx.product = find([/^product/, /^item(?! code)/, /description/], /code/);
+    idx.qty = find([/^qty/, /quantity/]);
+    idx.gross = find([/gross/]);
+    idx.salesman = find([/^name$/, /salesman/, /sales\s*person/, /sales\s*man/]);
+    idx.sret = find([/return\s*amount/, /sales\s*return$/]);
+    idx.net = find([/net\s*sales/, /^net/]);
+    idx.brand = find([/brand/]);
+    idx.customer = find([/customer/], /class/);
+    idx.cls = find([/class/]);
+    // The essentials without which reconciliation is meaningless:
+    if(idx.date < 0 || idx.doc < 0 || idx.net < 0 || idx.salesman < 0) return null;
+    return idx;
+  }
+  // CSV export → normalized rows. Returns {rows, skipped, error}.
+  function parseErpCsv(text){
+    var all = parseCsvText(String(text || ''));
+    var headerAt = -1, cols = null;
+    for(var i = 0; i < Math.min(all.length, 25); i++){
+      var c = detectErpColumns(all[i]);
+      if(c){ headerAt = i; cols = c; break; }
+    }
+    if(!cols) return { rows: [], skipped: 0, error: 'NO_HEADER' };
+    var rows = [], skipped = 0;
+    for(var r = headerAt + 1; r < all.length; r++){
+      var line = all[r];
+      var date = erpDate(line[cols.date]);
+      var doc = String(line[cols.doc] || '').trim();
+      if(!date || !doc){ skipped++; continue; }
+      rows.push({
+        date: date, doc: doc,
+        type: /^SRT|return/i.test(doc) ? 'return' : 'invoice',
+        product: String(cols.product >= 0 ? line[cols.product] || '' : '').trim(),
+        qty: cols.qty >= 0 ? erpNum(line[cols.qty]) : 0,
+        gross: cols.gross >= 0 ? erpNum(line[cols.gross]) : 0,
+        net: erpNum(line[cols.net]),
+        sret: cols.sret >= 0 ? erpNum(line[cols.sret]) : 0,
+        salesman: String(line[cols.salesman] || '').trim(),
+        brand: String(cols.brand >= 0 ? line[cols.brand] || '' : '').trim(),
+        customer: String(cols.customer >= 0 ? line[cols.customer] || '' : '').trim(),
+        cls: String(cols.cls >= 0 ? line[cols.cls] || '' : '').trim(),
+      });
+    }
+    return { rows: rows, skipped: skipped, error: rows.length ? null : 'NO_ROWS' };
+  }
+  // Text extracted/copied from the EXceed PDF sales report → normalized rows.
+  function parseErpPdfText(text){
+    var chunks = String(text || '').split(/(?=\d{2}[-\/]\d{2}[-\/]\d{4}\s+S(?:INV|RT)\d+)/);
+    var pat = /(\(?[\d,]+\.\d{2}-?\)?)\s+([\d,]+\.\d{3})\s+([\d,]+\.\d{3})\s+([\d,]+\.\d{3})\s+([A-Za-z][A-Za-z .\-]*?)\s*(\(?[\d,]+\.\d{3}-?\)?)\s+(\(?[\d,]+\.\d{3}-?\)?)\s+(\(?[\d,]+\.\d{3}-?\)?)/;
+    var rows = [];
+    for(var i = 0; i < chunks.length; i++){
+      var head = chunks[i].match(/^(\d{2}[-\/]\d{2}[-\/]\d{4})\s+(S(?:INV|RT)\d+)\s+(\d+)\s+([\s\S]*)/);
+      if(!head) continue;
+      var date = erpDate(head[1]), doc = head[2], rest = head[4];
+      var m = rest.match(pat);
+      if(!m || !date) continue;
+      var tail = rest.slice(rest.indexOf(m[0]) + m[0].length).replace(/^\s+/, '');
+      var brand = null;
+      for(var b = 0; b < ERP_BRANDS.length; b++){
+        if(tail.toUpperCase().indexOf(ERP_BRANDS[b].toUpperCase()) === 0){ brand = ERP_BRANDS[b]; break; }
+      }
+      var custRaw = brand ? tail.slice(brand.length) : tail;
+      var cm = custRaw.replace(/\n/g, ' ').match(/^[A-Za-z&().\-' ,]+/);
+      var custName = '';
+      if(cm){
+        // Trailing product-code fragments leak into the name run ("My Fatoorah WP",
+        // "...W.L.L (Sup"); drop all-caps code tokens and unclosed parens from the end.
+        var ctoks = cm[0].trim().split(/\s+/);
+        while(ctoks.length > 1){
+          var last = ctoks[ctoks.length - 1];
+          if(/^[A-Z][A-Z\-]{0,6}$/.test(last) || /^\([A-Za-z]*$/.test(last)) ctoks.pop();
+          else break;
+        }
+        custName = ctoks.join(' ').replace(/[ ,\-]+$/, '');
+      }
+      var cls = '';
+      var clsList = ['Online Customers', 'Hypermarkets and Supermarkets', 'Clinics', 'Pharmacy', 'Pharmacies', 'Co-Op', 'Hospitals', 'Dental Centers'];
+      var flat = chunks[i].replace(/\s+/g, ' ');
+      for(var cci = 0; cci < clsList.length; cci++){ if(flat.indexOf(clsList[cci]) >= 0){ cls = clsList[cci]; break; } }
+      rows.push({
+        date: date, doc: doc, type: doc.indexOf('SRT') === 0 ? 'return' : 'invoice',
+        product: rest.slice(0, rest.indexOf(m[0])).replace(/\s+/g, ' ').trim(),
+        qty: erpNum(m[1]), gross: erpNum(m[2]), net: erpNum(m[8]), sret: erpNum(m[6]),
+        salesman: m[5].trim(), brand: brand || '', customer: custName, cls: cls,
+      });
+    }
+    return { rows: rows, skipped: 0, error: rows.length ? null : 'NO_ROWS' };
+  }
+  function parseErpFile(text){
+    // Try CSV first (structured wins); fall back to the PDF text pattern.
+    var csv = parseErpCsv(text);
+    if(!csv.error) return csv;
+    var pdf = parseErpPdfText(text);
+    if(!pdf.error) return pdf;
+    return { rows: [], skipped: 0, error: 'UNRECOGNIZED' };
+  }
+
+  function levenshtein(a, b){
+    a = String(a); b = String(b);
+    var prev = [], cur = [];
+    for(var j = 0; j <= b.length; j++) prev[j] = j;
+    for(var i = 1; i <= a.length; i++){
+      cur = [i];
+      for(var k = 1; k <= b.length; k++){
+        cur[k] = Math.min(prev[k] + 1, cur[k-1] + 1, prev[k-1] + (a[i-1] === b[k-1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  // ERP salesman names rarely equal app rep names ("Ranova Ayman Mohammed" vs
+  // "Renova"). Guess by comparing each name token with edit distance ≤ 2.
+  function guessRepMap(salesmen, reps){
+    var map = {};
+    (salesmen || []).forEach(function(sm){
+      var tokens = String(sm).toLowerCase().split(/\s+/);
+      var best = null, bestD = 99;
+      (reps || []).forEach(function(rep){
+        var rl = String(rep).toLowerCase();
+        tokens.forEach(function(t){
+          if(!t) return;
+          var d = levenshtein(t, rl);
+          if(d < bestD && d <= 2){ best = rep; bestD = d; }
+        });
+      });
+      map[sm] = best;
+    });
+    return map;
+  }
+  function normClinicName(s){
+    var stop = ['dental', 'center', 'centre', 'clinic', 'clinics', 'pharmacy', 'company',
+      'co', 'wll', 'w.l.l', 'the', 'al', 'international', 'group', 'dr', 'medical', 'general', 'trading'];
+    return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ ]+/g, ' ')
+      .split(/\s+/).filter(function(t){ return t && stop.indexOf(t) < 0; }).join(' ');
+  }
+  function isErpChannel(cust){
+    var c = String(cust || '').toLowerCase();
+    return ERP_CHANNELS.some(function(ch){ return c.indexOf(ch) >= 0; });
+  }
+  // Match one ERP customer name to an app clinic. erpMap overrides win.
+  // Returns {clinicId, channel} — channel=true means "online/channel sale".
+  function matchCustomer(cust, clinics, erpMap){
+    if(erpMap && Object.prototype.hasOwnProperty.call(erpMap, cust)){
+      var v = erpMap[cust];
+      return v === '@channel' ? { clinicId: null, channel: true }
+           : v === '@ignore' ? { clinicId: null, channel: false, ignored: true }
+           : { clinicId: v, channel: false };
+    }
+    if(isErpChannel(cust)) return { clinicId: null, channel: true };
+    var n = normClinicName(cust);
+    if(!n) return { clinicId: null, channel: false };
+    var toks = n.split(' ');
+    var best = null, bestScore = 0;
+    (clinics || []).forEach(function(c){
+      var ct = normClinicName(c.name).split(' ');
+      var ov = toks.filter(function(t){ return ct.indexOf(t) >= 0; }).length;
+      var need = (toks.length === 1 || ct.length === 1) ? 1 : 2;
+      if(ov >= need && ov > bestScore){ best = c.id; bestScore = ov; }
+    });
+    return { clinicId: best, channel: false };
+  }
+  // Duplicate saves show up as identical visit rows; collapse them for fair counts.
+  function dedupeVisits(visits){
+    var seen = {}, unique = [], dup = 0;
+    (visits || []).forEach(function(v){
+      var key = [v.date, v.rep, v.clinicId, v.callOnly ? 1 : 0, v.orderTotal || 0,
+        (v.notes || ''), (v.orders || []).length].join('|');
+      if(seen[key]){ dup++; return; }
+      seen[key] = 1; unique.push(v);
+    });
+    return { unique: unique, dupCount: dup };
+  }
+  function erpTotals(rows){
+    var t = { net: 0, gross: 0, sret: 0, lines: 0, invoices: {}, returns: {}, bySalesman: {}, from: null, to: null };
+    (rows || []).forEach(function(r){
+      t.net += r.net; t.gross += r.gross; t.sret += r.sret; t.lines++;
+      (r.type === 'return' ? t.returns : t.invoices)[r.doc] = 1;
+      var s = t.bySalesman[r.salesman] || (t.bySalesman[r.salesman] = { net: 0, sret: 0, lines: 0 });
+      s.net += r.net; s.sret += r.sret; s.lines++;
+      if(!t.from || r.date < t.from) t.from = r.date;
+      if(!t.to || r.date > t.to) t.to = r.date;
+    });
+    t.invoiceCount = Object.keys(t.invoices).length;
+    t.returnCount = Object.keys(t.returns).length;
+    return t;
+  }
+  // The heart of the evaluation: ERP invoices vs app visits, per app rep.
+  // opts: {rows, visits, clinics, erpMap, repMap, from, to}
+  function reconcileErp(opts){
+    var rows = (opts.rows || []).filter(function(r){ return inRange(r.date, opts.from, opts.to); });
+    var repMap = opts.repMap || {};
+    var clinics = opts.clinics || [];
+    var dd = dedupeVisits(filterVisitsByRange(opts.visits, opts.from, opts.to));
+    var out = { perRep: [], unmatchedCustomers: [], window: { from: opts.from, to: opts.to } };
+    var reps = {};
+    rows.forEach(function(r){ var rep = repMap[r.salesman]; if(rep) reps[rep] = 1; });
+    dd.unique.forEach(function(v){ reps[v.rep] = 1; });
+    var unmatchedSet = {};
+    Object.keys(reps).sort().forEach(function(rep){
+      var erpRows = rows.filter(function(r){ return repMap[r.salesman] === rep; });
+      var appVisits = dd.unique.filter(function(v){ return v.rep === rep; });
+      var byCust = {};
+      erpRows.forEach(function(r){
+        var c = byCust[r.customer] || (byCust[r.customer] = { net: 0, sret: 0, docs: {} });
+        c.net += r.net; c.sret += r.sret; c.docs[r.doc] = 1;
+      });
+      var visitsByClinic = {};
+      appVisits.forEach(function(v){
+        var c = visitsByClinic[v.clinicId] || (visitsByClinic[v.clinicId] = { visits: 0, orders: 0, logged: 0 });
+        c.visits++; if(v.orderTaken){ c.orders++; c.logged += v.orderTotal || 0; }
+      });
+      var matched = [], invoicedNoVisit = [], channelNet = 0, ignoredNet = 0;
+      var matchedClinicIds = {};
+      Object.keys(byCust).forEach(function(cust){
+        var m = matchCustomer(cust, clinics, opts.erpMap);
+        var agg = byCust[cust];
+        if(m.ignored){ ignoredNet += agg.net; return; }
+        if(m.channel){ channelNet += agg.net; return; }
+        if(m.clinicId && visitsByClinic[m.clinicId]){
+          matchedClinicIds[m.clinicId] = 1;
+          var cl = clinics.find(function(c){ return c.id === m.clinicId; });
+          matched.push({ clinicId: m.clinicId, clinicName: cl ? cl.name : m.clinicId,
+            customer: cust, net: agg.net, sret: agg.sret, visits: visitsByClinic[m.clinicId].visits });
+        } else {
+          if(!m.clinicId && !unmatchedSet[cust] && Math.abs(agg.net) + Math.abs(agg.sret) > 0.005){
+            unmatchedSet[cust] = 1; out.unmatchedCustomers.push(cust);
+          }
+          invoicedNoVisit.push({ customer: cust, net: agg.net, sret: agg.sret,
+            clinicId: m.clinicId || null });
+        }
+      });
+      var visitedNoInvoice = [];
+      Object.keys(visitsByClinic).forEach(function(cid){
+        if(matchedClinicIds[cid]) return;
+        var cl = clinics.find(function(c){ return c.id === cid; });
+        visitedNoInvoice.push({ clinicId: cid, clinicName: cl ? cl.name : (cid || 'Unknown'),
+          visits: visitsByClinic[cid].visits, logged: visitsByClinic[cid].logged });
+      });
+      matched.sort(function(a, b){ return b.net - a.net; });
+      invoicedNoVisit.sort(function(a, b){ return b.net - a.net; });
+      visitedNoInvoice.sort(function(a, b){ return b.visits - a.visits; });
+      var erpNet = erpRows.reduce(function(s, r){ return s + r.net; }, 0);
+      var matchedNet = matched.reduce(function(s, m){ return s + m.net; }, 0);
+      var clinicNet = erpNet - channelNet - ignoredNet;
+      out.perRep.push({
+        rep: rep,
+        erp: {
+          net: Math.round(erpNet * 1000) / 1000,
+          invoices: Object.keys(erpRows.reduce(function(a, r){ if(r.type !== 'return') a[r.doc] = 1; return a; }, {})).length,
+          returns: Math.round(erpRows.reduce(function(s, r){ return s + r.sret; }, 0) * 1000) / 1000,
+          channelNet: Math.round(channelNet * 1000) / 1000,
+          clinicNet: Math.round(clinicNet * 1000) / 1000,
+        },
+        app: {
+          visits: appVisits.length,
+          orders: appVisits.filter(function(v){ return v.orderTaken; }).length,
+          logged: Math.round(appVisits.reduce(function(s, v){ return s + (v.orderTotal || 0); }, 0) * 100) / 100,
+          unknownClinic: appVisits.filter(function(v){ return !clinics.some(function(c){ return c.id === v.clinicId; }); }).length,
+          zeroOrders: appVisits.filter(function(v){ return v.orderTaken && !(v.orderTotal > 0); }).length,
+        },
+        matched: matched, visitedNoInvoice: visitedNoInvoice, invoicedNoVisit: invoicedNoVisit,
+        linkagePct: clinicNet > 0 ? Math.round(matchedNet / clinicNet * 100) : 0,
+      });
+    });
+    out.dupRows = dd.dupCount;
+    return out;
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
     inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,
-    contactCount, coachInsights
+    contactCount, coachInsights,
+    erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
+    parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
+    matchCustomer, dedupeVisits, erpTotals, reconcileErp
   };
 });
