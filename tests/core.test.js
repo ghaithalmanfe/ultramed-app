@@ -882,3 +882,32 @@ describe('erpWeeklyTrend', () => {
     assert.deepEqual(core.erpWeeklyTrend(rows, {}), []);
   });
 });
+
+describe('parseTargetsFile', () => {
+  const REPS = ['Renova', 'Mariam'];
+  test('reads a CSV with name and target columns', () => {
+    const csv = 'Salesman Name,Monthly Target,Visits Target\nRanova Ayman Mohammed,"12,000",60\nMariam Zohair,4000,40\nMr. Sundeep Kohli,30000,0\n';
+    const res = core.parseTargetsFile(csv, REPS);
+    assert.equal(res.error, null);
+    assert.equal(res.targets.Renova.revenue, 12000);
+    assert.equal(res.targets.Renova.visits, 60);
+    assert.equal(res.targets.Mariam.revenue, 4000);
+    assert.deepEqual(res.unmatched, ['Mr. Sundeep Kohli']);
+  });
+  test('reads plain "name amount" lines', () => {
+    const res = core.parseTargetsFile('Renova 12000\nMariam: 4,000\n', REPS);
+    assert.equal(res.error, null);
+    assert.equal(res.targets.Renova.revenue, 12000);
+    assert.equal(res.targets.Mariam.revenue, 4000);
+  });
+  test('rejects a wall of ambiguous number lines', () => {
+    const wall = Array.from({length: 20}, (_, i) => `Row Item ${'x'.repeat(1)} ${i + 1}00`).join('\n')
+      .replace(/Row Item x (\d+)/g, 'Rowitem $1'); // letters + trailing number, 20 lines
+    const res = core.parseTargetsFile(wall, REPS);
+    assert.equal(res.error, 'AMBIGUOUS');
+  });
+  test('no matchable names → NO_MATCH, gibberish → NO_TARGETS', () => {
+    assert.equal(core.parseTargetsFile('Somebody Else 900', REPS).error, 'NO_MATCH');
+    assert.equal(core.parseTargetsFile('total garbage without numbers', REPS).error, 'NO_TARGETS');
+  });
+});
