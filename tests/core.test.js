@@ -782,3 +782,72 @@ describe('reconcileErp', () => {
     assert.ok(!rec.unmatchedCustomers.includes('Joury Clinic'));
   });
 });
+
+describe('clinicCoverage', () => {
+  const today = '2026-08-13';
+  const opts = {
+    from: '2026-08-06', to: today, today, repFilter: 'all',
+    clinics: [
+      { id: 'c1', name: 'Visited Clinic', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-20' },
+      { id: 'c2', name: 'Overdue Clinic', rep: 'Mariam', cls: 'B', nextFollowUp: '2026-08-10' },
+      { id: 'c3', name: 'Never Clinic', rep: 'Renova', cls: 'A' },
+      { id: 'c4', name: 'Dormant Clinic', rep: 'Renova', cls: 'B' },
+      { id: 'c5', name: 'Due Soon Clinic', rep: 'Mariam', cls: 'C', nextFollowUp: '2026-08-18' },
+      { id: 'c6', name: 'Closed Clinic', rep: 'Mariam', cls: 'Closed', nextFollowUp: '2026-08-01' },
+      { id: 'c7', name: 'Missed Plan Clinic', rep: 'Renova', cls: 'C' },
+    ],
+    visits: [
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-10', orderTaken: true, orderTotal: 120, doctorIds: ['d1', 'd2'] },
+      { rep: 'Mariam', clinicId: 'c1', date: '2026-08-12', callOnly: true, contactName: 'Dr. X' },
+      { rep: 'Renova', clinicId: 'c4', date: '2026-06-01' }, // long ago → dormant
+    ],
+    dayPlans: { '2026-08-11': { Renova: [{ id: 'c7', note: '' }] } },
+  };
+  test('aggregates a visited clinic with orders, calls and contacts', () => {
+    const cov = core.clinicCoverage(opts);
+    assert.equal(cov.visited.length, 1);
+    const c = cov.visited[0];
+    assert.equal(c.id, 'c1');
+    assert.equal(c.visits, 2);
+    assert.equal(c.calls, 1);
+    assert.equal(c.orders, 1);
+    assert.equal(c.revenue, 120);
+    assert.equal(c.contacts, 3); // 2 doctors + 1 named call contact
+    assert.equal(c.lastDate, '2026-08-12');
+    assert.equal(c.detail.length, 2);
+  });
+  test('needsVisit lists the right reasons, most urgent first', () => {
+    const cov = core.clinicCoverage(opts);
+    const byId = Object.fromEntries(cov.needsVisit.map(c => [c.id, c]));
+    assert.equal(byId.c2.reasons[0].key, 'overdue');
+    assert.equal(byId.c7.reasons[0].key, 'missed-plan');
+    assert.equal(byId.c3.reasons[0].key, 'never-visited');
+    assert.equal(byId.c4.reasons[0].key, 'dormant');
+    assert.ok(byId.c4.reasons[0].days >= 60);
+    assert.equal(byId.c5.reasons[0].key, 'due-soon');
+    assert.equal(byId.c6, undefined); // closed clinics never appear
+    assert.equal(byId.c1, undefined); // visited clinics are not "needed"
+    // ordering: overdue before missed-plan before never before dormant before due-soon
+    assert.deepEqual(cov.needsVisit.map(c => c.id), ['c2', 'c7', 'c3', 'c4', 'c5']);
+  });
+  test('stats add up and coverage % is right', () => {
+    const cov = core.clinicCoverage(opts);
+    assert.equal(cov.stats.totalClinics, 6); // closed excluded
+    assert.equal(cov.stats.visitedCount, 1);
+    assert.equal(cov.stats.coveragePct, 17);
+    assert.equal(cov.stats.needsCount, 5);
+    assert.equal(cov.stats.revenue, 120);
+    assert.equal(cov.stats.contacts, 3);
+  });
+  test('rep filter narrows both lists', () => {
+    const cov = core.clinicCoverage({ ...opts, repFilter: 'Renova' });
+    assert.equal(cov.visited.length, 0);
+    assert.deepEqual(cov.needsVisit.map(c => c.id).sort(), ['c3', 'c4', 'c7']);
+  });
+  test('a joint visit covers the clinic for the secondary rep too', () => {
+    const cov = core.clinicCoverage({ ...opts, repFilter: 'Renova',
+      visits: [...opts.visits, { rep: 'Mariam', withRep: 'Renova', clinicId: 'c3', date: '2026-08-12' }] });
+    assert.ok(cov.visited.some(c => c.id === 'c3'));
+    assert.ok(!cov.needsVisit.some(c => c.id === 'c3'));
+  });
+});
