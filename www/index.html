@@ -4855,7 +4855,7 @@ async function erpImportXlsx(buf){
     const csv = toCsv(sh.rows);
     if(!UMCore.parseErpCsv(csv).error){ erpAutoImport(csv); return; }
   }
-  const tg = UMCore.parseDsrTargets(sheets, REPS);
+  const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: todayStr()});
   if(!tg.error){ await applyTargetsFile(tg); return; }
   showToast('Excel file read, but no sales or targets recognized in it');
 }
@@ -4911,7 +4911,7 @@ async function applyTargetsFile(tg){
   showModal(`
     <h3 style="margin-top:0;">🎯 Targets entered automatically</h3>
     <div class="card">
-      ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.visits?` · ${m.visits} visits`:''}${m.brandCount?` · ${m.brandCount} brand targets`:''}</span></div>`).join('')}
+      ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.achieved?` · achieved ${money(m.achieved)}`:''}${m.visits?` · ${m.visits} visits`:''}${m.brandCount?` · ${m.brandCount} brand targets`:''}</span></div>`).join('')}
     </div>
     ${tg.unmatched.length?`<div class="nudge" style="margin-top:10px;">Skipped (not on your team): ${tg.unmatched.map(esc).join(', ')}</div>`:''}
     <div style="color:var(--muted); font-size:12.5px; margin-top:10px;">The sales coach and target bars now track these numbers automatically.</div>
@@ -5009,7 +5009,8 @@ function openErpRecon(id){
     const targetBar = (t.revenue > 0 && inThisMonth) ? (()=>{
       const pct = Math.min(100, Math.round(r.erp.net / t.revenue * 100));
       return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)</div>
-        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${pct>=100?'var(--sage)':pct>=60?'#FF9500':'var(--coral)'};"></div></div>`;
+        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${pct>=100?'var(--sage)':pct>=60?'#FF9500':'var(--coral)'};"></div></div>
+        ${t.achieved!=null?`<div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Official DSR MTD: ${money(t.achieved)}${t.achievedAsOf?` (as of ${fmtDate(t.achievedAsOf)})`:''}</div>`:''}`;
     })() : '';
     return `
     <div class="section-title">👤 ${esc(r.rep)}</div>
@@ -5035,26 +5036,32 @@ function openErpRecon(id){
       });
       const items = Object.entries(bt).filter(([,t])=>t>0).sort((a,b)=>b[1]-a[1]);
       if(!items.length) return '';
+      const ab = targets[r.rep].achievedBrands || {};
+      const hasOfficial = Object.keys(ab).length > 0;
       return `<div class="card">
-        <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🎯 Brand targets vs invoiced (${esc(r.rep)})</div>
+        <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🎯 Brand targets vs achieved (${esc(r.rep)})</div>
         <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
           <tr><th style="text-align:left; padding:4px 6px; color:var(--muted);">Brand</th>
             <th style="text-align:right; padding:4px 6px; color:var(--muted);">Target</th>
             <th style="text-align:right; padding:4px 6px; color:var(--muted);">Invoiced</th>
+            ${hasOfficial?'<th style="text-align:right; padding:4px 6px; color:var(--muted);">DSR MTD</th>':''}
             <th style="text-align:right; padding:4px 6px; color:var(--muted);">Ach.</th></tr>
           ${items.map(([brand, tgt])=>{
             const act = Math.round((actual[UMCore.normBrand(brand)]||0)*100)/100;
-            const pct = Math.round(act/tgt*100);
+            const official = ab[brand];
+            const achBase = hasOfficial && official != null ? official : act;
+            const pct = Math.round(achBase/tgt*100);
             const col = pct>=60?'var(--sage)':pct>=25?'#FF9500':'var(--coral)';
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(brand)}</td>
               <td style="text-align:right; padding:5px 6px;">${tgt.toFixed(0)}</td>
               <td style="text-align:right; padding:5px 6px;">${act.toFixed(2)}</td>
+              ${hasOfficial?`<td style="text-align:right; padding:5px 6px;">${official!=null?official.toFixed(2):'—'}</td>`:''}
               <td style="text-align:right; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
             </tr>`;
           }).join('')}
         </table></div>
-        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets from the DSR file · invoiced from this ERP period. Green ≥60%, orange ≥25%, red below.</div>
+        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets & official MTD from the DSR file · invoiced from this ERP period${hasOfficial?' · Ach.% uses the official DSR figure when present':''}. Green ≥60%, orange ≥25%, red below.</div>
       </div>`;
     })()}
     ${r.matched.length?`<div class="card" style="border-left:4px solid var(--sage);">
