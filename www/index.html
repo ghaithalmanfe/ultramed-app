@@ -6744,11 +6744,15 @@ function showProReport(){
     <button class="print ${reportFormat==='full'?'':'off'}" onclick="setMrFormat('full')">${reportLang==='ar'?'كامل':'Full'}</button>
     <button class="print ${reportFormat==='summary'?'':'off'}" onclick="setMrFormat('summary')">${reportLang==='ar'?'صفحة واحدة':'1-page'}</button>`;
   document.getElementById('proreport').classList.add('active');
+  // The report replaces the app on screen — without this it renders below
+  // the whole app and only appears after a very long scroll.
+  document.getElementById('app').style.display = 'none';
   document.getElementById('bottomNav').style.display = 'none';
   window.scrollTo(0,0);
 }
 function hideProReport(){
   document.getElementById('proreport').classList.remove('active');
+  document.getElementById('app').style.display = 'block';
   document.getElementById('bottomNav').style.display = 'flex';
 }
 
