@@ -340,17 +340,21 @@
       const t = targets[rep];
       const goal = t.revenue;
       // Target tracking is grounded in the supervisor's uploads, never in what
-      // the reps type by hand: official DSR achieved → imported ERP sales →
-      // app-logged only as a clearly-labeled last resort. Pace math uses the
+      // the reps type by hand. The monthly DSR and the weekly sales files are
+      // both uploads — the FRESHEST one wins, so a weekly sales upload
+      // overtakes an older DSR figure. Pace math uses the winning source's
       // as-of day so a mid-month upload isn't judged against today's calendar.
-      const official = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
-      const erp = !official && erpMtd[rep] && erpMtd[rep].amount != null;
+      const officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
+      const e = erpMtd[rep];
+      const erpOk = e && e.amount != null;
+      const official = officialOk && (!erpOk || t.achievedAsOf >= (e.asOf || ''));
+      const erp = !official && erpOk;
       const mtd = official ? t.achieved
-        : erp ? erpMtd[rep].amount
+        : erp ? e.amount
         : visits.filter(v => v.rep === rep && v.date >= mStart && v.date <= today)
           .reduce(function(sum, v){ return sum + (v.orderTotal || 0); }, 0);
       const dayRef = official ? +t.achievedAsOf.slice(8, 10)
-        : erp && erpMtd[rep].asOf ? +erpMtd[rep].asOf.slice(8, 10) : dayOfMonth;
+        : erp && e.asOf ? +e.asOf.slice(8, 10) : dayOfMonth;
       const src = official ? ' (official DSR figure)' : erp ? ' (from uploaded sales)' : ' (app-logged — upload a sales file for the official figure)';
       const expected = goal * dayRef / daysInMonth;
       const daysLeft = daysInMonth - dayRef;

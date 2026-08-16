@@ -4879,17 +4879,37 @@ function erpMtdMap(){
   Object.keys(sums).forEach(rep => { map[rep] = { amount: Math.round(sums[rep]*100)/100, asOf: asOf[rep] }; });
   return map;
 }
-// Best month-to-date sales for a rep, most authoritative source first:
-// official DSR achieved → ERP invoices → app-logged orders.
+// Month-to-date ERP sales per rep per normalized brand, plus the latest
+// invoice date — for brand tables that must follow the freshest upload.
+function erpBrandMtd(rep){
+  const today = todayStr(), mStart = today.slice(0,7)+'-01';
+  const out = {}; let asOf = null;
+  erpPeriods().filter(p => p.to >= mStart && p.from <= today).forEach(p => {
+    unpackErpRows(p.rows).forEach(r => {
+      if(r.date < mStart || r.date > today) return;
+      if((p.repMap||{})[r.salesman] !== rep) return;
+      const b = UMCore.normBrand(r.brand);
+      out[b] = (out[b]||0) + r.net;
+      if(!asOf || r.date > asOf) asOf = r.date;
+    });
+  });
+  return { byBrand: out, asOf };
+}
+// Best month-to-date sales for a rep. Both the monthly DSR and the weekly
+// sales files are the supervisor's uploads — the FRESHEST one wins, so a
+// weekly sales upload overtakes an older DSR figure and a new DSR takes the
+// lead back. App-logged orders are only the last resort.
 function bestMonthRevenue(rep){
   const m = getMonthDates(todayStr());
   const t = targets[rep] || {};
-  if(t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === todayStr().slice(0,7))
-    return { amount: t.achieved, src: 'DSR official' };
-  const erp = erpRevenueForRange(m[0], m[m.length-1], rep);
-  if(erp != null) return { amount: erp, src: 'ERP invoices' };
+  const em = erpMtdMap()[rep];
+  const officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === todayStr().slice(0,7);
+  const erpOk = em && em.amount != null;
+  if(officialOk && (!erpOk || t.achievedAsOf >= (em.asOf || '')))
+    return { amount: t.achieved, src: `DSR official ${fmtDate(t.achievedAsOf)}`, asOf: t.achievedAsOf };
+  if(erpOk) return { amount: em.amount, src: `ERP invoices to ${fmtDate(em.asOf)}`, asOf: em.asOf };
   const s = UMCore.rangeSummary(m[0], m[m.length-1], rep, {visits, clinics, tasks, events, dayPlans});
-  return { amount: s.revenue, src: 'app-logged' };
+  return { amount: s.revenue, src: 'app-logged', asOf: null };
 }
 
 // Persistent status line inside the import modal — file handling must never
@@ -4943,7 +4963,7 @@ function erpHandleFile(input){
   const reader = new FileReader();
   reader.onerror = () => erpStatus('❌ Could not read the file — try again, or paste the report text below', true);
   if(/\.xlsx?$/i.test(f.name) || /spreadsheet|excel/i.test(f.type || '')){
-    reader.onload = () => { try{ erpImportXlsx(reader.result).catch(fail); }catch(e){ fail(e); } };
+    reader.onload = () => { try{ erpImportXlsx(reader.result, f.name).catch(fail); }catch(e){ fail(e); } };
     reader.readAsArrayBuffer(f);
   } else {
     reader.onload = () => { try{ Promise.resolve(erpAutoImport(String(reader.result||''))).catch(fail); }catch(e){ fail(e); } };
@@ -4952,7 +4972,17 @@ function erpHandleFile(input){
 }
 // Excel path: read the workbook in the browser (no libraries), then feed the
 // sheets to the same sales/targets detectors used for CSV.
-async function erpImportXlsx(buf){
+// "DSR_11.08.26.xlsx" carries its own report date — truer than the upload
+// day for judging which uploaded source is freshest.
+function dsrDateFromName(name){
+  const m = String(name || '').match(/(\d{1,2})[.\-_](\d{1,2})[.\-_](\d{2,4})/);
+  if(!m) return null;
+  let y = +m[3]; if(y < 100) y += 2000;
+  const mo = +m[2], d = +m[1];
+  if(y < 2020 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+async function erpImportXlsx(buf, fname){
   if(typeof DecompressionStream === 'undefined'){
     erpStatus('❌ This browser is too old to open Excel files — update the browser, or export the report as CSV and retry', true);
     return;
@@ -4969,7 +4999,7 @@ async function erpImportXlsx(buf){
     const csv = toCsv(sh.rows);
     if(!UMCore.parseErpCsv(csv).error){ erpAutoImport(csv); return; }
   }
-  const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: todayStr()});
+  const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: dsrDateFromName(fname) || todayStr()});
   if(!tg.error){ await applyTargetsFile(tg); return; }
   erpStatus('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export', true);
 }
@@ -5206,7 +5236,10 @@ function openErpRecon(id){
       const items = Object.entries(bt).filter(([,t])=>t>0).sort((a,b)=>b[1]-a[1]);
       if(!items.length) return '';
       const ab = targets[r.rep].achievedBrands || {};
-      const hasOfficial = Object.keys(ab).length > 0;
+      // The DSR's official brand MTD wins only while it is at least as fresh
+      // as this sales period; a newer weekly sales upload takes over.
+      const hasOfficial = Object.keys(ab).length > 0 &&
+        (targets[r.rep].achievedAsOf || '') >= (p.to || '');
       return `<div class="card">
         <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🎯 Brand targets vs achieved (${esc(r.rep)})</div>
         <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -6659,8 +6692,9 @@ function buildMasterReportBody(lang, format){
     const t = targets[rep] || {};
     if(!(t.revenue > 0)) return null;
     const bm = bestMonthRevenue(rep);
-    const dayRef = (t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === today.slice(0,7))
-      ? +t.achievedAsOf.slice(8,10) : +today.slice(8,10);
+    // Pace/forecast are judged at the winning source's as-of day, so a
+    // mid-month upload isn't measured against today's calendar.
+    const dayRef = bm.asOf ? +bm.asOf.slice(8,10) : +today.slice(8,10);
     const fc = UMCore.forecastMonthEnd(bm.amount, dayRef, daysInMonth);
     const pace = Math.round(bm.amount / (t.revenue * dayRef / daysInMonth) * 100);
     const state = bm.amount >= t.revenue ? 'hit' : pace >= 90 ? 'on' : 'behind';
@@ -6688,10 +6722,16 @@ function buildMasterReportBody(lang, format){
     const t = targets[rep]||{}; const bt = t.brands||{}; const ab = t.achievedBrands||{};
     const items = Object.entries(bt).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
     if(!items.length) return '';
+    // Freshest uploaded source per rep: the DSR's official brand MTD while it
+    // is newest, the weekly sales invoices once they overtake it.
+    const eb = erpBrandMtd(rep);
+    const officialFresh = Object.keys(ab).length > 0 && (t.achievedAsOf||'') >= (eb.asOf||'');
     return `<h3 style="font-size:14px; margin:12px 0 4px;">${esc(rep)}</h3><table class="mr-tbl">
       <tr><th>${L.brandCol}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.ach}</th></tr>
       ${items.map(([br,tg])=>{
-        const a = ab[br]!=null?ab[br]:0; const pct = Math.round(a/tg*100);
+        const a = officialFresh ? (ab[br]!=null?ab[br]:0)
+          : Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
+        const pct = Math.round(a/tg*100);
         return `<tr><td>${esc(br)}</td><td><span class="num">${tg.toFixed(0)}</span></td><td><span class="num">${a.toFixed(2)}</span></td>
           <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
       }).join('')}</table>`;
