@@ -899,6 +899,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
+const APP_REV = 'v24'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -4891,11 +4892,20 @@ function bestMonthRevenue(rep){
   return { amount: s.revenue, src: 'app-logged' };
 }
 
+// Persistent status line inside the import modal — file handling must never
+// fail silently (a missed 2-second toast reads as "nothing happened").
+function erpStatus(msg, isErr){
+  const el = document.getElementById('erpStatus');
+  if(!el){ if(msg) showToast(msg); return; }
+  el.style.display = 'block';
+  el.style.color = isErr ? 'var(--coral)' : 'var(--muted)';
+  el.textContent = msg;
+}
 function openErpImport(){
   if(currentUser.role!=='supervisor'){ showToast('Supervisor only'); return; }
   const periods = erpPeriods().slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
   showModal(`
-    <h3 style="margin-top:0;">📥 Import — fully automatic</h3>
+    <h3 style="margin-top:0;">📥 Import — fully automatic <span style="color:var(--muted); font-size:11px; font-weight:400;">${APP_REV}</span></h3>
     <div style="color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px;">
       Drop the <b>sales-detail export</b> or the <b>DSR targets file</b> — Excel (.xlsx), CSV, or PDF text
       pasted below all work, and I detect which file is which and enter it by myself.
@@ -4903,6 +4913,7 @@ function openErpImport(){
       <b>One file per rep works too</b> — upload Mariam's and Renova's exports separately and
       each is kept as its own report; re-importing one never touches the other.</div>
     <input type="file" id="erpFile" accept=".csv,.txt,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="erpHandleFile(this)">
+    <div id="erpStatus" style="display:none; margin-top:8px; font-size:12.5px; line-height:1.5;"></div>
     <label style="margin-top:10px;">…or paste the report text here</label>
     <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows, PDF report text, or target lines like: Renova 12000"></textarea>
     <button class="btn secondary small" style="margin-top:8px;" onclick="erpAutoImport(document.getElementById('erpPaste').value)">Read pasted text</button>
@@ -4926,22 +4937,30 @@ function openErpImport(){
 function erpHandleFile(input){
   const f = input.files && input.files[0];
   if(!f) return;
+  input.value = ''; // so picking the same file again always re-fires onchange
+  erpStatus(`📖 Reading ${f.name}…`);
+  const fail = e => erpStatus('❌ Import failed: ' + (e && e.message ? e.message : e), true);
   const reader = new FileReader();
-  reader.onerror = () => showToast('Could not read the file');
-  if(/\.xlsx?$/i.test(f.name)){
-    reader.onload = () => erpImportXlsx(reader.result);
+  reader.onerror = () => erpStatus('❌ Could not read the file — try again, or paste the report text below', true);
+  if(/\.xlsx?$/i.test(f.name) || /spreadsheet|excel/i.test(f.type || '')){
+    reader.onload = () => { try{ erpImportXlsx(reader.result).catch(fail); }catch(e){ fail(e); } };
     reader.readAsArrayBuffer(f);
   } else {
-    reader.onload = () => erpAutoImport(String(reader.result||''));
+    reader.onload = () => { try{ Promise.resolve(erpAutoImport(String(reader.result||''))).catch(fail); }catch(e){ fail(e); } };
     reader.readAsText(f);
   }
 }
 // Excel path: read the workbook in the browser (no libraries), then feed the
 // sheets to the same sales/targets detectors used for CSV.
 async function erpImportXlsx(buf){
+  if(typeof DecompressionStream === 'undefined'){
+    erpStatus('❌ This browser is too old to open Excel files — update the browser, or export the report as CSV and retry', true);
+    return;
+  }
   let sheets;
   try{ sheets = await UMCore.readXlsx(buf); }
-  catch(e){ showToast('Could not open this Excel file — save it as CSV and retry'); return; }
+  catch(e){ erpStatus('❌ Could not open this Excel file — save it as CSV and retry', true); return; }
+  erpStatus('🔎 File opened — detecting sales / targets…');
   const toCsv = rows => rows.map(r => (r||[]).map(v => {
     const s = String(v == null ? '' : v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -4952,15 +4971,16 @@ async function erpImportXlsx(buf){
   }
   const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: todayStr()});
   if(!tg.error){ await applyTargetsFile(tg); return; }
-  showToast('Excel file read, but no sales or targets recognized in it');
+  erpStatus('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export', true);
 }
 // One entry point, zero-touch: detect sales vs targets and enter the data.
 // Sales files auto-save when every ERP salesman is already known (stored
 // mapping from a previous import, or a confident fuzzy guess).
 async function erpAutoImport(text){
-  if(!text || !text.trim()){ showToast('Nothing to read yet'); return; }
+  if(!text || !text.trim()){ erpStatus('Nothing to read yet', true); return; }
   const sales = UMCore.parseErpFile(text);
   if(!sales.error){
+    erpStatus('💾 Sales recognized — saving…');
     const totals = UMCore.erpTotals(sales.rows);
     const salesmen = Object.keys(totals.bySalesman);
     const stored = erpSales.repMapGlobal || {};
@@ -4970,7 +4990,7 @@ async function erpAutoImport(text){
       const repMap = {};
       salesmen.forEach(sm => { repMap[sm] = Object.prototype.hasOwnProperty.call(stored, sm) ? stored[sm] : guess[sm]; });
       _erpParsed = { rows: sales.rows, totals, guess: repMap };
-      erpAutoSave(repMap);
+      await erpAutoSave(repMap);
       return;
     }
     erpParse(text); // a brand-new salesman name → verify once, remembered after
@@ -4978,7 +4998,7 @@ async function erpAutoImport(text){
   }
   const tg = UMCore.parseTargetsFile(text, REPS);
   if(!tg.error){ await applyTargetsFile(tg); return; }
-  showToast('Could not recognize this file — export the sales detail or the targets as CSV');
+  erpStatus('❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry', true);
 }
 // A new file only replaces its own salesmen's rows inside overlapping saved
 // periods — so Mariam's file and Renova's file for the same month coexist as
