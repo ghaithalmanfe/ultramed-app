@@ -331,22 +331,27 @@
         detail: 'Planned in the last 14 days but never logged. Reschedule them from the Today screen so the plan stays real.' });
     }
 
-    // 4. Monthly target pace, per rep with a revenue target set.
+    // 4. Monthly target pace, per rep with a sales target set.
     const mStart = today.slice(0, 7) + '-01';
     const daysInMonth = new Date(+today.slice(0, 4), +today.slice(5, 7), 0).getDate();
     const dayOfMonth = +today.slice(8, 10);
+    const erpMtd = opts.erpMtd || {}; // {rep: {amount, asOf}} from uploaded sales files
     Object.keys(targets).filter(r => wantRep(r) && targets[r] && targets[r].revenue > 0).sort().forEach(rep => {
       const t = targets[rep];
       const goal = t.revenue;
-      // Prefer the official achieved figure from the DSR when it covers this
-      // month; fall back to visit-logged revenue. Pace math uses the as-of day
-      // so a mid-month DSR isn't judged against today's calendar.
+      // Target tracking is grounded in the supervisor's uploads, never in what
+      // the reps type by hand: official DSR achieved → imported ERP sales →
+      // app-logged only as a clearly-labeled last resort. Pace math uses the
+      // as-of day so a mid-month upload isn't judged against today's calendar.
       const official = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
+      const erp = !official && erpMtd[rep] && erpMtd[rep].amount != null;
       const mtd = official ? t.achieved
+        : erp ? erpMtd[rep].amount
         : visits.filter(v => v.rep === rep && v.date >= mStart && v.date <= today)
           .reduce(function(sum, v){ return sum + (v.orderTotal || 0); }, 0);
-      const dayRef = official ? +t.achievedAsOf.slice(8, 10) : dayOfMonth;
-      const src = official ? ' (official DSR figure)' : '';
+      const dayRef = official ? +t.achievedAsOf.slice(8, 10)
+        : erp && erpMtd[rep].asOf ? +erpMtd[rep].asOf.slice(8, 10) : dayOfMonth;
+      const src = official ? ' (official DSR figure)' : erp ? ' (from uploaded sales)' : ' (app-logged — upload a sales file for the official figure)';
       const expected = goal * dayRef / daysInMonth;
       const daysLeft = daysInMonth - dayRef;
       if(mtd >= goal){
@@ -416,7 +421,7 @@
       if(share >= 60 && ids.length > 1){
         const c = clinics.find(x => x.id === ids[0]);
         out.push({ level: 'watch', icon: '🥚', key: 'concentration', data: { share: share, name: c ? c.name : '' },
-          title: share + '% of revenue comes from one clinic',
+          title: share + '% of sales comes from one clinic',
           detail: (c ? c.name : 'One clinic') + ' carries this period. Great account — but grow 2-3 more A/B clinics so one slow month there can’t sink the numbers.' });
       }
     }
@@ -469,13 +474,19 @@
     if(isNaN(v)) return 0;
     return neg ? -v : v;
   }
-  // Accepts dd-mm-yyyy, dd/mm/yyyy or yyyy-mm-dd → ISO yyyy-mm-dd (or null).
+  // Accepts dd-mm-yyyy, dd/mm/yyyy, yyyy-mm-dd, or an Excel serial number
+  // (raw .xlsx cells store dates as day counts) → ISO yyyy-mm-dd (or null).
   function erpDate(s){
     s = String(s || '').trim();
-    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if(m) return s;
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m) return m[1] + '-' + m[2] + '-' + m[3];
     m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
     if(m) return m[3] + '-' + ('0'+m[2]).slice(-2) + '-' + ('0'+m[1]).slice(-2);
+    var n = Number(s);
+    if(isFinite(n) && n >= 25569 && n <= 73415){ // 1970-01-01 .. 2100-12-31
+      var d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
+      return d.toISOString().slice(0, 10);
+    }
     return null;
   }
   // Minimal CSV parser that honors quoted fields (embedded commas/newlines).
@@ -519,7 +530,7 @@
     idx.sret = find([/return\s*amount/, /sales\s*return$/]);
     idx.net = find([/net\s*sales/, /^net/]);
     idx.brand = find([/brand/]);
-    idx.customer = find([/customer/], /class/);
+    idx.customer = find([/customer/, /^account$/], /class/);
     idx.cls = find([/class/]);
     // The essentials without which reconciliation is meaningless:
     if(idx.date < 0 || idx.doc < 0 || idx.net < 0 || idx.salesman < 0) return null;
