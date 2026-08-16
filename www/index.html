@@ -808,7 +808,7 @@
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
       <div class="report-line"><span>Contacts seen</span><span class="v" id="repContacts">0</span></div>
       <div class="report-line"><span>Orders taken</span><span class="v" id="repOrders">0</span></div>
-      <div class="report-line"><span id="repRevenueLabel">Revenue</span><span class="v" id="repRevenue">0.00 KD</span></div>
+      <div class="report-line"><span id="repRevenueLabel">Sales</span><span class="v" id="repRevenue">0.00 KD</span></div>
       <div id="repErpRow" style="display:none; color:var(--muted); font-size:12px; padding:2px 0 6px;"><span id="repErpRevenue"></span></div>
       <div class="report-line"><span>Discount given</span><span class="v" id="repDiscount">0.00 KD</span></div>
       <div class="report-line"><span>Clinics covered</span><span class="v" id="repClinics">0</span></div>
@@ -1752,7 +1752,7 @@ function renderCalRangeSummary(){
     <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
       ${tile(s.fieldVisits, 'Visits')}
       ${tile(s.orders, 'Orders')}
-      ${tile(money(s.revenue), 'Revenue')}
+      ${tile(money(s.revenue), 'Sales')}
       ${tile(s.conversion+'%', 'Conversion')}
     </div>
     <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:6px;">
@@ -1927,7 +1927,7 @@ function renderTargetCard(){
     el.innerHTML = currentUser.role==='supervisor'
       ? `<div class="card clickable" onclick="openAdminPanel()" style="margin-bottom:14px;">
           <div style="font-weight:700; font-size:14px;">🎯 Monthly targets</div>
-          <div style="color:var(--muted); font-size:12.5px; margin-top:2px;">Set revenue and visit targets per rep in the admin panel to see live progress here.</div>
+          <div style="color:var(--muted); font-size:12.5px; margin-top:2px;">Set sales and visit targets per rep in the admin panel to see live progress here.</div>
         </div>` : '';
     return;
   }
@@ -1946,7 +1946,7 @@ function renderTargetCard(){
       const bars = [];
       if(t.revenue>0){
         const bm = bestMonthRevenue(r);
-        bars.push(bar(`Revenue (${bm.src})`, `${money(bm.amount)} / ${money(t.revenue)}`, Math.round(bm.amount/t.revenue*100)));
+        bars.push(bar(`Sales (${bm.src})`, `${money(bm.amount)} / ${money(t.revenue)}`, Math.round(bm.amount/t.revenue*100)));
       }
       if(t.visits>0) bars.push(bar('Visits', `${s.fieldVisits} / ${t.visits}`, Math.round(s.fieldVisits/t.visits*100)));
       return `${currentUser.role==='supervisor'?`<div style="font-size:13px; font-weight:700; margin:${bars.length?'10px':'0'} 0 2px;">${esc(r)}</div>`:''}${bars.join('')}`;
@@ -2063,7 +2063,7 @@ function renderToday(){
   const erpWk = erpRevenueForRange(UMCore.localDateStr(weekAgo), todayStr(),
     currentUser.role==='rep' ? currentUser.name : 'all');
   document.getElementById('heroCard').innerHTML = `
-    <div class="htitle">Revenue this week${erpWk!=null?' (ERP-verified)':''}</div>
+    <div class="htitle">Sales this week${erpWk!=null?' (ERP-verified)':''}</div>
     <div class="hbig">${money(erpWk!=null?erpWk:wkRev)}</div>
     <div class="hsub">${wk.length} visit${wk.length===1?'':'s'} · ${wkOrders} order${wkOrders===1?'':'s'}${erpWk!=null?` · ${money(wkRev)} logged in app`:''}</div>
     <div class="hero-stats">
@@ -2908,7 +2908,7 @@ function renderClinicDash(){
   el.innerHTML = `
   <div class="kpi4">
     <div class="k"><div class="ki">\u{1F3E5}</div><div class="kn">${pool.length}</div><div class="kl">Active clinics</div></div>
-    <div class="k"><div class="ki">\u{1F4B0}</div><div class="kn">${money(totRev)}</div><div class="kl">Total revenue</div></div>
+    <div class="k"><div class="ki">\u{1F4B0}</div><div class="kn">${money(totRev)}</div><div class="kl">Total sales</div></div>
     <div class="k"><div class="ki">\u{1F45F}</div><div class="kn">${totVisits}</div><div class="kl">Visits logged</div></div>
     <div class="k"><div class="ki">\u{1F91D}</div><div class="kn">${totOrders}</div><div class="kl">Orders \u00b7 ${totVisits?Math.round(totOrders/totVisits*100):0}% conv.</div></div>
     <div class="k"><div class="ki">\u{1F468}\u200D\u2695\uFE0F</div><div class="kn">${totDocs}</div><div class="kl">Doctors on file</div></div>
@@ -2948,11 +2948,11 @@ function renderClinicDash(){
     ])}
   </div>
 
-  ${topRev.length?`<div class="chartcard"><h4>\u{1F3C6} Top clinics by revenue</h4><div class="csub">Where the money actually comes from</div>
+  ${topRev.length?`<div class="chartcard"><h4>\u{1F3C6} Top clinics by sales</h4><div class="csub">Where the money actually comes from</div>
     ${topRev.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${x.s.orders} order${x.s.orders===1?'':'s'} \u00b7 ${x.s.conv}% conv.`, money(x.s.rev))).join('')}
   </div>`:''}
 
-  ${topVis.length?`<div class="chartcard"><h4>\u{1F45F} Most visited</h4><div class="csub">Where your time goes \u2014 compare against revenue above</div>
+  ${topVis.length?`<div class="chartcard"><h4>\u{1F45F} Most visited</h4><div class="csub">Where your time goes \u2014 compare against sales above</div>
     ${topVis.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${money(x.s.rev)} earned`, x.s.visits)).join('')}
   </div>`:''}
 
@@ -3860,13 +3860,13 @@ function adminTeamHTML(){
       <button class="btn secondary small" onclick="saveBenchmarks()">Save targets</button>
     </div>
     <div class="section-title">Monthly targets per rep</div>
-    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">Set a monthly revenue and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
+    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">Set a monthly sales and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
     <div class="card">
       ${REPS.map((r,i)=>{
         const t = targets[r] || {};
         return `<div style="font-weight:700; font-size:13.5px; margin:${i?'14px':'0'} 0 4px;">${esc(r)}</div>
         <div style="display:flex; gap:10px;">
-          <div style="flex:1;"><label style="font-size:12px;">Revenue (KD)</label><input type="number" min="0" id="tgRev${i}" value="${t.revenue||0}"></div>
+          <div style="flex:1;"><label style="font-size:12px;">Sales (KD)</label><input type="number" min="0" id="tgRev${i}" value="${t.revenue||0}"></div>
           <div style="flex:1;"><label style="font-size:12px;">Visits</label><input type="number" min="0" id="tgVis${i}" value="${t.visits||0}"></div>
         </div>`;
       }).join('')}
@@ -3933,7 +3933,7 @@ function adminTeamStatsHTML(){
       <div class="kpi-grid" style="margin-bottom:0;">
         <div class="kpi"><div class="n">${wkV.length}</div><div class="l">Visits this week</div></div>
         <div class="kpi"><div class="n">${moV.length}</div><div class="l">Visits 30 days</div></div>
-        <div class="kpi"><div class="n">${money(moRev)}</div><div class="l">Revenue 30 days</div></div>
+        <div class="kpi"><div class="n">${money(moRev)}</div><div class="l">Sales 30 days</div></div>
         <div class="kpi"><div class="n">${coverage}%</div><div class="l">Coverage 30 days</div></div>
         <div class="kpi"><div class="n">${myClinics.length}</div><div class="l">Clinics assigned</div></div>
         <div class="kpi"><div class="n" style="${overdue?'color:var(--coral);':''}">${overdue}</div><div class="l">Overdue follow-ups</div></div>
@@ -4153,7 +4153,7 @@ function renderVisitLog(){
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Contacts seen</span><span>${rows.reduce((s,v)=>s+UMCore.contactCount(v),0)}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
-      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Revenue</span><span>${money(revenue)}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Sales</span><span>${money(revenue)}</span></div>
     </div>`;
   const el = document.getElementById('vlBody');
   if(rows.length===0){
@@ -4510,7 +4510,7 @@ function openProductDetail(pid){
     <div class="card">
       <div class="spec-row"><span class="k">Times discussed</span><span class="v">${timesDiscussed}</span></div>
       <div class="spec-row"><span class="k">Units ordered</span><span class="v">${unitsSold}</span></div>
-      <div class="spec-row"><span class="k">Revenue generated</span><span class="v">${money(revenue)}</span></div>
+      <div class="spec-row"><span class="k">Sales generated</span><span class="v">${money(revenue)}</span></div>
     </div>
   `);
   renderProductMaterials(pid);
@@ -4733,7 +4733,7 @@ function renderCoverageBoard(){
   const from = UMCore.localDateStr(d), to = todayStr();
   const cov = UMCore.clinicCoverage({ from, to, today: to, repFilter: covRep, visits, clinics, dayPlans });
   const ew = erpWindowStats(from, to, covRep);
-  const coach = UMCore.coachInsights({ from, to, today: to, repFilter: covRep, visits, clinics, targets, dayPlans })
+  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(), from, to, today: to, repFilter: covRep, visits, clinics, targets, dayPlans })
     .filter(i => i.level !== 'good').slice(0, 3);
   const repChips = currentUser.role === 'supervisor'
     ? `<div class="chip-row" style="margin-bottom:8px;">${['all', ...REPS].map(r =>
@@ -4804,8 +4804,8 @@ function renderCoverageBoard(){
         ? tile(ew.invoices + (cov.stats.orders ? ' / ' + cov.stats.orders : ''), 'ERP invoices' + (cov.stats.orders ? ' / logged' : ''))
         : tile(cov.stats.orders, 'Orders logged')}
       ${ew
-        ? tile(money(ew.net), 'Revenue (ERP)')
-        : tile(money(cov.stats.revenue), 'Revenue logged')}
+        ? tile(money(ew.net), 'Sales (ERP)')
+        : tile(money(cov.stats.revenue), 'Sales logged')}
     </div>
     ${ew && cov.stats.revenue ? `<div style="color:var(--muted); font-size:11.5px; margin:-6px 0 10px;">App-logged in this window: ${cov.stats.orders} order${cov.stats.orders===1?'':'s'} · ${money(cov.stats.revenue)}</div>` : ''}
     ${coach.length?`<div class="section-title" style="margin-top:0;">🧭 Top advice right now</div>
@@ -4860,7 +4860,25 @@ function erpRevenueForRange(from, to, repFilter){
   }));
   return Math.round(sum * 100) / 100;
 }
-// Best month-to-date revenue for a rep, most authoritative source first:
+// Month-to-date sales per rep from the uploaded reports, with each rep's
+// as-of date (latest invoice her uploads cover) so pace math stays fair.
+function erpMtdMap(){
+  const today = todayStr(), mStart = today.slice(0,7)+'-01';
+  const sums = {}, asOf = {};
+  erpPeriods().filter(p => p.to >= mStart && p.from <= today).forEach(p => {
+    unpackErpRows(p.rows).forEach(r => {
+      if(r.date < mStart || r.date > today) return;
+      const rep = (p.repMap||{})[r.salesman];
+      if(!rep) return;
+      sums[rep] = (sums[rep]||0) + r.net;
+      if(!asOf[rep] || r.date > asOf[rep]) asOf[rep] = r.date;
+    });
+  });
+  const map = {};
+  Object.keys(sums).forEach(rep => { map[rep] = { amount: Math.round(sums[rep]*100)/100, asOf: asOf[rep] }; });
+  return map;
+}
+// Best month-to-date sales for a rep, most authoritative source first:
 // official DSR achieved → ERP invoices → app-logged orders.
 function bestMonthRevenue(rep){
   const m = getMonthDates(todayStr());
@@ -4881,22 +4899,28 @@ function openErpImport(){
     <div style="color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px;">
       Drop the <b>sales-detail export</b> or the <b>DSR targets file</b> — Excel (.xlsx), CSV, or PDF text
       pasted below all work, and I detect which file is which and enter it by myself.
-      Sales files import with zero clicks once I know who is who (I ask only the first time).</div>
+      Sales files import with zero clicks once I know who is who (I ask only the first time).
+      <b>One file per rep works too</b> — upload Mariam's and Renova's exports separately and
+      each is kept as its own report; re-importing one never touches the other.</div>
     <input type="file" id="erpFile" accept=".csv,.txt,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="erpHandleFile(this)">
     <label style="margin-top:10px;">…or paste the report text here</label>
     <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows, PDF report text, or target lines like: Renova 12000"></textarea>
     <button class="btn secondary small" style="margin-top:8px;" onclick="erpAutoImport(document.getElementById('erpPaste').value)">Read pasted text</button>
     ${periods.length?`<div class="section-title">Saved sales periods</div>
-      ${periods.map(p=>`<div class="card" style="padding:12px 14px; margin-bottom:8px;">
+      ${periods.map(p=>{
+        const reps = [...new Set(Object.values(p.repMap||{}).filter(Boolean))];
+        const who = reps.length ? reps.join(' + ') : Object.keys(p.repMap||{}).join(' + ');
+        return `<div class="card" style="padding:12px 14px; margin-bottom:8px;">
         <div class="row-between">
-          <div><div style="font-weight:700; font-size:13.5px;">${fmtDate(p.from)} – ${fmtDate(p.to)}</div>
+          <div><div style="font-weight:700; font-size:13.5px;">${fmtDate(p.from)} – ${fmtDate(p.to)}${who?` <span style="color:var(--gold); font-size:12px;">· ${esc(who)}</span>`:''}</div>
           <div style="color:var(--muted); font-size:12px;">${money(p.net)} net · ${p.rowCount} lines</div></div>
           <div style="display:flex; gap:6px; flex-shrink:0;">
             <button class="chip small" onclick="openErpRecon('${p.id}')">📊 Report</button>
             <button class="chip small" onclick="deleteErpPeriod('${p.id}')">🗑</button>
           </div>
         </div>
-      </div>`).join('')}`:''}
+      </div>`;}).join('')}`:''}
+    <button class="btn" style="margin-top:12px;" onclick="closeModal()">Done</button>
   `);
 }
 function erpHandleFile(input){
@@ -4956,12 +4980,31 @@ async function erpAutoImport(text){
   if(!tg.error){ await applyTargetsFile(tg); return; }
   showToast('Could not recognize this file — export the sales detail or the targets as CSV');
 }
+// A new file only replaces its own salesmen's rows inside overlapping saved
+// periods — so Mariam's file and Renova's file for the same month coexist as
+// two separate reports, and re-importing one rep's file never wipes the other.
+function erpAbsorbOverlaps(t, newSalesmen){
+  const names = new Set(newSalesmen);
+  let replaced = 0;
+  const kept = [];
+  erpPeriods().forEach(p => {
+    if(!(p.from <= t.to && p.to >= t.from)){ kept.push(p); return; }
+    const rows = unpackErpRows(p.rows);
+    const remain = rows.filter(r => !names.has(r.salesman));
+    if(!remain.length){ replaced++; return; }              // fully superseded
+    if(remain.length === rows.length){ kept.push(p); return; } // other rep's report — untouched
+    const tt = UMCore.erpTotals(remain);                   // strip this rep, keep the rest
+    replaced++;
+    kept.push(Object.assign({}, p, { net: Math.round(tt.net*1000)/1000, rowCount: tt.lines,
+      from: tt.from || p.from, to: tt.to || p.to, rows: packErpRows(remain) }));
+  });
+  erpSales.periods = kept;
+  return replaced;
+}
 async function erpAutoSave(repMap){
   if(!_erpParsed) return;
   const t = _erpParsed.totals;
-  const before = erpPeriods().length;
-  erpSales.periods = erpPeriods().filter(p => !(p.from <= t.to && p.to >= t.from));
-  const replaced = before - erpSales.periods.length;
+  const replaced = erpAbsorbOverlaps(t, Object.keys(_erpParsed.totals.bySalesman));
   const period = { id: uid(), from: t.from, to: t.to, net: Math.round(t.net*1000)/1000,
     rowCount: t.lines, importedAt: new Date().toISOString(), repMap, rows: packErpRows(_erpParsed.rows) };
   erpSales.periods.push(period);
@@ -5021,6 +5064,7 @@ function erpParse(text){
         </div>`).join('')}
     </div>
     <button class="btn" style="margin-top:12px;" onclick="erpSavePeriod()">💾 Save & analyze</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">Cancel</button>
   `);
 }
 async function erpSavePeriod(){
@@ -5032,11 +5076,9 @@ async function erpSavePeriod(){
     repMap[sm] = sel && sel.value ? sel.value : null;
   });
   const t = _erpParsed.totals;
-  // A new file replaces any saved period its date range overlaps — so weekly
-  // cumulative exports (1st→today) never pile up as duplicates.
-  const before = erpPeriods().length;
-  erpSales.periods = erpPeriods().filter(p => !(p.from <= t.to && p.to >= t.from));
-  const replaced = before - erpSales.periods.length;
+  // A new file replaces only its own salesmen's data in overlapping periods —
+  // weekly cumulative exports never pile up, per-rep files coexist.
+  const replaced = erpAbsorbOverlaps(t, salesmen);
   if(replaced) showToast(`Replacing ${replaced} older overlapping period${replaced===1?'':'s'}`);
   const period = { id: uid(), from: t.from, to: t.to, net: Math.round(t.net*1000)/1000,
     rowCount: t.lines, importedAt: new Date().toISOString(), repMap, rows: packErpRows(_erpParsed.rows) };
@@ -5096,6 +5138,42 @@ function openErpRecon(id){
       ${kdRow('Visit→invoice linkage', r.linkagePct + '%', r.linkagePct>=50?'var(--sage)':'#FF9500')}
       ${targetBar}
     </div>
+    ${(()=>{ // every account (clinic / customer) this rep sold to, from the uploaded file
+      const acc = {};
+      rows.forEach(rw => {
+        if((p.repMap||{})[rw.salesman] !== r.rep) return;
+        const key = (rw.customer || '').trim() || '(no account name)';
+        const a = acc[key] || (acc[key] = { net: 0, docs: new Set() });
+        a.net += rw.net; a.docs.add(rw.doc);
+      });
+      const items = Object.entries(acc).sort((a,b)=>b[1].net-a[1].net);
+      if(!items.length) return '';
+      const total = items.reduce((s,[,a])=>s+a.net,0);
+      return `<div class="card">
+        <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🏥 Sales by account (${esc(r.rep)})</div>
+        <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <tr><th style="text-align:left; padding:4px 6px; color:var(--muted);">Account</th>
+            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Invoices</th>
+            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Net sales</th></tr>
+          ${items.map(([cust, a])=>{
+            const m = UMCore.matchCustomer(cust, clinics, erpMap);
+            const clinic = m.clinicId ? clinics.find(x=>x.id===m.clinicId) : null;
+            const tag = m.channel ? '<span style="color:var(--muted); font-size:11px;"> · 🌐 channel</span>'
+              : clinic ? `<span style="color:var(--muted); font-size:11px;"> · ${esc(clinic.name)}</span>` : '';
+            return `<tr style="border-top:1px solid var(--line);">
+              <td style="padding:5px 6px;">${esc(cust)}${tag}</td>
+              <td style="text-align:right; padding:5px 6px;">${a.docs.size}</td>
+              <td style="text-align:right; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral);':''}">${a.net.toFixed(2)}</td>
+            </tr>`;
+          }).join('')}
+          <tr style="border-top:2px solid var(--line);">
+            <td style="padding:5px 6px; font-weight:700;">Total</td>
+            <td></td>
+            <td style="text-align:right; padding:5px 6px; font-weight:700;">${total.toFixed(2)}</td>
+          </tr>
+        </table></div>
+      </div>`;
+    })()}
     ${(()=>{ // brand targets vs ERP actuals for this rep (from the DSR file)
       const bt = targets[r.rep] && targets[r.rep].brands;
       if(!bt || !Object.keys(bt).length) return '';
@@ -5198,7 +5276,8 @@ function openErpRecon(id){
           </select>
         </div>`).join('')}
     </div>`:''}
-    <button class="btn" style="margin-top:12px;" onclick="downloadErpReconFile('${esc(p.id)}')">⬇️ Save this report as a file</button>
+    <button class="btn" style="margin-top:12px;" onclick="closeModal()">✅ Done</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="downloadErpReconFile('${esc(p.id)}')">⬇️ Save this report as a file</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${esc(p.id)}')">📤 Share (WhatsApp / email)</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="openErpImport()">‹ Back to imports</button>
   `);
@@ -5406,7 +5485,7 @@ function renderCompare(){
     ${fmtRow('Contacts', A.contacts, B.contacts)}
     ${fmtRow('Calls', A.calls, B.calls)}
     ${fmtRow('Orders', A.orders, B.orders)}
-    ${fmtRow('Revenue', A.revenue, B.revenue, true)}
+    ${fmtRow('Sales', A.revenue, B.revenue, true)}
     ${fmtRow('Conversion %', A.conversion, B.conversion)}
     ${fmtRow('Clinics covered', A.clinicsCovered, B.clinicsCovered)}
     ${fmtRow('Events', A.events, B.events)}`;
@@ -5449,7 +5528,7 @@ function renderCoach(){
   const el = document.getElementById('coachCard');
   if(!el) return;
   const b = reportRangeBounds();
-  const insights = UMCore.coachInsights({
+  const insights = UMCore.coachInsights({ erpMtd: erpMtdMap(),
     from: b.from, to: b.to, today: todayStr(), repFilter: reportRepFilter,
     visits, clinics, targets, dayPlans,
   });
@@ -5485,7 +5564,7 @@ function renderReports(){
   const bounds = reportRangeBounds();
   const erpRev = erpRevenueForRange(bounds.from, bounds.to, reportRepFilter);
   document.getElementById('repRevenue').textContent = money(erpRev != null ? erpRev : loggedRev);
-  document.getElementById('repRevenueLabel').textContent = erpRev != null ? 'Revenue (ERP-verified)' : 'Revenue';
+  document.getElementById('repRevenueLabel').textContent = erpRev != null ? 'Sales (ERP-verified)' : 'Sales';
   const erpRow = document.getElementById('repErpRow');
   if(erpRow){
     erpRow.style.display = erpRev != null ? '' : 'none';
@@ -6043,11 +6122,11 @@ function renderCharts(){
   });
 
   wrap.innerHTML = `
-    <div class="chartcard"><h4>Revenue trend</h4><div class="csub">${periodLabel()} · KD</div>${svgLine(pts)}</div>
-    <div class="chartcard"><h4>Revenue by rep</h4><div class="csub">${periodLabel()} · KD</div>${svgBars(repBars)}</div>
+    <div class="chartcard"><h4>Sales trend</h4><div class="csub">${periodLabel()} · KD</div>${svgLine(pts)}</div>
+    <div class="chartcard"><h4>Sales by rep</h4><div class="csub">${periodLabel()} · KD</div>${svgBars(repBars)}</div>
     <div class="chartcard"><h4>Visit outcome</h4><div class="csub">Orders won vs. no order</div>
       ${svgDonut([{l:'Order taken',v:won,c:'#022917'},{l:'No order',v:lost,c:'#E5E5EA'}])}</div>
-    <div class="chartcard"><h4>Revenue by brand</h4><div class="csub">Top 5 · KD</div>${svgBars(brandBars)}</div>
+    <div class="chartcard"><h4>Sales by brand</h4><div class="csub">Top 5 · KD</div>${svgBars(brandBars)}</div>
     <div class="chartcard"><h4>Why orders weren't placed</h4><div class="csub">Most common reasons</div>${svgBars(reasonBars)}</div>
     <div class="chartcard"><h4>Coverage by clinic class</h4><div class="csub">% of clinics visited</div>${svgBars(classBars)}</div>
   `;
@@ -6060,8 +6139,12 @@ function computeRepScore(repName){
 function renderScorecards(){
   const wrap = document.getElementById('scorecards');
   const repsToShow = currentUser.role==='supervisor' ? REPS : [currentUser.name];
+  const sb = reportRangeBounds();
   wrap.innerHTML = repsToShow.map(r=>{
     const s = computeRepScore(r);
+    // Sales figure comes from the supervisor's uploaded files whenever they
+    // cover the range — app-logged orders are only the fallback.
+    const erpSales_ = erpRevenueForRange(sb.from, sb.to, r);
     return `
     <div class="card score-card">
       <div class="score-head">
@@ -6070,7 +6153,7 @@ function renderScorecards(){
       </div>
       <div class="kpi-grid">
         <div class="kpi"><div class="n">${s.visits}</div><div class="l">Visits</div></div>
-        <div class="kpi"><div class="n">${money(s.revenue)}</div><div class="l">Revenue</div></div>
+        <div class="kpi"><div class="n">${money(erpSales_!=null?erpSales_:s.revenue)}</div><div class="l">Sales${erpSales_!=null?' (uploaded)':' (logged)'}</div></div>
         <div class="kpi"><div class="n">${s.conversion}%</div><div class="l">Conversion rate</div></div>
         <div class="kpi"><div class="n">${s.overdue}</div><div class="l">Overdue follow-ups</div></div>
       </div>
@@ -6258,7 +6341,7 @@ function buildNarrative(rep, s, prev){
     if(s.visits>0 || prev.visits>0){
       const dir = visitDelta>=0 ? 'up' : 'down';
       const arrow = visitDelta>=0 ? '▲' : '▼';
-      trendHtml = `<div class="pr-trend ${dir}">${arrow} Visits ${dir} ${Math.abs(visitDelta)}% vs. the previous period · Revenue ${revDelta>=0?'up':'down'} ${Math.abs(revDelta)}%</div>`;
+      trendHtml = `<div class="pr-trend ${dir}">${arrow} Visits ${dir} ${Math.abs(visitDelta)}% vs. the previous period · Sales ${revDelta>=0?'up':'down'} ${Math.abs(revDelta)}%</div>`;
     }
   }
 
@@ -6267,7 +6350,7 @@ function buildNarrative(rep, s, prev){
 function prKpiGrid(s){
   return `<div class="pr-kpi-grid">
     <div class="pr-kpi"><div class="n">${s.visits}</div><div class="l">Visits</div></div>
-    <div class="pr-kpi"><div class="n">${money(s.revenue)}</div><div class="l">Revenue</div></div>
+    <div class="pr-kpi"><div class="n">${money(s.revenue)}</div><div class="l">Sales</div></div>
     <div class="pr-kpi"><div class="n">${s.conversion}%</div><div class="l">Conversion</div></div>
     <div class="pr-kpi"><div class="n">${s.coveragePct}%</div><div class="l">Coverage</div></div>
   </div>`;
@@ -6310,7 +6393,7 @@ function renderProDoc(){
     teamBox = `<div class="pr-team-box">
       <div class="kpi-grid">
         <div class="kpi"><div class="n">${totalVisits}</div><div class="l">Team Visits</div></div>
-        <div class="kpi"><div class="n">${money(totalRevenue)}</div><div class="l">Team Revenue</div></div>
+        <div class="kpi"><div class="n">${money(totalRevenue)}</div><div class="l">Team Sales</div></div>
         <div class="kpi"><div class="n">${totalOrders}</div><div class="l">Orders Taken</div></div>
         <div class="kpi"><div class="n">${totalOverdue}</div><div class="l">Overdue (Team)</div></div>
       </div>
@@ -6325,7 +6408,7 @@ function renderProDoc(){
     ${teamBox}
     ${(()=>{
       const b = reportRangeBounds();
-      const coach = UMCore.coachInsights({from:b.from, to:b.to, today:todayStr(),
+      const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from:b.from, to:b.to, today:todayStr(),
         repFilter: currentUser.role==='supervisor' ? 'all' : currentUser.name,
         visits, clinics, targets, dayPlans});
       const levLabel = {act:'DO NOW', watch:'WATCH', good:'WORKING'};
@@ -6405,7 +6488,7 @@ const REPORT_I18N = {
 en: {
   title:'Field Performance Report', brandName:'UltraMed', confidential:'Confidential — for internal management use only',
   preparedBy:'Prepared by', generated:'Generated', period:'Period', team:'Whole team',
-  s_exec:'Executive summary', s_chart:'Revenue week by week', s_targets:'Targets & month-end forecast',
+  s_exec:'Executive summary', s_chart:'Sales week by week', s_targets:'Targets & month-end forecast',
   s_brands:'Brand performance', s_recon:'Visits ↔ invoices reconciliation', s_returns:'Returns analysis',
   s_coverage:'Field coverage', s_reco:'Recommendations', s_plan:'Plan for the coming period',
   rep:'Rep', target:'Target', achieved:'Achieved', pace:'Pace', forecast:'Month-end forecast', status:'Status',
@@ -6424,7 +6507,7 @@ en: {
 ar: {
   title:'تقرير الأداء الميداني', brandName:'ألترا ميد — UltraMed', confidential:'سرّي — للاستخدام الإداري الداخلي فقط',
   preparedBy:'إعداد', generated:'تاريخ الإصدار', period:'الفترة', team:'كامل الفريق',
-  s_exec:'الملخص التنفيذي', s_chart:'الإيراد أسبوعاً بأسبوع', s_targets:'الأهداف وتوقع نهاية الشهر',
+  s_exec:'الملخص التنفيذي', s_chart:'المبيعات أسبوعاً بأسبوع', s_targets:'الأهداف وتوقع نهاية الشهر',
   s_brands:'أداء البراندات', s_recon:'مطابقة الزيارات مع الفواتير', s_returns:'تحليل المرتجعات',
   s_coverage:'التغطية الميدانية', s_reco:'التوصيات', s_plan:'خطة الفترة القادمة',
   rep:'المندوبة', target:'الهدف', achieved:'المحقق', pace:'الوتيرة', forecast:'توقع نهاية الشهر', status:'الحالة',
@@ -6458,7 +6541,7 @@ const AR_COACH = {
   contacts: d=> d.state==='low' ? `متوسط ${d.perVisit} جهة اتصال في الزيارة — كل طبيب إضافي في نفس العيادة عميل مجاني؛ الهدف 2+.`
     : `تغطية ممتازة: ${d.perVisit} جهة اتصال في الزيارة الواحدة.`,
   stuck: d=>`${d.count} عيادة زيرت 3 مرات أو أكثر بلا أي طلب (${(d.names||[]).join('، ')}) — غيّروا الأسلوب أو رتبوا زيارة مشتركة.`,
-  concentration: d=>`${d.share}% من الإيراد من عميل واحد (${d.name}) — نمّوا 2-3 حسابات إضافية لتوزيع المخاطر.`,
+  concentration: d=>`${d.share}% من المبيعات من عميل واحد (${d.name}) — نمّوا 2-3 حسابات إضافية لتوزيع المخاطر.`,
   jointcoach: d=>`${d.top} تغلق بنسبة ${d.topPct}% مقابل ${d.lowPct}% لـ${d.low} — رتبوا زيارات مشتركة بينهما للتعلم المباشر.`,
   allgood: ()=>`لا مؤشرات خطر في هذه الفترة — استمروا بنفس الإيقاع مع رفع عدد الزيارات وجهات الاتصال.`,
 };
@@ -6542,7 +6625,7 @@ function buildMasterReportBody(lang, format){
   const rows = allRows.filter(r => UMCore.inRange(r.date, b.from, b.to) && repsList.includes((p.repMap||{})[r.salesman]));
   const rec = p ? UMCore.reconcileErp({rows: allRows, visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to}) : null;
   const trend = p ? UMCore.erpWeeklyTrend(rows, p.repMap||{}) : [];
-  const coach = UMCore.coachInsights({from: b.from, to: b.to, today, repFilter, visits, clinics, targets, dayPlans});
+  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from: b.from, to: b.to, today, repFilter, visits, clinics, targets, dayPlans});
   const cov = UMCore.clinicCoverage({from: b.from || m[0], to: b.to || today, today, repFilter, visits, clinics, dayPlans});
   const returns = UMCore.returnsAnalysis(rows);
   const dateStr = new Date().toLocaleDateString(rtl ? 'ar' : 'en-US', {year:'numeric', month:'long', day:'numeric'});
@@ -6793,7 +6876,7 @@ function buildTasksCSV(range){
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
 function buildScorecardCSV(range){
-  const rows = [['Rep','Visits','Orders','Revenue (KD)','Conversion %','Clinics Covered','Assigned Clinics','Coverage %','Priority Covered','Priority Assigned','Priority Coverage %','Overdue Follow-ups','Tasks Done','Tasks Total']];
+  const rows = [['Rep','Visits','Orders','Sales (KD)','Conversion %','Clinics Covered','Assigned Clinics','Coverage %','Priority Covered','Priority Assigned','Priority Coverage %','Overdue Follow-ups','Tasks Done','Tasks Total']];
   REPS.forEach(r=>{
     const s = range
       ? UMCore.computeRepScore(r, {visits: UMCore.filterVisitsByRange(visits, range.from, range.to), clinics, tasks, today: todayStr()})
@@ -6963,10 +7046,10 @@ function copyReport(){
   text += `Visits logged: ${rv.length}\n`;
   text += `Contacts seen: ${rv.reduce((s,v)=>s+UMCore.contactCount(v),0)}\n`;
   text += `Orders taken: ${rv.filter(v=>v.orderTaken).length}\n`;
-  text += `Revenue: ${money(rv.reduce((s,v)=>s+(v.orderTotal||0),0))}\n`;
+  text += `Sales: ${money(rv.reduce((s,v)=>s+(v.orderTotal||0),0))}\n`;
   text += `Clinics covered: ${new Set(rv.map(v=>v.clinicId)).size}\n\n`;
   const b = reportRangeBounds();
-  const coach = UMCore.coachInsights({from:b.from, to:b.to, today:todayStr(), repFilter:reportRepFilter, visits, clinics, targets, dayPlans});
+  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from:b.from, to:b.to, today:todayStr(), repFilter:reportRepFilter, visits, clinics, targets, dayPlans});
   const actions = coach.filter(i=>i.level!=='good');
   if(actions.length){
     text += `Action list:\n`;
