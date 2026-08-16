@@ -1011,6 +1011,22 @@ describe('DSR achieved sales (MTD)', () => {
       .find(i => i.key === 'target-Mariam');
     assert.equal(stale.level, 'act');
   });
+  test('freshest upload wins: weekly ERP sales overtake an older DSR figure', () => {
+    const today = '2026-08-25';
+    const base = { from: '2026-08-01', to: today, today, repFilter: 'all',
+      visits: [], clinics: [], dayPlans: {},
+      targets: { Mariam: { revenue: 1000, achieved: 200, achievedAsOf: '2026-08-11' } } };
+    // ERP upload covers later dates → it becomes the tracked figure.
+    const erpWins = core.coachInsights({ ...base,
+      erpMtd: { Mariam: { amount: 600, asOf: '2026-08-20' } } })
+      .find(i => i.key === 'target-Mariam');
+    assert.match(erpWins.detail, /600\.00 KD \(from uploaded sales\)/);
+    // DSR at least as fresh as the ERP data → the official figure stays.
+    const dsrWins = core.coachInsights({ ...base,
+      erpMtd: { Mariam: { amount: 150, asOf: '2026-08-10' } } })
+      .find(i => i.key === 'target-Mariam');
+    assert.match(dsrWins.detail, /200\.00 KD \(official DSR figure\)/);
+  });
 });
 
 describe('report helpers: forecast, returns, coach data payloads', () => {
