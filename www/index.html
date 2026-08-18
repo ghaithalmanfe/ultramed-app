@@ -114,6 +114,8 @@
   .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:3px;}
   .cal-cell{aspect-ratio:1; border-radius:10px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; font-size:12.5px; font-weight:600; color:var(--ink); background:none; border:1.5px solid transparent; font-family:inherit; padding:0;}
   .cal-cell.other{color:var(--line); pointer-events:none;}
+  .cal-cell.wkend{color:var(--muted); opacity:.55;} /* Fri/Sat weekend */
+  .cal-cell.wkend.sel, .cal-cell.wkend.today{opacity:1;}
   .cal-cell.today{border-color:var(--green);}
   .cal-cell.sel{background:var(--green); color:#fff;}
   .cal-cell.sel .cal-dots i{outline:1.5px solid rgba(255,255,255,.7);}
@@ -899,7 +901,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v25'; // keep in step with sw.js CACHE version
+const APP_REV = 'v26'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -1613,7 +1615,8 @@ function renderCalendar(){
     for(const d of dates){
       const info = calDayData(d);
       const n = parseInt(d.slice(8),10);
-      const cls = ['cal-cell', d===todayStr()?'today':'', d===calSelected?'sel':''].join(' ');
+      const wkend = !UMCore.isWorkday(d); // Fri/Sat — the weekend
+      const cls = ['cal-cell', d===todayStr()?'today':'', d===calSelected?'sel':'', wkend?'wkend':''].join(' ');
       html += `<button class="${cls}" onclick="selectCalDay('${d}')"><span>${n}</span><span class="cal-dots">${calDots(info)}</span></button>`;
     }
     html += '</div>';
@@ -2052,16 +2055,19 @@ function renderToday(){
   renderErpNudge();
   const due = visibleDueClinics();
   document.getElementById('statDue').textContent = due.length;
-  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate()-7);
-  const weekVisits = visibleFieldVisits().filter(v => new Date(v.date) >= weekAgo);
+  // The work week runs Sunday→Thursday (Fri/Sat are the weekend), so "this
+  // week" means since the most recent Sunday — not a rolling 7 days.
+  const wkStartD = new Date(); wkStartD.setDate(wkStartD.getDate() - wkStartD.getDay());
+  const wkStart = UMCore.localDateStr(wkStartD);
+  const weekVisits = visibleFieldVisits().filter(v => v.date >= wkStart);
   document.getElementById('statVisitsWeek').textContent = weekVisits.length;
   document.getElementById('statTasks').textContent = visibleTasks().filter(t=>!t.done).length;
-  const wk = visibleVisits().filter(v=>new Date(v.date)>=weekAgo);
+  const wk = visibleVisits().filter(v => v.date >= wkStart);
   const wkRev = wk.reduce((a,v)=>a+(v.orderTotal||0),0);
   const wkOrders = wk.filter(v=>v.orderTaken).length;
   // ERP-verified revenue is the real number when an imported period covers
   // this week; the app-logged figure drops to the subtitle for comparison.
-  const erpWk = erpRevenueForRange(UMCore.localDateStr(weekAgo), todayStr(),
+  const erpWk = erpRevenueForRange(wkStart, todayStr(),
     currentUser.role==='rep' ? currentUser.name : 'all');
   document.getElementById('heroCard').innerHTML = `
     <div class="htitle">Sales this week${erpWk!=null?' (ERP-verified)':''}</div>
@@ -5311,7 +5317,7 @@ function openErpRecon(id){
             </tr>`;
           }).join('')}
         </table>
-        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">KD net per week (Sun–Sat). Arrows compare with the week before — the fastest way to see who is accelerating and who needs a push.</div>
+        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">KD net per work week (Sun–Thu; Fri–Sat are the weekend — any sale dated then counts in the same week). Arrows compare with the week before.</div>
       </div>`;
     })()}
     ${rec.perRep.length?rec.perRep.map(repCard).join(''):'<div class="empty">No rows map to your team — check the salesman mapping when importing.</div>'}
@@ -6692,11 +6698,14 @@ function buildMasterReportBody(lang, format){
     const t = targets[rep] || {};
     if(!(t.revenue > 0)) return null;
     const bm = bestMonthRevenue(rep);
-    // Pace/forecast are judged at the winning source's as-of day, so a
-    // mid-month upload isn't measured against today's calendar.
-    const dayRef = bm.asOf ? +bm.asOf.slice(8,10) : +today.slice(8,10);
-    const fc = UMCore.forecastMonthEnd(bm.amount, dayRef, daysInMonth);
-    const pace = Math.round(bm.amount / (t.revenue * dayRef / daysInMonth) * 100);
+    // Pace/forecast run on WORKING days (Sun–Thu) at the winning source's
+    // as-of day, so a mid-month upload isn't measured against the calendar.
+    const mStart = today.slice(0,7) + '-01';
+    const monthEnd = today.slice(0,7) + '-' + String(daysInMonth).padStart(2,'0');
+    const totalWork = UMCore.workingDaysBetween(mStart, monthEnd);
+    const worked = Math.max(1, UMCore.workingDaysBetween(mStart, bm.asOf || today));
+    const fc = Math.round(bm.amount / worked * totalWork * 100) / 100;
+    const pace = Math.round(bm.amount / (t.revenue * worked / totalWork) * 100);
     const state = bm.amount >= t.revenue ? 'hit' : pace >= 90 ? 'on' : 'behind';
     return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, fc, pace, state };
   }).filter(Boolean);

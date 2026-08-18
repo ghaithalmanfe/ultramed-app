@@ -36,6 +36,23 @@
     for(let i=0;i<7;i++){ const x=new Date(start); x.setDate(start.getDate()+i); dates.push(localDateStr(x)); }
     return dates;
   }
+  // The work week is Sunday–Thursday; Friday and Saturday are the weekend.
+  function isWorkday(dateStr){
+    var g = new Date(dateStr + 'T00:00:00').getDay();
+    return g !== 5 && g !== 6;
+  }
+  // Inclusive count of working days (Sun–Thu) between two ISO dates.
+  function workingDaysBetween(fromStr, toStr){
+    var n = 0;
+    var d = new Date(fromStr + 'T00:00:00');
+    var end = new Date(toStr + 'T00:00:00');
+    while(d <= end){
+      var g = d.getDay();
+      if(g !== 5 && g !== 6) n++;
+      d.setDate(d.getDate() + 1);
+    }
+    return n;
+  }
   function getMonthDates(anchor){
     const d = new Date(anchor+'T00:00:00');
     const year = d.getFullYear(), month = d.getMonth();
@@ -353,11 +370,15 @@
         : erp ? e.amount
         : visits.filter(v => v.rep === rep && v.date >= mStart && v.date <= today)
           .reduce(function(sum, v){ return sum + (v.orderTotal || 0); }, 0);
-      const dayRef = official ? +t.achievedAsOf.slice(8, 10)
-        : erp && e.asOf ? +e.asOf.slice(8, 10) : dayOfMonth;
       const src = official ? ' (official DSR figure)' : erp ? ' (from uploaded sales)' : ' (app-logged — upload a sales file for the official figure)';
-      const expected = goal * dayRef / daysInMonth;
-      const daysLeft = daysInMonth - dayRef;
+      // Pace runs on WORKING days only (Sun–Thu; Fri/Sat weekend) so the
+      // required daily amount is realistic for days actually worked.
+      const asOfDate = official ? t.achievedAsOf : (erp && e.asOf ? e.asOf : today);
+      const monthEnd = today.slice(0, 7) + '-' + ('0' + daysInMonth).slice(-2);
+      const totalWork = workingDaysBetween(mStart, monthEnd);
+      const workedSoFar = Math.max(1, workingDaysBetween(mStart, asOfDate));
+      const expected = goal * workedSoFar / totalWork;
+      const daysLeft = totalWork - workedSoFar;
       if(mtd >= goal){
         out.push({ level: 'good', icon: '🏆', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, state: 'hit', official: official },
           title: rep + ' already hit the monthly target',
@@ -367,7 +388,7 @@
         out.push({ level: 'act', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, perDay: perDay, daysLeft: daysLeft, state: 'behind', official: official },
           title: rep + ' is behind the monthly target',
           detail: money(mtd) + src + ' of ' + money(goal) + ' so far. Needs about ' + perDay + ' KD/day for the remaining ' + daysLeft +
-            ' day' + (daysLeft === 1 ? '' : 's') + ' — steer the visits toward clinics that already order.' });
+            ' working day' + (daysLeft === 1 ? '' : 's') + ' (Sun–Thu) — steer the visits toward clinics that already order.' });
       } else {
         out.push({ level: 'good', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, state: 'pace', official: official },
           title: rep + ' is on pace for the monthly target',
@@ -1154,7 +1175,7 @@
 
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
-    money, slugify, getWeekDates, getMonthDates, followStatus, safeParse,
+    money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
     inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,
