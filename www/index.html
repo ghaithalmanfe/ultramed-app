@@ -901,7 +901,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v27'; // keep in step with sw.js CACHE version
+const APP_REV = 'v28'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -2870,6 +2870,110 @@ function clinicStats(c){
     conv: vs.length? Math.round(orders.length/vs.length*100):0,
     docs:(c.doctors||[]).length};
 }
+// ---- ERP CUSTOMER SALES DASHBOARD (who bought / who didn't) ----
+// Built from the supervisor's uploaded sales files: every ERP customer with
+// net + invoices + last invoice date, matched to app clinics; app clinics
+// with no invoice in the period surface as the follow-up list.
+let erpDashTab = 'not';
+function erpDashData(){
+  const effRep = clinicRepFilter;
+  const today = todayStr(), mStart = today.slice(0,7)+'-01';
+  let ps = erpPeriods().filter(p => p.to >= mStart && p.from <= today);
+  let periodLabel = 'This month';
+  if(!ps.length){ // early in a new month, fall back to the latest upload
+    const latest = erpPeriods().slice().sort((a,b)=>(b.to||'').localeCompare(a.to||''))[0];
+    if(latest){ ps = [latest]; periodLabel = fmtDate(latest.from)+' – '+fmtDate(latest.to); }
+  }
+  const cust = {}; let maxDate = '';
+  ps.forEach(p => unpackErpRows(p.rows).forEach(r => {
+    const rep = (p.repMap||{})[r.salesman];
+    if(!rep) return; // salesmen outside the team stay out of the girls' lists
+    if(effRep !== 'all' && rep !== effRep) return;
+    const key = (r.customer||'').trim() || '(no name)';
+    const m = UMCore.matchCustomer(key, clinics, erpMap);
+    if(m.ignored) return;
+    const a = cust[key] || (cust[key] = {name:key, net:0, docs:new Set(), last:'', rep, clinicId:m.clinicId, channel:m.channel});
+    a.net += r.net; a.docs.add(r.doc);
+    if(r.date > a.last) a.last = r.date;
+    if(r.date > maxDate) maxDate = r.date;
+  }));
+  const buyers = Object.values(cust)
+    .map(a=>({name:a.name, rep:a.rep, clinicId:a.clinicId, channel:a.channel,
+      invoices:a.docs.size, last:a.last, net:Math.round(a.net*100)/100}))
+    .sort((x,y)=>y.net-x.net);
+  const boughtIds = new Set(buyers.filter(b=>b.clinicId).map(b=>b.clinicId));
+  let pool = clinics.filter(c=>c.cls!=='Closed');
+  if(effRep !== 'all') pool = pool.filter(c=>c.rep===effRep);
+  const nonBuyers = pool.filter(c=>!boughtIds.has(c.id)).map(c=>{
+    const lastV = visits.filter(v=>v.clinicId===c.id).map(v=>v.date).sort().pop() || null;
+    const days = lastV ? Math.round((new Date(todayStr())-new Date(lastV))/86400000) : null;
+    return {c, lastV, days};
+  }).sort((a,b)=>{
+    const order = {overdue:0, today:1, upcoming:2, none:3};
+    const d = order[followStatus(a.c.nextFollowUp)] - order[followStatus(b.c.nextFollowUp)];
+    return d !== 0 ? d : String(a.c.cls||'Z').localeCompare(String(b.c.cls||'Z'));
+  });
+  return {buyers, nonBuyers, periodLabel, maxDate, hasData: ps.length>0};
+}
+function erpDashSection(){
+  const d = erpDashData();
+  if(!d.hasData) return `<div class="chartcard"><h4>🧾 Customer sales (ERP)</h4>
+    <div class="csub">Upload a sales file in Report → 📥 Import and every customer's buying status appears here.</div></div>`;
+  const clinicBuyers = d.buyers.filter(b=>!b.channel);
+  const channels = d.buyers.filter(b=>b.channel);
+  const channelNet = Math.round(channels.reduce((s,b)=>s+b.net,0)*100)/100;
+  const buyersNet = Math.round(clinicBuyers.reduce((s,b)=>s+b.net,0)*100)/100;
+  const donut = svgDonut(Object.assign([
+    {l:'Bought', v: clinicBuyers.length, c:'#2E784C'},
+    {l:"Didn't buy", v: d.nonBuyers.length, c:'#E5E5EA'},
+  ], {centerLabel:'customers'}));
+  const topBars = svgBars(clinicBuyers.slice(0,8).map(b=>({l:b.name, v:Math.max(0,b.net), t:money(b.net), c:'#2E784C'})));
+  const CLS = ['A','B','C','D','F'];
+  const clsBars = svgBars(CLS.map(k=>({l:k, v:d.nonBuyers.filter(x=>x.c.cls===k).length, c:clsColor(k)})));
+  const rows = erpDashTab==='not'
+    ? d.nonBuyers.slice(0,40).map(x=>`
+      <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${x.c.id}')">
+        <div class="row-between">
+          <div>
+            <div class="clinic-name">${esc(x.c.name)}</div>
+            <div class="clinic-sub">${esc(x.c.rep||'')} · ${x.lastV ? 'last visit '+x.days+'d ago' : 'never visited'}${x.c.nextFollowUp?' · follow-up '+fmtDate(x.c.nextFollowUp):''}</div>
+          </div>
+          <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+            <span class="badge ${followStatus(x.c.nextFollowUp)}">${statusLabel(x.c.nextFollowUp).split('·')[0].trim()}</span>
+            <button class="chip small" onclick="event.stopPropagation(); openCallLog('${x.c.id}')">📞</button>
+          </div>
+        </div>
+      </div>`).join('') + (d.nonBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${d.nonBuyers.length-40} more in the list view</div>`:'')
+    : clinicBuyers.slice(0,40).map(b=>`
+      <div class="card ${b.clinicId?'clickable':''}" style="padding:11px 14px; border-left:4px solid ${b.net<0?'var(--coral)':'var(--sage)'};" ${b.clinicId?`onclick="openClinicDetail('${b.clinicId}')"`:''}>
+        <div class="row-between">
+          <div>
+            <div class="clinic-name">${esc(b.name)}${b.clinicId?'':' <span style="font-size:11px; color:var(--muted);">⚠ not linked</span>'}</div>
+            <div class="clinic-sub">${esc(b.rep)} · ${b.invoices} invoice${b.invoices===1?'':'s'} · last ${fmtDate(b.last)}</div>
+          </div>
+          <div style="font-weight:800; ${b.net<0?'color:var(--coral);':''}">${money(b.net)}</div>
+        </div>
+      </div>`).join('') + (clinicBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${clinicBuyers.length-40} more</div>`:'');
+  return `
+  <div class="chartcard" style="border-left:4px solid var(--gold);">
+    <h4>🧾 Customer sales — who bought & who didn't</h4>
+    <div class="csub">${d.periodLabel} · from the uploaded sales files${d.maxDate?' · to '+fmtDate(d.maxDate):''}</div>
+    <div class="kpi4" style="margin:10px 0 4px;">
+      <div class="k"><div class="ki">🛒</div><div class="kn">${clinicBuyers.length}</div><div class="kl">Bought · ${money(buyersNet)}</div></div>
+      <div class="k"><div class="ki">⭕</div><div class="kn" style="color:${d.nonBuyers.length?'var(--coral)':'var(--sage)'};">${d.nonBuyers.length}</div><div class="kl">Didn't buy yet</div></div>
+      <div class="k"><div class="ki">🌐</div><div class="kn">${money(channelNet)}</div><div class="kl">Online / channels</div></div>
+    </div>
+    ${donut}
+  </div>
+  <div class="chartcard"><h4>🏆 Top buyers</h4><div class="csub">Net KD in the period</div>${topBars}</div>
+  <div class="chartcard"><h4>⭕ Didn't buy — by class</h4><div class="csub">A/B first: the money is there</div>${clsBars}</div>
+  <div class="chip-row" style="margin:12px 0 10px;">
+    <div class="chip small ${erpDashTab==='not'?'on':''}" onclick="erpDashTab='not'; renderClinicDash();">⭕ Didn't buy (${d.nonBuyers.length})</div>
+    <div class="chip small ${erpDashTab==='bought'?'on':''}" onclick="erpDashTab='bought'; renderClinicDash();">🛒 Bought (${clinicBuyers.length})</div>
+  </div>
+  ${rows || '<div class="empty">Nothing here.</div>'}
+  <div style="height:8px;"></div>`;
+}
 function renderClinicDash(){
   const el = document.getElementById('clinicDash');
   let pool = clinics.filter(c=>c.cls!=='Closed');
@@ -2921,6 +3025,8 @@ function renderClinicDash(){
     <div class="k"><div class="ki">\u{1F468}\u200D\u2695\uFE0F</div><div class="kn">${totDocs}</div><div class="kl">Doctors on file</div></div>
     <div class="k"><div class="ki">\u{1F3F7}\uFE0F</div><div class="kn" style="color:var(--coral);">${money(totDisc)}</div><div class="kl">Discount given</div></div>
   </div>
+
+  ${erpDashSection()}
 
   <div class="chartcard">
     <h4>Coverage</h4>
@@ -6212,7 +6318,7 @@ function svgDonut(slices){
   return `<div class="donut-wrap">
     <svg viewBox="0 0 120 120" style="width:120px; height:120px; flex-shrink:0;">${paths}
       <text x="60" y="58" font-size="19" text-anchor="middle" font-weight="700" fill="#1C1C1E">${total}</text>
-      <text x="60" y="72" font-size="9" text-anchor="middle" fill="#8E8E93">visits</text>
+      <text x="60" y="72" font-size="9" text-anchor="middle" fill="#8E8E93">${esc((slices.centerLabel||'visits'))}</text>
     </svg>
     <div class="donut-legend">${slices.map(sl=>`<div><span class="swatch" style="background:${sl.c}"></span>${esc(sl.l)} — <strong>${sl.v}</strong></div>`).join('')}</div>
   </div>`;
