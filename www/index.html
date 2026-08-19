@@ -901,7 +901,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v26'; // keep in step with sw.js CACHE version
+const APP_REV = 'v27'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -3421,12 +3421,21 @@ let soClinicId = null, soItems = {}, soDiscount = 0;
 function openStandaloneOrder(prefillClinicId){
   soClinicId = prefillClinicId || null;
   soItems = {}; soDiscount = 0;
+  soNewClinicMode = false;
   showModal(`
     <h3 style="margin-top:0;">🛒 Add order</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone or remote orders — recorded as revenue, not as a field visit.</p>
     <label>Clinic</label>
     <input type="text" id="soClinicSearch" placeholder="🔍 Search clinics..." oninput="renderSoClinics()" style="margin-bottom:8px;">
     <div id="soClinicPick"></div>
+    <button class="btn secondary small" id="soNewClinicBtn" onclick="startSoNewClinic()">+ Add a new customer</button>
+    <div id="soNewClinicFields" style="display:none; margin-top:10px;">
+      <input type="text" id="soNewClinicName" placeholder="Clinic / customer name">
+      <input type="tel" id="soNewClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+      <label>Class</label>
+      <div class="chip-row" id="soNewClinicClsChips"></div>
+      <button class="btn ghost" onclick="cancelSoNewClinic()">Cancel</button>
+    </div>
     <label>Date</label>
     <input type="date" id="soDate" value="${todayStr()}" max="${todayStr()}">
     <label>Products</label>
@@ -3443,6 +3452,23 @@ function openStandaloneOrder(prefillClinicId){
     <button class="btn" onclick="saveStandaloneOrder()">Save order</button>
   `);
   renderSoClinics(); renderSoProducts(); renderSoQty();
+}
+let soNewClinicMode = false;
+function startSoNewClinic(){
+  soNewClinicMode = true;
+  soClinicId = null;
+  document.getElementById('soNewClinicFields').style.display='block';
+  document.getElementById('soClinicPick').style.display='none';
+  document.getElementById('soNewClinicBtn').style.display='none';
+  document.getElementById('soNewClinicClsChips').innerHTML =
+    ['A','B','C','D','F'].map(c=>`<div class="chip small" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('');
+}
+function cancelSoNewClinic(){
+  soNewClinicMode = false;
+  document.getElementById('soNewClinicFields').style.display='none';
+  document.getElementById('soClinicPick').style.display='';
+  document.getElementById('soNewClinicBtn').style.display='';
+  renderSoClinics();
 }
 function renderSoClinics(){
   const q = (document.getElementById('soClinicSearch')?.value||'').toLowerCase().trim();
@@ -3513,6 +3539,22 @@ function renderSoTotal(){
     <div class="row-between" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-weight:700;"><span>Order total</span><span>${money(t.net)}</span></div>`;
 }
 async function saveStandaloneOrder(){
+  let soNewCreated = false;
+  if(soNewClinicMode){
+    const name = document.getElementById('soNewClinicName').value.trim();
+    if(!name){ showToast('Enter the customer name'); return; }
+    const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
+    if(dup){ soClinicId = dup.id; showToast('Customer already exists — using it'); }
+    else {
+      const clsEl = document.querySelector('#soNewClinicClsChips .chip.on');
+      soClinicId = uid();
+      clinics.push(normalizeClinic({id:soClinicId, name, rep: currentUser.name,
+        cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'', account:null,
+        isNew:true, addedOn:todayStr(), contact:'',
+        phone: document.getElementById('soNewClinicPhone').value.trim()}));
+      soNewCreated = true;
+    }
+  }
   if(!soClinicId){ showToast('Pick a clinic first'); return; }
   // Snapshot name and unit price so the order keeps its true value even if the
   // catalog price changes later.
@@ -3533,9 +3575,10 @@ async function saveStandaloneOrder(){
     orderGross:t.gross, orderDiscount:t.disc, orderTotal:t.net,
     nextFollowUp:null, notes
   });
-  await persist('visits');
+  await Promise.all([persist('visits'), soNewCreated ? persist('clinics') : Promise.resolve()]);
+  soNewClinicMode = false;
   closeModal();
-  showToast(`🛒 Order saved — ${money(t.net)}`);
+  showToast(soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
   renderAll();
 }
 
@@ -3547,6 +3590,7 @@ let clClinicId = null, clDoctorId = null;
 function openCallLog(prefillClinicId){
   clClinicId = prefillClinicId || null;
   clDoctorId = null;
+  clNewClinicMode = false;
   showModal(`
     <h3 style="margin-top:0;">📞 Log a call / follow-up</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone calls, WhatsApp, or anything that isn't a field visit — counted as real work, not a clinic visit.</p>
@@ -3557,6 +3601,14 @@ function openCallLog(prefillClinicId){
     <label>Clinic</label>
     <input type="text" id="clClinicSearch" placeholder="🔍 Search clinics..." oninput="renderClClinics()" style="margin-bottom:8px;">
     <div id="clClinicPick"></div>
+    <button class="btn secondary small" id="clNewClinicBtn" onclick="startClNewClinic()">+ Add a new customer</button>
+    <div id="clNewClinicFields" style="display:none; margin-top:10px;">
+      <input type="text" id="clNewClinicName" placeholder="Clinic / customer name">
+      <input type="tel" id="clNewClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+      <label>Class</label>
+      <div class="chip-row" id="clNewClinicClsChips"></div>
+      <button class="btn ghost" onclick="cancelClNewClinic()">Cancel</button>
+    </div>
     <div id="clDoctorWrap"></div>
     <label>Who did you speak with?</label>
     <input type="text" id="clContactName" placeholder="Name (doctor, receptionist, procurement...)">
@@ -3573,6 +3625,24 @@ function openCallLog(prefillClinicId){
     <input type="date" id="clFollowUp">
     <button class="btn" onclick="saveCallLog()">Save</button>
   `);
+  renderClClinics();
+}
+let clNewClinicMode = false;
+function startClNewClinic(){
+  clNewClinicMode = true;
+  clClinicId = null; clDoctorId = null;
+  document.getElementById('clNewClinicFields').style.display='block';
+  document.getElementById('clClinicPick').style.display='none';
+  document.getElementById('clNewClinicBtn').style.display='none';
+  document.getElementById('clDoctorWrap').innerHTML='';
+  document.getElementById('clNewClinicClsChips').innerHTML =
+    ['A','B','C','D','F'].map(c=>`<div class="chip small" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('');
+}
+function cancelClNewClinic(){
+  clNewClinicMode = false;
+  document.getElementById('clNewClinicFields').style.display='none';
+  document.getElementById('clClinicPick').style.display='';
+  document.getElementById('clNewClinicBtn').style.display='';
   renderClClinics();
 }
 function renderClClinics(){
@@ -3612,6 +3682,22 @@ function pickClQuickDate(days){
 }
 const CHANNEL_LABELS = {call:'📞 Call', whatsapp:'💬 WhatsApp', email:'✉️ Email', other:'💭 Other'};
 async function saveCallLog(){
+  let newClinicCreated = false;
+  if(clNewClinicMode){
+    const name = document.getElementById('clNewClinicName').value.trim();
+    if(!name){ showToast('Enter the customer name'); return; }
+    const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
+    if(dup){ clClinicId = dup.id; showToast('Customer already exists — using it'); }
+    else {
+      const clsEl = document.querySelector('#clNewClinicClsChips .chip.on');
+      clClinicId = uid();
+      clinics.push(normalizeClinic({id:clClinicId, name, rep: currentUser.name,
+        cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'', account:null,
+        isNew:true, addedOn:todayStr(), contact:'',
+        phone: document.getElementById('clNewClinicPhone').value.trim()}));
+      newClinicCreated = true;
+    }
+  }
   if(!clClinicId){ showToast('Pick a clinic first'); return; }
   const notes = document.getElementById('clNotes').value.trim();
   if(!notes){ showToast('Add a quick note about the call'); return; }
@@ -3627,10 +3713,11 @@ async function saveCallLog(){
     contactName: contactName||null, contactRole: contactRole||null, contactPhone: contactPhone||null,
     notes, nextFollowUp:followUp});
   if(clinic && followUp) clinic.nextFollowUp = followUp;
-  await Promise.all([persist('visits'), clinic ? persist('clinics') : Promise.resolve()]);
+  await Promise.all([persist('visits'), (clinic || newClinicCreated) ? persist('clinics') : Promise.resolve()]);
   if(clinic && followUp) await scheduleFollowUp(clinic, followUp, rep);
+  clNewClinicMode = false;
   closeModal();
-  showToast(CHANNEL_LABELS[channel]+' logged');
+  showToast(newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
   renderAll();
 }
 
