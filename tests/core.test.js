@@ -824,11 +824,27 @@ describe('clinicCoverage', () => {
     assert.equal(byId.c3.reasons[0].key, 'never-visited');
     assert.equal(byId.c4.reasons[0].key, 'dormant');
     assert.ok(byId.c4.reasons[0].days >= 60);
-    assert.equal(byId.c5.reasons[0].key, 'due-soon');
+    // c5 has never been visited at all — that outranks its upcoming follow-up,
+    // and applies to every class (dormancy used to be judged for A/B only).
+    assert.equal(byId.c5.reasons[0].key, 'never-visited');
+    assert.ok(byId.c5.reasons.some(r => r.key === 'due-soon'));
     assert.equal(byId.c6, undefined); // closed clinics never appear
     assert.equal(byId.c1, undefined); // visited clinics are not "needed"
-    // ordering: overdue before missed-plan before never before dormant before due-soon
-    assert.deepEqual(cov.needsVisit.map(c => c.id), ['c2', 'c7', 'c3', 'c4', 'c5']);
+    // ordering: overdue, missed-plan, never-visited (A before C), dormant
+    assert.deepEqual(cov.needsVisit.map(c => c.id), ['c2', 'c7', 'c3', 'c5', 'c4']);
+  });
+  test('every active clinic is either visited or listed — the counts reconcile', () => {
+    // c8: visited before the window, not dormant yet, no follow-up flags —
+    // used to vanish from both lists, making visited + unvisited ≠ total.
+    const o = { ...opts,
+      clinics: [...opts.clinics, { id: 'c8', name: 'Quiet Recent', rep: 'Mariam', cls: 'D' }],
+      visits: [...opts.visits, { rep: 'Mariam', clinicId: 'c8', date: '2026-08-01' }] };
+    const cov = core.clinicCoverage(o);
+    const c8 = cov.needsVisit.find(c => c.id === 'c8');
+    assert.ok(c8, 'c8 must appear in the unvisited list');
+    assert.equal(c8.reasons[0].key, 'not-covered');
+    assert.equal(c8.lastVisit, '2026-08-01');
+    assert.equal(cov.stats.visitedCount + cov.stats.needsCount, cov.stats.totalClinics);
   });
   test('stats add up and coverage % is right', () => {
     const cov = core.clinicCoverage(opts);

@@ -1189,8 +1189,8 @@
 
     // Reasons a clinic still needs attention, most urgent first (lowest weight wins):
     // 0 overdue follow-up · 1 due today · 2 missed plan · 3 never visited ·
-    // 4 dormant 30+ days · 5 follow-up due within a week
-    var dorm = dormantClinics(opts.clinics, opts.visits, today, { days: 30 });
+    // 4 dormant 30+ days · 5 follow-up due within a week · 6 simply not
+    // covered this window
     var missed = missedPlans(opts.dayPlans, opts.visits, today, { daysBack: 14 })
       .filter(function(m){ return wantRep(m.rep); });
     var missedByClinic = {};
@@ -1198,6 +1198,11 @@
     var soon = new Date(today + 'T00:00:00'); soon.setDate(soon.getDate() + 7);
     var soonStr = localDateStr(soon);
 
+    // EVERY pool clinic lands in exactly one bucket: visited this window, or
+    // needsVisit with at least one reason. A clinic with no urgent flag still
+    // gets a 'not-covered' reason — silently dropping it made
+    // visited + unvisited ≠ total and read as data corruption in the field.
+    var dormDays = (opts.dormantDays || 30);
     var needsVisit = [];
     pool.forEach(function(c){
       if(byClinic[c.id]) return; // being handled this period
@@ -1206,17 +1211,18 @@
       if(fs === 'overdue') reasons.push({ key: 'overdue', weight: 0, date: c.nextFollowUp });
       if(fs === 'today') reasons.push({ key: 'due-today', weight: 1, date: c.nextFollowUp });
       if(missedByClinic[c.id]) reasons.push({ key: 'missed-plan', weight: 2, count: missedByClinic[c.id].length, date: missedByClinic[c.id][0].date });
-      var d = null;
-      for(var i = 0; i < dorm.length; i++) if(dorm[i].id === c.id){ d = dorm[i]; break; }
-      if(d) reasons.push(d.lastVisit === null
-        ? { key: 'never-visited', weight: 3 }
-        : { key: 'dormant', weight: 4, days: d.daysSince });
+      // Never-visited / dormant judged for every class from the full visit
+      // log (dormantClinics limits itself to A/B, which silently exempted
+      // C/D/F clinics from the unvisited list).
+      var last = lastEver[c.id] || null;
+      if(last === null) reasons.push({ key: 'never-visited', weight: 3 });
+      else if(daysBetween(last, today) >= dormDays) reasons.push({ key: 'dormant', weight: 4, days: daysBetween(last, today) });
       if(fs === 'upcoming' && c.nextFollowUp <= soonStr) reasons.push({ key: 'due-soon', weight: 5, date: c.nextFollowUp });
-      if(!reasons.length) return;
+      if(!reasons.length) reasons.push({ key: 'not-covered', weight: 6, lastVisit: last });
       reasons.sort(function(a, b){ return a.weight - b.weight; });
       needsVisit.push({ id: c.id, name: c.name, rep: c.rep, cls: c.cls,
         reasons: reasons, weight: reasons[0].weight,
-        lastVisit: lastEver[c.id] || null, nextFollowUp: c.nextFollowUp || null });
+        lastVisit: last, nextFollowUp: c.nextFollowUp || null });
     });
     needsVisit.sort(function(a, b){
       return a.weight - b.weight || String(a.cls || 'Z').localeCompare(String(b.cls || 'Z')) || a.name.localeCompare(b.name);
