@@ -668,7 +668,10 @@
   <div class="view" id="view-clinics">
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Clinics</h2>
-      <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddClinic()">+</button>
+      <div style="display:flex; gap:12px; align-items:center;">
+        <button class="del" id="manageClinicsBtn" style="color:var(--teal); font-size:16px; display:none;" onclick="openManageClinics()">⚙️</button>
+        <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddClinic()">+</button>
+      </div>
     </div>
     <div class="chip-row" style="margin-bottom:10px;" id="clinicRepFilter"></div>
     <div class="dash-toggle">
@@ -902,7 +905,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v35'; // keep in step with sw.js CACHE version
+const APP_REV = 'v36'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -1889,6 +1892,8 @@ function renderAll(){
   if(adminBtn) adminBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
   const erpBtn = document.getElementById('erpImportBtn');
   if(erpBtn) erpBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
+  const mgBtn = document.getElementById('manageClinicsBtn');
+  if(mgBtn) mgBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
   const fab = document.getElementById('aiFab');
   if(fab) fab.style.display = 'flex';
 
@@ -3349,10 +3354,29 @@ function erpNoteKey(kind, r){ return kind+'|'+(r.doc||'')+'|'+(r.product||''); }
 function erpNoteText(key){ const n = erpNotes[key]; return n ? n.text : ''; }
 async function saveErpNote(key, val){
   const t = (val||'').trim();
-  if(t) erpNotes[key] = {text:t, by:currentUser.name, on:todayStr()};
+  const prev = erpNotes[key] || {};
+  if(t || prev.kind) erpNotes[key] = {text:t, by:currentUser.name, on:todayStr(), kind: prev.kind};
   else delete erpNotes[key];
   await persist('erpNotes');
   showToast(t ? '📝 Reason saved' : 'Reason cleared');
+}
+// Free lines carry a classification: bonus inside a paying deal vs a
+// sample/marketing giveaway. The heuristic sets the default; one tap fixes it.
+function focKindOf(key, def){ const n = erpNotes[key]; return (n && n.kind) || def || 'sample'; }
+async function saveErpNoteKind(key, kind, el){
+  const n = erpNotes[key] || {};
+  n.kind = kind; n.by = n.by || currentUser.name; n.on = n.on || todayStr();
+  erpNotes[key] = n;
+  await persist('erpNotes');
+  if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
+  showToast(kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
+}
+function focKindChips(key, def){
+  const k = focKindOf(key, def);
+  return `<div class="chip-row" style="margin-top:6px;" onclick="event.stopPropagation()">
+    <div class="chip small ${k==='deal'?'on':''}" onclick="saveErpNoteKind('${esc(key)}','deal',this)">🤝 Deal bonus</div>
+    <div class="chip small ${k==='sample'?'on':''}" onclick="saveErpNoteKind('${esc(key)}','sample',this)">🎁 Sample / marketing</div>
+  </div>`;
 }
 async function saveNoSaleReason(clinicId, val){
   const c = clinics.find(x=>x.id===clinicId);
@@ -3363,14 +3387,19 @@ async function saveNoSaleReason(clinicId, val){
   showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
 }
 function clinicErpLedger(clinicId){
-  const ret = [], foc = [];
-  erpPeriods().forEach(p => unpackErpRows(p.rows).forEach(r => {
+  const ret = [], all = [];
+  erpPeriods().forEach(p => unpackErpRows(p.rows).forEach(r => all.push(r)));
+  const focAll = UMCore.focLinesAnnotated(all);
+  all.forEach(r => {
     const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
     if(m.clinicId !== clinicId) return;
     const rv = UMCore.returnValue(r);
     if(rv > 0) ret.push(Object.assign({}, r, {retAmount: Math.round(rv*1000)/1000}));
-    else if(UMCore.isFocRow(r)) foc.push(r);
-  }));
+  });
+  const foc = focAll.filter(r => {
+    const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
+    return m.clinicId === clinicId;
+  });
   const byDate = (a,b)=>(b.date||'').localeCompare(a.date||'');
   ret.sort(byDate); foc.sort(byDate);
   return {ret, foc};
@@ -3388,10 +3417,13 @@ function clinicErpSection(clinicId){
       <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · <span style="color:var(--coral); font-weight:700;">−${money(r.retAmount)}</span> <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
       ${erpNoteInput(erpNoteKey('ret', r))}
     </div>`).join('');
-  const focRows = led.foc.map(r=>`<div class="visit-hist" style="border-left:3px solid var(--gold); padding-left:10px;">
-      <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · 🎁 free${r.gross?` <span style="color:var(--muted);">(worth ${money(r.gross)})</span>`:''} <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
-      ${erpNoteInput(erpNoteKey('foc', r))}
-    </div>`).join('');
+  const focRows = led.foc.map(r=>{
+    const key = erpNoteKey('foc', r);
+    return `<div class="visit-hist" style="border-left:3px solid var(--gold); padding-left:10px;">
+      <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · free${r.gross?` <span style="color:var(--muted);">(worth ${money(r.gross)})</span>`:''} <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
+      ${focKindChips(key, r.kindDefault)}
+      ${erpNoteInput(key)}
+    </div>`;}).join('');
   return `
     ${led.ret.length?`<div class="section-title" style="margin-top:20px;">🔄 Returns from this account (${led.ret.length})</div>
       <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Write the reason under each line — it appears in the management report.</p>${retRows}`:''}
@@ -4685,6 +4717,148 @@ async function confirmDeleteClinic(id){
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
   showToast('Moved to recycle bin');
+}
+
+// ---- MANAGE CLINICS: bulk import from Excel/CSV + bulk delete ----
+let _clinicImport = null;     // parsed preview {rows:[{data, dup, include}], defaultRep}
+let _mgSelected = new Set();  // ids picked for bulk delete
+function openManageClinics(){
+  if(!requireAdmin()) return;
+  _clinicImport = null; _mgSelected = new Set();
+  showModal(`
+    <h3 style="margin-top:0;">⚙️ Manage clinics</h3>
+    <div class="section-title" style="margin-top:6px;">📥 Import clinics from Excel / CSV</div>
+    <p style="color:var(--muted); font-size:12.5px; margin:0 0 8px;">Any sheet works: Arabic or English headers (اسم العيادة، رقم الهاتف، المندوبة…) — or just a plain list of names with phone numbers next to them. Duplicates are detected by name.</p>
+    <label style="font-size:12px;">Assign imported clinics to</label>
+    <div class="chip-row" id="ciRepChips" style="margin-bottom:8px;">${REPS.map((r,i)=>`<div class="chip small ${i===0?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>
+    <p style="color:var(--muted); font-size:11.5px; margin:0 0 8px;">Used when the sheet has no rep column — a rep column in the file wins.</p>
+    <input type="file" id="clinicSheet" accept=".xlsx,.xls,.csv,text/csv" onchange="handleClinicSheet(this)">
+    <div id="ciPreview" style="margin-top:10px;"></div>
+
+    <div class="section-title" style="margin-top:22px;">🗑️ Bulk delete</div>
+    <p style="color:var(--muted); font-size:12.5px; margin:0 0 8px;">Deleted clinics go to the recycle bin (restorable for ${typeof BIN_DAYS!=='undefined'?BIN_DAYS:30} days). Their visit history stays in the log.</p>
+    <input type="text" id="mgSearch" placeholder="Search clinics…" oninput="renderMgList()">
+    <div class="chip-row" style="margin:8px 0;">
+      <div class="chip small" onclick="mgSelectVisible(true)">Select all shown</div>
+      <div class="chip small" onclick="mgSelectVisible(false)">Clear selection</div>
+    </div>
+    <div id="mgList" style="max-height:280px; overflow-y:auto;"></div>
+    <button class="btn" style="background:var(--coral); margin-top:10px;" onclick="bulkDeleteClinics()">Delete selected (<span id="mgCount">0</span>)</button>
+  `);
+  renderMgList();
+}
+function mgVisible(){
+  const q = (document.getElementById('mgSearch')?.value||'').toLowerCase().trim();
+  return clinics.filter(c=>!q || c.name.toLowerCase().includes(q));
+}
+function renderMgList(){
+  const el = document.getElementById('mgList');
+  if(!el) return;
+  el.innerHTML = mgVisible().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`
+    <div class="row-between" style="padding:8px 4px; border-bottom:1px solid var(--line);">
+      <label style="display:flex; align-items:center; gap:10px; flex:1; font-size:13.5px;">
+        <input type="checkbox" ${_mgSelected.has(c.id)?'checked':''} onchange="mgToggle('${c.id}', this.checked)">
+        <span><b>${esc(c.name)}</b> <span style="color:var(--muted); font-size:11.5px;">· ${esc(c.rep||'—')} · ${c.cls||'—'} · ${visits.filter(v=>v.clinicId===c.id).length} visits</span></span>
+      </label>
+    </div>`).join('') || '<div class="empty">No clinics match.</div>';
+  const cnt = document.getElementById('mgCount');
+  if(cnt) cnt.textContent = _mgSelected.size;
+}
+function mgToggle(id, on){ if(on) _mgSelected.add(id); else _mgSelected.delete(id); const c=document.getElementById('mgCount'); if(c) c.textContent=_mgSelected.size; }
+function mgSelectVisible(on){ mgVisible().forEach(c=>{ if(on) _mgSelected.add(c.id); else _mgSelected.delete(c.id); }); renderMgList(); }
+async function bulkDeleteClinics(){
+  if(!requireAdmin()) return;
+  if(!_mgSelected.size){ showToast('Nothing selected'); return; }
+  if(!confirm(`Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
+  for(const id of _mgSelected){
+    const c = clinics.find(x=>x.id===id);
+    if(c) await moveToBin('clinics', c, c.name);
+  }
+  clinics = clinics.filter(c=>!_mgSelected.has(c.id));
+  _mgSelected = new Set();
+  await persist('clinics');
+  renderMgList(); renderAll();
+  if(document.getElementById('clinicList')) renderClinics();
+  showToast('🗑️ Moved to recycle bin');
+}
+async function handleClinicSheet(input){
+  const f = input.files && input.files[0];
+  if(!f) return;
+  const prev = document.getElementById('ciPreview');
+  prev.innerHTML = '<div style="color:var(--muted); font-size:13px;">Reading file…</div>';
+  try{
+    let rows = null;
+    if(/\.(xlsx|xls)$/i.test(f.name)){
+      const sheets = await UMCore.readXlsx(await f.arrayBuffer());
+      // pick the sheet that yields the most clinics
+      let best = null;
+      for(const sh of sheets){
+        const r = UMCore.parseClinicRows(sh.rows);
+        if(!r.error && (!best || r.clinics.length > best.clinics.length)) best = r;
+      }
+      if(!best){ prev.innerHTML = '<div style="color:var(--coral); font-size:13px;">No clinic names recognized in this file.</div>'; return; }
+      rows = best;
+    } else {
+      const text = await f.text();
+      rows = UMCore.parseClinicRows(UMCore.parseCsvText(text));
+      if(rows.error){ prev.innerHTML = '<div style="color:var(--coral); font-size:13px;">No clinic names recognized in this file.</div>'; return; }
+    }
+    const norm = n => UMCore.normClinicName(n);
+    const existing = new Map(clinics.map(c=>[norm(c.name), c]));
+    const list = rows.clinics.map(d=>({data:d, dup: existing.get(norm(d.name)) || null, include: true}));
+    _clinicImport = { rows: list };
+    const dups = list.filter(x=>x.dup).length;
+    prev.innerHTML = `
+      <div class="card" style="background:var(--teal-dim);">
+        <div style="font-weight:700; font-size:13.5px;">Found ${list.length} clinics — ${list.length-dups} new · ${dups} already exist</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:3px;">Existing clinics are skipped; tick "update" to refresh their phone & contact from the sheet.</div>
+        <label style="display:flex; gap:8px; align-items:center; font-size:12.5px; margin-top:8px;"><input type="checkbox" id="ciUpdateDups"> Update phone/contact for existing clinics</label>
+      </div>
+      <div style="max-height:220px; overflow-y:auto; margin-top:8px;">
+        ${list.slice(0,60).map((x,i)=>`
+          <div class="row-between" style="padding:7px 4px; border-bottom:1px solid var(--line); font-size:13px;">
+            <label style="display:flex; gap:9px; align-items:center; flex:1;">
+              <input type="checkbox" checked onchange="_clinicImport.rows[${i}].include=this.checked">
+              <span><b>${esc(x.data.name)}</b><span style="color:var(--muted); font-size:11.5px;"> ${x.data.phone?'· '+esc(x.data.phone):''}${x.data.rep?' · '+esc(x.data.rep):''}${x.data.cls?' · '+x.data.cls:''}</span></span>
+            </label>
+            ${x.dup?'<span class="rep-tag" style="flex-shrink:0;">exists</span>':'<span style="color:var(--sage); font-size:11px; flex-shrink:0;">new</span>'}
+          </div>`).join('')}
+        ${list.length>60?`<div style="color:var(--muted); font-size:12px; text-align:center; padding:6px;">+${list.length-60} more (all included)</div>`:''}
+      </div>
+      <button class="btn" style="margin-top:10px;" onclick="commitClinicImport()">Add clinics</button>`;
+  }catch(e){
+    console.error(e);
+    prev.innerHTML = '<div style="color:var(--coral); font-size:13px;">Could not read this file — save it as .xlsx or .csv and retry.</div>';
+  }
+}
+async function commitClinicImport(){
+  if(!requireAdmin() || !_clinicImport) return;
+  const repEl = document.querySelector('#ciRepChips .chip.on');
+  const defaultRep = repEl ? repEl.dataset.rep : REPS[0];
+  const updateDups = !!document.getElementById('ciUpdateDups')?.checked;
+  const repByLower = new Map(REPS.map(r=>[r.toLowerCase(), r]));
+  let added = 0, updated = 0, skipped = 0;
+  _clinicImport.rows.forEach(x=>{
+    if(!x.include){ skipped++; return; }
+    const d = x.data;
+    if(x.dup){
+      if(updateDups){
+        if(d.phone) x.dup.phone = d.phone;
+        if(d.contact) x.dup.contact = d.contact;
+        updated++;
+      } else skipped++;
+      return;
+    }
+    const rep = repByLower.get((d.rep||'').toLowerCase()) || defaultRep;
+    clinics.push(normalizeClinic({id:uid(), name:d.name, rep, cls:d.cls, market:d.market,
+      account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
+    added++;
+  });
+  await persist('clinics');
+  closeModal();
+  renderAll();
+  if(document.getElementById('clinicList')) renderClinics();
+  showToast(`✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
 }
 
 // ---- DOCTORS DIRECTORY ----
@@ -6956,7 +7130,9 @@ en: {
   capFoc:(w)=>`Goods issued without revenue in the period ${w} — marketing-brand lines and zero-net bonus lines — with the clinic that received them and the justification.`,
   capRecon:'How well the logged visits explain the invoices: matched sales, visits awaiting an invoice, and invoices with no logged visit.',
   capCov:(w)=>`Every active clinic NOT visited between ${w}, with its last visit ever and why it needs attention.`,
-  retValueCol:'Returned value', contLabel:'(continued)',
+  retValueCol:'Returned value', contLabel:'(continued)', colType:'Type',
+  focDealLbl:'Bonus within deals', focSampleLbl:'Samples & marketing',
+  focDealPill:'Deal bonus', focSamplePill:'Sample',
   rxModel:'Prescription model', directModel:'Direct sales', reasonedLbl:'Reasons recorded',
   buyersNote:'Prescription-model clinics create pharmacy demand even without direct invoices — a recorded reason turns every quiet account into a plan, not a problem.',
   byBrand:'By brand', byCustomer:'By customer', covered:'Clinics covered', needVisit:'Not visited this period',
@@ -6996,7 +7172,9 @@ ar: {
   capFoc:(w)=>`البضاعة الصادرة دون إيراد في الفترة ${w} — سطور براند الماركتنغ والبونص بصافي صفر — مع العيادة المستلمة والمبرر.`,
   capRecon:'مدى تفسير الزيارات المسجلة للفواتير: مبيعات مطابقة، زيارات تنتظر فاتورة، وفواتير بلا زيارة مسجلة.',
   capCov:(w)=>`كل عيادة نشطة لم تُزَر بين ${w}، مع آخر زيارة لها على الإطلاق وسبب حاجتها للمتابعة.`,
-  retValueCol:'قيمة المرتجع', contLabel:'(تكملة)',
+  retValueCol:'قيمة المرتجع', contLabel:'(تكملة)', colType:'النوع',
+  focDealLbl:'بونص ضمن صفقات', focSampleLbl:'عينات وماركتنغ',
+  focDealPill:'بونص صفقة', focSamplePill:'عينة',
   rxModel:'نظام وصفات ℞', directModel:'بيع مباشر', reasonedLbl:'أسباب مسجلة',
   buyersNote:'عيادات نظام الوصفات تصنع طلباً في الصيدليات حتى بدون فواتير مباشرة — وتسجيل السبب يحوّل كل حساب هادئ إلى خطة عمل، لا مشكلة.',
   byBrand:'حسب البراند', byCustomer:'حسب العميل', covered:'عيادات مغطاة', needVisit:'لم تُزَر هذه الفترة',
@@ -7250,12 +7428,24 @@ function buildMasterReportBody(lang, format){
   // Marketing & free-of-charge goods: what left the warehouse with no revenue,
   // and which clinic received it.
   const foc = UMCore.focAnalysis(rows);
-  const focLines = rows.filter(r=>UMCore.isFocRow(r)).sort((a,b)=>(b.gross||0)-(a.gross||0)).slice(0,20);
+  // Deal bonuses (free goods inside a paying invoice) are a cost of the sale;
+  // samples/marketing are an investment — the report never mixes the two.
+  const focAll = UMCore.focLinesAnnotated(rows).map(r=>{
+    const key = 'foc|'+(r.doc||'')+'|'+(r.product||'');
+    const n = erpNotes[key];
+    return Object.assign({}, r, { kind: (n && n.kind) || r.kindDefault, note: n ? n.text : '' });
+  }).sort((a,b)=>(b.gross||0)-(a.gross||0));
+  const focDeal = focAll.filter(r=>r.kind==='deal'), focSample = focAll.filter(r=>r.kind==='sample');
+  const sumG = a=>Math.round(a.reduce((s,r)=>s+(r.gross||0),0)*100)/100;
+  const focLines = focAll.slice(0,20);
   const focSec = foc.count ? `<p style="margin:4px 0;">${L.focTotal}: <b><span class="num">${foc.totalQty}</span></b> ${L.focUnits} · ${L.focValueLbl}: <b>${mrMoney(foc.grossValue,lang)}</b></p>
+    <p style="margin:4px 0; font-size:12.5px;">${L.focDealLbl}: <b>${mrMoney(sumG(focDeal),lang)}</b> (<span class="num">${focDeal.length}</span>) · ${L.focSampleLbl}: <b>${mrMoney(sumG(focSample),lang)}</b> (<span class="num">${focSample.length}</span>)</p>
     ${cap(L.capFoc(winTxt))}
-    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colDate}</th><th>${L.colValue}</th><th>${L.colReason}</th></tr></thead><tbody>
-    ${focLines.map(r=>`<tr><td>${esc(r.customer||'—')}</td><td>${esc(r.product||r.brand)}${r.qty?` <span class="num">×${r.qty}</span>`:''}</td><td>${fmtDate(r.date)}</td><td>${mrMoney(r.gross||0,lang)}</td><td>${esc(noteFor('foc', r))||'<span class="mr-note">—</span>'}</td></tr>`).join('')}
-    ${foc.count>20?`<tr><td colspan="5"><span class="mr-note">+${foc.count-20}</span></td></tr>`:''}
+    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colDate}</th><th>${L.colValue}</th><th>${L.colType}</th><th>${L.colReason}</th></tr></thead><tbody>
+    ${focLines.map(r=>`<tr><td>${esc(r.customer||'—')}</td><td>${esc(r.product||r.brand)}${r.qty?` <span class="num">×${r.qty}</span>`:''}</td><td>${fmtDate(r.date)}</td><td>${mrMoney(r.gross||0,lang)}</td>
+      <td><span class="mr-pill ${r.kind==='deal'?'g':'o'}">${r.kind==='deal'?L.focDealPill:L.focSamplePill}</span></td>
+      <td>${esc(r.note)||'<span class="mr-note">—</span>'}</td></tr>`).join('')}
+    ${focAll.length>20?`<tr><td colspan="6"><span class="mr-note">+${focAll.length-20}</span></td></tr>`:''}
     </tbody></table><div class="mr-note">${L.focNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   // Who bought vs who didn't — counts plus every non-buying account with its
