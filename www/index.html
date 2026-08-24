@@ -902,7 +902,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v31'; // keep in step with sw.js CACHE version
+const APP_REV = 'v32'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -5080,6 +5080,7 @@ function covReasonLabel(r){
   if(r.key === 'never-visited') return '🆕 Never visited — a priority clinic still waiting for a first impression';
   if(r.key === 'dormant') return '😴 Quiet for ' + r.days + ' days — top clinics buy elsewhere when unattended';
   if(r.key === 'due-soon') return '🗓️ Follow-up due ' + fmtDate(r.date) + ' — put it in the day plan now';
+  if(r.key === 'not-covered') return '🚶 Not visited in this window' + (r.lastVisit ? ' — last visit ' + fmtDate(r.lastVisit) : '') + ' — fit it into an upcoming route';
   return '';
 }
 // ERP figures for a window: net + invoice count for the rep filter, and the
@@ -5188,8 +5189,9 @@ function renderCoverageBoard(){
       </div>`).join('')}`:''}
     <div class="section-title">✅ Visited (${cov.stats.visitedCount}) — tap for the visit summary</div>
     ${visitedRows || '<div class="empty">No visits in this window.</div>'}
-    <div class="section-title">⏳ Still need a visit (${cov.stats.needsCount})</div>
-    ${needsRows || '<div class="empty">Nothing pending — every priority clinic is covered. 👏</div>'}
+    <div class="section-title">⏳ Not visited in this window (${cov.stats.needsCount})</div>
+    <div style="color:var(--muted); font-size:11.5px; margin:-4px 0 8px;">${cov.stats.visitedCount} visited + ${cov.stats.needsCount} not visited = ${cov.stats.totalClinics} active clinics — most urgent first.</div>
+    ${needsRows || '<div class="empty">Nothing pending — every clinic is covered. 👏</div>'}
   `);
 }
 
@@ -6927,7 +6929,10 @@ en: {
   s_buyers:'Accounts with & without sales', boughtLbl:'Accounts that bought', notBoughtLbl:'No sales yet',
   rxModel:'Prescription model', directModel:'Direct sales', reasonedLbl:'Reasons recorded',
   buyersNote:'Prescription-model clinics create pharmacy demand even without direct invoices — a recorded reason turns every quiet account into a plan, not a problem.',
-  byBrand:'By brand', byCustomer:'By customer', covered:'Clinics covered', needVisit:'Still need a visit',
+  byBrand:'By brand', byCustomer:'By customer', covered:'Clinics covered', needVisit:'Not visited this period',
+  covRecon:(v,n,t)=>`${v} visited + ${n} not visited = ${t} active clinics — every clinic is accounted for.`,
+  covLast:'Last visit', covWhy:'Priority', covNever:'never',
+  covReason:{'overdue':'Follow-up overdue','due-today':'Follow-up due today','missed-plan':'Planned but missed','never-visited':'Never visited','dormant':'Quiet 30+ days','due-soon':'Follow-up this week','not-covered':'Not in this window'},
   overdue:'Overdue follow-ups', doNow:'Do now', watch:'Keep an eye', working:'Working — keep it up',
   planIntro:'Auto-drafted from the most urgent findings — edit in the meeting and assign owners:',
   noData:'No data available for this period.', kd:'KD', week:'Week', total:'Total',
@@ -6954,7 +6959,10 @@ ar: {
   s_buyers:'الحسابات المشترية وغير المشترية', boughtLbl:'حسابات اشترت', notBoughtLbl:'بدون مبيعات بعد',
   rxModel:'نظام وصفات ℞', directModel:'بيع مباشر', reasonedLbl:'أسباب مسجلة',
   buyersNote:'عيادات نظام الوصفات تصنع طلباً في الصيدليات حتى بدون فواتير مباشرة — وتسجيل السبب يحوّل كل حساب هادئ إلى خطة عمل، لا مشكلة.',
-  byBrand:'حسب البراند', byCustomer:'حسب العميل', covered:'عيادات مغطاة', needVisit:'تحتاج زيارة',
+  byBrand:'حسب البراند', byCustomer:'حسب العميل', covered:'عيادات مغطاة', needVisit:'لم تُزَر هذه الفترة',
+  covRecon:(v,n,t)=>`${v} مُزارة + ${n} غير مُزارة = ${t} عيادة نشطة — كل عيادة محسوبة.`,
+  covLast:'آخر زيارة', covWhy:'الأولوية', covNever:'لم تُزَر أبداً',
+  covReason:{'overdue':'متابعة متأخرة','due-today':'متابعة اليوم','missed-plan':'مخططة ولم تتم','never-visited':'لم تُزَر أبداً','dormant':'هادئة +30 يوم','due-soon':'متابعة هذا الأسبوع','not-covered':'خارج هذه الفترة'},
   overdue:'متابعات متأخرة', doNow:'نفّذ الآن', watch:'راقب', working:'يعمل جيداً — استمروا',
   planIntro:'مسودة آلية من أكثر النتائج إلحاحاً — تُناقش في الاجتماع ويُحدد مسؤول لكل بند:',
   noData:'لا تتوفر بيانات لهذه الفترة.', kd:'د.ك', week:'الأسبوع', total:'الإجمالي',
@@ -7221,7 +7229,13 @@ function buildMasterReportBody(lang, format){
     <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.needsCount}</span></div><div class="l">${L.needVisit}</div></div>
     <div class="mr-kpi"><div class="n"><span class="num">${cov.needsVisit.filter(c=>c.weight===0).length}</span></div><div class="l">${L.overdue}</div></div>
     <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.contacts}</span></div><div class="l">${L.kContacts}</div></div>
-  </div>`;
+  </div>
+  <div class="mr-note">${L.covRecon(cov.stats.visitedCount, cov.stats.needsCount, cov.stats.totalClinics)}</div>
+  ${cov.needsVisit.length?`<table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.covLast}</th><th>${L.covWhy}</th></tr></thead><tbody>
+    ${cov.needsVisit.slice(0,25).map(c=>`<tr><td>${esc(c.name)} <span class="num">${esc(c.cls||'')}</span></td><td>${esc(c.rep||'')}</td>
+      <td>${c.lastVisit?fmtDate(c.lastVisit):L.covNever}</td><td>${L.covReason[c.reasons[0].key]||''}</td></tr>`).join('')}
+    ${cov.needsVisit.length>25?`<tr><td colspan="4"><span class="mr-note">+${cov.needsVisit.length-25}</span></td></tr>`:''}
+    </tbody></table>`:''}`;
 
   const recoItems = coach.map(i=>`<div class="mr-reco ${i.level}"><span class="lv">${i.level==='act'?L.doNow:i.level==='watch'?L.watch:L.working}</span><br>${i.icon} ${esc(mrCoachText(i, lang))}</div>`);
   const planItems = coach.filter(i=>i.level!=='good');
