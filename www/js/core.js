@@ -378,14 +378,16 @@
       const t = targets[rep];
       const goal = t.revenue;
       // Target tracking is grounded in the supervisor's uploads, never in what
-      // the reps type by hand. The monthly DSR and the weekly sales files are
-      // both uploads — the FRESHEST one wins, so a weekly sales upload
-      // overtakes an older DSR figure. Pace math uses the winning source's
-      // as-of day so a mid-month upload isn't judged against today's calendar.
+      // the reps type by hand. The DSR is the company's OFFICIAL reconciled
+      // report — whenever one covers the current month it is authoritative,
+      // even over more recent raw sales-detail invoices (which may include
+      // rows the DSR excludes). Sales files only fill in when no current-month
+      // DSR exists. Pace math uses the winning source's as-of day so a
+      // mid-month upload isn't judged against today's calendar.
       const officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
       const e = erpMtd[rep];
       const erpOk = e && e.amount != null;
-      const official = officialOk && (!erpOk || t.achievedAsOf >= (e.asOf || ''));
+      const official = officialOk;
       const erp = !official && erpOk;
       const mtd = official ? t.achieved
         : erp ? e.amount
