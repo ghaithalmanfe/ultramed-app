@@ -748,6 +748,19 @@
     }
     return { clinicId: null, channel: false, method: 'none' };
   }
+  // Territory attribution: a sale to a KNOWN clinic belongs to the rep who
+  // owns that clinic, whatever salesman name the ERP invoice carries. Only
+  // when the customer isn't a matched clinic (channel / unmatched / ambiguous)
+  // do we fall back to the file's salesman→rep mapping.
+  function erpRowRep(r, clinics, erpMap, repMap){
+    var m = matchCustomer((r.customer || '').trim(), clinics, erpMap);
+    if(m.clinicId){
+      for(var i = 0; i < (clinics || []).length; i++){
+        if(clinics[i].id === m.clinicId) return clinics[i].rep || (repMap || {})[r.salesman] || null;
+      }
+    }
+    return (repMap || {})[r.salesman] || null;
+  }
   // Duplicate saves show up as identical visit rows; collapse them for fair counts.
   function dedupeVisits(visits){
     var seen = {}, unique = [], dup = 0;
@@ -781,12 +794,13 @@
     var clinics = opts.clinics || [];
     var dd = dedupeVisits(filterVisitsByRange(opts.visits, opts.from, opts.to));
     var out = { perRep: [], unmatchedCustomers: [], window: { from: opts.from, to: opts.to } };
+    var attr = function(r){ return erpRowRep(r, clinics, opts.erpMap, repMap); };
     var reps = {};
-    rows.forEach(function(r){ var rep = repMap[r.salesman]; if(rep) reps[rep] = 1; });
+    rows.forEach(function(r){ var rep = attr(r); if(rep) reps[rep] = 1; });
     dd.unique.forEach(function(v){ if(v.rep) reps[v.rep] = 1; if(v.withRep) reps[v.withRep] = 1; });
     var unmatchedSet = {};
     Object.keys(reps).sort().forEach(function(rep){
-      var erpRows = rows.filter(function(r){ return repMap[r.salesman] === rep; });
+      var erpRows = rows.filter(function(r){ return attr(r) === rep; });
       // A visit means a FIELD visit, and a joint attendee is credited too —
       // so calls/remote orders never fake a visit→invoice link, and a joint
       // rep's real visit isn't flagged as "invoiced with no visit".
@@ -1397,7 +1411,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
+    matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow,
     detectClinicColumns, parseClinicRows, focLinesAnnotated
