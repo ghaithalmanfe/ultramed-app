@@ -712,22 +712,41 @@
   function matchCustomer(cust, clinics, erpMap){
     if(erpMap && Object.prototype.hasOwnProperty.call(erpMap, cust)){
       var v = erpMap[cust];
-      return v === '@channel' ? { clinicId: null, channel: true }
-           : v === '@ignore' ? { clinicId: null, channel: false, ignored: true }
-           : { clinicId: v, channel: false };
+      return v === '@channel' ? { clinicId: null, channel: true, method: 'map' }
+           : v === '@ignore' ? { clinicId: null, channel: false, ignored: true, method: 'map' }
+           : { clinicId: v, channel: false, method: 'map' };
     }
-    if(isErpChannel(cust)) return { clinicId: null, channel: true };
+    if(isErpChannel(cust)) return { clinicId: null, channel: true, method: 'channel' };
     var n = normClinicName(cust);
-    if(!n) return { clinicId: null, channel: false };
+    if(!n) return { clinicId: null, channel: false, method: 'none' };
     var toks = n.split(' ');
-    var best = null, bestScore = 0;
+    // Token-overlap scoring; collect EVERY clinic tied at the top score so two
+    // branches of the same clinic ("Aline Salmiya" vs "Aline Hawally") are
+    // never silently merged — a tie is reported as ambiguous, not guessed.
+    var bestScore = 0, tied = [];
     (clinics || []).forEach(function(c){
       var ct = normClinicName(c.name).split(' ');
       var ov = toks.filter(function(t){ return ct.indexOf(t) >= 0; }).length;
       var need = (toks.length === 1 || ct.length === 1) ? 1 : 2;
-      if(ov >= need && ov > bestScore){ best = c.id; bestScore = ov; }
+      if(ov < need) return;
+      if(ov > bestScore){ bestScore = ov; tied = [c.id]; }
+      else if(ov === bestScore){ tied.push(c.id); }
     });
-    return { clinicId: best, channel: false };
+    if(tied.length === 1) return { clinicId: tied[0], channel: false, method: 'token', score: bestScore };
+    if(tied.length > 1) return { clinicId: null, channel: false, ambiguous: true, candidates: tied, method: 'ambiguous' };
+    // No token match — try a de-spaced containment pass for spelling/spacing
+    // variants ("Al-Noor" vs "Alnoor"), still branch-safe (unique winner only).
+    var flat = n.replace(/ /g, '');
+    if(flat.length >= 4){
+      var fz = [];
+      (clinics || []).forEach(function(c){
+        var cf = normClinicName(c.name).replace(/ /g, '');
+        if(cf.length >= 4 && (cf.indexOf(flat) >= 0 || flat.indexOf(cf) >= 0)) fz.push(c.id);
+      });
+      if(fz.length === 1) return { clinicId: fz[0], channel: false, method: 'fuzzy' };
+      if(fz.length > 1) return { clinicId: null, channel: false, ambiguous: true, candidates: fz, method: 'ambiguous' };
+    }
+    return { clinicId: null, channel: false, method: 'none' };
   }
   // Duplicate saves show up as identical visit rows; collapse them for fair counts.
   function dedupeVisits(visits){
