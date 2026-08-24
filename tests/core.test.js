@@ -811,6 +811,22 @@ describe('reconcileErp', () => {
     const rec = core.reconcileErp({ ...opts, erpMap: { 'Joury Clinic': '@ignore' } });
     assert.ok(!rec.unmatchedCustomers.includes('Joury Clinic'));
   });
+  test('a phone call is NOT a field visit, so it never fakes a visit→invoice link', () => {
+    const rec = core.reconcileErp({ ...opts,
+      visits: [{ date: '2026-08-10', rep: 'Mariam', clinicId: 'c1', callOnly: true }] });
+    const mariam = rec.perRep.find(r => r.rep === 'Mariam');
+    assert.equal(mariam.matched.length, 0);                 // call ≠ visit
+    assert.ok(mariam.invoicedNoVisit.some(x => x.clinicId === 'c1')); // Bayan: invoiced, not visited
+  });
+  test('a joint visit credits the non-lead rep in reconciliation too', () => {
+    const rec = core.reconcileErp({ ...opts,
+      rows: [{ date: '2026-08-10', doc: 'S1', type: 'invoice', net: 100, sret: 0, salesman: 'Ranova Ayman Mohammed', customer: 'Bayan Dental Center', brand: 'TEPE', cls: 'Clinics' }],
+      visits: [{ date: '2026-08-10', rep: 'Mariam', withRep: 'Renova', clinicId: 'c1', orderTaken: false }] });
+    const renova = rec.perRep.find(r => r.rep === 'Renova');
+    // Bayan was invoiced under Renova and jointly visited by Renova → matched, not "no visit".
+    assert.equal(renova.matched.length, 1);
+    assert.equal(renova.invoicedNoVisit.length, 0);
+  });
 });
 
 describe('clinicCoverage', () => {
@@ -838,13 +854,26 @@ describe('clinicCoverage', () => {
     assert.equal(cov.visited.length, 1);
     const c = cov.visited[0];
     assert.equal(c.id, 'c1');
-    assert.equal(c.visits, 2);
-    assert.equal(c.calls, 1);
+    assert.equal(c.visits, 1);              // one FIELD visit (the call does not count)
+    assert.equal(c.calls, 1);              // the call is kept as a sub-metric
     assert.equal(c.orders, 1);
     assert.equal(c.revenue, 120);
-    assert.equal(c.contacts, 3); // 2 doctors + 1 named call contact
-    assert.equal(c.lastDate, '2026-08-12');
-    assert.equal(c.detail.length, 2);
+    assert.equal(c.contacts, 2);           // 2 doctors on the field visit (call contact excluded)
+    assert.equal(c.lastDate, '2026-08-10'); // last FIELD visit, not the later call
+    assert.equal(c.detail.length, 1);
+  });
+  test('a clinic that was only phoned is NOT covered and reads as never-visited', () => {
+    const o = { ...opts,
+      clinics: [{ id: 'p1', name: 'Phoned Only', rep: 'Mariam', cls: 'A' }],
+      visits: [{ rep: 'Mariam', clinicId: 'p1', date: '2026-08-12', callOnly: true }],
+      dayPlans: {} };
+    const cov = core.clinicCoverage(o);
+    assert.equal(cov.stats.visitedCount, 0);
+    assert.equal(cov.stats.coveragePct, 0);
+    const p1 = cov.needsVisit.find(x => x.id === 'p1');
+    assert.ok(p1);
+    assert.equal(p1.reasons[0].key, 'never-visited'); // phone contact ≠ a visit
+    assert.equal(p1.lastVisit, null);
   });
   test('needsVisit lists the right reasons, most urgent first', () => {
     const cov = core.clinicCoverage(opts);
@@ -883,7 +912,7 @@ describe('clinicCoverage', () => {
     assert.equal(cov.stats.coveragePct, 17);
     assert.equal(cov.stats.needsCount, 5);
     assert.equal(cov.stats.revenue, 120);
-    assert.equal(cov.stats.contacts, 3);
+    assert.equal(cov.stats.contacts, 2); // field-visit contacts only (the call's contact is excluded)
   });
   test('rep filter narrows both lists', () => {
     const cov = core.clinicCoverage({ ...opts, repFilter: 'Renova' });
@@ -1109,7 +1138,8 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(d[1].amount, 25);
   });
   test('isFocRow flags marketing and zero-net lines, never returns or paid sales', () => {
-    assert.equal(core.isFocRow({ type: 'invoice', brand: 'Tepe - Marketing', qty: 1, net: 5, sret: 0 }), true);
+    assert.equal(core.isFocRow({ type: 'invoice', brand: 'Tepe - Marketing', qty: 1, net: 0, sret: 0 }), true);  // marketing brand, no revenue → giveaway
+    assert.equal(core.isFocRow({ type: 'invoice', brand: 'Tepe - Marketing', qty: 1, net: 5, sret: 0 }), false); // marketing brand that EARNED net → a real sale, not free
     assert.equal(core.isFocRow({ type: 'invoice', brand: 'TEPE', qty: 3, net: 0, sret: 0 }), true);
     assert.equal(core.isFocRow({ type: 'invoice', brand: 'TEPE', qty: 3, net: 9, sret: 0 }), false);
     assert.equal(core.isFocRow({ type: 'return', brand: 'Tepe - Marketing', qty: 1, net: -5, sret: 0 }), false);
@@ -1158,11 +1188,12 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
       {doc: 'S1', type: 'invoice', net: 50, qty: 2, gross: 55, sret: 0, brand: 'TEPE', product: 'Brush', customer: 'A'},
       {doc: 'S1', type: 'invoice', net: 0, qty: 1, gross: 5, sret: 0, brand: 'TEPE', product: 'Brush free', customer: 'A'},
       {doc: 'S2', type: 'invoice', net: 0, qty: 5, gross: 10, sret: 0, brand: 'TEPE', product: 'Samples', customer: 'B'},
-      {doc: 'S3', type: 'invoice', net: 20, qty: 1, gross: 20, sret: 0, brand: 'Tepe - Marketing', product: 'Kit', customer: 'C'},
+      {doc: 'S3', type: 'invoice', net: 20, qty: 1, gross: 20, sret: 0, brand: 'Tepe - Marketing', product: 'Kit', customer: 'C'}, // marketing brand but EARNED net 20 → a real sale, not free
+      {doc: 'S4', type: 'invoice', net: 0, qty: 3, gross: 12, sret: 0, brand: 'Tepe - Marketing', product: 'Free kit', customer: 'D'}, // marketing brand, no revenue → giveaway
     ];
     const ann = core.focLinesAnnotated(rows);
     assert.deepEqual(ann.map(r => [r.product, r.kindDefault]),
-      [['Brush free', 'deal'], ['Samples', 'sample'], ['Kit', 'sample']]);
+      [['Brush free', 'deal'], ['Samples', 'sample'], ['Free kit', 'sample']]);
   });
   test('returnsAnalysis also counts SRT return docs valued only as negative net', () => {
     const rows = [
