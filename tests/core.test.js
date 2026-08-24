@@ -1048,6 +1048,25 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.deepEqual(r.byBrand[0], { name: 'Hismile', amount: 150 });
     assert.deepEqual(r.byCustomer[0], { name: 'Trolley', amount: 130 });
   });
+  test('returnsAnalysis also counts SRT return docs valued only as negative net', () => {
+    const rows = [
+      { doc: 'SRT9', type: 'return', net: -25, sret: 0, brand: 'FLASH', customer: 'Joury' },
+      { doc: 'SRT9', type: 'return', net: -5, sret: 0, brand: 'FLASH', customer: 'Joury' },
+      { doc: 'SINV1', type: 'invoice', net: 100, sret: 10, brand: 'TEPE', customer: 'Lulu' },
+      { doc: 'SINV2', type: 'invoice', net: 80, sret: 0, brand: 'TEPE', customer: 'Lulu' }, // clean sale
+    ];
+    const r = core.returnsAnalysis(rows);
+    assert.equal(r.total, 40);       // 25 + 5 from the SRT doc + 10 from the sret column
+    assert.equal(r.count, 3);
+    assert.equal(r.docCount, 2);     // SRT9 and SINV1
+    assert.deepEqual(r.byBrand[0], { name: 'FLASH', amount: 30 });
+  });
+  test('returnValue never double-counts a row that has both sret and negative net', () => {
+    assert.equal(core.returnValue({ type: 'return', net: -30, sret: 30 }), 30);
+    assert.equal(core.returnValue({ type: 'return', net: -30, sret: 0 }), 30);
+    assert.equal(core.returnValue({ type: 'invoice', net: 100, sret: 12 }), 12);
+    assert.equal(core.returnValue({ type: 'invoice', net: 100, sret: 0 }), 0);
+  });
   test('coach insights now carry structured data for localization', () => {
     const today = '2026-08-12';
     const out = core.coachInsights({
