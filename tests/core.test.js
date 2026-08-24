@@ -252,6 +252,36 @@ describe('computeScoreForVisits', () => {
     assert.equal(s.coveragePct, 0);
     assert.equal(s.priorityPct, 0);
   });
+  test('phone calls and remote orders never count as field visits', () => {
+    const vs = [
+      { rep: 'Mariam', clinicId: 'c1', orderTaken: false },                 // field visit
+      { rep: 'Mariam', clinicId: 'c1', callOnly: true, channel: 'call' },   // phone call
+      { rep: 'Mariam', clinicId: 'c3', orderOnly: true, orderTaken: true, orderTotal: 40 }, // remote order
+    ];
+    const s = core.computeScoreForVisits('Mariam', vs, CLINICS);
+    assert.equal(s.visits, 1);          // only the field visit
+    assert.equal(s.calls, 1);
+    assert.equal(s.remoteOrders, 1);
+    assert.equal(s.orders, 1);          // the remote order still counts as an order
+    assert.equal(s.revenue, 40);        // and its revenue is kept
+    assert.equal(s.conversion, 0);      // the one field visit closed no order
+  });
+  test('a joint visit is credited to BOTH reps but its revenue is not double-counted', () => {
+    const vs = [
+      { rep: 'Mariam', withRep: 'Renova', clinicId: 'c1', orderTaken: true, orderTotal: 200 },
+    ];
+    const m = core.computeScoreForVisits('Mariam', vs, CLINICS);
+    const r = core.computeScoreForVisits('Renova', vs, CLINICS);
+    assert.equal(m.visits, 1);          // lead
+    assert.equal(r.visits, 1);          // colleague also gets the visit
+    assert.equal(m.revenue, 200);       // money stays with the lead
+    assert.equal(r.revenue, 0);         // colleague does not double-count it
+  });
+  test('an accidental duplicate visit is counted once', () => {
+    const dup = { rep: 'Mariam', clinicId: 'c1', date: '2026-08-10', orderTaken: false, notes: 'intro' };
+    const s = core.computeScoreForVisits('Mariam', [dup, { ...dup }], CLINICS);
+    assert.equal(s.visits, 1);
+  });
 });
 
 describe('computeRepScore', () => {
