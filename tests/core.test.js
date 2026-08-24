@@ -1102,6 +1102,38 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(f.byCustomer[0].qty, 15);
     assert.deepEqual(f.byProduct[0], { name: 'Sample Kit', qty: 10, gross: 30 });
   });
+  test('parseClinicRows reads Arabic headers, skips totals, normalizes class & phone', () => {
+    const r = core.parseClinicRows([
+      ['اسم العيادة', 'رقم الهاتف', 'المندوبة', 'الفئة'],
+      ['عيادة الابتسامة', '9988-7766', 'Mariam', 'a'],
+      ['المجموع', '', '', ''],
+    ]);
+    assert.equal(r.error, null);
+    assert.equal(r.clinics.length, 1);
+    assert.deepEqual(r.clinics[0], {name: 'عيادة الابتسامة', phone: '99887766', contact: '', rep: 'Mariam', cls: 'A', market: null, account: null});
+    assert.equal(r.skipped, 1);
+  });
+  test('parseClinicRows handles a headerless name+phone list', () => {
+    const r = core.parseClinicRows([['عيادة النور', '55443322'], ['Pearl Clinic', '']]);
+    assert.equal(r.clinics.length, 2);
+    assert.equal(r.clinics[0].phone, '55443322');
+    assert.equal(r.clinics[1].name, 'Pearl Clinic');
+  });
+  test('parseClinicRows drops a lone label row atop a bare list', () => {
+    const r = core.parseClinicRows([['اسم العيادة'], ['عيادة السلام']]);
+    assert.deepEqual(r.clinics.map(c => c.name), ['عيادة السلام']);
+  });
+  test('focLinesAnnotated separates deal bonuses from samples', () => {
+    const rows = [
+      {doc: 'S1', type: 'invoice', net: 50, qty: 2, gross: 55, sret: 0, brand: 'TEPE', product: 'Brush', customer: 'A'},
+      {doc: 'S1', type: 'invoice', net: 0, qty: 1, gross: 5, sret: 0, brand: 'TEPE', product: 'Brush free', customer: 'A'},
+      {doc: 'S2', type: 'invoice', net: 0, qty: 5, gross: 10, sret: 0, brand: 'TEPE', product: 'Samples', customer: 'B'},
+      {doc: 'S3', type: 'invoice', net: 20, qty: 1, gross: 20, sret: 0, brand: 'Tepe - Marketing', product: 'Kit', customer: 'C'},
+    ];
+    const ann = core.focLinesAnnotated(rows);
+    assert.deepEqual(ann.map(r => [r.product, r.kindDefault]),
+      [['Brush free', 'deal'], ['Samples', 'sample'], ['Kit', 'sample']]);
+  });
   test('returnsAnalysis also counts SRT return docs valued only as negative net', () => {
     const rows = [
       { doc: 'SRT9', type: 'return', net: -25, sret: 0, brand: 'FLASH', customer: 'Joury' },
