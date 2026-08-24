@@ -1094,10 +1094,57 @@
     };
     var docs = {};
     ret.forEach(function(r){ if(r.doc) docs[r.doc] = 1; });
+    // Per-line detail so a supervisor can see WHICH clinic returned WHAT,
+    // not just the top-5 aggregates.
+    var detail = ret.map(function(r){
+      return { date: r.date, doc: r.doc, customer: r.customer || '—', brand: r.brand || '—',
+        product: r.product || '', qty: r.qty || 0, amount: Math.round(returnValue(r) * 1000) / 1000 };
+    }).sort(function(a, b){ return b.amount - a.amount; });
     return {
       total: Math.round(ret.reduce(function(s, r){ return s + returnValue(r); }, 0) * 1000) / 1000,
       count: ret.length, docCount: Object.keys(docs).length,
-      byBrand: agg('brand'), byCustomer: agg('customer'),
+      byBrand: agg('brand'), byCustomer: agg('customer'), detail: detail,
+    };
+  }
+
+  // ==== MARKETING / FREE-OF-CHARGE TRACKING ====
+  // Goods that left the warehouse without revenue: rows filed under a
+  // "Marketing" brand or account, and invoice lines with quantity but zero
+  // net (bonus / free-of-charge goods). Grouped so the supervisor can see
+  // which clinic received what for free and what it was worth at gross.
+  function isMarketingRow(r){
+    return /marketing/i.test(String(r.brand || '')) || /marketing/i.test(String(r.customer || ''));
+  }
+  function focAnalysis(rows){
+    var foc = (rows || []).filter(function(r){
+      if(r.type === 'return' || r.sret > 0) return false; // return lines are not giveaways
+      return isMarketingRow(r) || ((r.qty || 0) > 0 && !(r.net > 0));
+    });
+    var round3 = function(n){ return Math.round(n * 1000) / 1000; };
+    var byCust = {}, byProd = {};
+    foc.forEach(function(r){
+      var ck = (r.customer || '').trim() || '—';
+      var c = byCust[ck] || (byCust[ck] = { name: ck, qty: 0, gross: 0, lines: 0, items: {} });
+      c.qty += (r.qty || 0); c.gross += (r.gross || 0); c.lines++;
+      var pk = (r.product || '').trim() || '—';
+      c.items[pk] = (c.items[pk] || 0) + (r.qty || 0);
+      var p = byProd[pk] || (byProd[pk] = { name: pk, qty: 0, gross: 0 });
+      p.qty += (r.qty || 0); p.gross += (r.gross || 0);
+    });
+    var customers = Object.keys(byCust).map(function(k){
+      var c = byCust[k];
+      return { name: c.name, qty: c.qty, gross: round3(c.gross), lines: c.lines,
+        items: Object.keys(c.items).map(function(pk){ return { product: pk, qty: c.items[pk] }; })
+          .sort(function(a, b){ return b.qty - a.qty; }) };
+    }).sort(function(a, b){ return b.gross - a.gross || b.qty - a.qty; });
+    var products = Object.keys(byProd).map(function(k){
+      return { name: byProd[k].name, qty: byProd[k].qty, gross: round3(byProd[k].gross) };
+    }).sort(function(a, b){ return b.qty - a.qty; });
+    return {
+      count: foc.length,
+      totalQty: foc.reduce(function(s, r){ return s + (r.qty || 0); }, 0),
+      grossValue: round3(foc.reduce(function(s, r){ return s + (r.gross || 0); }, 0)),
+      byCustomer: customers, byProduct: products,
     };
   }
 
@@ -1198,6 +1245,6 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow
   };
 });
