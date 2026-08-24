@@ -902,7 +902,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v34'; // keep in step with sw.js CACHE version
+const APP_REV = 'v35'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -1583,7 +1583,7 @@ const EVENT_TYPES = ['Meeting','Training','Conference','Marketing','Personal','O
 function calDayData(d){
   return UMCore.calendarDayItems(d, calRepFilter, {visits, clinics, tasks, events, dayPlans});
 }
-function setCalRepFilter(r){ calRepFilter = r; renderAll(); renderCalendar(); }
+function setCalRepFilter(r){ calRepFilter = ownRepOnly(r); renderAll(); renderCalendar(); }
 function setCalMode(m){
   calMode = m;
   document.getElementById('calModeMonth').classList.toggle('on', m==='month');
@@ -1791,7 +1791,12 @@ function calOpenPlanner(d){
   openDatePlanner(d);
 }
 function openAddEvent(dateStr){ openEventForm(null, dateStr); }
-function openEditEvent(id){ const ev = events.find(e=>e.id===id); if(ev) openEventForm(ev, ev.date); }
+function openEditEvent(id){
+  const ev = events.find(e=>e.id===id);
+  if(!ev) return;
+  if(currentUser.role!=='supervisor' && ev.rep!==currentUser.name){ showToast('🔒 Only its owner can edit this event'); return; }
+  openEventForm(ev, ev.date);
+}
 function openEventForm(ev, dateStr){
   const isNew = !ev;
   const repOpts = currentUser.role==='supervisor'
@@ -1840,6 +1845,8 @@ async function saveEventForm(id){
   renderCalendar();
 }
 async function deleteEvent(id){
+  const ev = events.find(e=>e.id===id);
+  if(ev && currentUser.role!=='supervisor' && ev.rep!==currentUser.name){ showToast('🔒 Only its owner can delete this event'); return; }
   if(!confirm('Delete this event?')) return;
   events = events.filter(e=>e.id!==id);
   await persist('events');
@@ -1898,8 +1905,8 @@ function renderAll(){
 
   renderToday();
 }
-function setClinicRepFilter(v){ clinicRepFilter=v; renderAll(); setClinicMode(clinicMode); }
-function setReportRepFilter(v){ reportRepFilter=v; renderAll(); renderReports(); }
+function setClinicRepFilter(v){ clinicRepFilter=ownRepOnly(v); renderAll(); setClinicMode(clinicMode); }
+function setReportRepFilter(v){ reportRepFilter=ownRepOnly(v); renderAll(); renderReports(); }
 
 function visibleDueClinics(){
   let list = clinics.filter(c => c.cls !== 'Closed' && ['overdue','today'].includes(followStatus(c.nextFollowUp)));
@@ -1914,6 +1921,13 @@ function visibleVisits(){
   if(currentUser.role==='supervisor') return visits;
   return visits.filter(v=>v.rep===currentUser.name || v.withRep===currentUser.name);
 }
+// ---- ACCOUNT SEPARATION ----
+// Reps are hard-scoped to their own book of business: they can neither see
+// nor act on another rep's clinics or data. The supervisor sees everything.
+function canViewClinic(c){ return currentUser.role==='supervisor' || !c || !c.rep || c.rep===currentUser.name; }
+// A rep filter value coming from the UI (or console) collapses to the rep's
+// own name for non-supervisors, so no setter can widen their view.
+function ownRepOnly(v){ return currentUser.role==='supervisor' ? v : currentUser.name; }
 // Both participants of a joint visit (and the supervisor) may edit it.
 function canEditVisit(v){
   return currentUser.role==='supervisor' || v.rep===currentUser.name || v.withRep===currentUser.name;
@@ -2281,6 +2295,7 @@ function openWeekMonthPlan(){
   renderWeekMonthPlan();
 }
 function setPlanViewRep(rep){
+  rep = ownRepOnly(rep);
   planViewRep = rep;
   document.querySelectorAll('#pvRepChips .chip').forEach(c=>c.classList.toggle('on', c.dataset.rep===rep));
   renderWeekMonthPlan();
@@ -2322,7 +2337,7 @@ function renderWeekMonthPlan(){
   }).join('');
 }
 function openDatePlanner(dateStr){
-  const rep = planViewRep || currentUser.name;
+  const rep = ownRepOnly(planViewRep || currentUser.name);
   const dayObj = dayPlans[dateStr] || {};
   const mine = (dayObj[rep] || []).map(e => typeof e==='string' ? {id:e, note:''} : {...e});
   const repClinics = clinics.filter(c=>c.rep===rep && c.cls!=='Closed').sort((a,b)=>a.name.localeCompare(b.name));
@@ -2481,7 +2496,7 @@ function renderClinicSelect(qClinicId){
   document.getElementById('docTipLink').innerHTML = '';
 
   const mine = clinics.filter(c=>c.rep===logAsRep && c.cls!=='Closed');
-  const others = clinics.filter(c=>c.rep!==logAsRep && c.cls!=='Closed');
+  const others = currentUser.role==='supervisor' ? clinics.filter(c=>c.rep!==logAsRep && c.cls!=='Closed') : [];
   const filt = c => c.name.toLowerCase().includes(q);
   let list = [...mine.filter(filt).sort((a,b)=>a.name.localeCompare(b.name)),
               ...others.filter(filt).sort((a,b)=>a.name.localeCompare(b.name))];
@@ -3255,6 +3270,7 @@ async function submitAddClinic(){
 function openClinicDetail(id){
   const c = clinics.find(x=>x.id===id);
   if(!c) return;
+  if(!canViewClinic(c)){ showToast('🔒 This clinic belongs to '+(c.rep||'another rep')); return; }
   const cVisits = visits.filter(v=>v.clinicId===id).sort((a,b)=>b.date.localeCompare(a.date));
   const canPlan = currentUser.name===c.rep;
   showModal(`
@@ -3341,6 +3357,7 @@ async function saveErpNote(key, val){
 async function saveNoSaleReason(clinicId, val){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
+  if(!canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   c.noSaleReason = (val||'').trim();
   await persist('clinics');
   showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
@@ -4612,6 +4629,7 @@ async function addDoctor(clinicId){
   const tEl = document.querySelector('#newDocTitleChips .chip.on');
   const title = tEl ? tEl.dataset.title : '';
   const c = clinics.find(x=>x.id===clinicId);
+  if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   c.doctors.push({id:uid(), name, title});
   await persist('clinics');
   document.getElementById('docListInModal').innerHTML = renderDoctorRows(c);
@@ -4621,12 +4639,14 @@ async function addDoctor(clinicId){
 }
 async function removeDoctor(clinicId, docId){
   const c = clinics.find(x=>x.id===clinicId);
+  if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   c.doctors = c.doctors.filter(d=>d.id!==docId);
   await persist('clinics');
   document.getElementById('docListInModal').innerHTML = renderDoctorRows(c);
 }
 async function saveProfileNotes(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
+  if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   c.profileNotes = document.getElementById('profileNotesEdit').value.trim();
   await persist('clinics');
   showToast('📝 Saved — future you will thank you');
@@ -4678,7 +4698,7 @@ function openDoctorsDirectory(){
 }
 function renderDoctorsDirectory(){
   const q = (document.getElementById('docDirSearch').value||'').toLowerCase();
-  const withDocs = clinics.filter(c=>c.doctors.length>0).sort((a,b)=>a.name.localeCompare(b.name));
+  const withDocs = clinics.filter(c=>c.doctors.length>0 && canViewClinic(c)).sort((a,b)=>a.name.localeCompare(b.name));
   let html = '';
   withDocs.forEach(c=>{
     const matchedDocs = c.doctors.filter(d=>d.name.toLowerCase().includes(q)||c.name.toLowerCase().includes(q));
@@ -5072,7 +5092,7 @@ function openCoverageBoard(){
   renderCoverageBoard();
 }
 function setCovDays(d){ covDays = d; renderCoverageBoard(); }
-function setCovRep(r){ covRep = r; renderCoverageBoard(); }
+function setCovRep(r){ covRep = ownRepOnly(r); renderCoverageBoard(); }
 function covReasonLabel(r){
   if(r.key === 'overdue') return '⏰ Follow-up overdue since ' + fmtDate(r.date) + ' — a promised visit is the easiest sale, book it first';
   if(r.key === 'due-today') return '📌 Follow-up due TODAY — keep the promise';
@@ -7689,7 +7709,8 @@ function visitTypeLabel(v){
 }
 function buildVisitsCSV(range){
   const rows = [['Date','Rep','Joint With','Type','Channel','Clinic','Class','Contacts Seen','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
-  const list = range ? UMCore.filterVisitsByRange(visits, range.from, range.to) : visits;
+  const base = visibleVisits(); // reps export only their own book
+  const list = range ? UMCore.filterVisitsByRange(base, range.from, range.to) : base;
   [...list].sort((a,b)=>a.date.localeCompare(b.date)).forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
     const cname = clinicNameOf(v.clinicId);
@@ -7713,7 +7734,7 @@ function buildVisitsCSV(range){
 }
 function buildClinicsCSV(){
   const rows = [['Clinic','Rep','Class','Account Type','Working Model','New Customer','Total Visits','Calls','Orders','Sales (KD)','Last Visit','Next Follow-up','Status','Contact','Phone','Doctors','No-sales Reason','Profile Notes']];
-  clinics.forEach(c=>{
+  clinics.filter(c=>canViewClinic(c)).forEach(c=>{
     const docStr = (c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).join('; ');
     // Compute from the visit log itself — c.lastVisit can go stale when a
     // visit is edited or deleted after the fact.
@@ -7729,14 +7750,14 @@ function buildClinicsCSV(){
 }
 function buildTasksCSV(range){
   const rows = [['Task','Rep','Status','Created','Due']];
-  let list = tasks;
-  if(range) list = tasks.filter(t=>UMCore.inRange(t.created, range.from, range.to) || UMCore.inRange(t.dueDate, range.from, range.to));
+  let list = visibleTasks();
+  if(range) list = list.filter(t=>UMCore.inRange(t.created, range.from, range.to) || UMCore.inRange(t.dueDate, range.from, range.to));
   list.forEach(t=>{ rows.push([t.text, t.rep||'', t.done?'Done':'Open', t.created||'', t.dueDate||'']); });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
 function buildScorecardCSV(range){
   const rows = [['Rep','Visits','Orders','Sales (KD)','Conversion %','Clinics Covered','Assigned Clinics','Coverage %','Priority Covered','Priority Assigned','Priority Coverage %','Overdue Follow-ups','Tasks Done','Tasks Total']];
-  REPS.forEach(r=>{
+  (currentUser.role==='supervisor' ? REPS : [currentUser.name]).forEach(r=>{
     const s = range
       ? UMCore.computeRepScore(r, {visits: UMCore.filterVisitsByRange(visits, range.from, range.to), clinics, tasks, today: todayStr()})
       : computeRepScore(r);
@@ -7746,7 +7767,7 @@ function buildScorecardCSV(range){
 }
 function buildDoctorsCSV(){
   const rows = [['Clinic','Rep','Doctor','Title']];
-  [...clinics].sort((a,b)=>a.name.localeCompare(b.name)).forEach(c=>{
+  clinics.filter(c=>canViewClinic(c)).sort((a,b)=>a.name.localeCompare(b.name)).forEach(c=>{
     (c.doctors||[]).forEach(d=>{ rows.push([c.name, c.rep||'', d.name, d.title||'']); });
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
@@ -7850,11 +7871,11 @@ function openExport(){
       <textarea class="export-textarea" id="tasksExportText" readonly></textarea>
     </div>
 
-    <div class="section-title" style="margin-top:4px;">Automatic backups</div>
+    ${currentUser.role==='supervisor'?`<div class="section-title" style="margin-top:4px;">Automatic backups</div>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">A snapshot of everything is saved automatically once a day. If data ever looks wrong, you can restore an earlier day here.</p>
-    <div id="backupList"><div style="color:var(--muted); font-size:13px;">Loading backups...</div></div>
+    <div id="backupList"><div style="color:var(--muted); font-size:13px;">Loading backups...</div></div>`:''}
   `);
-  renderBackupsList();
+  if(currentUser.role==='supervisor') renderBackupsList();
 }
 function showExportText(id, content){
   const el = document.getElementById(id);
@@ -7883,6 +7904,7 @@ async function renderBackupsList(){
   }
 }
 async function restoreSnapshot(dateStr){
+  if(!requireAdmin()) return; // a restore replaces the whole team's data
   if(!confirm(`Restore data from ${dateStr}? This will replace all current clinics, visits, and tasks with that day's backup.`)) return;
   try{
     const res = await window.storage.get('snap_'+dateStr, true);
