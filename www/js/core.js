@@ -1107,6 +1107,87 @@
     };
   }
 
+
+  // ==== CLINIC LIST IMPORT (Excel / CSV) ====
+  // Reads a clinic sheet the supervisor exports from anywhere: header names
+  // are detected in Arabic or English, and a bare list (name in the first
+  // column, phone in the second) works with no header row at all.
+  function detectClinicColumns(header){
+    var idx = { name: -1, phone: -1, contact: -1, rep: -1, cls: -1, area: -1, account: -1 };
+    var pats = {
+      name: /clinic|customer|account\s*name|^name$|عياد|عميل|اسم/i,
+      phone: /phone|mobile|tel|whats|هاتف|رقم|جوال|موبايل|واتس/i,
+      contact: /contact|person|attention|مسؤول|اتصال|جهة/i,
+      rep: /rep|sales\s*(man|person)|مندوب/i,
+      cls: /^class|^cls|grade|category|فئة|تصنيف|درجة/i,
+      area: /area|city|market|region|zone|منطق|محافظ|مدينة/i,
+      account: /account\s*type|payment|نوع\s*الحساب|دفع/i,
+    };
+    var hits = 0;
+    for(var i = 0; i < header.length; i++){
+      var h = String(header[i] || '').trim();
+      if(!h) continue;
+      for(var k in pats){ if(idx[k] < 0 && pats[k].test(h)) { idx[k] = i; hits++; break; } }
+    }
+    // A real header names at least two known columns — a lone match is far
+    // more likely to be an actual clinic name ("عيادة النور") in a bare list.
+    return idx.name >= 0 && hits >= 2 ? idx : null;
+  }
+  function cleanPhone(v){
+    var s = String(v == null ? '' : v).replace(/[^0-9+]/g, '');
+    return s.length >= 7 ? s : String(v == null ? '' : v).trim();
+  }
+  function parseClinicRows(rows){
+    var out = [], skipped = 0;
+    if(!rows || !rows.length) return { clinics: [], skipped: 0, error: 'NO_ROWS' };
+    var headerAt = -1, cols = null;
+    for(var i = 0; i < Math.min(rows.length, 10); i++){
+      var c = detectClinicColumns(rows[i] || []);
+      if(c){ headerAt = i; cols = c; break; }
+    }
+    var CLS = ['A', 'B', 'C', 'D', 'F'];
+    var push = function(name, phone, contact, rep, cls, area, account){
+      name = String(name == null ? '' : name).trim();
+      if(!name || /^(total|المجموع|الاجمالي|الإجمالي)$/i.test(name)){ skipped++; return; }
+      cls = String(cls == null ? '' : cls).trim().toUpperCase();
+      out.push({
+        name: name,
+        phone: cleanPhone(phone),
+        contact: String(contact == null ? '' : contact).trim(),
+        rep: String(rep == null ? '' : rep).trim(),
+        cls: CLS.indexOf(cls) >= 0 ? cls : null,
+        market: String(area == null ? '' : area).trim() || null,
+        account: String(account == null ? '' : account).trim() || null,
+      });
+    };
+    if(cols){
+      for(var r = headerAt + 1; r < rows.length; r++){
+        var line = rows[r] || [];
+        push(line[cols.name], cols.phone >= 0 ? line[cols.phone] : '',
+          cols.contact >= 0 ? line[cols.contact] : '', cols.rep >= 0 ? line[cols.rep] : '',
+          cols.cls >= 0 ? line[cols.cls] : '', cols.area >= 0 ? line[cols.area] : '',
+          cols.account >= 0 ? line[cols.account] : '');
+      }
+    } else {
+      // Headerless list: first column is the clinic name; if a later cell is
+      // phone-shaped it becomes the phone.
+      var start = 0;
+      // A lone label row like "Clinic Name" / "اسم العيادة" is not a clinic.
+      var first = String((rows[0] || [])[0] || '').trim();
+      if(/^(clinic\s*name|clinics?|customers?|name|اسم\s*العيادة|العيادات|الاسم|اسم)$/i.test(first)) start = 1;
+      for(var r2 = start; r2 < rows.length; r2++){
+        var ln = rows[r2] || [];
+        var phone = '';
+        for(var j = 1; j < ln.length; j++){
+          var cand = String(ln[j] == null ? '' : ln[j]).replace(/[^0-9]/g, '');
+          if(cand.length >= 7){ phone = cleanPhone(ln[j]); break; }
+        }
+        push(ln[0], phone, '', '', '', '', '');
+      }
+    }
+    return { clinics: out, skipped: skipped, error: out.length ? null : 'NO_ROWS' };
+  }
+
   // ==== MARKETING / FREE-OF-CHARGE TRACKING ====
   // Goods that left the warehouse without revenue: rows filed under a
   // "Marketing" brand or account, and invoice lines with quantity but zero
@@ -1120,6 +1201,18 @@
   function isFocRow(r){
     if(r.type === 'return' || r.sret > 0) return false; // return lines are not giveaways
     return isMarketingRow(r) || ((r.qty || 0) > 0 && !(r.net > 0));
+  }
+  // FOC lines split into two very different stories: a free line on an
+  // invoice that ALSO carries paid lines is a bonus inside a deal (part of
+  // the sale's economics); a free line on an all-free document or under a
+  // marketing brand is a sample / marketing giveaway.
+  function focLinesAnnotated(rows){
+    var paidDocs = {};
+    (rows || []).forEach(function(r){ if(r.type !== 'return' && r.net > 0 && r.doc) paidDocs[r.doc] = 1; });
+    return (rows || []).filter(isFocRow).map(function(r){
+      var kind = (!isMarketingRow(r) && r.doc && paidDocs[r.doc]) ? 'deal' : 'sample';
+      return Object.assign({}, r, { kindDefault: kind });
+    });
   }
   function focAnalysis(rows){
     var foc = (rows || []).filter(isFocRow);
@@ -1254,6 +1347,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow,
+    detectClinicColumns, parseClinicRows, focLinesAnnotated
   };
 });
