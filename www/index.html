@@ -902,7 +902,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v29'; // keep in step with sw.js CACHE version
+const APP_REV = 'v30'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -6823,6 +6823,9 @@ en: {
   officialNote:'Achieved figures are the official DSR numbers where available; otherwise ERP invoices.',
   linkage:'Visit→invoice linkage', matched:'Visited & invoiced', pipeline:'Visited, awaiting invoice',
   noVisit:'Invoiced with no logged visit', retTotal:'Total returned', retCount:'return lines',
+  s_foc:'Marketing & free-of-charge items', focTotal:'Given out free', focUnits:'units', focValueLbl:'Value at gross price',
+  focNote:'Lines filed under a Marketing brand/account, plus invoice lines shipped with quantity but zero net (bonus goods).',
+  colClinic:'Clinic / customer', colProduct:'Product', colDate:'Date', colQty:'Qty', colValue:'Value',
   byBrand:'By brand', byCustomer:'By customer', covered:'Clinics covered', needVisit:'Still need a visit',
   overdue:'Overdue follow-ups', doNow:'Do now', watch:'Keep an eye', working:'Working — keep it up',
   planIntro:'Auto-drafted from the most urgent findings — edit in the meeting and assign owners:',
@@ -6843,6 +6846,9 @@ ar: {
   officialNote:'أرقام المحقق هي الأرقام الرسمية من ملف DSR حيثما توفرت، وإلا فمن فواتير ERP.',
   linkage:'ربط الزيارات بالفواتير', matched:'زارت وفوترت', pipeline:'زارت وتنتظر الفاتورة',
   noVisit:'فواتير بدون زيارة مسجلة', retTotal:'إجمالي المرتجع', retCount:'سطر مرتجعات',
+  s_foc:'بند الماركتنغ والبضاعة المجانية', focTotal:'الكمية الموزعة مجاناً', focUnits:'وحدة', focValueLbl:'قيمتها بسعر البيع',
+  focNote:'السطور المسجلة تحت براند/حساب الماركتنغ، وسطور الفواتير التي خرجت بكمية وصافي صفر (بضاعة مجانية).',
+  colClinic:'العيادة / العميل', colProduct:'المنتج', colDate:'التاريخ', colQty:'الكمية', colValue:'القيمة',
   byBrand:'حسب البراند', byCustomer:'حسب العميل', covered:'عيادات مغطاة', needVisit:'تحتاج زيارة',
   overdue:'متابعات متأخرة', doNow:'نفّذ الآن', watch:'راقب', working:'يعمل جيداً — استمروا',
   planIntro:'مسودة آلية من أكثر النتائج إلحاحاً — تُناقش في الاجتماع ويُحدد مسؤول لكل بند:',
@@ -6969,11 +6975,20 @@ function buildMasterReportBody(lang, format){
   const daysInMonth = m.length;
   const repFilter = currentUser.role === 'supervisor' ? reportRepFilter : currentUser.name;
   const repsList = repFilter === 'all' ? REPS.slice() : [repFilter];
-  const p = erpPeriods().find(x => b.from ? (x.to >= b.from && (!b.to || x.from <= b.to)) : true) || null;
-  const allRows = p ? unpackErpRows(p.rows) : [];
-  const rows = allRows.filter(r => UMCore.inRange(r.date, b.from, b.to) && repsList.includes((p.repMap||{})[r.salesman]));
-  const rec = p ? UMCore.reconcileErp({rows: allRows, visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to}) : null;
-  const trend = p ? UMCore.erpWeeklyTrend(rows, p.repMap||{}) : [];
+  // Per-rep sales files live as SEPARATE overlapping periods (Mariam's and
+  // Renova's uploads), so every period touching the range must be merged —
+  // picking one period silently dropped the other rep's invoices from the
+  // whole report. Import-time overlap absorption already dedupes rows per
+  // salesman, so concatenating here cannot double-count.
+  const ps = erpPeriods().filter(x => b.from ? (x.to >= b.from && (!b.to || x.from <= b.to)) : true);
+  const repMapAll = {};
+  let allRows = [];
+  ps.forEach(x => { Object.assign(repMapAll, x.repMap || {}); allRows = allRows.concat(unpackErpRows(x.rows)); });
+  const rows = allRows.filter(r => UMCore.inRange(r.date, b.from, b.to) && repsList.includes(repMapAll[r.salesman]));
+  const psFrom = ps.length ? ps.map(x=>x.from).sort()[0] : null;
+  const psTo = ps.length ? ps.map(x=>x.to).sort().slice(-1)[0] : null;
+  const rec = ps.length ? UMCore.reconcileErp({rows: allRows, visits, clinics, erpMap, repMap: repMapAll, from: psFrom, to: psTo}) : null;
+  const trend = ps.length ? UMCore.erpWeeklyTrend(rows, repMapAll) : [];
   const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from: b.from, to: b.to, today, repFilter, visits, clinics, targets, dayPlans});
   const cov = UMCore.clinicCoverage({from: b.from || m[0], to: b.to || today, today, repFilter, visits, clinics, dayPlans});
   const returns = UMCore.returnsAnalysis(rows);
@@ -7005,11 +7020,14 @@ function buildMasterReportBody(lang, format){
     return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, fc, pace, state };
   }).filter(Boolean);
 
+  // Team sums across every rep in scope — the report must always show the
+  // COMBINED number for both reps, not just per-rep lines.
+  const goalSum = tstats.reduce((s,x)=>s+x.goal,0), achSum = tstats.reduce((s,x)=>s+x.ach,0), fcSum = tstats.reduce((s,x)=>s+x.fc,0);
+
   // 1 — executive summary
   let exec = '';
   if(tstats.length){
-    const goal = tstats.reduce((s,x)=>s+x.goal,0), ach = tstats.reduce((s,x)=>s+x.ach,0), fc = tstats.reduce((s,x)=>s+x.fc,0);
-    exec += `<p style="margin:0 0 6px;">${L.execTeam(mrMoney(ach,lang), mrMoney(goal,lang), goal?Math.round(ach/goal*100):0, mrMoney(fc,lang))}</p>`;
+    exec += `<p style="margin:0 0 6px;">${L.execTeam(mrMoney(achSum,lang), mrMoney(goalSum,lang), goalSum?Math.round(achSum/goalSum*100):0, mrMoney(fcSum,lang))}</p>`;
     const star = tstats.slice().sort((a,b)=>b.ach-a.ach)[0];
     if(star && star.ach > 0) exec += `<p style="margin:0 0 6px;">${L.execStar(esc(star.rep), mrMoney(star.ach,lang))}</p>`;
   }
@@ -7020,6 +7038,7 @@ function buildMasterReportBody(lang, format){
   const targetsTbl = tstats.length ? `<table class="mr-tbl"><thead><tr><th>${L.rep}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.pace}</th><th>${L.forecast}</th><th>${L.status}</th></tr></thead><tbody>
     ${tstats.map(x=>`<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td>${mrMoney(x.ach,lang)}</td><td><span class="num">${x.pace}%</span></td><td>${mrMoney(x.fc,lang)}</td>
       <td><span class="mr-pill ${x.state==='hit'?'g':x.state==='on'?'g':'r'}">${x.state==='hit'?L.st_hit:x.state==='on'?L.st_on:L.st_behind}</span></td></tr>`).join('')}
+    ${tstats.length>1?`<tr style="border-top:2px solid #022917;"><td><b>${L.total}</b></td><td><b>${mrMoney(goalSum,lang)}</b></td><td><b>${mrMoney(achSum,lang)}</b></td><td><span class="num"><b>${goalSum?Math.round(achSum/goalSum*100):0}%</b></span></td><td><b>${mrMoney(fcSum,lang)}</b></td><td></td></tr>`:''}
     </tbody></table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   const brandParts = repsList.map(rep=>{
@@ -7049,13 +7068,29 @@ function buildMasterReportBody(lang, format){
       <td><span class="num">${r.invoicedNoVisit.length}</span> (${mrMoney(r.invoicedNoVisit.reduce((s,x)=>s+x.net,0),lang)})</td></tr>`).join('')}
     </tbody></table>` : `<p class="mr-note">${L.noData}</p>`;
 
+  // Every return line named to its clinic — "who returned what, when" is the
+  // question the meeting actually asks; the brand/customer roll-up follows it.
+  const retDetail = (returns.detail||[]).slice(0, 20);
   const retSec = returns.count ? `<p style="margin:4px 0;">${L.retTotal}: <b>${mrMoney(returns.total,lang)}</b> (<span class="num">${returns.count}</span> ${L.retCount}${returns.docCount?` · <span class="num">${returns.docCount}</span> ${L.retDocs}`:''})</p>
+    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colDate}</th><th>${L.colValue}</th></tr></thead><tbody>
+    ${retDetail.map(d=>`<tr><td>${esc(d.customer)}</td><td>${esc(d.product||d.brand)}${d.qty?` <span class="num">×${d.qty}</span>`:''}</td><td>${fmtDate(d.date)}</td><td>${mrMoney(d.amount,lang)}</td></tr>`).join('')}
+    ${returns.detail.length>20?`<tr><td colspan="4"><span class="mr-note">+${returns.detail.length-20}</span></td></tr>`:''}
+    </tbody></table>
     <table class="mr-tbl"><thead><tr><th>${L.byBrand}</th><th></th><th>${L.byCustomer}</th><th></th></tr></thead><tbody>
     ${[0,1,2,3,4].map(i=>{
       const bb = returns.byBrand[i], bc = returns.byCustomer[i];
       if(!bb && !bc) return '';
       return `<tr><td>${bb?esc(bb.name):''}</td><td>${bb?mrMoney(bb.amount,lang):''}</td><td>${bc?esc(bc.name):''}</td><td>${bc?mrMoney(bc.amount,lang):''}</td></tr>`;
     }).join('')}</tbody></table>` : `<p class="mr-note">${L.noData}</p>`;
+
+  // Marketing & free-of-charge goods: what left the warehouse with no revenue,
+  // and which clinic received it.
+  const foc = UMCore.focAnalysis(rows);
+  const focSec = foc.count ? `<p style="margin:4px 0;">${L.focTotal}: <b><span class="num">${foc.totalQty}</span></b> ${L.focUnits} · ${L.focValueLbl}: <b>${mrMoney(foc.grossValue,lang)}</b></p>
+    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colQty}</th><th>${L.colValue}</th></tr></thead><tbody>
+    ${foc.byCustomer.slice(0,20).map(c=>`<tr><td>${esc(c.name)}</td><td>${c.items.slice(0,4).map(it=>esc(it.product)+' <span class="num">×'+it.qty+'</span>').join(' · ')}${c.items.length>4?' …':''}</td><td><span class="num">${c.qty}</span></td><td>${mrMoney(c.gross,lang)}</td></tr>`).join('')}
+    ${foc.byCustomer.length>20?`<tr><td colspan="4"><span class="mr-note">+${foc.byCustomer.length-20}</span></td></tr>`:''}
+    </tbody></table><div class="mr-note">${L.focNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   const covSec = `<div class="mr-kpis">
     <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.visitedCount}/${cov.stats.totalClinics}</span></div><div class="l">${L.covered} (<span class="num">${cov.stats.coveragePct}%</span>)</div></div>
@@ -7101,6 +7136,7 @@ function buildMasterReportBody(lang, format){
     ${brandParts.length?block(L.s_brands, brandParts[0])+brandParts.slice(1).map(contBlock).join(''):''}
     ${block(L.s_recon, reconSec, 'long')}
     ${block(L.s_returns, retSec)}
+    ${block(L.s_foc, focSec)}
     ${block(L.s_coverage, covSec)}
     ${block(L.s_reco, recoItems[0]||`<p class="mr-note">${L.noData}</p>`)}${recoItems.slice(1).map(contBlock).join('')}
     ${block(L.s_plan, planSec)}

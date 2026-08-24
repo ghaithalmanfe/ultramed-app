@@ -1048,6 +1048,37 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.deepEqual(r.byBrand[0], { name: 'Hismile', amount: 150 });
     assert.deepEqual(r.byCustomer[0], { name: 'Trolley', amount: 130 });
   });
+  test('returnsAnalysis names each returning clinic in the per-line detail', () => {
+    const rows = [
+      { date: '2026-08-10', doc: 'SRT1', type: 'return', net: -25, sret: 0, brand: 'FLASH', product: 'Strips', qty: 2, customer: 'Joury Clinic' },
+      { date: '2026-08-12', doc: 'SINV5', type: 'invoice', net: 100, sret: 40, brand: 'TEPE', product: 'Brush', qty: 1, customer: 'Lulu Dental' },
+      { date: '2026-08-13', doc: 'SINV6', type: 'invoice', net: 80, sret: 0, brand: 'TEPE', product: 'Brush', qty: 4, customer: 'Lulu Dental' },
+    ];
+    const d = core.returnsAnalysis(rows).detail;
+    assert.equal(d.length, 2);
+    assert.equal(d[0].customer, 'Lulu Dental');  // biggest return first
+    assert.equal(d[0].amount, 40);
+    assert.equal(d[1].customer, 'Joury Clinic');
+    assert.equal(d[1].product, 'Strips');
+    assert.equal(d[1].amount, 25);
+  });
+  test('focAnalysis tracks marketing-brand rows and zero-net giveaways per clinic', () => {
+    const rows = [
+      { type: 'invoice', brand: 'Tepe - Marketing', product: 'Sample Kit', qty: 10, gross: 30, net: 0, sret: 0, customer: 'Joury Clinic' },
+      { type: 'invoice', brand: 'TEPE', product: 'Brush', qty: 5, gross: 15, net: 0, sret: 0, customer: 'Joury Clinic' },   // bonus goods: qty with zero net
+      { type: 'invoice', brand: 'TEPE', product: 'Brush', qty: 3, gross: 9, net: 9, sret: 0, customer: 'Lulu Dental' },     // paid — not FOC
+      { type: 'invoice', brand: 'TEPE', product: 'Brush', qty: 1, gross: 3, net: 0, sret: 3, customer: 'Lulu Dental' },     // return line — not FOC
+      { type: 'return', brand: 'FLASH', product: 'Strips', qty: 2, gross: 0, net: -10, sret: 0, customer: 'Lulu Dental' },  // return doc — not FOC
+    ];
+    const f = core.focAnalysis(rows);
+    assert.equal(f.count, 2);
+    assert.equal(f.totalQty, 15);
+    assert.equal(f.grossValue, 45);
+    assert.equal(f.byCustomer.length, 1);
+    assert.equal(f.byCustomer[0].name, 'Joury Clinic');
+    assert.equal(f.byCustomer[0].qty, 15);
+    assert.deepEqual(f.byProduct[0], { name: 'Sample Kit', qty: 10, gross: 30 });
+  });
   test('returnsAnalysis also counts SRT return docs valued only as negative net', () => {
     const rows = [
       { doc: 'SRT9', type: 'return', net: -25, sret: 0, brand: 'FLASH', customer: 'Joury' },
