@@ -1115,11 +1115,14 @@
   function isMarketingRow(r){
     return /marketing/i.test(String(r.brand || '')) || /marketing/i.test(String(r.customer || ''));
   }
+  // One row's verdict, shared by the aggregate analysis and the per-clinic
+  // ledgers in the app UI.
+  function isFocRow(r){
+    if(r.type === 'return' || r.sret > 0) return false; // return lines are not giveaways
+    return isMarketingRow(r) || ((r.qty || 0) > 0 && !(r.net > 0));
+  }
   function focAnalysis(rows){
-    var foc = (rows || []).filter(function(r){
-      if(r.type === 'return' || r.sret > 0) return false; // return lines are not giveaways
-      return isMarketingRow(r) || ((r.qty || 0) > 0 && !(r.net > 0));
-    });
+    var foc = (rows || []).filter(isFocRow);
     var round3 = function(n){ return Math.round(n * 1000) / 1000; };
     var byCust = {}, byProd = {};
     foc.forEach(function(r){
@@ -1245,6 +1248,6 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow
   };
 });

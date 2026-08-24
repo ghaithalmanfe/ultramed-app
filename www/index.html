@@ -902,7 +902,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v30'; // keep in step with sw.js CACHE version
+const APP_REV = 'v31'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -1294,6 +1294,10 @@ let targets = {}; // {repName: {revenue: KD, visits: N}} — monthly targets
 let categoryGuides = {}; // {catName: {sell, how, objections, links[]}} — selling guides
 let erpSales = {periods: []}; // imported ERP sales periods (supervisor)
 let erpMap = {}; // {erpCustomerName: clinicId | '@channel' | '@ignore'}
+// Justifications the team writes against ERP events, keyed by kind:
+//   'ret|<doc>|<product>' / 'foc|<doc>|<product>'  → {text, by, on}
+// Keys survive re-imports because doc numbers are stable in the ERP.
+let erpNotes = {};
 let calMode = 'month';
 let calAnchor = null;   // set on first render
 let calSelected = null;
@@ -1483,6 +1487,8 @@ async function tryAutoLogin(){
 function normalizeClinic(c){
   c.profileNotes = c.profileNotes || '';
   c.account = c.account || null;
+  c.dealType = c.dealType || null;      // 'prescription' | 'direct' | null
+  c.noSaleReason = c.noSaleReason || ''; // why this account has no sales yet
   c.isNew = c.isNew || false;
   c.doctors = c.doctors || [];
   c.contact = c.contact || '';
@@ -1493,7 +1499,7 @@ function normalizeClinic(c){
 }
 async function loadAll(){
   try{
-    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em] = await Promise.all([
+    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em,en] = await Promise.all([
       window.storage.get('clinics', true).catch(()=>null),
       window.storage.get('products', true).catch(()=>null),
       window.storage.get('visits', true).catch(()=>null),
@@ -1507,6 +1513,7 @@ async function loadAll(){
       window.storage.get('categoryGuides', true).catch(()=>null),
       window.storage.get('erpSales', true).catch(()=>null),
       window.storage.get('erpMap', true).catch(()=>null),
+      window.storage.get('erpNotes', true).catch(()=>null),
     ]);
     // Each key parses independently: one corrupt entry falls back alone instead
     // of throwing and resetting every collection to seed data.
@@ -1524,6 +1531,7 @@ async function loadAll(){
     categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), cgVal || {});
     erpSales = Object.assign({periods: []}, UMCore.safeParse(es && es.value, null) || {});
     erpMap = UMCore.safeParse(em && em.value, {}) || {};
+    erpNotes = UMCore.safeParse(en && en.value, {}) || {};
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
     const rbVal = UMCore.safeParse(rb && rb.value, null);
@@ -1548,7 +1556,7 @@ async function loadAll(){
   renderAll();
 }
 async function persist(key){
-  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap};
+  const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap, erpNotes};
   try{
     const res = await window.storage.set(key, JSON.stringify(map[key]), true);
     if(!res){ showToast('Save failed, try again'); }
@@ -2740,7 +2748,16 @@ async function saveVisit(){
       contact: document.getElementById('newClinicContact').value.trim(),
       phone: document.getElementById('newClinicPhone').value.trim()}));
   }
-  if(!clinicId){ showToast('Pick a clinic first'); return; }
+  if(!clinicId){ window._lastVisitSaveAt = 0; showToast('Pick a clinic first'); return; }
+  // Who did you meet is required: a visit without the doctor's name can't be
+  // followed up or verified. New inline-created clinics are exempt (no roster
+  // yet) — the picker offers "+ Add doctor" for everyone else.
+  if(!newClinicMode && selectedDoctorIds.length === 0){
+    window._lastVisitSaveAt = 0;
+    const cRef = clinics.find(x=>x.id===clinicId);
+    showToast((cRef && (cRef.doctors||[]).length) ? '👨‍⚕️ Pick who you met — required' : '👨‍⚕️ Add the doctor you met first (+ Add doctor)');
+    return;
+  }
   const followUp = document.getElementById('followUpDate').value || null;
   let savedOrders = [], orderTotal = 0, grossTotal = 0, discountTotal = 0;
   if(orderTaken){
@@ -2877,8 +2894,8 @@ function clinicStats(c){
 // net + invoices + last invoice date, matched to app clinics; app clinics
 // with no invoice in the period surface as the follow-up list.
 let erpDashTab = 'not';
-function erpDashData(){
-  const effRep = clinicRepFilter;
+function erpDashData(repOverride){
+  const effRep = repOverride || clinicRepFilter;
   const today = todayStr(), mStart = today.slice(0,7)+'-01';
   let ps = erpPeriods().filter(p => p.to >= mStart && p.from <= today);
   let periodLabel = 'This month';
@@ -2938,7 +2955,7 @@ function erpDashSection(){
       <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${x.c.id}')">
         <div class="row-between">
           <div>
-            <div class="clinic-name">${esc(x.c.name)}</div>
+            <div class="clinic-name">${esc(x.c.name)}${x.c.dealType==='prescription'?' <span style="font-size:11px; color:var(--teal); font-weight:700;">℞ prescription</span>':''}</div>
             <div class="clinic-sub">${esc(x.c.rep||'')} · ${x.lastV ? 'last visit '+x.days+'d ago' : 'never visited'}${x.c.nextFollowUp?' · follow-up '+fmtDate(x.c.nextFollowUp):''}</div>
           </div>
           <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
@@ -2946,6 +2963,9 @@ function erpDashSection(){
             <button class="chip small" onclick="event.stopPropagation(); openCallLog('${x.c.id}')">📞</button>
           </div>
         </div>
+        <input type="text" value="${esc(x.c.noSaleReason||'')}" placeholder="💬 Why no sales yet? اكتب السبب…"
+          onclick="event.stopPropagation()" onchange="saveNoSaleReason('${x.c.id}', this.value)"
+          style="margin-top:8px; font-size:12.5px; padding:7px 10px;">
       </div>`).join('') + (d.nonBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${d.nonBuyers.length-40} more in the list view</div>`:'')
     : clinicBuyers.slice(0,40).map(b=>`
       <div class="card ${b.clinicId?'clickable':''}" style="padding:11px 14px; border-left:4px solid ${b.net<0?'var(--coral)':'var(--sage)'};" ${b.clinicId?`onclick="openClinicDetail('${b.clinicId}')"`:''}>
@@ -3196,6 +3216,11 @@ function openAddClinic(){
     <div class="chip-row" id="mClinicCls">${['A','B','C','D','F'].map(c=>`<div class="chip" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('')}</div>
     <label>Account type</label>
     <div class="chip-row" id="mClinicAcct">${ACCOUNT_TYPES.map(a=>`<div class="chip" data-acct="${a}" onclick="pickModalCls(this)">${a}</div>`).join('')}</div>
+    <label>How does this clinic work with us?</label>
+    <div class="chip-row" id="mClinicDeal">
+      <div class="chip" data-deal="direct" onclick="pickModalCls(this)">🛒 Direct sales</div>
+      <div class="chip" data-deal="prescription" onclick="pickModalCls(this)">℞ Prescription</div>
+    </div>
     <label>New customer?</label>
     <div class="chip-row" id="mClinicNew"><div class="chip" data-new="yes" onclick="pickModalCls(this)">🆕 Yes, new customer</div><div class="chip on" data-new="no" onclick="pickModalCls(this)">Existing</div></div>
     <label>Contact person</label>
@@ -3218,8 +3243,9 @@ async function submitAddClinic(){
   const clsEl = document.querySelector('#mClinicCls .chip.on');
   const acctEl2 = document.querySelector('#mClinicAcct .chip.on');
   const newEl2 = document.querySelector('#mClinicNew .chip.on');
+  const dealEl2 = document.querySelector('#mClinicDeal .chip.on');
   clinics.push(normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
-    account: acctEl2?acctEl2.dataset.acct:null, isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
+    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealEl2?dealEl2.dataset.deal:null, isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
   await persist('clinics');
   closeModal();
   renderClinics();
@@ -3236,6 +3262,7 @@ function openClinicDetail(id){
     <div class="clinic-sub" style="margin-bottom:12px;">${esc(c.rep||'')}${c.contact?' · '+esc(c.contact):''}${c.phone?' · '+esc(c.phone):''}</div>
     <div class="chip-row" style="margin-bottom:14px;">
       ${c.account?`<span class="chip small" style="background:var(--green-dim); color:var(--green-dark);">💳 ${esc(c.account)}</span>`:''}
+      ${c.dealType?`<span class="chip small" style="background:var(--teal-dim); color:var(--teal);">${c.dealType==='prescription'?'℞ Prescription':'🛒 Direct sales'}</span>`:''}
       ${c.isNew?`<span class="chip small" style="background:var(--amber-dim); color:var(--amber);">🆕 New customer</span>`:''}
     </div>
     <div style="display:flex; gap:8px; margin-bottom:16px;">
@@ -3262,6 +3289,12 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Order history</div>
     ${renderClinicOrders(id)}
+    ${clinicErpSection(id)}
+
+    <div class="section-title" style="margin-top:20px;">💬 No-sales reason</div>
+    <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">If this account isn't buying yet, note why (e.g. prescription-only, budget cycle, stock on hand) — shown in the management report.</p>
+    <input type="text" value="${esc(c.noSaleReason||'')}" placeholder="e.g. Works on prescriptions — patients buy from pharmacy"
+      onchange="saveNoSaleReason('${c.id}', this.value)">
 
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
@@ -3292,6 +3325,63 @@ function renderClinicOrders(clinicId){
       </div>`;
     }).join('');
 }
+// ---- PER-CLINIC ERP LEDGER: returns & free/marketing goods + justifications ----
+// Every clinic account shows ITS OWN returns and giveaway lines from the
+// uploaded sales files, and the team writes a reason against each event.
+// Notes are keyed by kind|doc|product so they survive re-imports.
+function erpNoteKey(kind, r){ return kind+'|'+(r.doc||'')+'|'+(r.product||''); }
+function erpNoteText(key){ const n = erpNotes[key]; return n ? n.text : ''; }
+async function saveErpNote(key, val){
+  const t = (val||'').trim();
+  if(t) erpNotes[key] = {text:t, by:currentUser.name, on:todayStr()};
+  else delete erpNotes[key];
+  await persist('erpNotes');
+  showToast(t ? '📝 Reason saved' : 'Reason cleared');
+}
+async function saveNoSaleReason(clinicId, val){
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c) return;
+  c.noSaleReason = (val||'').trim();
+  await persist('clinics');
+  showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
+}
+function clinicErpLedger(clinicId){
+  const ret = [], foc = [];
+  erpPeriods().forEach(p => unpackErpRows(p.rows).forEach(r => {
+    const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
+    if(m.clinicId !== clinicId) return;
+    const rv = UMCore.returnValue(r);
+    if(rv > 0) ret.push(Object.assign({}, r, {retAmount: Math.round(rv*1000)/1000}));
+    else if(UMCore.isFocRow(r)) foc.push(r);
+  }));
+  const byDate = (a,b)=>(b.date||'').localeCompare(a.date||'');
+  ret.sort(byDate); foc.sort(byDate);
+  return {ret, foc};
+}
+function erpNoteInput(key){
+  return `<input type="text" data-key="${esc(key)}" value="${esc(erpNoteText(key))}"
+    placeholder="Why? add the reason / اكتب السبب…" onclick="event.stopPropagation()"
+    onchange="saveErpNote(this.dataset.key, this.value)"
+    style="margin-top:6px; font-size:12.5px; padding:7px 10px;">`;
+}
+function clinicErpSection(clinicId){
+  const led = clinicErpLedger(clinicId);
+  if(!led.ret.length && !led.foc.length) return '';
+  const retRows = led.ret.map(r=>`<div class="visit-hist" style="border-left:3px solid var(--coral); padding-left:10px;">
+      <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · <span style="color:var(--coral); font-weight:700;">−${money(r.retAmount)}</span> <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
+      ${erpNoteInput(erpNoteKey('ret', r))}
+    </div>`).join('');
+  const focRows = led.foc.map(r=>`<div class="visit-hist" style="border-left:3px solid var(--gold); padding-left:10px;">
+      <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · 🎁 free${r.gross?` <span style="color:var(--muted);">(worth ${money(r.gross)})</span>`:''} <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
+      ${erpNoteInput(erpNoteKey('foc', r))}
+    </div>`).join('');
+  return `
+    ${led.ret.length?`<div class="section-title" style="margin-top:20px;">🔄 Returns from this account (${led.ret.length})</div>
+      <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Write the reason under each line — it appears in the management report.</p>${retRows}`:''}
+    ${led.foc.length?`<div class="section-title" style="margin-top:20px;">🎁 Marketing / free items to this account (${led.foc.length})</div>
+      <p style="color:var(--muted); font-size:12px; margin:0 0 8px;">Free-of-charge and marketing-brand goods — justify each so the value shows as an investment, not a loss.</p>${focRows}`:''}`;
+}
+
 // The product catalog contains some repeated product codes (different items sharing
 // an id). Resolving by id alone silently picks the wrong item and misprices orders,
 // so prefer a unique row key when we have one and fall back to id.
@@ -3344,6 +3434,11 @@ function openEditClinic(id){
     <div class="chip-row" id="ecCls">${['A','B','C','D','F'].map(x=>`<div class="chip small ${c.cls===x?'on':''}" data-cls="${x}" onclick="pickModalCls(this)">${x}</div>`).join('')}</div>
     <label>Account type</label>
     <div class="chip-row" id="ecAcct">${ACCOUNT_TYPES.map(a=>`<div class="chip small ${c.account===a?'on':''}" data-acct="${esc(a)}" onclick="pickModalCls(this)">${esc(a)}</div>`).join('')}</div>
+    <label>How does this clinic work with us?</label>
+    <div class="chip-row" id="ecDeal">
+      <div class="chip small ${c.dealType==='direct'?'on':''}" data-deal="direct" onclick="pickModalCls(this)">🛒 Direct sales</div>
+      <div class="chip small ${c.dealType==='prescription'?'on':''}" data-deal="prescription" onclick="pickModalCls(this)">℞ Prescription</div>
+    </div>
     <label>Contact person</label>
     <input type="text" id="ecContact" value="${esc(c.contact||'')}" placeholder="Optional">
     <label>Phone</label>
@@ -3374,6 +3469,8 @@ async function saveEditClinic(id){
   if(repEl) c.rep = repEl.dataset.rep;
   c.cls = closed ? 'Closed' : (clsEl ? clsEl.dataset.cls : null);
   c.account = acctEl ? acctEl.dataset.acct : null;
+  const dealEl = document.querySelector('#ecDeal .chip.on');
+  c.dealType = dealEl ? dealEl.dataset.deal : null;
   c.contact = document.getElementById('ecContact').value.trim();
   c.phone = document.getElementById('ecPhone').value.trim();
   await persist('clinics');
@@ -6826,6 +6923,10 @@ en: {
   s_foc:'Marketing & free-of-charge items', focTotal:'Given out free', focUnits:'units', focValueLbl:'Value at gross price',
   focNote:'Lines filed under a Marketing brand/account, plus invoice lines shipped with quantity but zero net (bonus goods).',
   colClinic:'Clinic / customer', colProduct:'Product', colDate:'Date', colQty:'Qty', colValue:'Value',
+  colReason:'Justification', colModel:'Working model',
+  s_buyers:'Accounts with & without sales', boughtLbl:'Accounts that bought', notBoughtLbl:'No sales yet',
+  rxModel:'Prescription model', directModel:'Direct sales', reasonedLbl:'Reasons recorded',
+  buyersNote:'Prescription-model clinics create pharmacy demand even without direct invoices — a recorded reason turns every quiet account into a plan, not a problem.',
   byBrand:'By brand', byCustomer:'By customer', covered:'Clinics covered', needVisit:'Still need a visit',
   overdue:'Overdue follow-ups', doNow:'Do now', watch:'Keep an eye', working:'Working — keep it up',
   planIntro:'Auto-drafted from the most urgent findings — edit in the meeting and assign owners:',
@@ -6849,6 +6950,10 @@ ar: {
   s_foc:'بند الماركتنغ والبضاعة المجانية', focTotal:'الكمية الموزعة مجاناً', focUnits:'وحدة', focValueLbl:'قيمتها بسعر البيع',
   focNote:'السطور المسجلة تحت براند/حساب الماركتنغ، وسطور الفواتير التي خرجت بكمية وصافي صفر (بضاعة مجانية).',
   colClinic:'العيادة / العميل', colProduct:'المنتج', colDate:'التاريخ', colQty:'الكمية', colValue:'القيمة',
+  colReason:'المبرر / السبب', colModel:'طريقة التعامل',
+  s_buyers:'الحسابات المشترية وغير المشترية', boughtLbl:'حسابات اشترت', notBoughtLbl:'بدون مبيعات بعد',
+  rxModel:'نظام وصفات ℞', directModel:'بيع مباشر', reasonedLbl:'أسباب مسجلة',
+  buyersNote:'عيادات نظام الوصفات تصنع طلباً في الصيدليات حتى بدون فواتير مباشرة — وتسجيل السبب يحوّل كل حساب هادئ إلى خطة عمل، لا مشكلة.',
   byBrand:'حسب البراند', byCustomer:'حسب العميل', covered:'عيادات مغطاة', needVisit:'تحتاج زيارة',
   overdue:'متابعات متأخرة', doNow:'نفّذ الآن', watch:'راقب', working:'يعمل جيداً — استمروا',
   planIntro:'مسودة آلية من أكثر النتائج إلحاحاً — تُناقش في الاجتماع ويُحدد مسؤول لكل بند:',
@@ -7071,10 +7176,11 @@ function buildMasterReportBody(lang, format){
   // Every return line named to its clinic — "who returned what, when" is the
   // question the meeting actually asks; the brand/customer roll-up follows it.
   const retDetail = (returns.detail||[]).slice(0, 20);
+  const noteFor = (kind, d) => { const n = erpNotes[kind+'|'+(d.doc||'')+'|'+(d.product||'')]; return n ? n.text : ''; };
   const retSec = returns.count ? `<p style="margin:4px 0;">${L.retTotal}: <b>${mrMoney(returns.total,lang)}</b> (<span class="num">${returns.count}</span> ${L.retCount}${returns.docCount?` · <span class="num">${returns.docCount}</span> ${L.retDocs}`:''})</p>
-    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colDate}</th><th>${L.colValue}</th></tr></thead><tbody>
-    ${retDetail.map(d=>`<tr><td>${esc(d.customer)}</td><td>${esc(d.product||d.brand)}${d.qty?` <span class="num">×${d.qty}</span>`:''}</td><td>${fmtDate(d.date)}</td><td>${mrMoney(d.amount,lang)}</td></tr>`).join('')}
-    ${returns.detail.length>20?`<tr><td colspan="4"><span class="mr-note">+${returns.detail.length-20}</span></td></tr>`:''}
+    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colDate}</th><th>${L.colValue}</th><th>${L.colReason}</th></tr></thead><tbody>
+    ${retDetail.map(d=>`<tr><td>${esc(d.customer)}</td><td>${esc(d.product||d.brand)}${d.qty?` <span class="num">×${d.qty}</span>`:''}</td><td>${fmtDate(d.date)}</td><td>${mrMoney(d.amount,lang)}</td><td>${esc(noteFor('ret', d))||'<span class="mr-note">—</span>'}</td></tr>`).join('')}
+    ${returns.detail.length>20?`<tr><td colspan="5"><span class="mr-note">+${returns.detail.length-20}</span></td></tr>`:''}
     </tbody></table>
     <table class="mr-tbl"><thead><tr><th>${L.byBrand}</th><th></th><th>${L.byCustomer}</th><th></th></tr></thead><tbody>
     ${[0,1,2,3,4].map(i=>{
@@ -7086,11 +7192,29 @@ function buildMasterReportBody(lang, format){
   // Marketing & free-of-charge goods: what left the warehouse with no revenue,
   // and which clinic received it.
   const foc = UMCore.focAnalysis(rows);
+  const focLines = rows.filter(r=>UMCore.isFocRow(r)).sort((a,b)=>(b.gross||0)-(a.gross||0)).slice(0,20);
   const focSec = foc.count ? `<p style="margin:4px 0;">${L.focTotal}: <b><span class="num">${foc.totalQty}</span></b> ${L.focUnits} · ${L.focValueLbl}: <b>${mrMoney(foc.grossValue,lang)}</b></p>
-    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colQty}</th><th>${L.colValue}</th></tr></thead><tbody>
-    ${foc.byCustomer.slice(0,20).map(c=>`<tr><td>${esc(c.name)}</td><td>${c.items.slice(0,4).map(it=>esc(it.product)+' <span class="num">×'+it.qty+'</span>').join(' · ')}${c.items.length>4?' …':''}</td><td><span class="num">${c.qty}</span></td><td>${mrMoney(c.gross,lang)}</td></tr>`).join('')}
-    ${foc.byCustomer.length>20?`<tr><td colspan="4"><span class="mr-note">+${foc.byCustomer.length-20}</span></td></tr>`:''}
+    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.colProduct}</th><th>${L.colDate}</th><th>${L.colValue}</th><th>${L.colReason}</th></tr></thead><tbody>
+    ${focLines.map(r=>`<tr><td>${esc(r.customer||'—')}</td><td>${esc(r.product||r.brand)}${r.qty?` <span class="num">×${r.qty}</span>`:''}</td><td>${fmtDate(r.date)}</td><td>${mrMoney(r.gross||0,lang)}</td><td>${esc(noteFor('foc', r))||'<span class="mr-note">—</span>'}</td></tr>`).join('')}
+    ${foc.count>20?`<tr><td colspan="5"><span class="mr-note">+${foc.count-20}</span></td></tr>`:''}
     </tbody></table><div class="mr-note">${L.focNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
+
+  // Who bought vs who didn't — counts plus every non-buying account with its
+  // working model and the reason the team recorded, framed as pipeline.
+  const dash = erpDashData(repFilter);
+  const dashBuyers = dash.buyers.filter(b=>!b.channel);
+  const buySec = dash.hasData ? `<div class="mr-kpis">
+      <div class="mr-kpi"><div class="n"><span class="num">${dashBuyers.length}</span></div><div class="l">${L.boughtLbl}</div></div>
+      <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.length}</span></div><div class="l">${L.notBoughtLbl}</div></div>
+      <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.filter(x=>x.c.dealType==='prescription').length}</span></div><div class="l">${L.rxModel}</div></div>
+      <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.filter(x=>x.c.noSaleReason).length}</span></div><div class="l">${L.reasonedLbl}</div></div>
+    </div>
+    <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.colModel}</th><th>${L.colReason}</th></tr></thead><tbody>
+    ${dash.nonBuyers.slice(0,25).map(x=>`<tr><td>${esc(x.c.name)}</td><td>${esc(x.c.rep||'')}</td>
+      <td>${x.c.dealType==='prescription'?`<span class="mr-pill g">${L.rxModel}</span>`:x.c.dealType==='direct'?L.directModel:'—'}</td>
+      <td>${esc(x.c.noSaleReason||'')||'<span class="mr-note">—</span>'}</td></tr>`).join('')}
+    ${dash.nonBuyers.length>25?`<tr><td colspan="4"><span class="mr-note">+${dash.nonBuyers.length-25}</span></td></tr>`:''}
+    </tbody></table><div class="mr-note">${L.buyersNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   const covSec = `<div class="mr-kpis">
     <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.visitedCount}/${cov.stats.totalClinics}</span></div><div class="l">${L.covered} (<span class="num">${cov.stats.coveragePct}%</span>)</div></div>
@@ -7137,6 +7261,7 @@ function buildMasterReportBody(lang, format){
     ${block(L.s_recon, reconSec, 'long')}
     ${block(L.s_returns, retSec)}
     ${block(L.s_foc, focSec)}
+    ${block(L.s_buyers, buySec, 'long')}
     ${block(L.s_coverage, covSec)}
     ${block(L.s_reco, recoItems[0]||`<p class="mr-note">${L.noData}</p>`)}${recoItems.slice(1).map(contBlock).join('')}
     ${block(L.s_plan, planSec)}
@@ -7461,7 +7586,7 @@ function buildVisitsCSV(range){
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
 function buildClinicsCSV(){
-  const rows = [['Clinic','Rep','Class','Account Type','New Customer','Total Visits','Calls','Orders','Sales (KD)','Last Visit','Next Follow-up','Status','Contact','Phone','Doctors','Profile Notes']];
+  const rows = [['Clinic','Rep','Class','Account Type','Working Model','New Customer','Total Visits','Calls','Orders','Sales (KD)','Last Visit','Next Follow-up','Status','Contact','Phone','Doctors','No-sales Reason','Profile Notes']];
   clinics.forEach(c=>{
     const docStr = (c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).join('; ');
     // Compute from the visit log itself — c.lastVisit can go stale when a
@@ -7472,7 +7597,7 @@ function buildClinicsCSV(){
     const callCount = vs.filter(v=>v.callOnly).length;
     const orderCount = vs.filter(v=>v.orderTaken).length;
     const rev = vs.reduce((s,v)=>s+(v.orderTotal||0),0);
-    rows.push([c.name, c.rep||'', c.cls||'', c.account||'', c.isNew?'Yes':'No', fieldCount, callCount, orderCount, rev.toFixed(2), lastVisit||'', c.nextFollowUp||'', followStatus(c.nextFollowUp), c.contact||'', c.phone||'', docStr, c.profileNotes||'']);
+    rows.push([c.name, c.rep||'', c.cls||'', c.account||'', c.dealType==='prescription'?'Prescription':c.dealType==='direct'?'Direct sales':'', c.isNew?'Yes':'No', fieldCount, callCount, orderCount, rev.toFixed(2), lastVisit||'', c.nextFollowUp||'', followStatus(c.nextFollowUp), c.contact||'', c.phone||'', docStr, c.noSaleReason||'', c.profileNotes||'']);
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
