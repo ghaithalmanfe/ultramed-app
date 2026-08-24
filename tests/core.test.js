@@ -1062,6 +1062,13 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(d[1].product, 'Strips');
     assert.equal(d[1].amount, 25);
   });
+  test('isFocRow flags marketing and zero-net lines, never returns or paid sales', () => {
+    assert.equal(core.isFocRow({ type: 'invoice', brand: 'Tepe - Marketing', qty: 1, net: 5, sret: 0 }), true);
+    assert.equal(core.isFocRow({ type: 'invoice', brand: 'TEPE', qty: 3, net: 0, sret: 0 }), true);
+    assert.equal(core.isFocRow({ type: 'invoice', brand: 'TEPE', qty: 3, net: 9, sret: 0 }), false);
+    assert.equal(core.isFocRow({ type: 'return', brand: 'Tepe - Marketing', qty: 1, net: -5, sret: 0 }), false);
+    assert.equal(core.isFocRow({ type: 'invoice', brand: 'TEPE', qty: 1, net: 0, sret: 3 }), false);
+  });
   test('focAnalysis tracks marketing-brand rows and zero-net giveaways per clinic', () => {
     const rows = [
       { type: 'invoice', brand: 'Tepe - Marketing', product: 'Sample Kit', qty: 10, gross: 30, net: 0, sret: 0, customer: 'Joury Clinic' },
