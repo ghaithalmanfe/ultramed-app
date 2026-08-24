@@ -754,6 +754,25 @@ describe('rep and customer matching', () => {
     assert.equal(core.matchCustomer('X', clinics, { 'X': '@channel' }).channel, true);
     assert.equal(core.matchCustomer('X', clinics, { 'X': '@ignore' }).ignored, true);
   });
+  test('matchCustomer keeps branches separate and reports ambiguity instead of guessing', () => {
+    const branches = [
+      { id: 'sal', name: 'Aline Clinic - Salmiya' },
+      { id: 'haw', name: 'Aline Clinic - Hawally' },
+      { id: 'noor', name: 'Al-Noor Dental Center' },
+    ];
+    // A branch-specific name resolves to that exact branch.
+    assert.equal(core.matchCustomer('Aline Clinic Salmiya', branches, {}).clinicId, 'sal');
+    assert.equal(core.matchCustomer('Aline Clinic Hawally', branches, {}).clinicId, 'haw');
+    // A bare name matching two branches is ambiguous — not silently assigned.
+    const amb = core.matchCustomer('Aline Clinic', branches, {});
+    assert.equal(amb.clinicId, null);
+    assert.equal(amb.ambiguous, true);
+    assert.deepEqual(amb.candidates.sort(), ['haw', 'sal']);
+    // A spacing/spelling variant matches via the de-spaced fallback.
+    assert.equal(core.matchCustomer('Alnoor Medical Co', branches, {}).clinicId, 'noor');
+    // A manual override always beats an otherwise-ambiguous name.
+    assert.equal(core.matchCustomer('Aline Clinic', branches, { 'Aline Clinic': 'haw' }).clinicId, 'haw');
+  });
   test('dedupeVisits collapses identical double-saves', () => {
     const v = { date: '2026-08-10', rep: 'Mariam', clinicId: 'c2', orderTotal: 0, notes: '' };
     const res = core.dedupeVisits([v, { ...v }, { ...v }, { ...v, clinicId: 'c1' }]);
