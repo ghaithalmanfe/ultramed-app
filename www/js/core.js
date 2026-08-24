@@ -93,7 +93,9 @@
   function orderGross(order, products){
     let g = 0;
     Object.keys(order.qty).forEach(pid=>{
-      const p = products.find(x=>x.id===pid);
+      // Keys may be plain ids or _key values ("ID#2" for duplicated catalog
+      // ids) — same lookup order as the app's findProduct.
+      const p = products.find(x=>(x._key||x.id)===pid) || products.find(x=>x.id===pid);
       const q = order.qty[pid]||0;
       if(p && p.price!=null) g += p.price*q;
     });
@@ -796,7 +798,7 @@
         erp: {
           net: Math.round(erpNet * 1000) / 1000,
           invoices: Object.keys(erpRows.reduce(function(a, r){ if(r.type !== 'return') a[r.doc] = 1; return a; }, {})).length,
-          returns: Math.round(erpRows.reduce(function(s, r){ return s + r.sret; }, 0) * 1000) / 1000,
+          returns: Math.round(erpRows.reduce(function(s, r){ return s + returnValue(r); }, 0) * 1000) / 1000,
           channelNet: Math.round(channelNet * 1000) / 1000,
           clinicNet: Math.round(clinicNet * 1000) / 1000,
         },
@@ -1073,17 +1075,29 @@
     return Math.round((achieved / asOfDay) * daysInMonth * 100) / 100;
   }
   // Groups returned value by brand and by customer, largest first.
+  // The returned value carried by one ERP row. Two shapes exist in the wild:
+  // a "Sales Return" column on invoice lines (sret), and dedicated SRT return
+  // documents whose value only shows up as a negative net. Count each row
+  // once — sret wins when both are present.
+  function returnValue(r){
+    if(r.sret > 0) return r.sret;
+    if(r.type === 'return') return Math.abs(r.net || 0);
+    return 0;
+  }
   function returnsAnalysis(rows){
-    var ret = (rows || []).filter(function(r){ return r.sret > 0; });
+    var ret = (rows || []).filter(function(r){ return returnValue(r) > 0; });
     var agg = function(key){
       var d = {};
-      ret.forEach(function(r){ var k = r[key] || '—'; d[k] = (d[k] || 0) + r.sret; });
+      ret.forEach(function(r){ var k = r[key] || '—'; d[k] = (d[k] || 0) + returnValue(r); });
       return Object.keys(d).map(function(k){ return { name: k, amount: Math.round(d[k] * 1000) / 1000 }; })
         .sort(function(a, b){ return b.amount - a.amount; });
     };
+    var docs = {};
+    ret.forEach(function(r){ if(r.doc) docs[r.doc] = 1; });
     return {
-      total: Math.round(ret.reduce(function(s, r){ return s + r.sret; }, 0) * 1000) / 1000,
-      count: ret.length, byBrand: agg('brand'), byCustomer: agg('customer'),
+      total: Math.round(ret.reduce(function(s, r){ return s + returnValue(r); }, 0) * 1000) / 1000,
+      count: ret.length, docCount: Object.keys(docs).length,
+      byBrand: agg('brand'), byCustomer: agg('customer'),
     };
   }
 
@@ -1184,6 +1198,6 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis
+    forecastMonthEnd, returnsAnalysis, returnValue
   };
 });

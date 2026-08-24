@@ -680,6 +680,7 @@
 
     <div id="clinicListPane" style="display:none;">
       <input type="text" class="search-box" id="clinicSearch" placeholder="Search clinics..." oninput="renderClinics()">
+      <div class="chip-row" id="clinicVisitChips" style="margin:10px 0 4px;"></div>
       <button class="btn secondary small" onclick="openDoctorsDirectory()">👨‍⚕️ Doctors directory</button>
       <div id="clinicList" style="margin-top:14px;"></div>
     </div>
@@ -838,8 +839,8 @@
   <div class="pr-toolbar">
     <button class="back" onclick="hideProReport()">&larr; Back to app</button>
     <span id="prLangBtns"></span>
-    <button class="print" onclick="window.print()">🖨 PDF</button>
-    <button class="print" onclick="downloadReportFile()">⬇️</button>
+    <button class="print" onclick="downloadReportPdf()">⬇️ PDF</button>
+    <button class="print" onclick="window.print()">🖨 Print</button>
     <button class="print" onclick="shareReportFile()">📤</button>
   </div>
   <div class="pr-doc" id="prDoc"></div>
@@ -901,7 +902,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v28'; // keep in step with sw.js CACHE version
+const APP_REV = 'v29'; // keep in step with sw.js CACHE version
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4",
   authDomain: "ultramed-field-ops.firebaseapp.com",
@@ -2574,7 +2575,7 @@ function renderProductChips(){
     <div class="chip-brand-group">
       <div class="chip-brand-label"><span class="swatch" style="background:${brandColor(b)}"></span>${esc(b)}</div>
       <div class="chip-row">
-        ${byBrand[b].map(p=>`<div class="chip small withimg ${selectedProducts.includes(p.id)?'on':''}" data-id="${p.id}" onclick="toggleProductChip('${p.id}')">${prodThumb(p,'pthumb')}<span>${esc(p.name)}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="chip small withimg ${selectedProducts.includes(productKey(p))?'on':''}" data-id="${productKey(p)}" onclick="toggleProductChip('${productKey(p)}')">${prodThumb(p,'pthumb')}<span>${esc(p.name)}</span></div>`).join('')}
       </div>
     </div>`).join('');
 }
@@ -2638,7 +2639,7 @@ function renderOrders(){
       ${(()=>{
         const opsByBrand = {};
         selectedProducts.forEach(pid=>{
-          const p = products.find(x=>x.id===pid);
+          const p = findProduct(pid);
           if(!p) return;
           const b = p.brand||'Other';
           (opsByBrand[b]=opsByBrand[b]||[]).push(p);
@@ -2648,14 +2649,15 @@ function renderOrders(){
         return obBrands.map(b=>`
           <div class="chip-brand-label" style="margin-top:10px;"><span class="swatch" style="background:${brandColor(b)}"></span>${esc(b)}</div>
           ${opsByBrand[b].map(p=>{
-            const q = o.qty[p.id]||0;
+            const key = productKey(p);
+            const q = o.qty[key]||0;
             return `<div class="qty-row">
               ${prodThumb(p,'pthumb')}
               <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:12px;">${p.price!=null?p.price.toFixed(2)+' KD each':'no price'}</span></div>
               <div class="stepper">
-                <button onclick="bumpQty('${o.id}','${p.id}',-1)" ${q<=0?'disabled':''}>−</button>
-                <span class="val" id="q-${o.id}-${slugify(p.id)}">${q}</span>
-                <button onclick="bumpQty('${o.id}','${p.id}',1)">+</button>
+                <button onclick="bumpQty('${o.id}','${key}',-1)" ${q<=0?'disabled':''}>−</button>
+                <span class="val" id="q-${o.id}-${slugify(key)}">${q}</span>
+                <button onclick="bumpQty('${o.id}','${key}',1)">+</button>
               </div>
             </div>`;
           }).join('')}`).join('');
@@ -2892,14 +2894,14 @@ function erpDashData(){
     const key = (r.customer||'').trim() || '(no name)';
     const m = UMCore.matchCustomer(key, clinics, erpMap);
     if(m.ignored) return;
-    const a = cust[key] || (cust[key] = {name:key, net:0, docs:new Set(), last:'', rep, clinicId:m.clinicId, channel:m.channel});
-    a.net += r.net; a.docs.add(r.doc);
+    const a = cust[key] || (cust[key] = {name:key, net:0, ret:0, docs:new Set(), last:'', rep, clinicId:m.clinicId, channel:m.channel});
+    a.net += r.net; a.ret += UMCore.returnValue(r); a.docs.add(r.doc);
     if(r.date > a.last) a.last = r.date;
     if(r.date > maxDate) maxDate = r.date;
   }));
   const buyers = Object.values(cust)
     .map(a=>({name:a.name, rep:a.rep, clinicId:a.clinicId, channel:a.channel,
-      invoices:a.docs.size, last:a.last, net:Math.round(a.net*100)/100}))
+      invoices:a.docs.size, last:a.last, net:Math.round(a.net*100)/100, ret:Math.round(a.ret*100)/100}))
     .sort((x,y)=>y.net-x.net);
   const boughtIds = new Set(buyers.filter(b=>b.clinicId).map(b=>b.clinicId));
   let pool = clinics.filter(c=>c.cls!=='Closed');
@@ -2923,6 +2925,7 @@ function erpDashSection(){
   const channels = d.buyers.filter(b=>b.channel);
   const channelNet = Math.round(channels.reduce((s,b)=>s+b.net,0)*100)/100;
   const buyersNet = Math.round(clinicBuyers.reduce((s,b)=>s+b.net,0)*100)/100;
+  const returnedTotal = Math.round(d.buyers.reduce((s,b)=>s+(b.ret||0),0)*100)/100;
   const donut = svgDonut(Object.assign([
     {l:'Bought', v: clinicBuyers.length, c:'#2E784C'},
     {l:"Didn't buy", v: d.nonBuyers.length, c:'#E5E5EA'},
@@ -2949,7 +2952,7 @@ function erpDashSection(){
         <div class="row-between">
           <div>
             <div class="clinic-name">${esc(b.name)}${b.clinicId?'':' <span style="font-size:11px; color:var(--muted);">⚠ not linked</span>'}</div>
-            <div class="clinic-sub">${esc(b.rep)} · ${b.invoices} invoice${b.invoices===1?'':'s'} · last ${fmtDate(b.last)}</div>
+            <div class="clinic-sub">${esc(b.rep)} · ${b.invoices} invoice${b.invoices===1?'':'s'} · last ${fmtDate(b.last)}${b.ret>0?` · <span style="color:var(--coral);">↩ ${money(b.ret)} returned</span>`:''}</div>
           </div>
           <div style="font-weight:800; ${b.net<0?'color:var(--coral);':''}">${money(b.net)}</div>
         </div>
@@ -2962,6 +2965,7 @@ function erpDashSection(){
       <div class="k"><div class="ki">🛒</div><div class="kn">${clinicBuyers.length}</div><div class="kl">Bought · ${money(buyersNet)}</div></div>
       <div class="k"><div class="ki">⭕</div><div class="kn" style="color:${d.nonBuyers.length?'var(--coral)':'var(--sage)'};">${d.nonBuyers.length}</div><div class="kl">Didn't buy yet</div></div>
       <div class="k"><div class="ki">🌐</div><div class="kn">${money(channelNet)}</div><div class="kl">Online / channels</div></div>
+      <div class="k"><div class="ki">↩️</div><div class="kn" style="color:${returnedTotal>0?'var(--coral)':'var(--sage)'};">${money(returnedTotal)}</div><div class="kl">Returned</div></div>
     </div>
     ${donut}
   </div>
@@ -3100,21 +3104,66 @@ function renderClinicDash(){
   `;
 }
 
+// Visit-count filter on the clinic list: everyone can see at a glance who was
+// never visited, who gets attention, and what to do next for each clinic.
+let clinicVisitFilter = 'all';   // 'all' | '0' | '1-2' | '3-5' | '6+'
+function setClinicVisitFilter(v){ clinicVisitFilter = v; renderClinics(); }
+function clinicVisitBucket(n){ return n===0 ? '0' : n<=2 ? '1-2' : n<=5 ? '3-5' : '6+'; }
+// What should happen next with this clinic — one honest line per card.
+function clinicNextAction(c, stats){
+  const fs = followStatus(c.nextFollowUp);
+  if(fs==='overdue'){
+    const days = daysBetween(c.nextFollowUp, todayStr());
+    return {icon:'⏰', cls:'overdue', text:`Follow-up overdue by ${days}d (${fmtDate(c.nextFollowUp)}) — reschedule it now`, reschedule:true};
+  }
+  if(fs==='today') return {icon:'📌', cls:'today', text:'Follow-up due TODAY — keep the promise', reschedule:false};
+  if(stats.total===0) return {icon:'🆕', cls:'never', text:'Never visited — book a first visit', reschedule:false};
+  if(stats.daysSince!=null && stats.daysSince>=30 && fs!=='upcoming')
+    return {icon:'😴', cls:'dormant', text:`Quiet for ${stats.daysSince}d — plan a revisit and set a follow-up`, reschedule:false};
+  if(fs==='upcoming') return {icon:'🗓️', cls:'ok', text:`Next follow-up ${fmtDate(c.nextFollowUp)}`, reschedule:false};
+  return {icon:'▫️', cls:'none', text:`Last visit ${stats.daysSince}d ago — no follow-up set, schedule one`, reschedule:false};
+}
 function renderClinics(){
   const q = (document.getElementById('clinicSearch').value||'').toLowerCase();
   const list = document.getElementById('clinicList');
   let filtered = clinics.filter(c=>c.name.toLowerCase().includes(q));
   if(clinicRepFilter !== 'all') filtered = filtered.filter(c=>c.rep===clinicRepFilter);
+  // Visit stats per clinic: field visits + phone orders count as "visited",
+  // call logs shown separately so a phone call never masks a missing visit.
+  const statFor = {};
+  filtered.forEach(c=>{
+    const vs = visits.filter(v=>v.clinicId===c.id);
+    const field = vs.filter(v=>!v.callOnly).length;
+    const calls = vs.length - field;
+    const last = vs.length ? vs.map(v=>v.date).sort().slice(-1)[0] : null;
+    statFor[c.id] = {total:field, calls, last, daysSince: last?daysBetween(last, todayStr()):null};
+  });
+  // Filter chips with live counts — they answer "how many were never visited?"
+  const buckets = {'all':filtered.length, '0':0, '1-2':0, '3-5':0, '6+':0};
+  filtered.forEach(c=>{ buckets[clinicVisitBucket(statFor[c.id].total)]++; });
+  const chipDefs = [
+    ['all','All'], ['0','⭕ Never visited'], ['1-2','1–2 visits'], ['3-5','3–5 visits'], ['6+','6+ visits'],
+  ];
+  const chipsEl = document.getElementById('clinicVisitChips');
+  if(chipsEl) chipsEl.innerHTML = chipDefs.map(([k,l])=>
+    `<div class="chip small ${clinicVisitFilter===k?'on':''}" onclick="setClinicVisitFilter('${k}')">${l} (${buckets[k]})</div>`).join('');
+  if(clinicVisitFilter!=='all') filtered = filtered.filter(c=>clinicVisitBucket(statFor[c.id].total)===clinicVisitFilter);
   filtered.sort((a,b)=>{
     const order = {overdue:0, today:1, upcoming:2, none:3};
-    return order[followStatus(a.nextFollowUp)] - order[followStatus(b.nextFollowUp)];
+    const d = order[followStatus(a.nextFollowUp)] - order[followStatus(b.nextFollowUp)];
+    if(d!==0) return d;
+    // Within the same urgency: least-visited first, then class A→F.
+    return statFor[a.id].total - statFor[b.id].total || String(a.cls||'Z').localeCompare(String(b.cls||'Z'));
   });
   if(filtered.length===0){
     list.innerHTML = `<div class="empty"><div class="big">No clinics here</div>Try another filter — or add a new customer and grow the territory.</div>`;
     return;
   }
+  const actColor = {overdue:'var(--coral)', today:'#FF9500', never:'var(--teal)', dormant:'#FF9500', ok:'var(--sage)', none:'var(--muted)'};
   list.innerHTML = filtered.map(c=>{
-    const cVisits = visits.filter(v=>v.clinicId===c.id).length;
+    const st = statFor[c.id];
+    const act = clinicNextAction(c, st);
+    const visitTxt = st.total===0 ? '⭕ no visits yet' : `${st.total} visit${st.total===1?'':'s'}`;
     return `
     <div class="card clickable" style="border-left:4px solid ${clsColor(c.cls)};" onclick="openClinicDetail('${c.id}')">
       <div class="row-between">
@@ -3122,11 +3171,15 @@ function renderClinics(){
           <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
           <div>
             <div class="clinic-name">${esc(c.name)}${c.isNew?' <span style="font-size:11px;">🆕</span>':''}</div>
-            <div class="clinic-sub">${esc(c.rep||'')} · ${cVisits} visit${cVisits===1?'':'s'}${c.account?' · '+esc(c.account):''}</div>
+            <div class="clinic-sub">${esc(c.rep||'')} · ${visitTxt}${st.calls?` · 📞 ${st.calls} call${st.calls===1?'':'s'}`:''}${st.last?` · last ${fmtDate(st.last)}`:''}${c.account?' · '+esc(c.account):''}</div>
             ${c.doctors.length?`<div style="margin-top:5px; font-size:15px;">${c.doctors.slice(0,6).map(d=>SPECIALTY_PLAYBOOK[d.title]?SPECIALTY_PLAYBOOK[d.title].icon:'👤').join(' ')}</div>`:''}
           </div>
         </div>
         <span class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp).split('·')[0].trim()}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
+        <div style="flex:1; font-size:12.5px; line-height:1.45; color:${actColor[act.cls]||'var(--muted)'};">${act.icon} ${act.text}</div>
+        ${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">📅 Reschedule</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3232,7 +3285,7 @@ function renderClinicOrders(clinicId){
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders placed</span><span>${rows.length}</span></div>
     </div>` +
     rows.map(r=>{
-      const items = r.o.items.map(it=>{ const p=products.find(x=>x.id===it.productId); return (p?p.name:'?')+' ×'+it.qty; }).join(', ');
+      const items = r.o.items.map(it=>orderItemName(it)+' ×'+it.qty).join(', ');
       return `<div class="visit-hist">
         <strong>${fmtDate(r.date)}</strong> · ${money(r.o.total)}${r.o.discountPct?` <span style="color:var(--coral);">(−${r.o.discountPct}%)</span>`:''} · ${esc(r.rep)}
         <br>${esc(items)}${r.o.notes?'<br><em>'+esc(r.o.notes)+'</em>':''}
@@ -3246,6 +3299,29 @@ function findProduct(key){
   return products.find(p => (p._key || p.id) === key) || products.find(p => p.id === key) || null;
 }
 function productKey(p){ return p._key || p.id; }
+// Resolve a product name from any stored key (id or _key). Never silently
+// blank: an unmatched key comes back as the raw key so exports stay honest
+// instead of dropping the row's information.
+function productName(key){
+  const p = findProduct(key);
+  return p ? p.name : String(key || '');
+}
+// Order items saved by the standalone-order flow carry a {name} snapshot —
+// prefer the live catalog, fall back to the snapshot, then the raw id.
+function orderItemName(it){
+  const p = findProduct(it.productId);
+  return p ? p.name : (it.name || String(it.productId || ''));
+}
+// Clinic name for exports/logs: live list first, then the recycle bin
+// (deleted clinics keep their name in history), then an explicit marker —
+// far more useful than a bare "Unknown".
+function clinicNameOf(id){
+  if(!id) return '(no clinic)';
+  const c = clinics.find(x=>x.id===id);
+  if(c) return c.name;
+  const b = ((recycleBin && recycleBin.clinics)||[]).find(x=>x && x.id===id);
+  return b ? b.name + ' (deleted)' : '(deleted clinic)';
+}
 function assignProductKeys(){
   const seen = {};
   products.forEach((p,i)=>{
@@ -4368,7 +4444,7 @@ function renderVisitLog(){
       html += `<div class="doc-group-head">${d.toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'})}</div>`;
     }
     const c = clinics.find(x=>x.id===v.clinicId);
-    const prods = (v.products||[]).map(id=>{ const p=products.find(x=>x.id===id); return p?p.name:null; }).filter(Boolean);
+    const prods = (v.products||[]).map(id=>productName(id)).filter(Boolean);
     const canEdit = canEditVisit(v);
     html += `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c?c.cls:null)};">
       <div class="row-between">
@@ -4410,7 +4486,7 @@ function copyVisitLog(){
   let text = `UltraMed Visit Log — ${label} — ${currentUser.role==='supervisor'?'Team':currentUser.name}\n\n`;
   rows.forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
-    text += `${v.date} · ${c?c.name:'Unknown'}${v.orderTaken?' · '+money(v.orderTotal):''}${currentUser.role==='supervisor'?' · '+v.rep:''}\n`;
+    text += `${v.date} · ${clinicNameOf(v.clinicId)}${v.orderTaken?' · '+money(v.orderTotal):''}${currentUser.role==='supervisor'?' · '+v.rep:''}\n`;
     if(v.notes) text += `   ${v.notes}\n`;
   });
   text += `\nTotal: ${rows.length} visits · ${money(rows.reduce((s,v)=>s+(v.orderTotal||0),0))}`;
@@ -5764,8 +5840,9 @@ function openReportTools(){
       <div class="chip small ${reportFormat==='summary'?'on':''}" onclick="reportFormat='summary'; openReportTools()">One-pager · صفحة واحدة</div>
     </div>
     <button class="btn" onclick="closeModal(); shareReportFile()">📤 Share (WhatsApp / email)</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">⬇️ Save as a file</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">🖨️ View on screen / print / PDF</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportPdf()">⬇️ Save as PDF</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">🌐 Save as HTML (opens in any browser)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">👁 View on screen / print</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); copyReport()">📋 Copy as text</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); openExport()">🗂 Data exports &amp; backups (CSV)</button>
   `);
@@ -5859,8 +5936,7 @@ function renderReports(){
     el.innerHTML = `<div style="color:var(--muted); font-size:13.5px;">No products logged in this range.</div>`;
   } else {
     el.innerHTML = top.map(([pid,count])=>{
-      const p = products.find(x=>x.id===pid);
-      return `<div class="report-line"><span>${esc(p?p.name:'Unknown')}</span><span class="v">${count}</span></div>`;
+      return `<div class="report-line"><span>${esc(productName(pid))}</span><span class="v">${count}</span></div>`;
     }).join('');
   }
   const reasons = {};
@@ -6202,7 +6278,7 @@ function achievements(rep){
   const streak = calcStreak(rep);
   const brands = new Set();
   mine.forEach(v=>(v.orders||[]).forEach(o=>o.items.forEach(it=>{
-    const p=products.find(x=>x.id===it.productId); if(p) brands.add(p.brand);
+    const p=findProduct(it.productId); if(p) brands.add(p.brand);
   })));
   const A=(i,t,cur,goal,desc)=>({i,t,cur:Math.min(cur,goal),goal,earned:cur>=goal,desc});
   return [
@@ -6354,7 +6430,7 @@ function renderCharts(){
   // 4) top brands by revenue
   const brandRev={};
   rv.forEach(v=>(v.orders||[]).forEach(o=>o.items.forEach(it=>{
-    const p=products.find(x=>x.id===it.productId); if(!p||p.price==null) return;
+    const p=findProduct(it.productId); if(!p||p.price==null) return;
     brandRev[p.brand]=(brandRev[p.brand]||0)+p.price*it.qty*(1-(o.discountPct||0)/100);
   })));
   const brandBars=Object.entries(brandRev).sort((a,b)=>b[1]-a[1]).slice(0,5)
@@ -6681,8 +6757,7 @@ function renderProDoc(){
       return top.length?`<div style="margin:18px 0;">
         <h2 style="font-size:15px; margin:0 0 8px;">Top products discussed</h2>
         <table class="pr-tbl"><tr><th>Product</th><th>Times discussed</th></tr>
-        ${top.map(([pid,n])=>{ const p=products.find(x=>x.id===pid);
-          return `<tr><td>${esc(p?p.name:'Unknown')}</td><td>${n}</td></tr>`; }).join('')}</table>
+        ${top.map(([pid,n])=>`<tr><td>${esc(productName(pid))}</td><td>${n}</td></tr>`).join('')}</table>
       </div>`:'';
     })()}
     ${(()=>{ // ERP-verified figures when an imported sales period overlaps this report
@@ -6752,6 +6827,7 @@ en: {
   overdue:'Overdue follow-ups', doNow:'Do now', watch:'Keep an eye', working:'Working — keep it up',
   planIntro:'Auto-drafted from the most urgent findings — edit in the meeting and assign owners:',
   noData:'No data available for this period.', kd:'KD', week:'Week', total:'Total',
+  kVisits:'Field visits', kSales:'Sales (ERP)', kSalesLogged:'Sales (logged)', kCoverage:'Coverage', kReturns:'Returned', retDocs:'return invoices', kContacts:'Contacts seen',
   execTeam:(ach,goal,pct,fc)=>`The team has delivered <b>${ach}</b> of the <b>${goal}</b> monthly target (<b>${pct}%</b>). At the current pace the month is projected to close at <b>${fc}</b>.`,
   execStar:(rep,amt)=>`Standout performer: <b>${rep}</b> with ${amt}.`,
   execRisk:(txt)=>`Main risk to address: ${txt}`,
@@ -6771,6 +6847,7 @@ ar: {
   overdue:'متابعات متأخرة', doNow:'نفّذ الآن', watch:'راقب', working:'يعمل جيداً — استمروا',
   planIntro:'مسودة آلية من أكثر النتائج إلحاحاً — تُناقش في الاجتماع ويُحدد مسؤول لكل بند:',
   noData:'لا تتوفر بيانات لهذه الفترة.', kd:'د.ك', week:'الأسبوع', total:'الإجمالي',
+  kVisits:'زيارات ميدانية', kSales:'المبيعات (ERP)', kSalesLogged:'المبيعات المسجلة', kCoverage:'التغطية', kReturns:'المرتجع', retDocs:'فاتورة مرتجع', kContacts:'جهات اتصال',
   execTeam:(ach,goal,pct,fc)=>`حقق الفريق <b>${ach}</b> من الهدف الشهري البالغ <b>${goal}</b> (بنسبة <b>${pct}%</b>). وبالوتيرة الحالية يُتوقع إقفال الشهر عند <b>${fc}</b>.`,
   execStar:(rep,amt)=>`الأداء الأبرز: <b>${rep}</b> بمبيعات ${amt}.`,
   execRisk:(txt)=>`أهم خطر يجب معالجته: ${txt}`,
@@ -6804,36 +6881,56 @@ function mrCoachText(i, lang){
   return f ? f(i.data || {}) : (i.title + (i.detail ? ' — ' + i.detail : ''));
 }
 const MASTER_REPORT_CSS = `
-.mr-doc{max-width:760px; margin:0 auto; padding:34px 30px 60px; background:#fff; color:#1C231E;
+.mr-doc{max-width:780px; margin:0 auto; padding:26px 26px 60px; background:#fff; color:#1C231E;
   font-family:'Avenir Next','Segoe UI','SF Arabic','Noto Kufi Arabic',Tahoma,system-ui,sans-serif; font-size:13.5px; line-height:1.7;}
 .mr-doc .num{direction:ltr; unicode-bidi:embed;}
-.mr-cover{text-align:center; border-bottom:3px solid #0B3D22; padding-bottom:22px; margin-bottom:26px;}
-.mr-cover .b{font-size:12px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; color:#0B6E4F;}
-.mr-cover h1{font-family:Georgia,'Times New Roman',serif; font-size:30px; margin:8px 0 6px; color:#12241A;}
-.mr-cover .meta{color:#6E7A70; font-size:13px;}
-.mr-conf{font-size:10.5px; color:#9AA49C; letter-spacing:.06em; margin-top:8px; text-transform:uppercase;}
-.mr-sec{margin:26px 0 10px; display:flex; align-items:baseline; gap:10px; page-break-after:avoid;}
-.mr-sec .no{font-family:Georgia,serif; font-size:15px; color:#0B6E4F; font-weight:700; min-width:22px;}
-.mr-sec h2{font-family:Georgia,serif; font-size:18px; margin:0; color:#12241A;}
+.mr-doc.mr-pdf{padding:0; max-width:none;}
+.mr-block{margin:0 0 24px;}
+.mr-cover{background:linear-gradient(135deg,#0B3D22 0%,#11512E 55%,#17663A 100%); color:#fff;
+  border-radius:16px; padding:30px 26px 20px; text-align:center; margin:0 0 26px;}
+.mr-cover .b{font-size:11.5px; font-weight:800; letter-spacing:.18em; text-transform:uppercase; color:#9FD8B4;}
+.mr-cover h1{font-family:Georgia,'Times New Roman',serif; font-size:29px; margin:8px 0 6px; color:#fff;}
+.mr-cover .meta{color:#CFE7D6; font-size:12.5px;}
+.mr-cover-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:18px;}
+@media (max-width:560px){ .mr-cover-kpis{grid-template-columns:repeat(2,1fr);} .mr-kpis{grid-template-columns:repeat(2,1fr);} }
+.mr-cover-kpis .ck{background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.16); border-radius:11px; padding:10px 6px;}
+.mr-cover-kpis .n{font-size:15.5px; font-weight:800; color:#fff; white-space:nowrap;}
+.mr-cover-kpis .l{font-size:10px; color:#CFE7D6; margin-top:2px; line-height:1.35;}
+.mr-conf{font-size:10px; color:#9CC7AA; letter-spacing:.06em; margin-top:14px; text-transform:uppercase;}
+.mr-sec{margin:0 0 10px; display:flex; align-items:center; gap:10px; border-bottom:2px solid #E3EBE4; padding-bottom:7px; page-break-after:avoid; break-after:avoid;}
+.mr-sec .no{font-family:Georgia,serif; font-size:12.5px; color:#fff; background:#0B3D22; font-weight:700;
+  min-width:24px; height:24px; line-height:24px; text-align:center; border-radius:7px; flex-shrink:0;}
+.mr-sec h2{font-family:Georgia,serif; font-size:17.5px; margin:0; color:#12241A;}
 .mr-exec{background:#F4F7F4; border-inline-start:4px solid #0B3D22; border-radius:8px; padding:14px 18px; font-size:14px;}
 .mr-tbl{width:100%; border-collapse:collapse; font-size:12.5px; margin:8px 0 4px;}
-.mr-tbl th{background:#EFF3EF; color:#3C4A40; font-weight:700; text-align:start; padding:8px 10px; border:1px solid #DFE5DF; white-space:nowrap;}
+.mr-tbl th{background:#0B3D22; color:#EAF3EC; font-weight:700; text-align:start; padding:8px 10px; border:1px solid #0B3D22; font-size:11.5px; line-height:1.45;}
 .mr-tbl td{padding:7px 10px; border:1px solid #E7EBE7; vertical-align:top;}
-.mr-pill{display:inline-block; border-radius:999px; padding:1px 10px; font-size:11px; font-weight:700;}
+.mr-tbl tbody tr:nth-child(even) td{background:#F5F8F5;}
+.mr-tbl thead{display:table-header-group;}
+.mr-pill{display:inline-block; border-radius:999px; padding:1px 10px; font-size:11px; font-weight:700; white-space:nowrap;}
 .mr-pill.g{background:#DFF1E4; color:#186A3B;} .mr-pill.o{background:#FBEDD3; color:#8A5A00;} .mr-pill.r{background:#FADDD7; color:#A93226;}
 .mr-note{color:#7C877E; font-size:11.5px; margin:4px 0 0;}
-.mr-reco{border:1px solid #E7EBE7; border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:13px;}
+.mr-reco{border:1px solid #E7EBE7; border-radius:10px; padding:10px 14px; margin-bottom:8px; font-size:13px; background:#FDFEFD;}
 .mr-reco.act{border-inline-start:4px solid #C0392B;} .mr-reco.watch{border-inline-start:4px solid #B9770E;} .mr-reco.good{border-inline-start:4px solid #1E8449;}
 .mr-reco .lv{font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;}
 .mr-reco.act .lv{color:#C0392B;} .mr-reco.watch .lv{color:#B9770E;} .mr-reco.good .lv{color:#1E8449;}
 .mr-plan li{margin-bottom:7px;}
 .mr-chart{direction:ltr;}
 .mr-kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:10px 0;}
-.mr-kpi{background:#F4F7F4; border-radius:8px; padding:10px 8px; text-align:center;}
+.mr-kpi{background:#F4F7F4; border-radius:10px; padding:12px 8px; text-align:center; border:1px solid #E3EBE4;}
 .mr-kpi .n{font-size:18px; font-weight:800; color:#0B3D22;}
-.mr-kpi .l{font-size:10.5px; color:#6E7A70;}
-.mr-foot{margin-top:34px; border-top:1px solid #DFE5DF; padding-top:10px; color:#9AA49C; font-size:11px; display:flex; justify-content:space-between; gap:10px;}
-@media print{ .mr-doc{padding:0;} .mr-sec{page-break-after:avoid;} .mr-tbl{page-break-inside:avoid;} }
+.mr-kpi .l{font-size:10.5px; color:#6E7A70; margin-top:2px;}
+.mr-foot{margin-top:30px; border-top:2px solid #0B3D22; padding-top:10px; color:#8A948C; font-size:11px; display:flex; justify-content:space-between; gap:10px;}
+h3.mr-rep{font-size:14px; margin:12px 0 4px;}
+@media print{
+  @page{size:A4; margin:12mm;}
+  .mr-doc{padding:0; max-width:none;}
+  .mr-block{break-inside:avoid; page-break-inside:avoid;}
+  .mr-block.long{break-inside:auto; page-break-inside:auto;}
+  .mr-sec{page-break-after:avoid;}
+  .mr-tbl tr{break-inside:avoid; page-break-inside:avoid;}
+  .mr-cover{border-radius:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+}
 `;
 function mrChartSvg(trend, lang){
   if(!trend.length) return '';
@@ -6884,7 +6981,12 @@ function buildMasterReportBody(lang, format){
   const AR_PERIODS = {'This Week':'هذا الأسبوع','This Month':'هذا الشهر','This Quarter':'هذا الربع','All Time':'كل الفترة'};
   const periodTxt = rtl ? (AR_PERIODS[periodLabel()] || periodLabel()) : periodLabel();
   let secNo = 0;
-  const sec = (title) => `<div class="mr-sec"><span class="no">${(++secNo)}</span><h2>${title}</h2></div>`;
+  // Each numbered section renders as a self-contained .mr-block so both the
+  // PDF paginator and the browser's print engine keep a heading glued to its
+  // content instead of splitting them across pages.
+  const secHead = (title) => `<div class="mr-sec"><span class="no">${(++secNo)}</span><h2>${title}</h2></div>`;
+  const block = (title, inner, cls) => `<section class="mr-block${cls?' '+cls:''}">${secHead(title)}${inner}</section>`;
+  const contBlock = (inner) => `<section class="mr-block">${inner}</section>`;
 
   // Per-rep target math, shared by exec summary and the targets table.
   const tstats = repsList.map(rep => {
@@ -6915,12 +7017,12 @@ function buildMasterReportBody(lang, format){
   if(risk) exec += `<p style="margin:0;">${L.execRisk(esc(mrCoachText(risk, lang)))}</p>`;
   if(!exec) exec = `<p style="margin:0;">${L.noData}</p>`;
 
-  const targetsTbl = tstats.length ? `<table class="mr-tbl"><tr><th>${L.rep}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.pace}</th><th>${L.forecast}</th><th>${L.status}</th></tr>
+  const targetsTbl = tstats.length ? `<table class="mr-tbl"><thead><tr><th>${L.rep}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.pace}</th><th>${L.forecast}</th><th>${L.status}</th></tr></thead><tbody>
     ${tstats.map(x=>`<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td>${mrMoney(x.ach,lang)}</td><td><span class="num">${x.pace}%</span></td><td>${mrMoney(x.fc,lang)}</td>
       <td><span class="mr-pill ${x.state==='hit'?'g':x.state==='on'?'g':'r'}">${x.state==='hit'?L.st_hit:x.state==='on'?L.st_on:L.st_behind}</span></td></tr>`).join('')}
-    </table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
+    </tbody></table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
-  const brandSec = repsList.map(rep=>{
+  const brandParts = repsList.map(rep=>{
     const t = targets[rep]||{}; const bt = t.brands||{}; const ab = t.achievedBrands||{};
     const items = Object.entries(bt).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
     if(!items.length) return '';
@@ -6928,69 +7030,80 @@ function buildMasterReportBody(lang, format){
     // is newest, the weekly sales invoices once they overtake it.
     const eb = erpBrandMtd(rep);
     const officialFresh = Object.keys(ab).length > 0 && (t.achievedAsOf||'') >= (eb.asOf||'');
-    return `<h3 style="font-size:14px; margin:12px 0 4px;">${esc(rep)}</h3><table class="mr-tbl">
-      <tr><th>${L.brandCol}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.ach}</th></tr>
+    return `<h3 class="mr-rep">${esc(rep)}</h3><table class="mr-tbl">
+      <thead><tr><th>${L.brandCol}</th><th>${L.target}</th><th>${L.achieved}</th><th>${L.ach}</th></tr></thead><tbody>
       ${items.map(([br,tg])=>{
         const a = officialFresh ? (ab[br]!=null?ab[br]:0)
           : Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
         const pct = Math.round(a/tg*100);
         return `<tr><td>${esc(br)}</td><td><span class="num">${tg.toFixed(0)}</span></td><td><span class="num">${a.toFixed(2)}</span></td>
           <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
-      }).join('')}</table>`;
-  }).join('');
+      }).join('')}</tbody></table>`;
+  }).filter(Boolean);
 
   const reconSec = rec && rec.perRep.length ? `<table class="mr-tbl">
-    <tr><th>${L.rep}</th><th>${L.linkage}</th><th>${L.matched}</th><th>${L.pipeline}</th><th>${L.noVisit}</th></tr>
+    <thead><tr><th>${L.rep}</th><th>${L.linkage}</th><th>${L.matched}</th><th>${L.pipeline}</th><th>${L.noVisit}</th></tr></thead><tbody>
     ${rec.perRep.filter(r=>repsList.includes(r.rep)).map(r=>`<tr><td><b>${esc(r.rep)}</b></td>
       <td><span class="num">${r.linkagePct}%</span></td><td><span class="num">${r.matched.length}</span></td>
       <td><span class="num">${r.visitedNoInvoice.length}</span></td>
       <td><span class="num">${r.invoicedNoVisit.length}</span> (${mrMoney(r.invoicedNoVisit.reduce((s,x)=>s+x.net,0),lang)})</td></tr>`).join('')}
-    </table>` : `<p class="mr-note">${L.noData}</p>`;
+    </tbody></table>` : `<p class="mr-note">${L.noData}</p>`;
 
-  const retSec = returns.count ? `<p style="margin:4px 0;">${L.retTotal}: <b>${mrMoney(returns.total,lang)}</b> (<span class="num">${returns.count}</span> ${L.retCount})</p>
-    <table class="mr-tbl"><tr><th>${L.byBrand}</th><th></th><th>${L.byCustomer}</th><th></th></tr>
+  const retSec = returns.count ? `<p style="margin:4px 0;">${L.retTotal}: <b>${mrMoney(returns.total,lang)}</b> (<span class="num">${returns.count}</span> ${L.retCount}${returns.docCount?` · <span class="num">${returns.docCount}</span> ${L.retDocs}`:''})</p>
+    <table class="mr-tbl"><thead><tr><th>${L.byBrand}</th><th></th><th>${L.byCustomer}</th><th></th></tr></thead><tbody>
     ${[0,1,2,3,4].map(i=>{
       const bb = returns.byBrand[i], bc = returns.byCustomer[i];
       if(!bb && !bc) return '';
       return `<tr><td>${bb?esc(bb.name):''}</td><td>${bb?mrMoney(bb.amount,lang):''}</td><td>${bc?esc(bc.name):''}</td><td>${bc?mrMoney(bc.amount,lang):''}</td></tr>`;
-    }).join('')}</table>` : `<p class="mr-note">${L.noData}</p>`;
+    }).join('')}</tbody></table>` : `<p class="mr-note">${L.noData}</p>`;
 
   const covSec = `<div class="mr-kpis">
     <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.visitedCount}/${cov.stats.totalClinics}</span></div><div class="l">${L.covered} (<span class="num">${cov.stats.coveragePct}%</span>)</div></div>
     <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.needsCount}</span></div><div class="l">${L.needVisit}</div></div>
     <div class="mr-kpi"><div class="n"><span class="num">${cov.needsVisit.filter(c=>c.weight===0).length}</span></div><div class="l">${L.overdue}</div></div>
-    <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.contacts}</span></div><div class="l">👥</div></div>
+    <div class="mr-kpi"><div class="n"><span class="num">${cov.stats.contacts}</span></div><div class="l">${L.kContacts}</div></div>
   </div>`;
 
-  const recoSec = coach.map(i=>`<div class="mr-reco ${i.level}"><span class="lv">${i.level==='act'?L.doNow:i.level==='watch'?L.watch:L.working}</span><br>${i.icon} ${esc(mrCoachText(i, lang))}</div>`).join('');
+  const recoItems = coach.map(i=>`<div class="mr-reco ${i.level}"><span class="lv">${i.level==='act'?L.doNow:i.level==='watch'?L.watch:L.working}</span><br>${i.icon} ${esc(mrCoachText(i, lang))}</div>`);
   const planItems = coach.filter(i=>i.level!=='good');
   const planSec = planItems.length ? `<p class="mr-note" style="margin-bottom:8px;">${L.planIntro}</p>
     <ol class="mr-plan">${planItems.map(i=>`<li>☐ ${esc(mrCoachText(i, lang))}</li>`).join('')}</ol>` : `<p class="mr-note">${L.noData}</p>`;
 
+  // Headline numbers on the cover so the report says something before page 2.
+  const periodVisits = UMCore.filterVisitsByRange(visits, b.from, b.to).filter(v=>repsList.includes(v.rep));
+  const fieldVisitsN = periodVisits.filter(v=>!v.callOnly && !v.orderOnly).length;
+  const salesVal = rows.length ? rows.reduce((s,r)=>s+r.net,0) : periodVisits.reduce((s,v)=>s+(v.orderTotal||0),0);
+  const salesLbl = rows.length ? L.kSales : L.kSalesLogged;
   const cover = `<div class="mr-cover">
     <div class="b">${L.brandName}</div><h1>${L.title}</h1>
     <div class="meta">${L.period}: ${periodTxt}${repFilter!=='all'?' · '+esc(repFilter):' · '+L.team} &nbsp;·&nbsp; ${L.generated}: ${dateStr} &nbsp;·&nbsp; ${L.preparedBy}: ${esc(currentUser.name||'')}</div>
+    <div class="mr-cover-kpis">
+      <div class="ck"><div class="n"><span class="num">${fieldVisitsN}</span></div><div class="l">${L.kVisits}</div></div>
+      <div class="ck"><div class="n">${mrMoney(salesVal,lang)}</div><div class="l">${salesLbl}</div></div>
+      <div class="ck"><div class="n"><span class="num">${cov.stats.coveragePct}%</span></div><div class="l">${L.kCoverage} (<span class="num">${cov.stats.visitedCount}/${cov.stats.totalClinics}</span>)</div></div>
+      <div class="ck"><div class="n">${mrMoney(returns.total,lang)}</div><div class="l">${L.kReturns}</div></div>
+    </div>
     <div class="mr-conf">${L.confidential}</div></div>`;
   const foot = `<div class="mr-foot"><span>${L.brandName} · UltraMed Field Ops</span><span>${L.confidential}</span></div>`;
 
   if(format === 'summary'){
     return `<div class="mr-doc" dir="${rtl?'rtl':'ltr'}">${cover}
-      ${sec(L.s_exec)}<div class="mr-exec">${exec}</div>
-      ${trend.length>1?sec(L.s_chart)+mrChartSvg(trend,lang):''}
-      ${sec(L.s_targets)}${targetsTbl}
-      ${sec(L.s_reco)}${coach.filter(i=>i.level==='act').slice(0,3).map(i=>`<div class="mr-reco act"><span class="lv">${L.doNow}</span><br>${i.icon} ${esc(mrCoachText(i,lang))}</div>`).join('') || `<p class="mr-note">${L.noData}</p>`}
+      ${block(L.s_exec, `<div class="mr-exec">${exec}</div>`)}
+      ${trend.length>1?block(L.s_chart, mrChartSvg(trend,lang)):''}
+      ${block(L.s_targets, targetsTbl)}
+      ${block(L.s_reco, coach.filter(i=>i.level==='act').slice(0,3).map(i=>`<div class="mr-reco act"><span class="lv">${L.doNow}</span><br>${i.icon} ${esc(mrCoachText(i,lang))}</div>`).join('') || `<p class="mr-note">${L.noData}</p>`)}
       ${foot}</div>`;
   }
   return `<div class="mr-doc" dir="${rtl?'rtl':'ltr'}">${cover}
-    ${sec(L.s_exec)}<div class="mr-exec">${exec}</div>
-    ${trend.length>1?sec(L.s_chart)+mrChartSvg(trend,lang):''}
-    ${sec(L.s_targets)}${targetsTbl}
-    ${brandSec?sec(L.s_brands)+brandSec:''}
-    ${sec(L.s_recon)}${reconSec}
-    ${sec(L.s_returns)}${retSec}
-    ${sec(L.s_coverage)}${covSec}
-    ${sec(L.s_reco)}${recoSec}
-    ${sec(L.s_plan)}${planSec}
+    ${block(L.s_exec, `<div class="mr-exec">${exec}</div>`)}
+    ${trend.length>1?block(L.s_chart, mrChartSvg(trend,lang)):''}
+    ${block(L.s_targets, targetsTbl)}
+    ${brandParts.length?block(L.s_brands, brandParts[0])+brandParts.slice(1).map(contBlock).join(''):''}
+    ${block(L.s_recon, reconSec, 'long')}
+    ${block(L.s_returns, retSec)}
+    ${block(L.s_coverage, covSec)}
+    ${block(L.s_reco, recoItems[0]||`<p class="mr-note">${L.noData}</p>`)}${recoItems.slice(1).map(contBlock).join('')}
+    ${block(L.s_plan, planSec)}
     ${foot}</div>`;
 }
 function buildMasterReportHtml(lang, format){
@@ -7007,6 +7120,167 @@ function ensureMrCss(){
   st.textContent = MASTER_REPORT_CSS;
   document.head.appendChild(st);
 }
+
+// ==== REAL PDF EXPORT (no libraries, fully offline) ====
+// The report is laid out at a fixed pixel width, split into pages at block
+// boundaries (so a heading never separates from its table), each page is
+// rasterized via SVG <foreignObject> → canvas → JPEG, and the JPEGs are
+// assembled by hand into a valid multi-page A4 PDF. The browser does the
+// text shaping, so Arabic and emoji come out exactly as on screen.
+const PDF_LAYOUT = {
+  pageW: 595.28, pageH: 841.89,   // A4 in PDF points
+  marginX: 36, marginTop: 34, marginBottom: 46,
+  contentPx: 720,                 // CSS px width the report is laid out at
+  scale: 2,                       // raster oversampling for crisp text
+};
+function pdfPtPerPx(){ return (PDF_LAYOUT.pageW - PDF_LAYOUT.marginX*2) / PDF_LAYOUT.contentPx; }
+function pdfPageContentPx(){ return Math.floor((PDF_LAYOUT.pageH - PDF_LAYOUT.marginTop - PDF_LAYOUT.marginBottom) / pdfPtPerPx()); }
+// Serialize a set of report blocks into standalone XHTML (styles inlined —
+// page CSS does not reach inside an SVG image).
+function pdfPageXhtml(blockEls, dir){
+  const wrap = document.createElement('div');
+  wrap.setAttribute('xmlns','http://www.w3.org/1999/xhtml');
+  const style = document.createElement('style');
+  style.textContent = 'div{box-sizing:border-box;}' + MASTER_REPORT_CSS;
+  wrap.appendChild(style);
+  const doc = document.createElement('div');
+  doc.className = 'mr-doc mr-pdf';
+  if(dir) doc.setAttribute('dir', dir);
+  blockEls.forEach(el=>doc.appendChild(el.cloneNode(true)));
+  wrap.appendChild(doc);
+  return new XMLSerializer().serializeToString(wrap);
+}
+function pdfRasterize(xhtml, w, h, scale){
+  return new Promise((resolve, reject)=>{
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><foreignObject width="${w}" height="${h}">${xhtml}</foreignObject></svg>`;
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(w*scale); canvas.height = Math.round(h*scale);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas);
+      }catch(e){ reject(e); }
+    };
+    img.onerror = ()=>reject(new Error('SVG rasterization failed'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+async function buildMasterReportPdf(lang, format){
+  ensureMrCss();
+  const dir = lang==='ar' ? 'rtl' : 'ltr';
+  const host = document.createElement('div');
+  host.style.cssText = `position:fixed; left:-10000px; top:0; width:${PDF_LAYOUT.contentPx}px; background:#fff;`;
+  host.innerHTML = buildMasterReportBody(lang, format);
+  const root = host.firstElementChild;
+  root.classList.add('mr-pdf');
+  document.body.appendChild(host);
+  try{
+    const pageHpx = pdfPageContentPx();
+    const rootTop = root.getBoundingClientRect().top;
+    const blocks = [...root.children].map(el=>{
+      const r = el.getBoundingClientRect();
+      const mb = parseFloat(getComputedStyle(el).marginBottom)||0;
+      return {el, top: r.top-rootTop, bottom: r.bottom-rootTop+mb};
+    }).filter(b=>b.bottom-b.top > 0.5);
+    // Group blocks into pages at block boundaries; a block taller than one
+    // page is rasterized alone and sliced.
+    const pages = [];
+    let cur = null;
+    blocks.forEach(b=>{
+      if(b.bottom-b.top > pageHpx){ if(cur){ pages.push(cur); cur=null; } pages.push({slice:b}); return; }
+      if(cur && b.bottom - cur.start > pageHpx){ pages.push(cur); cur = null; }
+      if(!cur) cur = {list:[b], start:b.top};
+      else cur.list.push(b);
+    });
+    if(cur) pages.push(cur);
+    const SCALE = PDF_LAYOUT.scale;
+    const jpegs = [];
+    for(const pg of pages){
+      if(pg.slice){
+        const h = Math.ceil(pg.slice.bottom-pg.slice.top)+8;
+        const canvas = await pdfRasterize(pdfPageXhtml([pg.slice.el], dir), PDF_LAYOUT.contentPx, h, SCALE);
+        for(let y=0; y<canvas.height; y+=pageHpx*SCALE){
+          const sh = Math.min(pageHpx*SCALE, canvas.height-y);
+          if(sh < 8*SCALE) break; // ignore a sliver of trailing margin
+          const c2 = document.createElement('canvas');
+          c2.width = canvas.width; c2.height = sh;
+          const ctx = c2.getContext('2d');
+          ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,c2.width,c2.height);
+          ctx.drawImage(canvas, 0, y, canvas.width, sh, 0, 0, canvas.width, sh);
+          jpegs.push({data:c2.toDataURL('image/jpeg',0.92), pw:c2.width, ph:c2.height});
+        }
+      } else {
+        const last = pg.list[pg.list.length-1];
+        const h = Math.ceil(last.bottom-pg.start)+8;
+        const canvas = await pdfRasterize(pdfPageXhtml(pg.list.map(x=>x.el), dir), PDF_LAYOUT.contentPx, h, SCALE);
+        jpegs.push({data:canvas.toDataURL('image/jpeg',0.92), pw:canvas.width, ph:canvas.height});
+      }
+    }
+    if(!jpegs.length) throw new Error('empty report');
+    return assemblePdf(jpegs);
+  } finally {
+    document.body.removeChild(host);
+  }
+}
+// Hand-rolled PDF: one JPEG XObject per page + a Helvetica footer with the
+// page number. Layout numbers are PDF points (72/inch), origin bottom-left.
+function assemblePdf(jpegs){
+  const {pageW, pageH, marginX, marginTop, scale} = PDF_LAYOUT;
+  const k = pdfPtPerPx();
+  const bin = str=>{ const u=new Uint8Array(str.length); for(let i=0;i<str.length;i++) u[i]=str.charCodeAt(i)&0xFF; return u; };
+  const chunks=[]; let pos=0; const offsets=[];
+  const push = d=>{ const u = typeof d==='string' ? bin(d) : d; chunks.push(u); pos += u.length; };
+  const obj = (num, body)=>{ offsets[num]=pos; push(num+' 0 obj\n'+body+'\nendobj\n'); };
+  push('%PDF-1.4\n%âãÏÓ\n');
+  const n = jpegs.length;
+  obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  obj(2, `<< /Type /Pages /Kids [${jpegs.map((_,i)=>(4+i*3)+' 0 R').join(' ')}] /Count ${n} >>`);
+  obj(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  jpegs.forEach((pg,i)=>{
+    const imgBytes = bin(atob(pg.data.split(',')[1]));
+    const W = pageW - marginX*2;
+    const H = (pg.ph/scale) * k;
+    const y = pageH - marginTop - H;
+    const pn = `${i+1} / ${n}`;
+    let st = `0.86 0.90 0.87 RG 0.8 w ${marginX} 32 m ${(pageW-marginX).toFixed(2)} 32 l S\n`;
+    st += `q ${W.toFixed(2)} 0 0 ${H.toFixed(2)} ${marginX} ${y.toFixed(2)} cm /Im${i} Do Q\n`;
+    st += `BT /F1 8.5 Tf 0.45 0.51 0.46 rg 1 0 0 1 ${marginX} 21 Tm (UltraMed Field Ops) Tj ET\n`;
+    st += `BT /F1 8.5 Tf 0.45 0.51 0.46 rg 1 0 0 1 ${(pageW-marginX-pn.length*4.8).toFixed(2)} 21 Tm (${pn}) Tj ET\n`;
+    obj(4+i*3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im${i} ${6+i*3} 0 R >> /Font << /F1 3 0 R >> >> /Contents ${5+i*3} 0 R >>`);
+    offsets[5+i*3]=pos;
+    push(`${5+i*3} 0 obj\n<< /Length ${st.length} >>\nstream\n${st}endstream\nendobj\n`);
+    offsets[6+i*3]=pos;
+    push(`${6+i*3} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pg.pw} /Height ${pg.ph} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`);
+    push(imgBytes);
+    push('\nendstream\nendobj\n');
+  });
+  const maxObj = 3+n*3;
+  const xrefPos = pos;
+  let xref = `xref\n0 ${maxObj+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=maxObj;i++) xref += String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  push(xref);
+  push(`trailer\n<< /Size ${maxObj+1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`);
+  return new Blob(chunks, {type:'application/pdf'});
+}
+function reportPdfName(){ return reportFileName('UltraMed-Report').replace(/\.html$/, '.pdf'); }
+async function downloadReportPdf(){
+  showToast('Building the PDF…');
+  try{
+    const blob = await buildMasterReportPdf(reportLang, reportFormat);
+    const ok = tryDownload(reportPdfName(), blob, 'application/pdf');
+    if(!ok) throw new Error('download blocked');
+    showToast('⬇️ PDF saved');
+  }catch(e){
+    console.error('pdf export failed', e);
+    // Very old WebViews can't rasterize foreignObject — print-to-PDF fallback.
+    showToast('Could not build the PDF here — opening print instead');
+    if(!document.getElementById('proreport').classList.contains('active')) showProReport();
+    setTimeout(()=>window.print(), 300);
+  }
+}
 function setMrLang(l){ reportLang = l; if(document.getElementById('proreport').classList.contains('active')) showProReport(); }
 function setMrFormat(f){ reportFormat = f; if(document.getElementById('proreport').classList.contains('active')) showProReport(); }
 function buildReportFileHtml(){
@@ -7017,6 +7291,22 @@ function downloadReportFile(){
   showToast(ok ? '⬇️ Report saved — opens in any browser' : 'Could not save the file');
 }
 async function shareReportFile(){
+  // Share the real PDF when the platform can; fall back to the HTML file.
+  try{
+    const blob = await buildMasterReportPdf(reportLang, reportFormat);
+    const file = new File([blob], reportPdfName(), {type: 'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files: [file]})){
+      await navigator.share({files: [file], title: 'UltraMed Field Performance Report'});
+      return;
+    }
+    if(tryDownload(reportPdfName(), blob, 'application/pdf')){
+      showToast('Sharing not available here — PDF saved instead');
+      return;
+    }
+  }catch(e){
+    if(e && e.name === 'AbortError') return;
+    console.error('pdf share failed', e);
+  }
   await shareHtmlFile(reportFileName('UltraMed-Report'), buildReportFileHtml(), 'UltraMed Field Performance Report');
 }
 async function shareHtmlFile(filename, html, title){
@@ -7103,30 +7393,50 @@ function hideProReport(){
 
 
 function csvEscape(v){ return UMCore.csvEscape(v); }
+// One row per visit (or per order within a visit). Type distinguishes real
+// field visits from phone orders and call logs so counts in Excel stay honest.
+function visitTypeLabel(v){
+  if(v.orderOnly) return 'Phone/remote order';
+  if(v.callOnly) return 'Call';
+  return 'Field visit';
+}
 function buildVisitsCSV(range){
-  const rows = [['Date','Rep','Clinic','Class','Contacts Seen','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
+  const rows = [['Date','Rep','Joint With','Type','Channel','Clinic','Class','Contacts Seen','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
   const list = range ? UMCore.filterVisitsByRange(visits, range.from, range.to) : visits;
   [...list].sort((a,b)=>a.date.localeCompare(b.date)).forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
-    const seen = contactNames(v,c);
-    const prodNames = (v.products||[]).map(pid=>{ const p=products.find(x=>x.id===pid); return p?p.name:''; }).filter(Boolean).join('; ');
+    const cname = clinicNameOf(v.clinicId);
+    // Doctors picked on the visit — and for call logs, the person called.
+    let seen = contactNames(v,c);
+    if(!seen && v.callOnly && v.contactName) seen = v.contactName + (v.contactRole?' ('+v.contactRole+')':'');
+    const channel = v.callOnly ? (v.channel||'call') : '';
+    const type = visitTypeLabel(v);
+    const prodNames = (v.products||[]).map(pid=>productName(pid)).filter(Boolean).join('; ');
     const orders = v.orders||[];
     if(orders.length===0){
-      rows.push([v.date, v.rep, c?c.name:'Unknown', c?c.cls||'':'', seen, '', prodNames, '', '', '', '', '0.00', '', v.noOrderReason||'', v.nextFollowUp||'', v.notes||'']);
+      rows.push([v.date, v.rep, v.withRep||'', type, channel, cname, c?c.cls||'':'', seen, '', prodNames, '', '', '', '', '0.00', '', v.noOrderReason||'', v.nextFollowUp||'', v.notes||'']);
     } else {
       orders.forEach((o,i)=>{
-        const items = o.items.map(it=>{ const p=products.find(x=>x.id===it.productId); return (p?p.name:'')+' x'+it.qty; }).join('; ');
-        rows.push([v.date, v.rep, c?c.name:'Unknown', c?c.cls||'':'', i===0?seen:'', i+1, i===0?prodNames:'', items, (o.gross||0).toFixed(2), o.discountPct||0, (o.discountAmount||0).toFixed(2), (o.total||0).toFixed(2), o.notes||'', '', i===0?(v.nextFollowUp||''):'', i===0?(v.notes||''):'']);
+        const items = (o.items||[]).map(it=>orderItemName(it)+' x'+it.qty).join('; ');
+        rows.push([v.date, v.rep, v.withRep||'', type, channel, cname, c?c.cls||'':'', i===0?seen:'', i+1, i===0?prodNames:'', items, (o.gross||0).toFixed(2), o.discountPct||0, (o.discountAmount||0).toFixed(2), (o.total||0).toFixed(2), o.notes||'', '', i===0?(v.nextFollowUp||''):'', i===0?(v.notes||''):'']);
       });
     }
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
 function buildClinicsCSV(){
-  const rows = [['Clinic','Rep','Class','Account Type','New Customer','Last Visit','Next Follow-up','Status','Contact','Phone','Doctors','Profile Notes']];
+  const rows = [['Clinic','Rep','Class','Account Type','New Customer','Total Visits','Calls','Orders','Sales (KD)','Last Visit','Next Follow-up','Status','Contact','Phone','Doctors','Profile Notes']];
   clinics.forEach(c=>{
     const docStr = (c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).join('; ');
-    rows.push([c.name, c.rep||'', c.cls||'', c.account||'', c.isNew?'Yes':'No', c.lastVisit||'', c.nextFollowUp||'', followStatus(c.nextFollowUp), c.contact||'', c.phone||'', docStr, c.profileNotes||'']);
+    // Compute from the visit log itself — c.lastVisit can go stale when a
+    // visit is edited or deleted after the fact.
+    const vs = visits.filter(v=>v.clinicId===c.id);
+    const lastVisit = vs.reduce((m,v)=>v.date>m?v.date:m, c.lastVisit||'');
+    const fieldCount = vs.filter(isFieldVisit).length;
+    const callCount = vs.filter(v=>v.callOnly).length;
+    const orderCount = vs.filter(v=>v.orderTaken).length;
+    const rev = vs.reduce((s,v)=>s+(v.orderTotal||0),0);
+    rows.push([c.name, c.rep||'', c.cls||'', c.account||'', c.isNew?'Yes':'No', fieldCount, callCount, orderCount, rev.toFixed(2), lastVisit||'', c.nextFollowUp||'', followStatus(c.nextFollowUp), c.contact||'', c.phone||'', docStr, c.profileNotes||'']);
   });
   return rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 }
@@ -7156,7 +7466,11 @@ function buildDoctorsCSV(){
 }
 function tryDownload(filename, content, mime){
   try{
-    const blob = new Blob([content], {type: mime || 'text/csv;charset=utf-8;'});
+    // Excel needs a UTF-8 BOM to read Arabic clinic/doctor names correctly —
+    // without it every non-ASCII cell turns into mojibake.
+    const isCsv = !mime || mime.indexOf('csv') !== -1;
+    if(isCsv && typeof content === 'string' && content.charCodeAt(0) !== 0xFEFF) content = '\ufeff' + content;
+    const blob = content instanceof Blob ? content : new Blob([content], {type: mime || 'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename;
@@ -7321,8 +7635,8 @@ function copyReport(){
   text += `Visit detail:\n`;
   [...rv].sort((a,b)=>b.date.localeCompare(a.date)).forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
-    const prodNames = (v.products||[]).map(pid=>{ const p=products.find(x=>x.id===pid); return p?p.name:''; }).filter(Boolean).join(', ');
-    text += `- ${fmtDate(v.date)} · ${c?c.name:'Unknown'} (${v.rep})${v.orderTaken?' · '+money(v.orderTotal):''}${prodNames?' · '+prodNames:''}\n`;
+    const prodNames = (v.products||[]).map(pid=>productName(pid)).filter(Boolean).join(', ');
+    text += `- ${fmtDate(v.date)} · ${clinicNameOf(v.clinicId)} (${v.rep})${v.orderTaken?' · '+money(v.orderTotal):''}${prodNames?' · '+prodNames:''}\n`;
   });
   navigator.clipboard.writeText(text).then(()=>showToast('Report copied')).catch(()=>showToast('Could not copy'));
 }
