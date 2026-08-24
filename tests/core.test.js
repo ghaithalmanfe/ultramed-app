@@ -830,6 +830,28 @@ describe('reconcileErp', () => {
     const rec = core.reconcileErp({ ...opts, erpMap: { 'Joury Clinic': '@ignore' } });
     assert.ok(!rec.unmatchedCustomers.includes('Joury Clinic'));
   });
+  test('a matched clinic\'s sales go to the clinic owner, not the invoice salesman', () => {
+    // Smart Clinic belongs to Mariam, but the ERP invoice was booked under a
+    // salesman that maps to Renova. Territory attribution credits Mariam.
+    const cl = [{ id: 'smart', name: 'Smart Dental Clinic', rep: 'Mariam', cls: 'A' }];
+    const rows = [{ date: '2026-08-10', doc: 'SINV9', type: 'invoice', net: 300, sret: 0,
+      salesman: 'Renova Ayman', customer: 'Smart Dental Clinic', brand: 'TEPE', cls: 'Clinics' }];
+    const rm = { 'Renova Ayman': 'Renova', 'Mariam Z': 'Mariam' };
+    assert.equal(core.erpRowRep(rows[0], cl, {}, rm), 'Mariam');
+    const rec = core.reconcileErp({ rows, visits: [], clinics: cl, erpMap: {}, repMap: rm, from: '2026-08-01', to: '2026-08-31' });
+    const mariam = rec.perRep.find(r => r.rep === 'Mariam');
+    const renova = rec.perRep.find(r => r.rep === 'Renova');
+    assert.ok(mariam && mariam.erp.net === 300);   // credited to the owner
+    assert.ok(!renova);                            // not to the invoice salesman's rep
+  });
+  test('an unmatched / channel customer still falls back to the salesman mapping', () => {
+    const cl = [{ id: 'smart', name: 'Smart Dental Clinic', rep: 'Mariam' }];
+    const rm = { 'Renova Ayman': 'Renova' };
+    // My Fatoorah is a channel, no clinic → salesman decides the rep.
+    assert.equal(core.erpRowRep({ salesman: 'Renova Ayman', customer: 'My Fatoorah' }, cl, {}, rm), 'Renova');
+    // A never-added clinic name → salesman decides.
+    assert.equal(core.erpRowRep({ salesman: 'Renova Ayman', customer: 'Brand New Place' }, cl, {}, rm), 'Renova');
+  });
   test('a phone call is NOT a field visit, so it never fakes a visit→invoice link', () => {
     const rec = core.reconcileErp({ ...opts,
       visits: [{ date: '2026-08-10', rep: 'Mariam', clinicId: 'c1', callOnly: true }] });
@@ -838,12 +860,14 @@ describe('reconcileErp', () => {
     assert.ok(mariam.invoicedNoVisit.some(x => x.clinicId === 'c1')); // Bayan: invoiced, not visited
   });
   test('a joint visit credits the non-lead rep in reconciliation too', () => {
+    // Pharmacy Plus (c2) is Renova's clinic → its invoice attributes to Renova;
+    // the visit is led by Mariam with Renova joining, so Renova is credited.
     const rec = core.reconcileErp({ ...opts,
-      rows: [{ date: '2026-08-10', doc: 'S1', type: 'invoice', net: 100, sret: 0, salesman: 'Ranova Ayman Mohammed', customer: 'Bayan Dental Center', brand: 'TEPE', cls: 'Clinics' }],
-      visits: [{ date: '2026-08-10', rep: 'Mariam', withRep: 'Renova', clinicId: 'c1', orderTaken: false }] });
+      rows: [{ date: '2026-08-10', doc: 'S1', type: 'invoice', net: 100, sret: 0, salesman: 'Mariam Zohair', customer: 'Pharmacy Plus', brand: 'TEPE', cls: 'Clinics' }],
+      visits: [{ date: '2026-08-10', rep: 'Mariam', withRep: 'Renova', clinicId: 'c2', orderTaken: false }] });
     const renova = rec.perRep.find(r => r.rep === 'Renova');
-    // Bayan was invoiced under Renova and jointly visited by Renova → matched, not "no visit".
-    assert.equal(renova.matched.length, 1);
+    assert.ok(renova);
+    assert.equal(renova.matched.length, 1);        // owned by Renova + jointly visited → matched
     assert.equal(renova.invoicedNoVisit.length, 0);
   });
 });
