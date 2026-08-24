@@ -128,19 +128,37 @@
   }
 
   // ---- rep scoring ----
+  // A "visit" means a real field visit — physical presence at the clinic.
+  // Phone calls (callOnly) and remote orders (orderOnly) are separate
+  // activities and never inflate the visit count.
+  function isFieldVisit(v){ return !!v && !v.orderOnly && !v.callOnly; }
+  // Everyone who was AT a visit counts it: the rep who logged it and the
+  // colleague on a joint visit both get credit in their own scorecard.
+  function repWasThere(v, repName){ return v.rep === repName || v.withRep === repName; }
+
   function computeScoreForVisits(repName, visitList, clinics){
-    const base = visitList.filter(v=>v.rep===repName);
+    // Money and orders belong to the lead rep only, so a joint visit's sale is
+    // never double-counted across two reps' revenue.
+    const led = visitList.filter(v=>v.rep===repName);
+    // Visit COUNT and coverage credit both reps who attended, de-duplicated so
+    // an accidental double-tap never inflates the number.
+    const attendedField = dedupeVisits(visitList.filter(v=>repWasThere(v,repName) && isFieldVisit(v))).unique;
     const assigned = clinics.filter(c=>c.rep===repName && c.cls!=='Closed');
     const priorityAssigned = assigned.filter(c=>c.cls==='A'||c.cls==='B');
-    const coveredIds = new Set(base.map(v=>v.clinicId));
+    const coveredIds = new Set(attendedField.map(v=>v.clinicId));
     const priorityIds = new Set(priorityAssigned.map(c=>c.id));
     const priorityCovered = [...coveredIds].filter(id=>priorityIds.has(id)).length;
-    const orders = base.filter(v=>v.orderTaken).length;
-    const revenue = base.reduce((s,v)=>s+(v.orderTotal||0),0);
-    const contacts = base.reduce((s,v)=>s+contactCount(v),0);
+    const orders = led.filter(v=>v.orderTaken).length;
+    const revenue = led.reduce((s,v)=>s+(v.orderTotal||0),0);
+    const contacts = attendedField.reduce((s,v)=>s+contactCount(v),0);
+    const ledField = led.filter(isFieldVisit).length;
+    const fieldOrders = led.filter(v=>isFieldVisit(v)&&v.orderTaken).length;
     return {
-      visits: base.length, orders, revenue, contacts,
-      conversion: base.length ? Math.round(orders/base.length*100) : 0,
+      visits: attendedField.length, orders, revenue, contacts,
+      calls: led.filter(v=>v.callOnly).length,
+      remoteOrders: led.filter(v=>v.orderOnly).length,
+      // Conversion = share of field visits that closed an order (not diluted by calls).
+      conversion: ledField ? Math.round(fieldOrders/ledField*100) : 0,
       assignedCount: assigned.length, covered: coveredIds.size,
       coveragePct: assigned.length ? Math.round(coveredIds.size/assigned.length*100) : 0,
       priorityAssignedCount: priorityAssigned.length, priorityCovered,
@@ -239,11 +257,12 @@
       c.cls !== 'Closed' && inRange(c.nextFollowUp, from, to) && wantRep(c.rep));
     const tasksDue = (data.tasks || []).filter(t =>
       !t.done && inRange(t.dueDate, from, to) && (wantRep(t.rep) || t.rep === 'Team'));
-    // per-rep breakdown from the visits in range
+    // per-rep breakdown from the visits in range — visits mean FIELD visits,
+    // consistent with the top-level fieldVisits and the scorecard.
     const byRep = {};
     vis.forEach(v => {
       const r = byRep[v.rep] || (byRep[v.rep] = { rep: v.rep, visits: 0, orders: 0, revenue: 0, contacts: 0 });
-      r.visits++;
+      if(!v.orderOnly && !v.callOnly) r.visits++;
       if(v.orderTaken) r.orders++;
       r.revenue += v.orderTotal || 0;
       r.contacts += contactCount(v);
@@ -1340,7 +1359,7 @@
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
-    computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems,
+    computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems, isFieldVisit, repWasThere,
     inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,
     contactCount, coachInsights,
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
