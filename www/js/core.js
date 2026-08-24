@@ -764,11 +764,14 @@
     var out = { perRep: [], unmatchedCustomers: [], window: { from: opts.from, to: opts.to } };
     var reps = {};
     rows.forEach(function(r){ var rep = repMap[r.salesman]; if(rep) reps[rep] = 1; });
-    dd.unique.forEach(function(v){ reps[v.rep] = 1; });
+    dd.unique.forEach(function(v){ if(v.rep) reps[v.rep] = 1; if(v.withRep) reps[v.withRep] = 1; });
     var unmatchedSet = {};
     Object.keys(reps).sort().forEach(function(rep){
       var erpRows = rows.filter(function(r){ return repMap[r.salesman] === rep; });
-      var appVisits = dd.unique.filter(function(v){ return v.rep === rep; });
+      // A visit means a FIELD visit, and a joint attendee is credited too —
+      // so calls/remote orders never fake a visit→invoice link, and a joint
+      // rep's real visit isn't flagged as "invoiced with no visit".
+      var appVisits = dd.unique.filter(function(v){ return repWasThere(v, rep) && isFieldVisit(v); });
       var byCust = {};
       erpRows.forEach(function(r){
         var c = byCust[r.customer] || (byCust[r.customer] = { net: 0, sret: 0, docs: {} });
@@ -1219,7 +1222,9 @@
   // ledgers in the app UI.
   function isFocRow(r){
     if(r.type === 'return' || r.sret > 0) return false; // return lines are not giveaways
-    return isMarketingRow(r) || ((r.qty || 0) > 0 && !(r.net > 0));
+    // A giveaway earns no revenue. A marketing-branded line that DID earn net
+    // is a real sale, not a free item — so both branches require net <= 0.
+    return (isMarketingRow(r) || (r.qty || 0) > 0) && !(r.net > 0);
   }
   // FOC lines split into two very different stories: a free line on an
   // invoice that ALSO carries paid lines is a bonus inside a deal (part of
@@ -1270,13 +1275,22 @@
   function clinicCoverage(opts){
     var wantRep = function(r){ return opts.repFilter === 'all' || r === opts.repFilter; };
     var pool = (opts.clinics || []).filter(function(c){ return c.cls !== 'Closed' && wantRep(c.rep); });
-    var vis = filterVisitsByRange(opts.visits, opts.from, opts.to)
+    var inWindow = filterVisitsByRange(opts.visits, opts.from, opts.to)
       .filter(function(v){ return wantRep(v.rep) || wantRep(v.withRep); });
+    // Coverage means a real FIELD visit — a phone call or a remote order does
+    // NOT cover a clinic, consistent with the visit count everywhere else.
+    var vis = inWindow.filter(isFieldVisit);
     var today = opts.today;
     var byClinic = {};
     vis.forEach(function(v){ (byClinic[v.clinicId] = byClinic[v.clinicId] || []).push(v); });
+    // Calls in-window, kept only as a sub-metric of an already-covered clinic.
+    var callsByClinic = {};
+    inWindow.forEach(function(v){ if(v.callOnly) callsByClinic[v.clinicId] = (callsByClinic[v.clinicId] || 0) + 1; });
+    // never-visited / dormant / last-visit are judged from FIELD visits only,
+    // so a clinic that was only phoned still reads as never actually visited.
     var lastEver = {};
     (opts.visits || []).forEach(function(v){
+      if(!isFieldVisit(v)) return;
       if(v.date && (!lastEver[v.clinicId] || v.date > lastEver[v.clinicId])) lastEver[v.clinicId] = v.date;
     });
 
@@ -1286,7 +1300,7 @@
         id: c.id, name: c.name, rep: c.rep, cls: c.cls,
         visits: list.length,
         lastDate: list[0].date,
-        calls: list.filter(function(v){ return v.callOnly; }).length,
+        calls: callsByClinic[c.id] || 0,
         orders: list.filter(function(v){ return v.orderTaken; }).length,
         revenue: Math.round(list.reduce(function(s, v){ return s + (v.orderTotal || 0); }, 0) * 100) / 100,
         contacts: list.reduce(function(s, v){ return s + contactCount(v); }, 0),
