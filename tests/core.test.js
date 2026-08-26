@@ -756,18 +756,28 @@ describe('rep and customer matching', () => {
   });
   test('matchCustomer keeps branches separate and reports ambiguity instead of guessing', () => {
     const branches = [
-      { id: 'sal', name: 'Aline Clinic - Salmiya' },
-      { id: 'haw', name: 'Aline Clinic - Hawally' },
-      { id: 'noor', name: 'Al-Noor Dental Center' },
+      { id: 'sal', name: 'Aline Clinic - Salmiya', rep: 'Renova' },
+      { id: 'haw', name: 'Aline Clinic - Hawally', rep: 'Renova' },
+      { id: 'noor', name: 'Al-Noor Dental Center', rep: 'Renova' },
     ];
     // A branch-specific name resolves to that exact branch.
     assert.equal(core.matchCustomer('Aline Clinic Salmiya', branches, {}).clinicId, 'sal');
     assert.equal(core.matchCustomer('Aline Clinic Hawally', branches, {}).clinicId, 'haw');
-    // A bare name matching two branches is ambiguous — not silently assigned.
-    const amb = core.matchCustomer('Aline Clinic', branches, {});
+    // A bare parent name tying two branches of ONE family resolves to the
+    // family (counted once under its primary branch) — the supervisor asked
+    // that multi-branch clinics never split or double across branches.
+    const fam = core.matchCustomer('Aline Clinic', branches, {});
+    assert.equal(fam.method, 'family');
+    assert.equal(fam.clinicId, 'haw'); // deterministic: sorted first branch id
+    assert.equal(fam.branches, 2);
+    // A tie across DIFFERENT owners is still ambiguous — never guessed.
+    const twoReps = [
+      { id: 'a1', name: 'Shifa Clinic - Salmiya', rep: 'Mariam' },
+      { id: 'a2', name: 'Shifa Clinic - Hawally', rep: 'Renova' },
+    ];
+    const amb = core.matchCustomer('Shifa Clinic', twoReps, {});
     assert.equal(amb.clinicId, null);
     assert.equal(amb.ambiguous, true);
-    assert.deepEqual(amb.candidates.sort(), ['haw', 'sal']);
     // A spacing/spelling variant matches via the de-spaced fallback.
     assert.equal(core.matchCustomer('Alnoor Medical Co', branches, {}).clinicId, 'noor');
     // A manual override always beats an otherwise-ambiguous name.
@@ -1187,6 +1197,90 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(inv.net, 28);
     // erpTotals' returned value is net of the discount too.
     assert.equal(core.erpTotals(res.rows).sret, 33.75);
+  });
+  test('multi-branch clinic: sales and returns unify to ONE family line, counted once', () => {
+    const clinics = [
+      { id: 'b1', name: 'Aline Clinic - Salmiya', rep: 'Renova' },
+      { id: 'b2', name: 'Aline Clinic - Hawally', rep: 'Renova' },
+      { id: 'x1', name: 'New Smile Center', rep: 'Renova' },
+      { id: 'x2', name: 'New Dawn Clinic', rep: 'Renova' },
+    ];
+    const fams = core.clinicFamilies(clinics);
+    // Aline branches form one family; "New X"/"New Y" never merge on a 3-char word.
+    assert.equal(fams.byClinic['b1'], fams.byClinic['b2']);
+    assert.ok(fams.byClinic['b1']);
+    assert.equal(fams.byClinic['x1'], undefined);
+    assert.equal(fams.byClinic['x2'], undefined);
+    // The family label is the real name word, not noise like "Dr.".
+    assert.equal(fams.fams[fams.byClinic['b1']].label, 'Aline');
+    // A doctor's CLINIC and his PHARMACY are different entities, never branches.
+    const nael = core.clinicFamilies([
+      { id: 'n1', name: 'Dr. Nael Al Hazeem Dental Center - Sharq', rep: 'Mariam' },
+      { id: 'n2', name: 'Dr. Nael Al Hazeem Pharmacy ( Al Soor )', rep: 'Mariam' },
+    ]);
+    assert.equal(nael.byClinic['n1'], undefined);
+    assert.equal(nael.byClinic['n2'], undefined);
+    // Arabic generic words never form a family: عيادة النور ≠ عيادة السلام.
+    const ar = core.clinicFamilies([
+      { id: 'a1', name: 'عيادة النور', rep: 'Mariam' },
+      { id: 'a2', name: 'عيادة السلام', rep: 'Mariam' },
+    ]);
+    assert.equal(ar.byClinic['a1'], undefined);
+    // Real Arabic branches DO unify: عيادة الين السالمية / عيادة الين حولي.
+    const arFam = core.clinicFamilies([
+      { id: 'f1', name: 'عيادة الين السالمية', rep: 'Renova' },
+      { id: 'f2', name: 'عيادة الين حولي', rep: 'Renova' },
+    ]);
+    assert.equal(arFam.byClinic['f1'], arFam.byClinic['f2']);
+    assert.ok(arFam.byClinic['f1']);
+    // Clinics with NO rep never auto-cluster.
+    const norep = core.clinicFamilies([
+      { id: 'u1', name: 'Noor Clinic A' },
+      { id: 'u2', name: 'Noor Clinic B', rep: '' },
+    ]);
+    assert.equal(norep.byClinic['u1'], undefined);
+    // Different owners never form a family (checked via matchCustomer tie above).
+    // Returns to two branches roll up to one line whose amount is the plain sum
+    // — each row counted exactly once, no doubling.
+    const rows = [
+      { date: '2026-08-10', doc: 'SRT1', type: 'return', net: -30, sret: 30, customer: 'Aline Clinic Salmiya', brand: 'X' },
+      { date: '2026-08-11', doc: 'SRT2', type: 'return', net: -20, sret: 20, customer: 'Aline Clinic Hawally', brand: 'X' },
+    ];
+    const ra = core.returnsAnalysis(rows, { clinics, erpMap: {} });
+    assert.equal(ra.total, 50);
+    assert.equal(ra.byCustomer.length, 1);
+    assert.match(ra.byCustomer[0].name, /^Aline \(2\)$/);
+    assert.equal(ra.byCustomer[0].amount, 50);
+    // Without clinics context the old per-customer behavior is unchanged.
+    assert.equal(core.returnsAnalysis(rows).byCustomer.length, 2);
+    // A parent-named invoice attributes to the family owner exactly once.
+    const rep = core.erpRowRep({ customer: 'Aline Clinic', salesman: 'Someone' }, clinics, {}, {});
+    assert.equal(rep, 'Renova');
+  });
+  test('file-type routing: the DSR workbook and the sales-detail export never cross-parse', () => {
+    // Real sales-detail header (Ultramed_Sales3): recognized as ERP sales.
+    const salesCsv = [
+      ',Date,Type,,Invoice#,Date of Stock Issue,Stock Issue #,Code,Account,Customer Class,Code,AltCode,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name,Remarks,',
+      ',2026-08-01 00:00:00,SalesInvoice,Credit,SINV0075029,2026-08-01,MIV1,080042,My Fatoorah,Online Customers ,WP,05,Waterpik,1,35,7,28,0,0,28,WATERPIK,Ranova Ayman Mohammed,notes,',
+    ].join('\n');
+    assert.equal(core.parseErpCsv(salesCsv).error, null);
+    // Real DSR sheet shape: rejected by the sales parser (no per-row date/doc),
+    // accepted by the targets parser — so the xlsx router can never mix them up.
+    const dsrSheets = [{ title: 'Sheet2', rows: [
+      ['Salesman ', 'Brand', 'Target', 'MTD Sales 26', 'Achieved vs. Target'],
+      ['Mariam Zohair', 'B&L Biotech', 780, '', 0],
+      ['Mariam Zohair Total', '', 11621.92, 5298.36, 0.46],
+      ['Ranova Ayman', 'B&L Biotech', 1520, 643.5, 0.42],
+      ['Ranova Ayman Total', '', 12563.08, 7501.41, 0.6],
+    ]}];
+    const dsrCsv = dsrSheets[0].rows.map(r => r.join(',')).join('\n');
+    assert.equal(core.parseErpCsv(dsrCsv).error, 'NO_HEADER');
+    const tg = core.parseDsrTargets(dsrSheets, ['Mariam', 'Renova'], { asOf: '2026-08-23' });
+    assert.equal(tg.error, null);
+    assert.equal(tg.targets.Mariam.achieved, 5298.36);
+    assert.equal(tg.targets.Renova.achieved, 7501.41);
+    // And a DSR-shaped text never parses as a targets file by the SALES path.
+    assert.equal(core.parseErpFile(dsrCsv).error, 'UNRECOGNIZED');
   });
   test('returnsAnalysis groups returned value by brand and customer', () => {
     const rows = [
