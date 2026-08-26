@@ -707,13 +707,25 @@
   }
   function normClinicName(s){
     var stop = ['dental', 'center', 'centre', 'clinic', 'clinics', 'pharmacy', 'company',
-      'co', 'wll', 'w.l.l', 'the', 'al', 'international', 'group', 'dr', 'medical', 'general', 'trading'];
+      'co', 'wll', 'w.l.l', 'the', 'al', 'international', 'group', 'dr', 'medical', 'general', 'trading',
+      'عيادة', 'عيادات', 'مركز', 'مجمع', 'مستشفى', 'مستوصف', 'صيدلية', 'دكتور', 'الدكتور', 'د'];
     return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ ]+/g, ' ')
       .split(/\s+/).filter(function(t){ return t && stop.indexOf(t) < 0; }).join(' ');
   }
   function isErpChannel(cust){
     var c = String(cust || '').toLowerCase();
     return ERP_CHANNELS.some(function(ch){ return c.indexOf(ch) >= 0; });
+  }
+  // A tie between clinics is NOT ambiguous when every candidate is a branch of
+  // the same family — the invoice belongs to that clinic, counted ONCE under
+  // its primary branch, whichever branch took delivery.
+  function familyOfTie(ids, clinics){
+    var f = clinicFamilies(clinics);
+    var key = f.byClinic[ids[0]];
+    if(!key) return null;
+    for(var i = 1; i < ids.length; i++) if(f.byClinic[ids[i]] !== key) return null;
+    var fam = f.fams[key];
+    return { clinicId: fam.ids[0], channel: false, method: 'family', family: key, familyLabel: fam.label, branches: fam.count };
   }
   // Match one ERP customer name to an app clinic. erpMap overrides win.
   // Returns {clinicId, channel} — channel=true means "online/channel sale".
@@ -741,7 +753,11 @@
       else if(ov === bestScore){ tied.push(c.id); }
     });
     if(tied.length === 1) return { clinicId: tied[0], channel: false, method: 'token', score: bestScore };
-    if(tied.length > 1) return { clinicId: null, channel: false, ambiguous: true, candidates: tied, method: 'ambiguous' };
+    if(tied.length > 1){
+      var famRes = familyOfTie(tied, clinics);
+      if(famRes) return famRes;
+      return { clinicId: null, channel: false, ambiguous: true, candidates: tied, method: 'ambiguous' };
+    }
     // No token match — try a de-spaced containment pass for spelling/spacing
     // variants ("Al-Noor" vs "Alnoor"), still branch-safe (unique winner only).
     var flat = n.replace(/ /g, '');
@@ -752,9 +768,53 @@
         if(cf.length >= 4 && (cf.indexOf(flat) >= 0 || flat.indexOf(cf) >= 0)) fz.push(c.id);
       });
       if(fz.length === 1) return { clinicId: fz[0], channel: false, method: 'fuzzy' };
-      if(fz.length > 1) return { clinicId: null, channel: false, ambiguous: true, candidates: fz, method: 'ambiguous' };
+      if(fz.length > 1){
+        var famFz = familyOfTie(fz, clinics);
+        if(famFz) return famFz;
+        return { clinicId: null, channel: false, ambiguous: true, candidates: fz, method: 'ambiguous' };
+      }
     }
     return { clinicId: null, channel: false, method: 'none' };
+  }
+  // Branches of one clinic ("Aline Salmiya" / "Aline Hawally") form a FAMILY:
+  // same rep, same distinctive first name-token (4+ chars, so "New X"/"New Y"
+  // never merge on a generic word). Sales and returns are aggregated per
+  // family so one clinic never LOOKS invoiced or returned twice just because
+  // deliveries went to different branches. Visits/coverage stay per-branch.
+  // Entity-type words: a clinic and a pharmacy sharing an owner's name are NOT
+  // branches of each other, so the type signature is part of the family key.
+  var FAMILY_TYPE_WORDS = ['clinic', 'clinics', 'pharmacy', 'pharmacies', 'hospital', 'center',
+    'centre', 'dental', 'medical', 'polyclinic', 'lab',
+    'عيادة', 'عيادات', 'صيدلية', 'مستشفى', 'مركز', 'مستوصف', 'مجمع', 'مختبر'];
+  function familyTypeSig(name){
+    var low = String(name || '').toLowerCase().replace(/[^a-z0-9؀-ۿ ]+/g, ' ').split(/\s+/);
+    return FAMILY_TYPE_WORDS.filter(function(w){ return low.indexOf(w) >= 0; }).sort().join('+');
+  }
+  function clinicFamilies(clinics){
+    var byKey = {}, byClinic = {}, fams = {};
+    (clinics || []).forEach(function(c){
+      if(!c.rep) return; // unassigned clinics never auto-cluster
+      var tok = normClinicName(c.name).split(' ')[0] || '';
+      if(tok.length < 4) return;
+      var key = tok + '|' + c.rep + '|' + familyTypeSig(c.name);
+      (byKey[key] = byKey[key] || []).push(c);
+    });
+    Object.keys(byKey).forEach(function(key){
+      var group = byKey[key];
+      if(group.length < 2) return;
+      var ids = group.map(function(c){ return c.id; }).sort();
+      var tok = key.split('|')[0];
+      // Human label: the original word whose normalized form IS the family
+      // token ("Aline"), never a noise word like "Dr." that norm discards.
+      var lead = tok;
+      var words = String(group[0].name || '').trim().split(/\s+/);
+      for(var i = 0; i < words.length; i++){
+        if(normClinicName(words[i]) === tok){ lead = words[i]; break; }
+      }
+      fams[key] = { key: key, label: lead, ids: ids, rep: group[0].rep || '', count: group.length };
+      group.forEach(function(c){ byClinic[c.id] = key; });
+    });
+    return { byClinic: byClinic, fams: fams };
   }
   // Territory attribution: a sale to a KNOWN clinic belongs to the rep who
   // owns that clinic, whatever salesman name the ERP invoice carries. Only
@@ -1155,12 +1215,35 @@
     if(r.sret > 0) return Math.max(0, r.sret - dd);
     return 0;
   }
-  function returnsAnalysis(rows){
+  function returnsAnalysis(rows, opts){
     var ret = (rows || []).filter(function(r){ return returnValue(r) > 0; });
+    // With clinics provided, branch customers roll up to ONE family line so a
+    // multi-branch clinic never looks like it returned twice.
+    var unify = null;
+    if(opts && opts.clinics){
+      var fmap = clinicFamilies(opts.clinics);
+      unify = function(cust){
+        var m = matchCustomer(String(cust || '').trim(), opts.clinics, opts.erpMap);
+        if(m.method === 'map') return null; // an explicit override stays its own line
+        var famKey = m.clinicId ? (m.family || fmap.byClinic[m.clinicId]) : null;
+        if(famKey && fmap.fams[famKey]){
+          var fam = fmap.fams[famKey];
+          return { key: '@fam:' + famKey, label: fam.label + ' (' + fam.count + ')' };
+        }
+        return null;
+      };
+    }
     var agg = function(key){
-      var d = {};
-      ret.forEach(function(r){ var k = r[key] || '—'; d[k] = (d[k] || 0) + returnValue(r); });
-      return Object.keys(d).map(function(k){ return { name: k, amount: Math.round(d[k] * 1000) / 1000 }; })
+      var d = {}, labels = {};
+      ret.forEach(function(r){
+        var k = r[key] || '—';
+        if(key === 'customer' && unify){
+          var u = unify(r[key]);
+          if(u){ k = u.key; labels[k] = u.label; }
+        }
+        d[k] = (d[k] || 0) + returnValue(r);
+      });
+      return Object.keys(d).map(function(k){ return { name: labels[k] || k, amount: Math.round(d[k] * 1000) / 1000 }; })
         .sort(function(a, b){ return b.amount - a.amount; });
     };
     var docs = {};
@@ -1429,7 +1512,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies,
     detectClinicColumns, parseClinicRows, focLinesAnnotated
   };
 });
