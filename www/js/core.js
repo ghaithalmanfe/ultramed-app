@@ -576,6 +576,11 @@
     idx.gross = find([/gross/]);
     idx.salesman = find([/^name$/, /salesman/, /sales\s*person/, /sales\s*man/]);
     idx.sret = find([/return\s*amount/, /sales\s*return$/]);
+    // The return's own discount ("Discount. Sales Ret") — without it a return
+    // shows GROSS, i.e. bigger than the discounted order it reverses. The
+    // patterns demand a return-stem token ("ret"/"return", end-anchored or
+    // abbreviated) so "Retail Discount"-style headers can never false-match.
+    idx.dsret = find([/disc\w*\.?\s*(sales\s*)?ret(urn)?s?\.?$/, /ret(urn)?s?\.?\s*disc/]);
     idx.net = find([/net\s*sales/, /^net/]);
     idx.brand = find([/brand/]);
     idx.customer = find([/customer/, /^account$/], /class/);
@@ -607,6 +612,7 @@
         gross: cols.gross >= 0 ? erpNum(line[cols.gross]) : 0,
         net: erpNum(line[cols.net]),
         sret: cols.sret >= 0 ? erpNum(line[cols.sret]) : 0,
+        dsret: cols.dsret >= 0 ? erpNum(line[cols.dsret]) : 0,
         salesman: String(line[cols.salesman] || '').trim(),
         brand: String(cols.brand >= 0 ? line[cols.brand] || '' : '').trim(),
         customer: String(cols.customer >= 0 ? line[cols.customer] || '' : '').trim(),
@@ -777,10 +783,10 @@
   function erpTotals(rows){
     var t = { net: 0, gross: 0, sret: 0, lines: 0, invoices: {}, returns: {}, bySalesman: {}, from: null, to: null };
     (rows || []).forEach(function(r){
-      t.net += r.net; t.gross += r.gross; t.sret += r.sret; t.lines++;
+      t.net += r.net; t.gross += r.gross; t.sret += returnValue(r); t.lines++;
       (r.type === 'return' ? t.returns : t.invoices)[r.doc] = 1;
       var s = t.bySalesman[r.salesman] || (t.bySalesman[r.salesman] = { net: 0, sret: 0, lines: 0 });
-      s.net += r.net; s.sret += r.sret; s.lines++;
+      s.net += r.net; s.sret += returnValue(r); s.lines++;
       if(!t.from || r.date < t.from) t.from = r.date;
       if(!t.to || r.date > t.to) t.to = r.date;
     });
@@ -810,7 +816,7 @@
       var byCust = {};
       erpRows.forEach(function(r){
         var c = byCust[r.customer] || (byCust[r.customer] = { net: 0, sret: 0, docs: {} });
-        c.net += r.net; c.sret += r.sret; c.docs[r.doc] = 1;
+        c.net += r.net; c.sret += returnValue(r); c.docs[r.doc] = 1;
       });
       var visitsByClinic = {};
       appVisits.forEach(function(v){
@@ -1134,11 +1140,19 @@
   // Groups returned value by brand and by customer, largest first.
   // The returned value carried by one ERP row. Two shapes exist in the wild:
   // a "Sales Return" column on invoice lines (sret), and dedicated SRT return
-  // documents whose value only shows up as a negative net. Count each row
-  // once — sret wins when both are present.
+  // documents. Count each row once, and always NET of the return's own
+  // discount ("Discount. Sales Ret") — the gross return column is bigger than
+  // the discounted order it reverses, so gross would overstate every return.
+  // On SRT documents the Net Sales column is already net-of-discount (and
+  // negative), so it is the primary source there.
   function returnValue(r){
-    if(r.sret > 0) return r.sret;
-    if(r.type === 'return') return Math.abs(r.net || 0);
+    var dd = Math.max(0, r.dsret || 0); // a negative discount cell must never inflate a return
+    if(r.type === 'return'){
+      var v = Math.abs(r.net || 0);
+      if(v > 0) return v;
+      return Math.max(0, (r.sret || 0) - dd);
+    }
+    if(r.sret > 0) return Math.max(0, r.sret - dd);
     return 0;
   }
   function returnsAnalysis(rows){

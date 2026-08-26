@@ -1155,6 +1155,39 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(core.forecastMonthEnd(0, 10, 31), 0);
     assert.equal(core.forecastMonthEnd(500, 0, 31), 0); // day zero → no projection
   });
+  test('return value is NET of the return line discount (Discount. Sales Ret)', () => {
+    // The real bug: SRT0009165 line — 37.5 gross return with a 3.75 discount.
+    // Counting the gross made the return LARGER than the discounted order.
+    const srt = { type: 'return', sret: 37.5, dsret: 3.75, net: -33.75 };
+    assert.equal(core.returnValue(srt), 33.75);
+    // SRT line with no net figure → gross minus its discount.
+    const srtNoNet = { type: 'return', sret: 10, dsret: 1, net: 0 };
+    assert.equal(core.returnValue(srtNoNet), 9);
+    // Legacy shape: a "Sales Return" column on an invoice line.
+    assert.equal(core.returnValue({ type: 'invoice', sret: 20, dsret: 2, net: 80 }), 18);
+    // Old saved rows have no dsret at all — unchanged behavior.
+    assert.equal(core.returnValue({ type: 'return', sret: 15, net: -15 }), 15);
+    assert.equal(core.returnValue({ type: 'invoice', net: 50 }), 0);
+  });
+  test('parser captures the return-discount column without confusing it with the sales discount', () => {
+    const csv = [
+      'Date,Type,Invoice#,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Account,Customer Class,Name',
+      '2026-08-05,SalesReturn,SRT0009165,Waterpik Ion,-3,0,0,0,37.5,3.75,-33.75,WATERPIK,Lulu Trading,Hypermarkets,Mr. Sundeep Kohli',
+      '2026-08-06,SalesInvoice,SINV0075029,Waterpik Cordless,1,35,7,28,0,0,28,WATERPIK,My Fatoorah,Online Customers ,Ranova Ayman',
+    ].join('\n');
+    const res = core.parseErpCsv(csv);
+    assert.equal(res.error, null);
+    const ret = res.rows.find(r => r.doc === 'SRT0009165');
+    assert.equal(ret.sret, 37.5);
+    assert.equal(ret.dsret, 3.75);
+    assert.equal(core.returnValue(ret), 33.75);
+    // The invoice line's own discount column must NOT leak into dsret.
+    const inv = res.rows.find(r => r.doc === 'SINV0075029');
+    assert.equal(inv.dsret, 0);
+    assert.equal(inv.net, 28);
+    // erpTotals' returned value is net of the discount too.
+    assert.equal(core.erpTotals(res.rows).sret, 33.75);
+  });
   test('returnsAnalysis groups returned value by brand and customer', () => {
     const rows = [
       { sret: 100, brand: 'Hismile', customer: 'Trolley' },
