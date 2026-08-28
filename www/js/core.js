@@ -877,6 +877,50 @@
     });
     return out;
   }
+  // Turn one brand's money gap into CONCRETE UNITS: "sell ~3x Cordless Plus
+  // + 2x Cordless Freedom". Products the clinic already re-buys come first
+  // (the easiest sale), then the market's best sellers, then the catalog as a
+  // last resort. Unit prices are the REAL average invoice prices. The plan
+  // always covers the gap (units are rounded up), and a small gap gets a
+  // single product instead of a scatter of one-unit lines.
+  function unitSellPlan(opts){
+    var target = normBrand(opts.brand);
+    var gap = opts.gap || 0;
+    if(!(gap > 0)) return [];
+    var stats = {};
+    var add = function(rows, mine){
+      (rows || []).forEach(function(r){
+        if(r.type === 'return' || !(r.net > 0) || !(r.qty > 0)) return;
+        if(normBrand(r.brand) !== target) return;
+        var pn = (r.product || '').trim(); if(!pn) return;
+        var a = stats[pn] || (stats[pn] = { q: 0, v: 0, mine: false });
+        a.q += r.qty; a.v += r.net; if(mine) a.mine = true;
+      });
+    };
+    add(opts.clinicRows, true);
+    add(opts.allRows, false);
+    var cands = Object.keys(stats).map(function(pn){
+      var a = stats[pn];
+      return { product: pn, price: Math.round(a.v / a.q * 100) / 100, popularity: a.q, mine: a.mine };
+    }).filter(function(x){ return x.price > 0; });
+    cands.sort(function(a, b){ return (b.mine ? 1 : 0) - (a.mine ? 1 : 0) || b.popularity - a.popularity; });
+    if(!cands.length){
+      cands = (opts.products || []).filter(function(pr){
+        return normBrand(pr.brand) === target && pr.price > 0;
+      }).slice(0, 2).map(function(pr){ return { product: pr.name, price: pr.price, popularity: 0, mine: false }; });
+    }
+    if(!cands.length) return [];
+    var chosen = cands.slice(0, 3);
+    // A gap smaller than ~1.5 of the best product's price: one product, no scatter.
+    if(gap < chosen[0].price * 1.5) chosen = [chosen[0]];
+    var popSum = chosen.reduce(function(s2, c){ return s2 + Math.max(1, c.popularity); }, 0);
+    return chosen.map(function(c){
+      var share = gap * Math.max(1, c.popularity) / popSum;
+      var units = Math.max(1, Math.ceil(share / c.price));
+      return { product: c.product, price: c.price, units: units,
+        amount: Math.round(units * c.price * 100) / 100, mine: c.mine };
+    });
+  }
   // Duplicate saves show up as identical visit rows; collapse them for fair counts.
   function dedupeVisits(visits){
     var seen = {}, unique = [], dup = 0;
@@ -1560,7 +1604,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan,
     detectClinicColumns, parseClinicRows, focLinesAnnotated
   };
 });
