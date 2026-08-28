@@ -1309,6 +1309,38 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // Every one of these target brands therefore accumulates sold value in
     // guidance; a brand with no sales this month simply shows a full gap.
   });
+  test('unitSellPlan turns a brand gap into concrete product units covering the gap', () => {
+    const clinicRows = [
+      { type: 'invoice', brand: 'WATERPIK', product: 'Cordless Plus', qty: 2, net: 46 },   // 23/unit, clinic re-buys this
+    ];
+    const allRows = [
+      { type: 'invoice', brand: 'WATERPIK', product: 'Cordless Plus', qty: 20, net: 460 },
+      { type: 'invoice', brand: 'WATERPIK', product: 'Cordless Freedom', qty: 30, net: 600 }, // 20/unit, market best seller
+      { type: 'return',  brand: 'WATERPIK', product: 'Cordless Plus', qty: -5, net: -115 },   // returns never suggest units
+      { type: 'invoice', brand: 'TEPE', product: 'Mini Flosser', qty: 50, net: 75 },          // other brand ignored
+    ];
+    const plan = core.unitSellPlan({ brand: 'Waterpik', gap: 120, clinicRows, allRows, products: [] });
+    assert.ok(plan.length >= 1);
+    // The clinic's own repeat product leads the plan.
+    assert.equal(plan[0].product, 'Cordless Plus');
+    assert.equal(plan[0].mine, true);
+    // Units are whole numbers and the plan covers the whole gap.
+    plan.forEach(x => { assert.ok(Number.isInteger(x.units) && x.units >= 1); });
+    const total = plan.reduce((s2, x) => s2 + x.amount, 0);
+    assert.ok(total >= 120, `plan total ${total} must cover the 120 gap`);
+    // A small gap yields ONE line, not a scatter of one-unit suggestions.
+    const small = core.unitSellPlan({ brand: 'Waterpik', gap: 25, clinicRows, allRows, products: [] });
+    assert.equal(small.length, 1);
+    assert.equal(small[0].units, Math.ceil(25 / small[0].price));
+    // No ERP history at all -> catalog fallback with list prices.
+    const cat = core.unitSellPlan({ brand: 'Silonn', gap: 50, clinicRows: [], allRows: [],
+      products: [{ name: 'Silonn Flosser X', brand: 'Silonn', price: 12 }] });
+    assert.equal(cat.length, 1);
+    assert.equal(cat[0].product, 'Silonn Flosser X');
+    assert.equal(cat[0].units, 5); // ceil(50/12)
+    // Zero or negative gap -> no plan.
+    assert.deepEqual(core.unitSellPlan({ brand: 'Waterpik', gap: 0, clinicRows, allRows }), []);
+  });
   test('allocateClinicTargets splits brand targets by sales history with class fallback', () => {
     const clinics = [
       { id: 'c1', name: 'Alpha Dental', rep: 'Renova', cls: 'A' },
