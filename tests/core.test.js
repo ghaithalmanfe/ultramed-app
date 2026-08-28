@@ -1282,6 +1282,40 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // And a DSR-shaped text never parses as a targets file by the SALES path.
     assert.equal(core.parseErpFile(dsrCsv).error, 'UNRECOGNIZED');
   });
+  test('allocateClinicTargets splits brand targets by sales history with class fallback', () => {
+    const clinics = [
+      { id: 'c1', name: 'Alpha Dental', rep: 'Renova', cls: 'A' },
+      { id: 'c2', name: 'Beta Clinic', rep: 'Renova', cls: 'B' },
+      { id: 'c3', name: 'Gamma Center', rep: 'Renova', cls: 'C' },
+      { id: 'x1', name: 'Other Rep Clinic', rep: 'Mariam', cls: 'A' },
+      { id: 'z1', name: 'Old Place', rep: 'Renova', cls: 'Closed' },
+    ];
+    const rows = [
+      // Waterpik history: Alpha 300, Beta 100 -> shares 75% / 25%, Gamma 0.
+      { type: 'invoice', customer: 'Alpha Dental', brand: 'WATERPIK', net: 300 },
+      { type: 'invoice', customer: 'Beta Clinic', brand: 'Waterpik', net: 100 },
+      // Returns never count as sales weight.
+      { type: 'return', customer: 'Gamma Center', brand: 'WATERPIK', net: -50, sret: 50 },
+    ];
+    const res = core.allocateClinicTargets({ rep: 'Renova', clinics, erpRows: rows, erpMap: {},
+      brandTargets: { 'Waterpik': 400, 'Tepe': 60 } });
+    // History-weighted split for Waterpik.
+    assert.equal(res.byClinic['c1'].byBrand['Waterpik'], 300);
+    assert.equal(res.byClinic['c2'].byBrand['Waterpik'], 100);
+    assert.equal(res.byClinic['c3'].byBrand['Waterpik'], undefined);
+    // No Tepe history anywhere -> class weights A3/B2/C1 over 60 = 30/20/10.
+    assert.equal(res.byClinic['c1'].byBrand['Tepe'], 30);
+    assert.equal(res.byClinic['c2'].byBrand['Tepe'], 20);
+    assert.equal(res.byClinic['c3'].byBrand['Tepe'], 10);
+    // Per-clinic totals add up; other reps' and Closed clinics get nothing.
+    assert.equal(res.byClinic['c1'].total, 330);
+    assert.equal(res.byClinic['x1'], undefined);
+    assert.equal(res.byClinic['z1'], undefined);
+    assert.equal(res.totals.target, 460);
+    // The whole target is distributed: sums across clinics equal each brand target.
+    const wSum = ['c1','c2','c3'].reduce((s2, id) => s2 + (res.byClinic[id].byBrand['Waterpik'] || 0), 0);
+    assert.equal(wSum, 400);
+  });
   test('returnsAnalysis groups returned value by brand and customer', () => {
     const rows = [
       { sret: 100, brand: 'Hismile', customer: 'Trolley' },
