@@ -1282,6 +1282,33 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // And a DSR-shaped text never parses as a targets file by the SALES path.
     assert.equal(core.parseErpFile(dsrCsv).error, 'UNRECOGNIZED');
   });
+  test('brand aliases join every real DSR target name to its ERP invoice spelling', () => {
+    // The guidance can only cover ALL products if the DSR's target names and
+    // the ERP's invoice brand names normalize to the same key — these are the
+    // real pairs from the shipped files, locked so a rename never splits them.
+    const pairs = [
+      ['Philips Sonicare', 'Philips Export BV'],
+      ['BHF', 'Beverly Hills Formula'],
+      ['EverBrands', 'EverBrands'],
+      ['Combo/ Bundle/ Kit', 'Combo/Bundle/Kit'],
+      ['Tepe', 'TEPE'],
+      ['The Breath Co.', 'The Breath Co.'],
+      ['Waterpik', 'WATERPIK'],
+      ['HiSmile', 'Hismile'],
+      ['Flash', 'FLASH'],
+      ['UNDO', 'UNDO'],
+      ['UNIVET', 'UNIVET'],
+      ['Intensiv', 'Intensiv'],
+      ['SCHEU', 'SCHEU'],
+      ['B&L Biotech', 'B&L Biotech'],
+    ];
+    pairs.forEach(([dsr, erp]) => {
+      assert.equal(core.normBrand(dsr), core.normBrand(erp),
+        `DSR '${dsr}' and ERP '${erp}' must share one brand key`);
+    });
+    // Every one of these target brands therefore accumulates sold value in
+    // guidance; a brand with no sales this month simply shows a full gap.
+  });
   test('allocateClinicTargets splits brand targets by sales history with class fallback', () => {
     const clinics = [
       { id: 'c1', name: 'Alpha Dental', rep: 'Renova', cls: 'A' },
