@@ -829,6 +829,54 @@
     }
     return (repMap || {})[r.salesman] || null;
   }
+  // Split a rep's monthly brand targets (from the uploaded DSR) across her
+  // clinics: each clinic's share of a brand's target follows its share of that
+  // brand's actual ERP sales history; brands nobody bought yet fall back to
+  // clinic-class weights (A=3, B=2, C=1) so every clinic still gets a concrete
+  // number to chase. Returns {byClinic: {clinicId: {total, byBrand}}, totals}.
+  function allocateClinicTargets(opts){
+    var reps = opts.rep ? [opts.rep] : null;
+    var clinics = (opts.clinics || []).filter(function(c){
+      return c.cls !== 'Closed' && (!reps || reps.indexOf(c.rep) >= 0);
+    });
+    var brandTargets = opts.brandTargets || {};
+    var out = { byClinic: {}, totals: { target: 0 } };
+    if(!clinics.length) return out;
+    clinics.forEach(function(c){ out.byClinic[c.id] = { total: 0, byBrand: {} }; });
+    // Brand sales per clinic from the ERP rows (invoice lines only).
+    var salesByBrand = {}; // brand -> {clinicId: net}
+    (opts.erpRows || []).forEach(function(r){
+      if(r.type === 'return') return;
+      var m = matchCustomer((r.customer || '').trim(), clinics, opts.erpMap);
+      if(!m.clinicId || !out.byClinic[m.clinicId]) return;
+      var b = normBrand(r.brand);
+      (salesByBrand[b] = salesByBrand[b] || {})[m.clinicId] =
+        (salesByBrand[b][m.clinicId] || 0) + Math.max(0, r.net || 0);
+    });
+    var clsW = { A: 3, B: 2, C: 1 };
+    Object.keys(brandTargets).forEach(function(brand){
+      var amount = brandTargets[brand];
+      if(!(amount > 0)) return;
+      var sales = salesByBrand[normBrand(brand)] || {};
+      var weights = {}, wSum = 0;
+      clinics.forEach(function(c){
+        var w = sales[c.id] || 0;
+        weights[c.id] = w; wSum += w;
+      });
+      if(wSum <= 0){
+        clinics.forEach(function(c){ weights[c.id] = clsW[c.cls] || 1; });
+        wSum = clinics.reduce(function(s2, c){ return s2 + weights[c.id]; }, 0);
+      }
+      clinics.forEach(function(c){
+        var share = Math.round(amount * weights[c.id] / wSum * 100) / 100;
+        if(share <= 0) return;
+        out.byClinic[c.id].byBrand[brand] = share;
+        out.byClinic[c.id].total = Math.round((out.byClinic[c.id].total + share) * 100) / 100;
+      });
+      out.totals.target = Math.round((out.totals.target + amount) * 100) / 100;
+    });
+    return out;
+  }
   // Duplicate saves show up as identical visit rows; collapse them for fair counts.
   function dedupeVisits(visits){
     var seen = {}, unique = [], dup = 0;
@@ -1512,7 +1560,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets,
     detectClinicColumns, parseClinicRows, focLinesAnnotated
   };
 });
