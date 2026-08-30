@@ -932,10 +932,14 @@
     });
     return { unique: unique, dupCount: dup };
   }
-  function erpTotals(rows){
+  function erpTotals(rows, opts){
+    var isEx = (opts && opts.isExchange) || function(){ return false; };
     var t = { net: 0, gross: 0, sret: 0, lines: 0, invoices: {}, returns: {}, bySalesman: {}, from: null, to: null };
     (rows || []).forEach(function(r){
-      t.net += r.net; t.gross += r.gross; t.sret += returnValue(r); t.lines++;
+      t.net += r.net; t.gross += r.gross;
+      if(isEx(r)) t.exchanged = Math.round(((t.exchanged || 0) + returnValue(r)) * 1000) / 1000;
+      else t.sret += returnValue(r);
+      t.lines++;
       (r.type === 'return' ? t.returns : t.invoices)[r.doc] = 1;
       var s = t.bySalesman[r.salesman] || (t.bySalesman[r.salesman] = { net: 0, sret: 0, lines: 0 });
       s.net += r.net; s.sret += returnValue(r); s.lines++;
@@ -949,6 +953,7 @@
   // The heart of the evaluation: ERP invoices vs app visits, per app rep.
   // opts: {rows, visits, clinics, erpMap, repMap, from, to}
   function reconcileErp(opts){
+    var isExRec = (opts && opts.isExchange) || function(){ return false; };
     var rows = (opts.rows || []).filter(function(r){ return inRange(r.date, opts.from, opts.to); });
     var repMap = opts.repMap || {};
     var clinics = opts.clinics || [];
@@ -1013,7 +1018,8 @@
         erp: {
           net: Math.round(erpNet * 1000) / 1000,
           invoices: Object.keys(erpRows.reduce(function(a, r){ if(r.type !== 'return') a[r.doc] = 1; return a; }, {})).length,
-          returns: Math.round(erpRows.reduce(function(s, r){ return s + returnValue(r); }, 0) * 1000) / 1000,
+          returns: Math.round(erpRows.reduce(function(s, r){ return s + (isExRec(r) ? 0 : returnValue(r)); }, 0) * 1000) / 1000,
+          exchanged: Math.round(erpRows.reduce(function(s, r){ return s + (isExRec(r) ? returnValue(r) : 0); }, 0) * 1000) / 1000,
           channelNet: Math.round(channelNet * 1000) / 1000,
           clinicNet: Math.round(clinicNet * 1000) / 1000,
         },
@@ -1308,7 +1314,13 @@
     return 0;
   }
   function returnsAnalysis(rows, opts){
-    var ret = (rows || []).filter(function(r){ return returnValue(r) > 0; });
+    // An EXCHANGE (تبديل) is stock swapped, not money lost — the supervisor
+    // marks those lines and they leave the returns figures completely,
+    // reported as their own bucket instead.
+    var isEx = (opts && opts.isExchange) || function(){ return false; };
+    var all = (rows || []).filter(function(r){ return returnValue(r) > 0; });
+    var ret = all.filter(function(r){ return !isEx(r); });
+    var exch = all.filter(function(r){ return isEx(r); });
     // With clinics provided, branch customers roll up to ONE family line so a
     // multi-branch clinic never looks like it returned twice.
     var unify = null;
@@ -1346,10 +1358,20 @@
       return { date: r.date, doc: r.doc, customer: r.customer || '—', brand: r.brand || '—',
         product: r.product || '', qty: r.qty || 0, amount: Math.round(returnValue(r) * 1000) / 1000 };
     }).sort(function(a, b){ return b.amount - a.amount; });
+    var exDocs = {};
+    exch.forEach(function(r){ if(r.doc) exDocs[r.doc] = 1; });
     return {
       total: Math.round(ret.reduce(function(s, r){ return s + returnValue(r); }, 0) * 1000) / 1000,
       count: ret.length, docCount: Object.keys(docs).length,
       byBrand: agg('brand'), byCustomer: agg('customer'), detail: detail,
+      exchange: {
+        total: Math.round(exch.reduce(function(s, r){ return s + returnValue(r); }, 0) * 1000) / 1000,
+        count: exch.length, docCount: Object.keys(exDocs).length,
+        detail: exch.map(function(r){
+          return { date: r.date, doc: r.doc, customer: r.customer || '—', brand: r.brand || '—',
+            product: r.product || '', qty: r.qty || 0, amount: Math.round(returnValue(r) * 1000) / 1000 };
+        }).sort(function(a, b){ return b.amount - a.amount; }),
+      },
     };
   }
 

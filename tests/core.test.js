@@ -1375,6 +1375,26 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     const wSum = ['c1','c2','c3'].reduce((s2, id) => s2 + (res.byClinic[id].byBrand['Waterpik'] || 0), 0);
     assert.equal(wSum, 400);
   });
+  test('exchange lines leave the returns figures and report as their own bucket', () => {
+    const rows = [
+      { type: 'return', doc: 'SRT1', net: -100, sret: 100, customer: 'Alpha', brand: 'X', product: 'P1' },
+      { type: 'return', doc: 'SRT2', net: -40, sret: 40, customer: 'Beta', brand: 'X', product: 'P2' },
+    ];
+    const isExchange = r => r.doc === 'SRT2';
+    const ra = core.returnsAnalysis(rows, { isExchange });
+    assert.equal(ra.total, 100);            // exchange excluded from returns
+    assert.equal(ra.count, 1);
+    assert.equal(ra.exchange.total, 40);    // ...and reported separately
+    assert.equal(ra.exchange.count, 1);
+    assert.equal(ra.exchange.detail[0].doc, 'SRT2');
+    assert.ok(!ra.byCustomer.some(c => c.name === 'Beta'));
+    // erpTotals splits the same way
+    const t = core.erpTotals(rows, { isExchange });
+    assert.equal(t.sret, 100);
+    assert.equal(t.exchanged, 40);
+    // without the flag callback nothing changes
+    assert.equal(core.returnsAnalysis(rows).total, 140);
+  });
   test('returnsAnalysis groups returned value by brand and customer', () => {
     const rows = [
       { sret: 100, brand: 'Hismile', customer: 'Trolley' },
