@@ -1,4 +1,4 @@
-const CACHE = 'ultramed-field-ops-v60';
+const CACHE = 'ultramed-field-ops-v61';
 const SHELL = ['./', './index.html', './js/core.js', './manifest.json', './icons/icon-192.png', './icons/logo-green.png', './icons/icon-512.png'];
 // The Firebase SDK lives on gstatic; without it a cached session cannot boot
 // offline at all, so precache it too (no-cors -> opaque, cached all the same).
