@@ -921,6 +921,109 @@
         amount: Math.round(units * c.price * 100) / 100, mine: c.mine };
     });
   }
+  // ==== DOCTOR CRM ====
+  // One flat analytics row per doctor across the visible clinics: visit
+  // history (from visits that tagged them), follow-up cadence status
+  // (weekly/monthly/quarterly), birthday countdown, handover totals
+  // (prescriptions / samples / gifts logged against the doctor), and the
+  // doctor's clinic ERP figures — so one screen tracks the person, the
+  // paper and the money together.
+  var CADENCE_DAYS = { weekly: 7, monthly: 30, quarterly: 90 };
+  function daysBetween(a, b){ return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000); }
+  function daysToBirthday(birthday, today){
+    if(!birthday) return null;
+    var md = String(birthday).slice(5); // MM-DD works for full dates and '--MM-DD'
+    if(!/^\d{2}-\d{2}$/.test(md)) return null;
+    var y = +today.slice(0, 4);
+    var next = y + '-' + md;
+    if(next < today) next = (y + 1) + '-' + md;
+    return daysBetween(today, next);
+  }
+  function handoverTotals(handovers, today){
+    var t = { prescription: 0, sample: 0, gift: 0, other: 0,
+      rxWeek: 0, rxLastWeek: 0, rxMonth: 0, rxLastMonth: 0, count: (handovers || []).length, last: null };
+    var wkStart = (function(){ var d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - d.getDay()); return localDateStr(d); })();
+    var wkPrev = (function(){ var d = new Date(wkStart + 'T00:00:00'); d.setDate(d.getDate() - 7); return localDateStr(d); })();
+    var mStart = today.slice(0, 7) + '-01';
+    var pm = new Date(mStart + 'T00:00:00'); pm.setMonth(pm.getMonth() - 1);
+    var pmStart = localDateStr(pm);
+    (handovers || []).forEach(function(h){
+      var kind = t[h.kind] != null ? h.kind : 'other';
+      var q = h.qty > 0 ? h.qty : 1;
+      t[kind] += q;
+      if(!t.last || h.date > t.last) t.last = h.date;
+      if(h.kind === 'prescription'){
+        if(h.date >= wkStart) t.rxWeek += q;
+        else if(h.date >= wkPrev) t.rxLastWeek += q;
+        if(h.date >= mStart) t.rxMonth += q;
+        else if(h.date >= pmStart) t.rxLastMonth += q;
+      }
+    });
+    return t;
+  }
+  function doctorAnalytics(opts){
+    var today = opts.today, out = [];
+    var vis = dedupeVisits(opts.visits || []).unique;
+    (opts.clinics || []).forEach(function(c){
+      if(opts.repFilter && opts.repFilter !== 'all' && c.rep !== opts.repFilter) return;
+      (c.doctors || []).forEach(function(d){
+        var dv = vis.filter(function(v){ return v.clinicId === c.id && (v.doctorIds || []).indexOf(d.id) >= 0; });
+        var dates = dv.map(function(v){ return v.date; }).sort();
+        var lastVisit = dates.length ? dates[dates.length - 1] : null;
+        var cadence = CADENCE_DAYS[d.cadence] ? d.cadence : null;
+        var overdueDays = null, cadenceStatus = 'none';
+        if(cadence){
+          var since = lastVisit ? daysBetween(lastVisit, today) : null;
+          if(since == null){ cadenceStatus = 'due'; overdueDays = CADENCE_DAYS[cadence]; }
+          else if(since > CADENCE_DAYS[cadence]){ cadenceStatus = 'due'; overdueDays = since - CADENCE_DAYS[cadence]; }
+          else cadenceStatus = 'ok';
+        }
+        out.push({
+          id: d.id, name: d.name, title: d.title || '', clinicId: c.id, clinicName: c.name,
+          rep: c.rep || '', phone: d.phone || '', birthday: d.birthday || '', notes: d.notes || '',
+          cadence: cadence, cadenceStatus: cadenceStatus, overdueDays: overdueDays,
+          lastVisit: lastVisit, fieldVisits: dv.filter(isFieldVisit).length,
+          calls: dv.filter(function(v){ return v.callOnly; }).length,
+          birthdayIn: daysToBirthday(d.birthday, today),
+          handovers: handoverTotals(d.handovers, today),
+          visitLog: dv.sort(function(a, b){ return b.date.localeCompare(a.date); }),
+        });
+      });
+    });
+    return out;
+  }
+  // Prescriptions distributed — the growth view: weekly and monthly counts
+  // per DOCTOR and per CLINIC (center), with growth vs the previous period.
+  function rxGrowth(opts){
+    var docs = doctorAnalytics(opts);
+    var pct = function(cur, prev){ return prev > 0 ? Math.round((cur - prev) / prev * 100) : (cur > 0 ? 100 : 0); };
+    var byDoctor = docs.filter(function(d){ return d.handovers.prescription > 0; }).map(function(d){
+      return { name: d.name, clinicName: d.clinicName, rep: d.rep,
+        week: d.handovers.rxWeek, lastWeek: d.handovers.rxLastWeek, weekGrowth: pct(d.handovers.rxWeek, d.handovers.rxLastWeek),
+        month: d.handovers.rxMonth, lastMonth: d.handovers.rxLastMonth, monthGrowth: pct(d.handovers.rxMonth, d.handovers.rxLastMonth),
+        total: d.handovers.prescription };
+    }).sort(function(a, b){ return b.month - a.month || b.total - a.total; });
+    var byClinicMap = {};
+    docs.forEach(function(d){
+      if(!(d.handovers.prescription > 0)) return;
+      var a = byClinicMap[d.clinicId] || (byClinicMap[d.clinicId] = { name: d.clinicName, rep: d.rep, week: 0, lastWeek: 0, month: 0, lastMonth: 0, total: 0, doctors: 0 });
+      a.week += d.handovers.rxWeek; a.lastWeek += d.handovers.rxLastWeek;
+      a.month += d.handovers.rxMonth; a.lastMonth += d.handovers.rxLastMonth;
+      a.total += d.handovers.prescription; a.doctors++;
+    });
+    var byClinic = Object.keys(byClinicMap).map(function(k){
+      var a = byClinicMap[k];
+      a.weekGrowth = pct(a.week, a.lastWeek); a.monthGrowth = pct(a.month, a.lastMonth);
+      return a;
+    }).sort(function(a, b){ return b.month - a.month || b.total - a.total; });
+    var sum = function(list, f){ return list.reduce(function(s2, x){ return s2 + x[f]; }, 0); };
+    return { byDoctor: byDoctor, byClinic: byClinic,
+      totals: { week: sum(byDoctor, 'week'), lastWeek: sum(byDoctor, 'lastWeek'),
+        weekGrowth: pct(sum(byDoctor, 'week'), sum(byDoctor, 'lastWeek')),
+        month: sum(byDoctor, 'month'), lastMonth: sum(byDoctor, 'lastMonth'),
+        monthGrowth: pct(sum(byDoctor, 'month'), sum(byDoctor, 'lastMonth')),
+        total: sum(byDoctor, 'total') } };
+  }
   // Duplicate saves show up as identical visit rows; collapse them for fair counts.
   function dedupeVisits(visits){
     var seen = {}, unique = [], dup = 0;
@@ -1626,7 +1729,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday,
     detectClinicColumns, parseClinicRows, focLinesAnnotated
   };
 });
