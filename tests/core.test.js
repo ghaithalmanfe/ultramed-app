@@ -1465,6 +1465,34 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(g.totals.week, 8);
     assert.equal(g.totals.lastWeek, 3);
   });
+  test('parseContactRows: Arabic/English headers, serial birthdays, specialty mapping', () => {
+    const SP = ['General Dentist','Orthodontist','Periodontist','Pedodontist','Prosthodontist','Endodontist','Oral Surgeon','Hygienist','Clinic Manager'];
+    const rows = [
+      ['اسم الطبيب','العيادة','رقم الهاتف','التخصص','تاريخ الميلاد','ملاحظات'],
+      ['د. سارة العلي','عيادة النجمة','99887766','تقويم','31356','تحب Waterpik'],
+      ['Dr. Omar Khalid','Star Dental','55443322','General','05/09/1990',''],
+      ['د. فهد','', '11112222','جراح','',''],           // no clinic — still parsed
+      ['','عيادة بلا اسم','','','',''],                 // no name — skipped
+    ];
+    const res = core.parseContactRows(rows, SP);
+    assert.equal(res.error, null);
+    assert.equal(res.contacts.length, 3);
+    assert.equal(res.skipped, 1);
+    const sara = res.contacts[0];
+    assert.equal(sara.name, 'د. سارة العلي');
+    assert.equal(sara.clinic, 'عيادة النجمة');
+    assert.equal(sara.title, 'Orthodontist');          // Arabic alias mapped
+    assert.equal(sara.birthday, '1985-11-05');         // Excel serial converted
+    assert.equal(res.contacts[1].title, 'General Dentist');
+    assert.equal(res.contacts[1].birthday, '1990-09-05'); // DD/MM/YYYY
+    assert.equal(res.contacts[2].title, 'Oral Surgeon');
+    // date shapes
+    assert.equal(core.parseDateLoose('1985-11-05 00:00:00'), '1985-11-05');
+    assert.equal(core.parseDateLoose(''), '');
+    assert.equal(core.parseDateLoose('garbage'), '');
+    // a sheet with no recognizable header
+    assert.equal(core.parseContactRows([['a','b'],['c','d']], SP).error, 'NO_HEADER');
+  });
   test('returnsAnalysis groups returned value by brand and customer', () => {
     const rows = [
       { sret: 100, brand: 'Hismile', customer: 'Trolley' },
