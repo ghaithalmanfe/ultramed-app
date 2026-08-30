@@ -1395,6 +1395,76 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // without the flag callback nothing changes
     assert.equal(core.returnsAnalysis(rows).total, 140);
   });
+  test('doctorAnalytics: cadence, birthday countdown, handover buckets, visit log', () => {
+    const today = '2026-08-30'; // Sunday — week starts today
+    const clinics = [
+      { id: 'c1', name: 'Star Dental', rep: 'Mariam', doctors: [
+        { id: 'd1', name: 'Dr. Sara', title: 'Orthodontist', cadence: 'weekly', birthday: '1990-09-05',
+          handovers: [
+            { id: 'h1', date: '2026-08-30', kind: 'prescription', what: 'Rx pads', qty: 3 },
+            { id: 'h2', date: '2026-08-25', kind: 'prescription', what: 'Rx pads', qty: 2 }, // previous week
+            { id: 'h3', date: '2026-07-20', kind: 'prescription', what: 'Rx pads', qty: 4 }, // previous month
+            { id: 'h4', date: '2026-08-10', kind: 'sample', what: 'Waterpik tips', qty: 5 },
+            { id: 'h5', date: '2026-08-12', kind: 'gift', what: 'Mug' },
+          ] },
+        { id: 'd2', name: 'Dr. Omar', title: '', cadence: 'monthly' }, // never visited -> due
+      ] },
+      { id: 'c2', name: 'Other Rep Clinic', rep: 'Renova', doctors: [{ id: 'd3', name: 'Dr. X' }] },
+    ];
+    const visits = [
+      { id: 'v1', clinicId: 'c1', rep: 'Mariam', date: '2026-08-10', doctorIds: ['d1'], ts: 1 },
+      { id: 'v1dup', clinicId: 'c1', rep: 'Mariam', date: '2026-08-10', doctorIds: ['d1'], ts: 2 }, // double-save
+      { id: 'v2', clinicId: 'c1', rep: 'Mariam', date: '2026-08-15', doctorIds: ['d1'], callOnly: true, channel: 'call', ts: 3 },
+    ];
+    const rows = core.doctorAnalytics({ clinics, visits, today, repFilter: 'Mariam' });
+    assert.equal(rows.length, 2); // Renova's doctor filtered out
+    const sara = rows.find(d => d.id === 'd1');
+    // visits deduped; field + call split; last visit
+    assert.equal(sara.fieldVisits, 1);
+    assert.equal(sara.calls, 1);
+    assert.equal(sara.lastVisit, '2026-08-15');
+    // weekly cadence, last seen 15 days ago -> 8 days overdue
+    assert.equal(sara.cadenceStatus, 'due');
+    assert.equal(sara.overdueDays, 8);
+    // birthday Sep 5 is 6 days away
+    assert.equal(sara.birthdayIn, 6);
+    // handover buckets: qty-aware, week/month windows
+    assert.equal(sara.handovers.prescription, 9);
+    assert.equal(sara.handovers.rxWeek, 3);
+    assert.equal(sara.handovers.rxLastWeek, 2);
+    assert.equal(sara.handovers.rxMonth, 5);
+    assert.equal(sara.handovers.rxLastMonth, 4);
+    assert.equal(sara.handovers.sample, 5);
+    assert.equal(sara.handovers.gift, 1);
+    // never-visited monthly doctor is due
+    const omar = rows.find(d => d.id === 'd2');
+    assert.equal(omar.cadenceStatus, 'due');
+    assert.equal(omar.lastVisit, null);
+  });
+  test('rxGrowth aggregates prescriptions per doctor and clinic with growth %', () => {
+    const today = '2026-08-30';
+    const clinics = [
+      { id: 'c1', name: 'Star Dental', rep: 'Mariam', doctors: [
+        { id: 'd1', name: 'Dr. Sara', handovers: [
+          { date: '2026-08-30', kind: 'prescription', qty: 6 },
+          { date: '2026-08-25', kind: 'prescription', qty: 3 } ] },
+        { id: 'd2', name: 'Dr. Omar', handovers: [
+          { date: '2026-08-30', kind: 'prescription', qty: 2 },
+          { date: '2026-08-05', kind: 'gift' } ] }, // gifts never count as rx
+      ] },
+    ];
+    const g = core.rxGrowth({ clinics, visits: [], today, repFilter: 'all' });
+    assert.equal(g.byDoctor.length, 2);
+    assert.equal(g.byDoctor[0].name, 'Dr. Sara'); // sorted by month volume
+    assert.equal(g.byDoctor[0].week, 6);
+    assert.equal(g.byDoctor[0].lastWeek, 3);
+    assert.equal(g.byDoctor[0].weekGrowth, 100); // 3 -> 6
+    assert.equal(g.byClinic.length, 1);
+    assert.equal(g.byClinic[0].month, 11);
+    assert.equal(g.byClinic[0].doctors, 2);
+    assert.equal(g.totals.week, 8);
+    assert.equal(g.totals.lastWeek, 3);
+  });
   test('returnsAnalysis groups returned value by brand and customer', () => {
     const rows = [
       { sret: 100, brand: 'Hismile', customer: 'Trolley' },
