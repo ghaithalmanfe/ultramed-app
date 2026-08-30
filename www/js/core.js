@@ -921,6 +921,92 @@
         amount: Math.round(units * c.price * 100) / 100, mine: c.mine };
     });
   }
+  // ==== CONTACTS BULK IMPORT ====
+  // One sheet with every contact in the market -> parsed, matched to the
+  // right clinic automatically, specialties normalized, birthdays accepted in
+  // any common shape (ISO, DD/MM/YYYY, or a raw Excel serial number).
+  function parseDateLoose(v){
+    if(v == null || v === '') return '';
+    if(typeof v === 'number' || /^\d+(\.\d+)?$/.test(String(v).trim())){
+      var n = parseFloat(v);
+      if(n > 10000 && n < 80000){ // Excel serial (days since 1899-12-30)
+        var d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
+        return d.toISOString().slice(0, 10);
+      }
+    }
+    var str = String(v).trim();
+    var iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+    var dmy = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    if(dmy){
+      var y = +dmy[3]; if(y < 100) y += y > 30 ? 1900 : 2000;
+      var mo = +dmy[2], da = +dmy[1];
+      if(mo > 12 && da <= 12){ var tswp = mo; mo = da; da = tswp; } // MM/DD written the other way
+      if(mo >= 1 && mo <= 12 && da >= 1 && da <= 31)
+        return y + '-' + String(mo).padStart(2, '0') + '-' + String(da).padStart(2, '0');
+    }
+    return '';
+  }
+  var SPECIALTY_ALIASES = {
+    'ortho': 'Orthodontist', 'orthodont': 'Orthodontist', 'تقويم': 'Orthodontist',
+    'perio': 'Periodontist', 'لثة': 'Periodontist',
+    'pedo': 'Pedodontist', 'اطفال': 'Pedodontist', 'أطفال': 'Pedodontist',
+    'prostho': 'Prosthodontist', 'تركيبات': 'Prosthodontist',
+    'endo': 'Endodontist', 'عصب': 'Endodontist', 'جذور': 'Endodontist',
+    'surg': 'Oral Surgeon', 'جراح': 'Oral Surgeon',
+    'hygien': 'Hygienist',
+    'manager': 'Clinic Manager', 'مدير': 'Clinic Manager',
+    'general': 'General Dentist', 'gp': 'General Dentist', 'عام': 'General Dentist', 'اسنان': 'General Dentist', 'أسنان': 'General Dentist',
+  };
+  function matchSpecialty(text, specialties){
+    var t = String(text || '').toLowerCase().trim();
+    if(!t) return '';
+    for(var i = 0; i < (specialties || []).length; i++)
+      if(specialties[i].toLowerCase() === t) return specialties[i];
+    for(var k in SPECIALTY_ALIASES)
+      if(t.indexOf(k) >= 0) return SPECIALTY_ALIASES[k];
+    for(var j = 0; j < (specialties || []).length; j++)
+      if(t.indexOf(specialties[j].toLowerCase().split(' ')[0]) >= 0) return specialties[j];
+    return '';
+  }
+  function parseContactRows(all, specialties){
+    if(!all || !all.length) return { contacts: [], skipped: 0, error: 'NO_ROWS' };
+    var idx = null, headerAt = -1;
+    var pats = {
+      name: /doctor|dr\.?\s|contact\s*name|^name$|طبيب|دكتور|اسم/i,
+      clinic: /clinic|center|centre|hospital|pharmacy|account|عيادة|مركز|مستشفى|صيدلية|جهة/i,
+      phone: /phone|mobile|tel|whats|هاتف|رقم|جوال|موبايل|واتس/i,
+      title: /special|title|position|role|تخصص|لقب|وظيفة/i,
+      birthday: /birth|b\.?day|dob|ميلاد/i,
+      notes: /note|remark|comment|ملاحظ|تقرير/i,
+    };
+    for(var i = 0; i < Math.min(all.length, 20); i++){
+      var r = all[i] || [], found = { name: -1, clinic: -1, phone: -1, title: -1, birthday: -1, notes: -1 }, hits = 0;
+      for(var c = 0; c < r.length; c++){
+        var h = String(r[c] || '').trim();
+        if(!h) continue;
+        for(var k in pats) if(found[k] < 0 && pats[k].test(h)){ found[k] = c; hits++; break; }
+      }
+      if(found.name >= 0 && hits >= 2){ idx = found; headerAt = i; break; }
+    }
+    if(!idx) return { contacts: [], skipped: 0, error: 'NO_HEADER' };
+    var contacts = [], skipped = 0;
+    for(var rI = headerAt + 1; rI < all.length; rI++){
+      var row = all[rI] || [];
+      var name = String(row[idx.name] || '').trim();
+      if(!name){ skipped++; continue; }
+      contacts.push({
+        name: name,
+        clinic: idx.clinic >= 0 ? String(row[idx.clinic] || '').trim() : '',
+        phone: idx.phone >= 0 ? cleanPhone(row[idx.phone]) : '',
+        title: idx.title >= 0 ? matchSpecialty(row[idx.title], specialties) : '',
+        titleRaw: idx.title >= 0 ? String(row[idx.title] || '').trim() : '',
+        birthday: idx.birthday >= 0 ? parseDateLoose(row[idx.birthday]) : '',
+        notes: idx.notes >= 0 ? String(row[idx.notes] || '').trim() : '',
+      });
+    }
+    return { contacts: contacts, skipped: skipped, error: contacts.length ? null : 'NO_ROWS' };
+  }
   // ==== DOCTOR CRM ====
   // One flat analytics row per doctor across the visible clinics: visit
   // history (from visits that tagged them), follow-up cadence status
@@ -1729,7 +1815,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, parseContactRows, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated
   };
 });
