@@ -35,7 +35,7 @@
     --radius:16px;
   }
   *{box-sizing:border-box;}
-  body{margin:0; background:linear-gradient(180deg,#0B3D22 0%,var(--green) 340px,var(--green) 100%) fixed, var(--green); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,sans-serif; -webkit-font-smoothing:antialiased; padding-bottom:78px;}
+  body{margin:0; background:linear-gradient(180deg,#0B3D22 0%,var(--green) 340px,var(--green) 100%) fixed, var(--green); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,sans-serif; -webkit-font-smoothing:antialiased; padding-bottom:150px;}
   h1,h2,h3,.disp{font-family:'Fraunces',Georgia,serif; letter-spacing:-0.01em; font-weight:600;}
   .wrap{max-width:640px; margin:0 auto; padding:20px 18px 8px;}
   header.top{display:flex; justify-content:space-between; align-items:flex-start; padding-top:8px; margin-bottom:16px;}
@@ -148,7 +148,7 @@
   .modal{background:var(--paper); width:100%; max-width:640px; max-height:90vh; overflow-y:auto; border-radius:22px 22px 0 0; padding:20px 18px calc(24px + env(safe-area-inset-bottom)); animation:sheetUp .3s cubic-bezier(.32,.72,0,1);}
   @keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
   .modal-handle{width:36px; height:4px; background:var(--line); border-radius:3px; margin:0 auto 16px;}
-  .modal-close{position:absolute; top:16px; right:16px; background:none; border:none; font-size:22px; color:var(--muted); cursor:pointer;}
+  .modal-close{position:absolute; top:16px; inset-inline-end:16px; background:none; border:none; font-size:22px; color:var(--muted); cursor:pointer;}
   .report-line{display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px;}
   .report-line:last-child{border-bottom:none;}
   .report-line .v{font-weight:700;}
@@ -361,6 +361,34 @@
   .disc-chips .chip{padding:8px 14px; font-size:14px;}
   .rep-tag{font-size:10.5px; font-weight:700; color:var(--purple-ink); background:var(--purple-dim); padding:2px 7px; border-radius:8px;}
 
+  /* ---- Accessibility & layout (design-review pass) ---- */
+  body.not-today #dateLabel, body.not-today #greeting{display:none;}
+  body.not-today header.top{margin-bottom:4px; align-items:center;}
+  body.not-today header.top .logo{height:24px;}
+  .nudge[data-nudge]{position:relative; padding-inline-end:38px;}
+  .nudge-x{position:absolute; top:4px; inset-inline-end:4px; width:32px; height:32px; border:none; background:none; color:var(--green-dark); font-size:16px; line-height:1; cursor:pointer; border-radius:50%; opacity:.65;}
+  .nudge-x:hover{opacity:1;}
+  .view.active{animation:viewIn .22s ease;}
+  @keyframes viewIn{from{opacity:.35; transform:translateY(5px);}to{opacity:1; transform:none;}}
+  :focus-visible{outline:3px solid var(--green); box-shadow:0 0 0 6px rgba(201,166,100,.85); border-radius:8px;}
+  input:focus-visible, textarea:focus-visible, select:focus-visible{outline:none; box-shadow:0 0 0 3px rgba(2,41,23,.35);}
+  .del{min-width:44px; min-height:44px; display:inline-flex; align-items:center; justify-content:center;}
+  .cal-nav{width:40px; height:40px;}
+  .task-check, .plan-check{border-color:#6B7A71; position:relative;}
+  .task-check.checked, .plan-check.done{border-color:var(--sage);}
+  .task-check::after, .plan-check::after{content:''; position:absolute; inset:-10px;}
+  .wclose::after, .ph-del::after, .modal-close::after, .lbclose::after{content:''; position:absolute; inset:-9px;}
+  header.top .eyebrow{color:rgba(255,255,255,.7);}
+  .view > .section-title{color:rgba(255,255,255,.7);}
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important;}
+  }
+  /* Desktop: keep the phone-width column, but bring the fixed chrome to it */
+  @media (min-width: 920px){
+    nav.bottom{left:50%; right:auto; width:640px; transform:translateX(-50%); border:0.5px solid var(--line); border-bottom:none; border-radius:18px 18px 0 0; overflow:hidden;}
+    .ai-fab{right:calc(50% - 320px + 16px);}
+  }
+
   /* Professional report */
   .proreport{display:none;}
   .proreport.active{display:block; background:#fff; min-height:100vh;}
@@ -440,7 +468,7 @@
       <div class="eyebrow" id="dateLabel" style="margin-top:6px;">Loading...</div>
       <h1 id="greeting">Field Ops</h1>
     </div>
-    <div class="userchip" onclick="openAccountMenu()">
+    <div class="userchip" onclick="openAccountMenu()" aria-label="Account menu">
       <div class="stamp" id="headerStamp">•••<div class="dot" id="headerDot"></div></div>
     </div>
   </header>
@@ -462,8 +490,8 @@
     <div class="section-title">Tasks <span class="link" onclick="openEmailImport()">Import from email</span></div>
     <div class="card">
       <div class="row-between" style="margin-bottom:10px;">
-        <input type="text" id="newTaskInput" placeholder="Add a quick task..." style="flex:1; border:none; padding:4px 0; font-size:14.5px;">
-        <button class="del" style="color:var(--teal); font-size:22px;" onclick="addTask()">+</button>
+        <input type="text" id="newTaskInput" dir="auto" placeholder="Add a quick task..." style="flex:1; border:none; padding:4px 0; font-size:14.5px;">
+        <button class="del" style="color:var(--teal); font-size:22px;" onclick="addTask()" aria-label="Add task">+</button>
       </div>
       <div id="taskList"></div>
     </div>
@@ -537,7 +565,7 @@
     <input type="date" id="followUpDate">
 
     <div class="step-h"><span class="n">6</span> Notes &amp; extras <span class="hint">optional</span></div>
-    <textarea id="visitNotes" placeholder="Anything worth remembering next visit..."></textarea>
+    <textarea id="visitNotes" dir="auto" placeholder="Anything worth remembering next visit..."></textarea>
     <label style="margin-top:10px;">Photos from this visit</label>
     <div class="photo-row" id="visitPhotoRow"></div>
     <label style="margin-top:10px;">Joint visit with <span style="color:var(--muted); font-weight:400; text-transform:none;">(a colleague who was with you)</span></label>
@@ -554,8 +582,8 @@
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Clinics</h2>
       <div style="display:flex; gap:12px; align-items:center;">
-        <button class="del" id="manageClinicsBtn" style="color:var(--teal); font-size:16px; display:none;" onclick="openManageClinics()">⚙️</button>
-        <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddClinic()">+</button>
+        <button class="del" id="manageClinicsBtn" style="color:var(--teal); font-size:16px; display:none;" onclick="openManageClinics()" aria-label="Manage clinics">⚙️</button>
+        <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddClinic()" aria-label="Add clinic">+</button>
       </div>
     </div>
     <div class="chip-row" style="margin-bottom:10px;" id="clinicRepFilter"></div>
@@ -578,9 +606,9 @@
   <div class="view" id="view-products">
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Products</h2>
-      <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddProduct()">+</button>
+      <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddProduct()" aria-label="Add product">+</button>
     </div>
-    <div class="nudge" style="margin-bottom:12px;">📦 118 products, 13 brands. Know three of them cold and you can solve most conversations.</div>
+    <div class="nudge" data-nudge="products" style="margin-bottom:12px;">📦 118 products, 13 brands. Know three of them cold and you can solve most conversations.</div>
     <button class="btn secondary small" style="margin-bottom:10px;" onclick="openCategoryGuides()">📚 Selling guides — how to sell every category</button>
     <input type="text" class="search-box" id="productSearch" placeholder="Search products or brand..." oninput="renderProducts()">
     <div id="productListWrap"></div>
@@ -597,17 +625,17 @@
     <div id="teamChat">
       <div class="chatwrap" id="chatList"></div>
       <div class="composer">
-        <button class="iconbtn" onclick="pickChatPhoto(false)" title="From gallery">🖼</button>
-        <button class="iconbtn" onclick="pickChatPhoto(true)" title="Take a photo">📷</button>
-        <textarea id="chatInput" placeholder="Message the team..." rows="1"></textarea>
-        <button class="iconbtn send" id="chatSendBtn" onclick="sendChat()">⬆</button>
+        <button class="iconbtn" onclick="pickChatPhoto(false)" title="From gallery" aria-label="Attach from gallery">🖼</button>
+        <button class="iconbtn" onclick="pickChatPhoto(true)" title="Take a photo" aria-label="Take a photo">📷</button>
+        <textarea id="chatInput" dir="auto" placeholder="Message the team..." rows="1"></textarea>
+        <button class="iconbtn send" id="chatSendBtn" onclick="sendChat()" aria-label="Send message">⬆</button>
       </div>
       <div id="chatPhotoPreview"></div>
       <button class="btn secondary small" onclick="refreshTeam()">↻ Refresh messages</button>
     </div>
 
     <div id="teamMem" style="display:none;">
-      <div class="nudge" style="margin-bottom:12px;">📸 The wins, the road trips, the clinic visits — keep the story of this team somewhere real.</div>
+      <div class="nudge" data-nudge="team-mem" style="margin-bottom:12px;">📸 The wins, the road trips, the clinic visits — keep the story of this team somewhere real.</div>
       <button class="btn" onclick="pickMemoryPhoto()">📷 Add a memory</button>
       <div id="memGrid" class="mgrid" style="margin-top:14px;"></div>
     </div>
@@ -617,7 +645,7 @@
   <!-- CALENDAR -->
   <div class="view" id="view-calendar">
     <h2 style="font-size:22px; margin:0 0 4px;">Calendar</h2>
-    <div class="nudge" style="margin-bottom:12px;">📅 Everything in one place: planned visits, logged visits, follow-ups, tasks and team events.</div>
+    <div class="nudge" data-nudge="calendar" style="margin-bottom:12px;">📅 Everything in one place: planned visits, logged visits, follow-ups, tasks and team events.</div>
     <div class="chip-row" style="margin-bottom:10px;" id="calRepFilter"></div>
     <div class="row-between" style="margin-bottom:10px;">
       <div class="chip-row" style="margin-bottom:0;">
@@ -634,7 +662,7 @@
       <div style="text-align:center; font-weight:700; font-size:15px; margin-bottom:8px;" id="calRangeLabel"></div>
       <div id="calBody"></div>
       <div class="cal-legend">
-        <span><i style="background:var(--green);"></i>Planned</span>
+        <span><i style="background:transparent; box-shadow:inset 0 0 0 1.5px var(--green);"></i>Planned</span>
         <span><i style="background:var(--sage);"></i>Visited</span>
         <span><i style="background:var(--amber);"></i>Follow-up</span>
         <span><i style="background:var(--purple);"></i>Task</span>
@@ -664,7 +692,7 @@
 
   <div class="view" id="view-doctors">
     <h2 style="font-size:22px; margin:0 0 4px;">👨‍⚕️ Doctors Database</h2>
-    <div class="nudge" style="margin-bottom:12px;">Every doctor in the market: visits, follow-up rhythm, birthdays, prescriptions, samples and gifts — tracked together with their clinic's invoices.</div>
+    <div class="nudge" data-nudge="doctors" style="margin-bottom:12px;">Every doctor in the market: visits, follow-up rhythm, birthdays, prescriptions, samples and gifts — tracked together with their clinic's invoices.</div>
     <div class="chip-row" style="margin-bottom:8px;">
       <div class="chip on" id="ddTabDb" onclick="ddTab='db'; renderDoctorsDb();">👨‍⚕️ Doctors</div>
       <div class="chip" id="ddTabRx" onclick="ddTab='rx'; renderDoctorsDb();">💊 Prescriptions growth</div>
@@ -676,7 +704,7 @@
 
   <div class="view" id="view-clanalysis">
     <h2 style="font-size:22px; margin:0 0 4px;">🎯 Clinic Sales Analysis</h2>
-    <div class="nudge" style="margin-bottom:12px;">Each clinic's share of the monthly target, what it bought, and what to sell next — built from the DSR targets, the ERP invoices, and the team's visit reports.</div>
+    <div class="nudge" data-nudge="clanalysis" style="margin-bottom:12px;">Each clinic's share of the monthly target, what it bought, and what to sell next — built from the DSR targets, the ERP invoices, and the team's visit reports.</div>
     <div class="chip-row" style="margin-bottom:8px;" id="caRepChips"></div>
     <input type="text" id="caSearch" placeholder="🔍 Search clinics…" oninput="renderClinicAnalysis()" style="margin-bottom:10px;">
     <div id="caBody"></div>
@@ -684,7 +712,7 @@
 
   <div class="view" id="view-playbook">
     <h2 style="font-size:22px; margin:0 0 4px;">Selling Playbook</h2>
-    <div class="nudge" style="margin-bottom:14px;">🧠 Walk in knowing what they care about. Preparation is the difference between a chat and an order.</div>
+    <div class="nudge" data-nudge="playbook" style="margin-bottom:14px;">🧠 Walk in knowing what they care about. Preparation is the difference between a chat and an order.</div>
     <div class="tile-grid" id="playbookGrid"></div>
   </div>
 
@@ -692,7 +720,7 @@
   <div class="view" id="view-reports">
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Report</h2>
-      <button class="chip small" onclick="openMonthReports()">📚 تقارير الشهور</button>
+      <button class="chip small" onclick="openMonthReports()">📚 Month reports</button>
     </div>
     <div class="chip-row" style="margin-bottom:10px;" id="reportRepFilter"></div>
     <div class="chip-row" style="margin-bottom:16px;">
@@ -714,7 +742,7 @@
       <div class="chip small" onclick="openCompare()">🆚 Compare</div>
     </div>
     <div class="section-title" style="margin-top:0;">🧭 Sales coach — read this first</div>
-    <div class="nudge" style="margin-bottom:10px;">The numbers below are summarized here as actions: red = do now, orange = keep an eye, green = working, do more of it.</div>
+    <div class="nudge" data-nudge="reports-coach" style="margin-bottom:10px;">The numbers below are summarized here as actions: red = do now, orange = keep an eye, green = working, do more of it.</div>
     <div id="coachCard" style="margin-bottom:16px;"></div>
     <div class="card">
       <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
@@ -736,7 +764,7 @@
     <div class="card" id="repNoOrder" style="display:none;"></div>
 
     <div class="section-title">Performance evaluation</div>
-    <div class="nudge" style="margin-bottom:12px;">📈 Numbers aren’t a verdict — they’re a map. Every metric below is something you can move this week.</div>
+    <div class="nudge" data-nudge="reports-perf" style="margin-bottom:12px;">📈 Numbers aren’t a verdict — they’re a map. Every metric below is something you can move this week.</div>
     <div id="scorecards"></div>
 
     <button class="btn secondary" onclick="openReportTools()">📤 Export &amp; share this report</button>
@@ -794,19 +822,19 @@
 
 <div class="modal-back" id="modalBack" onclick="closeModalBg(event)">
   <div class="modal" id="modalContent" style="position:relative;">
-    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <button class="modal-close" onclick="closeModal()" aria-label="Close">&times;</button>
     <div class="modal-handle"></div>
     <div id="modalInner"></div>
   </div>
 </div>
 
 <div class="lightbox" id="lightbox" onclick="closeLightbox(event)">
-  <button class="lbclose" onclick="closeLightbox(event,true)">&times;</button>
+  <button class="lbclose" onclick="closeLightbox(event,true)" aria-label="Close photo">&times;</button>
   <img id="lbImg" src="" alt="">
   <div class="lbcap" id="lbCap"></div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" dir="auto"></div>
 <button class="ai-fab" id="aiFab" style="display:none;" onclick="openAssistant()" aria-label="AI Assistant">✨</button>
 
 <script src="js/core.js"></script>
@@ -1089,7 +1117,7 @@ const CATEGORY_GUIDES_SEED = {
 // Team roster lives in storage so it can be managed from the admin panel
 // without touching code. REPS/USERS are derived views kept in sync with it.
 const AVATARS = [
-  'linear-gradient(140deg,#0B3D22,#01150C)','linear-gradient(140deg,#8FD4E8,#3E9BC4)',
+  'linear-gradient(140deg,#2E8B47,#0B3D22)','linear-gradient(140deg,#8FD4E8,#3E9BC4)',
   'linear-gradient(140deg,#B0AEF5,#5E5CE6)','linear-gradient(140deg,#F7C08A,#E8873F)',
   'linear-gradient(140deg,#F2A2C0,#D65C8E)','linear-gradient(140deg,#9FE3C8,#3FAE86)'
 ];
@@ -1307,7 +1335,7 @@ function renderGate(){
   const sups = staff.filter(s=>s.role!=='rep');
   const tile = (s, wide) => `
     <div class="gate-tile${wide?' wide':''}" onclick="gateTap('${esc(s.name)}')">
-      <div class="gate-av" style="background:${s.av||AVATARS[0]};">${initials(s.name)}</div>
+      <div class="gate-av" style="background:${(s.av==='linear-gradient(140deg,#0B3D22,#01150C)'?AVATARS[0]:s.av)||AVATARS[0]};">${initials(s.name)}</div>
       <div>
         <div class="gate-name">${esc(s.name)}</div>
         <div class="gate-role">${s.role==='rep'?'🦷 Sales Rep':'⭐ Supervisor'}</div>
@@ -2156,12 +2184,13 @@ function calGoToday(){ calAnchor = todayStr(); calSelected = todayStr(); renderC
 function selectCalDay(d){ calSelected = d; renderCalendar(); }
 function calDots(info){
   const dots = [];
-  if(info.planned.length) dots.push('var(--green)');
-  if(info.visits.length) dots.push('var(--sage)');
-  if(info.followUps.length) dots.push('var(--amber)');
-  if(info.tasks.length) dots.push('var(--purple)');
-  if(info.events.length) dots.push('#3478F6');
-  return dots.map(c=>`<i style="background:${c};"></i>`).join('');
+  // planned = hollow (not done yet), everything else = filled
+  if(info.planned.length) dots.push('background:transparent; box-shadow:inset 0 0 0 1.5px var(--green);');
+  if(info.visits.length) dots.push('background:var(--sage);');
+  if(info.followUps.length) dots.push('background:var(--amber);');
+  if(info.tasks.length) dots.push('background:var(--purple);');
+  if(info.events.length) dots.push('background:#3478F6;');
+  return dots.map(c=>`<i style="${c}"></i>`).join('');
 }
 function renderCalendar(){
   if(!calAnchor) calAnchor = todayStr();
@@ -2429,6 +2458,8 @@ function renderView(name){
 }
 function switchView(name){
   activeView = name;
+  // The full greeting header belongs to Today; other views keep a slim strip
+  document.body.classList.toggle('not-today', name!=='today');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   const navName = MORE_CHILDREN.includes(name) ? 'more' : name;
@@ -2592,7 +2623,7 @@ function renderTargetCard(){
     <div class="row-between" style="margin-bottom:6px;">
       <div style="font-weight:700; font-size:13.5px;">🎯 ${monthName} target</div>
       <span style="display:flex; gap:8px; align-items:center;">
-        <button class="chip small" onclick="event.stopPropagation(); openMonthReports()">📚 الشهور</button>
+        <button class="chip small" onclick="event.stopPropagation(); openMonthReports()">📚 Months</button>
         <span style="color:var(--muted); font-size:11.5px;">details ›</span>
       </span>
     </div>
@@ -3450,6 +3481,7 @@ async function saveVisit(){
 
   await Promise.all([persist('visits'), persist('clinics')]);
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
+  if(navigator.vibrate) navigator.vibrate(12); // a small physical "saved" cue in the field
   showToast(visitSavedMsg());
   renderAll();
   switchView('today');
@@ -3639,10 +3671,10 @@ function erpDashSection(){
           </div>
         </div>
         <div style="display:flex; gap:6px; margin-top:8px; align-items:center;" onclick="event.stopPropagation()">
-          <input type="text" value="${esc(x.c.noSaleReason||'')}" placeholder="💬 Why no sales yet? اكتب السبب…"
+          <input type="text" value="${esc(x.c.noSaleReason||'')}" placeholder="Why no sales yet? Add the reason…" dir="auto"
             onchange="saveNoSaleReason('${x.c.id}', this.value)"
             style="flex:1; margin:0; font-size:12.5px; padding:7px 10px;">
-          <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${x.c.id}', this.parentElement.querySelector('input').value)">💾 حفظ</button>
+          <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${x.c.id}', this.parentElement.querySelector('input').value)">💾 Save</button>
         </div>
       </div>`).join('') + (d.nonBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${d.nonBuyers.length-40} more in the list view</div>`:'')
     : clinicBuyers.slice(0,40).map(b=>`
@@ -3975,7 +4007,7 @@ function openClinicDetail(id){
     <div style="display:flex; gap:6px; align-items:center;">
       <input type="text" value="${esc(c.noSaleReason||'')}" placeholder="e.g. Works on prescriptions — patients buy from pharmacy"
         onchange="saveNoSaleReason('${c.id}', this.value)" style="flex:1; margin:0;">
-      <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${c.id}', this.parentElement.querySelector('input').value)">💾 حفظ</button>
+      <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${c.id}', this.parentElement.querySelector('input').value)">💾 Save</button>
     </div>
 
     <div class="section-title" style="margin-top:20px;">Visit history</div>
@@ -4091,7 +4123,7 @@ function clinicErpLedger(clinicId){
 }
 function erpNoteInput(key){
   return `<input type="text" data-key="${esc(key)}" value="${esc(erpNoteText(key))}"
-    placeholder="Why? add the reason / اكتب السبب…" onclick="event.stopPropagation()"
+    placeholder="Why? Add the reason…" dir="auto" onclick="event.stopPropagation()"
     onchange="saveErpNote(this.dataset.key, this.value)"
     style="margin-top:6px; font-size:12.5px; padding:7px 10px;">`;
 }
@@ -4959,7 +4991,7 @@ function confirmDeleteVisit(visitId){
     <div class="card" style="border-left:4px solid var(--coral); margin-bottom:14px;">
       <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}</div>
       <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}</div>
-      ${v.notes?`<div style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
+      ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
     </div>
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
     <button class="btn" style="background:var(--coral);" onclick="deleteVisit('${v.id}')">Yes, delete it</button>
@@ -5356,7 +5388,7 @@ function renderVisitLog(){
           <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
-          ${v.notes?`<div style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
+          ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
           ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
         </div>
         ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-left:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
@@ -5892,8 +5924,8 @@ function renderDoctorsDb(){
   const dueN = docs.filter(d=>d.cadenceStatus==='due').length;
   const bdayN = docs.filter(d=>d.birthdayIn!=null && d.birthdayIn<=14).length;
   filtersEl.innerHTML = [
-    ['all', `الكل (${docs.length})`], ['due', `⏰ متابعة مستحقة (${dueN})`],
-    ['bday', `🎂 أعياد ميلاد قريبة (${bdayN})`], ['rx', `💊 يستلمون بريسكريبشن`],
+    ['all', `All (${docs.length})`], ['due', `⏰ Follow-up due (${dueN})`],
+    ['bday', `🎂 Birthdays soon (${bdayN})`], ['rx', `💊 On prescriptions`],
   ].map(([k,l])=>`<div class="chip small ${ddFilter===k?'on':''}" onclick="ddFilter='${k}'; renderDoctorsDb();">${l}</div>`).join('');
   let list = docs;
   if(ddFilter==='due') list = list.filter(d=>d.cadenceStatus==='due');
@@ -5911,9 +5943,9 @@ function renderDoctorsDb(){
   body.innerHTML = `
     <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
       ${currentUser.role==='supervisor'?`<button class="chip small" onclick="openContactImport()">📥 Import contacts</button>`:''}
-      <button class="chip small" style="${gaps?'border-color:var(--gold); color:var(--gold);':''}" onclick="openDataEntry()">✍️ إكمال البيانات ${gaps?`(${gaps})`:'✓'}</button>
+      <button class="chip small" style="${gaps?'border-color:var(--gold); color:var(--gold);':''}" onclick="openDataEntry()">✍️ Complete data ${gaps?`(${gaps})`:'✓'}</button>
       <button class="chip small" onclick="exportDoctorsDbXlsx()">📤 Export (Excel)</button>
-      <span class="chip small" style="pointer-events:none;">اكتمال البيانات: ${pctDone}%</span>
+      <span class="chip small" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
     </div>
     ` + (list.map(d=>{
     const pb = SPECIALTY_PLAYBOOK[d.title];
@@ -6200,7 +6232,7 @@ function openDoctorProfile(clinicId, docId){
       <label>👨‍⚕️ الاسم (لتصحيحه)</label>
       <div style="display:flex; gap:6px;">
         <input type="text" value="${esc(d.name||'')}" style="flex:1; margin:0;">
-        <button class="chip small" onclick="saveDoctorField('${clinicId}','${docId}','name',this.previousElementSibling.value); openDoctorProfile('${clinicId}','${docId}');">💾 حفظ</button>
+        <button class="chip small" onclick="saveDoctorField('${clinicId}','${docId}','name',this.previousElementSibling.value); openDoctorProfile('${clinicId}','${docId}');">💾 Save</button>
       </div>
       <label style="margin-top:8px;">🎂 تاريخ الميلاد</label>
       <input type="date" value="${esc(d.birthday||'')}" onchange="saveDoctorField('${clinicId}','${docId}','birthday',this.value)">
@@ -6634,7 +6666,7 @@ function openProductDetail(pid){
     }
   })));
   showModal(`
-    ${p.img?`<img class="pbig" src="${p.img}" alt="" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
+    ${p.img?`<img class="pbig" src="${p.img}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
     <div class="row-between" style="margin:0 0 4px;">
       <h3 style="margin:0;">${esc(p.name)}</h3>
       ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">✏️ Edit</button>`:''}
@@ -8307,7 +8339,7 @@ function renderChat(){
     const me = m.who===currentUser.name;
     return `<div class="msg ${me?'me':'them'}">
       ${me?'':`<div class="who">${esc(m.who)}</div>`}
-      ${m.text?`<div>${esc(m.text)}</div>`:''}
+      ${m.text?`<div dir="auto">${esc(m.text)}</div>`:''}
       ${m.photoId?`<img src="${m.thumb||''}" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">`:''}
       <div class="when">${fmtWhen(m.ts)}</div>
     </div>`;
@@ -10317,7 +10349,15 @@ function copyReport(){
 }
 
 // ---- MODAL ----
-function showModal(html){ document.getElementById('modalInner').innerHTML = html; document.getElementById('modalBack').classList.add('show'); }
+function showModal(html){
+  const inner = document.getElementById('modalInner');
+  inner.innerHTML = html;
+  // Whole-Arabic sheets (data repair, month reports, doctor tools) read
+  // right-to-left; detect from the first strong characters of the content.
+  const firstText = (inner.textContent||'').trim().replace(/^[^A-Za-z؀-ۿ]+/,'').slice(0,60);
+  inner.setAttribute('dir', /^[؀-ۿ]/.test(firstText) ? 'rtl' : 'ltr');
+  document.getElementById('modalBack').classList.add('show');
+}
 function closeModal(){ document.getElementById('modalBack').classList.remove('show'); }
 function closeModalBg(e){ if(e.target.id==='modalBack') closeModal(); }
 
@@ -10350,6 +10390,86 @@ if(FIREBASE_ENABLED){
     }
   }, 20000);
 }
+// ---- Bottom-sheet drag-to-dismiss ----
+// The sheet already looks draggable (it has a handle); make the gesture real.
+(function(){
+  const sheet = document.getElementById('modalContent');
+  let startY = null, delta = 0, dragging = false;
+  sheet.addEventListener('touchstart', e=>{
+    if(sheet.scrollTop > 0) return; // only when the sheet content is at its top
+    startY = e.touches[0].clientY; delta = 0; dragging = true;
+    sheet.style.transition = 'none';
+  }, {passive:true});
+  sheet.addEventListener('touchmove', e=>{
+    if(!dragging || startY===null) return;
+    delta = e.touches[0].clientY - startY;
+    sheet.style.transform = delta > 0 ? `translateY(${delta}px)` : '';
+  }, {passive:true});
+  sheet.addEventListener('touchend', ()=>{
+    if(!dragging) return;
+    dragging = false; startY = null;
+    sheet.style.transition = 'transform .22s ease';
+    if(delta > 110){
+      sheet.style.transform = 'translateY(105%)';
+      setTimeout(()=>{ closeModal(); sheet.style.transform=''; sheet.style.transition=''; }, 190);
+    } else {
+      sheet.style.transform = '';
+      setTimeout(()=>{ sheet.style.transition=''; }, 240);
+    }
+  });
+})();
+
+// ---- Dismissible explainer nudges ----
+// The per-view explainer banners earn their keep the first few opens, then
+// become noise; a dismissal is a device-level preference, so plain
+// localStorage (not the synced store) is the right home for it.
+(function(){
+  let dismissed = {};
+  try{ dismissed = JSON.parse(localStorage.getItem('ultramed_nudges_dismissed')||'{}'); }catch(e){}
+  document.querySelectorAll('.nudge[data-nudge]').forEach(n=>{
+    const id = n.getAttribute('data-nudge');
+    if(dismissed[id]){ n.remove(); return; }
+    const x = document.createElement('button');
+    x.className = 'nudge-x'; x.setAttribute('aria-label','Dismiss tip'); x.textContent = '×';
+    x.onclick = ()=>{
+      dismissed[id] = true;
+      try{ localStorage.setItem('ultramed_nudges_dismissed', JSON.stringify(dismissed)); }catch(e){}
+      n.remove();
+    };
+    n.appendChild(x);
+  });
+})();
+
+// ---- Keyboard accessibility ----
+// Most interactive elements are template-rendered divs; rather than touching
+// every template, anything carrying an onclick handler becomes focusable and
+// activatable with Enter/Space. New nodes are enhanced as views re-render.
+(function(){
+  const SKIP_TAGS = new Set(['BUTTON','A','INPUT','SELECT','TEXTAREA','SUMMARY','LABEL','OPTION']);
+  const SKIP_IDS = new Set(['modalBack','lightbox']); // backdrops close on click but are not buttons
+  function apply(el){
+    if(SKIP_TAGS.has(el.tagName) || SKIP_IDS.has(el.id) || el.hasAttribute('tabindex')) return;
+    el.setAttribute('tabindex','0');
+    if(!el.hasAttribute('role')) el.setAttribute('role','button');
+  }
+  function enhance(root){
+    if(!root || root.nodeType!==1) return;
+    if(root.matches && root.matches('[onclick]')) apply(root);
+    if(root.querySelectorAll) root.querySelectorAll('[onclick]').forEach(apply);
+  }
+  enhance(document.body);
+  new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>enhance(n)));
+  }).observe(document.body, {childList:true, subtree:true});
+  document.addEventListener('keydown', e=>{
+    if(e.key!=='Enter' && e.key!==' ') return;
+    const t = e.target;
+    if(t && t.getAttribute && t.getAttribute('role')==='button' && !SKIP_TAGS.has(t.tagName)){
+      e.preventDefault();
+      t.click();
+    }
+  });
+})();
 renderGate();
 tryAutoLogin();
 </script>
