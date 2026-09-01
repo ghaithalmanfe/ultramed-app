@@ -43,7 +43,7 @@
   header.top h1{font-size:22px; margin:2px 0 0; font-weight:700; color:#fff;}
   .userchip{display:flex; align-items:center; gap:8px; cursor:pointer; position:relative;}
   .stamp{width:46px; height:46px; border-radius:50%; background:var(--green-soft); border:none; color:var(--green-deep); display:flex; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif; letter-spacing:-0.02em; font-weight:700; font-size:15px; flex-shrink:0;}
-  .stamp.sup{border-color:var(--purple); color:var(--purple);}
+  .stamp.sup{color:var(--purple-ink);}
   .dot{position:absolute; top:-2px; right:-2px; width:12px; height:12px; border-radius:50%; background:var(--coral); border:2px solid var(--paper); display:none;}
   .dot.show{display:block;}
   .section-title{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:22px 0 10px; display:flex; justify-content:space-between; align-items:center;}
@@ -94,7 +94,7 @@
   .btn{width:100%; padding:15px; border:1.5px solid rgba(196,228,206,.45); border-radius:14px; background:var(--green); color:#FFFFFF; font-weight:600; font-size:16px; cursor:pointer; font-family:inherit; margin-top:18px; transition:transform .12s ease, opacity .12s ease; -webkit-tap-highlight-color:transparent;}
   .btn:active{transform:scale(.97); opacity:.85;}
   .btn.secondary{background:var(--green-dim); color:var(--green-dark); border:none; font-weight:600;}
-  .btn.ghost{background:transparent; color:var(--coral); border:none; margin-top:8px; font-weight:500;}
+  .btn.ghost{background:transparent; color:var(--coral-ink); border:none; margin-top:8px; font-weight:500;}
   .btn.small{padding:9px; font-size:13px; margin-top:8px;}
   .toggle-row{display:flex; gap:10px;}
   .toggle-row .chip{flex:1; text-align:center;}
@@ -265,7 +265,7 @@
   .kpi4 .k .kl{font-size:11px; color:var(--muted); font-weight:600; margin-top:3px;}
   .kpi4 .k .ki{position:absolute; top:10px; right:11px; font-size:15px; opacity:.5;}
   .segbar{display:flex; height:26px; border-radius:9px; overflow:hidden; margin:4px 0 8px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.04);}
-  .segbar div{display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:700; color:#fff; min-width:16px;}
+  .segbar div{display:flex; align-items:center; justify-content:center; font-size:10.5px; font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.5); min-width:16px;}
   .seglegend{display:flex; flex-wrap:wrap; gap:12px; font-size:11.5px; color:var(--muted);}
   .seglegend span{display:flex; align-items:center; gap:5px;}
   .rank{display:flex; align-items:center; gap:11px; padding:10px 0; border-bottom:1px solid var(--line);}
@@ -361,6 +361,9 @@
   .disc-chips .chip{padding:8px 14px; font-size:14px;}
   .rep-tag{font-size:10.5px; font-weight:700; color:var(--purple-ink); background:var(--purple-dim); padding:2px 7px; border-radius:8px;}
 
+  /* ---- Icon system ---- */
+  .svgi{width:1.05em; height:1.05em; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-0.15em; display:inline-block; flex-shrink:0;}
+
   /* ---- Accessibility & layout (design-review pass) ---- */
   body.not-today #dateLabel, body.not-today #greeting{display:none;}
   body.not-today header.top{margin-bottom:4px; align-items:center;}
@@ -441,6 +444,53 @@
 </head>
 <body>
 
+<!-- Inline icon sprite: one consistent stroke-icon set replaces the
+     platform-dependent emoji that used to serve as UI chrome. -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.902.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.908.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-6 3 3 5-8"/></symbol>
+  <symbol id="i-package" viewBox="0 0 24 24"><path d="M16.5 9.4 7.5 4.21M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-stethoscope" viewBox="0 0 24 24"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .2.3"/><path d="M8 15v1a6 6 0 0 0 6 6 6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-award" viewBox="0 0 24 24"><circle cx="12" cy="8" r="7"/><path d="M8.21 13.89 7 23l5-3 5 3-1.21-9.12"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 5.4a2 2 0 0 0 1.2 1.2L20.5 11.5l-5.4 1.9a2 2 0 0 0-1.2 1.2L12 20l-1.9-5.4a2 2 0 0 0-1.2-1.2L3.5 11.5l5.4-1.9a2 2 0 0 0 1.2-1.2L12 3zM19 3v4M21 5h-4"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
+  <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></symbol>
+  <symbol id="i-pill" viewBox="0 0 24 24"><path d="M10.5 20.5a5 5 0 0 1-7.07-7.07l10-10a5 5 0 0 1 7.07 7.07l-10 10zM8.5 8.5l7 7"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M14 9h1M14 13h1M10 21v-5h4v5"/></symbol>
+  <symbol id="i-tooth" viewBox="0 0 24 24"><path d="M12 5.3C10.6 3.6 8.1 2.7 6.1 3.9c-2.3 1.4-2.7 4.5-1.4 7.1 1.2 2.4 1.6 5.1 2.2 7.7.3 1.2 1.9 1.3 2.4.1.5-1.2.9-2.6 1.7-2.6s1.2 1.4 1.7 2.6c.5 1.2 2.1 1.1 2.4-.1.6-2.6 1-5.3 2.2-7.7 1.3-2.6.9-5.7-1.4-7.1-2-1.2-4.5-.3-5.9 1.4z"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7M20 12v10H4V12M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></symbol>
+  <symbol id="i-cake" viewBox="0 0 24 24"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1M2 21h20M7 8v3M12 8v3M17 8v3M7 4h.01M12 4h.01M17 4h.01"/></symbol>
+  <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/></symbol>
+</svg>
+
 <div class="gate" id="gate">
   <div class="gate-card">
     <img class="gate-logo" id="gateLogo" alt="UltraMed" style="width:230px; height:auto; background:#FFFFFF; border-radius:14px; padding:16px 20px; box-sizing:border-box;">
@@ -451,13 +501,13 @@
     <div id="gateOther" style="margin-top:2px;"><span class="link" style="font-size:12.5px;" onclick="openEmailLogin()">Sign in with email instead</span></div>
 
     <div class="gate-badges">
-      <div class="gate-badge"><div class="bi">🏥</div>Clinics</div>
-      <div class="gate-badge"><div class="bi">📦</div>Products</div>
-      <div class="gate-badge"><div class="bi">📊</div>Reports</div>
-      <div class="gate-badge"><div class="bi">📖</div>Playbook</div>
+      <div class="gate-badge"><div class="bi"><svg class="svgi" aria-hidden="true"><use href="#i-building"/></svg></div>Clinics</div>
+      <div class="gate-badge"><div class="bi"><svg class="svgi" aria-hidden="true"><use href="#i-package"/></svg></div>Products</div>
+      <div class="gate-badge"><div class="bi"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></div>Reports</div>
+      <div class="gate-badge"><div class="bi"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg></div>Playbook</div>
     </div>
 
-    <div class="gate-foot">🔒 Ultramed International General Trading Co.</div>
+    <div class="gate-foot"><svg class="svgi" aria-hidden="true"><use href="#i-lock"/></svg> Ultramed International General Trading Co.</div>
   </div>
 </div>
 
@@ -506,8 +556,8 @@
     <div class="row-between" style="margin:0 0 4px;">
       <h2 style="font-size:18px; margin:0;">Log a visit</h2>
       <div style="display:flex; gap:8px;">
-        <button class="chip small" onclick="openCallLog()">📞 Call</button>
-        <button class="chip small" onclick="openStandaloneOrder()">🛒 Order only</button>
+        <button class="chip small" onclick="openCallLog()"><svg class="svgi" aria-hidden="true"><use href="#i-phone"/></svg> Call</button>
+        <button class="chip small" onclick="openStandaloneOrder()"><svg class="svgi" aria-hidden="true"><use href="#i-cart"/></svg> Order only</button>
       </div>
     </div>
     <p style="color:rgba(255,255,255,.6); font-size:13px; margin:0 0 16px;" id="logAsLabel">Takes about a minute.</p>
@@ -517,7 +567,7 @@
     </div>
 
     <div class="step-h" style="margin-top:8px;"><span class="n">1</span> Where were you? <span class="hint">pick the clinic</span></div>
-    <input type="text" id="clinicSearchLog" placeholder="🔍 Search clinics..." oninput="renderClinicSelect()" style="margin-bottom:10px;">
+    <input type="text" id="clinicSearchLog" placeholder="Search clinics..." oninput="renderClinicSelect()" style="margin-bottom:10px;">
     <div id="clinicPickList"></div>
     <div id="selectedClinicCard" style="display:none;"></div>
     <button class="btn secondary small" id="newClinicBtn" onclick="startNewClinic()">+ Add a new customer</button>
@@ -582,14 +632,14 @@
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Clinics</h2>
       <div style="display:flex; gap:12px; align-items:center;">
-        <button class="del" id="manageClinicsBtn" style="color:var(--teal); font-size:16px; display:none;" onclick="openManageClinics()" aria-label="Manage clinics">⚙️</button>
-        <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddClinic()" aria-label="Add clinic">+</button>
+        <button class="del" id="manageClinicsBtn" style="color:var(--green-soft); font-size:16px; display:none;" onclick="openManageClinics()" aria-label="Manage clinics"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></button>
+        <button class="del" style="color:var(--green-soft); font-size:24px;" onclick="openAddClinic()" aria-label="Add clinic">+</button>
       </div>
     </div>
     <div class="chip-row" style="margin-bottom:10px;" id="clinicRepFilter"></div>
     <div class="dash-toggle">
-      <div class="dt on" id="dtDash" onclick="setClinicMode('dash')">📊 Dashboard</div>
-      <div class="dt" id="dtList" onclick="setClinicMode('list')">📋 List</div>
+      <div class="dt on" id="dtDash" onclick="setClinicMode('dash')"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg> Dashboard</div>
+      <div class="dt" id="dtList" onclick="setClinicMode('list')"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg> List</div>
     </div>
 
     <div id="clinicDash"></div>
@@ -597,7 +647,7 @@
     <div id="clinicListPane" style="display:none;">
       <input type="text" class="search-box" id="clinicSearch" placeholder="Search clinics..." oninput="renderClinics()">
       <div class="chip-row" id="clinicVisitChips" style="margin:10px 0 4px;"></div>
-      <button class="btn secondary small" onclick="switchView('doctors')">👨‍⚕️ Doctors database</button>
+      <button class="btn secondary small" onclick="switchView('doctors')"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg> Doctors database</button>
       <div id="clinicList" style="margin-top:14px;"></div>
     </div>
   </div>
@@ -606,10 +656,10 @@
   <div class="view" id="view-products">
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Products</h2>
-      <button class="del" style="color:var(--teal); font-size:24px;" onclick="openAddProduct()" aria-label="Add product">+</button>
+      <button class="del" style="color:var(--green-soft); font-size:24px;" onclick="openAddProduct()" aria-label="Add product">+</button>
     </div>
     <div class="nudge" data-nudge="products" style="margin-bottom:12px;">📦 118 products, 13 brands. Know three of them cold and you can solve most conversations.</div>
-    <button class="btn secondary small" style="margin-bottom:10px;" onclick="openCategoryGuides()">📚 Selling guides — how to sell every category</button>
+    <button class="btn secondary small" style="margin-bottom:10px;" onclick="openCategoryGuides()"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg> Selling guides — how to sell every category</button>
     <input type="text" class="search-box" id="productSearch" placeholder="Search products or brand..." oninput="renderProducts()">
     <div id="productListWrap"></div>
   </div>
@@ -618,25 +668,25 @@
   <div class="view" id="view-team">
     <h2 style="font-size:22px; margin:0 0 12px;">Team</h2>
     <div class="tabs2">
-      <div class="t2 on" id="tabChat" onclick="setTeamTab('chat')">💬 Chat</div>
-      <div class="t2" id="tabMem" onclick="setTeamTab('mem')">📸 Memories</div>
+      <div class="t2 on" id="tabChat" onclick="setTeamTab('chat')"><svg class="svgi" aria-hidden="true"><use href="#i-chat"/></svg> Chat</div>
+      <div class="t2" id="tabMem" onclick="setTeamTab('mem')"><svg class="svgi" aria-hidden="true"><use href="#i-camera"/></svg> Memories</div>
     </div>
 
     <div id="teamChat">
       <div class="chatwrap" id="chatList"></div>
       <div class="composer">
-        <button class="iconbtn" onclick="pickChatPhoto(false)" title="From gallery" aria-label="Attach from gallery">🖼</button>
-        <button class="iconbtn" onclick="pickChatPhoto(true)" title="Take a photo" aria-label="Take a photo">📷</button>
+        <button class="iconbtn" onclick="pickChatPhoto(false)" title="From gallery" aria-label="Attach from gallery"><svg class="svgi" aria-hidden="true"><use href="#i-image"/></svg></button>
+        <button class="iconbtn" onclick="pickChatPhoto(true)" title="Take a photo" aria-label="Take a photo"><svg class="svgi" aria-hidden="true"><use href="#i-camera"/></svg></button>
         <textarea id="chatInput" dir="auto" placeholder="Message the team..." rows="1"></textarea>
-        <button class="iconbtn send" id="chatSendBtn" onclick="sendChat()" aria-label="Send message">⬆</button>
+        <button class="iconbtn send" id="chatSendBtn" onclick="sendChat()" aria-label="Send message"><svg class="svgi" aria-hidden="true"><use href="#i-arrow-up"/></svg></button>
       </div>
       <div id="chatPhotoPreview"></div>
-      <button class="btn secondary small" onclick="refreshTeam()">↻ Refresh messages</button>
+      <button class="btn secondary small" onclick="refreshTeam()"><svg class="svgi" aria-hidden="true"><use href="#i-refresh"/></svg> Refresh messages</button>
     </div>
 
     <div id="teamMem" style="display:none;">
       <div class="nudge" data-nudge="team-mem" style="margin-bottom:12px;">📸 The wins, the road trips, the clinic visits — keep the story of this team somewhere real.</div>
-      <button class="btn" onclick="pickMemoryPhoto()">📷 Add a memory</button>
+      <button class="btn" onclick="pickMemoryPhoto()"><svg class="svgi" aria-hidden="true"><use href="#i-camera"/></svg> Add a memory</button>
       <div id="memGrid" class="mgrid" style="margin-top:14px;"></div>
     </div>
   </div>
@@ -691,22 +741,22 @@
   </div>
 
   <div class="view" id="view-doctors">
-    <h2 style="font-size:22px; margin:0 0 4px;">👨‍⚕️ Doctors Database</h2>
+    <h2 style="font-size:22px; margin:0 0 4px;"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg> Doctors Database</h2>
     <div class="nudge" data-nudge="doctors" style="margin-bottom:12px;">Every doctor in the market: visits, follow-up rhythm, birthdays, prescriptions, samples and gifts — tracked together with their clinic's invoices.</div>
     <div class="chip-row" style="margin-bottom:8px;">
-      <div class="chip on" id="ddTabDb" onclick="ddTab='db'; renderDoctorsDb();">👨‍⚕️ Doctors</div>
-      <div class="chip" id="ddTabRx" onclick="ddTab='rx'; renderDoctorsDb();">💊 Prescriptions growth</div>
+      <div class="chip on" id="ddTabDb" onclick="ddTab='db'; renderDoctorsDb();"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg> Doctors</div>
+      <div class="chip" id="ddTabRx" onclick="ddTab='rx'; renderDoctorsDb();"><svg class="svgi" aria-hidden="true"><use href="#i-pill"/></svg> Prescriptions growth</div>
     </div>
     <div class="chip-row" style="margin-bottom:8px;" id="ddFilters"></div>
-    <input type="text" id="ddSearch" placeholder="🔍 Search doctors or clinics…" oninput="renderDoctorsDb()" style="margin-bottom:10px;">
+    <input type="text" id="ddSearch" placeholder="Search doctors or clinics…" oninput="renderDoctorsDb()" style="margin-bottom:10px;">
     <div id="ddBody"></div>
   </div>
 
   <div class="view" id="view-clanalysis">
-    <h2 style="font-size:22px; margin:0 0 4px;">🎯 Clinic Sales Analysis</h2>
+    <h2 style="font-size:22px; margin:0 0 4px;"><svg class="svgi" aria-hidden="true"><use href="#i-target"/></svg> Clinic Sales Analysis</h2>
     <div class="nudge" data-nudge="clanalysis" style="margin-bottom:12px;">Each clinic's share of the monthly target, what it bought, and what to sell next — built from the DSR targets, the ERP invoices, and the team's visit reports.</div>
     <div class="chip-row" style="margin-bottom:8px;" id="caRepChips"></div>
-    <input type="text" id="caSearch" placeholder="🔍 Search clinics…" oninput="renderClinicAnalysis()" style="margin-bottom:10px;">
+    <input type="text" id="caSearch" placeholder="Search clinics…" oninput="renderClinicAnalysis()" style="margin-bottom:10px;">
     <div id="caBody"></div>
   </div>
 
@@ -720,7 +770,7 @@
   <div class="view" id="view-reports">
     <div class="row-between" style="margin-bottom:14px;">
       <h2 style="font-size:18px; margin:0;">Report</h2>
-      <button class="chip small" onclick="openMonthReports()">📚 Month reports</button>
+      <button class="chip small" onclick="openMonthReports()"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg> Month reports</button>
     </div>
     <div class="chip-row" style="margin-bottom:10px;" id="reportRepFilter"></div>
     <div class="chip-row" style="margin-bottom:16px;">
@@ -728,7 +778,7 @@
       <div class="chip" id="repMonth" onclick="setReportRange(30)">This month</div>
       <div class="chip" id="repQuarter" onclick="setReportRange(90)">This quarter</div>
       <div class="chip" id="repAll" onclick="setReportRange(9999)">All time</div>
-      <div class="chip" id="repCustom" onclick="toggleReportCustom()">📅 Pick dates</div>
+      <div class="chip" id="repCustom" onclick="toggleReportCustom()"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg> Pick dates</div>
     </div>
     <div id="repCustomRow" style="display:none; margin-bottom:16px;" class="card">
       <div style="display:flex; gap:10px;">
@@ -738,10 +788,10 @@
       <button class="btn" style="margin-top:10px; padding:11px;" onclick="applyReportCustomRange()">Show this period</button>
     </div>
     <div class="chip-row" style="margin-bottom:16px;">
-      <div class="chip small" onclick="openCoverageBoard()">📋 Coverage</div>
-      <div class="chip small" onclick="openCompare()">🆚 Compare</div>
+      <div class="chip small" onclick="openCoverageBoard()"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg> Coverage</div>
+      <div class="chip small" onclick="openCompare()"><svg class="svgi" aria-hidden="true"><use href="#i-layers"/></svg> Compare</div>
     </div>
-    <div class="section-title" style="margin-top:0;">🧭 Sales coach — read this first</div>
+    <div class="section-title" style="margin-top:0;"><span><svg class="svgi" aria-hidden="true"><use href="#i-compass"/></svg> Sales coach — read this first</span></div>
     <div class="nudge" data-nudge="reports-coach" style="margin-bottom:10px;">The numbers below are summarized here as actions: red = do now, orange = keep an eye, green = working, do more of it.</div>
     <div id="coachCard" style="margin-bottom:16px;"></div>
     <div class="card">
@@ -767,7 +817,7 @@
     <div class="nudge" data-nudge="reports-perf" style="margin-bottom:12px;">📈 Numbers aren’t a verdict — they’re a map. Every metric below is something you can move this week.</div>
     <div id="scorecards"></div>
 
-    <button class="btn secondary" onclick="openReportTools()">📤 Export &amp; share this report</button>
+    <button class="btn secondary" onclick="openReportTools()"><svg class="svgi" aria-hidden="true"><use href="#i-share"/></svg> Export &amp; share this report</button>
   </div>
 
   <!-- MORE: everything that isn't daily work, grouped by category -->
@@ -784,9 +834,9 @@
   <div class="pr-toolbar">
     <button class="back" onclick="hideProReport()">&larr; Back to app</button>
     <span id="prLangBtns"></span>
-    <button class="print" onclick="downloadReportPdf()">⬇️ PDF</button>
-    <button class="print" onclick="window.print()">🖨 Print</button>
-    <button class="print" onclick="shareReportFile()">📤</button>
+    <button class="print" onclick="downloadReportPdf()"><svg class="svgi" aria-hidden="true"><use href="#i-download"/></svg> PDF</button>
+    <button class="print" onclick="window.print()"><svg class="svgi" aria-hidden="true"><use href="#i-printer"/></svg> Print</button>
+    <button class="print" onclick="shareReportFile()" aria-label="Share"><svg class="svgi" aria-hidden="true"><use href="#i-share"/></svg></button>
   </div>
   <div class="pr-doc" id="prDoc"></div>
 </div>
@@ -835,7 +885,7 @@
 </div>
 
 <div id="toast" dir="auto"></div>
-<button class="ai-fab" id="aiFab" style="display:none;" onclick="openAssistant()" aria-label="AI Assistant">✨</button>
+<button class="ai-fab" id="aiFab" style="display:none;" onclick="openAssistant()" aria-label="AI Assistant"><svg class="svgi" aria-hidden="true"><use href="#i-sparkles"/></svg></button>
 
 <script src="js/core.js"></script>
 <script>
@@ -843,7 +893,7 @@
 // This app expects a `window.storage` API (get/set/list/delete). Fill in
 // FIREBASE_CONFIG below (see README.md) to sync data across every device.
 // Until then it falls back to this browser's localStorage only.
-const APP_REV = 'v66'; // keep in step with sw.js CACHE version
+const APP_REV = 'v67'; // keep in step with sw.js CACHE version
 const LOGO_DATAURI = 'data:image/png;base64,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'; // official UltraMed primary logo (ultramedgcc.com), unmodified
 document.getElementById('gateLogo').src = LOGO_DATAURI; // single embedded copy serves both the gate and the reports
 const FIREBASE_CONFIG = {
@@ -1259,6 +1309,8 @@ const SAVE_MSGS = ['\u2705 Visit logged \u2014 momentum','\u{1F4AA} Logged. Onto
 function visitSavedMsg(){ return SAVE_MSGS[Math.floor(Math.random()*SAVE_MSGS.length)]; }
 function showToast(msg){ const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1800); }
 function esc(s){ return UMCore.esc(s); }
+// Chrome icon helper — renders one symbol from the inline sprite at text size
+function I(name){ return `<svg class="svgi" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
 function safeUrl(u){ return UMCore.safeUrl(u); }
 function initials(n){ return UMCore.initials(n); }
 function money(n){ return UMCore.money(n); }
@@ -1288,7 +1340,7 @@ function openAccountMenu(){
   showModal(`
     <h3 style="margin-top:0;">${esc(currentUser.name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(email)}</p>
-    ${FIREBASE_ENABLED ? `<button class="btn secondary" onclick="openChangePassword()">🔒 Change password</button>` : ''}
+    ${FIREBASE_ENABLED ? `<button class="btn secondary" onclick="openChangePassword()">${I('lock')} Change password</button>` : ''}
     <button class="btn ghost" onclick="closeModal(); switchUser();">Sign out</button>
   `);
 }
@@ -1338,7 +1390,7 @@ function renderGate(){
       <div class="gate-av" style="background:${(s.av==='linear-gradient(140deg,#0B3D22,#01150C)'?AVATARS[0]:s.av)||AVATARS[0]};">${initials(s.name)}</div>
       <div>
         <div class="gate-name">${esc(s.name)}</div>
-        <div class="gate-role">${s.role==='rep'?'🦷 Sales Rep':'⭐ Supervisor'}</div>
+        <div class="gate-role">${s.role==='rep'?I('tooth')+' Sales Rep':I('star')+' Supervisor'}</div>
       </div>
     </div>`;
   // Odd rep out gets a full-width tile so the grid never leaves a gap
@@ -2224,8 +2276,8 @@ function renderCalendar(){
       const isSel = d===calSelected, isToday = d===todayStr();
       const counts = [
         info.planned.length ? `<span style="color:var(--green);">${info.planned.length} planned</span>` : '',
-        info.visits.length ? `<span style="color:var(--sage);">${info.visits.length} visited</span>` : '',
-        info.followUps.length ? `<span style="color:var(--amber);">${info.followUps.length} follow-up${info.followUps.length>1?'s':''}</span>` : '',
+        info.visits.length ? `<span style="color:var(--sage-ink);">${info.visits.length} visited</span>` : '',
+        info.followUps.length ? `<span style="color:var(--amber-ink);">${info.followUps.length} follow-up${info.followUps.length>1?'s':''}</span>` : '',
         info.tasks.length ? `<span style="color:var(--purple);">${info.tasks.length} task${info.tasks.length>1?'s':''}</span>` : '',
         info.events.length ? `<span style="color:#3478F6;">${info.events.length} event${info.events.length>1?'s':''}</span>` : '',
       ].filter(Boolean).join(' · ');
@@ -2272,7 +2324,7 @@ function renderCalAgenda(){
   });
   info.followUps.forEach(c=>{
     rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${c.id}')">
-      <span class="tag" style="background:var(--amber-dim); color:var(--amber);">FOLLOW-UP</span>
+      <span class="tag" style="background:var(--amber-dim); color:var(--amber-ink);">FOLLOW-UP</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(c.name)}${repTag(c.rep)}</div>
         <div style="font-size:12px; color:var(--muted);">${statusLabel(c.nextFollowUp)}</div>
@@ -2282,7 +2334,7 @@ function renderCalAgenda(){
   info.visits.forEach(v=>{
     const kind = v.callOnly ? 'CALL' : v.orderOnly ? 'ORDER' : 'VISITED';
     rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${v.clinicId}')">
-      <span class="tag" style="background:var(--sage-dim); color:var(--sage);">${kind}</span>
+      <span class="tag" style="background:var(--sage-dim); color:var(--sage-ink);">${kind}</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(cname(v.clinicId))}${repTag(v.rep)}${jointTag(v)}</div>
         <div style="font-size:12px; color:var(--muted);">${v.orderTaken?'Order taken · '+money(v.orderTotal||0):(v.callOnly?'Remote follow-up':'No order')}</div>
@@ -2401,7 +2453,7 @@ function openEventForm(ev, dateStr){
     <label>Notes (optional)</label>
     <input type="text" id="evNotes" placeholder="Location, agenda, what to bring..." value="${ev&&ev.notes?esc(ev.notes):''}">
     <button class="btn" onclick="saveEventForm('${ev?ev.id:''}')">${isNew?'Add to calendar':'Save changes'}</button>
-    ${isNew?'':`<button class="btn secondary" style="margin-top:8px; color:var(--coral);" onclick="deleteEvent('${ev.id}')">Delete event</button>`}
+    ${isNew?'':`<button class="btn secondary" style="margin-top:8px; color:var(--coral-ink);" onclick="deleteEvent('${ev.id}')">Delete event</button>`}
   `);
 }
 async function saveEventForm(id){
@@ -2482,20 +2534,20 @@ function renderMore(){
       </div>
     </div>`;
   el.innerHTML = `
-    <div class="section-title">📦 Reference</div>
-    ${tile('📦','Products & prices','118 products, 13 brands',"switchView('products')")}
-    ${tile('🎯','Clinic sales analysis','Per-clinic targets, purchases and next moves',"switchView('clanalysis')")}
-    ${tile('👨‍⚕️','Doctors database','Profiles, birthdays, follow-up rhythm & prescriptions',"switchView('doctors')")}
-    ${tile('📖','Selling playbook','Tips per doctor specialty',"switchView('playbook')")}
-    ${tile('📚','Category guides','How to sell every category','openCategoryGuides()')}
-    <div class="section-title">👥 Team</div>
-    ${tile('💬','Team chat & memories','Messages and shared photos',"switchView('team')")}
-    ${tile('🏅','Achievements','Badges, streaks and milestones','openAchievements()')}
-    <div class="section-title">🛠️ Tools</div>
-    ${tile('📤','Export & share','CSV files and report sharing','openExport()')}
-    ${tile('🤖','Assistant','Ask anything about your data','openAssistant()')}
-    ${sup ? tile('📥','ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
-    ${sup ? tile('⚙️','Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}
+    <div class="section-title">Reference</div>
+    ${tile(I('package'),'Products & prices','118 products, 13 brands',"switchView('products')")}
+    ${tile(I('target'),'Clinic sales analysis','Per-clinic targets, purchases and next moves',"switchView('clanalysis')")}
+    ${tile(I('stethoscope'),'Doctors database','Profiles, birthdays, follow-up rhythm & prescriptions',"switchView('doctors')")}
+    ${tile(I('book'),'Selling playbook','Tips per doctor specialty',"switchView('playbook')")}
+    ${tile(I('layers'),'Category guides','How to sell every category','openCategoryGuides()')}
+    <div class="section-title">Team</div>
+    ${tile(I('chat'),'Team chat & memories','Messages and shared photos',"switchView('team')")}
+    ${tile(I('award'),'Achievements','Badges, streaks and milestones','openAchievements()')}
+    <div class="section-title">Tools</div>
+    ${tile(I('share'),'Export & share','CSV files and report sharing','openExport()')}
+    ${tile(I('bot'),'Assistant','Ask anything about your data','openAssistant()')}
+    ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
+    ${sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}
     <div style="text-align:center; color:var(--muted); font-size:11px; margin-top:14px;">UltraMed Clinical Sales Team · ${APP_REV}</div>`;
 }
 
@@ -2598,7 +2650,7 @@ function renderOccasionsCard(){
   const due = docs.filter(d=>d.cadenceStatus==='due').length;
   if(!bdays.length && !due){ el.innerHTML=''; return; }
   el.innerHTML = `<div class="card clickable" style="margin-bottom:14px; border-left:4px solid var(--gold);" onclick="switchView('doctors')">
-    <div style="font-weight:700; font-size:13.5px;">💐 Occasions & follow-ups</div>
+    <div style="font-weight:700; font-size:13.5px;">${I('gift')} Occasions & follow-ups</div>
     ${bdays.slice(0,3).map(d=>`<div style="font-size:12.5px; padding:2px 0;">🎂 <b>${esc(d.name)}</b> (${esc(d.clinicName)}) — ${d.birthdayIn===0?'birthday TODAY!':'in '+d.birthdayIn+' day'+(d.birthdayIn===1?'':'s')}</div>`).join('')}
     ${due?`<div style="font-size:12.5px; padding:2px 0;">⏰ <b>${due}</b> doctor${due===1?'':'s'} overdue for a scheduled visit</div>`:''}
     <div style="color:var(--muted); font-size:11px; margin-top:3px;">Open the doctors database ›</div>
@@ -2612,7 +2664,7 @@ function renderTargetCard(){
   if(withTargets.length===0){
     el.innerHTML = currentUser.role==='supervisor'
       ? `<div class="card clickable" onclick="openAdminPanel()" style="margin-bottom:14px;">
-          <div style="font-weight:700; font-size:14px;">🎯 Monthly targets</div>
+          <div style="font-weight:700; font-size:14px;">${I('target')} Monthly targets</div>
           <div style="color:var(--muted); font-size:12.5px; margin-top:2px;">Set sales and visit targets per rep in the admin panel to see live progress here.</div>
         </div>` : '';
     return;
@@ -2621,9 +2673,9 @@ function renderTargetCard(){
   // One compact line per rep — the detailed breakdown lives in Report.
   el.innerHTML = `<div class="card clickable" style="margin-bottom:14px;" onclick="switchView('reports')">
     <div class="row-between" style="margin-bottom:6px;">
-      <div style="font-weight:700; font-size:13.5px;">🎯 ${monthName} target</div>
+      <div style="font-weight:700; font-size:13.5px;">${I('target')} ${monthName} target</div>
       <span style="display:flex; gap:8px; align-items:center;">
-        <button class="chip small" onclick="event.stopPropagation(); openMonthReports()">📚 Months</button>
+        <button class="chip small" onclick="event.stopPropagation(); openMonthReports()">${I('book')} Months</button>
         <span style="color:var(--muted); font-size:11.5px;">details ›</span>
       </span>
     </div>
@@ -2662,7 +2714,7 @@ function renderMissedPlans(){
           <div class="clinic-sub">Planned ${fmtDate(m.date)}${currentUser.role==='supervisor'?' · '+esc(m.rep):''}${m.note?' · '+esc(m.note):''} · not visited</div>
         </div>
         <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
-          <button class="chip small" onclick="openReschedulePlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">📅 Reschedule</button>
+          <button class="chip small" onclick="openReschedulePlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">${I('calendar')} Reschedule</button>
           <button class="chip small" onclick="removeMissedPlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">✕</button>
         </div>
       </div>
@@ -2846,7 +2898,7 @@ async function addTask(){
   await persist('tasks');
   renderToday();
 }
-async function toggleTask(id){ const t = tasks.find(x=>x.id===id); if(t){ t.done = !t.done; await persist('tasks'); renderToday(); } }
+async function toggleTask(id){ const t = tasks.find(x=>x.id===id); if(t){ t.done = !t.done; if(t.done && navigator.vibrate) navigator.vibrate(10); await persist('tasks'); renderToday(); } }
 async function deleteTask(id){ tomb('tasks', id); tasks = tasks.filter(x=>x.id!==id); await persist('tasks'); renderToday(); }
 
 // ---- TODAY'S PLAN ----
@@ -3076,7 +3128,7 @@ function renderLogHistory(){
           <div class="clinic-name" style="font-size:13.5px;">${v.callOnly?(CHANNEL_LABELS[v.channel]||'📞')+' ':''}${v.orderOnly?'🛒 ':''}${esc(clinicNameOf(v.clinicId))}</div>
           <div class="clinic-sub">${fmtDate(v.date)} · ${esc(v.rep)}${jointTag(v)}${v.orderTaken?' · '+money(v.orderTotal):''}</div>
         </div>
-        ${canEditVisit(v)?`<button class="chip small" onclick="openEditVisit('${v.id}')">✏️</button>`:''}
+        ${canEditVisit(v)?`<button class="chip small" onclick="openEditVisit('${v.id}')">${I('pencil')}</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3371,7 +3423,7 @@ function renderOrders(){
       </div>
       <div style="font-size:13px; color:var(--muted); padding-top:10px;">
         <div class="row-between"><span>Subtotal</span><span>${money(gross)}</span></div>
-        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral);">− ${money(disc)}</span></div>
+        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${money(disc)}</span></div>
         <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${money(net)}</span></div>
       </div>
       <input type="text" placeholder="Order notes (optional)" value="${esc(o.notes)}" oninput="setDraftNotes('${o.id}',this.value)" style="margin-top:10px;">
@@ -3403,7 +3455,7 @@ function refreshOrderTotalsOnly(){
     const box = card.querySelector('div[style*="font-size:13px"]');
     if(box){
       box.innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(gross)}</span></div>
-        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral);">− ${money(disc)}</span></div>
+        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${money(disc)}</span></div>
         <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${money(gross-disc)}</span></div>`;
     }
   });
@@ -3515,8 +3567,8 @@ function confirmFollowUp(clinicId){
   showModal(`
     <h3 style="margin-top:0;">${esc(c.name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${statusLabel(c.nextFollowUp)}. What's the next step?</p>
-    <button class="btn" onclick="closeModal(); quickLogFrom('${c.id}')">✅ Log the visit now</button>
-    <button class="btn secondary" onclick="openRescheduleFollowUp('${c.id}')">📅 Not yet — reschedule</button>
+    <button class="btn" onclick="closeModal(); quickLogFrom('${c.id}')">${I('check')} Log the visit now</button>
+    <button class="btn secondary" onclick="openRescheduleFollowUp('${c.id}')">${I('calendar')} Not yet — reschedule</button>
     <button class="btn ghost" onclick="clearFollowUp('${c.id}')">Clear — no longer needed</button>
   `);
 }
@@ -3682,9 +3734,9 @@ function erpDashSection(){
         <div class="row-between">
           <div>
             <div class="clinic-name">${esc(b.name)}${b.clinicId?'':' <span style="font-size:11px; color:var(--muted);">⚠ not linked</span>'}</div>
-            <div class="clinic-sub">${esc(b.rep)} · ${b.invoices} invoice${b.invoices===1?'':'s'} · last ${fmtDate(b.last)}${b.ret>0?` · <span style="color:var(--coral);">↩ ${money(b.ret)} returned</span>`:''}</div>
+            <div class="clinic-sub">${esc(b.rep)} · ${b.invoices} invoice${b.invoices===1?'':'s'} · last ${fmtDate(b.last)}${b.ret>0?` · <span style="color:var(--coral-ink);">↩ ${money(b.ret)} returned</span>`:''}</div>
           </div>
-          <div style="font-weight:800; ${b.net<0?'color:var(--coral);':''}">${money(b.net)}</div>
+          <div style="font-weight:800; ${b.net<0?'color:var(--coral-ink);':''}">${money(b.net)}</div>
         </div>
       </div>`).join('') + (clinicBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${clinicBuyers.length-40} more</div>`:'');
   return `
@@ -3692,10 +3744,10 @@ function erpDashSection(){
     <h4>🧾 Customer sales — who bought & who didn't</h4>
     <div class="csub">${d.periodLabel} · from the uploaded sales files${d.maxDate?' · to '+fmtDate(d.maxDate):''}</div>
     <div class="kpi4" style="margin:10px 0 4px;">
-      <div class="k"><div class="ki">🛒</div><div class="kn">${clinicBuyers.length}</div><div class="kl">Bought · ${money(buyersNet)}</div></div>
-      <div class="k"><div class="ki">⭕</div><div class="kn" style="color:${d.nonBuyers.length?'var(--coral)':'var(--sage)'};">${d.nonBuyers.length}</div><div class="kl">Didn't buy yet</div></div>
-      <div class="k"><div class="ki">🌐</div><div class="kn">${money(channelNet)}</div><div class="kl">Online / channels</div></div>
-      <div class="k"><div class="ki">↩️</div><div class="kn" style="color:${returnedTotal>0?'var(--coral)':'var(--sage)'};">${money(returnedTotal)}</div><div class="kl">Returned</div></div>
+      <div class="k"><div class="ki">${I('cart')}</div><div class="kn">${clinicBuyers.length}</div><div class="kl">Bought · ${money(buyersNet)}</div></div>
+      <div class="k"><div class="ki">${I('target')}</div><div class="kn" style="color:${d.nonBuyers.length?'var(--coral-ink)':'var(--sage-ink)'};">${d.nonBuyers.length}</div><div class="kl">Didn't buy yet</div></div>
+      <div class="k"><div class="ki">${I('globe')}</div><div class="kn">${money(channelNet)}</div><div class="kl">Online / channels</div></div>
+      <div class="k"><div class="ki">${I('refresh')}</div><div class="kn" style="color:${returnedTotal>0?'var(--coral-ink)':'var(--sage-ink)'};">${money(returnedTotal)}</div><div class="kl">Returned</div></div>
     </div>
     ${donut}
   </div>
@@ -3752,12 +3804,12 @@ function renderClinicDash(){
 
   el.innerHTML = `
   <div class="kpi4">
-    <div class="k"><div class="ki">\u{1F3E5}</div><div class="kn">${pool.length}</div><div class="kl">Active clinics</div></div>
-    <div class="k"><div class="ki">\u{1F4B0}</div><div class="kn">${money(totRev)}</div><div class="kl">Total sales</div></div>
-    <div class="k"><div class="ki">\u{1F45F}</div><div class="kn">${totVisits}</div><div class="kl">Visits logged</div></div>
-    <div class="k"><div class="ki">\u{1F91D}</div><div class="kn">${totOrders}</div><div class="kl">Orders \u00b7 ${totVisits?Math.round(totOrders/totVisits*100):0}% conv.</div></div>
-    <div class="k"><div class="ki">\u{1F468}\u200D\u2695\uFE0F</div><div class="kn">${totDocs}</div><div class="kl">Doctors on file</div></div>
-    <div class="k"><div class="ki">\u{1F3F7}\uFE0F</div><div class="kn" style="color:var(--coral);">${money(totDisc)}</div><div class="kl">Discount given</div></div>
+    <div class="k"><div class="ki">${I('building')}</div><div class="kn">${pool.length}</div><div class="kl">Active clinics</div></div>
+    <div class="k"><div class="ki">${I('chart')}</div><div class="kn">${money(totRev)}</div><div class="kl">Total sales</div></div>
+    <div class="k"><div class="ki">${I('calendar')}</div><div class="kn">${totVisits}</div><div class="kl">Visits logged</div></div>
+    <div class="k"><div class="ki">${I('cart')}</div><div class="kn">${totOrders}</div><div class="kl">Orders \u00b7 ${totVisits?Math.round(totOrders/totVisits*100):0}% conv.</div></div>
+    <div class="k"><div class="ki">${I('stethoscope')}</div><div class="kn">${totDocs}</div><div class="kl">Doctors on file</div></div>
+    <div class="k"><div class="ki">${I('gift')}</div><div class="kn" style="color:var(--coral-ink);">${money(totDisc)}</div><div class="kl">Discount given</div></div>
   </div>
 
   ${erpDashSection()}
@@ -3844,13 +3896,13 @@ function clinicNextAction(c, stats){
   const fs = followStatus(c.nextFollowUp);
   if(fs==='overdue'){
     const days = daysBetween(c.nextFollowUp, todayStr());
-    return {icon:'⏰', cls:'overdue', text:`Follow-up overdue by ${days}d (${fmtDate(c.nextFollowUp)}) — reschedule it now`, reschedule:true};
+    return {icon:I('bell'), cls:'overdue', text:`Follow-up overdue by ${days}d (${fmtDate(c.nextFollowUp)}) — reschedule it now`, reschedule:true};
   }
-  if(fs==='today') return {icon:'📌', cls:'today', text:'Follow-up due TODAY — keep the promise', reschedule:false};
-  if(stats.total===0) return {icon:'🆕', cls:'never', text:'Never visited — book a first visit', reschedule:false};
+  if(fs==='today') return {icon:I('target'), cls:'today', text:'Follow-up due TODAY — keep the promise', reschedule:false};
+  if(stats.total===0) return {icon:I('sparkles'), cls:'never', text:'Never visited — book a first visit', reschedule:false};
   if(stats.daysSince!=null && stats.daysSince>=30 && fs!=='upcoming')
-    return {icon:'😴', cls:'dormant', text:`Quiet for ${stats.daysSince}d — plan a revisit and set a follow-up`, reschedule:false};
-  if(fs==='upcoming') return {icon:'🗓️', cls:'ok', text:`Next follow-up ${fmtDate(c.nextFollowUp)}`, reschedule:false};
+    return {icon:I('coffee'), cls:'dormant', text:`Quiet for ${stats.daysSince}d — plan a revisit and set a follow-up`, reschedule:false};
+  if(fs==='upcoming') return {icon:I('calendar'), cls:'ok', text:`Next follow-up ${fmtDate(c.nextFollowUp)}`, reschedule:false};
   return {icon:'▫️', cls:'none', text:`Last visit ${stats.daysSince}d ago — no follow-up set, schedule one`, reschedule:false};
 }
 function renderClinics(){
@@ -3909,7 +3961,7 @@ function renderClinics(){
       </div>
       <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
         <div style="flex:1; font-size:12.5px; line-height:1.45; color:${actColor[act.cls]||'var(--muted)'};">${act.icon} ${act.text}</div>
-        ${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">📅 Reschedule</button>`:''}
+        ${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">${I('calendar')} Reschedule</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3932,7 +3984,7 @@ function openAddClinic(){
       <div class="chip" data-deal="prescription" onclick="pickModalCls(this)">℞ Prescription</div>
     </div>
     <label>New customer?</label>
-    <div class="chip-row" id="mClinicNew"><div class="chip" data-new="yes" onclick="pickModalCls(this)">🆕 Yes, new customer</div><div class="chip on" data-new="no" onclick="pickModalCls(this)">Existing</div></div>
+    <div class="chip-row" id="mClinicNew"><div class="chip" data-new="yes" onclick="pickModalCls(this)">${I('sparkles')} Yes, new customer</div><div class="chip on" data-new="no" onclick="pickModalCls(this)">Existing</div></div>
     <label>Contact person</label>
     <input type="text" id="mClinicContact" placeholder="Optional">
     <label>Phone</label>
@@ -3974,7 +4026,7 @@ function openClinicDetail(id){
     <div class="chip-row" style="margin-bottom:14px;">
       ${c.account?`<span class="chip small" style="background:var(--green-dim); color:var(--green-dark);">💳 ${esc(c.account)}</span>`:''}
       ${c.dealType?`<span class="chip small" style="background:var(--teal-dim); color:var(--teal);">${c.dealType==='prescription'?'℞ Prescription':'🛒 Direct sales'}</span>`:''}
-      ${c.isNew?`<span class="chip small" style="background:var(--amber-dim); color:var(--amber);">🆕 New customer</span>`:''}
+      ${c.isNew?`<span class="chip small" style="background:var(--amber-dim); color:var(--amber-ink);">${I('sparkles')} New customer</span>`:''}
     </div>
     <div style="display:flex; gap:8px; margin-bottom:16px;">
       <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -3982,10 +4034,10 @@ function openClinicDetail(id){
     </div>
     <button class="btn" onclick="quickLogFrom('${c.id}'); closeModal();">Log a visit here</button>
     <div class="chip-row" style="margin-top:10px;">
-      <div class="chip small" onclick="openStandaloneOrder('${c.id}')">🛒 Order only</div>
-      <div class="chip small" onclick="openCallLog('${c.id}')">📞 Log a call</div>
-      ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">📅 Today's plan</div>` : ''}
-      ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">✏️ Edit</div>` : ''}
+      <div class="chip small" onclick="openStandaloneOrder('${c.id}')">${I('cart')} Order only</div>
+      <div class="chip small" onclick="openCallLog('${c.id}')">${I('phone')} Log a call</div>
+      ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">${I('calendar')} Today's plan</div>` : ''}
+      ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">${I('pencil')} Edit</div>` : ''}
     </div>
 
     <div class="section-title" style="margin-top:20px;">Clinic profile notes</div>
@@ -4002,7 +4054,7 @@ function openClinicDetail(id){
     ${renderClinicOrders(id)}
     ${clinicErpSection(id)}
 
-    <div class="section-title" style="margin-top:20px;">💬 No-sales reason</div>
+    <div class="section-title" style="margin-top:20px;"><span>${I('chat')} No-sales reason</span></div>
     <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">If this account isn't buying yet, note why (e.g. prescription-only, budget cycle, stock on hand) — shown in the management report.</p>
     <div style="display:flex; gap:6px; align-items:center;">
       <input type="text" value="${esc(c.noSaleReason||'')}" placeholder="e.g. Works on prescriptions — patients buy from pharmacy"
@@ -4012,7 +4064,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
-      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
+      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber-ink); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
         ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c.name)}')">`).join('')}</div>`:''}
       </div>`).join('')}
   `);
@@ -4034,7 +4086,7 @@ function renderClinicOrders(clinicId){
     rows.map(r=>{
       const items = r.o.items.map(it=>orderItemName(it)+' ×'+it.qty).join(', ');
       return `<div class="visit-hist">
-        <strong>${fmtDate(r.date)}</strong> · ${money(r.o.total)}${r.o.discountPct?` <span style="color:var(--coral);">(−${r.o.discountPct}%)</span>`:''} · ${esc(r.rep)}
+        <strong>${fmtDate(r.date)}</strong> · ${money(r.o.total)}${r.o.discountPct?` <span style="color:var(--coral-ink);">(−${r.o.discountPct}%)</span>`:''} · ${esc(r.rep)}
         <br>${esc(items)}${r.o.notes?'<br><em>'+esc(r.o.notes)+'</em>':''}
       </div>`;
     }).join('');
@@ -4131,7 +4183,7 @@ function clinicErpSection(clinicId){
   const led = clinicErpLedger(clinicId);
   if(!led.ret.length && !led.foc.length) return '';
   const retRows = led.ret.map(r=>`<div class="visit-hist" style="border-left:3px solid ${isExchangeLine(r)?'var(--gold)':'var(--coral)'}; padding-left:10px;">
-      <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · <span style="color:var(--coral); font-weight:700;">−${money(r.retAmount)}</span> <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
+      <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · <span style="color:var(--coral-ink); font-weight:700;">−${money(r.retAmount)}</span> <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
       ${retKindChips(r)}
       ${erpNoteInput(erpNoteKey('ret', r))}
     </div>`).join('');
@@ -4262,7 +4314,7 @@ function openEditProduct(key){
     <input type="text" id="epBrand" value="${esc(p.brand||'')}">
     <label>Product code</label>
     <input type="text" id="epCode" value="${esc(p.id)}">
-    ${sharing>1?`<p style="color:var(--coral); font-size:12.5px; margin-top:6px;">⚠️ ${sharing} products share this code. Giving each a unique code prevents pricing mistakes.</p>`:''}
+    ${sharing>1?`<p style="color:var(--coral-ink); font-size:12.5px; margin-top:6px;">⚠️ ${sharing} products share this code. Giving each a unique code prevents pricing mistakes.</p>`:''}
     <label>Price (KD)</label>
     <input type="number" step="0.01" min="0" id="epPrice" value="${p.price!=null?p.price:''}">
     <label>Description</label>
@@ -4539,10 +4591,10 @@ function openStandaloneOrder(prefillClinicId){
   soItems = {}; soDiscount = 0;
   soNewClinicMode = false;
   showModal(`
-    <h3 style="margin-top:0;">🛒 Add order</h3>
+    <h3 style="margin-top:0;">${I('cart')} Add order</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone or remote orders — recorded as revenue, not as a field visit.</p>
     <label>Clinic</label>
-    <input type="text" id="soClinicSearch" placeholder="🔍 Search clinics..." oninput="renderSoClinics()" style="margin-bottom:8px;">
+    <input type="text" id="soClinicSearch" placeholder="Search clinics..." oninput="renderSoClinics()" style="margin-bottom:8px;">
     <div id="soClinicPick"></div>
     <button class="btn secondary small" id="soNewClinicBtn" onclick="startSoNewClinic()">+ Add a new customer</button>
     <div id="soNewClinicFields" style="display:none; margin-top:10px;">
@@ -4555,7 +4607,7 @@ function openStandaloneOrder(prefillClinicId){
     <label>Date</label>
     <input type="date" id="soDate" value="${todayStr()}" max="${todayStr()}">
     <label>Products</label>
-    <input type="text" id="soProdSearch" placeholder="🔍 Search products..." oninput="renderSoProducts()" style="margin-bottom:8px;">
+    <input type="text" id="soProdSearch" placeholder="Search products..." oninput="renderSoProducts()" style="margin-bottom:8px;">
     <div class="chip-row" id="soProdChips" style="max-height:160px; overflow-y:auto;"></div>
     <div id="soQtyWrap"></div>
     <label>Discount</label>
@@ -4651,7 +4703,7 @@ function renderSoTotal(){
   const t = soTotals();
   el.innerHTML = `
     <div class="row-between" style="font-size:13px;"><span>Subtotal</span><span>${money(t.gross)}</span></div>
-    ${soDiscount?`<div class="row-between" style="font-size:12.5px; color:var(--coral); margin-top:4px;"><span>Discount (${soDiscount}%)</span><span>− ${money(t.disc)}</span></div>`:''}
+    ${soDiscount?`<div class="row-between" style="font-size:12.5px; color:var(--coral-ink); margin-top:4px;"><span>Discount (${soDiscount}%)</span><span>− ${money(t.disc)}</span></div>`:''}
     <div class="row-between" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-weight:700;"><span>Order total</span><span>${money(t.net)}</span></div>`;
 }
 async function saveStandaloneOrder(){
@@ -4708,14 +4760,14 @@ function openCallLog(prefillClinicId){
   clDoctorId = null;
   clNewClinicMode = false;
   showModal(`
-    <h3 style="margin-top:0;">📞 Log a call / follow-up</h3>
+    <h3 style="margin-top:0;">${I('phone')} Log a call / follow-up</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone calls, WhatsApp, or anything that isn't a field visit — counted as real work, not a clinic visit.</p>
     <label>Channel</label>
     <div class="chip-row" id="clChannelChips">
       ${[['call','📞 Call'],['whatsapp','💬 WhatsApp'],['email','✉️ Email'],['other','💭 Other']].map(([k,l],i)=>`<div class="chip small ${i===0?'on':''}" data-ch="${k}" onclick="pickModalCls(this)">${l}</div>`).join('')}
     </div>
     <label>Clinic</label>
-    <input type="text" id="clClinicSearch" placeholder="🔍 Search clinics..." oninput="renderClClinics()" style="margin-bottom:8px;">
+    <input type="text" id="clClinicSearch" placeholder="Search clinics..." oninput="renderClClinics()" style="margin-bottom:8px;">
     <div id="clClinicPick"></div>
     <button class="btn secondary small" id="clNewClinicBtn" onclick="startClNewClinic()">+ Add a new customer</button>
     <div id="clNewClinicFields" style="display:none; margin-top:10px;">
@@ -5026,7 +5078,7 @@ function requireAdmin(){
 function openAdminPanel(){
   if(!requireAdmin()) return;
   showModal(`
-    <h3 style="margin-top:0;">⚙️ Admin panel</h3>
+    <h3 style="margin-top:0;">${I('settings')} Admin panel</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Supervisor tools — team oversight and data management.</p>
     <div class="chip-row" style="margin-bottom:14px;">
       <div class="chip small on" id="apTabTeam" onclick="setAdminTab('team')">Team</div>
@@ -5147,7 +5199,7 @@ function adminTeamStatsHTML(){
         <div class="kpi"><div class="n">${money(moRev)}</div><div class="l">Sales 30 days</div></div>
         <div class="kpi"><div class="n">${coverage}%</div><div class="l">Coverage 30 days</div></div>
         <div class="kpi"><div class="n">${myClinics.length}</div><div class="l">Clinics assigned</div></div>
-        <div class="kpi"><div class="n" style="${overdue?'color:var(--coral);':''}">${overdue}</div><div class="l">Overdue follow-ups</div></div>
+        <div class="kpi"><div class="n" style="${overdue?'color:var(--coral-ink);':''}">${overdue}</div><div class="l">Overdue follow-ups</div></div>
       </div>
       ${openTasks?`<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">${openTasks} open task${openTasks===1?'':'s'}</div>`:''}
     </div>`;
@@ -5160,7 +5212,7 @@ function adminTeamStatsHTML(){
 function adminTerritoryHTML(){
   return `
     <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Move a clinic to a different rep. Visit history stays with the clinic.</p>
-    <input type="text" id="apTerrSearch" placeholder="🔍 Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
+    <input type="text" id="apTerrSearch" placeholder="Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
     <div class="chip-row" style="margin-bottom:10px;" id="apTerrFilter">
       <div class="chip small on" data-f="all" onclick="setTerrFilter(this,'all')">All</div>
       ${REPS.map(r=>`<div class="chip small" data-f="${esc(r)}" onclick="setTerrFilter(this,'${esc(r)}')">${esc(r)}</div>`).join('')}
@@ -5188,7 +5240,7 @@ function renderAdminTerritory(){
     const vCount = visits.filter(v=>v.clinicId===c.id).length;
     return `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c.cls)};">
       <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral);">unassigned</span>'}</div>
+      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}</div>
       <div class="chip-row">
         ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
       </div>
@@ -5249,7 +5301,7 @@ function adminHealthHTML(){
           <div class="clinic-name">${label}</div>
           ${n?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(items.slice(0,4).map(x=>typeof x==='string'?x:x.name).join(', '))}${n>4?' +'+(n-4)+' more':''}</div>`:'<div class="clinic-sub">All good ✅</div>'}
         </div>
-        <strong style="${n?'color:'+color+';':'color:var(--sage);'} font-size:19px;">${n}</strong>
+        <strong style="${n?'color:'+color+';':'color:var(--sage-ink);'} font-size:19px;">${n}</strong>
       </div>
     </div>`;
   };
@@ -5273,7 +5325,7 @@ function adminHealthHTML(){
 function adminPricesHTML(){
   return `
     <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Update a price and it applies to all future orders. Past orders keep their original value.</p>
-    <input type="text" id="apPriceSearch" placeholder="🔍 Search product or brand..." oninput="renderAdminPrices()" style="margin-bottom:10px;">
+    <input type="text" id="apPriceSearch" placeholder="Search product or brand..." oninput="renderAdminPrices()" style="margin-bottom:10px;">
     <div id="apPriceBody"></div>`;
 }
 function renderAdminPrices(){
@@ -5313,10 +5365,10 @@ function openVisitLog(){
       <div class="chip small" id="vlQuarter" onclick="setVisitLogRange(90)">Quarter</div>
       <div class="chip small" id="vlAll" onclick="setVisitLogRange(9999)">All time</div>
     </div>
-    <input type="text" id="vlSearch" placeholder="🔍 Search clinic or notes..." oninput="renderVisitLog()" style="margin-bottom:12px;">
+    <input type="text" id="vlSearch" placeholder="Search clinic or notes..." oninput="renderVisitLog()" style="margin-bottom:12px;">
     <div id="vlSummary"></div>
     <div id="vlBody"></div>
-    <button class="btn secondary" onclick="openPhotoGallery()">📸 Photo gallery</button>
+    <button class="btn secondary" onclick="openPhotoGallery()">${I('camera')} Photo gallery</button>
     <button class="btn secondary" onclick="copyVisitLog()">Copy log as text</button>
     <button class="btn" onclick="closeModal()">Done</button>
   `);
@@ -5360,7 +5412,7 @@ function renderVisitLog(){
     <div class="card" style="background:var(--teal-dim); margin-bottom:12px;">
       <div class="row-between"><span style="font-size:13px;">Field visits</span><strong>${fieldVisits.length}</strong></div>
       ${orderOnly.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Phone/remote orders</span><span>${orderOnly.length}</span></div>`:''}
-      ${calls.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>📞 Calls logged</span><span>${calls.length}</span></div>`:''}
+      ${calls.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>${I('phone')} Calls logged</span><span>${calls.length}</span></div>`:''}
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Contacts seen</span><span>${rows.reduce((s,v)=>s+UMCore.contactCount(v),0)}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
@@ -5402,7 +5454,7 @@ function openPhotoGallery(){
   const withPhotos = visibleVisits().filter(v=>v.photos && v.photos.length).sort((a,b)=>b.date.localeCompare(a.date));
   const cname = id => clinicLabel(id);
   showModal(`
-    <h3 style="margin-top:0;">📸 Visit photos</h3>
+    <h3 style="margin-top:0;">${I('camera')} Visit photos</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${withPhotos.reduce((s,v)=>s+v.photos.length,0)} photo${withPhotos.reduce((s,v)=>s+v.photos.length,0)===1?'':'s'} across ${withPhotos.length} visit${withPhotos.length===1?'':'s'}. Tap any photo to view it full size.</p>
     ${withPhotos.length===0 ? '<div class="empty">No photos yet — attach them when logging a visit.</div>' :
       withPhotos.map(v=>`
@@ -5645,7 +5697,7 @@ function openManageClinics(){
   if(!requireAdmin()) return;
   _clinicImport = null; _mgSelected = new Set();
   showModal(`
-    <h3 style="margin-top:0;">⚙️ Manage clinics</h3>
+    <h3 style="margin-top:0;">${I('settings')} Manage clinics</h3>
     <button class="btn" style="margin:6px 0 4px; background:var(--teal);" onclick="openMissingClinics()">🔍 العيادات الناقصة — افحص وأرجِع</button>
     <div class="section-title" style="margin-top:6px;">📥 Import clinics from Excel / CSV</div>
     <p style="color:var(--muted); font-size:12.5px; margin:0 0 8px;">Any sheet works: Arabic or English headers (اسم العيادة، رقم الهاتف، المندوبة…) — or just a plain list of names with phone numbers next to them. Duplicates are detected by name.</p>
@@ -5716,12 +5768,12 @@ async function handleClinicSheet(input){
         const r = UMCore.parseClinicRows(sh.rows);
         if(!r.error && (!best || r.clinics.length > best.clinics.length)) best = r;
       }
-      if(!best){ prev.innerHTML = '<div style="color:var(--coral); font-size:13px;">No clinic names recognized in this file.</div>'; return; }
+      if(!best){ prev.innerHTML = '<div style="color:var(--coral-ink); font-size:13px;">No clinic names recognized in this file.</div>'; return; }
       rows = best;
     } else {
       const text = await f.text();
       rows = UMCore.parseClinicRows(UMCore.parseCsvText(text));
-      if(rows.error){ prev.innerHTML = '<div style="color:var(--coral); font-size:13px;">No clinic names recognized in this file.</div>'; return; }
+      if(rows.error){ prev.innerHTML = '<div style="color:var(--coral-ink); font-size:13px;">No clinic names recognized in this file.</div>'; return; }
     }
     const norm = n => UMCore.normClinicName(n);
     const existing = new Map(clinics.map(c=>[norm(c.name), c]));
@@ -5741,14 +5793,14 @@ async function handleClinicSheet(input){
               <input type="checkbox" checked onchange="_clinicImport.rows[${i}].include=this.checked">
               <span><b>${esc(x.data.name)}</b><span style="color:var(--muted); font-size:11.5px;"> ${x.data.phone?'· '+esc(x.data.phone):''}${x.data.rep?' · '+esc(x.data.rep):''}${x.data.cls?' · '+x.data.cls:''}</span></span>
             </label>
-            ${x.dup?'<span class="rep-tag" style="flex-shrink:0;">exists</span>':'<span style="color:var(--sage); font-size:11px; flex-shrink:0;">new</span>'}
+            ${x.dup?'<span class="rep-tag" style="flex-shrink:0;">exists</span>':'<span style="color:var(--sage-ink); font-size:11px; flex-shrink:0;">new</span>'}
           </div>`).join('')}
         ${list.length>60?`<div style="color:var(--muted); font-size:12px; text-align:center; padding:6px;">+${list.length-60} more (all included)</div>`:''}
       </div>
       <button class="btn" style="margin-top:10px;" onclick="commitClinicImport()">Add clinics</button>`;
   }catch(e){
     console.error(e);
-    prev.innerHTML = '<div style="color:var(--coral); font-size:13px;">Could not read this file — save it as .xlsx or .csv and retry.</div>';
+    prev.innerHTML = '<div style="color:var(--coral-ink); font-size:13px;">Could not read this file — save it as .xlsx or .csv and retry.</div>';
   }
 }
 async function commitClinicImport(){
@@ -5825,7 +5877,7 @@ function renderProducts(){
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
       <div class="brand-body ${open?'open':''}" id="brand-${slugify(b)}">
-        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -5899,7 +5951,7 @@ function findCatalogProduct(name){
   return bestScore >= 0.5 ? best : null;
 }
 const BRAND_TILE_COLORS = {waterpik:'#0E7490', philips:'#1D4ED8', tepe:'#CA8A04', hismile:'#7C3AED', flash:'#DC2626', undo:'#0F766E', univet:'#334155', silonn:'#9333EA', intensiv:'#B45309', eversmile:'#0891B2', bundles:'#15803D', 'the breath co':'#166534', 'beverly hills':'#991B1B', 'b&l biotech':'#3F6212', shenzhen:'#6D28D9'};
-function prodThumb(name, size){
+function playbookThumb(name, size){
   size = size || 44;
   const pr = findCatalogProduct(name);
   if(pr && pr.img) return `<img src="${esc(pr.img)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display='none'" style="width:${size}px; height:${size}px; object-fit:contain; border-radius:8px; background:#fff; border:1px solid var(--line); flex-shrink:0;">`;
@@ -5924,8 +5976,8 @@ function renderDoctorsDb(){
   const dueN = docs.filter(d=>d.cadenceStatus==='due').length;
   const bdayN = docs.filter(d=>d.birthdayIn!=null && d.birthdayIn<=14).length;
   filtersEl.innerHTML = [
-    ['all', `All (${docs.length})`], ['due', `⏰ Follow-up due (${dueN})`],
-    ['bday', `🎂 Birthdays soon (${bdayN})`], ['rx', `💊 On prescriptions`],
+    ['all', `All (${docs.length})`], ['due', `${I('bell')} Follow-up due (${dueN})`],
+    ['bday', `${I('cake')} Birthdays soon (${bdayN})`], ['rx', `${I('pill')} On prescriptions`],
   ].map(([k,l])=>`<div class="chip small ${ddFilter===k?'on':''}" onclick="ddFilter='${k}'; renderDoctorsDb();">${l}</div>`).join('');
   let list = docs;
   if(ddFilter==='due') list = list.filter(d=>d.cadenceStatus==='due');
@@ -5942,9 +5994,9 @@ function renderDoctorsDb(){
   const pctDone = totalFields ? Math.max(0, Math.round((1 - dataGaps().reduce((s2,g)=>s2+g.miss.length,0)/totalFields)*100)) : 100;
   body.innerHTML = `
     <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
-      ${currentUser.role==='supervisor'?`<button class="chip small" onclick="openContactImport()">📥 Import contacts</button>`:''}
-      <button class="chip small" style="${gaps?'border-color:var(--gold); color:var(--gold);':''}" onclick="openDataEntry()">✍️ Complete data ${gaps?`(${gaps})`:'✓'}</button>
-      <button class="chip small" onclick="exportDoctorsDbXlsx()">📤 Export (Excel)</button>
+      ${currentUser.role==='supervisor'?`<button class="chip small" onclick="openContactImport()">${I('download')} Import contacts</button>`:''}
+      <button class="chip small" style="${gaps?'border-color:var(--gold); color:var(--amber-ink); font-weight:700;':''}" onclick="openDataEntry()">${I('pencil')} Complete data ${gaps?`(${gaps})`:'✓'}</button>
+      <button class="chip small" onclick="exportDoctorsDbXlsx()">${I('share')} Export (Excel)</button>
       <span class="chip small" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
     </div>
     ` + (list.map(d=>{
@@ -5956,8 +6008,8 @@ function renderDoctorsDb(){
           <div class="clinic-sub">${esc(d.clinicName)}${currentUser.role==='supervisor'?' · '+esc(d.rep):''} · ${d.fieldVisits} visit${d.fieldVisits===1?'':'s'}${d.calls?` · ${d.calls} call${d.calls===1?'':'s'}`:''}${d.lastVisit?` · last ${fmtDate(d.lastVisit)}`:' · never visited'}</div>
         </div>
         <div style="text-align:left; flex-shrink:0; display:flex; flex-direction:column; gap:3px; align-items:flex-end;">
-          ${d.cadenceStatus==='due'?`<span class="badge overdue">⏰ ${d.overdueDays}d late</span>`:d.cadence?`<span class="badge upcoming">✓ ${esc(d.cadence)}</span>`:''}
-          ${d.birthdayIn!=null && d.birthdayIn<=14?`<span class="badge today">🎂 ${d.birthdayIn===0?'TODAY':'in '+d.birthdayIn+'d'}</span>`:''}
+          ${d.cadenceStatus==='due'?`<span class="badge overdue">${I('bell')} ${d.overdueDays}d late</span>`:d.cadence?`<span class="badge upcoming">✓ ${esc(d.cadence)}</span>`:''}
+          ${d.birthdayIn!=null && d.birthdayIn<=14?`<span class="badge today">${I('cake')} ${d.birthdayIn===0?'TODAY':'in '+d.birthdayIn+'d'}</span>`:''}
           ${d.handovers.rxMonth?`<span style="font-size:10.5px; color:var(--teal); font-weight:700;">💊 ${d.handovers.rxMonth} this month</span>`:''}
         </div>
       </div>
@@ -5970,7 +6022,7 @@ function renderRxStats(body, docs){
   const gTag = v => `<span style="font-weight:800; color:${v>0?'var(--sage)':v<0?'var(--coral)':'var(--muted)'};">${v>0?'▲':v<0?'▼':'•'} ${Math.abs(v)}%</span>`;
   body.innerHTML = `
     <div class="card" style="margin-bottom:10px;">
-      <div style="font-weight:800; font-size:14px; margin-bottom:8px;">💊 Prescriptions distributed</div>
+      <div style="font-weight:800; font-size:14px; margin-bottom:8px;">${I('pill')} Prescriptions distributed</div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; text-align:center;">
         <div style="background:var(--paper); border-radius:10px; padding:10px;">
           <div style="font-size:20px; font-weight:800;">${g.totals.week}</div>
@@ -5985,16 +6037,16 @@ function renderRxStats(body, docs){
       </div>
       <div style="color:var(--muted); font-size:11px; margin-top:6px;">Growth = هذا الأسبوع/الشهر مقابل الذي قبله — سجّلي كل بريسكريبشن من ملف الطبيب ليُحسب هنا.</div>
     </div>
-    <div class="section-title">👨‍⚕️ By doctor</div>
+    <div class="section-title"><span>${I('stethoscope')} By doctor</span></div>
     ${g.byDoctor.length?`<div class="card" style="padding:10px 12px;">${g.byDoctor.map(d=>`
       <div class="spec-row"><span class="k">${esc(d.name)} <span style="color:var(--muted); font-size:10.5px;">${esc(d.clinicName)}</span></span>
       <span class="v">W:<b>${d.week}</b> ${gTag(d.weekGrowth)} · M:<b>${d.month}</b> ${gTag(d.monthGrowth)}</span></div>`).join('')}</div>`
       :'<div class="empty">No prescriptions logged yet — open a doctor\'s profile and log the first one.</div>'}
-    <div class="section-title">🏥 By center</div>
+    <div class="section-title"><span>${I('building')} By center</span></div>
     ${g.byClinic.length?`<div class="card" style="padding:10px 12px;">${g.byClinic.map(c=>`
       <div class="spec-row"><span class="k">${esc(c.name)} <span style="color:var(--muted); font-size:10.5px;">${c.doctors} doctor${c.doctors===1?'':'s'}</span></span>
       <span class="v">W:<b>${c.week}</b> ${gTag(c.weekGrowth)} · M:<b>${c.month}</b> ${gTag(c.monthGrowth)}</span></div>`).join('')}</div>`:''}
-    ${g.byDoctor.length?`<button class="chip small" style="margin-top:10px;" onclick="exportRxXlsx()">📥 Export prescriptions (Excel)</button>`:''}`;
+    ${g.byDoctor.length?`<button class="chip small" style="margin-top:10px;" onclick="exportRxXlsx()">${I('share')} Export prescriptions (Excel)</button>`:''}`;
 }
 // ---- CONTACTS BULK IMPORT: one sheet in, everything filed automatically ----
 let _contactImport = null;
@@ -6265,7 +6317,7 @@ function openDoctorProfile(clinicId, docId){
     ${da.visitLog.slice(0,10).map(v=>`
       <div class="visit-hist"><strong>${fmtDate(v.date)}</strong> · ${esc(v.rep)}${v.callOnly?' · '+(CHANNEL_LABELS[v.channel]||'📞'):''}${v.orderTaken?' · 🛒 '+money(v.orderTotal):''}
       ${v.notes?`<div style="color:var(--muted); font-size:12px;">${esc(v.notes.slice(0,120))}</div>`:''}
-      ${v.noOrderReason?`<div style="color:var(--coral); font-size:11.5px;">بلا طلب: ${esc(v.noOrderReason.slice(0,80))}</div>`:''}</div>`).join('')
+      ${v.noOrderReason?`<div style="color:var(--coral-ink); font-size:11.5px;">بلا طلب: ${esc(v.noOrderReason.slice(0,80))}</div>`:''}</div>`).join('')
       || '<div style="color:var(--muted); font-size:12.5px;">لم تُسجَّل زيارات له بعد — اختاريه عند تسجيل الزيارة القادمة.</div>'}
     ${da.visitLog.length>10?`<div style="color:var(--muted); font-size:11.5px; text-align:center;">+${da.visitLog.length-10} في التقرير المفصل</div>`:''}
     <button class="btn secondary" style="margin-top:12px;" onclick="closeModal()">إغلاق</button>
@@ -6491,16 +6543,16 @@ function renderClinicAnalysis(){
           </div>
         </div>
         <div style="height:6px; border-radius:3px; background:var(--paper); overflow:hidden; margin:8px 0;"><div style="width:${barPct}%; height:100%; background:${cd.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>
-        ${cd.opps.length?`<div style="font-size:12.5px; margin-bottom:6px;"><b>🎯 Sell next:</b> ${cd.opps.slice(0,3).map(o=>`${esc(o.brand)} <span class="num" style="color:var(--coral);">${money(o.gap)}</span>`).join(' · ')}</div>${cd.topPlan?`<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; overflow:hidden;">
-          ${cd.topPlan.slice(0,3).map(x=>`<div style="position:relative;">${prodThumb(x.product, 42)}<span style="position:absolute; top:-5px; inset-inline-end:-5px; background:var(--teal); color:#fff; font-size:9.5px; font-weight:800; border-radius:99px; padding:1px 5px;">×${x.units}</span></div>`).join('')}
+        ${cd.opps.length?`<div style="font-size:12.5px; margin-bottom:6px;"><b>🎯 Sell next:</b> ${cd.opps.slice(0,3).map(o=>`${esc(o.brand)} <span class="num" style="color:var(--coral-ink);">${money(o.gap)}</span>`).join(' · ')}</div>${cd.topPlan?`<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; overflow:hidden;">
+          ${cd.topPlan.slice(0,3).map(x=>`<div style="position:relative;">${playbookThumb(x.product, 42)}<span style="position:absolute; top:-5px; inset-inline-end:-5px; background:var(--teal); color:#fff; font-size:9.5px; font-weight:800; border-radius:99px; padding:1px 5px;">×${x.units}</span></div>`).join('')}
           <div style="font-size:11px; color:var(--teal); font-weight:600; min-width:0;">${esc(cd.opps[0].brand)}</div>
-        </div>`:''}`:`<div style="font-size:12.5px; color:var(--sage); margin-bottom:6px;">🏆 Clinic target fully covered</div>`}
+        </div>`:''}`:`<div style="font-size:12.5px; color:var(--sage-ink); margin-bottom:6px;">🏆 Clinic target fully covered</div>`}
         ${cd.docs.length?`<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">👨‍⚕️ ${cd.docs.slice(0,4).map(d=>esc(d.name)+(d.title?` <span style="font-size:10.5px;">(${esc(d.title)})</span>`:'')).join(' · ')}${cd.docs.length>4?` +${cd.docs.length-4}`:''}</div>`:''}
         ${cd.contact?`<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">📇 ${esc(cd.contact)}</div>`:''}
         ${cd.notes.length?`<div style="font-size:11.5px; color:var(--muted); border-top:1px dashed var(--line); padding-top:5px; margin-top:5px;">${cd.notes.map(n=>`📝 <i>${fmtDate(n.date)}:</i> ${esc(n.txt)}`).join('<br>')}</div>`:''}
         <div style="display:flex; gap:6px; margin-top:8px;">
           <button class="chip small" onclick="openClinicAllocDetail('${cd.id}')">📊 Brand plan</button>
-          <button class="chip small" onclick="openClinicDetail('${cd.id}')">📁 Clinic file</button>
+          <button class="chip small" onclick="openClinicDetail('${cd.id}')">${I('file')} Clinic file</button>
           ${cd.nextFollowUp?`<span class="chip small" style="pointer-events:none;">⏰ ${fmtDate(cd.nextFollowUp)}</span>`:''}
         </div>
       </div>`;
@@ -6550,7 +6602,7 @@ function openClinicAllocDetail(clinicId){
           const up = UMCore.unitSellPlan({brand: r.b, gap: r.gap, clinicRows, allRows, products});
           if(up.length) unitLine = `<div style="padding:4px 0 8px;">
             ${up.map(x=>`<div style="display:flex; align-items:center; gap:9px; padding:3px 0;">
-              ${prodThumb(x.product, 40)}
+              ${playbookThumb(x.product, 40)}
               <div style="flex:1; min-width:0;"><div style="font-size:12px; font-weight:600; line-height:1.25;">${esc(x.product)}${x.mine?' <span title="re-order" style="font-size:10px;">🔁</span>':''}</div>
               <div style="font-size:11px; color:var(--muted);">${x.price.toFixed(2)} KD each</div></div>
               <div style="font-weight:800; font-size:14px; color:var(--teal); flex-shrink:0;">×${x.units}</div>
@@ -6559,7 +6611,7 @@ function openClinicAllocDetail(clinicId){
           </div>`;
         }
         return `<div class="spec-row" style="${r.gap>0.005?'border-bottom:none;':''}"><span class="k">${esc(r.b)}</span>
-        <span class="v">${money(r.sold)} / ${money(r.tgt)} ${r.gap>0.005?`<span style="color:var(--coral); font-size:11px;">▲ ${money(r.gap)}</span>`:'<span style="color:var(--sage); font-size:11px;">✓</span>'}</span></div>${unitLine}`;
+        <span class="v">${money(r.sold)} / ${money(r.tgt)} ${r.gap>0.005?`<span style="color:var(--coral-ink); font-size:11px;">▲ ${money(r.gap)}</span>`:'<span style="color:var(--sage-ink); font-size:11px;">✓</span>'}</span></div>${unitLine}`;
       }).join('')}
     </div>
     <div style="color:var(--muted); font-size:11px; margin-top:6px;">📦 = the exact units to sell to close that brand's gap · prices are this month's real average invoice prices · 🔁 = a product this clinic already re-orders.</div>
@@ -6625,7 +6677,7 @@ function openPlaybook(sp){
     </div>
 
     <div class="section-title" style="margin-top:0;">What they struggle with</div>
-    <div class="card">${pb.pains.map(x=>`<div class="pb-item"><div class="pb-bullet" style="background:var(--coral-dim); color:var(--coral);">!</div><div>${esc(x)}</div></div>`).join('')}</div>
+    <div class="card">${pb.pains.map(x=>`<div class="pb-item"><div class="pb-bullet" style="background:var(--coral-dim); color:var(--coral-ink);">!</div><div>${esc(x)}</div></div>`).join('')}</div>
 
     <div class="section-title">Lead with these products</div>
     <div class="card">${pb.lead.map((x,i)=>`<div class="pb-item"><div class="pb-bullet">${i+1}</div><div>${esc(x)}</div></div>`).join('')}</div>
@@ -6633,7 +6685,7 @@ function openPlaybook(sp){
     ${(()=>{ const tagged = products.filter(p=>(p.specialties||[]).includes(sp));
       return tagged.length ? `<div class="section-title">From our catalog</div>
         <div class="card">${tagged.map(p=>`<div class="qty-row" style="cursor:pointer; align-items:center; gap:10px;" onclick="closeModal(); openProductDetail('${esc(productKey(p))}')">
-          ${prodThumb(p.name, 44)}
+          ${playbookThumb(p.name, 44)}
           <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
         </div>`).join('')}</div>` : ''; })()}
 
@@ -6669,7 +6721,7 @@ function openProductDetail(pid){
     ${p.img?`<img class="pbig" src="${p.img}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
     <div class="row-between" style="margin:0 0 4px;">
       <h3 style="margin:0;">${esc(p.name)}</h3>
-      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">✏️ Edit</button>`:''}
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">${I('pencil')} Edit</button>`:''}
     </div>
     <div style="color:var(--muted); font-size:13.5px; margin-bottom:16px;">${esc(p.brand||'')}</div>
 
@@ -6785,11 +6837,11 @@ function categoryGuideCardHTML(cat){
   const g = categoryGuides[cat];
   if(!g) return '';
   return `
-    <div class="section-title">📚 How to sell: ${esc(cat)}</div>
+    <div class="section-title"><span>${I('book')} How to sell: ${esc(cat)}</span></div>
     <div class="card">
-      ${guideBlock('Why it sells', '💡', g.sell)}
-      ${guideBlock('How to sell it', '🎯', g.how)}
-      ${guideBlock('Objections & answers', '🛡️', g.objections)}
+      ${guideBlock('Why it sells', I('sparkles'), g.sell)}
+      ${guideBlock('How to sell it', I('target'), g.how)}
+      ${guideBlock('Objections & answers', I('shield'), g.objections)}
       ${guideLinks(g).length?`<div style="margin-top:10px;">${guideLinks(g).map(l=>`
         <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:6px;">🔗 ${esc(l.title||'Link')}</a>`).join('')}</div>`:''}
       ${currentUser.role==='supervisor'?`<button class="chip small" style="margin-top:10px;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">✏️ Edit this guide</button>`:''}
@@ -6801,7 +6853,7 @@ function openCategoryGuides(){
   Object.keys(categoryGuides).forEach(c=>{ if(!(c in cats)) cats[c] = 0; });
   const names = Object.keys(cats).sort((a,b)=>cats[b]-cats[a] || a.localeCompare(b));
   showModal(`
-    <h3 style="margin-top:0;">📚 Selling guides</h3>
+    <h3 style="margin-top:0;">${I('book')} Selling guides</h3>
     <div style="color:var(--muted); font-size:13px; margin-bottom:12px;">How to sell every category: key claims, pitch steps, objection answers and official materials. Also shown inside each product's page.</div>
     ${names.map(c=>{
       const g = categoryGuides[c];
@@ -6810,7 +6862,7 @@ function openCategoryGuides(){
           <div style="font-weight:700; font-size:14px;">${esc(c)}</div>
           <div style="color:var(--muted); font-size:12px; flex-shrink:0;">${cats[c]} product${cats[c]===1?'':'s'} ›</div>
         </div>
-        ${g?'':'<div style="color:var(--coral); font-size:12px; margin-top:2px;">No guide yet</div>'}
+        ${g?'':'<div style="color:var(--coral-ink); font-size:12px; margin-top:2px;">No guide yet</div>'}
       </div>`;
     }).join('')}
   `);
@@ -6820,14 +6872,14 @@ function openCategoryGuide(cat){
   const catProds = products.filter(p=>p.cat===cat);
   showModal(`
     <div class="row-between" style="margin:0 0 4px;">
-      <h3 style="margin:0;">📚 ${esc(cat)}</h3>
-      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">✏️ Edit</button>`:''}
+      <h3 style="margin:0;">${I('book')} ${esc(cat)}</h3>
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">${I('pencil')} Edit</button>`:''}
     </div>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">${catProds.length} product${catProds.length===1?'':'s'} in this category</div>
     ${g?`<div class="card">
-      ${guideBlock('Why it sells', '💡', g.sell)}
-      ${guideBlock('How to sell it', '🎯', g.how)}
-      ${guideBlock('Objections & answers', '🛡️', g.objections)}
+      ${guideBlock('Why it sells', I('sparkles'), g.sell)}
+      ${guideBlock('How to sell it', I('target'), g.how)}
+      ${guideBlock('Objections & answers', I('shield'), g.objections)}
       ${guideLinks(g).length?`<div style="margin-top:10px;">${guideLinks(g).map(l=>`
         <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:6px;">🔗 ${esc(l.title||'Link')}</a>`).join('')}</div>`:''}
     </div>`:`<div class="empty">No guide for this category yet.${currentUser.role==='supervisor'?' Tap ✏️ Edit to write one.':''}</div>`}
@@ -6843,12 +6895,12 @@ function openEditCategoryGuide(cat){
   const g = categoryGuides[cat] || {sell:'', how:'', objections:'', links:[]};
   window._guideLinks = guideLinks(g).map(l=>({title:l.title, url:l.url}));
   showModal(`
-    <h3 style="margin-top:0;">✏️ Edit guide — ${esc(cat)}</h3>
-    <label>💡 Why it sells (key claims)</label>
+    <h3 style="margin-top:0;">${I('pencil')} Edit guide — ${esc(cat)}</h3>
+    <label>${I('sparkles')} Why it sells (key claims)</label>
     <textarea id="cgSell" style="min-height:110px;">${esc(g.sell||'')}</textarea>
-    <label>🎯 How to sell it (pitch steps)</label>
+    <label>${I('target')} How to sell it (pitch steps)</label>
     <textarea id="cgHow" style="min-height:110px;">${esc(g.how||'')}</textarea>
-    <label>🛡️ Objections &amp; answers</label>
+    <label>${I('shield')} Objections &amp; answers</label>
     <textarea id="cgObj" style="min-height:90px;">${esc(g.objections||'')}</textarea>
     <label>🔗 Official links &amp; materials</label>
     <div id="cgLinks"></div>
@@ -6973,7 +7025,7 @@ function renderCoverageBoard(){
       </summary>
       ${detail}
       ${c.nextFollowUp?`<div style="font-size:12px; color:var(--muted); margin-top:6px;">Next follow-up: ${fmtDate(c.nextFollowUp)}</div>`:''}
-      <button class="chip small" style="margin-top:8px;" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">📂 Open clinic</button>
+      <button class="chip small" style="margin-top:8px;" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">${I('file')} Open clinic</button>
     </details>`;
   }).join('');
   const needsRows = cov.needsVisit.map(c => `
@@ -6989,12 +7041,12 @@ function renderCoverageBoard(){
       </div>
       ${c.reasons.map(r=>`<div style="font-size:12.5px; line-height:1.5; margin-top:6px;">${covReasonLabel(r)}</div>`).join('')}
       <div style="display:flex; gap:8px; margin-top:8px;">
-        <button class="chip small" onclick="closeModal(); quickLogFrom('${esc(c.id)}')">➕ Log a visit</button>
-        <button class="chip small" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">📂 Open clinic</button>
+        <button class="chip small" onclick="closeModal(); quickLogFrom('${esc(c.id)}')">${I('plus')} Log a visit</button>
+        <button class="chip small" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">${I('file')} Open clinic</button>
       </div>
     </div>`).join('');
   showModal(`
-    <h3 style="margin-top:0;">📋 Coverage review</h3>
+    <h3 style="margin-top:0;">${I('clipboard')} Coverage review</h3>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">Everything done and still needed — last ${covDays} days${covRep!=='all'?' · '+esc(covRep):''}</div>
     ${repChips}
     <div class="chip-row" style="margin-bottom:12px;">
@@ -7037,7 +7089,7 @@ function renderErpNudge(){
   el.style.display = stale ? 'block' : 'none';
   if(!stale){ el.innerHTML = ''; return; }
   el.innerHTML = `<div class="card clickable" style="border-left:4px solid var(--purple); margin-bottom:6px;" onclick="openErpImport()">
-    <div style="font-weight:700; font-size:13.5px;">📥 Weekly sales file due</div>
+    <div style="font-weight:700; font-size:13.5px;">${I('download')} Weekly sales file due</div>
     <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">
       ${latest ? `Latest ERP data covers up to ${fmtDate(latest.to)} (${staleDays} days ago).` : 'No ERP sales file imported yet.'}
       Import this week's file to keep coaching based on real invoices. Tap to import →</div>
@@ -7605,7 +7657,7 @@ function erpAuditSection(p){
   const c = a.counts;
   const salesmanRows = a.salesmen.map(s=>`<tr style="border-top:1px solid var(--line);">
     <td style="padding:5px 6px;">${esc(s.name)}</td>
-    <td style="padding:5px 6px;">${s.rep?esc(s.rep):'<span style="color:var(--coral);">— خارج الفريق —</span>'}</td>
+    <td style="padding:5px 6px;">${s.rep?esc(s.rep):'<span style="color:var(--coral-ink);">— خارج الفريق —</span>'}</td>
     <td style="text-align:right; padding:5px 6px;">${s.rows}</td>
     <td style="text-align:right; padding:5px 6px; font-weight:700;">${money(s.net)}</td></tr>`).join('');
   const needAttn = a.customers.filter(x=>x.kind==='none'||x.kind==='ambiguous');
@@ -7615,7 +7667,7 @@ function erpAuditSection(p){
       <td style="padding:5px 6px;">${esc(x.name)}</td>
       <td style="padding:5px 6px; font-size:11.5px;">${x.label}</td>
       <td style="text-align:right; padding:5px 6px;">${x.invoices}</td>
-      <td style="text-align:right; padding:5px 6px; font-weight:700; ${x.net<0?'color:var(--coral);':''}">${money(x.net)}</td></tr>`;
+      <td style="text-align:right; padding:5px 6px; font-weight:700; ${x.net<0?'color:var(--coral-ink);':''}">${money(x.net)}</td></tr>`;
   }).join('');
   return `
   <div class="section-title" style="margin-top:0;">🔍 مرجع المعالجة — كيف قرأ الموقع هذا الملف</div>
@@ -7623,7 +7675,7 @@ function erpAuditSection(p){
     <div class="report-line"><span>سطور الملف</span><span class="v">${T.rows}</span></div>
     <div class="report-line"><span>فواتير · مرتجعات</span><span class="v">${Object.keys(T.inv).length} · ${Object.keys(T.ret).length}</span></div>
     <div class="report-line"><span>صافي الملف الكامل</span><span class="v">${money(T.net)}</span></div>
-    ${T.retVal>0.005?`<div class="report-line"><span>قيمة المرتجعات</span><span class="v" style="color:var(--coral);">${money(T.retVal)}</span></div>`:''}
+    ${T.retVal>0.005?`<div class="report-line"><span>قيمة المرتجعات</span><span class="v" style="color:var(--coral-ink);">${money(T.retVal)}</span></div>`:''}
     <div class="report-line"><span>تصنيف العملاء</span><span class="v" style="font-size:12px;">✅ ${c.clinic||0} · 🌐 ${c.channel||0} · ⛔ ${c.ignored||0} · ⚠️ ${(c.none||0)+(c.ambiguous||0)}</span></div>
   </div>
   ${needAttn.length?`<div class="nudge" style="margin-bottom:10px; border-color:#FF9500;">⚠️ ${needAttn.length} عميل يحتاج ربطاً يدوياً (بالأصفر أدناه) — لن تُحسب مبيعاتهم لأي عيادة حتى تربطهم.</div>`:'<div class="nudge" style="margin-bottom:10px;">✅ كل العملاء مصنّفون — لا شيء معلّق.</div>'}
@@ -7695,7 +7747,7 @@ function openErpRecon(id){
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(cust)}${tag}</td>
               <td style="text-align:right; padding:5px 6px;">${a.docs.size}</td>
-              <td style="text-align:right; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral);':''}">${a.net.toFixed(2)}</td>
+              <td style="text-align:right; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${a.net.toFixed(2)}</td>
             </tr>`;
           }).join('')}
           <tr style="border-top:2px solid var(--line);">
@@ -7768,7 +7820,7 @@ function openErpRecon(id){
     </div>`:''}`;
   };
   showModal(`
-    <h3 style="margin-top:0;">📊 ERP reconciliation</h3>
+    <h3 style="margin-top:0;">${I('chart')} ERP reconciliation</h3>
     <div style="color:var(--muted); font-size:13px; margin-bottom:10px;">${fmtDate(p.from)} – ${fmtDate(p.to)} · ERP invoices vs visits logged in this app</div>
     ${erpAuditSection(p)}
     <div style="height:6px;"></div>
@@ -7778,9 +7830,9 @@ function openErpRecon(id){
       if(trend.length < 2) return '';
       const trendReps = [...new Set(trend.flatMap(w=>Object.keys(w.byRep)))].sort();
       const arrow = (cur, prev) => prev==null ? '' :
-        cur > prev ? ` <span style="color:var(--sage); font-size:11px;">▲${UMCore.pctDelta(cur, prev)}%</span>` :
-        cur < prev ? ` <span style="color:var(--coral); font-size:11px;">▼${Math.abs(UMCore.pctDelta(cur, prev))}%</span>` : '';
-      return `<div class="section-title" style="margin-top:0;">📈 Week by week</div>
+        cur > prev ? ` <span style="color:var(--sage-ink); font-size:11px;">▲${UMCore.pctDelta(cur, prev)}%</span>` :
+        cur < prev ? ` <span style="color:var(--coral-ink); font-size:11px;">▼${Math.abs(UMCore.pctDelta(cur, prev))}%</span>` : '';
+      return `<div class="section-title" style="margin-top:0;"><span>${I('chart')} Week by week</span></div>
       <div class="card" style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:12px;">
           <tr><th style="text-align:left; padding:5px 6px; color:var(--muted);">Week</th>
@@ -7815,7 +7867,7 @@ function openErpRecon(id){
     </div>`:''}
     <button class="btn" style="margin-top:12px;" onclick="closeModal()">✅ Done</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="downloadErpReconFile('${esc(p.id)}')">⬇️ Save this report as a file</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${esc(p.id)}')">📤 Share (WhatsApp / email)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${esc(p.id)}')">${I('share')} Share (WhatsApp / email)</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="openErpImport()">‹ Back to imports</button>
   `);
 }
@@ -7869,7 +7921,7 @@ let aiMsgs = [];
 let aiBusy = false;
 function openAssistant(){
   showModal(`
-    <h3 style="margin-top:0;">✨ Assistant</h3>
+    <h3 style="margin-top:0;">${I('sparkles')} Assistant</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Ask anything about your clinics, visits, products or plans — in Arabic or English. It only sees this app's data.</p>
     <div id="aiThread" style="max-height:45vh; overflow-y:auto; margin-bottom:10px;"></div>
     <div style="display:flex; gap:8px;">
@@ -8006,8 +8058,8 @@ function renderCompare(){
   const B = UMCore.rangeSummary(bF, bT, rep, data);
   const fmtRow = (label, a, b, isMoney) => {
     const d = UMCore.pctDelta(a, b);
-    const arrow = d>0 ? `<span style="color:var(--sage); font-weight:700;">▲ +${d}%</span>`
-      : d<0 ? `<span style="color:var(--coral); font-weight:700;">▼ ${d}%</span>`
+    const arrow = d>0 ? `<span style="color:var(--sage-ink); font-weight:700;">▲ +${d}%</span>`
+      : d<0 ? `<span style="color:var(--coral-ink); font-weight:700;">▼ ${d}%</span>`
       : `<span style="color:var(--muted);">—</span>`;
     const show = v => isMoney ? money(v) : v;
     return `<div style="display:grid; grid-template-columns:1.2fr 1fr 1fr .8fr; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px; align-items:center;">
@@ -8036,7 +8088,7 @@ function reportVisitsBase(){
 // One home for every way a report can leave the system.
 function openReportTools(){
   showModal(`
-    <h3 style="margin-top:0;">📤 Export &amp; share</h3>
+    <h3 style="margin-top:0;">${I('share')} Export &amp; share</h3>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">Uses the period and rep selected on the Report tab.</div>
     <label>Language / اللغة</label>
     <div class="chip-row" style="margin-bottom:8px;">
@@ -8048,12 +8100,12 @@ function openReportTools(){
       <div class="chip small ${reportFormat==='full'?'on':''}" onclick="reportFormat='full'; openReportTools()">Full report · كامل</div>
       <div class="chip small ${reportFormat==='summary'?'on':''}" onclick="reportFormat='summary'; openReportTools()">One-pager · صفحة واحدة</div>
     </div>
-    <button class="btn" onclick="closeModal(); shareReportFile()">📤 Share (WhatsApp / email)</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportPdf()">⬇️ Save as PDF</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">🌐 Save as HTML (opens in any browser)</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">👁 View on screen / print</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); copyReport()">📋 Copy as text</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); openExport()">🗂 Data exports &amp; backups (CSV)</button>
+    <button class="btn" onclick="closeModal(); shareReportFile()">${I('share')} Share (WhatsApp / email)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportPdf()">${I('download')} Save as PDF</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportFile()">${I('globe')} Save as HTML (opens in any browser)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); showProReport()">${I('eye')} View on screen / print</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); copyReport()">${I('clipboard')} Copy as text</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); openExport()">${I('database')} Data exports &amp; backups (CSV)</button>
   `);
 }
 function reportRangeBounds(){
@@ -8071,9 +8123,9 @@ function renderCoach(){
     visits, clinics, targets: blendedTargets(), dayPlans,
   });
   const styles = {
-    act:   {c:'var(--coral)',  label:'DO NOW'},
-    watch: {c:'#FF9500',       label:'WATCH'},
-    good:  {c:'var(--sage)',   label:'WORKING'},
+    act:   {c:'var(--coral)',  ink:'var(--coral-ink)', label:'DO NOW'},
+    watch: {c:'var(--amber)',  ink:'var(--amber-ink)', label:'WATCH'},
+    good:  {c:'var(--sage)',   ink:'var(--sage-ink)',  label:'WORKING'},
   };
   el.innerHTML = insights.map(i=>{
     const st = styles[i.level] || styles.watch;
@@ -8082,7 +8134,7 @@ function renderCoach(){
         <span style="font-size:17px;">${i.icon}</span>
         <div style="flex:1;">
           <div style="font-weight:700; font-size:13.5px;">${esc(i.title)}
-            <span style="font-size:10px; font-weight:800; color:${st.c}; letter-spacing:.06em; margin-left:4px;">${st.label}</span></div>
+            <span style="font-size:10px; font-weight:800; color:${st.ink}; letter-spacing:.06em; margin-left:4px;">${st.label}</span></div>
           <div style="font-size:12.5px; color:var(--muted); line-height:1.55; margin-top:3px;">${esc(i.detail)}</div>
         </div>
       </div>
@@ -8424,7 +8476,7 @@ function renderMemories(){
   }
   el.innerHTML = [...memories].sort((a,b)=>b.ts-a.ts).map(m=>`
     <div class="mcard" onclick="showLightbox('${m.id}','${esc((m.cap||'').replace(/'/g,''))}')">
-      <img src="${m.thumb}" alt="">
+      <img src="${m.thumb}" alt="" onerror="this.style.display='none'">
       <div class="mmeta">
         <div class="mcap">${m.tag?m.tag+' ':''}${esc(m.cap||'Untitled')}</div>
         <div class="mwho">${esc(m.who)} \u00b7 ${new Date(m.ts).toLocaleDateString([], {month:'short',day:'numeric'})}</div>
@@ -8757,7 +8809,7 @@ function renderFocusCard(){
   if(!best){ el.innerHTML=''; return; }
   const prefix = currentUser.role==='supervisor' && REPS.length>1 ? `${esc(best.rep)} — ` : '';
   el.innerHTML = `<div class="focus-card">
-    <div class="focus-label">🎯 ${currentUser.role==='supervisor' ? 'Team focus' : 'Your focus today'}</div>
+    <div class="focus-label">${I('target')} ${currentUser.role==='supervisor' ? 'Team focus' : 'Your focus today'}</div>
     <div class="focus-text">${prefix}${best.top.opp}</div>
     ${best.top.action?`<div class="focus-action">→ ${best.top.action}</div>`:''}
   </div>`;
@@ -8768,7 +8820,7 @@ function renderGuidanceBlock(rep, s){
   const items = [...n.opportunities, ...n.strengths];
   if(!items.length) return '';
   return `<div class="guidance-block">
-    <div class="guidance-head">${currentUser.role==='supervisor' ? '🎯 Coaching guidance' : '🎯 Your focus this period'}</div>
+    <div class="guidance-head">${currentUser.role==='supervisor' ? I('target')+' Coaching guidance' : I('target')+' Your focus this period'}</div>
     ${n.opportunities.slice(0,3).map(x=>`<div class="pr-list-item"><div class="pr-icon opp">!</div><div>${x.opp}${x.action?`<div class="pr-action">→ ${x.action}</div>`:''}</div></div>`).join('')}
     ${n.opportunities.length===0 ? `<div class="pr-list-item"><div class="pr-icon good">✓</div><div>Every tracked metric is at or above target this period — excellent, consistent work.</div></div>` : ''}
   </div>`;
@@ -10351,6 +10403,7 @@ function copyReport(){
 // ---- MODAL ----
 function showModal(html){
   const inner = document.getElementById('modalInner');
+  document.getElementById('modalContent').style.transform = ''; // clear any leftover drag offset
   inner.innerHTML = html;
   // Whole-Arabic sheets (data repair, month reports, doctor tools) read
   // right-to-left; detect from the first strong characters of the content.
@@ -10462,6 +10515,7 @@ if(FIREBASE_ENABLED){
     muts.forEach(m=>m.addedNodes.forEach(n=>enhance(n)));
   }).observe(document.body, {childList:true, subtree:true});
   document.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){ closeModal(); return; }
     if(e.key!=='Enter' && e.key!==' ') return;
     const t = e.target;
     if(t && t.getAttribute && t.getAttribute('role')==='button' && !SKIP_TAGS.has(t.tagName)){
