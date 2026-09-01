@@ -1053,7 +1053,14 @@
     (opts.clinics || []).forEach(function(c){
       if(opts.repFilter && opts.repFilter !== 'all' && c.rep !== opts.repFilter) return;
       (c.doctors || []).forEach(function(d){
-        var dv = vis.filter(function(v){ return v.clinicId === c.id && (v.doctorIds || []).indexOf(d.id) >= 0; });
+        // Every doctor picked on the visit counts — the multi-select list when
+        // present, else the legacy single doctorId — so a two-doctor visit
+        // shows in BOTH doctors' reports and old records aren't lost.
+        var dv = vis.filter(function(v){
+          if(v.clinicId !== c.id) return false;
+          var ids = (Array.isArray(v.doctorIds) && v.doctorIds.length) ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
+          return ids.indexOf(d.id) >= 0;
+        });
         var dates = dv.map(function(v){ return v.date; }).sort();
         var lastVisit = dates.length ? dates[dates.length - 1] : null;
         var cadence = CADENCE_DAYS[d.cadence] ? d.cadence : null;

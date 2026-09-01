@@ -1441,6 +1441,25 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(omar.cadenceStatus, 'due');
     assert.equal(omar.lastVisit, null);
   });
+  test('doctorAnalytics counts legacy single-doctorId visits and shares multi-doctor visits', () => {
+    const clinics = [
+      { id: 'c1', name: 'Star Dental', rep: 'Mariam', doctors: [
+        { id: 'd1', name: 'Dr. Sara' }, { id: 'd2', name: 'Dr. Omar' } ] },
+    ];
+    const visits = [
+      // old record: doctorId only, no doctorIds array
+      { id: 'v1', clinicId: 'c1', rep: 'Mariam', date: '2026-08-10', doctorId: 'd1', ts: 1 },
+      // one visit where BOTH doctors were seen — must appear in both reports
+      { id: 'v2', clinicId: 'c1', rep: 'Mariam', date: '2026-08-20', doctorIds: ['d1', 'd2'], ts: 2 },
+    ];
+    const rows = core.doctorAnalytics({ clinics, visits, today: '2026-08-30' });
+    const sara = rows.find(d => d.id === 'd1');
+    const omar = rows.find(d => d.id === 'd2');
+    assert.equal(sara.fieldVisits, 2);        // legacy + shared
+    assert.equal(sara.visitLog.length, 2);
+    assert.equal(omar.fieldVisits, 1);        // the shared visit shows for him too
+    assert.equal(omar.visitLog[0].date, '2026-08-20');
+  });
   test('rxGrowth aggregates prescriptions per doctor and clinic with growth %', () => {
     const today = '2026-08-30';
     const clinics = [
