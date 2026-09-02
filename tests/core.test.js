@@ -1761,6 +1761,10 @@ describe('UMI18N dictionary', () => {
       '← أنجز المهام المفتوحة في بداية كل يوم قبل أن تتراكم فوقها مهام جديدة.');
     assert.equal(i18n.tr('🦷 Bright Smile Dental'), null);
   });
+  test('multi-line blocks are translated line by line, untranslated lines kept', () => {
+    assert.equal(i18n.tr('Save visit\nBayan Dental Center\n  Cancel'), 'حفظ الزيارة\nBayan Dental Center\n  إلغاء');
+    assert.equal(i18n.tr('Bayan Dental Center\nOther Clinic'), null);
+  });
   test('sales-coach cards keep clinic names and figures, translate the words around them', () => {
     assert.equal(i18n.tr('3 overdue follow-ups'), '3 متابعة متأخرة');
     assert.equal(i18n.tr('3lagy Pharmacy (never visited), Al Seef Hospital (12d) +27 more. Class A/B clinics buy the most — put them in next week’s plan.'),
