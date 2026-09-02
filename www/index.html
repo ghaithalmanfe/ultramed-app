@@ -366,6 +366,18 @@
   .disc-chips .chip{padding:8px 14px; font-size:14px;}
   .rep-tag{font-size:10.5px; font-weight:700; color:var(--purple-ink); background:var(--purple-dim); padding:2px 7px; border-radius:8px;}
 
+  /* ---- Sell guide (cross-sell / up-sell) ---- */
+  .sg-buy{display:flex; justify-content:space-between; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px;}
+  .sg-buy .n{color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .sg-buy .v{font-weight:700; white-space:nowrap; flex-shrink:0;}
+  .sg-row{display:flex; gap:10px; padding:11px 0; border-bottom:1px solid var(--line);}
+  .sg-row:last-child, .sg-buy:last-child{border-bottom:none;}
+  .sg-row .ic{flex-shrink:0; width:24px; height:24px; border-radius:50%; background:var(--green-dim); color:var(--green-dark); display:flex; align-items:center; justify-content:center; margin-top:1px;}
+  .sg-row .tag{font-size:10px; font-weight:800; letter-spacing:.06em; color:var(--muted); text-transform:uppercase;}
+  .sg-row .ttl{font-weight:700; font-size:13.5px; line-height:1.35;}
+  .sg-row .why{font-size:12px; color:var(--muted); line-height:1.45; margin-top:2px;}
+  .sg-head{font-size:11px; font-weight:800; letter-spacing:.05em; color:var(--muted); text-transform:uppercase; margin-bottom:2px;}
+
   /* ---- Icon system ---- */
   .svgi{width:1.05em; height:1.05em; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-0.15em; display:inline-block; flex-shrink:0;}
 
@@ -623,8 +635,10 @@
     <textarea id="visitNotes" dir="auto" placeholder="Anything worth remembering next visit..."></textarea>
     <label style="margin-top:10px;">Photos from this visit</label>
     <div class="photo-row" id="visitPhotoRow"></div>
-    <label style="margin-top:10px;">Joint visit with <span style="color:var(--muted); font-weight:400; text-transform:none;">(a colleague who was with you)</span></label>
-    <div class="chip-row" id="jointChips" style="margin-bottom:14px;"></div>
+    <div id="jointWrap" style="display:none;">
+      <label style="margin-top:10px;">Joint visit with <span style="color:var(--muted); font-weight:400; text-transform:none;">(a colleague who was with you)</span></label>
+      <div class="chip-row" id="jointChips" style="margin-bottom:14px;"></div>
+    </div>
 
     <button class="btn" onclick="saveVisit()">Save visit</button>
 
@@ -1526,7 +1540,9 @@ async function tryAutoLogin(){
 function normalizeClinic(c){
   c.profileNotes = c.profileNotes || '';
   c.account = c.account || null;
-  c.dealType = c.dealType || null;      // 'prescription' | 'direct' | null
+  // 'prescription' | 'direct' | 'both' | null — many clinics do both: they
+  // prescribe to patients AND buy stock for the practice.
+  c.dealType = ['prescription','direct','both'].includes(c.dealType) ? c.dealType : null;
   c.noSaleReason = c.noSaleReason || ''; // why this account has no sales yet
   c.isNew = c.isNew || false;
   // doctors must tolerate ANY stored shape — one odd record in one clinic must
@@ -3216,7 +3232,17 @@ function setLogAsRep(r){
 // ---- JOINT (DOUBLE) VISITS ----
 function renderJointChips(){
   const el = document.getElementById('jointChips');
+  const wrap = document.getElementById('jointWrap');
   if(!el) return;
+  // Attributing a visit to a colleague is a supervisor action: a rep must not
+  // be able to write anything into another rep's record from their account.
+  if(currentUser.role !== 'supervisor'){
+    jointRep = null;
+    if(wrap) wrap.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  if(wrap) wrap.style.display = 'block';
   const options = REPS.filter(r=>r!==logAsRep);
   el.innerHTML = `<div class="chip small ${!jointRep?'on':''}" onclick="setJointRep(null)">Solo</div>`
     + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${esc(r)}')">🤝 ${esc(r)}</div>`).join('');
@@ -3245,6 +3271,7 @@ function renderClinicSelect(qClinicId){
           </div>
           <button class="chip small" onclick="clearClinicPick()">Change</button>
         </div>
+        ${sellHintLine(c)}
       </div>`;
       renderDoctorPick(c);
       return;
@@ -3291,6 +3318,18 @@ function pickClinic(id){
   newClinicMode = false;
   document.getElementById('newClinicFields').style.display='none';
   renderClinicSelect();
+}
+// The single strongest suggestion, shown while the visit is being logged.
+function sellHintLine(c){
+  const g = clinicSellGuide(c.id);
+  const top = g.lapsed[0] || g.upsell[0] || g.cross[0];
+  if(!top) return '';
+  const tag = g.lapsed[0] ? 'Re-order' : g.upsell[0] ? 'Up-sell' : 'Cross-sell';
+  return `<div style="margin-top:10px; padding-top:9px; border-top:1px dashed var(--line); font-size:12.5px; line-height:1.45;">
+    <span style="font-weight:800; font-size:10px; letter-spacing:.06em; color:var(--muted); text-transform:uppercase;">${tag}</span>
+    <div style="font-weight:700;">${esc(top.product)}</div>
+    <div style="color:var(--muted); font-size:11.5px;">${esc(top.reason)}</div>
+  </div>`;
 }
 function clearClinicPick(){
   selectedClinicId = null;
@@ -3525,7 +3564,11 @@ async function saveVisit(){
   if(window._lastVisitSaveAt && now - window._lastVisitSaveAt < 4000){ showToast('Already saving…'); return; }
   window._lastVisitSaveAt = now;
   let clinicId = selectedClinicId;
-  const rep = logAsRep;
+  // The UI hides the pickers for reps; enforce it here too so no stale screen
+  // or edited markup can file a visit under someone else's name.
+  const isRep = currentUser.role !== 'supervisor';
+  const rep = isRep ? currentUser.name : logAsRep;
+  const joint = isRep ? null : jointRep;
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
     if(!name){ showToast('Enter a clinic name'); return; }
@@ -3567,7 +3610,7 @@ async function saveVisit(){
     });
   }
   const allItems = savedOrders.flatMap(o=>o.items);
-  const visit = {id:uid(), clinicId, rep, withRep: (jointRep && jointRep!==rep) ? jointRep : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorIds[0]||null, doctorIds: selectedDoctorIds.slice(), nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
+  const visit = {id:uid(), clinicId, rep, withRep: (joint && joint!==rep) ? joint : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorIds[0]||null, doctorIds: selectedDoctorIds.slice(), nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
     noOrderReason: (savedOrders.length===0) ? (noOrderReason || document.getElementById('noOrderOther').value.trim() || null) : null};
   if(visitPhotos.length){
     const ids=[];
@@ -3761,7 +3804,7 @@ function erpDashSection(){
       <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${x.c.id}')">
         <div class="row-between">
           <div>
-            <div class="clinic-name">${esc(x.c.name)}${x.c.dealType==='prescription'?' <span style="font-size:11px; color:var(--teal); font-weight:700;">℞ prescription</span>':''}</div>
+            <div class="clinic-name">${esc(x.c.name)}${clinicIsRx(x.c)?' <span style="font-size:11px; color:var(--teal); font-weight:700;">'+(clinicIsDirect(x.c)?'℞ + direct':'℞ prescription')+'</span>':''}</div>
             <div class="clinic-sub">${esc(x.c.rep||'')} · ${x.lastV ? 'last visit '+x.days+'d ago' : 'never visited'}${x.c.nextFollowUp?' · follow-up '+fmtDate(x.c.nextFollowUp):''}</div>
           </div>
           <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
@@ -4027,8 +4070,8 @@ function openAddClinic(){
     <div class="chip-row" id="mClinicAcct">${ACCOUNT_TYPES.map(a=>`<div class="chip" data-acct="${a}" onclick="pickModalCls(this)">${a}</div>`).join('')}</div>
     <label>How does this clinic work with us?</label>
     <div class="chip-row" id="mClinicDeal">
-      <div class="chip" data-deal="direct" onclick="pickModalCls(this)">🛒 Direct sales</div>
-      <div class="chip" data-deal="prescription" onclick="pickModalCls(this)">℞ Prescription</div>
+      <div class="chip" data-deal="direct" onclick="pickModalMulti(this)">🛒 Direct sales</div>
+      <div class="chip" data-deal="prescription" onclick="pickModalMulti(this)">℞ Prescription</div>
     </div>
     <label>New customer?</label>
     <div class="chip-row" id="mClinicNew"><div class="chip" data-new="yes" onclick="pickModalCls(this)">${I('sparkles')} Yes, new customer</div><div class="chip on" data-new="no" onclick="pickModalCls(this)">Existing</div></div>
@@ -4041,6 +4084,23 @@ function openAddClinic(){
 }
 function pickDocTitle(el){ const was = el.classList.contains('on'); el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); if(!was) el.classList.add('on'); }
 function pickModalCls(el){ el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
+// Multi-select chips (a clinic can work with us in more than one way)
+function pickModalMulti(el){ el.classList.toggle('on'); }
+function clinicIsRx(c){ return !!c && (c.dealType==='prescription' || c.dealType==='both'); }
+function clinicIsDirect(c){ return !!c && (c.dealType==='direct' || c.dealType==='both'); }
+function dealTypeOf(rx, direct){ return rx && direct ? 'both' : rx ? 'prescription' : direct ? 'direct' : null; }
+function dealFromChips(sel){
+  const on = Array.from(document.querySelectorAll(sel+' .chip.on')).map(x=>x.dataset.deal);
+  return dealTypeOf(on.includes('prescription'), on.includes('direct'));
+}
+function dealTypeLabel(c, opts){
+  const short = opts && opts.short;
+  if(!c || !c.dealType) return '';
+  const rx = clinicIsRx(c), dir = clinicIsDirect(c);
+  if(rx && dir) return short ? '℞ + Direct' : '℞ Prescription + 🛒 Direct sales';
+  if(rx) return short ? '℞ Rx' : '℞ Prescription';
+  return short ? '🛒 Direct' : '🛒 Direct sales';
+}
 function pickModalRep(el){ el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
 async function submitAddClinic(){
   const name = document.getElementById('mClinicName').value.trim();
@@ -4052,9 +4112,9 @@ async function submitAddClinic(){
   const clsEl = document.querySelector('#mClinicCls .chip.on');
   const acctEl2 = document.querySelector('#mClinicAcct .chip.on');
   const newEl2 = document.querySelector('#mClinicNew .chip.on');
-  const dealEl2 = document.querySelector('#mClinicDeal .chip.on');
+
   clinics.push(normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
-    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealEl2?dealEl2.dataset.deal:null, isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
+    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
   await persist('clinics');
   closeModal();
   renderClinics();
@@ -4072,7 +4132,7 @@ function openClinicDetail(id){
     <div class="clinic-sub" style="margin-bottom:12px;">${esc(c.rep||'')}${c.contact?' · '+esc(c.contact):''}${c.phone?' · '+esc(c.phone):''}</div>
     <div class="chip-row" style="margin-bottom:14px;">
       ${c.account?`<span class="chip small" style="background:var(--green-dim); color:var(--green-dark);">💳 ${esc(c.account)}</span>`:''}
-      ${c.dealType?`<span class="chip small" style="background:var(--teal-dim); color:var(--teal);">${c.dealType==='prescription'?'℞ Prescription':'🛒 Direct sales'}</span>`:''}
+      ${c.dealType?`<span class="chip small" style="background:var(--teal-dim); color:var(--teal);">${dealTypeLabel(c)}</span>`:''}
       ${c.isNew?`<span class="chip small" style="background:var(--amber-dim); color:var(--amber-ink);">${I('sparkles')} New customer</span>`:''}
     </div>
     <div style="display:flex; gap:8px; margin-bottom:16px;">
@@ -4086,6 +4146,8 @@ function openClinicDetail(id){
       ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">${I('calendar')} Today's plan</div>` : ''}
       ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">${I('pencil')} Edit</div>` : ''}
     </div>
+
+    ${sellGuideBlock(c)}
 
     <div class="section-title" style="margin-top:20px;">Clinic profile notes</div>
     <textarea id="profileNotesEdit" dir="auto" placeholder="Preferences, competitor products in use, best time to visit...">${esc(c.profileNotes)}</textarea>
@@ -4303,8 +4365,8 @@ function openEditClinic(id){
     <div class="chip-row" id="ecAcct">${ACCOUNT_TYPES.map(a=>`<div class="chip small ${c.account===a?'on':''}" data-acct="${esc(a)}" onclick="pickModalCls(this)">${esc(a)}</div>`).join('')}</div>
     <label>How does this clinic work with us?</label>
     <div class="chip-row" id="ecDeal">
-      <div class="chip small ${c.dealType==='direct'?'on':''}" data-deal="direct" onclick="pickModalCls(this)">🛒 Direct sales</div>
-      <div class="chip small ${c.dealType==='prescription'?'on':''}" data-deal="prescription" onclick="pickModalCls(this)">℞ Prescription</div>
+      <div class="chip small ${clinicIsDirect(c)?'on':''}" data-deal="direct" onclick="pickModalMulti(this)">🛒 Direct sales</div>
+      <div class="chip small ${clinicIsRx(c)?'on':''}" data-deal="prescription" onclick="pickModalMulti(this)">℞ Prescription</div>
     </div>
     <label>Contact person</label>
     <input type="text" id="ecContact" value="${esc(c.contact||'')}" placeholder="Optional">
@@ -4336,8 +4398,7 @@ async function saveEditClinic(id){
   if(repEl) c.rep = repEl.dataset.rep;
   c.cls = closed ? 'Closed' : (clsEl ? clsEl.dataset.cls : null);
   c.account = acctEl ? acctEl.dataset.acct : null;
-  const dealEl = document.querySelector('#ecDeal .chip.on');
-  c.dealType = dealEl ? dealEl.dataset.deal : null;
+  c.dealType = dealFromChips('#ecDeal');
   c.contact = document.getElementById('ecContact').value.trim();
   c.phone = document.getElementById('ecPhone').value.trim();
   await persist('clinics');
@@ -4947,7 +5008,7 @@ function openEditVisit(visitId){
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:clinicLabel(v.clinicId, v))}</p>
     <label>Date</label>
     <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
-    ${!v.orderOnly && !v.callOnly ? `
+    ${!v.orderOnly && !v.callOnly && currentUser.role==='supervisor' ? `
     <label>Joint visit with</label>
     <select id="evJoint">
       <option value="">Solo visit</option>
@@ -6247,7 +6308,7 @@ function renderDataEntryStep(){
       ${it.miss.includes('phone')?`<label>📞 هاتف العيادة</label><input type="text" id="deClinicPhone" placeholder="2XXXXXXX">`:''}
       ${it.miss.includes('contact')?`<label style="margin-top:6px;">📇 جهة الاتصال (استقبال/مسؤول)</label><input type="text" id="deClinicContact" placeholder="مثال: الاستقبال — أ. هدى">`:''}
       ${it.miss.includes('dealType')?`<label style="margin-top:6px;">🤝 طريقة التعامل</label>
-        <div class="chip-row" id="deDeal"><div class="chip" data-v="prescription" onclick="pickModalCls(this)">💊 بريسكريبشن</div><div class="chip" data-v="direct" onclick="pickModalCls(this)">🛒 بيع مباشر</div></div>`:''}
+        <div class="chip-row" id="deDeal"><div class="chip" data-v="prescription" data-deal="prescription" onclick="pickModalMulti(this)">💊 بريسكريبشن</div><div class="chip" data-v="direct" data-deal="direct" onclick="pickModalMulti(this)">🛒 بيع مباشر</div></div>`:''}
       <button class="btn" style="margin-top:12px;" onclick="saveDataEntryStep()">حفظ والتالي ←</button>
       <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">تخطّي</button>`);
   } else {
@@ -6270,7 +6331,8 @@ async function saveDataEntryStep(){
   if(it.kind==='clinic'){
     if(val('deClinicPhone')){ it.c.phone = val('deClinicPhone').trim(); changed=true; }
     if(val('deClinicContact')){ it.c.contact = val('deClinicContact').trim(); changed=true; }
-    if(chip('deDeal')){ it.c.dealType = chip('deDeal'); changed=true; }
+    const deal = dealFromChips('#deDeal');
+    if(deal){ it.c.dealType = deal; changed=true; }
   } else {
     if(chip('deTitle')){ it.d.title = chip('deTitle'); changed=true; }
     if(val('deDocPhone')){ it.d.phone = val('deDocPhone').trim(); changed=true; }
@@ -6292,7 +6354,7 @@ function doctorNextActions(da, c){
   const acts = [];
   if(da.cadenceStatus==='due') acts.push(`⏰ زيارة مستحقة — متأخرة ${da.overdueDays} يوم عن إيقاع "${da.cadence}"`);
   if(da.birthdayIn!=null && da.birthdayIn<=14) acts.push(`🎂 عيد ميلاده ${da.birthdayIn===0?'اليوم!':'بعد '+da.birthdayIn+' يوم'} — جهّزي تهنئة أو هدية مناسبة`);
-  if(c.dealType==='prescription' && da.handovers.rxMonth===0) acts.push('💊 لم يستلم أي بريسكريبشن هذا الشهر — عيادته تعمل بنظام الوصفات');
+  if(clinicIsRx(c) && da.handovers.rxMonth===0) acts.push('💊 لم يستلم أي بريسكريبشن هذا الشهر — عيادته تعمل بنظام الوصفات');
   if(!da.cadence) acts.push('📆 حددي إيقاع متابعة (أسبوعي/شهري/ربع سنوي) ليتابعه النظام تلقائيًا');
   const lastV = da.visitLog[0];
   if(lastV && lastV.noOrderReason) acts.push(`📝 آخر زيارة بلا طلب — السبب: "${lastV.noOrderReason}" — عالجيه في الزيارة القادمة`);
@@ -6464,6 +6526,53 @@ function exportRxXlsx(){
 let caRep = null;
 // All uploaded rows grouped by the clinic they matched — computed in ONE pass
 // so unit-plan suggestions never re-match per card.
+// Every imported invoice line, flattened once and reused — the cross-sell
+// engine needs the whole market to know what comparable clinics buy.
+let _allRowsMemo = null;
+function erpAllRows(){
+  const sig = erpPeriods().map(p2=>p2.id+':'+(p2.rows?p2.rows.length:0)).join('|');
+  if(!_allRowsMemo || _allRowsMemo.sig !== sig){
+    let all = [];
+    erpPeriods().forEach(p2=>{ all = all.concat(unpackErpRows(p2.rows)); });
+    _allRowsMemo = { sig, all };
+  }
+  return _allRowsMemo.all;
+}
+function clinicSellGuide(clinicId){
+  return UMCore.crossSellPlan({ clinicId, clinics, products, visits,
+    erpRows: erpAllRows(), erpMap, today: todayStr(), limit: 3 });
+}
+// "What do they buy, and what do I sell them next?" — every line carries the
+// evidence behind it, so the rep can say it out loud in the clinic.
+function sellGuideBlock(c){
+  const g = clinicSellGuide(c.id);
+  const has = g.bought.length || g.cross.length || g.upsell.length;
+  if(!has){
+    return `<div class="section-title" style="margin-top:20px;">What to sell next</div>
+    <div class="card"><div style="color:var(--muted); font-size:13px; line-height:1.5;">
+      Nothing bought by this clinic yet in the imported invoices. Import a sales file (or log an order here) and this guide fills in on its own.
+    </div></div>`;
+  }
+  const line = (icon, tag, title, sub, price) => `
+    <div class="sg-row">
+      <div class="ic">${icon}</div>
+      <div style="flex:1; min-width:0;">
+        <div class="tag">${tag}</div>
+        <div class="ttl">${esc(title)}${price?` <span style="color:var(--muted); font-weight:600;">· ${money(price)}</span>`:''}</div>
+        <div class="why">${esc(sub)}</div>
+      </div>
+    </div>`;
+  const bought = g.bought.slice(0,4).map(b=>
+    `<div class="sg-buy"><span class="n">${esc(b.product)}</span><span class="v">${b.units} unit${b.units===1?'':'s'} · ${money(b.net)}</span></div>`).join('');
+  return `<div class="section-title" style="margin-top:20px;">What to sell next</div>
+    <div class="card">
+      ${bought?`<div class="sg-head">Buys today</div>${bought}<div style="height:6px;"></div>`:''}
+      ${g.lapsed.map(x=>line(I('refresh'),'Re-order', x.product, x.reason, 0)).join('')}
+      ${g.upsell.map(x=>line(I('arrow-up'),'Up-sell', x.product, x.reason, x.price)).join('')}
+      ${g.cross.map(x=>line(I('plus'),'Cross-sell', x.product, x.reason, x.price)).join('')}
+      ${(!g.lapsed.length && !g.upsell.length && !g.cross.length)?`<div style="color:var(--muted); font-size:12.5px; padding-top:8px;">No gap found against comparable clinics — this account already buys across the range.</div>`:''}
+    </div>`;
+}
 function caAllRowsByClinic(){
   const by = {};
   let all = [];
@@ -6669,6 +6778,7 @@ function openClinicAllocDetail(clinicId){
     <div class="card" style="padding:10px 12px;">
       ${extras.map(r=>`<div class="spec-row"><span class="k">${esc(r.b)}</span><span class="v">${money(r.sold)}</span></div>`).join('')}
     </div>`:''}
+    ${sellGuideBlock(c)}
     <button class="btn" style="margin-top:12px;" onclick="closeModal()">Done</button>
   `);
 }
@@ -9624,7 +9734,7 @@ function buildMasterReportBody(lang, format){
   const buySec = dash.hasData ? `<div class="mr-kpis">
       <div class="mr-kpi"><div class="n"><span class="num">${dashBuyers.length}</span></div><div class="l">${L.boughtLbl}</div></div>
       <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.length}</span></div><div class="l">${L.notBoughtLbl}</div></div>
-      <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.filter(x=>x.c.dealType==='prescription').length}</span></div><div class="l">${L.rxModel}</div></div>
+      <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.filter(x=>clinicIsRx(x.c)).length}</span></div><div class="l">${L.rxModel}</div></div>
       <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.filter(x=>x.c.noSaleReason).length}</span></div><div class="l">${L.reasonedLbl}</div></div>
     </div>
     <h3 class="mr-rep">${L.boughtLbl} (${dashBuyers.length})</h3>
@@ -9637,7 +9747,7 @@ function buildMasterReportBody(lang, format){
     ${cap(L.capNonBuyers(dash.periodLabel))}
     <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.colModel}</th><th>${L.colReason}</th></tr></thead><tbody>
     ${dash.nonBuyers.slice(0,40).map(x=>`<tr><td>${esc(x.c.name)}</td><td>${esc(x.c.rep||'')}</td>
-      <td>${x.c.dealType==='prescription'?`<span class="mr-pill g">${L.rxModel}</span>`:x.c.dealType==='direct'?L.directModel:'—'}</td>
+      <td>${clinicIsRx(x.c)?`<span class="mr-pill g">${L.rxModel}</span>${clinicIsDirect(x.c)?' + '+L.directModel:''}`:clinicIsDirect(x.c)?L.directModel:'—'}</td>
       <td>${esc(x.c.noSaleReason||'')||'<span class="mr-note">—</span>'}</td></tr>`).join('')}
     ${dash.nonBuyers.length>40?`<tr><td colspan="4"><span class="mr-note">+${dash.nonBuyers.length-40}</span></td></tr>`:''}
     </tbody></table><div class="mr-note">${L.buyersNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
@@ -10116,7 +10226,7 @@ function buildClinicsCSV(){
     const callCount = vs.filter(v=>v.callOnly).length;
     const orderCount = vs.filter(v=>v.orderTaken).length;
     const rev = vs.reduce((s,v)=>s+(v.orderTotal||0),0);
-    rows.push([c.name, c.rep||'', c.cls||'', c.account||'', c.dealType==='prescription'?'Prescription':c.dealType==='direct'?'Direct sales':'', c.isNew?'Yes':'No', fieldCount, callCount, orderCount, rev.toFixed(2), lastVisit||'', c.nextFollowUp||'', followStatus(c.nextFollowUp), c.contact||'', c.phone||'', docStr, c.noSaleReason||'', c.profileNotes||'']);
+    rows.push([c.name, c.rep||'', c.cls||'', c.account||'', clinicIsRx(c)?(clinicIsDirect(c)?'Prescription + Direct sales':'Prescription'):clinicIsDirect(c)?'Direct sales':'', c.isNew?'Yes':'No', fieldCount, callCount, orderCount, rev.toFixed(2), lastVisit||'', c.nextFollowUp||'', followStatus(c.nextFollowUp), c.contact||'', c.phone||'', docStr, c.noSaleReason||'', c.profileNotes||'']);
   });
   return rows;
 }

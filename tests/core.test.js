@@ -1341,6 +1341,102 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // Zero or negative gap -> no plan.
     assert.deepEqual(core.unitSellPlan({ brand: 'Waterpik', gap: 0, clinicRows, allRows }), []);
   });
+  test('crossSellPlan reads the buying profile and proves every suggestion', () => {
+    const products = [
+      { id: 'wp-plus',  name: 'Waterpik Cordless Plus',    brand: 'Waterpik', cat: 'Water Flosser',       price: 23 },
+      { id: 'wp-pro',   name: 'Waterpik Aquarius Pro',     brand: 'Waterpik', cat: 'Water Flosser',       price: 62 },
+      { id: 'tepe-mix', name: 'TePe Angle Mixed Pack',     brand: 'TePe',     cat: 'Interdental Brushes', price: 3 },
+      { id: 'son-4300', name: 'Sonicare ProtectiveClean 4300', brand: 'Philips', cat: 'Electric Toothbrush', price: 35 },
+    ];
+    const clinics = [
+      { id: 'me',   name: 'Bayan Dental Center', cls: 'A', rep: 'Mariam' },
+      { id: 'peer', name: 'Apex Dental Center',  cls: 'A', rep: 'Mariam' },
+      { id: 'far',  name: 'Joury Clinic',        cls: 'D', rep: 'Renova' },
+    ];
+    const row = (customer, product, brand, qty, net, date) =>
+      ({ type: 'invoice', customer, product, brand, qty, net, date, doc: 'INV' });
+    const erpRows = [
+      // this clinic: two water-flosser orders of the entry model
+      row('Bayan Dental Center', 'Waterpik Cordless Plus', 'WATERPIK', 2, 46, '2026-07-05'),
+      row('Bayan Dental Center', 'Waterpik Cordless Plus', 'WATERPIK', 1, 23, '2026-07-20'),
+      // a comparable A-class clinic: the premium model AND a category this one never buys
+      row('Apex Dental Center', 'Waterpik Aquarius Pro', 'WATERPIK', 3, 186, '2026-07-10'),
+      row('Apex Dental Center', 'TePe Angle Mixed Pack', 'TEPE', 40, 120, '2026-07-11'),
+      row('Joury Clinic',       'TePe Angle Mixed Pack', 'TEPE', 10, 30,  '2026-07-12'),
+      // returns never count as a purchase
+      { type: 'return', customer: 'Bayan Dental Center', product: 'Waterpik Cordless Plus',
+        brand: 'WATERPIK', qty: -1, net: -23, date: '2026-07-21', doc: 'SRT' },
+    ];
+    const plan = core.crossSellPlan({ clinicId: 'me', clinics, products, erpRows, erpMap: {}, today: '2026-09-10' });
+
+    // what they buy today
+    assert.equal(plan.bought.length, 1);
+    assert.equal(plan.bought[0].product, 'Waterpik Cordless Plus');
+    assert.equal(plan.bought[0].units, 3);          // the return is excluded
+    assert.equal(plan.bought[0].net, 69);
+    assert.equal(plan.bought[0].times, 2);
+    assert.equal(plan.catsBought, 1);
+
+    // up-sell: the premium model inside the category they already buy
+    assert.equal(plan.upsell.length, 1);
+    assert.equal(plan.upsell[0].product, 'Waterpik Aquarius Pro');
+    assert.equal(plan.upsell[0].price, 62);
+    assert.equal(plan.upsell[0].from, 23);
+    assert.equal(plan.upsell[0].buyers, 1);
+    assert.match(plan.upsell[0].reason, /step up, and 1 other clinic takes it/);
+
+    // cross-sell: a category comparable clinics buy and this one never has
+    assert.equal(plan.cross.length, 1);
+    assert.equal(plan.cross[0].cat, 'Interdental Brushes');
+    assert.equal(plan.cross[0].product, 'TePe Angle Mixed Pack');
+    assert.equal(plan.cross[0].price, 3);
+    // Only the comparable buyer counts: the D-class clinic buys interdental
+    // brushes too, but shares no class and no category with this one.
+    assert.equal(plan.cross[0].peers, 1);
+    assert.match(plan.cross[0].reason, /never has/);
+
+    // lapsed: a repeat purchase that stopped
+    assert.equal(plan.lapsed.length, 1);
+    assert.equal(plan.lapsed[0].product, 'Waterpik Cordless Plus');
+    assert.equal(plan.lapsed[0].daysSince, core.daysBetween('2026-07-20', '2026-09-10'));
+    assert.match(plan.lapsed[0].reason, /due a re-order/);
+
+    // a clinic still inside its re-order rhythm is not called lapsed
+    const fresh = core.crossSellPlan({ clinicId: 'me', clinics, products, erpRows, erpMap: {}, today: '2026-07-25' });
+    assert.equal(fresh.lapsed.length, 0);
+  });
+  test('crossSellPlan falls back to app-logged orders and never throws on empty data', () => {
+    const products = [
+      { id: 'a', name: 'TePe Angle Mixed Pack', brand: 'TePe', cat: 'Interdental Brushes', price: 3 },
+      { id: 'b', name: 'Waterpik Cordless Plus', brand: 'Waterpik', cat: 'Water Flosser', price: 23 },
+    ];
+    const clinics = [{ id: 'me', name: 'A Clinic', cls: 'B' }, { id: 'p2', name: 'B Clinic', cls: 'B' }];
+    const visits = [
+      { clinicId: 'me', date: '2026-08-01', orders: [{ items: [{ productId: 'a', qty: 10 }] }] },
+      { clinicId: 'p2', date: '2026-08-02', orders: [{ items: [{ productId: 'b', qty: 2 }] }] },
+    ];
+    const plan = core.crossSellPlan({ clinicId: 'me', clinics, products, visits, erpRows: [], erpMap: {}, today: '2026-08-10' });
+    assert.equal(plan.bought[0].product, 'TePe Angle Mixed Pack');
+    assert.equal(plan.cross.length, 1);
+    assert.equal(plan.cross[0].cat, 'Water Flosser');
+
+    // no data at all, and an unknown clinic id: empty, not broken
+    const none = core.crossSellPlan({ clinicId: 'me', clinics, products, erpRows: [], erpMap: {}, today: '2026-08-10' });
+    assert.deepEqual([none.bought, none.cross, none.upsell, none.lapsed], [[], [], [], []]);
+    const missing = core.crossSellPlan({ clinicId: 'nope', clinics, products, erpRows: [], erpMap: {} });
+    assert.deepEqual([missing.bought, missing.cross, missing.upsell, missing.lapsed], [[], [], [], []]);
+    assert.deepEqual(core.crossSellPlan({}).bought, []);
+  });
+  test('matchCatalogProduct bridges free-text invoice names to the catalog', () => {
+    const products = [
+      { name: 'Waterpik Cordless Plus Water Flosser', brand: 'Waterpik', cat: 'Water Flosser', price: 23 },
+      { name: 'TePe Angle Mixed Pack', brand: 'TePe', cat: 'Interdental Brushes', price: 3 },
+    ];
+    assert.equal(core.matchCatalogProduct('WATERPIK CORDLESS PLUS', products).cat, 'Water Flosser');
+    assert.equal(core.matchCatalogProduct('Tepe angle mixed', products).cat, 'Interdental Brushes');
+    assert.equal(core.matchCatalogProduct('Completely Unrelated Item', products), null);
+    assert.equal(core.matchCatalogProduct('', products), null);
+  });
   test('allocateClinicTargets splits brand targets by sales history with class fallback', () => {
     const clinics = [
       { id: 'c1', name: 'Alpha Dental', rep: 'Renova', cls: 'A' },
