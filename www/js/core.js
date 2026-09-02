@@ -921,6 +921,176 @@
         amount: Math.round(units * c.price * 100) / 100, mine: c.mine };
     });
   }
+  // ==== CROSS-SELL / UP-SELL ====
+  // Answers the two questions a rep has at the clinic door: what do they
+  // already buy, and what should I sell them next? Every suggestion carries
+  // its evidence — either this clinic's own re-order history, or how many
+  // comparable clinics already buy the thing they are missing.
+  function catKeyOf(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+  // Invoice product names are free text; the catalog is the source of brand,
+  // category and list price. Token overlap is enough to bridge the two.
+  function matchCatalogProduct(name, products){
+    var nt = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    if(!nt.length) return null;
+    var best = null, bestScore = 0;
+    (products || []).forEach(function(pr){
+      var pt = ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+      var ov = nt.filter(function(t){ return pt.indexOf(t) >= 0; }).length;
+      var score = ov / Math.max(1, Math.max(nt.length, Math.min(pt.length, nt.length + 2)));
+      if(ov >= Math.min(2, nt.length) && score > bestScore){ best = pr; bestScore = score; }
+    });
+    return bestScore >= 0.5 ? best : null;
+  }
+
+  function crossSellPlan(opts){
+    opts = opts || {};
+    var clinics = opts.clinics || [];
+    var products = opts.products || [];
+    var today = opts.today || todayStr();
+    var limit = opts.limit || 3;
+    var out = { bought: [], upsell: [], cross: [], lapsed: [], catsBought: 0, lines: 0, net: 0 };
+    var me = null;
+    clinics.forEach(function(c){ if(c && c.id === opts.clinicId) me = c; });
+    if(!me) return out;
+
+    var memo = {};
+    function catalogInfo(name){
+      var k = catKeyOf(name);
+      if(memo[k] !== undefined) return memo[k];
+      var pr = matchCatalogProduct(name, products);
+      return (memo[k] = pr ? { name: pr.name, cat: pr.cat || '', brand: pr.brand || '', price: pr.price || 0 } : null);
+    }
+
+    // Purchase lines: ERP invoices are authoritative; app-logged orders keep
+    // the guide alive for clinics whose invoices have not been imported yet.
+    var lines = [];
+    (opts.erpRows || []).forEach(function(r){
+      if(!r || r.type === 'return') return;
+      if(!(r.net > 0) && !(r.qty > 0)) return;
+      var m = matchCustomer((r.customer || '').trim(), clinics, opts.erpMap);
+      if(!m.clinicId) return;
+      var pn = (r.product || '').trim();
+      if(!pn) return;
+      var ci = catalogInfo(pn);
+      lines.push({ clinicId: m.clinicId, product: (ci && ci.name) || pn,
+        brand: normBrand(r.brand || (ci && ci.brand) || ''), cat: (ci && ci.cat) || '',
+        qty: Math.max(0, r.qty || 0), net: Math.max(0, r.net || 0), date: r.date || '' });
+    });
+    var byKey = {};
+    products.forEach(function(pr){ byKey[pr._key || pr.id] = pr; });
+    (opts.visits || []).forEach(function(v){
+      if(!v || !v.clinicId) return;
+      (v.orders || []).forEach(function(o){
+        (o.items || []).forEach(function(it){
+          var pr = byKey[it.productId];
+          if(!pr) return;
+          lines.push({ clinicId: v.clinicId, product: pr.name, brand: normBrand(pr.brand || ''),
+            cat: pr.cat || '', qty: it.qty || 0, net: (pr.price || 0) * (it.qty || 0), date: v.date || '' });
+        });
+      });
+    });
+
+    var mineByProduct = {}, myCat = {}, clinicCats = {}, catClinics = {}, marketByCat = {};
+    lines.forEach(function(l){
+      var cat = l.cat;
+      if(cat){
+        (clinicCats[l.clinicId] = clinicCats[l.clinicId] || {})[cat] = true;
+        (catClinics[cat] = catClinics[cat] || {})[l.clinicId] = true;
+        var mc = marketByCat[cat] || (marketByCat[cat] = { qty: 0, net: 0, prods: {} });
+        mc.qty += l.qty; mc.net += l.net;
+        var mp = mc.prods[l.product] || (mc.prods[l.product] = { qty: 0, net: 0, clinics: {}, brand: l.brand });
+        mp.qty += l.qty; mp.net += l.net; mp.clinics[l.clinicId] = true;
+      }
+      if(l.clinicId !== me.id) return;
+      out.lines++; out.net += l.net;
+      var a = mineByProduct[l.product] || (mineByProduct[l.product] =
+        { product: l.product, brand: l.brand, cat: cat, qty: 0, net: 0, last: '', times: 0 });
+      a.qty += l.qty; a.net += l.net; a.times++;
+      if(l.date > a.last) a.last = l.date;
+      if(cat){
+        var k = myCat[cat] || (myCat[cat] = { qty: 0, net: 0 });
+        k.qty += l.qty; k.net += l.net;
+      }
+    });
+    out.net = Math.round(out.net * 100) / 100;
+
+    var myCats = Object.keys(myCat);
+    out.catsBought = myCats.length;
+    out.bought = Object.keys(mineByProduct).map(function(k){ return mineByProduct[k]; })
+      .sort(function(a, b){ return b.net - a.net; })
+      .map(function(b){ return { product: b.product, brand: b.brand, cat: b.cat,
+        units: b.qty, net: Math.round(b.net * 100) / 100, lastDate: b.last, times: b.times }; })
+      .slice(0, Math.max(limit, 5));
+
+    // Cross-sell: a category comparable clinics buy and this one never has.
+    // "Comparable" = same class, or overlapping buying profile.
+    var cross = [];
+    Object.keys(marketByCat).forEach(function(cat){
+      if(myCat[cat]) return;
+      var buyers = Object.keys(catClinics[cat] || {}).filter(function(id){ return id !== me.id; });
+      var similar = buyers.filter(function(id){
+        var peer = null;
+        clinics.forEach(function(c){ if(c && c.id === id) peer = c; });
+        if(peer && me.cls && peer.cls === me.cls) return true;
+        var pc = clinicCats[id] || {};
+        return myCats.some(function(c2){ return pc[c2]; });
+      });
+      if(!similar.length) return;
+      var best = null;
+      Object.keys(marketByCat[cat].prods).forEach(function(pn){
+        var pp = marketByCat[cat].prods[pn];
+        var score = Object.keys(pp.clinics).length * 2 + pp.qty;
+        if(!best || score > best.score) best = { name: pn, brand: pp.brand, score: score, qty: pp.qty };
+      });
+      if(!best) return;
+      var pr = matchCatalogProduct(best.name, products);
+      cross.push({ product: best.name, brand: best.brand, cat: cat,
+        price: pr ? pr.price || 0 : 0, peers: similar.length, marketNet: marketByCat[cat].net,
+        reason: similar.length + ' comparable clinic' + (similar.length === 1 ? '' : 's') +
+          ' buy ' + cat + ' — this one never has' });
+    });
+    cross.sort(function(a, b){ return b.peers - a.peers || b.marketNet - a.marketNet; });
+    out.cross = cross.slice(0, limit);
+
+    // Up-sell: a real price step inside a category they already buy, proven by
+    // other clinics buying it.
+    var ups = [];
+    myCats.forEach(function(cat){
+      var mineAvg = myCat[cat].qty > 0 ? myCat[cat].net / myCat[cat].qty : 0;
+      if(!(mineAvg > 0)) return;
+      var mc = marketByCat[cat];
+      Object.keys(mc.prods).forEach(function(pn){
+        if(mineByProduct[pn]) return;
+        var pp = mc.prods[pn];
+        var price = pp.qty > 0 ? pp.net / pp.qty : 0;
+        if(!(price >= mineAvg * 1.25)) return;
+        var buyers = Object.keys(pp.clinics).filter(function(id){ return id !== me.id; }).length;
+        if(!buyers) return;
+        ups.push({ product: pn, brand: pp.brand, cat: cat,
+          price: Math.round(price * 100) / 100, from: Math.round(mineAvg * 100) / 100,
+          buyers: buyers, lift: price / mineAvg,
+          reason: 'They buy ' + cat + ' at about ' + money(Math.round(mineAvg * 100) / 100) +
+            ' a unit — this is the step up, and ' + buyers + ' other clinic' + (buyers === 1 ? ' takes' : 's take') + ' it' });
+      });
+    });
+    ups.sort(function(a, b){ return b.buyers - a.buyers || b.lift - a.lift; });
+    out.upsell = ups.slice(0, limit);
+
+    // Lapsed: a proven repeat purchase that stopped.
+    var gapDays = opts.lapsedDays || 45;
+    out.lapsed = out.bought.filter(function(b){
+      return b.times >= 2 && b.lastDate && daysBetween(b.lastDate, today) >= gapDays;
+    }).map(function(b){
+      var d = daysBetween(b.lastDate, today);
+      return { product: b.product, brand: b.brand, cat: b.cat, lastDate: b.lastDate,
+        daysSince: d, units: b.units, times: b.times,
+        reason: 'Bought ' + b.times + ' times, last ' + fmtDate(b.lastDate) + ' (' + d + ' days ago) — due a re-order' };
+    }).sort(function(a, b){ return b.daysSince - a.daysSince; }).slice(0, limit);
+
+    return out;
+  }
+
   // ==== CONTACTS BULK IMPORT ====
   // One sheet with every contact in the market -> parsed, matched to the
   // right clinic automatically, specialties normalized, birthdays accepted in
@@ -1823,6 +1993,7 @@
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, parseContactRows, parseDateLoose, matchSpecialty,
-    detectClinicColumns, parseClinicRows, focLinesAnnotated
+    detectClinicColumns, parseClinicRows, focLinesAnnotated,
+    matchCatalogProduct, crossSellPlan
   };
 });
