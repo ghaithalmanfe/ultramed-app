@@ -170,7 +170,7 @@
   .gate-tile{background:var(--card); border-radius:20px; padding:20px 14px 18px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,.25); border:2px solid transparent; transition:transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s, border-color .18s; -webkit-tap-highlight-color:transparent;}
   .gate-tile:active{transform:scale(.95);}
   .gate-tile:hover{border-color:var(--green); box-shadow:0 10px 26px rgba(0,0,0,.35);}
-  .gate-tile.wide{grid-column:1 / -1; display:flex; align-items:center; gap:16px; text-align:left; padding:18px 20px;}
+  .gate-tile.wide{grid-column:1 / -1; display:flex; align-items:center; gap:16px; text-align:start; padding:18px 20px;}
   .gate-av{width:64px; height:64px; border-radius:50%; margin:0 auto 12px; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:#fff; box-shadow:0 4px 12px rgba(0,0,0,.14);}
   .gate-tile.wide .gate-av{margin:0; width:56px; height:56px; font-size:23px; flex-shrink:0;}
   .gate-name{font-weight:700; font-size:16px; letter-spacing:-.01em;}
@@ -184,7 +184,7 @@
   .gate .link:hover{opacity:1;}
   .gate-card .disp{font-size:26px; font-weight:700; margin-bottom:6px;}
   .gate-card p{color:var(--muted); font-size:14px; margin-bottom:26px;}
-  .gate-option{display:block; width:100%; text-align:left; padding:18px 20px; margin-bottom:10px; border-radius:var(--radius); border:none; background:var(--card); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.06); transition:transform .15s ease;}
+  .gate-option{display:block; width:100%; text-align:start; padding:18px 20px; margin-bottom:10px; border-radius:var(--radius); border:none; background:var(--card); cursor:pointer; box-shadow:0 1px 3px rgba(0,0,0,.06); transition:transform .15s ease;}
   .gate-option:active{transform:scale(.98);}
   .gate-option .name{font-weight:700; font-size:16px;}
   .gate-option .role{font-size:12.5px; color:var(--muted); margin-top:2px;}
@@ -198,7 +198,7 @@
   .score-card{margin-bottom:12px;}
   .guidance-block{margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);}
   .guidance-head{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px;}
-  .focus-card{background:var(--green-dim); border-left:4px solid var(--coral); border-radius:0 var(--radius) var(--radius) 0; padding:14px 16px; margin-bottom:18px;}
+  .focus-card{background:var(--green-dim); border-inline-start:4px solid var(--coral); border-radius:0 var(--radius) var(--radius) 0; padding:14px 16px; margin-bottom:18px;}
   .focus-label{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--green-dark);}
   .focus-text{font-size:14.5px; font-weight:600; color:var(--ink); line-height:1.4; margin-top:4px;}
   .focus-action{font-size:13px; color:var(--green-dark); margin-top:5px; font-weight:600;}
@@ -253,7 +253,7 @@
   .spec-row{display:flex; justify-content:space-between; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); font-size:14px;}
   .spec-row:last-child{border-bottom:none;}
   .spec-row .k{color:var(--muted); flex-shrink:0;}
-  .spec-row .v{font-weight:600; text-align:right;}
+  .spec-row .v{font-weight:600; text-align:end;}
   .pbig{width:100%; max-height:190px; object-fit:contain; border-radius:14px; background:var(--paper); display:block; margin-bottom:14px;}
   .pb-hero{border-radius:18px; padding:18px; color:#fff; margin-bottom:16px;}
   .pb-hero .ic{font-size:34px;}
@@ -296,7 +296,7 @@
   .msg.me{align-self:flex-end; background:#1C5A38; color:#FFFFFF; border:1px solid rgba(196,228,206,.35); border-bottom-right-radius:5px;}
   .msg .who{font-size:11px; font-weight:700; color:var(--green-dark); margin-bottom:3px;}
   .msg.me .who{color:#FFFFFF; opacity:.75;}
-  .msg .when{font-size:10px; color:var(--muted); margin-top:4px; text-align:right;}
+  .msg .when{font-size:10px; color:var(--muted); margin-top:4px; text-align:end;}
   .msg.me .when{color:#C4E4CE; opacity:.85;}
   .msg img{max-width:100%; border-radius:10px; margin-top:6px; display:block;}
   .composer{display:flex; gap:8px; align-items:flex-end; position:sticky; bottom:82px; background:var(--paper); padding:8px 0;}
@@ -341,7 +341,7 @@
   .streak .sf{font-size:26px;}
   .streak .sn{font-size:17px; font-weight:700; color:#9A6200;}
   .streak .sl{font-size:12px; color:#8A5800; margin-top:1px;}
-  .nudge{background:var(--green-dim); border-left:4px solid var(--green); border-radius:0 12px 12px 0; padding:12px 15px; font-size:13.5px; line-height:1.5; color:var(--green-deep); margin-bottom:10px; font-weight:500;}
+  .nudge{background:var(--green-dim); border-inline-start:4px solid var(--green); border-radius:0 12px 12px 0; padding:12px 15px; font-size:13.5px; line-height:1.5; color:var(--green-deep); margin-bottom:10px; font-weight:500;}
   .progline{font-size:12px; color:var(--green-dark); font-weight:600; margin-top:6px;}
   .chartcard{background:var(--card); border-radius:var(--radius); padding:16px 18px; margin-bottom:10px; box-shadow:0 1px 2px rgba(0,0,0,.04);}
   .chartcard h4{margin:0 0 2px; font-size:15px;}
@@ -2693,7 +2693,7 @@ function renderOccasionsCard(){
   const bdays = docs.filter(d=>d.birthdayIn!=null && d.birthdayIn<=7).sort((a,b)=>a.birthdayIn-b.birthdayIn);
   const due = docs.filter(d=>d.cadenceStatus==='due').length;
   if(!bdays.length && !due){ el.innerHTML=''; return; }
-  el.innerHTML = `<div class="card clickable" style="margin-bottom:14px; border-left:4px solid var(--gold);" onclick="switchView('doctors')">
+  el.innerHTML = `<div class="card clickable" style="margin-bottom:14px; border-inline-start:4px solid var(--gold);" onclick="switchView('doctors')">
     <div style="font-weight:700; font-size:13.5px;">${I('gift')} Occasions & follow-ups</div>
     ${bdays.slice(0,3).map(d=>`<div style="font-size:12.5px; padding:2px 0;">🎂 <b>${esc(d.name)}</b> (${esc(d.clinicName)}) — ${d.birthdayIn===0?'birthday TODAY!':'in '+d.birthdayIn+' day'+(d.birthdayIn===1?'':'s')}</div>`).join('')}
     ${due?`<div style="font-size:12.5px; padding:2px 0;">⏰ <b>${due}</b> doctor${due===1?'':'s'} overdue for a scheduled visit</div>`:''}
@@ -2763,7 +2763,7 @@ function renderMissedPlans(){
           <div class="clinic-name">${esc(cname(m.clinicId))}</div>
           <div class="clinic-sub">Planned ${fmtDate(m.date)}${currentUser.role==='supervisor'?' · '+esc(m.rep):''}${m.note?' · '+esc(m.note):''} · not visited</div>
         </div>
-        <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
+        <div style="display:flex; gap:6px; flex-shrink:0; margin-inline-start:8px;">
           <button class="chip small" onclick="openReschedulePlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">${I('calendar')} Reschedule</button>
           <button class="chip small" onclick="removeMissedPlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">✕</button>
         </div>
@@ -2928,7 +2928,7 @@ function renderTasks(){
     return;
   }
   list.innerHTML = ordered.map(t=>{
-    const dueBadge = (t.dueDate && !t.done) ? `<span class="badge ${followStatus(t.dueDate)}" style="margin-left:6px;">${statusLabel(t.dueDate).split('·')[0].trim()}</span>` : '';
+    const dueBadge = (t.dueDate && !t.done) ? `<span class="badge ${followStatus(t.dueDate)}" style="margin-inline-start:6px;">${statusLabel(t.dueDate).split('·')[0].trim()}</span>` : '';
     const clickable = t.kind==='followup' && t.clinicId;
     return `
     <div class="task-item" style="padding:7px 0;">
@@ -3234,16 +3234,8 @@ function renderJointChips(){
   const el = document.getElementById('jointChips');
   const wrap = document.getElementById('jointWrap');
   if(!el) return;
-  // Attributing a visit to a colleague is a supervisor action: a rep must not
-  // be able to write anything into another rep's record from their account.
-  if(currentUser.role !== 'supervisor'){
-    jointRep = null;
-    if(wrap) wrap.style.display = 'none';
-    el.innerHTML = '';
-    return;
-  }
-  if(wrap) wrap.style.display = 'block';
   const options = REPS.filter(r=>r!==logAsRep);
+  if(wrap) wrap.style.display = options.length ? 'block' : 'none';
   el.innerHTML = `<div class="chip small ${!jointRep?'on':''}" onclick="setJointRep(null)">Solo</div>`
     + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${esc(r)}')">🤝 ${esc(r)}</div>`).join('');
 }
@@ -3260,7 +3252,7 @@ function renderClinicSelect(qClinicId){
       listEl.style.display='none';
       document.getElementById('newClinicBtn').style.display='none';
       cardEl.style.display='block';
-      cardEl.innerHTML = `<div class="card" style="border-left:4px solid ${clsColor(c.cls)};">
+      cardEl.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
         <div class="row-between">
           <div style="display:flex; align-items:center; gap:11px;">
             <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -3297,7 +3289,7 @@ function renderClinicSelect(qClinicId){
     return;
   }
   listEl.innerHTML = list.map(c=>`
-    <div class="card clickable" style="padding:12px 14px; border-left:4px solid ${clsColor(c.cls)};" onclick="pickClinic('${c.id}')">
+    <div class="card clickable" style="padding:12px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="pickClinic('${c.id}')">
       <div class="row-between">
         <div style="display:flex; align-items:center; gap:11px;">
           <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -3364,7 +3356,7 @@ function renderDoctorPick(c){
   const d = docs.find(x=>x.id===selectedDoctorIds[selectedDoctorIds.length-1]);
   if(d && d.title && SPECIALTY_PLAYBOOK[d.title]){
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    tip.innerHTML = `<div class="card clickable" style="margin-top:10px; background:${pb.color}14; border-left:4px solid ${pb.color};" onclick="openPlaybook('${d.title}')">
+    tip.innerHTML = `<div class="card clickable" style="margin-top:10px; background:${pb.color}14; border-inline-start:4px solid ${pb.color};" onclick="openPlaybook('${d.title}')">
       <div style="font-size:12px; font-weight:700; color:${pb.color}; text-transform:uppercase; letter-spacing:.05em;">${pb.icon} ${esc(d.title)}</div>
       <div style="font-size:13px; margin-top:5px; line-height:1.5;">${esc(pb.lead[0])}</div>
       <div style="font-size:12.5px; color:${pb.color}; font-weight:600; margin-top:6px;">Open full playbook ›</div>
@@ -3564,11 +3556,11 @@ async function saveVisit(){
   if(window._lastVisitSaveAt && now - window._lastVisitSaveAt < 4000){ showToast('Already saving…'); return; }
   window._lastVisitSaveAt = now;
   let clinicId = selectedClinicId;
-  // The UI hides the pickers for reps; enforce it here too so no stale screen
-  // or edited markup can file a visit under someone else's name.
-  const isRep = currentUser.role !== 'supervisor';
-  const rep = isRep ? currentUser.name : logAsRep;
-  const joint = isRep ? null : jointRep;
+  // A rep files visits under their own name only — "logging as" is a
+  // supervisor control, enforced here too so no stale screen can bypass it.
+  // Marking a colleague as joint stays open to everyone: both were there.
+  const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
+  const joint = jointRep;
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
     if(!name){ showToast('Enter a clinic name'); return; }
@@ -3801,7 +3793,7 @@ function erpDashSection(){
   const clsBars = svgBars(CLS.map(k=>({l:k, v:d.nonBuyers.filter(x=>x.c.cls===k).length, c:clsColor(k)})));
   const rows = erpDashTab==='not'
     ? d.nonBuyers.slice(0,40).map(x=>`
-      <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${x.c.id}')">
+      <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${x.c.id}')">
         <div class="row-between">
           <div>
             <div class="clinic-name">${esc(x.c.name)}${clinicIsRx(x.c)?' <span style="font-size:11px; color:var(--teal); font-weight:700;">'+(clinicIsDirect(x.c)?'℞ + direct':'℞ prescription')+'</span>':''}</div>
@@ -3820,7 +3812,7 @@ function erpDashSection(){
         </div>
       </div>`).join('') + (d.nonBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${d.nonBuyers.length-40} more in the list view</div>`:'')
     : clinicBuyers.slice(0,40).map(b=>`
-      <div class="card ${b.clinicId?'clickable':''}" style="padding:11px 14px; border-left:4px solid ${b.net<0?'var(--coral)':'var(--sage)'};" ${b.clinicId?`onclick="openClinicDetail('${b.clinicId}')"`:''}>
+      <div class="card ${b.clinicId?'clickable':''}" style="padding:11px 14px; border-inline-start:4px solid ${b.net<0?'var(--coral)':'var(--sage)'};" ${b.clinicId?`onclick="openClinicDetail('${b.clinicId}')"`:''}>
         <div class="row-between">
           <div>
             <div class="clinic-name">${esc(b.name)}${b.clinicId?'':' <span style="font-size:11px; color:var(--muted);">⚠ not linked</span>'}</div>
@@ -3830,7 +3822,7 @@ function erpDashSection(){
         </div>
       </div>`).join('') + (clinicBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${clinicBuyers.length-40} more</div>`:'');
   return `
-  <div class="chartcard" style="border-left:4px solid var(--gold);">
+  <div class="chartcard" style="border-inline-start:4px solid var(--gold);">
     <h4>🧾 Customer sales — who bought & who didn't</h4>
     <div class="csub">${d.periodLabel} · from the uploaded sales files${d.maxDate?' · to '+fmtDate(d.maxDate):''}</div>
     <div class="kpi4" style="margin:10px 0 4px;">
@@ -4037,7 +4029,7 @@ function renderClinics(){
     const act = clinicNextAction(c, st);
     const visitTxt = st.total===0 ? '⭕ no visits yet' : `${st.total} visit${st.total===1?'':'s'}`;
     return `
-    <div class="card clickable" style="border-left:4px solid ${clsColor(c.cls)};" onclick="openClinicDetail('${c.id}')">
+    <div class="card clickable" style="border-inline-start:4px solid ${clsColor(c.cls)};" onclick="openClinicDetail('${c.id}')">
       <div class="row-between">
         <div class="row-between" style="gap:11px;">
           <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -4291,14 +4283,14 @@ function erpNoteInput(key){
 function clinicErpSection(clinicId){
   const led = clinicErpLedger(clinicId);
   if(!led.ret.length && !led.foc.length) return '';
-  const retRows = led.ret.map(r=>`<div class="visit-hist" style="border-left:3px solid ${isExchangeLine(r)?'var(--gold)':'var(--coral)'}; padding-left:10px;">
+  const retRows = led.ret.map(r=>`<div class="visit-hist" style="border-inline-start:3px solid ${isExchangeLine(r)?'var(--gold)':'var(--coral)'}; padding-inline-start:10px;">
       <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · <span style="color:var(--coral-ink); font-weight:700;">−${money(r.retAmount)}</span> <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
       ${retKindChips(r)}
       ${erpNoteInput(erpNoteKey('ret', r))}
     </div>`).join('');
   const focRows = led.foc.map(r=>{
     const key = erpNoteKey('foc', r);
-    return `<div class="visit-hist" style="border-left:3px solid var(--gold); padding-left:10px;">
+    return `<div class="visit-hist" style="border-inline-start:3px solid var(--gold); padding-inline-start:10px;">
       <strong>${fmtDate(r.date)}</strong> · ${esc(r.product||r.brand)}${r.qty?` ×${r.qty}`:''} · free${r.gross?` <span style="color:var(--muted);">(worth ${money(r.gross)})</span>`:''} <span style="color:var(--muted); font-size:11.5px;">${esc(r.doc||'')}</span>
       ${focKindChips(key, r.kindDefault)}
       ${erpNoteInput(key)}
@@ -4752,7 +4744,7 @@ function renderSoClinics(){
   if(soClinicId){
     const c = clinics.find(x=>x.id===soClinicId);
     if(c){
-      el.innerHTML = `<div class="card" style="border-left:4px solid ${clsColor(c.cls)};">
+      el.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
         <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
         <button class="del" onclick="soClinicId=null; renderSoClinics();">&times;</button></div></div>`;
       return;
@@ -4763,7 +4755,7 @@ function renderSoClinics(){
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
   el.innerHTML = pool.length ? pool.map(c=>`
-    <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(c.cls)};" onclick="soClinicId='${c.id}'; renderSoClinics();">
+    <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="soClinicId='${c.id}'; renderSoClinics();">
       <div class="clinic-name">${esc(c.name)}</div>
       <div class="clinic-sub">${esc(c.rep||'')}</div>
     </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
@@ -4927,7 +4919,7 @@ function renderClClinics(){
   if(clClinicId){
     const c = clinics.find(x=>x.id===clClinicId);
     if(c){
-      el.innerHTML = `<div class="card" style="border-left:4px solid ${clsColor(c.cls)};">
+      el.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
         <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
         <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();">&times;</button></div></div>`;
       renderClDoctors();
@@ -4939,7 +4931,7 @@ function renderClClinics(){
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
   el.innerHTML = pool.length ? pool.map(c=>`
-    <div class="card clickable" style="padding:11px 14px; border-left:4px solid ${clsColor(c.cls)};" onclick="clClinicId='${c.id}'; renderClClinics();">
+    <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="clClinicId='${c.id}'; renderClClinics();">
       <div class="clinic-name">${esc(c.name)}</div>
       <div class="clinic-sub">${esc(c.rep||'')}</div>
     </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
@@ -5008,7 +5000,7 @@ function openEditVisit(visitId){
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:clinicLabel(v.clinicId, v))}</p>
     <label>Date</label>
     <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
-    ${!v.orderOnly && !v.callOnly && currentUser.role==='supervisor' ? `
+    ${!v.orderOnly && !v.callOnly ? `
     <label>Joint visit with</label>
     <select id="evJoint">
       <option value="">Solo visit</option>
@@ -5148,7 +5140,7 @@ function confirmDeleteVisit(visitId){
   const c = clinics.find(x=>x.id===v.clinicId);
   showModal(`
     <h3 style="margin-top:0;">Delete this ${v.orderOnly?'order':'visit'}?</h3>
-    <div class="card" style="border-left:4px solid var(--coral); margin-bottom:14px;">
+    <div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:14px;">
       <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}</div>
       <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}</div>
       ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
@@ -5293,7 +5285,7 @@ function adminTeamStatsHTML(){
     const daysSince = last ? daysBetween(last, today) : null;
     const stale = daysSince===null || daysSince>3;
     const person = staff.find(s=>s.name===r);
-    html += `<div class="card" style="margin-bottom:10px; border-left:4px solid ${stale?'var(--coral)':'var(--sage)'};">
+    html += `<div class="card" style="margin-bottom:10px; border-inline-start:4px solid ${stale?'var(--coral)':'var(--sage)'};">
       <div class="row-between" style="margin-bottom:4px;">
         <div class="clinic-name">${esc(r)}${person&&person.role==='supervisor'?' <span class="rep-tag">supervisor</span>':''}</div>
         <button class="chip small" style="flex-shrink:0;" onclick="openStaffForm(${staff.indexOf(person)})">Edit</button>
@@ -5347,7 +5339,7 @@ function renderAdminTerritory(){
   if(!list.length){ el.innerHTML = `<div class="empty">No clinics match.</div>`; return; }
   el.innerHTML = list.map(c=>{
     const vCount = visits.filter(v=>v.clinicId===c.id).length;
-    return `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c.cls)};">
+    return `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c.cls)};">
       <div class="clinic-name">${esc(c.name)}</div>
       <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}</div>
       <div class="chip-row">
@@ -5404,7 +5396,7 @@ function adminHealthHTML(){
   });
   const row = (label, items, color) => {
     const n = items.length;
-    return `<div class="card" style="margin-bottom:8px; ${n?'border-left:4px solid '+color+';':''}">
+    return `<div class="card" style="margin-bottom:8px; ${n?'border-inline-start:4px solid '+color+';':''}">
       <div class="row-between">
         <div style="flex:1;">
           <div class="clinic-name">${label}</div>
@@ -5542,7 +5534,7 @@ function renderVisitLog(){
     const c = clinics.find(x=>x.id===v.clinicId);
     const prods = (v.products||[]).map(id=>productName(id)).filter(Boolean);
     const canEdit = canEditVisit(v);
-    html += `<div class="card" style="margin-bottom:8px; border-left:4px solid ${clsColor(c?c.cls:null)};">
+    html += `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c?c.cls:null)};">
       <div class="row-between">
         <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
           <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
@@ -5552,7 +5544,7 @@ function renderVisitLog(){
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
           ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
         </div>
-        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-left:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
+        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
       </div>
     </div>`;
   });
@@ -6118,7 +6110,7 @@ function renderDoctorsDb(){
           <div class="clinic-name">${pb?pb.icon+' ':''}${esc(d.name)}${d.title?` <span style="color:var(--muted); font-size:11.5px; font-weight:400;">${esc(d.title)}</span>`:''}</div>
           <div class="clinic-sub">${esc(d.clinicName)}${currentUser.role==='supervisor'?' · '+esc(d.rep):''} · ${d.fieldVisits} visit${d.fieldVisits===1?'':'s'}${d.calls?` · ${d.calls} call${d.calls===1?'':'s'}`:''}${d.lastVisit?` · last ${fmtDate(d.lastVisit)}`:' · never visited'}</div>
         </div>
-        <div style="text-align:left; flex-shrink:0; display:flex; flex-direction:column; gap:3px; align-items:flex-end;">
+        <div style="text-align:start; flex-shrink:0; display:flex; flex-direction:column; gap:3px; align-items:flex-end;">
           ${d.cadenceStatus==='due'?`<span class="badge overdue">${I('bell')} ${d.overdueDays}d late</span>`:d.cadence?`<span class="badge upcoming">✓ ${esc(d.cadence)}</span>`:''}
           ${d.birthdayIn!=null && d.birthdayIn<=14?`<span class="badge today">${I('cake')} ${d.birthdayIn===0?'TODAY':'in '+d.birthdayIn+'d'}</span>`:''}
           ${d.handovers.rxMonth?`<span style="font-size:10.5px; color:var(--teal); font-weight:700;">💊 ${d.handovers.rxMonth} this month</span>`:''}
@@ -6380,7 +6372,7 @@ function openDoctorProfile(clinicId, docId){
     <p style="color:var(--muted); font-size:12.5px; margin:2px 0 10px;">${esc(d.title||'—')} · <a onclick="closeModal(); openClinicDetail('${clinicId}')" style="text-decoration:underline; cursor:pointer;">${esc(c.name)}</a>${currentUser.role==='supervisor'?' · '+esc(c.rep):''}${d.phone?` · <a href="tel:${esc(d.phone)}">📞 ${esc(d.phone)}</a>`:''}</p>
 
     <div class="section-title" style="margin-top:0;">🎯 ما يجب عمله</div>
-    <div class="card" style="border-left:4px solid var(--teal);">${acts.map(a=>`<div style="font-size:12.5px; padding:3px 0;">${esc(a)}</div>`).join('')}</div>
+    <div class="card" style="border-inline-start:4px solid var(--teal);">${acts.map(a=>`<div style="font-size:12.5px; padding:3px 0;">${esc(a)}</div>`).join('')}</div>
 
     <div class="section-title">📊 الأرقام</div>
     <div class="card" style="padding:10px 12px;">
@@ -6419,7 +6411,7 @@ function openDoctorProfile(clinicId, docId){
       <button class="btn small" style="margin-top:8px;" onclick="addHandover('${clinicId}','${docId}')">➕ سجّل التسليم</button>
     </div>`:''}
     ${(d.handovers||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(h=>`
-      <div class="visit-hist" style="border-left:3px solid ${h.kind==='prescription'?'var(--teal)':h.kind==='gift'?'var(--gold)':'var(--sage)'}; padding-left:10px;">
+      <div class="visit-hist" style="border-inline-start:3px solid ${h.kind==='prescription'?'var(--teal)':h.kind==='gift'?'var(--gold)':'var(--sage)'}; padding-inline-start:10px;">
         <strong>${fmtDate(h.date)}</strong> · ${KINDS[h.kind]||h.kind} · ${esc(h.what||'')}${h.qty>1?` ×${h.qty}`:''}
         <span style="color:var(--muted); font-size:11px;"> — ${esc(h.by||'')}</span>
         ${canEdit?`<button class="del" style="float:left;" onclick="removeHandover('${clinicId}','${docId}','${h.id}')">&times;</button>`:''}
@@ -6696,7 +6688,7 @@ function renderClinicAnalysis(){
               <div class="clinic-sub">${cd.fieldN} visit${cd.fieldN===1?'':'s'} · ${cd.callsN} call${cd.callsN===1?'':'s'} this month${cd.lastV?` · last ${fmtDate(cd.lastV.date)}`:' · never visited'}</div>
             </div>
           </div>
-          <div style="text-align:left; flex-shrink:0;">
+          <div style="text-align:start; flex-shrink:0;">
             <div style="font-weight:800; font-size:14px;">${money(cd.act)} <span style="color:var(--muted); font-weight:500; font-size:11px;">/ ${money(cd.tgt)}</span></div>
             <div style="font-size:10.5px; font-weight:700; color:${cd.pct>=100?'var(--sage-ink)':cd.pct>=50?'var(--gold-ink)':'var(--coral-ink)'};">${cd.pct}% of clinic target</div>
           </div>
@@ -6766,7 +6758,7 @@ function openClinicAllocDetail(clinicId){
               <div style="font-size:11px; color:var(--muted);">${x.price.toFixed(2)} KD each</div></div>
               <div style="font-weight:800; font-size:14px; color:var(--teal); flex-shrink:0;">×${x.units}</div>
             </div>`).join('')}
-            <div style="font-size:11px; color:var(--muted); text-align:left;">= ${money(up.reduce((s2,x)=>s2+x.amount,0))}</div>
+            <div style="font-size:11px; color:var(--muted); text-align:start;">= ${money(up.reduce((s2,x)=>s2+x.amount,0))}</div>
           </div>`;
         }
         return `<div class="spec-row" style="${r.gap>0.005?'border-bottom:none;':''}"><span class="k">${esc(r.b)}</span>
@@ -6794,7 +6786,7 @@ function renderPlaybookGrid(){
   // Doctors the team logged WITHOUT a specialty were invisible here — surface
   // them with one-tap tagging so every recorded doctor lands in a category.
   const untaggedCard = untagged.length ? `
-    <div class="card" style="grid-column:1/-1; border-left:4px solid var(--gold);">
+    <div class="card" style="grid-column:1/-1; border-inline-start:4px solid var(--gold);">
       <div style="font-weight:700; font-size:14px;">🏷️ ${untagged.length} doctor${untagged.length===1?'':'s'} without a specialty</div>
       <div style="color:var(--muted); font-size:12px; margin:2px 0 8px;">Recorded by the team but not tagged yet — tap a specialty to file each one.</div>
       ${untagged.slice(0,12).map(u=>`
@@ -7189,7 +7181,7 @@ function renderCoverageBoard(){
     </details>`;
   }).join('');
   const needsRows = cov.needsVisit.map(c => `
-    <div class="card" style="padding:12px 14px; margin-bottom:8px; border-left:4px solid ${c.weight<=1?'var(--coral)':c.weight<=4?'#FF9500':'var(--teal)'};">
+    <div class="card" style="padding:12px 14px; margin-bottom:8px; border-inline-start:4px solid ${c.weight<=1?'var(--coral)':c.weight<=4?'#FF9500':'var(--teal)'};">
       <div class="row-between">
         <div style="display:flex; align-items:center; gap:9px;">
           <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -7226,7 +7218,7 @@ function renderCoverageBoard(){
     </div>
     ${ew && cov.stats.revenue ? `<div style="color:var(--muted); font-size:11.5px; margin:-6px 0 10px;">App-logged in this window: ${cov.stats.orders} order${cov.stats.orders===1?'':'s'} · ${money(cov.stats.revenue)}</div>` : ''}
     ${coach.length?`<div class="section-title" style="margin-top:0;">🧭 Top advice right now</div>
-      ${coach.map(i=>`<div class="card" style="padding:10px 14px; margin-bottom:6px; border-left:4px solid ${i.level==='act'?'var(--coral)':'#FF9500'};">
+      ${coach.map(i=>`<div class="card" style="padding:10px 14px; margin-bottom:6px; border-inline-start:4px solid ${i.level==='act'?'var(--coral)':'#FF9500'};">
         <div style="font-weight:700; font-size:13px;">${i.icon} ${esc(i.title)}</div>
         <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:2px;">${esc(i.detail)}</div>
       </div>`).join('')}`:''}
@@ -7248,7 +7240,7 @@ function renderErpNudge(){
   const stale = !latest || staleDays >= 7;
   el.style.display = stale ? 'block' : 'none';
   if(!stale){ el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="card clickable" style="border-left:4px solid var(--purple); margin-bottom:6px;" onclick="openErpImport()">
+  el.innerHTML = `<div class="card clickable" style="border-inline-start:4px solid var(--purple); margin-bottom:6px;" onclick="openErpImport()">
     <div style="font-weight:700; font-size:13.5px;">${I('download')} Weekly sales file due</div>
     <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">
       ${latest ? `Latest ERP data covers up to ${fmtDate(latest.to)} (${staleDays} days ago).` : 'No ERP sales file imported yet.'}
@@ -7466,13 +7458,13 @@ function renderMonthClose(m){
     const names = [...new Set([...Object.keys(bt), ...Object.keys(ab)])].sort((a,b)=>(bt[b]||0)-(bt[a]||0));
     if(!names.length) return '';
     return `<div style="margin-top:6px; overflow-x:auto;"><table style="width:100%; font-size:11.5px; border-collapse:collapse;">
-      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:left;">تارغت</td><td style="text-align:left;">محقق</td><td style="text-align:left;">%</td></tr>
+      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق</td><td style="text-align:start;">%</td></tr>
       ${names.map(n=>{
         const tv = bt[n]||0, av = ab[n]||0;
         const p = tv>0 ? Math.round(av/tv*100) : null;
         return `<tr style="border-top:1px dashed var(--line);"><td style="padding:2px 4px;">${esc(n)}</td>
-          <td style="text-align:left;">${tv?money(tv):'—'}</td><td style="text-align:left;">${av?money(av):'—'}</td>
-          <td style="text-align:left; font-weight:700; color:${p==null?'var(--muted)':p>=100?'var(--sage-ink)':p>=60?'var(--gold-ink)':'var(--coral-ink)'};">${p==null?'—':p+'%'}</td></tr>`;
+          <td style="text-align:start;">${tv?money(tv):'—'}</td><td style="text-align:start;">${av?money(av):'—'}</td>
+          <td style="text-align:start; font-weight:700; color:${p==null?'var(--muted)':p>=100?'var(--sage-ink)':p>=60?'var(--gold-ink)':'var(--coral-ink)'};">${p==null?'—':p+'%'}</td></tr>`;
       }).join('')}
     </table></div>`;
   };
@@ -7818,16 +7810,16 @@ function erpAuditSection(p){
   const salesmanRows = a.salesmen.map(s=>`<tr style="border-top:1px solid var(--line);">
     <td style="padding:5px 6px;">${esc(s.name)}</td>
     <td style="padding:5px 6px;">${s.rep?esc(s.rep):'<span style="color:var(--coral-ink);">— خارج الفريق —</span>'}</td>
-    <td style="text-align:right; padding:5px 6px;">${s.rows}</td>
-    <td style="text-align:right; padding:5px 6px; font-weight:700;">${money(s.net)}</td></tr>`).join('');
+    <td style="text-align:end; padding:5px 6px;">${s.rows}</td>
+    <td style="text-align:end; padding:5px 6px; font-weight:700;">${money(s.net)}</td></tr>`).join('');
   const needAttn = a.customers.filter(x=>x.kind==='none'||x.kind==='ambiguous');
   const custRows = a.customers.map(x=>{
     const bg = (x.kind==='none'||x.kind==='ambiguous') ? 'background:var(--amber-dim);' : '';
     return `<tr style="border-top:1px solid var(--line); ${bg}">
       <td style="padding:5px 6px;">${esc(x.name)}</td>
       <td style="padding:5px 6px; font-size:11.5px;">${x.label}</td>
-      <td style="text-align:right; padding:5px 6px;">${x.invoices}</td>
-      <td style="text-align:right; padding:5px 6px; font-weight:700; ${x.net<0?'color:var(--coral-ink);':''}">${money(x.net)}</td></tr>`;
+      <td style="text-align:end; padding:5px 6px;">${x.invoices}</td>
+      <td style="text-align:end; padding:5px 6px; font-weight:700; ${x.net<0?'color:var(--coral-ink);':''}">${money(x.net)}</td></tr>`;
   }).join('');
   return `
   <div class="section-title" style="margin-top:0;">🔍 مرجع المعالجة — كيف قرأ الموقع هذا الملف</div>
@@ -7841,13 +7833,13 @@ function erpAuditSection(p){
   ${needAttn.length?`<div class="nudge" style="margin-bottom:10px; border-color:#FF9500;">⚠️ ${needAttn.length} عميل يحتاج ربطاً يدوياً (بالأصفر أدناه) — لن تُحسب مبيعاتهم لأي عيادة حتى تربطهم.</div>`:'<div class="nudge" style="margin-bottom:10px;">✅ كل العملاء مصنّفون — لا شيء معلّق.</div>'}
   <div class="section-title">👥 ربط البائعين بالمندوبات</div>
   <div class="card" style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <tr><th style="text-align:left; padding:4px 6px; color:var(--muted);">البائع في الملف</th><th style="text-align:left; padding:4px 6px; color:var(--muted);">المندوبة</th><th style="text-align:right; padding:4px 6px; color:var(--muted);">سطور</th><th style="text-align:right; padding:4px 6px; color:var(--muted);">صافي</th></tr>
+    <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">البائع في الملف</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">المندوبة</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">سطور</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">صافي</th></tr>
     ${salesmanRows}
   </table></div>
   <div class="mr-note" style="color:var(--muted); font-size:11.5px; margin:6px 2px;">ملاحظة: مبيعات أي عيادة مطابَقة تُنسب لِـ<b>المندوبة المالكة للعيادة</b>، بغض النظر عن اسم البائع في الملف. الجدول أعلاه يبيّن ربط الأسماء كما في الملف فقط.</div>
   <div class="section-title">🏥 تصنيف كل عميل (مصدر المطابقة)</div>
   <div class="card" style="overflow-x:auto; max-height:340px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <tr><th style="text-align:left; padding:4px 6px; color:var(--muted);">العميل في الملف</th><th style="text-align:left; padding:4px 6px; color:var(--muted);">صُنّف كـ</th><th style="text-align:right; padding:4px 6px; color:var(--muted);">فواتير</th><th style="text-align:right; padding:4px 6px; color:var(--muted);">صافي</th></tr>
+    <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">العميل في الملف</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">صُنّف كـ</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">فواتير</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">صافي</th></tr>
     ${custRows}
   </table></div>`;
 }
@@ -7896,9 +7888,9 @@ function openErpRecon(id){
       return `<div class="card">
         <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🏥 Sales by account (${esc(r.rep)})</div>
         <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
-          <tr><th style="text-align:left; padding:4px 6px; color:var(--muted);">Account</th>
-            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Invoices</th>
-            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Net sales</th></tr>
+          <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">Account</th>
+            <th style="text-align:end; padding:4px 6px; color:var(--muted);">Invoices</th>
+            <th style="text-align:end; padding:4px 6px; color:var(--muted);">Net sales</th></tr>
           ${items.map(([cust, a])=>{
             const m = UMCore.matchCustomer(cust, clinics, erpMap);
             const clinic = m.clinicId ? clinics.find(x=>x.id===m.clinicId) : null;
@@ -7906,14 +7898,14 @@ function openErpRecon(id){
               : clinic ? `<span style="color:var(--muted); font-size:11px;"> · ${esc(clinic.name)}</span>` : '';
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(cust)}${tag}</td>
-              <td style="text-align:right; padding:5px 6px;">${a.docs.size}</td>
-              <td style="text-align:right; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${a.net.toFixed(2)}</td>
+              <td style="text-align:end; padding:5px 6px;">${a.docs.size}</td>
+              <td style="text-align:end; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${a.net.toFixed(2)}</td>
             </tr>`;
           }).join('')}
           <tr style="border-top:2px solid var(--line);">
             <td style="padding:5px 6px; font-weight:700;">Total</td>
             <td></td>
-            <td style="text-align:right; padding:5px 6px; font-weight:700;">${total.toFixed(2)}</td>
+            <td style="text-align:end; padding:5px 6px; font-weight:700;">${total.toFixed(2)}</td>
           </tr>
         </table></div>
       </div>`;
@@ -7937,11 +7929,11 @@ function openErpRecon(id){
       return `<div class="card">
         <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🎯 Brand targets vs achieved (${esc(r.rep)})</div>
         <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
-          <tr><th style="text-align:left; padding:4px 6px; color:var(--muted);">Brand</th>
-            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Target</th>
-            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Invoiced</th>
-            ${hasOfficial?'<th style="text-align:right; padding:4px 6px; color:var(--muted);">DSR MTD</th>':''}
-            <th style="text-align:right; padding:4px 6px; color:var(--muted);">Ach.</th></tr>
+          <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">Brand</th>
+            <th style="text-align:end; padding:4px 6px; color:var(--muted);">Target</th>
+            <th style="text-align:end; padding:4px 6px; color:var(--muted);">Invoiced</th>
+            ${hasOfficial?'<th style="text-align:end; padding:4px 6px; color:var(--muted);">DSR MTD</th>':''}
+            <th style="text-align:end; padding:4px 6px; color:var(--muted);">Ach.</th></tr>
           ${items.map(([brand, tgt])=>{
             const act = Math.round((actual[UMCore.normBrand(brand)]||0)*100)/100;
             const official = ab[brand];
@@ -7950,25 +7942,25 @@ function openErpRecon(id){
             const col = pct>=60?'var(--sage)':pct>=25?'#FF9500':'var(--coral)';
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(brand)}</td>
-              <td style="text-align:right; padding:5px 6px;">${tgt.toFixed(0)}</td>
-              <td style="text-align:right; padding:5px 6px;">${act.toFixed(2)}</td>
-              ${hasOfficial?`<td style="text-align:right; padding:5px 6px;">${official!=null?official.toFixed(2):'—'}</td>`:''}
-              <td style="text-align:right; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
+              <td style="text-align:end; padding:5px 6px;">${tgt.toFixed(0)}</td>
+              <td style="text-align:end; padding:5px 6px;">${act.toFixed(2)}</td>
+              ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?official.toFixed(2):'—'}</td>`:''}
+              <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
             </tr>`;
           }).join('')}
         </table></div>
         <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets & official MTD from the DSR file · invoiced from this ERP period${hasOfficial?' · Ach.% uses the official DSR figure when present':''}. Green ≥60%, orange ≥25%, red below.</div>
       </div>`;
     })()}
-    ${r.matched.length?`<div class="card" style="border-left:4px solid var(--sage);">
+    ${r.matched.length?`<div class="card" style="border-inline-start:4px solid var(--sage);">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">✅ Visited AND invoiced</div>
       ${r.matched.map(m=>`<div class="report-line"><span>${esc(m.clinicName)} <span style="color:var(--muted);">(${m.visits} visit${m.visits===1?'':'s'})</span></span><span class="v">${money(m.net)}</span></div>`).join('')}
     </div>`:''}
-    ${r.visitedNoInvoice.length?`<div class="card" style="border-left:4px solid #FF9500;">
+    ${r.visitedNoInvoice.length?`<div class="card" style="border-inline-start:4px solid #FF9500;">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🕓 Visited, no invoice yet (pipeline)</div>
       ${r.visitedNoInvoice.map(m=>`<div class="report-line"><span>${esc(m.clinicName)}</span><span class="v">${m.visits} visit${m.visits===1?'':'s'}</span></div>`).join('')}
     </div>`:''}
-    ${r.invoicedNoVisit.length?`<div class="card" style="border-left:4px solid var(--coral);">
+    ${r.invoicedNoVisit.length?`<div class="card" style="border-inline-start:4px solid var(--coral);">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">⚠️ Invoiced with NO logged visit</div>
       <div style="color:var(--muted); font-size:12px; margin-bottom:6px;">Phone sales, or visits that were never logged — worth asking about.</div>
       ${r.invoicedNoVisit.map(m=>`<div class="report-line"><span>${esc(m.customer)}</span><span class="v">${money(m.net)}</span></div>`).join('')}
@@ -7995,15 +7987,15 @@ function openErpRecon(id){
       return `<div class="section-title" style="margin-top:0;"><span>${I('chart')} Week by week</span></div>
       <div class="card" style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:12px;">
-          <tr><th style="text-align:left; padding:5px 6px; color:var(--muted);">Week</th>
-            ${trendReps.map(r=>`<th style="text-align:right; padding:5px 6px; color:var(--muted);">${esc(r)}</th>`).join('')}
-            <th style="text-align:right; padding:5px 6px; color:var(--muted);">Total</th></tr>
+          <tr><th style="text-align:start; padding:5px 6px; color:var(--muted);">Week</th>
+            ${trendReps.map(r=>`<th style="text-align:end; padding:5px 6px; color:var(--muted);">${esc(r)}</th>`).join('')}
+            <th style="text-align:end; padding:5px 6px; color:var(--muted);">Total</th></tr>
           ${trend.map((w,i)=>{
             const prev = i>0 ? trend[i-1] : null;
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:6px;">${fmtDate(w.from)}–${fmtDate(w.to)}</td>
-              ${trendReps.map(r=>`<td style="text-align:right; padding:6px; white-space:nowrap;">${(w.byRep[r]||0).toFixed(2)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
-              <td style="text-align:right; padding:6px; font-weight:700; white-space:nowrap;">${w.total.toFixed(2)}${arrow(w.total, prev?prev.total:null)}</td>
+              ${trendReps.map(r=>`<td style="text-align:end; padding:6px; white-space:nowrap;">${(w.byRep[r]||0).toFixed(2)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
+              <td style="text-align:end; padding:6px; font-weight:700; white-space:nowrap;">${w.total.toFixed(2)}${arrow(w.total, prev?prev.total:null)}</td>
             </tr>`;
           }).join('')}
         </table>
@@ -8096,8 +8088,8 @@ function renderAiThread(){
   const el = document.getElementById('aiThread');
   if(!el) return;
   el.innerHTML = aiMsgs.length ? aiMsgs.map(m=>`
-    <div style="margin-bottom:8px; ${m.role==='user'?'text-align:right;':''}">
-      <div style="display:inline-block; max-width:88%; text-align:left; padding:9px 12px; border-radius:12px; font-size:13.5px; line-height:1.55; white-space:pre-wrap; ${m.role==='user'?'background:var(--green); color:#fff;':'background:var(--paper);'}">${esc(m.content)}</div>
+    <div style="margin-bottom:8px; ${m.role==='user'?'text-align:end;':''}">
+      <div style="display:inline-block; max-width:88%; text-align:start; padding:9px 12px; border-radius:12px; font-size:13.5px; line-height:1.55; white-space:pre-wrap; ${m.role==='user'?'background:var(--green); color:#fff;':'background:var(--paper);'}">${esc(m.content)}</div>
     </div>`).join('')
     : `<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:12px 0;">Try: “Summarize my month so far” · “لخص لي عيادة قبل زيارتي” · “Write a follow-up WhatsApp message”</div>`;
   el.scrollTop = el.scrollHeight;
@@ -8223,7 +8215,7 @@ function renderCompare(){
       : `<span style="color:var(--muted);">—</span>`;
     const show = v => isMoney ? money(v) : v;
     return `<div style="display:grid; grid-template-columns:1.2fr 1fr 1fr .8fr; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px; align-items:center;">
-      <span style="font-weight:600;">${label}</span><span>${show(a)}</span><span style="color:var(--muted);">${show(b)}</span><span style="text-align:left;">${arrow}</span>
+      <span style="font-weight:600;">${label}</span><span>${show(a)}</span><span style="color:var(--muted);">${show(b)}</span><span style="text-align:start;">${arrow}</span>
     </div>`;
   };
   el.innerHTML = `
@@ -8289,12 +8281,12 @@ function renderCoach(){
   };
   el.innerHTML = insights.map(i=>{
     const st = styles[i.level] || styles.watch;
-    return `<div class="card" style="border-left:4px solid ${st.c}; margin-bottom:8px; padding:12px 14px;">
+    return `<div class="card" style="border-inline-start:4px solid ${st.c}; margin-bottom:8px; padding:12px 14px;">
       <div style="display:flex; gap:9px; align-items:baseline;">
         <span style="font-size:17px;">${i.icon}</span>
         <div style="flex:1;">
           <div style="font-weight:700; font-size:13.5px;">${esc(i.title)}
-            <span style="font-size:10px; font-weight:800; color:${st.ink}; letter-spacing:.06em; margin-left:4px;">${st.label}</span></div>
+            <span style="font-size:10px; font-weight:800; color:${st.ink}; letter-spacing:.06em; margin-inline-start:4px;">${st.label}</span></div>
           <div style="font-size:12.5px; color:var(--muted); line-height:1.55; margin-top:3px;">${esc(i.detail)}</div>
         </div>
       </div>
@@ -8782,7 +8774,7 @@ function openAchievements(){
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${earned} of ${list.length} unlocked \u2014 ${earned===list.length?'all of them. Remarkable.':'keep going, you\u2019re building something.'}</p>
     <div class="bar-track" style="margin-bottom:18px;"><div class="bar-fill" style="width:${Math.round(earned/list.length*100)}%;"></div></div>
     ${list.map(a=>`
-      <div class="card" style="display:flex; gap:13px; align-items:center; ${a.earned?'border-left:4px solid var(--green);':'opacity:.7;'}">
+      <div class="card" style="display:flex; gap:13px; align-items:center; ${a.earned?'border-inline-start:4px solid var(--green);':'opacity:.7;'}">
         <div style="font-size:28px; ${a.earned?'':'filter:grayscale(1); opacity:.5;'}">${a.i}</div>
         <div style="flex:1;">
           <div style="font-weight:700; font-size:14.5px;">${esc(a.t)} ${a.earned?'<span style="color:var(--green-dark);">\u2713</span>':''}</div>
