@@ -895,6 +895,7 @@
     'Meeting more people per clinic multiplies orders without extra driving. Keep it up.': 'مقابلة أشخاص أكثر في كل عيادة تضاعف الطلبيات بدون قيادة إضافية. واصل.',
     'Follow-ups done and top clinics covered. To grow from here: more visits, and 2+ contacts met per visit.': 'المتابعات منجزة والعيادات المهمة مغطاة. للنمو من هنا: زيارات أكثر، و2+ جهة اتصال في كل زيارة.',
     // ---- calendar event types ----
+    'Plan for': 'خطة لـ',
     'Meeting': 'اجتماع',
     'Training': 'تدريب',
     'Conference': 'مؤتمر',
