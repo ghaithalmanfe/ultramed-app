@@ -1729,3 +1729,51 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.ok(tg.data.perDay > 0);
   });
 });
+
+// ---------- Arabic UI dictionary ----------
+describe('UMI18N dictionary', () => {
+  const i18n = require('../www/js/i18n.js');
+  test('every entry is a real Arabic translation of a non-empty English key', () => {
+    const keys = Object.keys(i18n.AR);
+    assert.ok(keys.length > 700, `expected a full dictionary, got ${keys.length}`);
+    keys.forEach(k => {
+      assert.ok(k.trim().length > 0, 'empty key');
+      assert.ok(/[؀-ۿ]/.test(i18n.AR[k]), `no Arabic in translation of ${JSON.stringify(k)}`);
+    });
+  });
+  test('tr() matches exact strings, wrapped whitespace, and numeric patterns', () => {
+    assert.equal(i18n.tr('Save visit'), 'حفظ الزيارة');
+    assert.equal(i18n.tr('  Save visit \n'), 'حفظ الزيارة');
+    assert.equal(i18n.tr("No ERP sales file imported yet.\n      Import this week's file to keep coaching based on real invoices. Tap to import →"),
+      'لم يُستورد ملف مبيعات ERP بعد. استورد ملف هذا الأسبوع ليبقى التوجيه مبنياً على فواتير حقيقية. اضغط للاستيراد ←');
+    assert.equal(i18n.tr('· last visit 5d ago · follow-up 3 سبتمبر'), '· آخر زيارة قبل 5 يوم · متابعة 3 سبتمبر');
+    assert.equal(i18n.tr('Mariam · never visited'), 'Mariam · لم تُزر أبداً');
+    assert.equal(i18n.tr('Class B · 17 (24%)'), 'فئة B · 17 (24%)');
+    assert.equal(i18n.tr('Good evening, Dr. Ghaith'), 'مساء الخير، Dr. Ghaith');
+    assert.equal(i18n.tr('3 visits · 1 order'), '3 زيارة · 1 طلبية');
+  });
+  test('a leading emoji or arrow is kept and the words behind it are translated', () => {
+    assert.equal(i18n.tr('📞 Call'), '📞 مكالمة');
+    assert.equal(i18n.tr('👨‍⚕️ Doctors by specialty'), '👨‍⚕️ الأطباء حسب التخصص');
+    assert.equal(i18n.tr('⏳ Not visited in this window (72)'), '⏳ لم تُزر في هذه الفترة (72)');
+    // arrows point into the text, so they flip for right-to-left
+    assert.equal(i18n.tr('→ Clear open tasks at the start of each day before new ones pile on top.'),
+      '← أنجز المهام المفتوحة في بداية كل يوم قبل أن تتراكم فوقها مهام جديدة.');
+    assert.equal(i18n.tr('🦷 Bright Smile Dental'), null);
+  });
+  test('sales-coach cards keep clinic names and figures, translate the words around them', () => {
+    assert.equal(i18n.tr('3 overdue follow-ups'), '3 متابعة متأخرة');
+    assert.equal(i18n.tr('3lagy Pharmacy (never visited), Al Seef Hospital (12d) +27 more. Class A/B clinics buy the most — put them in next week’s plan.'),
+      '3lagy Pharmacy (لم تُزر أبداً), Al Seef Hospital (قبل 12 يوم) +27 أخرى. عيادات الفئة A/B تشتري الأكثر — ضعها في خطة الأسبوع القادم.');
+    assert.equal(i18n.tr('300.00 KD (from uploaded sales) of 1000.00 KD so far. Needs about 50 KD/day for the remaining 14 working days (Sun–Thu) — steer the visits toward clinics that already order.'),
+      '300.00 KD (من ملف المبيعات المرفوع) من 1000.00 KD حتى الآن. تحتاج نحو 50 د.ك/يوم لبقية 14 يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.');
+    assert.equal(i18n.tr('0 doctors · Mariam'), '0 أطباء · Mariam');
+  });
+  test('data is never translated: names, numbers, unknown text return null', () => {
+    assert.equal(i18n.tr('Bayan Dental Center'), null);
+    assert.equal(i18n.tr('12.50 KD'), null);
+    assert.equal(i18n.tr(''), null);
+    assert.equal(i18n.tr(null), null);
+    assert.equal(i18n.tr('Waterpik Cordless Plus'), null);
+  });
+});
