@@ -1761,6 +1761,11 @@ describe('UMI18N dictionary', () => {
       '← أنجز المهام المفتوحة في بداية كل يوم قبل أن تتراكم فوقها مهام جديدة.');
     assert.equal(i18n.tr('🦷 Bright Smile Dental'), null);
   });
+  test('dot-separated status lines translate each segment and keep names', () => {
+    assert.equal(i18n.tr('Renova · ⭕ no visits yet'), 'Renova · ⭕ لا زيارات بعد');
+    assert.equal(i18n.tr('Mariam · 3 visits · 📞 1 call · last 3 سبتمبر · Credit'), 'Mariam · 3 زيارة · 📞 1 مكالمة · آخر زيارة 3 سبتمبر · آجل');
+    assert.equal(i18n.tr('Bayan Dental · Salmiya'), null);
+  });
   test('multi-line blocks are translated line by line, untranslated lines kept', () => {
     assert.equal(i18n.tr('Save visit\nBayan Dental Center\n  Cancel'), 'حفظ الزيارة\nBayan Dental Center\n  إلغاء');
     assert.equal(i18n.tr('Bayan Dental Center\nOther Clinic'), null);
