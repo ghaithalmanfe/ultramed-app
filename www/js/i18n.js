@@ -895,6 +895,7 @@
     'Meeting more people per clinic multiplies orders without extra driving. Keep it up.': 'مقابلة أشخاص أكثر في كل عيادة تضاعف الطلبيات بدون قيادة إضافية. واصل.',
     'Follow-ups done and top clinics covered. To grow from here: more visits, and 2+ contacts met per visit.': 'المتابعات منجزة والعيادات المهمة مغطاة. للنمو من هنا: زيارات أكثر، و2+ جهة اتصال في كل زيارة.',
     // ---- calendar event types ----
+    'Tap a class to see its clinics by name': 'اضغط على فئة لترى عياداتها بالاسم',
     'Plan for': 'خطة لـ',
     'Meeting': 'اجتماع',
     'Training': 'تدريب',
@@ -1261,6 +1262,10 @@
     [/^\+(\d+) more — tag these first$/, function (m) { return '+' + m[1] + ' أخرى — صنّف هؤلاء أولاً'; }],
     [/^Your (.+?)s \((\d+)\)$/, function (m) { return 'أطباء ' + (AR[m[1]] || m[1]) + ' لديك (' + m[2] + ')'; }],
     [/^UltraMed Clinical Sales Team · (v\d+)$/, function (m) { return 'فريق المبيعات الطبية ألترا ميد · ' + m[1]; }],
+    [/^All classes \((\d+)\)$/, function (m) { return 'كل الفئات (' + m[1] + ')'; }],
+    [/^Class ([A-F]) \((\d+)\)$/, function (m) { return 'فئة ' + m[1] + ' (' + m[2] + ')'; }],
+    [/^Unclassified \((\d+)\)$/, function (m) { return 'غير مصنّفة (' + m[1] + ')'; }],
+    [/^Unclassified · (\d+)$/, function (m) { return 'غير مصنّفة · ' + m[1]; }],
     // clinic rows and name lists
     [/^(\d+) doctors? · (.+)$/, function (m) { return m[1] + (m[1] === '1' ? ' طبيب · ' : ' أطباء · ') + m[2]; }],
     [/^(.+) \+(\d+) more$/, function (m) { return m[1] + ' +' + m[2] + ' أخرى'; }],
