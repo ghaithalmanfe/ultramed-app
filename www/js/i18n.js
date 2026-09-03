@@ -895,6 +895,11 @@
     'Meeting more people per clinic multiplies orders without extra driving. Keep it up.': 'مقابلة أشخاص أكثر في كل عيادة تضاعف الطلبيات بدون قيادة إضافية. واصل.',
     'Follow-ups done and top clinics covered. To grow from here: more visits, and 2+ contacts met per visit.': 'المتابعات منجزة والعيادات المهمة مغطاة. للنمو من هنا: زيارات أكثر، و2+ جهة اتصال في كل زيارة.',
     // ---- calendar event types ----
+    'no visits yet': 'لا زيارات بعد',
+    'Never visited — book a first visit': 'لم تُزر أبداً — احجز أول زيارة',
+    'Reschedule': 'إعادة جدولة',
+    'All classes': 'كل الفئات',
+    'Unclassified': 'غير مصنّفة',
     'Tap a class to see its clinics by name': 'اضغط على فئة لترى عياداتها بالاسم',
     'Plan for': 'خطة لـ',
     'Meeting': 'اجتماع',
@@ -1267,6 +1272,17 @@
     [/^Unclassified \((\d+)\)$/, function (m) { return 'غير مصنّفة (' + m[1] + ')'; }],
     [/^Unclassified · (\d+)$/, function (m) { return 'غير مصنّفة · ' + m[1]; }],
     // clinic rows and name lists
+    [/^Never visited \((\d+)\)$/, function (m) { return 'لم تُزر أبداً (' + m[1] + ')'; }],
+    [/^1–2 visits \((\d+)\)$/, function (m) { return '1–2 زيارة (' + m[1] + ')'; }],
+    [/^3–5 visits \((\d+)\)$/, function (m) { return '3–5 زيارات (' + m[1] + ')'; }],
+    [/^6\+ visits \((\d+)\)$/, function (m) { return '6+ زيارات (' + m[1] + ')'; }],
+    [/^(\d+) visits?$/, function (m) { return m[1] + ' زيارة'; }],
+    [/^(\d+) calls?$/, function (m) { return m[1] + ' مكالمة'; }],
+    [/^last (.+)$/, function (m) { return 'آخر زيارة ' + m[1]; }],
+    [/^Follow-up overdue by (\d+)d \((.+?)\) — reschedule it now$/, function (m) { return 'المتابعة متأخرة ' + m[1] + ' يوم (' + m[2] + ') — أعد جدولتها الآن'; }],
+    [/^Quiet for (\d+)d — plan a revisit and set a follow-up$/, function (m) { return 'هادئة منذ ' + m[1] + ' يوم — خطط لزيارة جديدة وحدد متابعة'; }],
+    [/^Next follow-up (.+)$/, function (m) { return 'المتابعة القادمة ' + m[1]; }],
+    [/^Last visit (\d+)d ago — no follow-up set, schedule one$/, function (m) { return 'آخر زيارة قبل ' + m[1] + ' يوم — لا متابعة محددة، حدد واحدة'; }],
     [/^(\d+) doctors? · (.+)$/, function (m) { return m[1] + (m[1] === '1' ? ' طبيب · ' : ' أطباء · ') + m[2]; }],
     [/^(.+) \+(\d+) more$/, function (m) { return m[1] + ' +' + m[2] + ' أخرى'; }],
     [/^(\d+) doctors?$/, function (m) { return m[1] + (m[1] === '1' ? ' طبيب' : ' أطباء'); }],
@@ -1365,6 +1381,18 @@
     if (lead) {
       var rest = lookup(lead[2]);
       if (rest != null) return (MIRROR[lead[1]] || lead[1]) + ' ' + rest;
+    }
+    // "Renova · ⭕ no visits yet · last 3 Sep": translate each segment, keep names.
+    if (t.indexOf(' · ') !== -1) {
+      var segs = t.split(' · '), hitAny = false;
+      var outSegs = segs.map(function (seg) {
+        var sg = seg.trim(); if (!sg) return seg;
+        var h = lookup(sg);
+        if (h == null) { var ld2 = sg.match(LEAD); if (ld2) { var r2 = lookup(ld2[2]); if (r2 != null) h = (MIRROR[ld2[1]] || ld2[1]) + ' ' + r2; } }
+        if (h == null) return seg;
+        hitAny = true; return h;
+      });
+      if (hitAny) return outSegs.join(' · ');
     }
     // A block of bullet lines (selling guides) is one text node: translate each line.
     if (t.indexOf('\n') !== -1) {
