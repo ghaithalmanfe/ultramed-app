@@ -1139,43 +1139,354 @@
       if(t.indexOf(specialties[j].toLowerCase().split(' ')[0]) >= 0) return specialties[j];
     return '';
   }
-  function parseContactRows(all, specialties){
-    if(!all || !all.length) return { contacts: [], skipped: 0, error: 'NO_ROWS' };
-    var idx = null, headerAt = -1;
-    var pats = {
-      name: /doctor|dr\.?\s|contact\s*name|^name$|طبيب|دكتور|اسم/i,
-      clinic: /clinic|center|centre|hospital|pharmacy|account|عيادة|مركز|مستشفى|صيدلية|جهة/i,
-      phone: /phone|mobile|tel|whats|هاتف|رقم|جوال|موبايل|واتس/i,
-      title: /special|title|position|role|تخصص|لقب|وظيفة/i,
-      birthday: /birth|b\.?day|dob|ميلاد/i,
-      notes: /note|remark|comment|ملاحظ|تقرير/i,
-    };
+  // ==== CONTACT IMPORT (people sheets → doctors/hygienists) ====
+  // The team's own spreadsheets are messy by nature: a title row above the
+  // header, several people columns ("Doctor", "Dentist", "Hygienist"), a
+  // phone column called "Contact Number", a name cell that also carries the
+  // role and the clinic ("Maram Aline Hygenist"), abbreviations for clinics,
+  // and the same person repeated across sheets. Everything below exists to
+  // turn that into clean, de-duplicated contacts attached to the right clinic.
+  var PERSON_HDR = /hygien|dentist|doctor|dr\.?\s|contact\s*name|^name$|physician|staff|person|طبيب|دكتور|^اسم$|اسم (الطبيب|الدكتور|الشخص|جهة الاتصال|الممرض)/i;
+  var LOCATION_HDR = /location|area|address|branch|منطقة|موقع|عنوان|فرع/i;
+  var PHONE_HDR = /phone|mobile|tel\b|whats|number|contact\s*(no|num)|هاتف|رقم|جوال|موبايل|واتس/i;
+  var CLINIC_HDR = /clinic|center|centre|hospital|pharmacy|account|عيادة|مركز|مستشفى|صيدلية|جهة/i;
+  var TITLE_HDR = /special|title|position|role|تخصص|لقب|وظيفة/i;
+  var BIRTHDAY_HDR = /birth|b\.?day|dob|ميلاد/i;
+  var NOTES_HDR = /note|remark|comment|feedback|action|ملاحظ|تقرير/i;
+  var HYG_TOKEN = /\b(hyg\w*)\b/i;                       // hygienist, hygenist, hyginist, hygeinst…
+  var CLINIC_WORD = /\b(clinic|clinics|center|centre|hospital|hosp|tower|pharmacy|dental|polyclinic|medical)\b/i;
+  var PERSON_TITLE = /^(ms|mr|mrs|miss|dr|dra|d)\.?\s*/i;
+
+  // Spelling variants and abbreviations the team uses for clinics in their own
+  // sheets, expanded before a hint is matched against the app's clinics.
+  var CLINIC_HINT_ALIASES = [
+    [/\bnhc\b/g, 'nael hazeem sharq'],
+    [/\bnael\s+(al\s*)?haze+m\b/g, 'nael hazeem sharq'],
+    [/\balien\b/g, 'aline'],
+    [/\bspecializrd\b/g, 'specialized'],
+    [/\broyale?\s+h[ay]+a?t+\b/g, 'royale hayat hospital'],
+    [/\bansan\b/g, 'asnan'],
+    [/\bdaman\b/g, 'dasman'],
+    [/\bhekma\b/g, 'al hekma dental center'],
+    [/\b(al\s*)?seef(\s+hosp\w*)?\b/g, 'al seef hospital'],
+    [/\bgrow\s+clinic\b/g, ' '],
+    [/\bmoh\b/g, 'ministry of health'],
+    [/\bhosp\b/g, 'hospital'],
+    [/\basnan\s+co\b\.?/g, 'asnanco'],
+  ];
+  // Words that name a place, not a clinic — "Jahra" after a hygienist's name is where she works, not who she works for.
+  var AREA_WORDS = ['jahra','salmiya','hawally','hawalli','farwaniya','fahaheel','fahahel','mangaf','mahboula','jabriya','sabah','salem','shaab','sharq','kuwait','city','egaila','fintas','avenues','mall','kipco','hamra','tijaria','riggae','bneid','beneid','gar','algar','alghar','qurain','mubarak','kabeer','ahmadi','jleeb','khaitan','rumaithiya','mishref','bayan','surra','qadsiya','adan','dasma','shuwaikh'];
+  // Tokens that never identify a clinic on their own.
+  var GENERIC_WORDS = ['hospital','clinic','clinics','center','centre','dental','medical','care','group','tower','plus','co','company','pharmacy','international','general','dr','al','the','of','polyclinic','services','service','new'];
+  // A hint made only of these says nothing at all ("Dental", "Clinic", "H").
+  var PURE_NOISE = ['dental','clinic','clinics','center','centre','hospital','medical','dr','al','the','of','and'];
+  var NOT_A_PERSON = /^(no|none|n\/a|yes|close|closed|floater|nurse|hygienist|hygienists|filipino|filipina|arab|indian|partimer|part\s*timer|pharmacy|office|self|team|staff|reception|tbd|na|-)\b/i;
+  function hintSaysSomething(h){
+    var t = normClinicHint(h);
+    if(t.length < 2 || /^ksa$/.test(t)) return false;
+    var toks = t.split(' ').filter(Boolean);
+    // "SN", "Dental 8" carry a real identifier; "H", "Dental", "Clinic" do not
+    return toks.some(function(w){ return PURE_NOISE.indexOf(w) < 0 && (w.length >= 2 || /^\d$/.test(w)) && (w.length >= 2 || toks.length > 1); });
+  }
+  function isAreaHint(h){ var t = normClinicHint(h).split(' ').filter(Boolean); return t.length > 0 && t.every(function(w){ return AREA_WORDS.indexOf(w) >= 0 || /^\d+$/.test(w); }); }
+  function distinctiveTokens(name){ return normClinicName(name).split(' ').filter(function(t){ return t && GENERIC_WORDS.indexOf(t) < 0; }); }
+  function normClinicHint(s){
+    var t = String(s || '').toLowerCase().replace(/[()"'’“”]/g, ' ').replace(/\s+/g, ' ').trim();
+    CLINIC_HINT_ALIASES.forEach(function(a){ t = t.replace(a[0], a[1]); });
+    return t.replace(/\s+/g, ' ').trim();
+  }
+  function normPerson(name){
+    return String(name || '').toLowerCase().replace(PERSON_TITLE, '').replace(/[^a-z0-9؀-ۿ ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function tidyPersonName(name){
+    return String(name || '').replace(/[“”"]/g, '').replace(/\s+/g, ' ').trim()
+      .replace(/^(Ms|Mr|Mrs|Miss|Dr)\.?\s*/i, function(m, t){ return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() + '. '; })
+      .replace(/\s+\.$/, '').trim();
+  }
+  function looksLikeName(s){
+    var t = String(s || '').trim();
+    if(!t || t.length > 60) return false;
+    if(t.split(/\s+/).length > 8) return false;
+    if(/[.!?;]\s+[A-Za-z]/.test(t) && t.length > 30) return false; // a sentence, not a name
+    if(/^\d|\d{3,}/.test(t) || NOT_A_PERSON.test(t)) return false;   // "No Hygienist", "1 / Arab", "Floater", a phone number
+    return /[A-Za-z؀-ۿ]{3}/.test(t);
+  }
+  // "Ms. Bidya, Ms.Abby and Ms.Moly" → three people
+  function splitPeople(cell){
+    var t = String(cell || '').trim();
+    if(!/(,|&|\band\b|\+)/i.test(t)) return [t];
+    var parts = t.split(/\s*(?:,|&|\band\b|\+)\s*/i).map(function(x){ return x.trim(); }).filter(Boolean);
+    if(parts.length < 2 || !parts.every(looksLikeName)) return [t];
+    return parts;
+  }
+  // "Maram Aline Hygenist" → {name:'Maram', hint:'Aline', title:'Hygienist'}
+  // "Dr Aseel Yousfan Hygenist Nael Hazem" → name 'Dr Aseel Yousfan', hint 'Nael Hazem'
+  // "Dana El Shatty Kuwait Hospital Hyg" → name 'Dana El Shatty', hint 'Kuwait Hospital'
+  function splitPersonHint(raw, clinics){
+    var s = String(raw || '').replace(/[“”"]/g, ' ').replace(/\s+/g, ' ').trim();
+    var m = s.match(HYG_TOKEN);
+    if(!m) return { name: s, hint: '', title: '' };
+    var before = s.slice(0, m.index).trim();
+    var after = s.slice(m.index + m[0].length).trim();
+    var m2 = after.match(HYG_TOKEN);                 // a second copy of the role → keep what precedes it
+    if(m2) after = after.slice(0, m2.index).trim();
+    var fill = /\b(cheif|chief|the|from)\b/gi;
+    before = before.replace(fill, ' ').replace(/\s+/g, ' ').trim();
+    after = after.replace(fill, ' ').replace(/\s+/g, ' ').trim();
+    var name = before.replace(/[.,]+$/, '').trim(), hint = after, area = '';
+    if(hint && isAreaHint(hint)){ area = hint; hint = ''; }      // "iane Bayan Hygenist Jahra" → Jahra is where, not who
+    if(!name && after){                              // "Hygeinist Anwar New Care" → the name follows the role
+      var w = after.split(' '); name = w[0]; hint = w.slice(1).join(' ');
+    } else if(!hint){
+      var words = name.split(/\s+/);
+      var ci = -1;
+      for(var i = 0; i < words.length; i++) if(CLINIC_WORD.test(words[i])){ ci = i; break; }
+      if(ci >= 0){                                   // "Marlyn. Gulf Clinic" / "Pia Asnan Tower"
+        var cut = Math.max(1, ci - 1);
+        hint = words.slice(cut).join(' '); name = words.slice(0, cut).join(' ');
+      } else if(words.length >= 2){
+        // "Maram Aline" / "Dr Ghoson Al Ali Moh": the shortest tail that names a clinic we know, or an abbreviation we expand
+        for(var k = words.length - 1; k >= 1; k--){
+          var tail = words.slice(k).join(' ');
+          var aliased = normClinicHint(tail) !== tail.toLowerCase().replace(/\s+/g, ' ').trim();
+          var mm = (clinics && clinics.length) ? matchCustomer(normClinicHint(tail), clinics, {}) : { clinicId: null };
+          if(mm.clinicId || aliased){ hint = tail; name = words.slice(0, k).join(' '); break; }
+        }
+      }
+    }
+    name = name.replace(/[.,]+$/, '').trim();
+    hint = hint.replace(/^[.,\-–]+|[.,\-–]+$/g, '').trim();
+    if(hint && !hintSaysSomething(hint)) hint = '';   // "H", "Dental", "Clinic", "Ksa" say nothing
+    if(CLINIC_WORD.test(name) && name.split(' ').length <= 2 && !PERSON_TITLE.test(name)) return { name: '', hint: name, area: area, title: 'Hygienist' }; // "Sen Clinic Hygenist": no person named
+    return { name: name, hint: hint, area: area, title: 'Hygienist' };
+  }
+  function detectContactHeader(all){
     for(var i = 0; i < Math.min(all.length, 20); i++){
-      var r = all[i] || [], found = { name: -1, clinic: -1, phone: -1, title: -1, birthday: -1, notes: -1 }, hits = 0;
+      var r = all[i] || [], cols = { people: [], phones: [], clinic: -1, location: -1, title: -1, birthday: -1, notes: -1 };
       for(var c = 0; c < r.length; c++){
         var h = String(r[c] || '').trim();
-        if(!h) continue;
-        for(var k in pats) if(found[k] < 0 && pats[k].test(h)){ found[k] = c; hits++; break; }
+        if(!h || h.length > 40) continue;
+        if(LOCATION_HDR.test(h)) { if(cols.location < 0) cols.location = c; }
+        else if(PERSON_HDR.test(h) && !/^total/i.test(h)) cols.people.push({ col: c, title: /hygien/i.test(h) ? 'Hygienist' : '' });
+        else if(PHONE_HDR.test(h)) cols.phones.push(c);
+        else if(CLINIC_HDR.test(h)) { if(cols.clinic < 0) cols.clinic = c; }
+        else if(TITLE_HDR.test(h)) { if(cols.title < 0) cols.title = c; }
+        else if(BIRTHDAY_HDR.test(h)) { if(cols.birthday < 0) cols.birthday = c; }
+        else if(NOTES_HDR.test(h)) { if(cols.notes < 0) cols.notes = c; }
       }
-      if(found.name >= 0 && hits >= 2){ idx = found; headerAt = i; break; }
+      if(cols.people.length && (cols.clinic >= 0 || cols.phones.length)) return { at: i, cols: cols, width: r.length };
     }
-    if(!idx) return { contacts: [], skipped: 0, error: 'NO_HEADER' };
+    return null;
+  }
+  // Rows → contacts. opts.clinics lets a role-and-clinic name cell be split.
+  function parseContactRows(all, specialties, opts){
+    if(!all || !all.length) return { contacts: [], skipped: 0, error: 'NO_ROWS' };
+    var hdr = detectContactHeader(all);
+    if(!hdr) return { contacts: [], skipped: 0, error: 'NO_HEADER' };
+    var cols = hdr.cols, clinics = (opts && opts.clinics) || [];
+    var headed = {};
+    cols.people.forEach(function(p){ headed[p.col] = 1; }); cols.phones.forEach(function(c){ headed[c] = 1; });
+    ['clinic', 'location', 'title', 'birthday', 'notes'].forEach(function(k){ if(cols[k] >= 0) headed[cols[k]] = 1; });
+    // each people column pairs with the nearest phone column to its right
+    cols.people.forEach(function(p, i){
+      var next = cols.people[i + 1] ? cols.people[i + 1].col : Infinity;
+      var right = cols.phones.filter(function(c){ return c > p.col && c < next; });
+      p.phone = right.length ? right[0] : (cols.phones.filter(function(c){ return c > p.col; })[0] != null ? cols.phones.filter(function(c){ return c > p.col; })[0] : (cols.phones.length === 1 ? cols.phones[0] : -1));
+    });
+    // a "people" column whose cells are sentences is a report column, not names
+    cols.people = cols.people.filter(function(p){
+      var vals = all.slice(hdr.at + 1).map(function(r){ return String((r || [])[p.col] || '').trim(); }).filter(Boolean);
+      if(!vals.length) return false;
+      var ok = vals.filter(function(v){ return splitPeople(v).every(looksLikeName); }).length;
+      return ok / vals.length >= 0.6;
+    });
+    if(!cols.people.length) return { contacts: [], skipped: 0, error: 'NO_HEADER' };
     var contacts = [], skipped = 0;
-    for(var rI = headerAt + 1; rI < all.length; rI++){
+    for(var rI = hdr.at + 1; rI < all.length; rI++){
       var row = all[rI] || [];
-      var name = String(row[idx.name] || '').trim();
-      if(!name){ skipped++; continue; }
-      contacts.push({
-        name: name,
-        clinic: idx.clinic >= 0 ? String(row[idx.clinic] || '').trim() : '',
-        phone: idx.phone >= 0 ? cleanPhone(row[idx.phone]) : '',
-        title: idx.title >= 0 ? matchSpecialty(row[idx.title], specialties) : '',
-        titleRaw: idx.title >= 0 ? String(row[idx.title] || '').trim() : '',
-        birthday: idx.birthday >= 0 ? parseDateLoose(row[idx.birthday]) : '',
-        notes: idx.notes >= 0 ? String(row[idx.notes] || '').trim() : '',
+      var clinic = cols.clinic >= 0 ? String(row[cols.clinic] || '').trim() : '';
+      var area = cols.location >= 0 ? String(row[cols.location] || '').trim() : '';
+      var extra = [];
+      for(var x = 0; x < row.length; x++){
+        var v = String(row[x] == null ? '' : row[x]).trim();
+        if(!headed[x] && v && !/^\d+(\.\d+)?$/.test(v) && v.length <= 60) extra.push(v);
+      }
+      var any = false;
+      cols.people.forEach(function(p){
+        var cell = String(row[p.col] || '').trim();
+        if(!cell) return;
+        splitPeople(cell).forEach(function(raw){
+        if(!looksLikeName(raw)) return;
+        any = true;
+        var name = raw, hint = clinic, title = p.title, rowArea = area;
+        if(!clinic || HYG_TOKEN.test(raw)){
+          var sp = splitPersonHint(raw, clinics);
+          name = sp.name; if(!clinic) hint = sp.hint; if(sp.title) title = sp.title; if(!rowArea && sp.area) rowArea = sp.area;
+        }
+        if(!name) return;
+        var notes = [];
+        if(cols.notes >= 0 && String(row[cols.notes] || '').trim()) notes.push(String(row[cols.notes]).trim());
+        extra.forEach(function(e){ if(notes.indexOf(e) < 0) notes.push(e); });
+        var t = cols.title >= 0 ? matchSpecialty(row[cols.title], specialties) : '';
+        contacts.push({
+          name: tidyPersonName(name),
+          clinic: hint,
+          area: rowArea,
+          phone: p.phone >= 0 ? cleanPhone(row[p.phone]) : '',
+          title: t || (title && (specialties || []).indexOf(title) >= 0 ? title : ''),
+          titleRaw: cols.title >= 0 ? String(row[cols.title] || '').trim() : '',
+          birthday: cols.birthday >= 0 ? parseDateLoose(row[cols.birthday]) : '',
+          notes: notes.join(' · '),
+        });
+        });
       });
+      if(!any) skipped++;
     }
     return { contacts: contacts, skipped: skipped, error: contacts.length ? null : 'NO_ROWS' };
+  }
+  function phoneKey(phone){ var d = String(phone || '').replace(/\D/g, ''); return d.length >= 8 ? d.slice(-8) : ''; }
+  function samePerson(a, b){
+    var xa = normPerson(a).split(' ').filter(function(t){ return t.length >= 3; });
+    var ya = normPerson(b).split(' ').filter(function(t){ return t.length >= 3; });
+    if(!xa.length || !ya.length) return false;
+    return xa.some(function(x){ return ya.some(function(y){
+      var a = x.length <= y.length ? x : y, b = x.length <= y.length ? y : x;   // a is the shorter
+      return x === y || (a.length >= 4 && b.indexOf(a) >= 0) || (a.length >= 3 && b.length >= 6 && b.indexOf(a) === 0)
+        || (a.length >= 4 && levenshtein(x, y) <= 1) || (a.length >= 6 && levenshtein(x, y) <= 2);
+    }); });
+  }
+  function areaKey(a){ return String(a || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+  // One record per person across every sheet: same phone + similar name, or
+  // same first name at the same clinic when one side has no phone.
+  // resolve(hint, area) → a stable key for the clinic (the matched app clinic id when known).
+  function dedupeContacts(list, resolve){
+    var key = function(c){ if(!c.clinic) return ''; return (resolve && resolve(c.clinic, c.area)) || ('h:' + normClinicName(normClinicHint(c.clinic))); };
+    var out = [];
+    list.forEach(function(c){
+      var pk = phoneKey(c.phone), ck = key(c), hit = null;
+      for(var i = 0; i < out.length && !hit; i++){
+        var e = out[i], ek = phoneKey(e.phone);
+        if(pk && ek && pk === ek && samePerson(e.name, c.name)) hit = e;
+        else if(ck && key(e) === ck && samePerson(e.name, c.name) && (!pk || !ek || pk === ek)) hit = e;
+      }
+      if(!hit){ out.push(Object.assign({}, c)); return; }
+      ['clinic', 'phone', 'title', 'birthday', 'area'].forEach(function(f){ if(!hit[f] && c[f]) hit[f] = c[f]; });
+      if(c.notes) c.notes.split(' · ').forEach(function(n){ if(n && (hit.notes || '').indexOf(n) < 0) hit.notes = hit.notes ? hit.notes + ' · ' + n : n; });
+      if(c.area && hit.area && areaKey(hit.area) !== areaKey(c.area) && areaKey(hit.notes || '').indexOf(areaKey(c.area)) < 0) hit.notes = (hit.notes ? hit.notes + ' · ' : '') + 'Also ' + c.area;
+    });
+    return out;
+  }
+  // Every sheet of a workbook that holds people, merged and de-duplicated.
+  function parseContactWorkbook(sheets, specialties, opts){
+    var all = [], perSheet = [], skipped = 0;
+    var clinics = (opts && opts.clinics) || [];
+    (sheets || []).forEach(function(sh){
+      if(isClinicRepSheet(sh.rows)){ perSheet.push({ sheet: sh.name, contacts: 0, error: 'CLINIC_LIST' }); return; }
+      var r = parseContactRows(sh.rows, specialties, opts);
+      if(r.error){ perSheet.push({ sheet: sh.name, contacts: 0, error: r.error }); return; }
+      r.contacts.forEach(function(c){ c.sheet = sh.name; });
+      all = all.concat(r.contacts); skipped += r.skipped;
+      perSheet.push({ sheet: sh.name, contacts: r.contacts.length });
+    });
+    var merged = dedupeContacts(all, clinics.length ? function(hint, area){ var m = matchClinicHint(hint, area, clinics); return m.clinicId || null; } : null);
+    return { contacts: merged, perSheet: perSheet, skipped: skipped, duplicates: all.length - merged.length,
+      error: merged.length ? null : (all.length ? 'NO_ROWS' : 'NO_HEADER') };
+  }
+  // A sheet listing clinics with their rep ("Account | Rep | Location") tells
+  // the importer who a brand-new clinic belongs to. {normalized name → rep}.
+  function clinicRepHeader(rows){
+    for(var i = 0; i < Math.min((rows || []).length, 10); i++){
+      var r = rows[i] || [], nameC = -1, repC = -1, locC = -1;
+      for(var c = 0; c < r.length; c++){
+        var h = String(r[c] || '').trim();
+        if(nameC < 0 && /^(account|clinic|clinic name|customer|اسم العيادة|العيادة|الحساب)$/i.test(h)) nameC = c;
+        else if(repC < 0 && /^(rep|representative|salesman|مندوب|المندوبة|المندوب)$/i.test(h)) repC = c;
+        else if(locC < 0 && LOCATION_HDR.test(h)) locC = c;
+      }
+      if(nameC >= 0 && repC >= 0) return { at: i, nameC: nameC, repC: repC, locC: locC };
+    }
+    return null;
+  }
+  function isClinicRepSheet(rows){ return !!clinicRepHeader(rows); }
+  function parseClinicRepSheet(sheets, reps){
+    var map = {}, areas = {};
+    (sheets || []).forEach(function(sh){
+      var rows = sh.rows || [], hd = clinicRepHeader(rows);
+      if(!hd) return;
+      for(var j = hd.at + 1; j < rows.length; j++){
+        var row = rows[j] || [], nm = String(row[hd.nameC] || '').trim(), rp = String(row[hd.repC] || '').trim();
+        if(!nm || !rp) continue;
+        var g = guessRepMap([rp], reps)[rp];
+        if(!g) continue;
+        var key = normClinicName(normClinicHint(nm));
+        if(key && !map[key]) map[key] = g;
+        if(hd.locC >= 0 && key && !areas[key] && String(row[hd.locC] || '').trim()) areas[key] = String(row[hd.locC]).trim();
+      }
+    });
+    return { reps: map, areas: areas };
+  }
+  // A clinic hint from a sheet → app clinic, branch-aware: a tie between
+  // branches is settled by the contact's area, and a dental hint never lands
+  // on the clinic's pharmacy.
+  function fullTokens(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9؀-ۿ ]+/g, ' ').split(/\s+/).filter(Boolean); }
+  function matchClinicHint(hint, area, clinics){
+    var h = normClinicHint(hint);
+    if(!h || !hintSaysSomething(h)) return { clinicId: null, method: 'none' };
+    var m = matchCustomer(h, clinics, {});
+    if(!m.clinicId && !m.ambiguous){
+      // "Royal Hayat" → "Royale Hayat Hospital": rare words that nearly match, unique winner only
+      var hd0 = distinctiveTokens(h);
+      if(hd0.length){
+        var near = function(t, u){ return t === u || (t.length >= 4 && u.length >= 4 && (u.indexOf(t) >= 0 || t.indexOf(u) >= 0)) || (t.length >= 5 && u.length >= 5 && levenshtein(t, u) <= 1); };
+        var hits = [];
+        clinics.forEach(function(c){
+          var cd0 = distinctiveTokens(c.name);
+          var n = hd0.filter(function(t){ return cd0.some(function(u){ return near(t, u); }); }).length;
+          if(n && n * 2 >= hd0.length) hits.push({ id: c.id, n: n });
+        });
+        var top = hits.filter(function(x){ return x.n === Math.max.apply(null, hits.map(function(y){ return y.n; })); });
+        if(top.length === 1) m = { clinicId: top[0].id, channel: false, method: 'near' };
+      }
+    }
+    // "Kuwait Hospital" must not land on "International Hospital" just because both say hospital
+    if(m.clinicId && (m.method === 'token' || m.method === 'fuzzy')){
+      var cl = clinics.find(function(x){ return x.id === m.clinicId; });
+      var hd = distinctiveTokens(h), cd = distinctiveTokens(cl ? cl.name : '');
+      var shared = hd.filter(function(t){ return cd.some(function(u){ return u === t || (t.length >= 4 && u.length >= 4 && (u.indexOf(t) >= 0 || t.indexOf(u) >= 0)); }); });
+      if(!shared.length) return { clinicId: null, method: 'none' };
+    }
+    var pool = null;
+    if(m.clinicId && m.method === 'family' && m.family){
+      var fam = clinicFamilies(clinics).fams[m.family];
+      pool = fam ? fam.ids.slice() : null;
+    } else if(m.ambiguous && m.candidates) pool = m.candidates.slice();
+    if(pool && pool.length > 1){
+      var wantsPharmacy = /pharmac|صيدلية/i.test(String(hint));
+      var noPh = pool.filter(function(id){ var c = clinics.find(function(x){ return x.id === id; }); return c && !/pharmac|صيدلية/i.test(c.name); });
+      if(!wantsPharmacy && noPh.length && noPh.length < pool.length) pool = noPh;
+      var at = normClinicName(area || '').split(' ').filter(function(t){ return t.length >= 3; });
+      if(at.length && pool.length > 1){
+        var byArea = pool.filter(function(id){
+          var c = clinics.find(function(x){ return x.id === id; });
+          var ct = normClinicName(c ? c.name : '').split(' ');
+          return at.some(function(a){ return ct.some(function(t){ return t.length >= 3 && (t.indexOf(a) >= 0 || a.indexOf(t) >= 0); }); });
+        });
+        if(byArea.length) pool = byArea;
+      }
+      if(pool.length > 1){                           // "Gulf Clinic" vs "Gulf Medical Service": count every word, not just the rare ones
+        var ht = fullTokens(h), best = -1, bestIds = [];
+        pool.forEach(function(id){ var c = clinics.find(function(x){ return x.id === id; }); var ct = fullTokens(c ? c.name : ''); var ov = ht.filter(function(t){ return ct.indexOf(t) >= 0; }).length; if(ov > best){ best = ov; bestIds = [id]; } else if(ov === best) bestIds.push(id); });
+        if(bestIds.length === 1 && best > 0) pool = bestIds;
+      }
+      if(pool.length === 1) return { clinicId: pool[0], method: 'branch' };
+      if(m.clinicId) return m;                       // family head when the area does not settle it
+      return { clinicId: null, ambiguous: true, candidates: pool, method: 'ambiguous' };
+    }
+    return m;
+  }
+  function clinicDisplayName(hint){
+    var t = normClinicHint(hint).replace(/\s+/g, ' ').trim();
+    return t.split(' ').map(function(w){ return /^[a-z]/.test(w) ? w.charAt(0).toUpperCase() + w.slice(1) : w.toUpperCase() === w ? w : w; }).join(' ');
   }
   // ==== DOCTOR CRM ====
   // One flat analytics row per doctor across the visible clinics: visit
@@ -1992,7 +2303,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, parseContactRows, parseDateLoose, matchSpecialty,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan
   };

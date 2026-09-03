@@ -1781,3 +1781,98 @@ describe('UMI18N dictionary', () => {
     assert.equal(i18n.tr('Waterpik Cordless Plus'), null);
   });
 });
+
+describe('contact workbook import', () => {
+  const SPEC = ['General Dentist','Orthodontist','Periodontist','Hygienist','Clinic Manager'];
+  const clinics = [
+    { id: 'a', name: 'Aline Dental Center Jahra', doctors: [] },
+    { id: 'b', name: 'Bayan Dental Center', doctors: [] },
+    { id: 'g1', name: 'Gulf Clinic', doctors: [] },
+    { id: 'g2', name: 'Gulf Medical Service', doctors: [] },
+    { id: 's1', name: 'SN Jabriya', doctors: [] },
+    { id: 's2', name: 'SN Clinic 360', doctors: [] },
+    { id: 'n1', name: 'Dr. Nael Al Hazeem Dental Center - Sharq', doctors: [] },
+    { id: 'n2', name: 'Dr. Nael Al Hazeem Pharmacy ( Al Soor )', doctors: [] },
+    { id: 'ih', name: 'International Hospital', doctors: [] },
+    { id: 'rh', name: 'Royale Hayat Hospital', doctors: [] },
+  ];
+  test('a hygienist sheet with a title row, "Hygienist" and "Contact Number" columns parses', () => {
+    const rows = [
+      ['ULTRAMED Dental Hygienist Data List'],
+      ['SR#', 'Clinic Name', 'Location', 'Hygienist', 'Contact Number'],
+      ['1', 'Aline Dental Clinic', 'Jahra', 'Ms.Maram', ' +965 90023457', 'For Tepe Practice Box'],
+      ['2', 'Bayan Dental Center', 'Salmiya', 'Mr.Ejay', ' +965 65076372'],
+    ];
+    const r = core.parseContactRows(rows, SPEC, { clinics });
+    assert.equal(r.error, null);
+    assert.equal(r.contacts.length, 2);
+    assert.deepEqual([r.contacts[0].name, r.contacts[0].title, r.contacts[0].phone, r.contacts[0].area, r.contacts[0].notes],
+      ['Ms. Maram', 'Hygienist', '+96590023457', 'Jahra', 'For Tepe Practice Box']);
+    assert.equal(r.contacts[1].name, 'Mr. Ejay');
+  });
+  test('several people columns each pair with the phone column to their right', () => {
+    const rows = [
+      ['SR#', 'Clinic Name', 'Doctor', 'DOC. Phone Number', 'Hygienist', 'Contact Number'],
+      ['1', 'Bayan Dental Center', 'Dr. Sara', '99001122', 'Ms. Karen', '99003344'],
+    ];
+    const r = core.parseContactRows(rows, SPEC, { clinics });
+    assert.equal(r.contacts.length, 2);
+    assert.deepEqual([r.contacts[0].name, r.contacts[0].phone, r.contacts[0].title], ['Dr. Sara', '99001122', '']);
+    assert.deepEqual([r.contacts[1].name, r.contacts[1].phone, r.contacts[1].title], ['Ms. Karen', '99003344', 'Hygienist']);
+  });
+  test('a name cell that carries the role and the clinic is split', () => {
+    assert.deepEqual(core.splitPersonHint('Maram Aline Hygenist', clinics), { name: 'Maram', hint: 'Aline', area: '', title: 'Hygienist' });
+    assert.deepEqual(core.splitPersonHint('Dr Aseel Yousfan Hygenist Nael Hazem', clinics).name, 'Dr Aseel Yousfan');
+    assert.equal(core.splitPersonHint('Dana El Shatty Kuwait Hospital Hyg', clinics).hint, 'Kuwait Hospital');
+    assert.equal(core.splitPersonHint('Dr Ghoson Al Ali Moh Hygenist', clinics).name, 'Dr Ghoson Al Ali');
+    assert.equal(core.clinicDisplayName(core.splitPersonHint('Dr Ghoson Al Ali Moh Hygenist', clinics).hint), 'Ministry Of Health');
+    const area = core.splitPersonHint('iane Bayan Hygenist Jahra', clinics);
+    assert.deepEqual([area.name, area.hint, area.area], ['iane', 'Bayan', 'Jahra']);
+    assert.deepEqual([core.splitPersonHint('Sen Clinic Hygenist', clinics).name, core.splitPersonHint('Sen Clinic Hygenist', clinics).hint], ['Sen', '']); // "Clinic" alone names nothing
+    assert.equal(core.splitPersonHint('Nourah Dental Hygenist', clinics).hint, '');        // "Dental" says nothing
+  });
+  test('a report column full of sentences is never taken for names, and clinic lists are skipped', () => {
+    const sheets = [
+      { name: 'Visits', rows: [
+        ['Date', 'Hygienist', 'Clinic Name', 'Location', 'Visit with the Hygienist'],
+        ['46145', 'Ms. Karen', 'Bayan Dental Center', 'Al-hamra', 'Pushing The Breath Co. mouthwash to the team. They liked it and asked for samples next week.'],
+        ['46146', 'Ms. Roma and Ms. Jadi', 'Maidan Dental Clinic', 'Sabah Salem', 'During our meet-and-greet we introduced the range. The doctor asked about prices.'],
+      ]},
+      { name: 'Clinic location', rows: [['Account', 'Rep', 'Location'], ['Bayan Dental Center', 'Mariam', 'Salmiya'], ['New Smile', 'Ranova', 'Salmiya']] },
+    ];
+    const wb = core.parseContactWorkbook(sheets, SPEC, { clinics });
+    assert.deepEqual(wb.contacts.map(c => c.name), ['Ms. Karen', 'Ms. Roma', 'Ms. Jadi']);
+    assert.equal(wb.perSheet[1].error, 'CLINIC_LIST');
+    const reps = core.parseClinicRepSheet(sheets, ['Mariam', 'Renova']);
+    assert.equal(reps.reps[core.normClinicName('New Smile')], 'Renova');   // "Ranova" → Renova
+    assert.equal(reps.areas[core.normClinicName('New Smile')], 'Salmiya');
+  });
+  test('the same person across sheets becomes one contact; two people on one line stay two', () => {
+    const list = [
+      { name: 'Ms.Mary Grace', clinic: 'Bayan Dental Center', area: 'Salmiya', phone: '+96551146942', title: 'Hygienist', notes: '' },
+      { name: 'Ms.Grace', clinic: 'Bayan', area: 'Jahra', phone: '+965 51146942', title: 'Hygienist', notes: '' },
+      { name: 'Ms. Khaira', clinic: 'Prestige Clinic', area: 'Salmiya', phone: '', title: 'Hygienist', notes: '' },
+      { name: 'Ms. Khairiya', clinic: 'Prestige Clinic', area: 'Salmiya', phone: '+96596609869', title: 'Hygienist', notes: '' },
+      { name: 'Ms.Joy', clinic: 'Crown Dental Center', area: '', phone: '+96560981918', title: 'Hygienist', notes: '' },
+      { name: 'Ms.Claire', clinic: 'Crown Dental Center', area: '', phone: '+96560981918', title: 'Hygienist', notes: '' },
+    ];
+    const out = core.dedupeContacts(list, (hint) => core.matchClinicHint(hint, '', clinics).clinicId);
+    assert.deepEqual(out.map(c => c.name), ['Ms.Mary Grace', 'Ms. Khaira', 'Ms.Joy', 'Ms.Claire']);
+    assert.equal(out[0].notes, 'Also Jahra');
+    assert.equal(out[1].phone, '+96596609869');
+  });
+  test('clinic hints resolve branch-aware and never on shared generic words', () => {
+    assert.equal(core.matchClinicHint('Gulf Clinic', '', clinics).clinicId, 'g1');
+    assert.equal(core.matchClinicHint('SN', 'Jabriya', clinics).clinicId, 's1');
+    assert.equal(core.matchClinicHint('SN', '360Mall', clinics).clinicId, 's2');
+    assert.equal(core.matchClinicHint('NHC (Dr. Nael Alhazeem Center)', 'Hawally', clinics).clinicId, 'n1');
+    assert.equal(core.matchClinicHint('Royal Hyatt', 'Jabriya', clinics).clinicId, 'rh');
+    assert.equal(core.matchClinicHint('Kuwait Hospital', '', clinics).clinicId, null);
+    assert.equal(core.matchClinicHint('Alien dental Clinic', 'Jahra', clinics).clinicId, 'a');
+    assert.equal(core.matchClinicHint('Dental', '', clinics).clinicId, null);
+  });
+  test('"Ms. A, Ms.B and Ms.C" is three people', () => {
+    assert.deepEqual(core.splitPeople('Ms. Bidya, Ms.Abby and Ms.Moly'), ['Ms. Bidya', 'Ms.Abby', 'Ms.Moly']);
+    assert.deepEqual(core.splitPeople('Ms. Rose Ann'), ['Ms. Rose Ann']);
+  });
+});
