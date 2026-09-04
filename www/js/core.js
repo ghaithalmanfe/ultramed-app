@@ -489,6 +489,28 @@
       }
     }
 
+    // 10. Decision maps: the coach can only steer what the team recorded.
+    var withDocs = clinics.filter(function(c){ return c.cls !== 'Closed' && wantRep(c.rep) && (c.doctors || []).length; });
+    var noDecider = withDocs.filter(function(c){ return !(c.doctors || []).some(function(d){ return d.influence === 'decider'; }); });
+    if(noDecider.length){
+      out.push({ level: 'watch', icon: '🧭', key: 'decision-map', data: { count: noDecider.length, names: noDecider.slice(0, 3).map(function(c){ return c.name; }) },
+        title: noDecider.length + ' clinic' + (noDecider.length === 1 ? '' : 's') + ' with no known decision maker',
+        detail: listNames(noDecider.map(function(c){ return c.name; }), 3) + '. Ask who signs the orders and mark them in the doctor card — then the next step appears on the clinic.' });
+    }
+    var staleDeciders = [];
+    withDocs.forEach(function(c){
+      (c.doctors || []).filter(function(d){ return d.influence === 'decider' && d.stage !== 'blocked'; }).forEach(function(d){
+        var dates = vis.filter(function(v){ if(v.clinicId !== c.id) return false; var ids = (Array.isArray(v.doctorIds) && v.doctorIds.length) ? v.doctorIds : (v.doctorId ? [v.doctorId] : []); return ids.indexOf(d.id) >= 0; }).map(function(v){ return v.date; }).sort();
+        var lv = dates.length ? dates[dates.length - 1] : null;
+        if(!lv || daysBetween(lv, today) >= 45) staleDeciders.push(d.name + ' (' + c.name + ')');
+      });
+    });
+    if(staleDeciders.length){
+      out.push({ level: 'act', icon: '🤝', key: 'deciders-stale', data: { count: staleDeciders.length, names: staleDeciders.slice(0, 3) },
+        title: staleDeciders.length + ' decision maker' + (staleDeciders.length === 1 ? '' : 's') + ' not met in 45+ days',
+        detail: listNames(staleDeciders, 3) + '. These people sign the orders — put them in next week\u2019s plan.' });
+    }
+
     if(!out.length){
       out.push({ level: 'good', icon: '✅', key: 'allgood', data: {},
         title: 'No red flags in this period',
@@ -1566,6 +1588,71 @@
     });
     return out;
   }
+  // ==== DOCTOR RECORDS: who is who inside a clinic, and what to do about it ====
+  // The card a rep fills per doctor. Role = their job in the clinic; influence
+  // = their weight in the buying decision; stage = where the relationship is.
+  var DOC_ROLES = [
+    ['owner', 'Owner'], ['partner', 'Partner'], ['dentist', 'Dentist (employed)'], ['hygienist', 'Hygienist'],
+    ['manager', 'Clinic manager'], ['procurement', 'Procurement / purchasing'], ['reception', 'Reception'], ['other', 'Other']
+  ];
+  var DOC_INFLUENCE = [['decider', 'Decision maker'], ['influencer', 'Influencer'], ['user', 'User only'], ['gatekeeper', 'Gatekeeper']];
+  var DOC_STAGES = [['new', 'Not met yet'], ['met', 'Met once'], ['warm', 'Warm'], ['champion', 'Champion'], ['blocked', 'Blocked']];
+  var RECORD_FIELDS = ['title', 'role', 'influence', 'stage', 'phone'];
+  function doctorRecordCompleteness(d){
+    var missing = RECORD_FIELDS.filter(function(f){ return !(d && d[f]); });
+    return { pct: Math.round((RECORD_FIELDS.length - missing.length) / RECORD_FIELDS.length * 100), missing: missing };
+  }
+  // The clinic's decision map: who decides, who influences, who is on our side
+  // or against us — plus the gaps in what we know and the rep's next step.
+  // opts.analytics = doctorAnalytics rows for this clinic (for last-visit dates).
+  function clinicDecisionMap(c, opts){
+    opts = opts || {};
+    var today = opts.today || null, last = {};
+    (opts.analytics || []).forEach(function(a){ last[a.id] = a.lastVisit; });
+    var docs = (c && c.doctors) || [];
+    var by = function(k, v){ return docs.filter(function(d){ return d[k] === v; }); };
+    var names = function(arr, max){ max = max || 3; var n = arr.map(function(d){ return d.name; }); return n.slice(0, max).join(', ') + (n.length > max ? ' +' + (n.length - max) : ''); };
+    var deciders = by('influence', 'decider'), influencers = by('influence', 'influencer'), gatekeepers = by('influence', 'gatekeeper');
+    var champions = by('stage', 'champion'), blocked = by('stage', 'blocked'), unmet = by('stage', 'new'), metOnce = by('stage', 'met');
+    var unknown = docs.filter(function(d){ return !d.influence || !d.role; });
+    var noPhone = docs.filter(function(d){ return !d.phone; });
+    var gaps = [], steps = [];
+    var res = { deciders: deciders, influencers: influencers, gatekeepers: gatekeepers, champions: champions, blocked: blocked, unknown: unknown, noPhone: noPhone, gaps: gaps, steps: steps, total: docs.length };
+    if(!docs.length){
+      gaps.push('No doctors recorded yet — add who works here and who decides.');
+      steps.push('Ask reception for the doctors\' names and who signs the orders.');
+      return res;
+    }
+    if(!deciders.length) gaps.push('No decision maker identified — find out who signs the orders (owner or manager).');
+    if(unknown.length) gaps.push(unknown.length + ' doctor' + (unknown.length === 1 ? '' : 's') + ' with unknown role or influence: ' + names(unknown));
+    if(noPhone.length) gaps.push(noPhone.length + ' without a phone number: ' + names(noPhone));
+    deciders.forEach(function(d){
+      var lv = last[d.id];
+      if(d.stage === 'blocked'){
+        var ally = champions.concat(influencers).filter(function(x){ return x.id !== d.id && x.stage !== 'blocked'; })[0];
+        steps.push(d.name + ' (decision maker) is blocked — win over ' + (ally ? ally.name : 'an influencer') + ' first and let them open the door.');
+      } else if(d.stage === 'new' || (!lv && d.stage !== 'champion')){
+        steps.push('Meet the decision maker ' + d.name + ' — no visit with them yet.');
+      } else if(lv && today && daysBetween(lv, today) >= 45){
+        steps.push('Decision maker ' + d.name + ' not seen for ' + daysBetween(lv, today) + ' days — visit before the next order cycle.');
+      }
+    });
+    champions.forEach(function(d){
+      var other = deciders.filter(function(x){ return x.id !== d.id && x.stage !== 'champion'; })[0];
+      steps.push(other ? 'Ask ' + d.name + ' (champion) to introduce you to ' + other.name + '.'
+                       : 'Ask ' + d.name + ' (champion) for a prescription or a referral to another clinic.');
+    });
+    blocked.filter(function(d){ return d.influence !== 'decider'; }).forEach(function(d){
+      var via = influencers.concat(gatekeepers, champions).filter(function(x){ return x.id !== d.id && x.stage !== 'blocked'; })[0];
+      steps.push('Do not push ' + d.name + ' — work through ' + (via ? via.name : 'another contact') + ' instead.');
+    });
+    metOnce.forEach(function(d){ steps.push('Second visit for ' + d.name + ' within two weeks — bring samples.'); });
+    var unmetOthers = unmet.filter(function(d){ return d.influence !== 'decider'; });
+    if(unmetOthers.length) steps.push('Still to meet: ' + names(unmetOthers) + '.');
+    if(!steps.length && !gaps.length) steps.push('Decision map complete — keep the champion warm and the decision maker informed.');
+    return res;
+  }
+
   // Prescriptions distributed — the growth view: weekly and monthly counts
   // per DOCTOR and per CLINIC (center), with growth vs the previous period.
   function rxGrowth(opts){
@@ -2303,7 +2390,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan
   };

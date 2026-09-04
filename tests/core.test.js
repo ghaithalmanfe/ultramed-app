@@ -1881,3 +1881,60 @@ describe('contact workbook import', () => {
     assert.deepEqual(core.splitPeople('Ms. Rose Ann'), ['Ms. Rose Ann']);
   });
 });
+
+describe('doctor records — decision map', () => {
+  const today = '2026-09-02';
+  test('completeness counts the five record fields', () => {
+    assert.deepEqual(core.doctorRecordCompleteness({}), {pct: 0, missing: ['title','role','influence','stage','phone']});
+    assert.equal(core.doctorRecordCompleteness({title:'Orthodontist', role:'owner', influence:'decider', stage:'warm', phone:'9'}).pct, 100);
+    assert.equal(core.doctorRecordCompleteness({title:'Orthodontist', role:'owner'}).pct, 40);
+  });
+  test('a clinic with no records asks for the basics', () => {
+    const m = core.clinicDecisionMap({id:'c', doctors:[]}, {today});
+    assert.equal(m.total, 0);
+    assert.match(m.gaps[0], /No doctors recorded/);
+    assert.match(m.steps[0], /who signs the orders/);
+  });
+  test('gaps: no decision maker, unknown roles, missing phones', () => {
+    const c = {id:'c', doctors:[{id:'a', name:'Dr. A', title:'Dentist'}, {id:'b', name:'Ms. B', role:'hygienist', influence:'influencer', stage:'warm', phone:'9'}]};
+    const m = core.clinicDecisionMap(c, {today});
+    assert.ok(m.gaps.some(g => /No decision maker identified/.test(g)));
+    assert.ok(m.gaps.some(g => /1 doctor with unknown role or influence: Dr\. A/.test(g)));
+    assert.ok(m.gaps.some(g => /1 without a phone number: Dr\. A/.test(g)));
+  });
+  test('steps follow the decision maker and the champion', () => {
+    const c = {id:'c', doctors:[
+      {id:'own', name:'Dr. Owner', role:'owner', influence:'decider', stage:'met', phone:'1'},
+      {id:'hyg', name:'Ms. Champ', role:'hygienist', influence:'influencer', stage:'champion', phone:'2'},
+      {id:'blk', name:'Dr. Wall', role:'dentist', influence:'user', stage:'blocked', phone:'3'},
+    ]};
+    const analytics = [{id:'own', lastVisit:'2026-06-01'}, {id:'hyg', lastVisit:'2026-08-30'}];
+    const m = core.clinicDecisionMap(c, {today, analytics});
+    assert.equal(m.deciders.length, 1); assert.equal(m.champions.length, 1); assert.equal(m.blocked.length, 1);
+    assert.deepEqual(m.gaps, []);
+    assert.ok(m.steps.some(s => /Decision maker Dr\. Owner not seen for 93 days/.test(s)));
+    assert.ok(m.steps.some(s => /Ask Ms\. Champ \(champion\) to introduce you to Dr\. Owner/.test(s)));
+    assert.ok(m.steps.some(s => /Do not push Dr\. Wall — work through Ms\. Champ/.test(s)));
+    assert.ok(m.steps.some(s => /Second visit for Dr\. Owner within two weeks/.test(s)));
+  });
+  test('a never-met decision maker is the first thing to fix', () => {
+    const c = {id:'c', doctors:[{id:'m', name:'Dr. Boss', role:'manager', influence:'decider', stage:'new', phone:'1'}]};
+    const m = core.clinicDecisionMap(c, {today});
+    assert.match(m.steps[0], /Meet the decision maker Dr\. Boss/);
+  });
+  test('coach flags clinics without a known decision maker and stale decision makers', () => {
+    const clinics = [
+      {id:'c1', name:'Alpha Dental', rep:'Mariam', cls:'A', doctors:[{id:'d1', name:'Dr. One', influence:'user'}]},
+      {id:'c2', name:'Beta Dental', rep:'Mariam', cls:'B', doctors:[{id:'d2', name:'Dr. Two', influence:'decider', stage:'warm'}]},
+      {id:'c3', name:'Gamma Dental', rep:'Mariam', cls:'C', doctors:[]},
+    ];
+    const visits = [{id:'v1', clinicId:'c2', rep:'Mariam', date:'2026-06-01', doctorIds:['d2']}];
+    const out = core.coachInsights({today, repFilter:'all', visits, clinics, targets:{}, dayPlans:{}});
+    const dm = out.find(i => i.key === 'decision-map');
+    assert.ok(dm, 'decision-map insight present');
+    assert.equal(dm.data.count, 1); // Alpha only — Gamma has no doctors at all, Beta has a decider
+    assert.match(dm.title, /1 clinic with no known decision maker/);
+    const st = out.find(i => i.key === 'deciders-stale');
+    assert.ok(st && st.data.count === 1 && /Dr\. Two \(Beta Dental\)/.test(st.detail), 'stale decider flagged');
+  });
+});
