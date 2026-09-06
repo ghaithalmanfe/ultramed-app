@@ -894,6 +894,14 @@
     'Every extra doctor met in the same clinic is a free lead. Ask reception who else is in today — aim for 2+ per visit.': 'كل طبيب إضافي تقابله في نفس العيادة فرصة مجانية. اسأل الاستقبال من موجود اليوم — استهدف 2+ في كل زيارة.',
     'Meeting more people per clinic multiplies orders without extra driving. Keep it up.': 'مقابلة أشخاص أكثر في كل عيادة تضاعف الطلبيات بدون قيادة إضافية. واصل.',
     'Follow-ups done and top clinics covered. To grow from here: more visits, and 2+ contacts met per visit.': 'المتابعات منجزة والعيادات المهمة مغطاة. للنمو من هنا: زيارات أكثر، و2+ جهة اتصال في كل زيارة.',
+    // ---- ignored salesmen ----
+    'Salesmen in your files': 'البائعون في ملفاتك',
+    'Ignored salesmen are not read at all: their lines are dropped on import and removed from stored files. To bring one back, include them and re-upload the file.': 'البائع المتجاهَل لا يُقرأ أصلاً: تُحذف سطوره عند الاستيراد وتُزال من الملفات المحفوظة. لإرجاعه، ضعه ضمن الفريق وأعد رفع الملف.',
+    '· ignored — not read': '· متجاهَل — لا يُقرأ',
+    'Ignore': 'تجاهل',
+    '— ignore (not my team) —': '— تجاهل (ليس من فريقي) —',
+    'Nothing to import — every salesman in this file is ignored': 'لا شيء للاستيراد — كل البائعين في هذا الملف متجاهَلون',
+    'Nothing to import — every salesman in this file is ignored (not my team)': 'لا شيء للاستيراد — كل البائعين في هذا الملف متجاهَلون (ليسوا من فريقي)',
     // ---- returns policy ----
     'Returns of earlier months\' invoices': 'مرتجعات فواتير الأشهر السابقة',
     'Count in the original invoice\'s month': 'تُحسب في شهر الفاتورة الأصلية',
