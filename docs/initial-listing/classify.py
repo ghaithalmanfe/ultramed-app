@@ -124,3 +124,60 @@ for ph,name in [(1,'المرحلة 1'),(2,'المرحلة 2'),(3,'المرحلة
         for br in sorted(set(o['brand'] for o in it)):
             sub=[o for o in it if o['brand']==br]
             print('    ',br, len(sub), round(sum(x['kd'] for x in sub)))
+
+# ================= English rendering pass (same rules, same data) =================
+CLS_EN = {'سريع':'Fast-moving','متوسط':'Mid-moving','بطيء':'Slow-moving','بدون':'No paid sales'}
+CH_EN  = {'صيدليات':'Pharmacies','عيادات':'Clinics','صيدليات + عيادات':'Pharmacies + Clinics'}
+BR_EN  = {'Combo/Bundle/Kit (أطقم مخصصة)':'Combo/Bundle/Kit (custom kits)'}
+
+def issues_en(o):
+    f=[]
+    if o['units'] and o['ret'] >= o['units']: f.append('Returns ≥ sales (net movement zero or negative)')
+    if o['ret_inv_ratio'] >= 0.20: f.append('Customer returns %d%% of units sold' % round(o['ret_inv_ratio']*100))
+    if 'تراجع' in o['note']: f.append('Declining: last 3 months below 40%% of period average (%.0f vs %.0f units/month)' % (o['upm3'], o['upm']))
+    if o['days'] > 60: f.append('No sale in %d days' % o['days'])
+    if o['ret_stk_ratio'] >= 0.35 and o['ret'] < o['units']: f.append('Non-invoice stock returns %d%% (shelf clearance / prior-year goods — not a customer rejection)' % round(o['ret_stk_ratio']*100))
+    if 'تعبئة أولية' in o['note']: f.append('Initial fill: a large share of sales landed in a single month')
+    if 'منتج جديد' in o['note']: f.append('New product — short sales history')
+    return f
+
+for o in d:
+    o['cls_en']     = CLS_EN[o['cls'].split(' ')[0][:5].replace('بدون','بدون')] if o['cls'][:4] not in CLS_EN else CLS_EN[o['cls'][:4]]
+    o['brand_en']   = BR_EN.get(o['brand'], o['brand'])
+    o['channel_en'] = CH_EN[o['channel']]
+    o['issues_en']  = issues_en(o)
+
+# reason_en mirrors the reason built above, rule by rule
+for br, items in by_brand.items():
+    fast_ok = sorted([o for o in items if o['cls'].startswith('سريع') and not blocked(o)],
+                     key=lambda o: (-o['units'], -o['kd']))
+    for o in fast_ok[:CEIL]:
+        o['reason_en'] = 'Fast-moving: %.1f invoices/month · %.0f units/month · %d customers' % (o['ipm'], o['upm'], o['cust'])
+    for o in fast_ok[CEIL:]:
+        o['reason_en'] = 'Fast-moving but outside the brand top %d — added once Phase 1 is established' % CEIL
+    if not fast_ok:
+        for o in sorted([x for x in items if x['days'] <= 90 and (x['units'] >= 10 or x['kd'] >= 500)], key=lambda x:-x['kd'])[:2]:
+            o['reason_en'] = 'Brand anchor: highest-value item in a brand with no fast movers (%.0f KD · %d customers · last sale %d days ago)' % (o['kd'], o['cust'], o['days'])
+for o in d:
+    if o.get('reason_en'): continue
+    if o['phase'] == 2:
+        if o['cls'].startswith('متوسط'):
+            o['reason_en'] = 'Mid-moving: %.1f invoices/month · %d customers — steady but less frequent demand' % (o['ipm'], o['cust'])
+        elif o['cls'].startswith('سريع'):
+            o['reason_en'] = 'Fast-moving but flagged: ' + ' · '.join(o['issues_en'])
+        else:
+            o['reason_en'] = 'Professional equipment: judged on value, not invoice count (%.0f KD from %d customers)' % (o['kd'], o['cust'])
+    elif o['phase'] == 3:
+        o['reason_en'] = 'Slow-moving but alive: %.2f invoices/month · last sale %d days ago' % (o['ipm'], o['days'])
+    elif o['phase'] == 0:
+        if o['units'] == 0:
+            o['reason_en'] = 'No paid sales in 2026 — free-of-charge or returns only; review before any listing'
+        else:
+            o['reason_en'] = 'Dormant: no sale in %d days — review (clearance / delist)' % o['days']
+    else:
+        o['reason_en'] = ''
+
+json.dump(d, open('classified.json','w'), ensure_ascii=False, indent=1)
+missing = [o['المنتج / Product'] for o in d if not o.get('reason_en')]
+print('missing reason_en:', len(missing))
+print('sample cls_en:', sorted(set(o['cls_en'] for o in d)))

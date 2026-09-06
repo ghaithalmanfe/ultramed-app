@@ -7,9 +7,11 @@
 
 | الملف | الوصف |
 |---|---|
-| `UltraMed-Initial-Listing-2026.xlsx` | المستند النهائي (8 أوراق: المقترح · المراحل الثلاث · عرض الصيدليات · عرض العيادات · خارج القائمة · المعايير) |
+| `UltraMed-Initial-Listing-2026.xlsx` | المستند النهائي بالعربية (8 أوراق: المقترح · المراحل الثلاث · عرض الصيدليات · عرض العيادات · خارج القائمة · المعايير) |
+| `UltraMed-Initial-Listing-2026-EN.xlsx` | English version of the same document (identical figures and rules) |
 | `classify.py` | توزيع الأصناف على المراحل والقنوات حسب القواعد المكتوبة في ورقة «المعايير» |
-| `build.py` | بناء ملف الإكسل من مخرجات `classify.py` |
+| `build.py` | بناء ملف الإكسل العربي من مخرجات `classify.py` |
+| `build_en.py` | بناء النسخة الإنجليزية من نفس المخرجات |
 
 ## إعادة التوليد
 
@@ -17,6 +19,7 @@
 pip install openpyxl
 python3 classify.py   # يقرأ list.json المستخرج من ملف حركة المنتجات، ويكتب classified.json
 python3 build.py      # يكتب UltraMed-Initial-Listing-2026.xlsx
+python3 build_en.py   # يكتب UltraMed-Initial-Listing-2026-EN.xlsx
 ```
 
 `list.json` يُستخرج من ورقة «القائمة List» في ملف حركة المنتجات
