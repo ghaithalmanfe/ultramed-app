@@ -1982,3 +1982,145 @@ describe('returns of earlier invoices', () => {
     assert.equal(Math.round(t.bySalesman.R.net * 100) / 100, -10);
   });
 });
+
+
+describe('product movement — brand → products ranked by real sales', () => {
+  const R = (date, doc, product, qty, net, extra) => Object.assign({ date, doc, type: doc.startsWith('SRT') ? 'return' : 'invoice', product, qty, net, brand: 'Breath', customer: 'Trolley' }, extra || {});
+  const rows = [
+    // Alpha: 5 invoices in Jan..Mar under an old and a new code → merged, fast by frequency? 5 inv / 3 mo = 1.67 → mid
+    R('2026-01-05', 'SINV1', 'Alpha Mouthwash', 10, 50), R('2026-01-20', 'SINV2', 'Alpha Mouthwash', 10, 50),
+    R('2026-02-05', 'SINV3', 'Alpha Mouthwash IME', 20, 100), R('2026-03-01', 'SINV4', 'Alpha Mouthwash IME', 20, 100), R('2026-03-30', 'SINV5', 'Alpha Mouthwash IME', 20, 100),
+    R('2026-02-06', 'SRT1', 'Alpha Mouthwash', -3, -15, { ref: 'SINV1' }),          // return against an invoice
+    R('2026-03-06', 'SRT2', 'Alpha Mouthwash', -2, -10, { ref: null }),              // stock return, no invoice
+    R('2026-03-07', 'SRT3', 'Alpha Mouthwash IME', -4, 0),                            // free goods coming back → not a return
+    R('2026-03-08', 'SINV6', 'Alpha Mouthwash IME', 6, 0),                            // free goods to a customer
+    // Beta: sold every few days → fast
+    ...Array.from({ length: 14 }, (_, i) => R('2026-0' + (1 + Math.floor(i / 5)) + '-' + String(1 + (i % 5) * 5).padStart(2, '0'), 'SINV' + (100 + i), 'Beta Floss', 2, 6)),
+    // Gamma: one invoice in three months → slow
+    R('2026-01-10', 'SINV200', 'Gamma Kit', 1, 300),
+    // Delta: free only → no sale
+    R('2026-02-10', 'SINV201', 'Delta Sample', 3, 0),
+    // Marketing / non-product lines are ignored
+    R('2026-02-11', 'SINV202', 'Vanity bag', 50, 0, { brand: 'Tepe - Marketing Materials / Items' }),
+    R('2026-02-12', 'SINV203', 'Alpha Mouthwash IME', 40, 0, { customer: 'Marketing and Advertisement' }),
+    R('2026-02-13', 'SINV204', 'Delivery/Pick Up Charge', 1, 2, { brand: 'Delivery Charge' }),
+  ];
+  const m = core.productMovement(rows);
+  const brand = m.brands[0];
+  const by = n => brand.products.find(p => p.name === n);
+
+  test('period, counts and non-product exclusion', () => {
+    assert.equal(m.from, '2026-01-01'); assert.equal(m.to, '2026-03-30');
+    assert.equal(m.brands.length, 1); assert.equal(m.products, 4); assert.equal(m.sold, 3);
+    assert.deepEqual(m.counts, { fast: 1, mid: 1, slow: 1, none: 1 });
+    assert.equal(brand.brand, 'Breath');
+  });
+  test('old and new codes of one product merge under the best-selling name', () => {
+    const a = by('Alpha Mouthwash IME');
+    assert.ok(a, 'merged product exists');
+    assert.deepEqual(a.otherNames, ['Alpha Mouthwash']);
+    assert.equal(a.paid, 80);
+    assert.ok(a.flags.some(f => f.k === 'merged'));
+    assert.equal(brand.products.filter(p => /alpha/i.test(p.name)).length, 1);
+  });
+  test('paid, FOC and the two kinds of returns are kept apart', () => {
+    const a = by('Alpha Mouthwash IME');
+    assert.equal(a.retInv, 3); assert.equal(a.retNoInv, 2); assert.equal(a.ret, 5);
+    assert.equal(a.netUnits, 75);
+    assert.equal(a.focNet, 2);         // 6 free out, 4 free back
+    assert.equal(a.kd, 375);           // 400 paid − 15 − 10
+    assert.equal(a.price, 5);
+    assert.equal(a.invoices, 5); assert.equal(a.customers, 1);
+  });
+  test('classes follow invoice frequency: fast, mid, slow, none', () => {
+    assert.equal(by('Beta Floss').cls, 'fast');          // 14 invoices in under 3 months
+    assert.equal(by('Alpha Mouthwash IME').cls, 'mid');  // 5 invoices / ~2.8 months
+    assert.equal(by('Gamma Kit').cls, 'slow');           // 1 invoice
+    assert.equal(by('Delta Sample').cls, 'none');
+    assert.ok(by('Delta Sample').flags.some(f => f.k === 'focOnly'));
+  });
+  test('ranking is by paid units with unsold products last; A/B/C is cumulative within the brand', () => {
+    assert.deepEqual(brand.products.map(p => p.name), ['Alpha Mouthwash IME', 'Beta Floss', 'Gamma Kit', 'Delta Sample']);
+    assert.deepEqual(brand.products.map(p => p.rank), [1, 2, 3, 4]);
+    assert.equal(by('Alpha Mouthwash IME').abc, 'A');
+    assert.equal(by('Gamma Kit').abc, 'C');
+    assert.equal(by('Delta Sample').abc, null);
+    assert.ok(Math.abs(brand.products.reduce((s, p) => s + p.share, 0) - 1) < 1e-9);
+  });
+  test('a brand with one product puts it in A', () => {
+    const one = core.productMovement([R('2026-01-05', 'SINV1', 'Solo', 3, 9, { brand: 'Solo Brand' })]);
+    assert.equal(one.brands[0].products[0].abc, 'A');
+  });
+  test('velocity uses the data span when the data is shorter than the floor', () => {
+    const short = core.productMovement([R('2026-08-01', 'SINV1', 'X', 10, 10), R('2026-08-20', 'SINV2', 'X', 10, 10), R('2026-09-06', 'SINV3', 'X', 10, 10)]);
+    const x = short.brands[0].products[0];
+    assert.ok(x.window > 1.1 && x.window < 1.3, 'window ≈ 1.2 months, not 3');
+    assert.equal(x.cls, 'mid'); // 3 invoices / 1.18 months ≈ 2.5 per month
+  });
+  test('heavy stock returns flag the product but do not hide its movement', () => {
+    const rows2 = [
+      ...Array.from({ length: 30 }, (_, i) => R('2026-0' + (1 + Math.floor(i / 10)) + '-' + String(1 + (i % 10) * 2).padStart(2, '0'), 'SINV' + i, 'Powder', 5, 20)),
+      R('2026-03-25', 'SRT9', 'Powder', -160, -600, { ref: null }),
+      R('2026-06-30', 'SINV999', 'Anchor', 1, 1, { brand: 'Other' }), // stretches the data to > 92 days
+    ];
+    const noRefs = core.productMovement(rows2);
+    const p0 = noRefs.brands.find(b => b.brand === 'Breath').products[0];
+    assert.equal(p0.cls, 'fast');
+    assert.equal(noRefs.hasRefs, false);
+    assert.ok(p0.flags.some(f => f.k === 'returns' && f.noInv === false && f.pct === 107), 'no "without invoice" claim when the data carries no references');
+    assert.ok(p0.flags.some(f => f.k === 'exceed'));
+    assert.ok(p0.flags.some(f => f.k === 'stale'));
+    const withRefs = core.productMovement(rows2.concat([R('2026-04-02', 'SRT10', 'Anchor', -1, -1, { brand: 'Other', ref: 'SINV999' })]));
+    assert.equal(withRefs.hasRefs, true);
+    const p1 = withRefs.brands.find(b => b.brand === 'Breath').products[0];
+    assert.ok(p1.flags.some(f => f.k === 'returns' && f.noInv === true), 'with references in the data, an unreferenced return is a stock return');
+  });
+  test('a product sold once is slow even when the data covers a few weeks', () => {
+    const m = core.productMovement([R('2026-08-01', 'SINV1', 'Once', 4, 40), R('2026-08-03', 'SINV2', 'Twice', 1, 5), R('2026-08-20', 'SINV3', 'Twice', 1, 5)]);
+    assert.equal(m.provisional, true);
+    assert.equal(m.brands[0].products.find(p => p.name === 'Once').cls, 'slow');
+    assert.equal(m.brands[0].products.find(p => p.name === 'Twice').cls, 'mid');
+  });
+  test('supervisor-marked exchanges are not returns', () => {
+    const rows = [R('2026-01-05', 'SINV1', 'X', 5, 50), R('2026-01-20', 'SINV2', 'X', 5, 50), R('2026-02-01', 'SRT1', 'X', -5, -50, { ref: 'SINV1' })];
+    const plain = core.productMovement(rows).brands[0].products[0];
+    const swapped = core.productMovement(rows, { isExchange: r => r.doc === 'SRT1' }).brands[0].products[0];
+    assert.equal(plain.ret, 5);
+    assert.equal(swapped.ret, 0); assert.equal(swapped.exchanged, 5);
+    assert.ok(swapped.flags.some(f => f.k === 'exchanged'));
+    assert.equal(swapped.kd, 50); // the swap line still nets against revenue like everywhere else in the app
+  });
+  test('a return of free goods (sret fully discounted) is not a return', () => {
+    const rows = [R('2026-01-05', 'SINV1', 'X', 5, 50), R('2026-01-06', 'SINV2', 'X', 2, 0), R('2026-01-20', 'SRT1', 'X', -2, 0, { sret: 4.4, dsret: 4.4 }), R('2026-01-21', 'SRT2', 'X', -1, 0, { sret: 10, dsret: 1 })];
+    const p = core.productMovement(rows).brands[0].products[0];
+    assert.equal(p.focBack, 2); assert.equal(p.focNet, 0);
+    assert.equal(p.ret, 1);          // the second line is a real return valued only in the return column
+    assert.equal(p.kd, 41);          // 50 − 9
+  });
+  test('a paid line without a quantity still counts as a sale', () => {
+    const p = core.productMovement([R('2026-01-05', 'SINV1', 'X', undefined, 50), R('2026-01-15', 'SINV2', 'X', 0, 70)]).brands[0].products[0];
+    assert.equal(p.hasPaid, true); assert.equal(p.cls, 'mid'); assert.equal(p.invoices, 2); assert.equal(p.kd, 120);
+  });
+  test('rows with unusable dates are dropped instead of breaking the screen', () => {
+    const m = core.productMovement([R('05-01-2026', 'SINV1', 'Bad', 1, 5), R('2026-01-05', 'SINV2', 'Good', 1, 5)]);
+    assert.equal(m.rows, 1); assert.equal(m.brands[0].products[0].name, 'Good');
+  });
+  test('a launch is measured over at least two months and flagged new', () => {
+    const rows = [R('2026-01-05', 'SINV0', 'Old', 1, 5), R('2026-08-30', 'SINV00', 'Old', 1, 5)];
+    for(let i = 0; i < 8; i++) rows.push(R('2026-07-' + String(12 + i * 6).padStart(2, '0').slice(-2) < '2026-07-32' ? '2026-07-' + String(12 + i * 6 > 31 ? 31 : 12 + i * 6).padStart(2, '0') : '2026-08-01', 'SINVL' + i, 'Launch', 3, 30));
+    const p = core.productMovement(rows).brands[0].products.find(x => x.name === 'Launch');
+    assert.ok(p.window >= 2 - 1e-9 && p.window < 2.01, 'floor of two months applies to a 7-week launch: ' + p.window);
+    assert.equal(p.cls, 'fast'); // 8 invoices / 2 months
+    assert.ok(p.flags.some(f => f.k === 'new'));
+  });
+  test('spelling-only variants are not reported as other codes; unicode names keep their identity', () => {
+    const m = core.productMovement([R('2026-01-05', 'SINV1', 'Alpha Mouthwash', 1, 5), R('2026-01-06', 'SINV2', 'alpha  mouthwash', 1, 5), R('2026-01-07', 'SINV3', 'غسول ألفا', 1, 5), R('2026-01-08', 'SINV4', 'خيط بيتا', 1, 5)]);
+    const names = m.brands[0].products.map(p => p.name).sort();
+    assert.deepEqual(names, ['Alpha Mouthwash', 'خيط بيتا', 'غسول ألفا']);
+    assert.deepEqual(m.brands[0].products.find(p => p.name === 'Alpha Mouthwash').otherNames, []);
+  });
+  test('empty input is safe', () => {
+    const e = core.productMovement([]);
+    assert.deepEqual(e.brands, []); assert.equal(e.products, 0);
+  });
+});
