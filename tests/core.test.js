@@ -1938,3 +1938,47 @@ describe('doctor records — decision map', () => {
     assert.ok(st && st.data.count === 1 && /Dr\. Two \(Beta Dental\)/.test(st.detail), 'stale decider flagged');
   });
 });
+
+describe('returns of earlier invoices', () => {
+  test('the referenced invoice is read from the remarks column', () => {
+    assert.equal(core.erpRefFromRemarks('Philip SINV0076017'), 'SINV0076017');
+    assert.equal(core.erpRefFromRemarks('RETURN UNDER # 708329//708313'), null);
+    assert.equal(core.erpRefFromRemarks('ref sinv 0076017 damaged'), 'SINV0076017');
+  });
+  test('parseErpCsv keeps the reference on return rows', () => {
+    const csv = 'Date,Type,Invoice#,Account,Product,Quantity,Sales Gross,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name,Remarks\n' +
+      '2026-09-01,SalesInvoice,SINV0076020,City Center,Brush,5,49.5,42.075,0,0,42.075,Philips,Mr. Sundeep Kohli,LPO 1\n' +
+      '2026-09-02,SalesReturn,SRT0009410,Medico Denta Company,Diamond Clean,-2,0,0,138,27.6,-110.4,Philips,Ranova Ayman Mohammed,Philip SINV0076017\n';
+    const r = core.parseErpCsv(csv);
+    assert.equal(r.error, null);
+    assert.equal(r.rows[0].ref, null);
+    assert.equal(r.rows[1].ref, 'SINV0076017');
+  });
+  test("a return of last month's invoice moves to that month under the origin policy", () => {
+    const rows = [
+      {date:'2026-08-29', doc:'SINV0076017', type:'invoice', net:150, salesman:'R'},
+      {date:'2026-09-01', doc:'SINV0076020', type:'invoice', net:42, salesman:'S'},
+      {date:'2026-09-02', doc:'SRT0009410', type:'return', ref:'SINV0076017', net:-110.4, sret:138, salesman:'R'},
+      {date:'2026-09-03', doc:'SRT0009417', type:'return', ref:null, net:-2100, sret:2100, salesman:'S'},
+    ];
+    const ctx = core.returnContext(rows);
+    assert.deepEqual(core.returnOrigin(rows[2], ctx), {prior:true, date:'2026-08-29', known:true});
+    assert.equal(core.returnOrigin(rows[3], ctx), null);
+    const view = core.applyReturnPolicy(rows, 'origin', ctx);
+    assert.equal(view[2].date, '2026-08-29'); assert.equal(view[2].origDate, '2026-09-02'); assert.equal(view[2].priorReturn, true);
+    assert.equal(view[3].date, '2026-09-03');
+    assert.equal(core.applyReturnPolicy(rows, 'erp', ctx)[2].date, '2026-09-02');
+  });
+  test('an invoice number below the month\'s first invoice counts as the month before, even when that invoice is not stored', () => {
+    const rows = [
+      {date:'2026-09-01', doc:'SINV0076020', type:'invoice', net:42, salesman:'S'},
+      {date:'2026-09-02', doc:'SRT0009410', type:'return', ref:'SINV0076017', net:-110.4, sret:138, salesman:'R'},
+      {date:'2026-09-04', doc:'SRT0009419', type:'return', ref:'SINV0076100', net:-10, sret:10, salesman:'R'},
+    ];
+    const ctx = core.returnContext(rows);
+    assert.deepEqual(core.returnOrigin(rows[1], ctx), {prior:true, date:'2026-08-31', known:false});
+    assert.equal(core.returnOrigin(rows[2], ctx), null); // a September invoice number → stays in September
+    const t = core.erpTotals(core.applyReturnPolicy(rows, 'origin', ctx).filter(r => r.date >= '2026-09-01'));
+    assert.equal(Math.round(t.bySalesman.R.net * 100) / 100, -10);
+  });
+});

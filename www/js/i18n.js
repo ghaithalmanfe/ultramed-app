@@ -894,6 +894,18 @@
     'Every extra doctor met in the same clinic is a free lead. Ask reception who else is in today — aim for 2+ per visit.': 'كل طبيب إضافي تقابله في نفس العيادة فرصة مجانية. اسأل الاستقبال من موجود اليوم — استهدف 2+ في كل زيارة.',
     'Meeting more people per clinic multiplies orders without extra driving. Keep it up.': 'مقابلة أشخاص أكثر في كل عيادة تضاعف الطلبيات بدون قيادة إضافية. واصل.',
     'Follow-ups done and top clinics covered. To grow from here: more visits, and 2+ contacts met per visit.': 'المتابعات منجزة والعيادات المهمة مغطاة. للنمو من هنا: زيارات أكثر، و2+ جهة اتصال في كل زيارة.',
+    // ---- returns policy ----
+    'Returns of earlier months\' invoices': 'مرتجعات فواتير الأشهر السابقة',
+    'Count in the original invoice\'s month': 'تُحسب في شهر الفاتورة الأصلية',
+    'Count in the month returned (as the ERP file)': 'تُحسب في شهر الإرجاع (كما في ملف ERP)',
+    'Returns of earlier invoices — counted in their own month': 'مرتجعات فواتير سابقة — محسوبة في شهرها',
+    'Returns of earlier invoices — deducted here (ERP policy)': 'مرتجعات فواتير سابقة — مخصومة هنا (سياسة ERP)',
+    'before this month': 'قبل هذا الشهر',
+    'Returns now count in the month they were booked': 'المرتجعات تُحسب الآن في شهر تسجيلها',
+    'Returns now count in the original invoice\'s month': 'المرتجعات تُحسب الآن في شهر الفاتورة الأصلية',
+    'ERP net sales': 'صافي مبيعات ERP',
+    '— from clinics/customers': '— من العيادات/العملاء',
+    '— from online/channels': '— من الأونلاين/القنوات',
     // ---- doctor records & decision map ----
     'Doctor records': 'سجل الأطباء',
     'One card per doctor: who they are, what they decide, where the relationship stands. The coach turns the cards into next steps for every clinic.': 'كارت لكل طبيب: من هو، ماذا يقرر، وأين تقف العلاقة معه. المدرب يحوّل الكروت إلى خطوات تالية لكل عيادة.',
