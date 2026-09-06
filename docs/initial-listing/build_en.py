@@ -6,6 +6,7 @@ from openpyxl.utils import get_column_letter
 
 d = json.load(open('classified.json'))
 EV = json.load(open('clinic_evidence.json'))
+GAPS = json.load(open('price_gaps.json'))
 TOT_KD = sum(o['kd'] for o in d)
 NC = EV['n_clinics']
 P1 = [o for o in d if o['phase']==1]
@@ -127,6 +128,14 @@ para('4)  Every brand is represented in Phase 1 — even brands with no fast-mov
 para('5)  What brings a customer back is not what opens the account: 13 of %d clinics opened with a Waterpik unit, while the most repeated item in follow-up orders is the Intensiv OS80XC strip (43 repeat orders). The first-visit offer and the follow-up offer are therefore different — the "Clinic Evidence" and "Clinic Baskets" sheets set this out.' % NC)
 gap()
 
+h2('What the pricelist added (117 items)')
+para('I joined the pricelist to the listing by code, then by hand-reviewed family matching. Four findings go straight to management:')
+para('1)  %d Phase 1 items carry an approved price and %d do not — and every one of those is professional (Intensiv · B&L · SCHEU · custom kits · UNIVET). In practice: the pharmacy quotation is ready to issue, and the clinic quotation cannot be issued from the current pricelist, which covers the consumer range only.' % (sum(1 for o in P1 if o['rrp'] is not None), sum(1 for o in P1 if o['rrp'] is None)), bold=True)
+para('2)  The discount is not given as a lower price but as free goods: we invoice at full list price and hand over 25–47%% of the units free. So the "effective price per unit" is net sales ÷ all units delivered, and that is what sets the pharmacy\'s real margin. Example: TheBreath invoices at 7.27 KD with 29%% free, i.e. 5.10 KD effective and a 30%% pharmacy margin.')
+para('3)  Pharmacy margins today run from 20%% to 48%%, but every Philips item sits at exactly 20%% with no free goods — the weakest margin in the portfolio. A pharmacy compares margin, not price, which explains Philips\'s thin reach in that channel.')
+para('4)  Three data problems in the pricelist itself: %d items whose ERP price differs from the pricelist by more than 5%% (gaps reach 33%%), %d duplicate codes with one code carrying up to 5 products at different prices, and %d rows with no matching movement in 2026. Details in the "Pricing Gaps" sheet.' % (len(GAPS['conflict']), len(GAPS['dup_sku']), len(GAPS['no_movement'])))
+gap()
+
 h2('Proposed rollout')
 plan = [
     ('Weeks 1–2','Approve and price Phase 1','Issue one standard pharmacy quotation (%d items) and a separate clinic quotation (%d items) · set minimum stock levels on all Priority A items' % (cnt('Pharmacies')+cnt('Pharmacies + Clinics'), cnt('Clinics')+cnt('Pharmacies + Clinics'))),
@@ -150,6 +159,9 @@ gap()
 h2('What we ask management to approve')
 para('•  Adopt the Phase 1 items as the official opening list, and commit to not offering Phase 3 items up front on any visit.')
 para('•  Fix a single price and standard terms (opening quantity + margin) for the Phase 1 items before the reps go out, so the offer does not differ from one rep to another.')
+para('•  Price the professional range (%d items across Phases 1 and 2) — without it no clinic quotation can be issued at all.' % len(GAPS['no_price']), bold=True)
+para('•  Settle %d price conflicts between the ERP and the pricelist, and fix %d duplicate codes that block joining the two systems.' % (len(GAPS['conflict']), len(GAPS['dup_sku'])))
+para('•  Decide on the Philips margin: a flat 20%% with no free goods against 25–48%% for every other brand — either lift it or keep Philips out of the opening pharmacy offer.')
 para('•  Decide on the 59 items outside the initial listing: clearance or delisting — they consume stock and shelf space against no matching movement.')
 para('•  Decide on UNIVET: treat it as a direct, by-appointment sale (each loupe is cut to the doctor\'s prescription) rather than a line item on a quotation — or give it its own separate offer mechanism.')
 para('•  Note: pricing and margins are outside the scope of this document. This is a listing built on movement, not a price list.', bold=True)
@@ -160,8 +172,8 @@ PHASE_META = {
  2: ('Phase 2 — Expansion',    P2F, 'Added after a first successful order or on customer request — not part of the opening quotation'),
  3: ('Phase 3 — On Demand',    P3F, 'Not offered up front · quoted only on request · no stock commitment'),
 }
-HEAD = ['#','Brand','Product','Code','Proposed channel','Priority','Current class','Units/month','Last 3 months units/month','Invoices/month','Customers','Units sold 2026','Net sales KD','Avg price/unit KD','Why it sits in this phase','Watch-out']
-W    = [ 5, 22, 54, 18, 18, 9, 14, 10, 12, 11, 11, 12, 13, 13, 48, 48]
+HEAD = ['#','Brand','Product','Code','Proposed channel','Priority','Current class','Units/month','Last 3 months units/month','Invoices/month','Customers','Units sold 2026','Net sales KD','Avg price/unit KD','Consumer price KD','Effective pharmacy price KD','Pharmacy margin %','Why it sits in this phase','Watch-out']
+W    = [ 5, 22, 54, 18, 18, 9, 14, 10, 12, 11, 11, 12, 13, 13, 14, 16, 14, 48, 48]
 
 for ph in (1,2,3):
     name, fill, sub = PHASE_META[ph]
@@ -176,16 +188,23 @@ for ph in (1,2,3):
     for i,o in enumerate(items, start=1):
         vals = [i, o['brand_en'], o['المنتج / Product'], o['الكود / Code'] or '—', o['channel_en'], o['prio'],
                 o['cls_en'], round(o['upm'],1), round(o['upm3'],1), round(o['ipm'],2), o['cust'], o['units'],
-                round(o['kd'],1), round(o['px'],2), o['reason_en'], ' · '.join(o['issues_en']) or '—']
+                round(o['kd'],1), round(o['px'],2),
+                o['rrp'] if o['rrp'] is not None else 'no price',
+                round(o['pharm_eff'],2) if o['pharm_eff'] else '—',
+                o['margin_pharm'] if o['margin_pharm'] is not None else '—',
+                o['reason_en'], ' · '.join(o['issues_en']) or '—']
         for j,v in enumerate(vals, start=1):
             c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
-            c.alignment = Alignment(horizontal='left' if j in (2,3,15,16) else 'center', vertical='center', wrap_text=(j in (3,15,16)))
+            c.alignment = Alignment(horizontal='left' if j in (2,3,18,19) else 'center', vertical='center', wrap_text=(j in (3,18,19)))
             if j == 13: c.number_format = '#,##0.0'
-            if j in (8,9,14): c.number_format = '#,##0.00'
+            if j in (8,9,14,15,16): c.number_format = '#,##0.00'
             if j in (11,12): c.number_format = '#,##0'
+            if j == 17 and isinstance(v,float): c.number_format = '0%'
+            if j == 15 and o['rrp'] is None: c.font = Font(size=9, bold=True, color='9C0006')
+            if j == 17 and isinstance(v,float) and v < 0.22: c.font = Font(size=9, bold=True, color=GOLD)
             if j == 6: c.font = Font(size=9, bold=True, color={'A':GREEN,'B':GOLD,'C':GREY}[o['prio']])
             if j == 5: c.fill = PatternFill('solid', fgColor={'Pharmacies':'E7F0FA','Clinics':'FBE9E7','Pharmacies + Clinics':'F0EAF7','Direct / Online':'EDEDED'}[o['channel_en']])
-            if j == 16 and o['issues_en']: c.font = Font(size=9, color='9C0006')
+            if j == 19 and o['issues_en']: c.font = Font(size=9, color='9C0006')
         ws.cell(r,1).fill = PatternFill('solid', fgColor=fill)
         ws.row_dimensions[r].height = 26; r += 1
     ws.auto_filter.ref = 'A3:%s%d' % (get_column_letter(len(HEAD)), r-1)
@@ -203,9 +222,11 @@ def channel_sheet(sname, chans, title, sub, clinic=False):
     ws = sheet(sname)
     H = ['#','Phase','Priority','Brand','Product','Code','Current class','Units/month','Invoices/month','Customers','Units sold 2026','Net sales KD','Avg price/unit KD','Note for the rep']
     WW= [ 5, 8, 9, 22, 56, 18, 14, 10, 12, 11, 12, 13, 13, 54]
+    H  = H[:13]  + ['Consumer price KD','Effective customer price KD','Customer margin %'] + H[13:]
+    WW = WW[:13] + [14, 16, 14] + WW[13:]
     if clinic:
-        H  = H[:13]  + ['Clinics buying (of %d)' % NC, 'Reach %', 'Reordered %', 'Opened the account', 'Repeat orders', 'Role'] + H[13:]
-        WW = WW[:13] + [13, 10, 12, 13, 12, 16] + WW[13:]
+        H  = H[:16]  + ['Clinics buying (of %d)' % NC, 'Reach %', 'Reordered %', 'Opened the account', 'Repeat orders', 'Role'] + H[16:]
+        WW = WW[:16] + [13, 10, 12, 13, 12, 16] + WW[16:]
     p1 = [o for o in items if o['phase']==1]
     title_block(ws, title, '%s  ·  Phase 1: %d items · Phase 2: %d · Phase 3: %d  —  the opening quotation is Phase 1 only'
         % (sub, len(p1), len([o for o in items if o['phase']==2]), len([o for o in items if o['phase']==3])), len(H))
@@ -215,6 +236,10 @@ def channel_sheet(sname, chans, title, sub, clinic=False):
         note = ' · '.join(o['issues_en']) if o['issues_en'] else ('Offer on the first visit' if o['phase']==1 else ('Add after a first reorder' if o['phase']==2 else 'On request only — no stock commitment'))
         vals = [i, o['phase'], o['prio'], o['brand_en'], o['المنتج / Product'], o['الكود / Code'] or '—', o['cls_en'],
                 round(o['upm'],1), round(o['ipm'],2), o['cust'], o['units'], round(o['kd'],1), round(o['px'],2)]
+        eff = o['clin_eff'] if clinic else o['pharm_eff']
+        mar = o['margin_clin'] if clinic else o['margin_pharm']
+        vals += [o['rrp'] if o['rrp'] is not None else 'no price',
+                 round(eff,2) if eff else '—', mar if mar is not None else '—']
         if clinic:
             vals += [o['cl_clinics'], o['cl_pen'], o['cl_repeat'], o['cl_opener'], o['cl_reorders'], o['cl_role_en']]
         vals += [note]
@@ -227,9 +252,12 @@ def channel_sheet(sname, chans, title, sub, clinic=False):
             if j in (10,11): c.number_format = '#,##0'
             if j == 2: c.fill = PatternFill('solid', fgColor={1:P1F,2:P2F,3:P3F}[o['phase']]); c.font = Font(size=9, bold=True)
             if j == 3: c.font = Font(size=9, bold=True, color={'A':GREEN,'B':GOLD,'C':GREY}[o['prio']])
-            if clinic and j in (15,16): c.number_format = '0%'
-            if clinic and j == 14 and o['cl_clinics'] == 0: c.font = Font(size=9, bold=True, color='9C0006')
-            if clinic and j == 19:
+            if j in (14,15): c.number_format = '#,##0.00'
+            if j == 16 and isinstance(v,float): c.number_format = '0%'
+            if j == 14 and o['rrp'] is None: c.font = Font(size=9, bold=True, color='9C0006')
+            if clinic and j in (18,19): c.number_format = '0%'
+            if clinic and j == 17 and o['cl_clinics'] == 0: c.font = Font(size=9, bold=True, color='9C0006')
+            if clinic and j == 22:
                 c.font = Font(size=9, bold=True, color={'Door-opener':GREEN,'Repeat engine':BLUE,'Add-on':GOLD,'Single account':GREY,'No clinic sales':'9C0006'}[o['cl_role_en']])
         ws.row_dimensions[r].height = 26; r += 1
     ws.auto_filter.ref = 'A3:%s%d' % (get_column_letter(len(H)), r-1)
@@ -309,6 +337,125 @@ for i,p in enumerate(EV['pairs'][:20], start=1):
         c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
         c.alignment = Alignment(horizontal='left' if j in (2,3,5) else 'center', vertical='center', wrap_text=(j in (2,3,5)))
     ws.row_dimensions[r].height = 26; r += 1
+
+
+# ============================================================ PRICING & MARGINS
+ws = sheet('Pricing & Margins')
+items = sorted([o for o in d if o['units'] > 0 and o['phase'] in (1,2,3)], key=lambda o:(o['phase'], -o['kd']))
+priced = sum(1 for o in items if o['rrp'] is not None)
+title_block(ws, 'Pricing & Margins — consumer price vs. what the channel actually pays',
+    'We invoice at full list price and give free goods · so "effective price" = net sales ÷ all units delivered (paid + free) — that is what sets the customer\'s real margin  ·  %d of %d items carry an approved price'
+    % (priced, len(items)), 17)
+H = ['#','Phase','Brand','Product','Consumer price KD','ERP list price','Prices agree',
+     'Hypermarket: effective','Hypermarket: free %','Pharmacy: effective','Pharmacy: free %','Pharmacy margin %',
+     'Clinic: effective','Clinic margin %','Online: effective','Units sold 2026','Note']
+WD= [5,8,20,54,14,14,14,13,14,13,14,14,13,13,13,13,44]
+header_row(ws, 3, H, WD)
+r = 4
+for i,o in enumerate(items, start=1):
+    if o['rrp'] is None:
+        note = 'No price in the pricelist — blocks any quotation for this item'
+    elif o['price_match'] is False and o['erp_list'] and abs(o['erp_list']-o['rrp'])/o['rrp'] > 0.05:
+        note = 'Conflict: the ERP price differs %+.0f%% from the pricelist — settle before quoting' % ((o['erp_list']-o['rrp'])/o['rrp']*100)
+    elif o['margin_pharm'] is not None and o['margin_pharm'] < 0.22:
+        note = 'Pharmacy margin only %.0f%% — below what a shelf normally carries' % (o['margin_pharm']*100)
+    elif o['pharm_foc'] and o['pharm_foc'] >= 0.25:
+        note = 'The discount is given as free goods (%.0f%% of units), not as a lower price' % (o['pharm_foc']*100)
+    elif o['pharm_eff'] is None:
+        note = 'Not sold to any pharmacy in 2026 — margin is indicative only'
+    else:
+        note = '—'
+    f = lambda x: round(x, 2) if x is not None else '—'
+    vals = [i, o['phase'], o['brand_en'], o['المنتج / Product'],
+            o['rrp'] if o['rrp'] is not None else 'no price', f(o['erp_list']),
+            ('Yes' if o['price_match'] else ('No' if o['price_match'] is False else '—')),
+            f(o['hyper_eff']), o['hyper_foc'] if o['hyper_foc'] is not None else '—',
+            f(o['pharm_eff']), o['pharm_foc'] if o['pharm_foc'] is not None else '—',
+            o['margin_pharm'] if o['margin_pharm'] is not None else '—',
+            f(o['clin_eff']), o['margin_clin'] if o['margin_clin'] is not None else '—',
+            f(o['online_eff']), o['units'], note]
+    for j,v in enumerate(vals, start=1):
+        c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
+        c.alignment = Alignment(horizontal='left' if j in (3,4,17) else 'center', vertical='center', wrap_text=(j in (4,17)))
+        if j in (5,6,8,10,13,15): c.number_format = '#,##0.00'
+        if j in (9,11,12,14) and isinstance(v,float): c.number_format = '0%'
+        if j == 16: c.number_format = '#,##0'
+        if j == 2: c.fill = PatternFill('solid', fgColor={1:P1F,2:P2F,3:P3F}[o['phase']]); c.font = Font(size=9, bold=True)
+        if j == 5 and o['rrp'] is None: c.font = Font(size=9, bold=True, color='9C0006')
+        if j == 7 and v == 'No': c.font = Font(size=9, bold=True, color=GOLD)
+        if j == 12 and isinstance(v,float): c.font = Font(size=9, bold=True, color=(GREEN if v>=0.25 else GOLD if v>=0.22 else '9C0006'))
+    ws.row_dimensions[r].height = 24; r += 1
+ws.auto_filter.ref = 'A3:Q%d' % (r-1)
+
+# ============================================================ PRICING GAPS
+ws = sheet('Pricing Gaps')
+title_block(ws, 'Pricing Gaps — what blocks issuing a quotation today',
+    'Five gaps ordered by what each one blocks: items with no price · ERP vs pricelist conflicts · thin margins · duplicate codes · rows with no movement', 8)
+for col,w in zip('ABCDEFGH',[5,24,56,15,15,15,15,54]): ws.column_dimensions[col].width = w
+r = 4
+def sec(title, sub=None):
+    global r
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    c = ws.cell(r,1,title); c.font = Font(bold=True, size=12, color='FFFFFF')
+    c.fill = PatternFill('solid', fgColor=BLUE); c.alignment = Alignment(horizontal='left', vertical='center')
+    ws.row_dimensions[r].height = 22; r += 1
+    if sub:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+        c = ws.cell(r,1,sub); c.font = Font(size=10, color=GREY)
+        c.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+        ws.row_dimensions[r].height = 28; r += 1
+def tbl(headers, rows, fmts=None):
+    global r
+    for j,h in enumerate(headers, start=1):
+        c = ws.cell(r,j,h); c.font = Font(bold=True, size=10, color='FFFFFF')
+        c.fill = PatternFill('solid', fgColor=NAVY); c.border = BORD
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[r].height = 24; r += 1
+    for row in rows:
+        for j,v in enumerate(row, start=1):
+            c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
+            c.alignment = Alignment(horizontal='left' if j in (2,3,len(headers)) else 'center', vertical='center', wrap_text=(j in (3,len(headers))))
+            if fmts and fmts.get(j): c.number_format = fmts[j]
+        ws.row_dimensions[r].height = 22; r += 1
+    r += 1
+
+np1 = [g for g in GAPS['no_price'] if g['phase']==1]
+sec('1 · Listed items with no approved price — %d items (%d of them in Phase 1)' % (len(GAPS['no_price']), len(np1)),
+    'Every Phase 1 item without a price is a professional one: Intensiv · B&L · SCHEU · custom kits · UNIVET. The pricelist covers the consumer range only — so the pharmacy quotation is ready to issue, while the clinic quotation cannot be issued from it at all.')
+tbl(['#','Brand','Product','Phase','Units 2026','Net KD','Our avg price KD','Channel'],
+    [[i,g['brand_en'],g['product'],g['phase'],g['units'],round(g['kd'],1),round(g['px'],2),g['channel_en']]
+     for i,g in enumerate(GAPS['no_price'][:40], start=1)],
+    {5:'#,##0',6:'#,##0.0',7:'#,##0.00'})
+
+sec('2 · ERP price conflicts with the pricelist (gap > 5%%) — %d items' % len(GAPS['conflict']),
+    'One price has to be settled before the reps go out, otherwise the offer differs from one rep and one channel to the next.')
+tbl(['#','Brand','Product','Pricelist KD','ERP price KD','Gap %','Net KD','Match source'],
+    [[i,c['brand_en'],c['product'],c['rrp'],round(c['erp'],2),c['diff'],round(c['kd'],1),
+      {'كود فريد':'unique code','مطابقة مُراجَعة':'reviewed name match'}.get(c['src'], c['src'] or '—')]
+     for i,c in enumerate(GAPS['conflict'], start=1)],
+    {4:'#,##0.00',5:'#,##0.00',6:'+0.0%;-0.0%',7:'#,##0.0'})
+
+sec('3 · Thin pharmacy margins (under 22%%) — %d items' % len(GAPS['thin_margin']),
+    'Every Philips item carries a flat 20%% discount with no free goods, while the other brands reach 25–48%% through bonus stock. A pharmacy compares margin, not price.')
+tbl(['#','Brand','Product','Phase','Consumer price KD','Effective price KD','Free %','Pharmacy margin %'],
+    [[i,t['brand_en'],t['product'],t['phase'],t['rrp'],round(t['eff'],2),t['foc'],t['margin']]
+     for i,t in enumerate(GAPS['thin_margin'], start=1)],
+    {5:'#,##0.00',6:'#,##0.00',7:'0%',8:'0%'})
+
+sec('4 · Duplicate codes in the pricelist — %d codes covering %d rows' % (len(GAPS['dup_sku']), sum(g['count'] for g in GAPS['dup_sku'])),
+    'One code carries several products at different prices, and the barcodes repeat too. This blocks any automatic join between the pricelist and the ERP, and mis-scans at the point of sale.')
+tbl(['#','Code','Products sharing it','Count','Barcode','','','Effect'],
+    [[i, g['sku'], ' · '.join('%s (%s KD)' % (x['name'][:38], x['price']) for x in g['items']),
+      g['count'], g['barcode'] or '—', '', '', 'One code on several products at different prices']
+     for i,g in enumerate(GAPS['dup_sku'], start=1)])
+
+sec('5 · Pricelist rows with no 2026 movement — %d rows' % len(GAPS['no_movement']),
+    'Either web-only items and bundles with no matching ERP name, or UNIVET rows carrying no price at all. To review: price them, map them to an ERP code, or pull them from the site.')
+tbl(['#','Brand','Product','Price KD','Code','','','Reason'],
+    [[i,g['brand'],g['name'],g['price'] if g['price'] is not None else 'no price',g['sku'],'','',
+      {'كود مكرر — لم يُسنَد':'Duplicate code — not assigned','تعارض سعر — لم يُسنَد':'Price conflict — not assigned'}.get(g['reason'],'No matching item in 2026 movement')]
+     for i,g in enumerate(GAPS['no_movement'], start=1)],
+    {4:'#,##0.00'})
 
 # ============================================================ OUTSIDE THE LISTING
 items = sorted([o for o in d if o['phase']==0], key=lambda o: (-o['kd'], o['brand']))
@@ -413,7 +560,19 @@ h2('7 — A separate criterion for professional equipment')
 para('Professional equipment (avg price ≥ 100 KD: UNIVET loupes · Intensiv handpieces · B&L kits) is judged on value, not on invoice count. One unit at 981 KD is not "slow-moving" in any commercial sense — such goods are sold one unit at a time to one customer a year. They therefore entered Phases 1 and 2 on a value criterion (≥ 500 KD within the last 120 days) even though they invoice less than once a month.', bold=True)
 gap()
 
-h2('8 — Priority within each phase (A / B / C)')
+h2('8 — Pricing and margin criteria')
+para('Source: the pricelist file (117 items) joined to the listing by code, then by hand-reviewed family matching wherever one code covers several colours.')
+table([
+    ('Consumer price','The price published in the pricelist — corroborated by the ERP list price matching it on %d items' % sum(1 for o in d if o['price_match'] is True),'The reference'),
+    ('Effective price per unit','Net sales ÷ all units delivered (paid + free) — because the discount is given as free goods, not as a lower price','The correct basis'),
+    ('Customer margin','(consumer price − effective price) ÷ consumer price — computed per channel from that channel\'s own invoices','The acceptance test'),
+    ('Acceptable margin floor','Below 22% is flagged as thin: a pharmacy compares margin, not price','%d items flagged' % len(GAPS['thin_margin'])),
+    ('Conservative matching','A price is assigned only on a unique code or a hand-reviewed family match · duplicate or conflicting codes are quarantined into the gaps sheet','%d codes quarantined' % len(GAPS['dup_sku'])),
+], ['Criterion','Definition','Effect'])
+para('Why the distinction is decisive: computed on paid units alone, the pharmacy would appear to buy at almost the consumer price (a 1% margin). The free units are the real discount, and ignoring them inverts the whole profitability reading.', bold=True)
+gap()
+
+h2('9 — Priority within each phase (A / B / C)')
 table([
     ('A','The items making up the first 60% of the phase\'s value — offered first, and never allowed to go out of stock'),
     ('B','The next band, up to 90% of the phase\'s value'),
@@ -421,13 +580,14 @@ table([
 ], ['Priority','Definition'])
 gap()
 
-h2('9 — Limits of this reading (stated for honesty)')
+h2('10 — Limits of this reading (stated for honesty)')
 para('•  The period covers only 8.1 months of 2026, with no comparison against 2025 — so year-on-year growth or decline does not show.')
 para('•  The classification reflects what we sold, not what the market wants: an item we never presented properly will look "slow" without being so — which is why Phase 3 is "on demand", not "for delisting".')
 para('•  New items (first sale within the last 3 months) rest on a short history, and are flagged as such in the watch-out column.')
 para('•  Non-invoice returns may relate to goods sold in earlier years, so they are not charged against 2026 performance.')
 para('•  The clinic evidence rests on Ranova\'s and Mariam\'s invoices only. A clinic served through another rep or through the online channel does not appear in the reach and reorder figures.')
-para('•  Pricing, margins and commercial agreements are entirely outside the scope of this document.')
+para('•  Margins are computed on what actually happened in 2026, not on an approved policy — an item sold to one pharmacy has a margin that cannot be generalised.')
+para('•  The pricelist reflects the published consumer price; any special agreement with a particular customer does not appear in it.')
 
 wb.save('UltraMed-Initial-Listing-2026-EN.xlsx')
 print('saved')

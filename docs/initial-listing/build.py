@@ -6,6 +6,7 @@ from openpyxl.utils import get_column_letter
 
 d = json.load(open('classified.json'))
 EV = json.load(open('clinic_evidence.json'))
+GAPS = json.load(open('price_gaps.json'))
 TOT_KD = sum(o['kd'] for o in d)
 NC = EV['n_clinics']
 P1 = [o for o in d if o['phase']==1]
@@ -132,6 +133,14 @@ para('3)  الصيدليات أولاً ثم العيادات: الصيدلية 
 para('4)  كل براند مُمثَّل في المرحلة 1 — حتى البراندات التي لا تملك صنفاً سريعاً (UNIVET · B&L · SCHEU · الأطقم) دخلت بأعلى صنف قيمةً فيها («قاطرة البراند»)، حفاظاً على وجود البراند في العرض دون إثقاله.')
 gap()
 
+h2('ما أضافته قائمة الأسعار (117 صنفاً)')
+para('ربطتُ قائمة الأسعار بالقائمة عبر الكود، ثم بمطابقة عائلات مُراجَعة يدوياً. أربع نتائج تخصّ الإدارة مباشرة:')
+para('1)  %d من أصناف المرحلة 1 لها سعر معتمد، و%d بلا سعر — وكلها مهنية (Intensiv · B&L · SCHEU · الأطقم · UNIVET). عملياً: عرض سعر الصيدليات جاهز للإصدار، وعرض سعر العيادات لا يمكن إصداره من قائمة الأسعار الحالية لأنها تغطي الخط الاستهلاكي فقط.' % (sum(1 for o in P1 if o['rrp'] is not None), sum(1 for o in P1 if o['rrp'] is None)), bold=True)
+para('2)  الخصم لا يُمنح بخفض السعر بل ببضاعة مجانية: نحن نُفوتر بسعر القائمة كاملاً ونعطي 25–47%% من القطع مجاناً. لذلك «السعر الفعلي للقطعة» = صافي المبيعات ÷ كل القطع المُسلَّمة، وهو ما يحدد هامش الصيدلية الحقيقي. مثال: TheBreath يُفوتر بـ 7.27 د.ك مع 29%% مجاني، أي 5.10 د.ك فعلياً وهامش صيدلية 30%%.')
+para('3)  هامش الصيدلية اليوم بين 20%% و48%%، لكن كل أصناف Philips عند 20%% بالضبط بلا أي بضاعة مجانية — أضعف هامش في المحفظة. الصيدلية تقارن الهامش لا السعر، وهذا يفسّر ضعف انتشار Philips في قناة الصيدليات.')
+para('4)  ثلاث مشاكل بيانات في قائمة الأسعار نفسها: %d أصناف سعرها في ERP يختلف عن قائمة الأسعار بأكثر من 5%% (فرق يصل 33%%)، و%d أكواد مكررة يحمل الواحد منها حتى 5 منتجات بأسعار مختلفة، و%d صفاً بلا حركة مقابلة في 2026. التفاصيل في ورقة «فجوات التسعير».' % (len(GAPS['conflict']), len(GAPS['dup_sku']), len(GAPS['no_movement'])))
+gap()
+
 h2('خطة التنفيذ المقترحة')
 plan = [
     ('الأسبوع 1–2','اعتماد المرحلة 1 وتسعيرها','إصدار عرض سعر موحّد للصيدليات (%d صنفاً) وعرض منفصل للعيادات (%d صنفاً) · تثبيت حد أدنى للمخزون على أصناف الأولوية A' % (cnt('صيدليات')+cnt('صيدليات + عيادات'), cnt('عيادات')+cnt('صيدليات + عيادات'))),
@@ -155,6 +164,9 @@ gap()
 h2('المطلوب من الإدارة')
 para('•  اعتماد أصناف المرحلة 1 كقائمة رسمية أولى، والالتزام بعدم عرض أصناف المرحلة 3 ابتداءً في أي زيارة.')
 para('•  اعتماد سعر ثابت وشروط موحّدة (كمية أولى + هامش) لأصناف المرحلة 1 قبل نزول المندوبين، حتى لا يختلف العرض من مندوب لآخر.')
+para('•  تسعير الخط المهني (%d صنفاً في المرحلتين 1 و2) — بدونه لا يمكن إصدار عرض سعر العيادات إطلاقاً.' % len(GAPS['no_price']), bold=True)
+para('•  حسم %d تعارضاً سعرياً بين ERP وقائمة الأسعار، وتصحيح %d أكواد مكررة تمنع ربط النظامين.' % (len(GAPS['conflict']), len(GAPS['dup_sku'])))
+para('•  قرار في هامش Philips: 20%% ثابت بلا بضاعة مجانية مقابل 25–48%% لباقي البراندات — إما رفع الهامش أو استبعاده من عرض الصيدليات الأول.')
 para('•  قرار في 59 صنفاً «خارج القائمة الأولية»: تصفية أو سحب — لأنها تستهلك مخزوناً ومساحة عرض بلا حركة مقابلة.')
 para('•  قرار في براند UNIVET: يُعامل كبيع مباشر بموعد (مقاس مخصص لكل طبيب) لا كصنف في عرض سعر — أو تُخصَّص له آلية عرض مستقلة.')
 para('•  ملاحظة: التسعير والهوامش خارج نطاق هذا المستند — هذه قائمة أصناف مبنية على الحركة، لا قائمة أسعار.', bold=True)
@@ -165,26 +177,33 @@ PHASE_META = {
  2: ('المرحلة 2 — التوسعة',  P2F, 'تُضاف بعد أول أوردر ناجح أو عند طلب العميل — لا تدخل عرض السعر الأول'),
  3: ('المرحلة 3 — حسب الطلب', P3F, 'لا تُعرض ابتداءً · تُسعَّر عند الطلب فقط · بدون التزام مخزون'),
 }
-HEAD = ['#','البراند','المنتج','الكود','القناة المقترحة','الأولوية','التصنيف الحالي','قطع/شهر','آخر 3 أشهر قطع/شهر','فواتير/شهر','عدد العملاء','قطع مبيعة 2026','صافي المبيعات KD','متوسط سعر القطعة KD','سبب الإدراج في المرحلة','تنبيه / نقطة انتباه']
-W    = [ 5, 20, 52, 18, 16, 8, 14, 9, 11, 9, 9, 11, 13, 12, 46, 46]
+HEAD = ['#','البراند','المنتج','الكود','القناة المقترحة','الأولوية','التصنيف الحالي','قطع/شهر','آخر 3 أشهر قطع/شهر','فواتير/شهر','عدد العملاء','قطع مبيعة 2026','صافي المبيعات KD','متوسط سعر القطعة KD','سعر الجمهور KD','السعر الفعلي للصيدلية KD','هامش الصيدلية %','سبب الإدراج في المرحلة','تنبيه / نقطة انتباه']
+W    = [ 5, 20, 52, 18, 16, 8, 14, 9, 11, 9, 9, 11, 13, 12, 12, 14, 12, 46, 46]
 
 def write_rows(ws, items, start, fill):
     r = start
     for i,o in enumerate(items, start=1):
         vals = [i, o['brand'], o['المنتج / Product'], o['الكود / Code'] or '—', o['channel'], o['prio'],
                 o['cls'], round(o['upm'],1), round(o['upm3'],1), round(o['ipm'],2), o['cust'], o['units'],
-                round(o['kd'],1), round(o['px'],2), o['reason'], ' · '.join(o['issues']) or '—']
+                round(o['kd'],1), round(o['px'],2),
+                o['rrp'] if o['rrp'] is not None else 'بلا سعر',
+                round(o['pharm_eff'],2) if o['pharm_eff'] else '—',
+                o['margin_pharm'] if o['margin_pharm'] is not None else '—',
+                o['reason'], ' · '.join(o['issues']) or '—']
         for j,v in enumerate(vals, start=1):
             c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
-            c.alignment = Alignment(horizontal='right' if j in (2,3,15,16) else 'center', vertical='center', wrap_text=(j in (3,15,16)))
+            c.alignment = Alignment(horizontal='right' if j in (2,3,18,19) else 'center', vertical='center', wrap_text=(j in (3,18,19)))
             if j in (13,): c.number_format = '#,##0.0'
-            if j in (8,9,14): c.number_format = '#,##0.00'
+            if j in (8,9,14,15,16): c.number_format = '#,##0.00'
             if j in (11,12): c.number_format = '#,##0'
+            if j == 17 and isinstance(v,float): c.number_format = '0%'
+            if j == 15 and o['rrp'] is None: c.font = Font(size=9, bold=True, color='9C0006')
+            if j == 17 and isinstance(v,float) and v < 0.22: c.font = Font(size=9, bold=True, color=GOLD)
             if j == 6:
                 c.font = Font(size=9, bold=True, color={'A':GREEN,'B':GOLD,'C':GREY}[o['prio']])
             if j == 5:
                 c.fill = PatternFill('solid', fgColor={'صيدليات':'E7F0FA','عيادات':'FBE9E7','صيدليات + عيادات':'F0EAF7','مباشر / أونلاين':'EDEDED'}[o['channel']])
-            if j == 16 and o['issues']:
+            if j == 19 and o['issues']:
                 c.font = Font(size=9, color='9C0006')
         ws.cell(r,1).fill = PatternFill('solid', fgColor=fill)
         ws.row_dimensions[r].height = 26
@@ -217,9 +236,11 @@ def channel_sheet(sname, chans, title, sub, clinic=False):
     ws = sheet(sname)
     HEAD2 = ['#','المرحلة','الأولوية','البراند','المنتج','الكود','التصنيف الحالي','قطع/شهر','فواتير/شهر','عدد العملاء','قطع مبيعة 2026','صافي المبيعات KD','متوسط سعر القطعة KD','ملاحظة للمندوب']
     W2    = [ 5, 9, 8, 20, 54, 18, 14, 9, 9, 9, 11, 13, 12, 52]
+    HEAD2 = HEAD2[:13] + ['سعر الجمهور KD','السعر الفعلي للعميل KD','هامش العميل %'] + HEAD2[13:]
+    W2    = W2[:13]    + [12, 15, 12] + W2[13:]
     if clinic:
-        HEAD2 = HEAD2[:13] + ['عيادات اشترته (من ' + str(NC) + ')', 'انتشار %', 'أعادت الطلب %', 'فتحت الحساب به', 'طلبات إعادة', 'دور الصنف'] + HEAD2[13:]
-        W2    = W2[:13]    + [12, 10, 12, 12, 10, 16] + W2[13:]
+        HEAD2 = HEAD2[:16] + ['عيادات اشترته (من ' + str(NC) + ')', 'انتشار %', 'أعادت الطلب %', 'فتحت الحساب به', 'طلبات إعادة', 'دور الصنف'] + HEAD2[16:]
+        W2    = W2[:16]    + [12, 10, 12, 12, 10, 16] + W2[16:]
     p1 = [o for o in items if o['phase']==1]
     title_block(ws, title, '%s  ·  المرحلة 1: %d صنفاً · المرحلة 2: %d · المرحلة 3: %d  —  عرض السعر الأول = أصناف المرحلة 1 فقط'
                 % (sub, len(p1), len([o for o in items if o['phase']==2]), len([o for o in items if o['phase']==3])), len(HEAD2))
@@ -229,6 +250,11 @@ def channel_sheet(sname, chans, title, sub, clinic=False):
         note = ' · '.join(o['issues']) if o['issues'] else ('يُعرض في أول زيارة' if o['phase']==1 else ('يُضاف بعد أول إعادة طلب' if o['phase']==2 else 'عند الطلب فقط — بدون التزام مخزون'))
         vals = [i, o['phase'], o['prio'], o['brand'], o['المنتج / Product'], o['الكود / Code'] or '—', o['cls'],
                 round(o['upm'],1), round(o['ipm'],2), o['cust'], o['units'], round(o['kd'],1), round(o['px'],2)]
+        eff = o['clin_eff'] if clinic else o['pharm_eff']
+        mar = o['margin_clin'] if clinic else o['margin_pharm']
+        vals += [o['rrp'] if o['rrp'] is not None else 'بلا سعر',
+                 round(eff,2) if eff else '—',
+                 mar if mar is not None else '—']
         if clinic:
             vals += [o['cl_clinics'], o['cl_pen'], o['cl_repeat'], o['cl_opener'], o['cl_reorders'], o['cl_role']]
         vals += [note]
@@ -241,9 +267,12 @@ def channel_sheet(sname, chans, title, sub, clinic=False):
             if j in (10,11): c.number_format = '#,##0'
             if j == 2: c.fill = PatternFill('solid', fgColor={1:P1F,2:P2F,3:P3F}[o['phase']]); c.font = Font(size=9, bold=True)
             if j == 3: c.font = Font(size=9, bold=True, color={'A':GREEN,'B':GOLD,'C':GREY}[o['prio']])
-            if clinic and j in (15,16): c.number_format = '0%'
-            if clinic and j == 14 and o['cl_clinics'] == 0: c.font = Font(size=9, bold=True, color='9C0006')
-            if clinic and j == 19:
+            if j in (14,15): c.number_format = '#,##0.00'
+            if j == 16 and isinstance(v,float): c.number_format = '0%'
+            if j == 14 and o['rrp'] is None: c.font = Font(size=9, bold=True, color='9C0006')
+            if clinic and j in (18,19): c.number_format = '0%'
+            if clinic and j == 17 and o['cl_clinics'] == 0: c.font = Font(size=9, bold=True, color='9C0006')
+            if clinic and j == 22:
                 c.font = Font(size=9, bold=True, color={'فاتح حساب':GREEN,'محرّك إعادة طلب':BLUE,'مكمّل':GOLD,'حساب واحد':GREY,'لا بيع للعيادات':'9C0006'}[o['cl_role']])
         ws.row_dimensions[r].height = 26; r += 1
     ws.auto_filter.ref = 'A3:%s%d' % (get_column_letter(len(HEAD2)), r-1)
@@ -323,6 +352,124 @@ for i,p in enumerate(EV['pairs'][:20], start=1):
         c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
         c.alignment = Alignment(horizontal='right' if j in (2,3,5) else 'center', vertical='center', wrap_text=(j in (2,3,5)))
     ws.row_dimensions[r].height = 26; r += 1
+
+
+# ============================================================== التسعير والهوامش
+ws = sheet('التسعير والهوامش')
+items = sorted([o for o in d if o['units'] > 0 and o['phase'] in (1,2,3)], key=lambda o:(o['phase'], -o['kd']))
+priced = sum(1 for o in items if o['rrp'] is not None)
+title_block(ws, 'التسعير والهوامش — سعر الجمهور مقابل ما تدفعه القناة فعلياً',
+    'نحن نُفوتر بسعر القائمة كاملاً ونمنح بضاعة مجانية · لذلك «السعر الفعلي» = صافي المبيعات ÷ كل القطع المُسلَّمة (المدفوعة + المجانية) — وهو ما يحدد هامش العميل الحقيقي  ·  %d صنفاً من %d له سعر معتمد'
+    % (priced, len(items)), 17)
+H = ['#','المرحلة','البراند','المنتج','سعر الجمهور KD','سعر القائمة في ERP','تطابق السعرين',
+     'هايبر: فعلي','هايبر: مجاني %','صيدليات: فعلي','صيدليات: مجاني %','هامش الصيدلية %',
+     'عيادات: فعلي','هامش العيادة %','أونلاين: فعلي','قطع مبيعة 2026','ملاحظة']
+WD= [5,8,20,52,13,15,13,11,13,12,14,13,11,13,12,12,42]
+header_row(ws, 3, H, WD)
+r = 4
+for i,o in enumerate(items, start=1):
+    if o['rrp'] is None:
+        note = 'لا سعر في قائمة الأسعار — يمنع إصدار عرض سعر لهذا الصنف'
+    elif o['price_match'] is False and o['erp_list'] and abs(o['erp_list']-o['rrp'])/o['rrp'] > 0.05:
+        note = 'تعارض: سعر ERP يختلف %+.0f%% عن قائمة الأسعار — يُحسم قبل العرض' % ((o['erp_list']-o['rrp'])/o['rrp']*100)
+    elif o['margin_pharm'] is not None and o['margin_pharm'] < 0.22:
+        note = 'هامش الصيدلية %.0f%% فقط — أقل من المعتاد للرف' % (o['margin_pharm']*100)
+    elif o['pharm_foc'] and o['pharm_foc'] >= 0.25:
+        note = 'الخصم يُمنح بضاعةً مجانية (%.0f%% من القطع) لا بخفض السعر' % (o['pharm_foc']*100)
+    elif o['pharm_eff'] is None:
+        note = 'لم يُبع لأي صيدلية في 2026 — الهامش تقديري'
+    else:
+        note = '—'
+    f = lambda x, nd=2: round(x, nd) if x is not None else '—'
+    vals = [i, o['phase'], o['brand'], o['المنتج / Product'],
+            o['rrp'] if o['rrp'] is not None else 'بلا سعر', f(o['erp_list']),
+            ('نعم' if o['price_match'] else ('لا' if o['price_match'] is False else '—')),
+            f(o['hyper_eff']), o['hyper_foc'] if o['hyper_foc'] is not None else '—',
+            f(o['pharm_eff']), o['pharm_foc'] if o['pharm_foc'] is not None else '—',
+            o['margin_pharm'] if o['margin_pharm'] is not None else '—',
+            f(o['clin_eff']), o['margin_clin'] if o['margin_clin'] is not None else '—',
+            f(o['online_eff']), o['units'], note]
+    for j,v in enumerate(vals, start=1):
+        c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
+        c.alignment = Alignment(horizontal='right' if j in (3,4,17) else 'center', vertical='center', wrap_text=(j in (4,17)))
+        if j in (5,6,8,10,13,15): c.number_format = '#,##0.00'
+        if j in (9,11,12,14) and isinstance(v,float): c.number_format = '0%'
+        if j == 16: c.number_format = '#,##0'
+        if j == 2: c.fill = PatternFill('solid', fgColor={1:P1F,2:P2F,3:P3F}[o['phase']]); c.font = Font(size=9, bold=True)
+        if j == 5 and o['rrp'] is None: c.font = Font(size=9, bold=True, color='9C0006')
+        if j == 7 and v == 'لا': c.font = Font(size=9, bold=True, color=GOLD)
+        if j == 12 and isinstance(v,float): c.font = Font(size=9, bold=True, color=(GREEN if v>=0.25 else GOLD if v>=0.22 else '9C0006'))
+    ws.row_dimensions[r].height = 24; r += 1
+ws.auto_filter.ref = 'A3:Q%d' % (r-1)
+
+# ============================================================== فجوات التسعير
+ws = sheet('فجوات التسعير')
+title_block(ws, 'فجوات التسعير — ما يمنع إصدار عرض السعر اليوم',
+    'خمس فجوات مرتّبة بحسب ما تُعطّله: أصناف بلا سعر · تعارض بين ERP وقائمة الأسعار · هوامش رقيقة · أكواد مكررة · صفوف بلا حركة', 8)
+for col,w in zip('ABCDEFGH',[5,24,54,14,14,14,14,52]): ws.column_dimensions[col].width = w
+r = 4
+def sec(title, sub=None):
+    global r
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    c = ws.cell(r,1,title); c.font = Font(bold=True, size=12, color='FFFFFF')
+    c.fill = PatternFill('solid', fgColor=BLUE); c.alignment = Alignment(horizontal='right', vertical='center')
+    ws.row_dimensions[r].height = 22; r += 1
+    if sub:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+        c = ws.cell(r,1,sub); c.font = Font(size=10, color=GREY)
+        c.alignment = Alignment(horizontal='right', vertical='center', wrap_text=True)
+        ws.row_dimensions[r].height = 28; r += 1
+def tbl(headers, rows, fmts=None):
+    global r
+    for j,h in enumerate(headers, start=1):
+        c = ws.cell(r,j,h); c.font = Font(bold=True, size=10, color='FFFFFF')
+        c.fill = PatternFill('solid', fgColor=NAVY); c.border = BORD
+        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ws.row_dimensions[r].height = 24; r += 1
+    for row in rows:
+        for j,v in enumerate(row, start=1):
+            c = ws.cell(r,j,v); c.border = BORD; c.font = Font(size=9)
+            c.alignment = Alignment(horizontal='right' if j in (2,3,len(headers)) else 'center', vertical='center', wrap_text=(j in (3,len(headers))))
+            if fmts and fmts.get(j): c.number_format = fmts[j]
+        ws.row_dimensions[r].height = 22; r += 1
+    r += 1
+
+np1 = [g for g in GAPS['no_price'] if g['phase']==1]
+sec('1 · أصناف في القائمة بلا سعر معتمد — %d صنفاً (منها %d في المرحلة 1)' % (len(GAPS['no_price']), len(np1)),
+    'كل أصناف المرحلة 1 بلا سعر هي أصناف مهنية: Intensiv · B&L · SCHEU · الأطقم · UNIVET. قائمة الأسعار الحالية تغطي الخط الاستهلاكي فقط — أي أن عرض سعر الصيدليات جاهز، وعرض سعر العيادات لا يمكن إصداره من هذه القائمة.')
+tbl(['#','البراند','المنتج','المرحلة','قطع 2026','صافي KD','متوسط سعرنا KD','القناة'],
+    [[i,g['brand'],g['product'],g['phase'],g['units'],round(g['kd'],1),round(g['px'],2),g['channel']]
+     for i,g in enumerate(GAPS['no_price'][:40], start=1)],
+    {5:'#,##0',6:'#,##0.0',7:'#,##0.00'})
+
+sec('2 · تعارض بين سعر ERP وسعر قائمة الأسعار (فرق > 5%%) — %d أصناف' % len(GAPS['conflict']),
+    'سعر واحد يجب أن يُعتمد قبل نزول المندوبين، وإلا اختلف العرض من مندوب لآخر ومن قناة لأخرى.')
+tbl(['#','البراند','المنتج','قائمة الأسعار KD','سعر ERP KD','الفرق %','صافي KD','مصدر المطابقة'],
+    [[i,c['brand'],c['product'],c['rrp'],round(c['erp'],2),c['diff'],round(c['kd'],1),c['src'] or '—']
+     for i,c in enumerate(GAPS['conflict'], start=1)],
+    {4:'#,##0.00',5:'#,##0.00',6:'+0.0%;-0.0%',7:'#,##0.0'})
+
+sec('3 · هوامش رقيقة للصيدلية (أقل من 22%%) — %d صنفاً' % len(GAPS['thin_margin']),
+    'كل أصناف Philips تُمنح خصماً ثابتاً 20%% بلا بضاعة مجانية، بينما باقي البراندات تصل 25–48%% عبر المجاني. الصيدلية تقارن الهامش لا السعر.')
+tbl(['#','البراند','المنتج','المرحلة','سعر الجمهور KD','السعر الفعلي KD','مجاني %','هامش الصيدلية %'],
+    [[i,t['brand'],t['product'],t['phase'],t['rrp'],round(t['eff'],2),t['foc'],t['margin']]
+     for i,t in enumerate(GAPS['thin_margin'], start=1)],
+    {5:'#,##0.00',6:'#,##0.00',7:'0%',8:'0%'})
+
+sec('4 · أكواد مكررة في قائمة الأسعار — %d كوداً تغطي %d صفاً' % (len(GAPS['dup_sku']), sum(g['count'] for g in GAPS['dup_sku'])),
+    'الكود الواحد محمول على أكثر من منتج بأسعار مختلفة، والباركود كذلك. هذا يمنع ربط قائمة الأسعار بالـ ERP آلياً، ويُخطئ عند المسح في نقطة البيع.')
+rows=[]
+for i,g in enumerate(GAPS['dup_sku'], start=1):
+    rows.append([i, g['sku'], ' · '.join('%s (%s د.ك)' % (x['name'][:38], x['price']) for x in g['items']),
+                 g['count'], g['barcode'] or '—', '', '', 'كود واحد لأكثر من منتج بسعر مختلف'])
+tbl(['#','الكود','المنتجات التي تحمله','العدد','الباركود','','','الأثر'], rows)
+
+sec('5 · صفوف في قائمة الأسعار بلا حركة في 2026 — %d صفاً' % len(GAPS['no_movement']),
+    'إما أصناف موقع إلكتروني/باقات لا تظهر في الـ ERP باسم مقابل، أو أصناف UNIVET بلا سعر أصلاً. تُراجع: تُسعَّر، تُربط بكود ERP، أو تُسحب من الموقع.')
+tbl(['#','البراند','المنتج','السعر KD','الكود','','','السبب'],
+    [[i,g['brand'],g['name'],g['price'] if g['price'] is not None else 'بلا سعر',g['sku'],'','',g['reason']]
+     for i,g in enumerate(GAPS['no_movement'], start=1)],
+    {4:'#,##0.00'})
 
 # ============================================================== خارج القائمة
 items = sorted([o for o in d if o['phase']==0], key=lambda o: (-o['kd'], o['brand']))
@@ -430,7 +577,19 @@ h2('سابعاً — معيار خاص بالمعدات المهنية')
 para('المعدات المهنية (متوسط سعر القطعة ≥ 100 د.ك: لوبات UNIVET · هاندبيس Intensiv · أطقم B&L) تُقاس بالقيمة لا بعدد الفواتير. جهاز واحد بـ 981 د.ك ليس «بطيء الحركة» بالمعنى التجاري — طبيعة السلعة أن تُباع بالقطعة لعميل واحد في السنة. لذلك دخلت المرحلتين 1 و2 بمعيار القيمة (≥ 500 د.ك خلال آخر 120 يوماً) رغم أن عدد فواتيرها أقل من واحدة شهرياً.', bold=True)
 gap()
 
-h2('ثامناً — معيار الأولوية داخل كل مرحلة (A / B / C)')
+h2('ثامناً — معيار التسعير والهامش')
+para('المصدر: ملف قائمة الأسعار (117 صنفاً) مربوطاً بالقائمة عبر الكود، ثم بمطابقة عائلات مُراجَعة يدوياً حيث يحمل الكود الواحد عدة ألوان.')
+crit_table([
+    ('سعر الجمهور','السعر المعلن في قائمة الأسعار — تحقّق من صحته أن سعر القائمة في ERP يطابقه في %d صنفاً' % sum(1 for o in d if o['price_match'] is True),'المرجع'),
+    ('السعر الفعلي للقطعة','صافي المبيعات ÷ كل القطع المُسلَّمة (المدفوعة + المجانية) — لأن الخصم يُمنح بضاعةً مجانية لا بخفض السعر','الأساس الصحيح'),
+    ('هامش العميل','(سعر الجمهور − السعر الفعلي) ÷ سعر الجمهور — محسوب لكل قناة على حدة من فواتيرها','معيار القبول'),
+    ('حد الهامش المقبول','أقل من 22% يُعلَّم كهامش رقيق: الصيدلية تقارن الهامش لا السعر','%d صنفاً معلَّماً' % len(GAPS['thin_margin'])),
+    ('مطابقة محافظة','لا يُسنَد سعر إلا بكود فريد أو مطابقة عائلة مُراجَعة يدوياً · الكود المكرر أو المتعارض يُحجز ويُدرج في الفجوات','%d كوداً محجوزاً' % len(GAPS['dup_sku'])),
+], ['المعيار','التعريف','الأثر'])
+para('لماذا هذا التمييز حاسم: لو حُسب الهامش على القطع المدفوعة فقط لظهرت الصيدلية وكأنها تشتري بسعر الجمهور تقريباً (هامش 1%). القطع المجانية هي الخصم الحقيقي، وتجاهلها يقلب قراءة الربحية رأساً على عقب.', bold=True)
+gap()
+
+h2('تاسعاً — معيار الأولوية داخل كل مرحلة (A / B / C)')
 crit_table([
     ('A','الأصناف التي تُشكّل أول 60% من قيمة المرحلة — تُعرض أولاً ولا يُقبل نفادها من المخزون'),
     ('B','الشريحة التالية حتى 90% من قيمة المرحلة'),
@@ -438,13 +597,14 @@ crit_table([
 ], ['الأولوية','التعريف'])
 gap()
 
-h2('تاسعاً — حدود هذه القراءة (يجب ذكرها للأمانة)')
+h2('عاشراً — حدود هذه القراءة (يجب ذكرها للأمانة)')
 para('•  الفترة 8.1 شهر فقط من سنة 2026 — بلا مقارنة بسنة 2025، فلا يظهر النمو أو التراجع السنوي.')
 para('•  التصنيف مبني على ما بعناه نحن، لا على ما يطلبه السوق: صنف لم نعرضه جيداً سيظهر «بطيئاً» وهو ليس كذلك — لذلك المرحلة 3 هي «حسب الطلب» وليست «للسحب».')
 para('•  الأصناف الجديدة (أول بيع خلال آخر 3 أشهر) قاعدة بياناتها قصيرة، ومُشار إليها بتنبيه في عمود الملاحظات.')
 para('•  المرتجعات بدون فاتورة قد تعود لبضاعة بيعت في سنوات سابقة، فلا تُحمَّل على أداء 2026.')
 para('•  أدلة العيادات مبنية على فواتير رانوفا ومريم فقط. أي بيع لعيادة عبر مندوب آخر أو عبر الأونلاين لا يظهر في أرقام الانتشار وإعادة الطلب.')
-para('•  التسعير والهوامش والاتفاقيات التجارية خارج نطاق هذا المستند تماماً.')
+para('•  الهوامش محسوبة على ما حدث فعلاً في 2026 لا على سياسة معتمدة — الصنف الذي بيع لصيدلية واحدة هامشه غير قابل للتعميم.')
+para('•  قائمة الأسعار تعكس سعر الجمهور المعلن؛ أي اتفاقية خاصة مع عميل بعينه لا تظهر فيها.')
 
 wb.save('UltraMed-Initial-Listing-2026.xlsx')
 print('saved')
