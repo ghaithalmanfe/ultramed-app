@@ -2434,6 +2434,157 @@
     };
   }
 
+
+  // ---------------------------------------------------------------------
+  // Product movement: every brand, its products ranked by REAL paid sales,
+  // classified fast / mid / slow. Built from stored ERP rows
+  // ({date, doc, type, product, qty, net, sret, dsret, brand, customer, ref}).
+  //  - paid units   = invoice lines that earned money (net > 0)
+  //  - FOC          = free invoice lines minus free lines that came back
+  //  - returns      = split into "against an invoice" (ref known) and
+  //                   "stock returns without invoice" (no ref) when the data
+  //                   carries references at all — shown next to sales, never
+  //                   allowed to hide a product's movement; exchange lines the
+  //                   supervisor marked (opts.isExchange) are stock swaps
+  //  - velocity     = per month, from the product's first paid sale (or the
+  //                   start of the data) to the last date in the data, with a
+  //                   floor (2 months; the data span when it is shorter) so a
+  //                   weeks-old launch is not crowned on 2 invoices
+  //  - classes      = fast: 4+ invoices/month, or 100+ units/month on 3+
+  //                   invoices · slow: under 1 invoice/month or a single sale
+  //                   · mid: the rest · none: never sold for money
+  //  - old / new ERP codes of one product (IME / INT / OLD suffixes) merge
+  // Marketing brands and internal marketing accounts, delivery, maintenance
+  // and packaging lines are not products and are left out.
+  var PM_NONPRODUCT = /marketing|delivery|maintenance|packaging/i;
+  var PM_ISO = /^\d{4}-\d{2}-\d{2}$/;
+  function pmNormName(n){
+    return String(n || '').toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').split(/\s+/)
+      .filter(function(t){ return t && t !== 'ime' && t !== 'int' && t !== 'old'; }).join(' ');
+  }
+  function pmLoose(n){ return String(n || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function pmMonths(a, b){ // 'YYYY-MM-DD' strings → months (30.44 days)
+    var ms = Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z');
+    return Math.max(0, ms) / 86400000 / 30.44;
+  }
+  function pmDaysBetween(a, b){ return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+  function productMovement(rows, opts){
+    opts = opts || {};
+    var minWin = opts.minWindow != null ? opts.minWindow : 2;
+    var fastInv = opts.fastInvoices != null ? opts.fastInvoices : 4;
+    var fastUnits = opts.fastUnits != null ? opts.fastUnits : 100;
+    var slowInv = opts.slowInvoices != null ? opts.slowInvoices : 1;
+    var isExchange = typeof opts.isExchange === 'function' ? opts.isExchange : function(){ return false; };
+    var list = (rows || []).filter(function(r){
+      return r && r.product && PM_ISO.test(String(r.date || '')) && !isNaN(Date.parse(r.date + 'T00:00:00Z'))
+        && !PM_NONPRODUCT.test(String(r.brand || '')) && !/marketing/i.test(String(r.customer || ''));
+    });
+    var out = { from: null, to: null, months: 0, rows: list.length, hasRefs: false, provisional: false, brands: [], sold: 0, products: 0, counts: { fast: 0, mid: 0, slow: 0, none: 0 } };
+    if(!list.length) return out;
+    var d0 = null, d1 = null;
+    list.forEach(function(r){
+      if(!d0 || r.date < d0) d0 = r.date; if(!d1 || r.date > d1) d1 = r.date;
+      if(r.type === 'return' && r.ref) out.hasRefs = true;
+    });
+    out.from = d0; out.to = d1; out.months = pmMonths(d0, d1);
+    var span = Math.max(out.months, 1 / 30.44);
+    out.provisional = span < 2;
+    var floor = Math.min(minWin, Math.max(span, 1));
+    var l3Start = new Date(Date.parse(d1 + 'T00:00:00Z') - 91 * 86400000).toISOString().slice(0, 10);
+    var P = {}, rawNames = {};
+    list.forEach(function(r){
+      var bkey = normBrand(r.brand), pkey = bkey + '||' + pmNormName(r.product);
+      var d = P[pkey];
+      if(!d) d = P[pkey] = { bkey: bkey, brandNames: {}, names: {}, hasPaid: false, paid: 0, paidKd: 0, foc: 0, focBack: 0, retInv: 0, retNoInv: 0, exchanged: 0, kd: 0, invs: {}, custs: {}, months: {}, byMonth: {}, first: null, last: null, l3: 0 };
+      var q = +r.qty || 0, net = +r.net || 0, b = String(r.brand || '').trim(), n = String(r.product || '').trim();
+      d.brandNames[b] = (d.brandNames[b] || 0) + 1;
+      (rawNames[pkey] = rawNames[pkey] || {})[n] = 1;
+      d.kd += net;
+      var retLine = r.type === 'return' || (r.sret > 0 && !(net > 0)); // legacy shape: a return valued in the Sales Return column of an invoice line
+      if(retLine){
+        var rv = returnValue(r);
+        if(net === 0) d.kd -= rv;                       // valued only in the return column
+        if(isExchange(r)){ d.exchanged += Math.abs(q); return; }
+        if(net === 0 && rv === 0){ d.focBack += Math.abs(q); return; } // free goods coming back
+        if(r.ref) d.retInv += Math.abs(q); else d.retNoInv += Math.abs(q);
+        return;
+      }
+      if(!(net > 0)){ d.foc += Math.max(q, 0); return; }
+      d.hasPaid = true; d.paid += q; d.paidKd += net; d.names[n] = (d.names[n] || 0) + q;
+      if(r.doc) d.invs[r.doc] = 1;
+      d.custs[String(r.customer || '').trim().toLowerCase()] = 1;
+      var ym = r.date.slice(0, 7); d.months[ym] = 1; d.byMonth[ym] = (d.byMonth[ym] || 0) + q;
+      if(r.date > l3Start) d.l3 += q;
+      if(!d.first || r.date < d.first) d.first = r.date;
+      if(!d.last || r.date > d.last) d.last = r.date;
+    });
+    var pick = function(o){ var best = null; Object.keys(o).forEach(function(x){ if(best === null || o[x] > o[best]) best = x; }); return best; };
+    var brands = {};
+    Object.keys(P).forEach(function(k){
+      var d = P[k];
+      var names = Object.keys(rawNames[k] || {});
+      d.name = Object.keys(d.names).length ? pick(d.names) : (names.slice().sort(function(a, b){ return a.length - b.length; })[0] || '');
+      var seen = {}; seen[pmLoose(d.name)] = 1;
+      d.otherNames = names.filter(function(n){ var key = pmLoose(n); if(seen[key]) return false; seen[key] = 1; return true; });
+      d.brand = pick(d.brandNames);
+      d.ret = d.retInv + d.retNoInv;
+      d.netUnits = d.paid - d.ret;
+      d.focNet = d.foc - d.focBack;
+      var start = d.first ? (d.first > d0 ? d.first : d0) : d0;
+      d.window = Math.max(floor, pmMonths(start, d1));
+      d.invoices = Object.keys(d.invs).length; d.customers = Object.keys(d.custs).length; d.monthsActive = Object.keys(d.months).length;
+      d.upm = d.paid / d.window; d.ipm = d.invoices / d.window; d.l3pm = d.l3 / 3;
+      d.price = d.paid ? d.paidKd / d.paid : 0;
+      var flags = [];
+      if(!d.hasPaid){
+        d.cls = 'none';
+        if(d.foc > 0) flags.push({ k: 'focOnly', units: d.foc });
+        if(d.ret > 0) flags.push({ k: 'returnsOnly', units: d.ret });
+      } else {
+        // the units path needs repeat business too: one bulk invoice is not a fast mover;
+        // a product sold once in the whole data is slow whatever the span
+        if(d.ipm >= fastInv || (d.upm >= fastUnits && d.invoices >= 3)) d.cls = 'fast';
+        else if(d.invoices < 2 || d.ipm < slowInv) d.cls = 'slow';
+        else d.cls = 'mid';
+        if(d.ret >= 10 && d.ret >= 0.25 * d.paid) flags.push({ k: 'returns', pct: Math.round(d.ret / d.paid * 100), noInv: out.hasRefs && d.retNoInv >= 0.5 * d.ret });
+        if(d.paid > 0 && d.netUnits <= 0) flags.push({ k: 'exceed' });
+        var age = pmDaysBetween(d.first, d1);
+        if(age <= 92 && pmDaysBetween(d0, d1) > 92) flags.push({ k: 'new', first: d.first });
+        else if(d.paid >= 50 && pmDaysBetween(d0, d1) > 92){
+          var top = pick(d.byMonth);
+          if(d.byMonth[top] >= 0.6 * d.paid) flags.push({ k: 'fill', pct: Math.round(d.byMonth[top] / d.paid * 100), month: top });
+        }
+        var idle = pmDaysBetween(d.last, d1);
+        if(idle >= 60) flags.push({ k: 'stale', days: idle });
+        if(age > 92 && d.l3 > 0 && d.l3pm < 0.4 * d.upm) flags.push({ k: 'decline' });
+        if(d.exchanged > 0) flags.push({ k: 'exchanged', units: d.exchanged });
+      }
+      if(d.otherNames.length) flags.push({ k: 'merged', names: d.otherNames });
+      d.flags = flags;
+      var B = brands[d.bkey] || (brands[d.bkey] = { key: d.bkey, names: {}, kd: 0, paid: 0, retInv: 0, retNoInv: 0, foc: 0, sold: 0, counts: { fast: 0, mid: 0, slow: 0, none: 0 }, products: [] });
+      B.names[d.brand] = (B.names[d.brand] || 0) + 1;
+      B.kd += d.kd; B.paid += d.paid; B.retInv += d.retInv; B.retNoInv += d.retNoInv; B.foc += d.focNet; B.counts[d.cls]++; if(d.hasPaid) B.sold++;
+      B.products.push(d);
+    });
+    var byPaid = function(a, b){ return (a.hasPaid ? 0 : 1) - (b.hasPaid ? 0 : 1) || b.paid - a.paid || b.invoices - a.invoices || b.kd - a.kd || b.foc - a.foc; };
+    out.brands = Object.keys(brands).map(function(k){
+      var B = brands[k];
+      B.brand = pick(B.names); delete B.names;
+      B.products.sort(byPaid);
+      var cum = 0;
+      B.products.forEach(function(d, i){
+        d.rank = i + 1;
+        if(d.paid > 0 && B.paid > 0){ d.share = d.paid / B.paid; d.abc = cum < 0.80 * B.paid - 1e-9 ? 'A' : (cum < 0.95 * B.paid - 1e-9 ? 'B' : 'C'); cum += d.paid; }
+        else { d.share = 0; d.abc = null; }
+        delete d.brandNames; delete d.names; delete d.invs; delete d.custs; delete d.months; delete d.byMonth; delete d.bkey;
+        out.counts[d.cls]++; out.products++; if(d.hasPaid) out.sold++;
+      });
+      B.netUnits = B.paid - B.retInv - B.retNoInv;
+      return B;
+    }).sort(function(a, b){ return b.kd - a.kd || b.paid - a.paid; });
+    return out;
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
@@ -2447,6 +2598,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
-    matchCatalogProduct, crossSellPlan
+    matchCatalogProduct, crossSellPlan,
+    productMovement, pmNormName
   };
 });
