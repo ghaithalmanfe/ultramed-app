@@ -607,6 +607,7 @@
     idx.brand = find([/brand/]);
     idx.customer = find([/customer/, /^account$/], /class/);
     idx.cls = find([/class/]);
+    idx.remarks = find([/remark/, /^notes?$/, /reference/]);
     // The essentials without which reconciliation is meaningless:
     if(idx.date < 0 || idx.doc < 0 || idx.net < 0 || idx.salesman < 0) return null;
     return idx;
@@ -626,9 +627,12 @@
       var date = erpDate(line[cols.date]);
       var doc = String(line[cols.doc] || '').trim();
       if(!date || !doc){ skipped++; continue; }
+      var isRet = /^SRT|return/i.test(doc);
+      var remarks = String(cols.remarks >= 0 ? line[cols.remarks] || '' : '').trim();
       rows.push({
         date: date, doc: doc,
-        type: /^SRT|return/i.test(doc) ? 'return' : 'invoice',
+        type: isRet ? 'return' : 'invoice',
+        ref: isRet ? erpRefFromRemarks(remarks) : null,
         product: String(cols.product >= 0 ? line[cols.product] || '' : '').trim(),
         qty: cols.qty >= 0 ? erpNum(line[cols.qty]) : 0,
         gross: cols.gross >= 0 ? erpNum(line[cols.gross]) : 0,
@@ -1714,6 +1718,57 @@
     t.returnCount = Object.keys(t.returns).length;
     return t;
   }
+  // ==== RETURNS OF EARLIER INVOICES ====
+  // A return document names the invoice it reverses in its remarks
+  // ("Philip SINV0076017"). When that invoice belongs to an earlier month,
+  // the ERP still deducts the return in the month it was booked — so a rep's
+  // new month opens with last month's goods coming back. The 'origin' policy
+  // moves such returns to the month of the original invoice instead.
+  function erpRefFromRemarks(text){
+    var m = String(text || '').match(/S\s*INV\s*[-#:]?\s*(\d{4,})/i);
+    return m ? 'SINV' + m[1] : null;
+  }
+  function erpDocNo(doc){ var m = String(doc || '').match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : null; }
+  // Context across every stored row: when each invoice was issued, and the
+  // lowest invoice number seen in each month (an earlier number = an earlier month).
+  function returnContext(rows){
+    var invoiceDates = {}, minNo = {};
+    (rows || []).forEach(function(r){
+      if(r.type !== 'invoice' || !r.date) return;
+      if(!invoiceDates[r.doc] || r.date < invoiceDates[r.doc]) invoiceDates[r.doc] = r.date;
+      var n = erpDocNo(r.doc), mo = r.date.slice(0, 7);
+      if(n != null && (minNo[mo] == null || n < minNo[mo])) minNo[mo] = n;
+    });
+    return { invoiceDates: invoiceDates, minNo: minNo };
+  }
+  // {prior, date, known} for a return that reverses an earlier month's invoice; null otherwise.
+  function returnOrigin(r, ctx){
+    if(!r || r.type !== 'return' || !r.ref || !ctx) return null;
+    var mo = String(r.date || '').slice(0, 7);
+    var d = ctx.invoiceDates[r.ref];
+    if(d) return d.slice(0, 7) < mo ? { prior: true, date: d, known: true } : { prior: false, date: d, known: true };
+    var n = erpDocNo(r.ref), mn = ctx.minNo[mo];
+    if(n != null && mn != null && n < mn){
+      var prev = new Date(mo + '-01T00:00:00'); prev.setDate(0); // last day of the month before
+      return { prior: true, date: localDateStr(prev), known: false };
+    }
+    return null;
+  }
+  // policy 'origin': prior-invoice returns are re-dated to the original invoice's
+  // month (its exact date when known, else the last day of the month before).
+  // policy 'erp' (or anything else): rows unchanged, as the ERP reports them.
+  function applyReturnPolicy(rows, policy, ctx){
+    if(policy !== 'origin') return rows || [];
+    ctx = ctx || returnContext(rows);
+    return (rows || []).map(function(r){
+      var o = returnOrigin(r, ctx);
+      if(!o || !o.prior) return r;
+      var c = {}; for(var k in r) c[k] = r[k];
+      c.origDate = r.date; c.date = o.date; c.priorReturn = true; c.originKnown = o.known;
+      return c;
+    });
+  }
+
   // The heart of the evaluation: ERP invoices vs app visits, per app rep.
   // opts: {rows, visits, clinics, erpMap, repMap, from, to}
   function reconcileErp(opts){
@@ -2388,7 +2443,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend,
+    matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
