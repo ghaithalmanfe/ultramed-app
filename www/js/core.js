@@ -1978,7 +1978,66 @@
     out.removed = removed;
     out.repMapGlobal = Object.assign({}, (cloud && cloud.repMapGlobal) || {}, (local && local.repMapGlobal) || {});
     out.seeds = Object.assign({}, (cloud && cloud.seeds) || {}, (local && local.seeds) || {});
+    // chunk documents nobody references any more, with the moment they were
+    // first seen orphaned (the earliest sighting wins) — deleted only later
+    var orphans = Object.assign({}, (local && local.orphans) || {});
+    Object.keys((cloud && cloud.orphans) || {}).forEach(function(k){ var c = cloud.orphans[k]; if(!(orphans[k] <= c)) orphans[k] = c; });
+    out.orphans = orphans;
     return { merged: out, added: added };
+  }
+  // Global overlap invariant: for one salesman and one calendar day there is
+  // exactly ONE uploaded period — the most recently IMPORTED file wins. Every
+  // import enforces this on the device that imports; enforcing it again after
+  // every merge with the cloud means two devices importing overlapping files,
+  // or an index write that landed after the app had given up on it, can never
+  // double-count a day. Precedence is importedAt (immutable), so bumping a
+  // period's revision when its rows are stripped never reorders anything and
+  // the pass is idempotent. Older overlapping periods lose the winner's
+  // salesmen over the winner's date span; a period left with no rows is
+  // tombstoned. A period whose rows are not on this device is never stripped,
+  // but still claims its salesmen (from its who-is-who map).
+  function erpEnforceNoOverlap(sales, now){
+    now = now || Date.now();
+    var periods = ((sales && sales.periods) || []).filter(Boolean);
+    var order = periods.slice().sort(function(a, b){
+      var ia = String(a.importedAt || ''), ib = String(b.importedAt || '');
+      return ib.localeCompare(ia) || (b.rev || 0) - (a.rev || 0);
+    });
+    var removed = Object.assign({}, (sales && sales.removed) || {});
+    var claimed = {}; // salesman -> [{from, to}] taken by newer periods
+    var replacement = {}, dropped = {}, changed = 0;
+    order.forEach(function(p){
+      var readable = Array.isArray(p.rows) && !p.rowsMissing;
+      var salesmen = {};
+      if(readable) p.rows.forEach(function(r){ salesmen[r[8]] = 1; });
+      else Object.keys(p.repMap || {}).forEach(function(k){ salesmen[k] = 1; });
+      if(readable){
+        var kept = p.rows.filter(function(r){
+          var spans = claimed[r[8]];
+          if(!spans) return true;
+          for(var i = 0; i < spans.length; i++) if(r[0] >= spans[i].from && r[0] <= spans[i].to) return false;
+          return true;
+        });
+        if(kept.length !== p.rows.length){
+          changed++;
+          if(!kept.length){ removed[p.id] = now; dropped[p.id] = 1; }
+          else {
+            var net = 0, from = null, to = null;
+            kept.forEach(function(r){ net += (r[6] || 0); if(!from || r[0] < from) from = r[0]; if(!to || r[0] > to) to = r[0]; });
+            replacement[p.id] = Object.assign({}, p, { rows: kept, rowCount: kept.length, net: Math.round(net * 1000) / 1000,
+              from: from || p.from, to: to || p.to, rev: now });
+          }
+        }
+      }
+      // claim AFTER being stripped: a stripped period claims only what it still spans
+      var q = replacement[p.id] || p;
+      if(!dropped[p.id] && q.from && q.to) Object.keys(salesmen).forEach(function(sm){ (claimed[sm] = claimed[sm] || []).push({ from: q.from, to: q.to }); });
+    });
+    var out = Object.assign({}, sales || {}, {
+      periods: periods.filter(function(p){ return !dropped[p.id]; }).map(function(p){ return replacement[p.id] || p; }),
+      removed: removed,
+    });
+    return { sales: out, changed: changed };
   }
 
   // ---- Minimal XLSX reader (no libraries) ----
@@ -2737,7 +2796,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
+    erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,

@@ -2287,3 +2287,49 @@ describe('ERP storage: a missing period (rows:[] + rowsMissing) is never mistake
     assert.deepEqual(core.erpChunkKeys({ periods: [{ id: 'l', rows: [[1]] }] }), []);
   });
 });
+
+describe('ERP no-overlap invariant (erpEnforceNoOverlap)', () => {
+  const R = (date, sm, net) => [date, 'D' + date + sm, 0, 'P', 1, net, net, 0, sm, 'TEPE', 'Clinic', 'Clinics', 0];
+  const P = (id, importedAt, rows, extra) => Object.assign({ id, importedAt, rev: 1, from: rows.reduce((a, r) => !a || r[0] < a ? r[0] : a, null), to: rows.reduce((a, r) => !a || r[0] > a ? r[0] : a, null), rows, rowCount: rows.length, repMap: {} }, extra || {});
+  const now = 1758400000000;
+  test('two devices imported the same week: the later import wins, the earlier one is tombstoned', () => {
+    const a = P('a', '2026-09-21T10:00:00Z', [R('2026-09-02', 'Mariam Zohair', 100), R('2026-09-21', 'Mariam Zohair', 50)]);
+    const b = P('b', '2026-09-21T09:00:00Z', [R('2026-09-05', 'Mariam Zohair', 999)]);
+    const r = core.erpEnforceNoOverlap({ periods: [b, a], removed: {} }, now);
+    assert.equal(r.changed, 1);
+    assert.deepEqual(r.sales.periods.map(p => p.id), ['a']);
+    assert.deepEqual(r.sales.removed, { b: now });
+  });
+  test('partial overlap strips only the winner\'s salesmen inside the winner\'s span; stays idempotent', () => {
+    const old = P('old', '2026-10-01T00:00:00Z', [R('2026-09-01', 'S', 10), R('2026-09-15', 'S', 20), R('2026-09-30', 'S', 30), R('2026-09-15', 'T', 5)]);
+    const nu = P('nu', '2026-10-02T00:00:00Z', [R('2026-09-10', 'S', 1), R('2026-09-20', 'S', 2)]);
+    const r = core.erpEnforceNoOverlap({ periods: [old, nu] }, now);
+    assert.equal(r.changed, 1);
+    const o = r.sales.periods.find(p => p.id === 'old');
+    assert.deepEqual(o.rows.map(x => x[0] + x[8]), ['2026-09-01S', '2026-09-30S', '2026-09-15T'], 'S on the 15th (inside 10–20) removed, T untouched');
+    assert.equal(o.net, 45); assert.equal(o.rowCount, 3); assert.equal(o.rev, now);
+    assert.equal(o.importedAt, '2026-10-01T00:00:00Z', 'precedence stamp never changes');
+    const again = core.erpEnforceNoOverlap(r.sales, now + 1);
+    assert.equal(again.changed, 0, 'second pass changes nothing');
+    assert.equal(again.sales.periods.find(p => p.id === 'nu').rows.length, 2, 'the winner keeps its rows on the re-run');
+  });
+  test('different salesmen never interfere', () => {
+    const a = P('a', '2026-09-21T10:00:00Z', [R('2026-09-02', 'Mariam Zohair', 100)]);
+    const b = P('b', '2026-09-21T09:00:00Z', [R('2026-09-05', 'Ranova Ayman Mohammed', 999)]);
+    const r = core.erpEnforceNoOverlap({ periods: [a, b] }, now);
+    assert.equal(r.changed, 0); assert.equal(r.sales.periods.length, 2);
+  });
+  test('a newer period whose rows are not on this device still claims its salesmen (from who-is-who) and is never stripped itself', () => {
+    const readable = P('r', '2026-09-20T00:00:00Z', [R('2026-09-05', 'Mariam Zohair', 100), R('2026-09-06', 'Ranova Ayman Mohammed', 7)]);
+    const missing = P('m', '2026-09-21T00:00:00Z', [], { rows: [], rowsMissing: true, rowsRef: { key: 'erpRows:m:1', chunks: 1, count: 9 }, from: '2026-09-01', to: '2026-09-21', repMap: { 'Mariam Zohair': 'Mariam' } });
+    const r = core.erpEnforceNoOverlap({ periods: [readable, missing] }, now);
+    assert.equal(r.changed, 1);
+    assert.deepEqual(r.sales.periods.find(p => p.id === 'r').rows.map(x => x[8]), ['Ranova Ayman Mohammed']);
+    const m = r.sales.periods.find(p => p.id === 'm');
+    assert.equal(m.rowsMissing, true); assert.equal(m.rowsRef.key, 'erpRows:m:1');
+  });
+  test('erpMergeIndex merges orphan sightings, earliest sighting wins', () => {
+    const r = core.erpMergeIndex({ periods: [], orphans: { k1: 5000, k2: 9000 } }, { periods: [], orphans: { k2: 7000, k3: 1000 } }, now);
+    assert.deepEqual(r.merged.orphans, { k1: 5000, k2: 7000, k3: 1000 });
+  });
+});
