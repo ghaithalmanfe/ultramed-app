@@ -608,6 +608,10 @@
     idx.customer = find([/customer/, /^account$/], /class/);
     idx.cls = find([/class/]);
     idx.remarks = find([/remark/, /^notes?$/, /reference/]);
+    // Document kind ("SalesInvoice" / "SalesReturn") — a return is recognized
+    // from this column too, so a future numbering scheme without the SRT
+    // prefix still counts returns as returns.
+    idx.type = find([/^type$/, /^doc(ument)?\s*type$/, /^transaction\s*type$/, /^voucher\s*type$/]);
     // The essentials without which reconciliation is meaningless:
     if(idx.date < 0 || idx.doc < 0 || idx.net < 0 || idx.salesman < 0) return null;
     return idx;
@@ -627,7 +631,8 @@
       var date = erpDate(line[cols.date]);
       var doc = String(line[cols.doc] || '').trim();
       if(!date || !doc){ skipped++; continue; }
-      var isRet = /^SRT|return/i.test(doc);
+      var isRet = /^SRT|return/i.test(doc) ||
+        (cols.type >= 0 && /return|credit\s*note/i.test(String(line[cols.type] || '')));
       var remarks = String(cols.remarks >= 0 ? line[cols.remarks] || '' : '').trim();
       rows.push({
         date: date, doc: doc,
@@ -1866,19 +1871,42 @@
   // period's packed rows live in their own chunk documents, addressed by
   // period id + revision (the revision changes whenever the rows do).
   var ERP_CHUNK_ROWS = 1200;
+  var ERP_CHUNK_BYTES = 350000; // JSON bytes per chunk document — a third of the cloud's 1 MB cap
   function erpRowsKey(p){ return 'erpRows:' + p.id + ':' + (p.rev || 0); }
+  // Rows → chunk arrays bounded by BOTH row count and JSON size, so a future
+  // export with long remarks or product names can never push one document
+  // past the cloud's limit. Always yields at least one (possibly empty) chunk.
+  function erpChunkRows(rows, chunkRows, chunkBytes){
+    chunkRows = chunkRows || ERP_CHUNK_ROWS; chunkBytes = chunkBytes || ERP_CHUNK_BYTES;
+    var chunks = [], cur = [], bytes = 2;
+    for(var i = 0; i < rows.length; i++){
+      var len = JSON.stringify(rows[i]).length + 1;
+      if(cur.length && (cur.length >= chunkRows || bytes + len > chunkBytes)){ chunks.push(cur); cur = []; bytes = 2; }
+      cur.push(rows[i]); bytes += len;
+    }
+    chunks.push(cur);
+    return chunks;
+  }
   // In-memory sales (periods carry rows) → {index, docs:{chunkKey: rows[]}}.
-  function erpSplitForStorage(sales, chunkRows){
-    chunkRows = chunkRows || ERP_CHUNK_ROWS;
+  // A period whose rows could not be read (rowsMissing) keeps its stored
+  // reference untouched and emits no documents: its chunks stay in the cloud
+  // for the next successful read, and are never overwritten with nothing.
+  function erpSplitForStorage(sales, chunkRows, chunkBytes){
     var index = Object.assign({}, sales || {}, { periods: [] });
     var docs = {};
     ((sales && sales.periods) || []).forEach(function(p){
       if(!p) return;
+      var head;
+      if(p.rowsMissing && p.rowsRef){
+        head = Object.assign({}, p); delete head.rows; delete head.rowsMissing;
+        index.periods.push(head);
+        return;
+      }
       var rows = Array.isArray(p.rows) ? p.rows : [];
       var key = erpRowsKey(p);
-      var chunks = Math.max(1, Math.ceil(rows.length / chunkRows));
-      for(var i = 0; i < chunks; i++) docs[key + ':' + i] = rows.slice(i * chunkRows, (i + 1) * chunkRows);
-      var head = Object.assign({}, p, { rowsRef: { key: key, chunks: chunks, count: rows.length } });
+      var parts = erpChunkRows(rows, chunkRows, chunkBytes);
+      for(var i = 0; i < parts.length; i++) docs[key + ':' + i] = parts[i];
+      head = Object.assign({}, p, { rowsRef: { key: key, chunks: parts.length, count: rows.length } });
       delete head.rows; delete head.rowsMissing;
       index.periods.push(head);
     });
@@ -1888,7 +1916,8 @@
   function erpChunkKeys(index){
     var keys = [];
     ((index && index.periods) || []).forEach(function(p){
-      if(!p || Array.isArray(p.rows) || !p.rowsRef) return;
+      if(!p || !p.rowsRef) return;
+      if(Array.isArray(p.rows) && !p.rowsMissing) return; // legacy inline rows need no chunks; a missing period (rows:[]) does
       for(var i = 0; i < (p.rowsRef.chunks || 0); i++) keys.push(p.rowsRef.key + ':' + i);
     });
     return keys;
@@ -1903,7 +1932,7 @@
     var missing = [];
     ((index && index.periods) || []).forEach(function(p){
       if(!p) return;
-      if(Array.isArray(p.rows)){ sales.periods.push(p); return; }
+      if(Array.isArray(p.rows) && !(p.rowsMissing && p.rowsRef)){ sales.periods.push(p); return; }
       var ref = p.rowsRef, rows = [], ok = !!ref;
       if(ref){
         for(var i = 0; i < (ref.chunks || 0); i++){
@@ -1921,18 +1950,26 @@
   }
   // Merge-on-save for the index: two devices can each import a file. A
   // period the cloud has and we do not is kept — unless it was deliberately
-  // replaced or deleted (a tombstone in `removed`, from either side). Local
-  // wins on a shared id (we are the ones saving). Tombstones expire after
-  // 60 days so the index never grows without bound.
+  // replaced or deleted (a tombstone in `removed`, from either side). On a
+  // shared id the HIGHER revision wins (every change to a period's rows bumps
+  // its rev), ties go to local. Periods taken from the cloud arrive as bare
+  // headers (`added` counts them) — the caller must fetch their rows.
+  // Tombstones expire after 60 days so the index never grows without bound.
   function erpMergeIndex(local, cloud, now){
     now = now || Date.now();
     var out = Object.assign({}, local || {});
     var removed = Object.assign({}, (cloud && cloud.removed) || {}, (local && local.removed) || {});
     Object.keys(removed).forEach(function(id){ if(!(removed[id] > now - 60 * 86400000)) delete removed[id]; });
-    var have = {};
-    var periods = ((local && local.periods) || []).filter(function(p){ return p && !removed[p.id]; });
-    periods.forEach(function(p){ have[p.id] = 1; });
-    var added = 0;
+    var cloudById = {};
+    ((cloud && cloud.periods) || []).forEach(function(p){ if(p && p.id != null) cloudById[p.id] = p; });
+    var have = {}, added = 0, periods = [];
+    ((local && local.periods) || []).forEach(function(p){
+      if(!p || removed[p.id]) return;
+      var c = cloudById[p.id];
+      if(c && (c.rev || 0) > (p.rev || 0) && !Array.isArray(c.rows)){ periods.push(c); added++; }
+      else periods.push(p);
+      have[p.id] = 1;
+    });
     ((cloud && cloud.periods) || []).forEach(function(p){
       if(!p || have[p.id] || removed[p.id]) return;
       periods.push(p); have[p.id] = 1; added++;
@@ -2010,25 +2047,42 @@
       var xml = await readEntry(rels[rid] || ('xl/worksheets/sheet' + (s + 1) + '.xml'));
       if(!xml) continue;
       var rows = [];
-      var cellRe = /<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
-      var m;
-      while((m = cellRe.exec(xml))){
-        var attrs = m[1], body = m[2] || '';
-        var ref = (attrs.match(/r="([A-Z]+)(\d+)"/) || []);
-        if(!ref[1]) continue;
-        var col = 0;
-        for(var L = 0; L < ref[1].length; L++) col = col * 26 + (ref[1].charCodeAt(L) - 64);
-        var rowIdx = parseInt(ref[2], 10) - 1;
-        var t = (attrs.match(/t="([^"]+)"/) || [])[1] || '';
-        var val = '';
+      var cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+      var cellValue = function(attrs, body){
+        var t = (attrs.match(/\bt="([^"]+)"/) || [])[1] || '';
         if(t === 'inlineStr'){
           var it = body.match(/<t[^>]*>([\s\S]*?)<\/t>/);
-          val = it ? xmlUnescape(it[1]) : '';
-        } else {
-          var vm = body.match(/<v>([\s\S]*?)<\/v>/);
-          if(vm) val = t === 's' ? (shared[parseInt(vm[1], 10)] || '') : xmlUnescape(vm[1]);
+          return it ? xmlUnescape(it[1]) : '';
         }
-        (rows[rowIdx] = rows[rowIdx] || [])[col - 1] = val;
+        var vm = body.match(/<v>([\s\S]*?)<\/v>/);
+        return vm ? (t === 's' ? (shared[parseInt(vm[1], 10)] || '') : xmlUnescape(vm[1])) : '';
+      };
+      var colOf = function(letters){ var col = 0; for(var L = 0; L < letters.length; L++) col = col * 26 + (letters.charCodeAt(L) - 64); return col; };
+      // Walk <row> by <row>: some generators omit the r="A1" cell address
+      // (cells are then simply sequential), and a self-closing <row/> must not
+      // swallow its neighbours.
+      var rowRe = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, rm, nextRow = 0, sawRow = false;
+      while((rm = rowRe.exec(xml))){
+        sawRow = true;
+        var rAttr = (rm[1].match(/\br="(\d+)"/) || [])[1];
+        var rowIdx = rAttr ? parseInt(rAttr, 10) - 1 : nextRow;
+        nextRow = rowIdx + 1;
+        var colSeq = 0, cm;
+        var rowBody = rm[2] || '';
+        while((cm = cellRe.exec(rowBody))){
+          var ref = cm[1].match(/\br="([A-Z]+)(\d+)"/);
+          var col = ref ? colOf(ref[1]) : colSeq + 1;
+          colSeq = col;
+          (rows[rowIdx] = rows[rowIdx] || [])[col - 1] = cellValue(cm[1], cm[2] || '');
+        }
+      }
+      if(!sawRow){ // no <row> wrappers at all — address every cell by its r= attribute
+        var m;
+        while((m = cellRe.exec(xml))){
+          var ref2 = m[1].match(/\br="([A-Z]+)(\d+)"/);
+          if(!ref2) continue;
+          (rows[parseInt(ref2[2], 10) - 1] = rows[parseInt(ref2[2], 10) - 1] || [])[colOf(ref2[1]) - 1] = cellValue(m[1], m[2] || '');
+        }
       }
       for(var rI = 0; rI < rows.length; rI++){
         if(!rows[rI]){ rows[rI] = []; continue; }
@@ -2683,7 +2737,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    erpRowsKey, erpSplitForStorage, erpChunkKeys, erpAssemble, erpMergeIndex, ERP_CHUNK_ROWS,
+    erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
