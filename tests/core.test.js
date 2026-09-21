@@ -2194,3 +2194,96 @@ describe('ERP storage split', () => {
     assert.deepEqual(r3.merged.removed, {});
   });
 });
+
+// ---------- v80 hardening: byte-bounded chunks, rowsMissing pass-through, rev-wins merge, Type-column returns, r-less xlsx cells ----------
+
+describe('ERP storage hardening', () => {
+  const row = i => ['2026-09-0' + (1 + (i % 9)), 'SINV' + i, 0, 'P' + i, 1, 2, 2, 0, 'Mariam Zohair', 'TEPE', 'Clinic ' + i, 'Clinics', 0];
+  test('chunks are bounded by JSON size as well as row count', () => {
+    const fat = Array.from({ length: 50 }, (_, i) => row(i).concat(['x'.repeat(5000)]));
+    const parts = core.erpChunkRows(fat, 1200, 20000);
+    assert.ok(parts.length > 10, 'fat rows split into many chunks: ' + parts.length);
+    parts.forEach(p => assert.ok(JSON.stringify(p).length <= 20000 + 5200, 'chunk stays under the byte cap'));
+    assert.equal(parts.flat().length, 50);
+    assert.deepEqual(core.erpChunkRows([], 10, 100), [[]]);
+    const { index, docs } = core.erpSplitForStorage({ periods: [{ id: 'f', rev: 1, rows: fat }] }, 1200, 20000);
+    assert.equal(index.periods[0].rowsRef.chunks, parts.length);
+    assert.deepEqual(core.erpAssemble(index, docs).sales.periods[0].rows, fat);
+  });
+  test('a period whose rows are missing keeps its stored reference and emits no documents', () => {
+    const p = { id: 'm', rev: 3, rowCount: 40, rows: [], rowsMissing: true, rowsRef: { key: 'erpRows:m:3', chunks: 2, count: 40 } };
+    const { index, docs } = core.erpSplitForStorage({ periods: [p, { id: 'ok', rev: 1, rows: [row(1)] }] });
+    assert.deepEqual(index.periods[0].rowsRef, { key: 'erpRows:m:3', chunks: 2, count: 40 });
+    assert.equal('rowsMissing' in index.periods[0], false);
+    assert.deepEqual(Object.keys(docs), ['erpRows:ok:1:0']);
+    assert.deepEqual(core.erpChunkKeys(index).sort(), ['erpRows:m:3:0', 'erpRows:m:3:1', 'erpRows:ok:1:0']);
+  });
+  test('merge: the higher revision wins a shared id and arrives as a header to be fetched', () => {
+    const now = 1758400000000;
+    const local = { periods: [{ id: 'a', rev: 1, rows: [row(1)] }, { id: 'b', rev: 9, rows: [row(2)] }] };
+    const cloud = { periods: [{ id: 'a', rev: 5, rowsRef: { key: 'erpRows:a:5', chunks: 1, count: 3 } }, { id: 'b', rev: 2, rowsRef: { key: 'erpRows:b:2', chunks: 1, count: 1 } }] };
+    const r = core.erpMergeIndex(local, cloud, now);
+    assert.equal(r.added, 1);
+    assert.equal(r.merged.periods[0].rev, 5);
+    assert.equal(Array.isArray(r.merged.periods[0].rows), false, 'cloud winner is a bare header');
+    assert.equal(r.merged.periods[1].rev, 9, 'local newer copy kept');
+  });
+  test('a SalesReturn typed row counts as a return even without the SRT document prefix', () => {
+    const csv = 'Date,Type,Invoice#,Account,Product,Quantity,Sales Gross,Sales Return Amount,Net Sales,Brand,Name\n' +
+      '2026-09-05,SalesInvoice,INV100,Clinic A,P1,2,10,0,10,TEPE,Mariam Zohair\n' +
+      '2026-09-06,SalesReturn,CN200,Clinic A,P1,-1,0,5,-5,TEPE,Mariam Zohair\n';
+    const p = core.parseErpCsv(csv);
+    assert.equal(p.error, null);
+    assert.deepEqual(p.rows.map(r => r.type), ['invoice', 'return']);
+    const t = core.erpTotals(p.rows);
+    assert.equal(t.invoiceCount, 1); assert.equal(t.returnCount, 1);
+  });
+  test('readXlsx: cells without r= addresses are read sequentially, self-closing rows do not swallow neighbours', async () => {
+    // minimal stored (uncompressed) zip built by hand — the reader validates no CRC
+    const entries = [
+      ['xl/workbook.xml', '<workbook><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>'],
+      ['xl/_rels/workbook.xml.rels', '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>'],
+      ['xl/sharedStrings.xml', '<sst><si><t>Date</t></si><si><r><t>Net </t></r><r><t>Sales</t></r></si><si><t>hello</t></si></sst>'],
+      ['xl/worksheets/sheet1.xml', '<worksheet><sheetData>' +
+        '<row r="1"><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row>' +   // no r= on cells → A1, B1
+        '<row r="2" spans="1:2"/>' +                                       // self-closing row
+        '<row r="3"><c r="B3"><v>42</v></c><c t="inlineStr"><is><t>x</t></is></c></row>' + // B3 then sequential C3
+        '<row><c t="s"><v>2</v></c></row>' +                               // no r= on row → row 4
+        '</sheetData></worksheet>'],
+    ];
+    const parts = [], cd = []; let off = 0;
+    const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0); return b; };
+    const u16 = n => { const b = Buffer.alloc(2); b.writeUInt16LE(n); return b; };
+    entries.forEach(([name, xml]) => {
+      const data = Buffer.from(xml, 'utf8'), nm = Buffer.from(name);
+      const local = Buffer.concat([u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(0), u32(data.length), u32(data.length), u16(nm.length), u16(0), nm, data]);
+      cd.push(Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(0), u32(data.length), u32(data.length), u16(nm.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(off), nm]));
+      parts.push(local); off += local.length;
+    });
+    const cdBuf = Buffer.concat(cd);
+    const eocd = Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(entries.length), u16(entries.length), u32(cdBuf.length), u32(off), u16(0)]);
+    const zip = Buffer.concat(parts.concat([cdBuf, eocd]));
+    const sheets = await core.readXlsx(zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength));
+    assert.equal(sheets.length, 1);
+    assert.deepEqual(sheets[0].rows[0], ['Date', 'Net Sales']);
+    assert.deepEqual(sheets[0].rows[1], []);
+    assert.deepEqual(sheets[0].rows[2], ['', '42', 'x']);
+    assert.deepEqual(sheets[0].rows[3], ['hello']);
+  });
+});
+
+describe('ERP storage: a missing period (rows:[] + rowsMissing) is never mistaken for legacy inline rows', () => {
+  test('erpChunkKeys lists its chunks and erpAssemble fills it once the docs are readable', () => {
+    const missing = { id: 'm', rev: 2, rows: [], rowsMissing: true, rowsRef: { key: 'erpRows:m:2', chunks: 1, count: 1 } };
+    assert.deepEqual(core.erpChunkKeys({ periods: [missing] }), ['erpRows:m:2:0']);
+    const back = core.erpAssemble({ periods: [missing] }, { 'erpRows:m:2:0': [['2026-09-01', 'SINV1', 0, 'P', 1, 1, 1, 0, 'Mariam Zohair', 'TEPE', 'C', 'Clinics', 0]] });
+    assert.deepEqual(back.missing, []);
+    assert.equal(back.sales.periods[0].rows.length, 1);
+    assert.equal(back.sales.periods[0].rowsMissing, undefined);
+    // still unreadable → still missing, still not silently emptied
+    const again = core.erpAssemble({ periods: [missing] }, {});
+    assert.deepEqual(again.missing, ['m']);
+    // a genuine legacy period (rows inline, no rowsRef) is untouched
+    assert.deepEqual(core.erpChunkKeys({ periods: [{ id: 'l', rows: [[1]] }] }), []);
+  });
+});
