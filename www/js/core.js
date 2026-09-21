@@ -1857,6 +1857,93 @@
     return out;
   }
 
+  // ---- ERP sales storage split ----
+  // Every uploaded period's rows used to sit inside ONE cloud document. A
+  // month of invoice lines is ~250 KB, so that document grew past what a
+  // phone can read or write inside the app's save timeouts (and towards the
+  // cloud's hard 1 MB document cap) — imports then silently never landed.
+  // Now the index document keeps only the light period headers; each
+  // period's packed rows live in their own chunk documents, addressed by
+  // period id + revision (the revision changes whenever the rows do).
+  var ERP_CHUNK_ROWS = 1200;
+  function erpRowsKey(p){ return 'erpRows:' + p.id + ':' + (p.rev || 0); }
+  // In-memory sales (periods carry rows) → {index, docs:{chunkKey: rows[]}}.
+  function erpSplitForStorage(sales, chunkRows){
+    chunkRows = chunkRows || ERP_CHUNK_ROWS;
+    var index = Object.assign({}, sales || {}, { periods: [] });
+    var docs = {};
+    ((sales && sales.periods) || []).forEach(function(p){
+      if(!p) return;
+      var rows = Array.isArray(p.rows) ? p.rows : [];
+      var key = erpRowsKey(p);
+      var chunks = Math.max(1, Math.ceil(rows.length / chunkRows));
+      for(var i = 0; i < chunks; i++) docs[key + ':' + i] = rows.slice(i * chunkRows, (i + 1) * chunkRows);
+      var head = Object.assign({}, p, { rowsRef: { key: key, chunks: chunks, count: rows.length } });
+      delete head.rows; delete head.rowsMissing;
+      index.periods.push(head);
+    });
+    return { index: index, docs: docs };
+  }
+  // Every chunk key an index references (nothing for legacy inline rows).
+  function erpChunkKeys(index){
+    var keys = [];
+    ((index && index.periods) || []).forEach(function(p){
+      if(!p || Array.isArray(p.rows) || !p.rowsRef) return;
+      for(var i = 0; i < (p.rowsRef.chunks || 0); i++) keys.push(p.rowsRef.key + ':' + i);
+    });
+    return keys;
+  }
+  // Index + chunk docs {key: rows[]} → in-memory sales. A period whose chunks
+  // could not be read comes back with rows:[] and rowsMissing:true (listed in
+  // `missing`) so the caller can refuse to save over it. Legacy periods that
+  // still carry rows inline pass straight through.
+  function erpAssemble(index, docs){
+    docs = docs || {};
+    var sales = Object.assign({ periods: [] }, index || {}, { periods: [] });
+    var missing = [];
+    ((index && index.periods) || []).forEach(function(p){
+      if(!p) return;
+      if(Array.isArray(p.rows)){ sales.periods.push(p); return; }
+      var ref = p.rowsRef, rows = [], ok = !!ref;
+      if(ref){
+        for(var i = 0; i < (ref.chunks || 0); i++){
+          var part = docs[ref.key + ':' + i];
+          if(!Array.isArray(part)){ ok = false; break; }
+          rows = rows.concat(part);
+        }
+        if(ok && ref.count != null && rows.length !== ref.count) ok = false;
+      }
+      var q = Object.assign({}, p, { rows: ok ? rows : [] });
+      if(ok) delete q.rowsMissing; else { q.rowsMissing = true; missing.push(p.id); }
+      sales.periods.push(q);
+    });
+    return { sales: sales, missing: missing };
+  }
+  // Merge-on-save for the index: two devices can each import a file. A
+  // period the cloud has and we do not is kept — unless it was deliberately
+  // replaced or deleted (a tombstone in `removed`, from either side). Local
+  // wins on a shared id (we are the ones saving). Tombstones expire after
+  // 60 days so the index never grows without bound.
+  function erpMergeIndex(local, cloud, now){
+    now = now || Date.now();
+    var out = Object.assign({}, local || {});
+    var removed = Object.assign({}, (cloud && cloud.removed) || {}, (local && local.removed) || {});
+    Object.keys(removed).forEach(function(id){ if(!(removed[id] > now - 60 * 86400000)) delete removed[id]; });
+    var have = {};
+    var periods = ((local && local.periods) || []).filter(function(p){ return p && !removed[p.id]; });
+    periods.forEach(function(p){ have[p.id] = 1; });
+    var added = 0;
+    ((cloud && cloud.periods) || []).forEach(function(p){
+      if(!p || have[p.id] || removed[p.id]) return;
+      periods.push(p); have[p.id] = 1; added++;
+    });
+    out.periods = periods;
+    out.removed = removed;
+    out.repMapGlobal = Object.assign({}, (cloud && cloud.repMapGlobal) || {}, (local && local.repMapGlobal) || {});
+    out.seeds = Object.assign({}, (cloud && cloud.seeds) || {}, (local && local.seeds) || {});
+    return { merged: out, added: added };
+  }
+
   // ---- Minimal XLSX reader (no libraries) ----
   // .xlsx is a ZIP of XML files; browsers and Node both ship the pieces we
   // need (DataView + DecompressionStream). Returns [{name, rows[][]}].
@@ -2596,6 +2683,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
+    erpRowsKey, erpSplitForStorage, erpChunkKeys, erpAssemble, erpMergeIndex, ERP_CHUNK_ROWS,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
