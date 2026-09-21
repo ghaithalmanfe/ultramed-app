@@ -2124,3 +2124,73 @@ describe('product movement — brand → products ranked by real sales', () => {
     assert.deepEqual(e.brands, []); assert.equal(e.products, 0);
   });
 });
+// ---------- ERP sales storage split (index + row chunks) ----------
+
+describe('ERP storage split', () => {
+  const row = i => ['2026-09-0' + (1 + (i % 9)), 'SINV' + i, 0, 'P' + i, 1, 2, 2, 0, 'Mariam Zohair', 'TEPE', 'Clinic ' + i, 'Clinics', 0];
+  const mk = (id, n, rev) => ({ id, from: '2026-09-01', to: '2026-09-21', net: n * 2, rowCount: n, repMap: {}, rev, rows: Array.from({ length: n }, (_, i) => row(i)) });
+
+  test('splits rows out of the index into chunk docs and assembles them back identically', () => {
+    const sales = { periods: [mk('a', 5, 7), mk('b', 0, 0)], repMapGlobal: { 'Mariam Zohair': 'Mariam' }, seeds: { x: true } };
+    const { index, docs } = core.erpSplitForStorage(sales, 2);
+    assert.equal(index.periods.length, 2);
+    assert.ok(!('rows' in index.periods[0]), 'index carries no rows');
+    assert.deepEqual(index.periods[0].rowsRef, { key: 'erpRows:a:7', chunks: 3, count: 5 });
+    assert.deepEqual(index.periods[1].rowsRef, { key: 'erpRows:b:0', chunks: 1, count: 0 });
+    assert.deepEqual(Object.keys(docs).sort(), ['erpRows:a:7:0', 'erpRows:a:7:1', 'erpRows:a:7:2', 'erpRows:b:0:0']);
+    assert.equal(docs['erpRows:a:7:2'].length, 1);
+    assert.deepEqual(core.erpChunkKeys(index).sort(), Object.keys(docs).sort());
+    const back = core.erpAssemble(index, docs);
+    assert.deepEqual(back.missing, []);
+    assert.deepEqual(back.sales.periods[0].rows, sales.periods[0].rows);
+    assert.deepEqual(back.sales.periods[1].rows, []);
+    assert.deepEqual(back.sales.repMapGlobal, sales.repMapGlobal);
+    assert.deepEqual(back.sales.seeds, sales.seeds);
+    // the index is small: a ~250 KB month collapses to a header line
+    assert.ok(JSON.stringify(index).length < 400);
+  });
+  test('the revision is part of the chunk key, so changed rows never reuse a stale doc', () => {
+    assert.equal(core.erpRowsKey({ id: 'p1' }), 'erpRows:p1:0');
+    assert.equal(core.erpRowsKey({ id: 'p1', rev: 1758400000000 }), 'erpRows:p1:1758400000000');
+  });
+  test('a period whose chunks are unreadable is flagged, not silently emptied', () => {
+    const { index, docs } = core.erpSplitForStorage({ periods: [mk('a', 3, 1), mk('b', 3, 1)] }, 2);
+    delete docs['erpRows:b:1:1'];
+    const back = core.erpAssemble(index, docs);
+    assert.deepEqual(back.missing, ['b']);
+    assert.equal(back.sales.periods[0].rows.length, 3);
+    assert.equal(back.sales.periods[0].rowsMissing, undefined);
+    assert.equal(back.sales.periods[1].rowsMissing, true);
+    assert.deepEqual(back.sales.periods[1].rows, []);
+    // a truncated chunk set (count mismatch) is missing too
+    const d2 = core.erpSplitForStorage({ periods: [mk('c', 3, 1)] }, 2).docs;
+    d2['erpRows:c:1:1'] = [];
+    assert.deepEqual(core.erpAssemble(core.erpSplitForStorage({ periods: [mk('c', 3, 1)] }, 2).index, d2).missing, ['c']);
+  });
+  test('legacy inline rows pass through untouched and need no chunk reads', () => {
+    const legacy = { periods: [mk('old', 4)] };
+    assert.deepEqual(core.erpChunkKeys(legacy), []);
+    const back = core.erpAssemble(legacy, {});
+    assert.deepEqual(back.missing, []);
+    assert.equal(back.sales.periods[0].rows.length, 4);
+    // and splits normally on the next save
+    assert.equal(core.erpSplitForStorage(legacy).index.periods[0].rowsRef.key, 'erpRows:old:0');
+  });
+  test('merge-on-save keeps a period only the cloud has, honours tombstones from both sides, local wins on shared ids', () => {
+    const now = 1758400000000;
+    const local = { periods: [{ id: 'aug', rev: 1 }, { id: 'sep21', rev: 5 }], removed: { sep14: now - 1000 }, repMapGlobal: { A: 'Mariam' }, seeds: { s1: true } };
+    const cloud = { periods: [{ id: 'aug', rev: 0 }, { id: 'sep14', rev: 2 }, { id: 'other', rev: 3 }], removed: { gone: now - 5000 }, repMapGlobal: { A: 'Renova', B: 'Renova' }, seeds: { s2: true } };
+    const r = core.erpMergeIndex(local, cloud, now);
+    assert.equal(r.added, 1);
+    assert.deepEqual(r.merged.periods.map(p => p.id + ':' + p.rev), ['aug:1', 'sep21:5', 'other:3']);
+    assert.deepEqual(r.merged.removed, { sep14: now - 1000, gone: now - 5000 });
+    assert.deepEqual(r.merged.repMapGlobal, { A: 'Mariam', B: 'Renova' });
+    assert.deepEqual(r.merged.seeds, { s1: true, s2: true });
+    // a cloud tombstone deletes our stale local copy of that period
+    const r2 = core.erpMergeIndex({ periods: [{ id: 'sep14' }] }, { periods: [], removed: { sep14: now } }, now);
+    assert.deepEqual(r2.merged.periods, []);
+    // tombstones older than 60 days are pruned
+    const r3 = core.erpMergeIndex({ periods: [], removed: { ancient: now - 61 * 86400000 } }, null, now);
+    assert.deepEqual(r3.merged.removed, {});
+  });
+});
