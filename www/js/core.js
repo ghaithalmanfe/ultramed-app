@@ -1891,6 +1891,52 @@
     return out;
   }
 
+  // ---- Doctors: one person, one record ----
+  // The same doctor was reaching a clinic's list several times (typed twice,
+  // added from two devices, imported with a different "Dr." prefix), and
+  // several names typed in one box became one "doctor". These helpers give
+  // every screen a single rule for what counts as the same person.
+  function normDoctorName(s){
+    return String(s || '').toLowerCase()
+      .replace(/\b(dr|doctor|prof|professor|mr|mrs|ms)\.?\s*/g, ' ')
+      .replace(/(^|\s)(الدكتورة|الدكتور|دكتورة|دكتور|أ\.د\.?|د\.?)(?=\s|$)\s*/g, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+  }
+  // "Dr. Ahmed, Dr. Sara / د. نور و د. علي" → four names. (No \b: JavaScript
+  // word boundaries do not understand Arabic letters — a standalone "و" is
+  // one surrounded by spaces.)
+  function splitDoctorNames(input){
+    return String(input || '').split(/\s*(?:,|،|;|\/|&|\n|\+|\s+و\s+|\band\b)\s*/i)
+      .map(function(s){ return s.trim(); }).filter(function(s){ return normDoctorName(s); });
+  }
+  // Collapse duplicates by normalized name. The first record survives and
+  // absorbs any field the duplicate had filled (title, phone, birthday,
+  // cadence, notes, handovers). Returns the merged list and {lostId: keptId}.
+  function dedupeDoctors(list){
+    var out = [], byName = {}, remap = {};
+    (list || []).forEach(function(d){
+      if(!d || typeof d !== 'object') return;
+      var key = normDoctorName(d.name);
+      if(!key){ out.push(d); return; }
+      var keep = byName[key];
+      if(!keep){ byName[key] = d; out.push(d); return; }
+      ['title', 'phone', 'birthday', 'cadence'].forEach(function(f){ if(!keep[f] && d[f]) keep[f] = d[f]; });
+      if(d.notes && (keep.notes || '').indexOf(d.notes) < 0) keep.notes = keep.notes ? keep.notes + ' · ' + d.notes : d.notes;
+      if(Array.isArray(d.handovers) && d.handovers.length) keep.handovers = (keep.handovers || []).concat(d.handovers);
+      if(d.id != null && d.id !== keep.id) remap[d.id] = keep.id;
+    });
+    return { doctors: out, remap: remap };
+  }
+  // Union of two devices' doctor lists for the same clinic: by id first, then
+  // by person — nothing either side added is lost, nobody appears twice.
+  function mergeDoctorLists(local, cloud){
+    var have = {};
+    var merged = (local || []).filter(Boolean).slice();
+    merged.forEach(function(d){ have[d.id] = 1; });
+    (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
+    return dedupeDoctors(merged);
+  }
+
   // ---- ERP sales storage split ----
   // Every uploaded period's rows used to sit inside ONE cloud document. A
   // month of invoice lines is ~250 KB, so that document grew past what a
@@ -2841,6 +2887,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
