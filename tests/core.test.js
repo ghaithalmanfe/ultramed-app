@@ -2386,3 +2386,36 @@ describe('v84: date order, grouped exports, who-is-who stamps, salesman keys', (
     assert.deepEqual(keyed.sales.periods.map(p => p.id), ['nu'], 'the older spelling\'s period is superseded');
   });
 });
+
+describe('v85: doctors — one person, one record', () => {
+  test('names normalize across Dr./د. prefixes, case and spacing', () => {
+    assert.equal(core.normDoctorName('Dr. Ahmed  Al-Sabah'), 'ahmed al sabah');
+    assert.equal(core.normDoctorName('DR AHMED AL SABAH'), 'ahmed al sabah');
+    assert.equal(core.normDoctorName('د. نور الخالد'), 'نور الخالد');
+    assert.equal(core.normDoctorName('الدكتورة نور الخالد'), 'نور الخالد');
+    assert.equal(core.normDoctorName(''), '');
+  });
+  test('several names typed in one box become several doctors', () => {
+    assert.deepEqual(core.splitDoctorNames('Dr. Ahmed, Dr. Sara / Dr Ali & Dr. Noor and Dr. Omar'), ['Dr. Ahmed', 'Dr. Sara', 'Dr Ali', 'Dr. Noor', 'Dr. Omar']);
+    assert.deepEqual(core.splitDoctorNames('د. نور و د. علي'), ['د. نور', 'د. علي']);
+    assert.deepEqual(core.splitDoctorNames('  Dr. Single  '), ['Dr. Single']);
+    assert.deepEqual(core.splitDoctorNames(''), []);
+  });
+  test('duplicates collapse into the first record, fields merge, visits get a remap', () => {
+    const r = core.dedupeDoctors([
+      { id: 'a', name: 'Dr. Ahmed', title: '', phone: '' },
+      { id: 'b', name: 'Dr. Sara', title: 'Orthodontist' },
+      { id: 'c', name: 'dr ahmed', title: 'Periodontist', phone: '555', notes: 'prefers mornings', handovers: [{ x: 1 }] },
+      { id: 'd', name: 'DR. AHMED ' },
+    ]);
+    assert.deepEqual(r.doctors.map(d => d.id), ['a', 'b']);
+    assert.deepEqual(r.remap, { c: 'a', d: 'a' });
+    assert.equal(r.doctors[0].title, 'Periodontist'); assert.equal(r.doctors[0].phone, '555');
+    assert.equal(r.doctors[0].notes, 'prefers mornings'); assert.equal(r.doctors[0].handovers.length, 1);
+  });
+  test('two devices\' lists merge by id then by person — nothing lost, nobody twice', () => {
+    const m = core.mergeDoctorLists([{ id: 'a', name: 'Dr. Ahmed' }], [{ id: 'a', name: 'Dr. Ahmed' }, { id: 'z', name: 'Dr. Zain' }, { id: 'q', name: 'DR AHMED' }]);
+    assert.deepEqual(m.doctors.map(d => d.id), ['a', 'z']);
+    assert.deepEqual(m.remap, { q: 'a' });
+  });
+});
