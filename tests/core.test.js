@@ -2333,3 +2333,56 @@ describe('ERP no-overlap invariant (erpEnforceNoOverlap)', () => {
     assert.deepEqual(r.merged.orphans, { k1: 5000, k2: 7000, k3: 1000 });
   });
 });
+
+describe('v84: date order, grouped exports, who-is-who stamps, salesman keys', () => {
+  test('erpDate validates fields, floors time-of-day serials, and honours a per-file month-first order', () => {
+    assert.equal(core.erpDate('21/09/2026'), '2026-09-21');
+    assert.equal(core.erpDate('9/21/2026'), null, 'month 21 is impossible day-first → rejected, not garbage');
+    assert.equal(core.erpDate('9/21/2026', { mdy: true }), '2026-09-21');
+    assert.equal(core.erpDate('2026-9-5'), '2026-09-05');
+    assert.equal(core.erpDate('46286.75'), '2026-09-21', 'an afternoon time never rolls into the next day');
+    assert.deepEqual(core.erpDateOrder(['21/09/2026', '9/21/2026']), { mdy: false }, 'a first field >12 anywhere proves day-first, even against a conflicting line');
+    assert.deepEqual(core.erpDateOrder(['9/21/2026', '9/1/2026']), { mdy: true });
+    assert.deepEqual(core.erpDateOrder(['1/2/2026']), { mdy: false }, 'ambiguous → the ERP\'s own day-first');
+  });
+  test('a US-locale CSV (M/D/YYYY) parses to the right dates instead of a garbage span', () => {
+    const csv = 'Date,Invoice#,Account,Product,Quantity,Net Sales,Brand,Name\n9/21/2026,SINV1,C,P,1,10,TEPE,Mariam Zohair\n9/2/2026,SINV2,C,P,1,5,TEPE,Mariam Zohair\n';
+    const p = core.parseErpCsv(csv);
+    assert.equal(p.mdy, true);
+    assert.deepEqual(p.rows.map(r => r.date), ['2026-09-21', '2026-09-02']);
+  });
+  test('grouped export: product lines under an invoice inherit its date/invoice/customer; a totals row is still skipped', () => {
+    const csv = 'Date,Invoice#,Account,Product,Quantity,Net Sales,Brand,Name\n' +
+      '21/09/2026,SINV1,Clinic A,P1,1,10,TEPE,Mariam Zohair\n,,,P2,2,20,TEPE,\n,,,P3,1,5,TEPE,\n' +
+      '20/09/2026,SINV2,Clinic B,P1,1,7,TEPE,Mariam Zohair\n,,,,999,42,,\n';
+    const p = core.parseErpCsv(csv);
+    assert.equal(p.rows.length, 4); assert.equal(p.inherited, 2); assert.equal(p.dropped, 0);
+    assert.deepEqual(p.rows.map(r => r.doc), ['SINV1', 'SINV1', 'SINV1', 'SINV2']);
+    assert.deepEqual(p.rows.slice(0, 3).map(r => r.customer), ['Clinic A', 'Clinic A', 'Clinic A']);
+    assert.deepEqual(p.rows.slice(0, 3).map(r => r.salesman), ['Mariam Zohair', 'Mariam Zohair', 'Mariam Zohair']);
+    assert.equal(core.erpTotals(p.rows).net, 42);
+    // a data line with a product but truly no date anywhere before it is counted as dropped
+    const p2 = core.parseErpCsv('Date,Invoice#,Account,Product,Quantity,Net Sales,Brand,Name\n,,,P9,1,10,TEPE,X\n21/09/2026,SINV1,C,P1,1,10,TEPE,X\n');
+    assert.equal(p2.dropped, 1); assert.equal(p2.rows.length, 1);
+  });
+  test('merge: the most recent who-is-who decision wins per name (repMapAt), not the local copy', () => {
+    const now = 1758400000000;
+    const local = { periods: [], repMapGlobal: { X: 'Mariam', Y: 'Renova' }, repMapAt: { X: now - 5000 } };
+    const cloud = { periods: [], repMapGlobal: { X: null, Y: 'Mariam', Z: null }, repMapAt: { X: now - 1000, Z: now } };
+    const r = core.erpMergeIndex(local, cloud, now);
+    assert.deepEqual(r.merged.repMapGlobal, { X: null, Y: 'Renova', Z: null }, 'X: cloud is newer; Y: unstamped tie → local; Z: cloud only');
+    assert.deepEqual(r.merged.repMapAt, { X: now - 1000, Z: now });
+  });
+  test('overlap invariant keys on the rep a name maps to, so a re-spelled ERP name is the same person', () => {
+    const now = 1758400000000;
+    const R = (date, sm, net) => [date, 'D' + date + sm, 0, 'P', 1, net, net, 0, sm, 'TEPE', 'Clinic', 'Clinics', 0];
+    const old = { id: 'old', importedAt: '2026-09-10T00:00:00Z', rev: 1, from: '2026-09-01', to: '2026-09-10', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [R('2026-09-05', 'Mariam Zohair', 100)] };
+    const nu = { id: 'nu', importedAt: '2026-09-21T00:00:00Z', rev: 2, from: '2026-09-01', to: '2026-09-21', repMap: { 'Mariam  Zohair': 'Mariam' }, rows: [R('2026-09-05', 'Mariam  Zohair', 100), R('2026-09-20', 'Mariam  Zohair', 50)] };
+    const keyOf = (row, p) => { const rep = (p.repMap || {})[row[8]]; return rep ? 'rep:' + rep : 'sm:' + row[8]; };
+    const raw = core.erpEnforceNoOverlap({ periods: [old, nu] }, now);
+    assert.equal(raw.changed, 0, 'raw names differ → nothing detected without the key');
+    const keyed = core.erpEnforceNoOverlap({ periods: [old, nu] }, now, { keyOf, nameKey: (n, p) => keyOf([,,,,,,,, n], p) });
+    assert.equal(keyed.changed, 1);
+    assert.deepEqual(keyed.sales.periods.map(p => p.id), ['nu'], 'the older spelling\'s period is superseded');
+  });
+});
