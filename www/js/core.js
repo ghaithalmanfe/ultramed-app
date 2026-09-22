@@ -546,18 +546,34 @@
   }
   // Accepts dd-mm-yyyy, dd/mm/yyyy, yyyy-mm-dd, or an Excel serial number
   // (raw .xlsx cells store dates as day counts) → ISO yyyy-mm-dd (or null).
-  function erpDate(s){
+  // opts.mdy: the text dates are month/day/year (a CSV saved on a US-locale
+  // laptop) — decided per FILE by erpDateOrder, never guessed per row.
+  function erpDate(s, opts){
     s = String(s || '').trim();
-    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if(m) return m[1] + '-' + m[2] + '-' + m[3];
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-    if(m) return m[3] + '-' + ('0'+m[2]).slice(-2) + '-' + ('0'+m[1]).slice(-2);
+    var ok = function(y, mo, d){ return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? y + '-' + ('0'+mo).slice(-2) + '-' + ('0'+d).slice(-2) : null; };
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return ok(+m[1], +m[2], +m[3]);
+    m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+    if(m) return (opts && opts.mdy) ? ok(+m[3], +m[1], +m[2]) : ok(+m[3], +m[2], +m[1]);
     var n = Number(s);
-    if(isFinite(n) && n >= 25569 && n <= 73415){ // 1970-01-01 .. 2100-12-31
-      var d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
+    if(isFinite(n) && n >= 25569 && n <= 73415){ // 1970-01-01 .. 2100-12-31; a time of day never rolls to the next date
+      var d = new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000);
       return d.toISOString().slice(0, 10);
     }
     return null;
+  }
+  // Day-first or month-first? Any value whose FIRST field exceeds 12 proves
+  // day-first; any whose SECOND field exceeds 12 proves month-first. Day-first
+  // (the ERP's own format) when nothing proves otherwise.
+  function erpDateOrder(values){
+    var mdy = false, dmy = false;
+    (values || []).forEach(function(v){
+      var m = String(v || '').trim().match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+      if(!m) return;
+      if(+m[1] > 12) dmy = true;
+      if(+m[2] > 12) mdy = true;
+    });
+    return mdy && !dmy ? { mdy: true } : { mdy: false };
   }
   // Minimal CSV parser that honors quoted fields (embedded commas/newlines).
   function parseCsvText(text){
@@ -625,12 +641,25 @@
       if(c){ headerAt = i; cols = c; break; }
     }
     if(!cols) return { rows: [], skipped: 0, error: 'NO_HEADER' };
-    var rows = [], skipped = 0;
+    var order = erpDateOrder(all.slice(headerAt + 1).map(function(l){ return l[cols.date]; }));
+    var rows = [], skipped = 0, dropped = 0, inherited = 0;
+    var last = null; // previous line's date/doc/customer/class/salesman, for grouped exports
     for(var r = headerAt + 1; r < all.length; r++){
       var line = all[r];
-      var date = erpDate(line[cols.date]);
+      var date = erpDate(line[cols.date], order);
       var doc = String(line[cols.doc] || '').trim();
-      if(!date || !doc){ skipped++; continue; }
+      var product = String(cols.product >= 0 ? line[cols.product] || '' : '').trim();
+      if((!date || !doc) && last && product && !String(line[cols.date] || '').trim() && !doc){
+        // Grouped/report-style export: date and invoice number only on the
+        // first line of each invoice — the following product lines inherit
+        // them. A totals row has no product, so it is never inherited.
+        date = last.date; doc = last.doc; inherited++;
+        if(cols.customer >= 0 && !String(line[cols.customer] || '').trim()) line[cols.customer] = last.customer;
+        if(cols.cls >= 0 && !String(line[cols.cls] || '').trim()) line[cols.cls] = last.cls;
+        if(!String(line[cols.salesman] || '').trim()) line[cols.salesman] = last.salesman;
+      }
+      if(!date || !doc){ skipped++; if(product) dropped++; continue; }
+      last = { date: date, doc: doc, customer: cols.customer >= 0 ? line[cols.customer] : '', cls: cols.cls >= 0 ? line[cols.cls] : '', salesman: line[cols.salesman] };
       var isRet = /^SRT|return/i.test(doc) ||
         (cols.type >= 0 && /return|credit\s*note/i.test(String(line[cols.type] || '')));
       var remarks = String(cols.remarks >= 0 ? line[cols.remarks] || '' : '').trim();
@@ -650,7 +679,7 @@
         cls: String(cols.cls >= 0 ? line[cols.cls] || '' : '').trim(),
       });
     }
-    return { rows: rows, skipped: skipped, error: rows.length ? null : 'NO_ROWS' };
+    return { rows: rows, skipped: skipped, dropped: dropped, inherited: inherited, mdy: !!order.mdy, error: rows.length ? null : 'NO_ROWS' };
   }
   // Text extracted/copied from the EXceed PDF sales report → normalized rows.
   function parseErpPdfText(text){
@@ -1976,7 +2005,18 @@
     });
     out.periods = periods;
     out.removed = removed;
-    out.repMapGlobal = Object.assign({}, (cloud && cloud.repMapGlobal) || {}, (local && local.repMapGlobal) || {});
+    // who-is-who: per name, the most recent decision wins (repMapAt stamps;
+    // an unstamped entry counts as oldest; ties go to local)
+    var lm = (local && local.repMapGlobal) || {}, cm = (cloud && cloud.repMapGlobal) || {};
+    var la = (local && local.repMapAt) || {}, ca = (cloud && cloud.repMapAt) || {};
+    var repMap = {}, repMapAt = {};
+    Object.keys(cm).forEach(function(k){ repMap[k] = cm[k]; if(ca[k]) repMapAt[k] = ca[k]; });
+    Object.keys(lm).forEach(function(k){
+      var mine = la[k] || 0, theirs = ca[k] || 0;
+      if(!(k in cm) || mine >= theirs){ repMap[k] = lm[k]; if(mine) repMapAt[k] = mine; }
+    });
+    out.repMapGlobal = repMap;
+    out.repMapAt = repMapAt;
     out.seeds = Object.assign({}, (cloud && cloud.seeds) || {}, (local && local.seeds) || {});
     // chunk documents nobody references any more, with the moment they were
     // first seen orphaned (the earliest sighting wins) — deleted only later
@@ -1996,8 +2036,13 @@
   // salesmen over the winner's date span; a period left with no rows is
   // tombstoned. A period whose rows are not on this device is never stripped,
   // but still claims its salesmen (from its who-is-who map).
-  function erpEnforceNoOverlap(sales, now){
+  // opts.keyOf(row, period) / opts.nameKey(name, period): how a salesman is
+  // identified (the app keys on the rep a name maps to, so a re-spelled ERP
+  // name never counts as a second person). Default: the raw name.
+  function erpEnforceNoOverlap(sales, now, opts){
     now = now || Date.now();
+    var keyOf = (opts && opts.keyOf) || function(r){ return r[8]; };
+    var nameKey = (opts && opts.nameKey) || function(n){ return n; };
     var periods = ((sales && sales.periods) || []).filter(Boolean);
     var order = periods.slice().sort(function(a, b){
       var ia = String(a.importedAt || ''), ib = String(b.importedAt || '');
@@ -2009,11 +2054,11 @@
     order.forEach(function(p){
       var readable = Array.isArray(p.rows) && !p.rowsMissing;
       var salesmen = {};
-      if(readable) p.rows.forEach(function(r){ salesmen[r[8]] = 1; });
-      else Object.keys(p.repMap || {}).forEach(function(k){ salesmen[k] = 1; });
+      if(readable) p.rows.forEach(function(r){ salesmen[keyOf(r, p)] = 1; });
+      else Object.keys(p.repMap || {}).forEach(function(k){ salesmen[nameKey(k, p)] = 1; });
       if(readable){
         var kept = p.rows.filter(function(r){
-          var spans = claimed[r[8]];
+          var spans = claimed[keyOf(r, p)];
           if(!spans) return true;
           for(var i = 0; i < spans.length; i++) if(r[0] >= spans[i].from && r[0] <= spans[i].to) return false;
           return true;
@@ -2792,7 +2837,7 @@
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems, isFieldVisit, repWasThere,
     inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,
     contactCount, coachInsights,
-    erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
+    erpNum, erpDate, erpDateOrder, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
