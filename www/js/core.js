@@ -291,7 +291,13 @@
     const floor = new Date(today + 'T00:00:00');
     floor.setDate(floor.getDate() - daysBack);
     const floorStr = localDateStr(floor);
-    const visited = new Set((visits || []).map(v => v.date + '|' + v.rep + '|' + v.clinicId));
+    // Everyone who was AT the visit fulfilled their plan: the rep who logged
+    // it and the colleague on a joint visit alike.
+    const visited = new Set();
+    (visits || []).forEach(v => {
+      visited.add(v.date + '|' + v.rep + '|' + v.clinicId);
+      if(v.withRep) visited.add(v.date + '|' + v.withRep + '|' + v.clinicId);
+    });
     const out = [];
     Object.keys(dayPlans || {}).forEach(d => {
       if(d >= today || d < floorStr) return;
@@ -366,7 +372,7 @@
     if(missed.length){
       out.push({ level: missed.length >= 3 ? 'act' : 'watch', icon: '📅', key: 'missed', data: { count: missed.length },
         title: missed.length + ' planned visit' + (missed.length === 1 ? '' : 's') + ' never happened',
-        detail: 'Planned in the last 14 days but never logged. Reschedule them from the Today screen so the plan stays real.' });
+        detail: 'Planned in the last 14 days but never logged. Reschedule or clear them under "Missed planned visits" on the Today screen so the plan stays real.' });
     }
 
     // 4. Monthly target pace, per rep with a sales target set.
@@ -546,18 +552,34 @@
   }
   // Accepts dd-mm-yyyy, dd/mm/yyyy, yyyy-mm-dd, or an Excel serial number
   // (raw .xlsx cells store dates as day counts) → ISO yyyy-mm-dd (or null).
-  function erpDate(s){
+  // opts.mdy: the text dates are month/day/year (a CSV saved on a US-locale
+  // laptop) — decided per FILE by erpDateOrder, never guessed per row.
+  function erpDate(s, opts){
     s = String(s || '').trim();
-    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if(m) return m[1] + '-' + m[2] + '-' + m[3];
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-    if(m) return m[3] + '-' + ('0'+m[2]).slice(-2) + '-' + ('0'+m[1]).slice(-2);
+    var ok = function(y, mo, d){ return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? y + '-' + ('0'+mo).slice(-2) + '-' + ('0'+d).slice(-2) : null; };
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return ok(+m[1], +m[2], +m[3]);
+    m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+    if(m) return (opts && opts.mdy) ? ok(+m[3], +m[1], +m[2]) : ok(+m[3], +m[2], +m[1]);
     var n = Number(s);
-    if(isFinite(n) && n >= 25569 && n <= 73415){ // 1970-01-01 .. 2100-12-31
-      var d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
+    if(isFinite(n) && n >= 25569 && n <= 73415){ // 1970-01-01 .. 2100-12-31; a time of day never rolls to the next date
+      var d = new Date(Date.UTC(1899, 11, 30) + Math.floor(n) * 86400000);
       return d.toISOString().slice(0, 10);
     }
     return null;
+  }
+  // Day-first or month-first? Any value whose FIRST field exceeds 12 proves
+  // day-first; any whose SECOND field exceeds 12 proves month-first. Day-first
+  // (the ERP's own format) when nothing proves otherwise.
+  function erpDateOrder(values){
+    var mdy = false, dmy = false;
+    (values || []).forEach(function(v){
+      var m = String(v || '').trim().match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/);
+      if(!m) return;
+      if(+m[1] > 12) dmy = true;
+      if(+m[2] > 12) mdy = true;
+    });
+    return mdy && !dmy ? { mdy: true } : { mdy: false };
   }
   // Minimal CSV parser that honors quoted fields (embedded commas/newlines).
   function parseCsvText(text){
@@ -608,6 +630,10 @@
     idx.customer = find([/customer/, /^account$/], /class/);
     idx.cls = find([/class/]);
     idx.remarks = find([/remark/, /^notes?$/, /reference/]);
+    // Document kind ("SalesInvoice" / "SalesReturn") — a return is recognized
+    // from this column too, so a future numbering scheme without the SRT
+    // prefix still counts returns as returns.
+    idx.type = find([/^type$/, /^doc(ument)?\s*type$/, /^transaction\s*type$/, /^voucher\s*type$/]);
     // The essentials without which reconciliation is meaningless:
     if(idx.date < 0 || idx.doc < 0 || idx.net < 0 || idx.salesman < 0) return null;
     return idx;
@@ -621,13 +647,27 @@
       if(c){ headerAt = i; cols = c; break; }
     }
     if(!cols) return { rows: [], skipped: 0, error: 'NO_HEADER' };
-    var rows = [], skipped = 0;
+    var order = erpDateOrder(all.slice(headerAt + 1).map(function(l){ return l[cols.date]; }));
+    var rows = [], skipped = 0, dropped = 0, inherited = 0;
+    var last = null; // previous line's date/doc/customer/class/salesman, for grouped exports
     for(var r = headerAt + 1; r < all.length; r++){
       var line = all[r];
-      var date = erpDate(line[cols.date]);
+      var date = erpDate(line[cols.date], order);
       var doc = String(line[cols.doc] || '').trim();
-      if(!date || !doc){ skipped++; continue; }
-      var isRet = /^SRT|return/i.test(doc);
+      var product = String(cols.product >= 0 ? line[cols.product] || '' : '').trim();
+      if((!date || !doc) && last && product && !String(line[cols.date] || '').trim() && !doc){
+        // Grouped/report-style export: date and invoice number only on the
+        // first line of each invoice — the following product lines inherit
+        // them. A totals row has no product, so it is never inherited.
+        date = last.date; doc = last.doc; inherited++;
+        if(cols.customer >= 0 && !String(line[cols.customer] || '').trim()) line[cols.customer] = last.customer;
+        if(cols.cls >= 0 && !String(line[cols.cls] || '').trim()) line[cols.cls] = last.cls;
+        if(!String(line[cols.salesman] || '').trim()) line[cols.salesman] = last.salesman;
+      }
+      if(!date || !doc){ skipped++; if(product) dropped++; continue; }
+      last = { date: date, doc: doc, customer: cols.customer >= 0 ? line[cols.customer] : '', cls: cols.cls >= 0 ? line[cols.cls] : '', salesman: line[cols.salesman] };
+      var isRet = /^SRT|return/i.test(doc) ||
+        (cols.type >= 0 && /return|credit\s*note/i.test(String(line[cols.type] || '')));
       var remarks = String(cols.remarks >= 0 ? line[cols.remarks] || '' : '').trim();
       rows.push({
         date: date, doc: doc,
@@ -645,7 +685,7 @@
         cls: String(cols.cls >= 0 ? line[cols.cls] || '' : '').trim(),
       });
     }
-    return { rows: rows, skipped: skipped, error: rows.length ? null : 'NO_ROWS' };
+    return { rows: rows, skipped: skipped, dropped: dropped, inherited: inherited, mdy: !!order.mdy, error: rows.length ? null : 'NO_ROWS' };
   }
   // Text extracted/copied from the EXceed PDF sales report → normalized rows.
   function parseErpPdfText(text){
@@ -1381,6 +1421,16 @@
         || (a.length >= 4 && levenshtein(x, y) <= 1) || (a.length >= 6 && levenshtein(x, y) <= 2);
     }); });
   }
+  // Two people at the same clinic who merely share a family name ("Ahmed
+  // Al-Sabah" / "Noura Al-Sabah") are two people: without a shared phone the
+  // GIVEN name has to match as well (typo-tolerant, abbreviation-tolerant).
+  function sameFirstName(a, b){
+    var x = normPerson(a).split(' ').filter(function(t){ return t.length >= 3; })[0];
+    var y = normPerson(b).split(' ').filter(function(t){ return t.length >= 3; })[0];
+    if(!x || !y) return false;
+    var sh = x.length <= y.length ? x : y, lo = x.length <= y.length ? y : x;
+    return x === y || (sh.length >= 4 && lo.indexOf(sh) === 0) || (sh.length >= 4 && levenshtein(x, y) <= 1) || (sh.length >= 6 && levenshtein(x, y) <= 2);
+  }
   function areaKey(a){ return String(a || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
   // One record per person across every sheet: same phone + similar name, or
   // same first name at the same clinic when one side has no phone.
@@ -1393,12 +1443,60 @@
       for(var i = 0; i < out.length && !hit; i++){
         var e = out[i], ek = phoneKey(e.phone);
         if(pk && ek && pk === ek && samePerson(e.name, c.name)) hit = e;
-        else if(ck && key(e) === ck && samePerson(e.name, c.name) && (!pk || !ek || pk === ek)) hit = e;
+        else if(ck && key(e) === ck && samePerson(e.name, c.name) && sameFirstName(e.name, c.name) && (!pk || !ek || pk === ek)) hit = e;
       }
       if(!hit){ out.push(Object.assign({}, c)); return; }
       ['clinic', 'phone', 'title', 'birthday', 'area'].forEach(function(f){ if(!hit[f] && c[f]) hit[f] = c[f]; });
       if(c.notes) c.notes.split(' · ').forEach(function(n){ if(n && (hit.notes || '').indexOf(n) < 0) hit.notes = hit.notes ? hit.notes + ' · ' + n : n; });
       if(c.area && hit.area && areaKey(hit.area) !== areaKey(c.area) && areaKey(hit.notes || '').indexOf(areaKey(c.area)) < 0) hit.notes = (hit.notes ? hit.notes + ' · ' : '') + 'Also ' + c.area;
+    });
+    return out;
+  }
+  // ---- Day plans: three-way merge (this device's copy, the cloud copy, and
+  // the copy this device last loaded or saved). A date|rep list this device
+  // changed since then wins; every other list takes the cloud's version, so
+  // a clinic removed from a plan on another device stays removed instead of
+  // being resurrected by the next save from here. Without a base (first save
+  // after an offline boot) it degrades to the old union: local lists win,
+  // cloud fills in what is missing. `tombs` = Set of 'date|rep' keys whose
+  // list this device deleted.
+  function mergeDayPlans3(local, cloud, base, tombs){
+    var out = {}, recovered = 0;
+    var tomb = tombs || { has: function(){ return false; } };
+    var keysOf = function(o){ var ks = []; Object.keys(o || {}).forEach(function(d){ Object.keys(o[d] || {}).forEach(function(r){ ks.push(d + '|' + r); }); }); return ks; };
+    var get = function(o, k){ var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1); return o && o[d] ? o[d][r] : undefined; };
+    var all = {};
+    keysOf(local).concat(keysOf(cloud), keysOf(base)).forEach(function(k){ all[k] = 1; });
+    Object.keys(all).forEach(function(k){
+      var L = get(local, k), C = get(cloud, k), B = base ? get(base, k) : undefined;
+      var pick;
+      if(!base){
+        pick = (L && L.length) ? L : (tomb.has(k) ? undefined : C);
+      } else {
+        var localChanged = JSON.stringify(L === undefined ? null : L) !== JSON.stringify(B === undefined ? null : B);
+        pick = localChanged ? L : (tomb.has(k) ? undefined : C);
+        if(!localChanged && JSON.stringify(pick === undefined ? null : pick) !== JSON.stringify(L === undefined ? null : L)) recovered++;
+      }
+      if(!pick || !pick.length) return;
+      var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1);
+      (out[d] = out[d] || {})[r] = pick;
+    });
+    return { merged: out, recovered: recovered };
+  }
+  // Recycle bin: union by id per kind (newest deletion wins) — a bin this
+  // device never managed to load must not be replaced by its own defaults.
+  function mergeRecycleBin(cloud, local){
+    var out = {};
+    ['clinics', 'products', 'visits'].forEach(function(k){
+      var byId = {}, order = [];
+      [(cloud || {})[k] || [], (local || {})[k] || []].forEach(function(list){
+        list.forEach(function(x){
+          if(!x || x.id == null) return;
+          if(!byId[x.id]){ byId[x.id] = x; order.push(x.id); }
+          else if((x._deletedAt || 0) > (byId[x.id]._deletedAt || 0)) byId[x.id] = x;
+        });
+      });
+      out[k] = order.map(function(id){ return byId[id]; });
     });
     return out;
   }
@@ -1857,6 +1955,246 @@
     return out;
   }
 
+  // ---- Doctors: one person, one record ----
+  // The same doctor was reaching a clinic's list several times (typed twice,
+  // added from two devices, imported with a different "Dr." prefix), and
+  // several names typed in one box became one "doctor". These helpers give
+  // every screen a single rule for what counts as the same person.
+  function normDoctorName(s){
+    return String(s || '').toLowerCase()
+      .replace(/\b(dr|doctor|prof|professor|mr|mrs|ms)\.?\s*/g, ' ')
+      .replace(/(^|\s)(الدكتورة|الدكتور|دكتورة|دكتور|أ\.د\.?|د\.?)(?=\s|$)\s*/g, ' ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, ' ');
+  }
+  // "Dr. Ahmed, Dr. Sara / د. نور و د. علي" → four names. (No \b: JavaScript
+  // word boundaries do not understand Arabic letters — a standalone "و" is
+  // one surrounded by spaces.)
+  function splitDoctorNames(input){
+    return String(input || '').split(/\s*(?:,|،|;|\/|&|\n|\+|\s+و\s+|\band\b)\s*/i)
+      .map(function(s){ return s.trim(); }).filter(function(s){ return normDoctorName(s); });
+  }
+  // Collapse duplicates by normalized name. The first record survives and
+  // absorbs any field the duplicate had filled (title, phone, birthday,
+  // cadence, notes, handovers). Returns the merged list and {lostId: keptId}.
+  function dedupeDoctors(list){
+    var out = [], byName = {}, remap = {};
+    (list || []).forEach(function(d){
+      if(!d || typeof d !== 'object') return;
+      var key = normDoctorName(d.name);
+      if(!key){ out.push(d); return; }
+      var keep = byName[key];
+      if(!keep){ byName[key] = d; out.push(d); return; }
+      ['title', 'phone', 'birthday', 'cadence'].forEach(function(f){ if(!keep[f] && d[f]) keep[f] = d[f]; });
+      if(d.notes && (keep.notes || '').indexOf(d.notes) < 0) keep.notes = keep.notes ? keep.notes + ' · ' + d.notes : d.notes;
+      if(Array.isArray(d.handovers) && d.handovers.length) keep.handovers = (keep.handovers || []).concat(d.handovers);
+      if(d.id != null && d.id !== keep.id) remap[d.id] = keep.id;
+    });
+    return { doctors: out, remap: remap };
+  }
+  // Union of two devices' doctor lists for the same clinic: by id first, then
+  // by person — nothing either side added is lost, nobody appears twice.
+  function mergeDoctorLists(local, cloud){
+    var have = {};
+    var merged = (local || []).filter(Boolean).slice();
+    merged.forEach(function(d){ have[d.id] = 1; });
+    (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
+    return dedupeDoctors(merged);
+  }
+
+  // ---- ERP sales storage split ----
+  // Every uploaded period's rows used to sit inside ONE cloud document. A
+  // month of invoice lines is ~250 KB, so that document grew past what a
+  // phone can read or write inside the app's save timeouts (and towards the
+  // cloud's hard 1 MB document cap) — imports then silently never landed.
+  // Now the index document keeps only the light period headers; each
+  // period's packed rows live in their own chunk documents, addressed by
+  // period id + revision (the revision changes whenever the rows do).
+  var ERP_CHUNK_ROWS = 1200;
+  var ERP_CHUNK_BYTES = 350000; // JSON bytes per chunk document — a third of the cloud's 1 MB cap
+  function erpRowsKey(p){ return 'erpRows:' + p.id + ':' + (p.rev || 0); }
+  // Rows → chunk arrays bounded by BOTH row count and JSON size, so a future
+  // export with long remarks or product names can never push one document
+  // past the cloud's limit. Always yields at least one (possibly empty) chunk.
+  function erpChunkRows(rows, chunkRows, chunkBytes){
+    chunkRows = chunkRows || ERP_CHUNK_ROWS; chunkBytes = chunkBytes || ERP_CHUNK_BYTES;
+    var chunks = [], cur = [], bytes = 2;
+    for(var i = 0; i < rows.length; i++){
+      var len = JSON.stringify(rows[i]).length + 1;
+      if(cur.length && (cur.length >= chunkRows || bytes + len > chunkBytes)){ chunks.push(cur); cur = []; bytes = 2; }
+      cur.push(rows[i]); bytes += len;
+    }
+    chunks.push(cur);
+    return chunks;
+  }
+  // In-memory sales (periods carry rows) → {index, docs:{chunkKey: rows[]}}.
+  // A period whose rows could not be read (rowsMissing) keeps its stored
+  // reference untouched and emits no documents: its chunks stay in the cloud
+  // for the next successful read, and are never overwritten with nothing.
+  function erpSplitForStorage(sales, chunkRows, chunkBytes){
+    var index = Object.assign({}, sales || {}, { periods: [] });
+    var docs = {};
+    ((sales && sales.periods) || []).forEach(function(p){
+      if(!p) return;
+      var head;
+      if(p.rowsMissing && p.rowsRef){
+        head = Object.assign({}, p); delete head.rows; delete head.rowsMissing;
+        index.periods.push(head);
+        return;
+      }
+      var rows = Array.isArray(p.rows) ? p.rows : [];
+      var key = erpRowsKey(p);
+      var parts = erpChunkRows(rows, chunkRows, chunkBytes);
+      for(var i = 0; i < parts.length; i++) docs[key + ':' + i] = parts[i];
+      head = Object.assign({}, p, { rowsRef: { key: key, chunks: parts.length, count: rows.length } });
+      delete head.rows; delete head.rowsMissing;
+      index.periods.push(head);
+    });
+    return { index: index, docs: docs };
+  }
+  // Every chunk key an index references (nothing for legacy inline rows).
+  function erpChunkKeys(index){
+    var keys = [];
+    ((index && index.periods) || []).forEach(function(p){
+      if(!p || !p.rowsRef) return;
+      if(Array.isArray(p.rows) && !p.rowsMissing) return; // legacy inline rows need no chunks; a missing period (rows:[]) does
+      for(var i = 0; i < (p.rowsRef.chunks || 0); i++) keys.push(p.rowsRef.key + ':' + i);
+    });
+    return keys;
+  }
+  // Index + chunk docs {key: rows[]} → in-memory sales. A period whose chunks
+  // could not be read comes back with rows:[] and rowsMissing:true (listed in
+  // `missing`) so the caller can refuse to save over it. Legacy periods that
+  // still carry rows inline pass straight through.
+  function erpAssemble(index, docs){
+    docs = docs || {};
+    var sales = Object.assign({ periods: [] }, index || {}, { periods: [] });
+    var missing = [];
+    ((index && index.periods) || []).forEach(function(p){
+      if(!p) return;
+      if(Array.isArray(p.rows) && !(p.rowsMissing && p.rowsRef)){ sales.periods.push(p); return; }
+      var ref = p.rowsRef, rows = [], ok = !!ref;
+      if(ref){
+        for(var i = 0; i < (ref.chunks || 0); i++){
+          var part = docs[ref.key + ':' + i];
+          if(!Array.isArray(part)){ ok = false; break; }
+          rows = rows.concat(part);
+        }
+        if(ok && ref.count != null && rows.length !== ref.count) ok = false;
+      }
+      var q = Object.assign({}, p, { rows: ok ? rows : [] });
+      if(ok) delete q.rowsMissing; else { q.rowsMissing = true; missing.push(p.id); }
+      sales.periods.push(q);
+    });
+    return { sales: sales, missing: missing };
+  }
+  // Merge-on-save for the index: two devices can each import a file. A
+  // period the cloud has and we do not is kept — unless it was deliberately
+  // replaced or deleted (a tombstone in `removed`, from either side). On a
+  // shared id the HIGHER revision wins (every change to a period's rows bumps
+  // its rev), ties go to local. Periods taken from the cloud arrive as bare
+  // headers (`added` counts them) — the caller must fetch their rows.
+  // Tombstones expire after 60 days so the index never grows without bound.
+  function erpMergeIndex(local, cloud, now){
+    now = now || Date.now();
+    var out = Object.assign({}, local || {});
+    var removed = Object.assign({}, (cloud && cloud.removed) || {}, (local && local.removed) || {});
+    Object.keys(removed).forEach(function(id){ if(!(removed[id] > now - 60 * 86400000)) delete removed[id]; });
+    var cloudById = {};
+    ((cloud && cloud.periods) || []).forEach(function(p){ if(p && p.id != null) cloudById[p.id] = p; });
+    var have = {}, added = 0, periods = [];
+    ((local && local.periods) || []).forEach(function(p){
+      if(!p || removed[p.id]) return;
+      var c = cloudById[p.id];
+      if(c && (c.rev || 0) > (p.rev || 0) && !Array.isArray(c.rows)){ periods.push(c); added++; }
+      else periods.push(p);
+      have[p.id] = 1;
+    });
+    ((cloud && cloud.periods) || []).forEach(function(p){
+      if(!p || have[p.id] || removed[p.id]) return;
+      periods.push(p); have[p.id] = 1; added++;
+    });
+    out.periods = periods;
+    out.removed = removed;
+    // who-is-who: per name, the most recent decision wins (repMapAt stamps;
+    // an unstamped entry counts as oldest; ties go to local)
+    var lm = (local && local.repMapGlobal) || {}, cm = (cloud && cloud.repMapGlobal) || {};
+    var la = (local && local.repMapAt) || {}, ca = (cloud && cloud.repMapAt) || {};
+    var repMap = {}, repMapAt = {};
+    Object.keys(cm).forEach(function(k){ repMap[k] = cm[k]; if(ca[k]) repMapAt[k] = ca[k]; });
+    Object.keys(lm).forEach(function(k){
+      var mine = la[k] || 0, theirs = ca[k] || 0;
+      if(!(k in cm) || mine >= theirs){ repMap[k] = lm[k]; if(mine) repMapAt[k] = mine; }
+    });
+    out.repMapGlobal = repMap;
+    out.repMapAt = repMapAt;
+    out.seeds = Object.assign({}, (cloud && cloud.seeds) || {}, (local && local.seeds) || {});
+    // chunk documents nobody references any more, with the moment they were
+    // first seen orphaned (the earliest sighting wins) — deleted only later
+    var orphans = Object.assign({}, (local && local.orphans) || {});
+    Object.keys((cloud && cloud.orphans) || {}).forEach(function(k){ var c = cloud.orphans[k]; if(!(orphans[k] <= c)) orphans[k] = c; });
+    out.orphans = orphans;
+    return { merged: out, added: added };
+  }
+  // Global overlap invariant: for one salesman and one calendar day there is
+  // exactly ONE uploaded period — the most recently IMPORTED file wins. Every
+  // import enforces this on the device that imports; enforcing it again after
+  // every merge with the cloud means two devices importing overlapping files,
+  // or an index write that landed after the app had given up on it, can never
+  // double-count a day. Precedence is importedAt (immutable), so bumping a
+  // period's revision when its rows are stripped never reorders anything and
+  // the pass is idempotent. Older overlapping periods lose the winner's
+  // salesmen over the winner's date span; a period left with no rows is
+  // tombstoned. A period whose rows are not on this device is never stripped,
+  // but still claims its salesmen (from its who-is-who map).
+  // opts.keyOf(row, period) / opts.nameKey(name, period): how a salesman is
+  // identified (the app keys on the rep a name maps to, so a re-spelled ERP
+  // name never counts as a second person). Default: the raw name.
+  function erpEnforceNoOverlap(sales, now, opts){
+    now = now || Date.now();
+    var keyOf = (opts && opts.keyOf) || function(r){ return r[8]; };
+    var nameKey = (opts && opts.nameKey) || function(n){ return n; };
+    var periods = ((sales && sales.periods) || []).filter(Boolean);
+    var order = periods.slice().sort(function(a, b){
+      var ia = String(a.importedAt || ''), ib = String(b.importedAt || '');
+      return ib.localeCompare(ia) || (b.rev || 0) - (a.rev || 0);
+    });
+    var removed = Object.assign({}, (sales && sales.removed) || {});
+    var claimed = {}; // salesman -> [{from, to}] taken by newer periods
+    var replacement = {}, dropped = {}, changed = 0;
+    order.forEach(function(p){
+      var readable = Array.isArray(p.rows) && !p.rowsMissing;
+      var salesmen = {};
+      if(readable) p.rows.forEach(function(r){ salesmen[keyOf(r, p)] = 1; });
+      else Object.keys(p.repMap || {}).forEach(function(k){ salesmen[nameKey(k, p)] = 1; });
+      if(readable){
+        var kept = p.rows.filter(function(r){
+          var spans = claimed[keyOf(r, p)];
+          if(!spans) return true;
+          for(var i = 0; i < spans.length; i++) if(r[0] >= spans[i].from && r[0] <= spans[i].to) return false;
+          return true;
+        });
+        if(kept.length !== p.rows.length){
+          changed++;
+          if(!kept.length){ removed[p.id] = now; dropped[p.id] = 1; }
+          else {
+            var net = 0, from = null, to = null;
+            kept.forEach(function(r){ net += (r[6] || 0); if(!from || r[0] < from) from = r[0]; if(!to || r[0] > to) to = r[0]; });
+            replacement[p.id] = Object.assign({}, p, { rows: kept, rowCount: kept.length, net: Math.round(net * 1000) / 1000,
+              from: from || p.from, to: to || p.to, rev: now });
+          }
+        }
+      }
+      // claim AFTER being stripped: a stripped period claims only what it still spans
+      var q = replacement[p.id] || p;
+      if(!dropped[p.id] && q.from && q.to) Object.keys(salesmen).forEach(function(sm){ (claimed[sm] = claimed[sm] || []).push({ from: q.from, to: q.to }); });
+    });
+    var out = Object.assign({}, sales || {}, {
+      periods: periods.filter(function(p){ return !dropped[p.id]; }).map(function(p){ return replacement[p.id] || p; }),
+      removed: removed,
+    });
+    return { sales: out, changed: changed };
+  }
+
   // ---- Minimal XLSX reader (no libraries) ----
   // .xlsx is a ZIP of XML files; browsers and Node both ship the pieces we
   // need (DataView + DecompressionStream). Returns [{name, rows[][]}].
@@ -1923,25 +2261,42 @@
       var xml = await readEntry(rels[rid] || ('xl/worksheets/sheet' + (s + 1) + '.xml'));
       if(!xml) continue;
       var rows = [];
-      var cellRe = /<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
-      var m;
-      while((m = cellRe.exec(xml))){
-        var attrs = m[1], body = m[2] || '';
-        var ref = (attrs.match(/r="([A-Z]+)(\d+)"/) || []);
-        if(!ref[1]) continue;
-        var col = 0;
-        for(var L = 0; L < ref[1].length; L++) col = col * 26 + (ref[1].charCodeAt(L) - 64);
-        var rowIdx = parseInt(ref[2], 10) - 1;
-        var t = (attrs.match(/t="([^"]+)"/) || [])[1] || '';
-        var val = '';
+      var cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+      var cellValue = function(attrs, body){
+        var t = (attrs.match(/\bt="([^"]+)"/) || [])[1] || '';
         if(t === 'inlineStr'){
           var it = body.match(/<t[^>]*>([\s\S]*?)<\/t>/);
-          val = it ? xmlUnescape(it[1]) : '';
-        } else {
-          var vm = body.match(/<v>([\s\S]*?)<\/v>/);
-          if(vm) val = t === 's' ? (shared[parseInt(vm[1], 10)] || '') : xmlUnescape(vm[1]);
+          return it ? xmlUnescape(it[1]) : '';
         }
-        (rows[rowIdx] = rows[rowIdx] || [])[col - 1] = val;
+        var vm = body.match(/<v>([\s\S]*?)<\/v>/);
+        return vm ? (t === 's' ? (shared[parseInt(vm[1], 10)] || '') : xmlUnescape(vm[1])) : '';
+      };
+      var colOf = function(letters){ var col = 0; for(var L = 0; L < letters.length; L++) col = col * 26 + (letters.charCodeAt(L) - 64); return col; };
+      // Walk <row> by <row>: some generators omit the r="A1" cell address
+      // (cells are then simply sequential), and a self-closing <row/> must not
+      // swallow its neighbours.
+      var rowRe = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, rm, nextRow = 0, sawRow = false;
+      while((rm = rowRe.exec(xml))){
+        sawRow = true;
+        var rAttr = (rm[1].match(/\br="(\d+)"/) || [])[1];
+        var rowIdx = rAttr ? parseInt(rAttr, 10) - 1 : nextRow;
+        nextRow = rowIdx + 1;
+        var colSeq = 0, cm;
+        var rowBody = rm[2] || '';
+        while((cm = cellRe.exec(rowBody))){
+          var ref = cm[1].match(/\br="([A-Z]+)(\d+)"/);
+          var col = ref ? colOf(ref[1]) : colSeq + 1;
+          colSeq = col;
+          (rows[rowIdx] = rows[rowIdx] || [])[col - 1] = cellValue(cm[1], cm[2] || '');
+        }
+      }
+      if(!sawRow){ // no <row> wrappers at all — address every cell by its r= attribute
+        var m;
+        while((m = cellRe.exec(xml))){
+          var ref2 = m[1].match(/\br="([A-Z]+)(\d+)"/);
+          if(!ref2) continue;
+          (rows[parseInt(ref2[2], 10) - 1] = rows[parseInt(ref2[2], 10) - 1] || [])[colOf(ref2[1]) - 1] = cellValue(m[1], m[2] || '');
+        }
       }
       for(var rI = 0; rI < rows.length; rI++){
         if(!rows[rI]){ rows[rI] = []; continue; }
@@ -2592,10 +2947,12 @@
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems, isFieldVisit, repWasThere,
     inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,
     contactCount, coachInsights,
-    erpNum, erpDate, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
+    erpNum, erpDate, erpDateOrder, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
+    erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
