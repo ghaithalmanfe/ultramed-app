@@ -291,7 +291,13 @@
     const floor = new Date(today + 'T00:00:00');
     floor.setDate(floor.getDate() - daysBack);
     const floorStr = localDateStr(floor);
-    const visited = new Set((visits || []).map(v => v.date + '|' + v.rep + '|' + v.clinicId));
+    // Everyone who was AT the visit fulfilled their plan: the rep who logged
+    // it and the colleague on a joint visit alike.
+    const visited = new Set();
+    (visits || []).forEach(v => {
+      visited.add(v.date + '|' + v.rep + '|' + v.clinicId);
+      if(v.withRep) visited.add(v.date + '|' + v.withRep + '|' + v.clinicId);
+    });
     const out = [];
     Object.keys(dayPlans || {}).forEach(d => {
       if(d >= today || d < floorStr) return;
@@ -366,7 +372,7 @@
     if(missed.length){
       out.push({ level: missed.length >= 3 ? 'act' : 'watch', icon: '📅', key: 'missed', data: { count: missed.length },
         title: missed.length + ' planned visit' + (missed.length === 1 ? '' : 's') + ' never happened',
-        detail: 'Planned in the last 14 days but never logged. Reschedule them from the Today screen so the plan stays real.' });
+        detail: 'Planned in the last 14 days but never logged. Reschedule or clear them under "Missed planned visits" on the Today screen so the plan stays real.' });
     }
 
     // 4. Monthly target pace, per rep with a sales target set.
@@ -1415,6 +1421,16 @@
         || (a.length >= 4 && levenshtein(x, y) <= 1) || (a.length >= 6 && levenshtein(x, y) <= 2);
     }); });
   }
+  // Two people at the same clinic who merely share a family name ("Ahmed
+  // Al-Sabah" / "Noura Al-Sabah") are two people: without a shared phone the
+  // GIVEN name has to match as well (typo-tolerant, abbreviation-tolerant).
+  function sameFirstName(a, b){
+    var x = normPerson(a).split(' ').filter(function(t){ return t.length >= 3; })[0];
+    var y = normPerson(b).split(' ').filter(function(t){ return t.length >= 3; })[0];
+    if(!x || !y) return false;
+    var sh = x.length <= y.length ? x : y, lo = x.length <= y.length ? y : x;
+    return x === y || (sh.length >= 4 && lo.indexOf(sh) === 0) || (sh.length >= 4 && levenshtein(x, y) <= 1) || (sh.length >= 6 && levenshtein(x, y) <= 2);
+  }
   function areaKey(a){ return String(a || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
   // One record per person across every sheet: same phone + similar name, or
   // same first name at the same clinic when one side has no phone.
@@ -1427,12 +1443,60 @@
       for(var i = 0; i < out.length && !hit; i++){
         var e = out[i], ek = phoneKey(e.phone);
         if(pk && ek && pk === ek && samePerson(e.name, c.name)) hit = e;
-        else if(ck && key(e) === ck && samePerson(e.name, c.name) && (!pk || !ek || pk === ek)) hit = e;
+        else if(ck && key(e) === ck && samePerson(e.name, c.name) && sameFirstName(e.name, c.name) && (!pk || !ek || pk === ek)) hit = e;
       }
       if(!hit){ out.push(Object.assign({}, c)); return; }
       ['clinic', 'phone', 'title', 'birthday', 'area'].forEach(function(f){ if(!hit[f] && c[f]) hit[f] = c[f]; });
       if(c.notes) c.notes.split(' · ').forEach(function(n){ if(n && (hit.notes || '').indexOf(n) < 0) hit.notes = hit.notes ? hit.notes + ' · ' + n : n; });
       if(c.area && hit.area && areaKey(hit.area) !== areaKey(c.area) && areaKey(hit.notes || '').indexOf(areaKey(c.area)) < 0) hit.notes = (hit.notes ? hit.notes + ' · ' : '') + 'Also ' + c.area;
+    });
+    return out;
+  }
+  // ---- Day plans: three-way merge (this device's copy, the cloud copy, and
+  // the copy this device last loaded or saved). A date|rep list this device
+  // changed since then wins; every other list takes the cloud's version, so
+  // a clinic removed from a plan on another device stays removed instead of
+  // being resurrected by the next save from here. Without a base (first save
+  // after an offline boot) it degrades to the old union: local lists win,
+  // cloud fills in what is missing. `tombs` = Set of 'date|rep' keys whose
+  // list this device deleted.
+  function mergeDayPlans3(local, cloud, base, tombs){
+    var out = {}, recovered = 0;
+    var tomb = tombs || { has: function(){ return false; } };
+    var keysOf = function(o){ var ks = []; Object.keys(o || {}).forEach(function(d){ Object.keys(o[d] || {}).forEach(function(r){ ks.push(d + '|' + r); }); }); return ks; };
+    var get = function(o, k){ var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1); return o && o[d] ? o[d][r] : undefined; };
+    var all = {};
+    keysOf(local).concat(keysOf(cloud), keysOf(base)).forEach(function(k){ all[k] = 1; });
+    Object.keys(all).forEach(function(k){
+      var L = get(local, k), C = get(cloud, k), B = base ? get(base, k) : undefined;
+      var pick;
+      if(!base){
+        pick = (L && L.length) ? L : (tomb.has(k) ? undefined : C);
+      } else {
+        var localChanged = JSON.stringify(L === undefined ? null : L) !== JSON.stringify(B === undefined ? null : B);
+        pick = localChanged ? L : (tomb.has(k) ? undefined : C);
+        if(!localChanged && JSON.stringify(pick === undefined ? null : pick) !== JSON.stringify(L === undefined ? null : L)) recovered++;
+      }
+      if(!pick || !pick.length) return;
+      var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1);
+      (out[d] = out[d] || {})[r] = pick;
+    });
+    return { merged: out, recovered: recovered };
+  }
+  // Recycle bin: union by id per kind (newest deletion wins) — a bin this
+  // device never managed to load must not be replaced by its own defaults.
+  function mergeRecycleBin(cloud, local){
+    var out = {};
+    ['clinics', 'products', 'visits'].forEach(function(k){
+      var byId = {}, order = [];
+      [(cloud || {})[k] || [], (local || {})[k] || []].forEach(function(list){
+        list.forEach(function(x){
+          if(!x || x.id == null) return;
+          if(!byId[x.id]){ byId[x.id] = x; order.push(x.id); }
+          else if((x._deletedAt || 0) > (byId[x.id]._deletedAt || 0)) byId[x.id] = x;
+        });
+      });
+      out[k] = order.map(function(id){ return byId[id]; });
     });
     return out;
   }
@@ -2887,7 +2951,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,

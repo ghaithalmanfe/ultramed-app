@@ -2419,3 +2419,58 @@ describe('v85: doctors — one person, one record', () => {
     assert.deepEqual(m.remap, { q: 'a' });
   });
 });
+
+describe('v86: whole-app audit fixes', () => {
+  test('a joint visit satisfies the partner\'s planned visit too', () => {
+    const plans = { '2026-09-10': { Mariam: [{ id: 'c1', note: '' }], Renova: [{ id: 'c1', note: '' }] } };
+    const visits = [{ date: '2026-09-10', rep: 'Mariam', withRep: 'Renova', clinicId: 'c1' }];
+    assert.deepEqual(core.missedPlans(plans, visits, '2026-09-21'), []);
+    const solo = [{ date: '2026-09-10', rep: 'Mariam', clinicId: 'c1' }];
+    assert.deepEqual(core.missedPlans(plans, solo, '2026-09-21').map(m => m.rep), ['Renova']);
+  });
+  test('contacts: same family name at the same clinic is NOT the same person', () => {
+    const list = [
+      { name: 'Dr. Ahmed Al-Sabah', clinic: 'Dental 8', phone: '' },
+      { name: 'Dr. Noura Al-Sabah', clinic: 'Dental 8', phone: '' },
+      { name: 'Dr Ahmad Al Sabah', clinic: 'Dental 8', phone: '' },   // a typo of the first
+    ];
+    const out = core.dedupeContacts(list, null);
+    assert.deepEqual(out.map(c => c.name), ['Dr. Ahmed Al-Sabah', 'Dr. Noura Al-Sabah']);
+    assert.equal(core.sameFirstName('Mohammed Ali', 'Mohamed Ali'), true);
+    assert.equal(core.sameFirstName('Ahmed Ali', 'Noura Ali'), false);
+    // a shared phone still merges (same person, name typed differently)
+    const byPhone = core.dedupeContacts([{ name: 'Dr. Sara Q', clinic: 'A', phone: '99887766' }, { name: 'Sara Q.', clinic: 'B', phone: '+965 99887766' }], null);
+    assert.equal(byPhone.length, 1);
+  });
+  test('day plans merge three ways: my changed lists win, untouched lists follow the cloud', () => {
+    const base  = { '2026-09-22': { Mariam: [{ id: 'c1', note: '' }, { id: 'c2', note: '' }], Renova: [{ id: 'c9', note: '' }] } };
+    // the other device removed c2 from Mariam's list and added a plan for Renova on the 23rd
+    const cloud = { '2026-09-22': { Mariam: [{ id: 'c1', note: '' }], Renova: [{ id: 'c9', note: '' }] }, '2026-09-23': { Renova: [{ id: 'c5', note: 'call first' }] } };
+    // this device (unaware) changed Renova's 22nd list only
+    const local = { '2026-09-22': { Mariam: [{ id: 'c1', note: '' }, { id: 'c2', note: '' }], Renova: [{ id: 'c9', note: '' }, { id: 'c7', note: '' }] } };
+    const r = core.mergeDayPlans3(local, cloud, base, new Set());
+    assert.deepEqual(r.merged['2026-09-22'].Mariam.map(e => e.id), ['c1']);          // the removal sticks
+    assert.deepEqual(r.merged['2026-09-22'].Renova.map(e => e.id), ['c9', 'c7']);    // my change wins
+    assert.deepEqual(r.merged['2026-09-23'].Renova.map(e => e.id), ['c5']);          // their new plan arrives
+    assert.equal(r.recovered, 2);
+    // a list I deleted stays deleted even though the cloud still holds it
+    const del = core.mergeDayPlans3({ '2026-09-22': { Renova: [{ id: 'c9', note: '' }] } }, cloud, base, new Set());
+    assert.equal(del.merged['2026-09-22'].Mariam, undefined);
+    assert.equal(del.merged['2026-09-22'].Renova.length, 1);
+    // no base (first save after an offline boot): local lists win, cloud fills the gaps
+    const nb = core.mergeDayPlans3(local, cloud, null, new Set());
+    assert.deepEqual(nb.merged['2026-09-22'].Mariam.map(e => e.id), ['c1', 'c2']);
+    assert.deepEqual(nb.merged['2026-09-23'].Renova.map(e => e.id), ['c5']);
+    // a tombstoned date|rep never comes back from the cloud
+    const tb = core.mergeDayPlans3({}, cloud, null, new Set(['2026-09-23|Renova']));
+    assert.equal(tb.merged['2026-09-23'], undefined);
+  });
+  test('recycle bin union keeps every entry once, newest deletion wins', () => {
+    const cloud = { clinics: [{ id: 'a', _deletedAt: 1 }], visits: [{ id: 'v1', _deletedAt: 5 }] };
+    const local = { clinics: [{ id: 'a', _deletedAt: 9 }, { id: 'b', _deletedAt: 2 }], products: [{ id: 'p', _deletedAt: 3 }] };
+    const m = core.mergeRecycleBin(cloud, local);
+    assert.deepEqual(m.clinics.map(x => x.id + ':' + x._deletedAt), ['a:9', 'b:2']);
+    assert.deepEqual(m.visits.map(x => x.id), ['v1']);
+    assert.deepEqual(m.products.map(x => x.id), ['p']);
+  });
+});
