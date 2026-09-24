@@ -137,7 +137,7 @@ Two automatic digests go out every working day (Sunday–Thursday), Kuwait time:
 
 The digest is built by `UMCore.dailyDigest` in `www/js/core.js` — the very code the app uses for its own
 figures — and sent by the Netlify scheduled functions `daily-morning` / `daily-evening`
-(`netlify/lib/daily-report.js`). The app's Admin → **Email reports** tab shows the last run,
+(`www/netlify/lib/daily-report.js`). The app's Admin → **Email reports** tab shows the last run,
 previews any digest and can send one now.
 
 ### One-time setup (Netlify → Site configuration → Environment variables)
