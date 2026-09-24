@@ -9,7 +9,7 @@
 //   MAIL_FROM                                   e.g. "UltraMed Field Ops <reports@ultramed-kw.com>" (domain verified in Resend)
 //   MAIL_ALL_DAYS=1                             also send on Fridays/Saturdays (default: skipped)
 //   MAIL_TO_OVERRIDE                            (testing) send every digest to this one address instead
-const core = require('../../../www/js/core.js');
+const core = require('../../www/js/core.js');
 
 const FIREBASE = { apiKey: 'AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4', projectId: 'ultramed-field-ops' };
 const DOCS = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents`;
@@ -126,13 +126,6 @@ async function run(kind, opts){
   return entry;
 }
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
-// Scheduled entry point (Netlify calls it on the cron above).
-function scheduled(kind){
-  return async () => {
-    try{ const r = await run(kind); console.log('daily-report', kind, JSON.stringify(r)); return { statusCode: 200 }; }
-    catch(e){ console.error('daily-report', kind, e); return { statusCode: 500 }; }
-  };
-}
 // Manual entry point: POST { kind, idToken } from the app — only a supervisor's login may trigger a send.
 async function manual(event){
   if(event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS };
@@ -153,4 +146,4 @@ async function manual(event){
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: String(e.message || e).slice(0, 300) }) };
   }
 }
-module.exports = { run, buildAll, scheduled, manual, kuwaitToday, loadData, readDocs };
+module.exports = { run, buildAll, manual, kuwaitToday, loadData, readDocs };
