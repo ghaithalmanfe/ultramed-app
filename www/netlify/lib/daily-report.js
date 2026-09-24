@@ -9,7 +9,7 @@
 //   MAIL_FROM                                   e.g. "UltraMed Field Ops <reports@ultramed-kw.com>" (domain verified in Resend)
 //   MAIL_ALL_DAYS=1                             also send on Fridays/Saturdays (default: skipped)
 //   MAIL_TO_OVERRIDE                            (testing) send every digest to this one address instead
-const core = require('../../www/js/core.js');
+const core = require('../../js/core.js');
 
 const FIREBASE = { apiKey: 'AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4', projectId: 'ultramed-field-ops' };
 const DOCS = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents`;
