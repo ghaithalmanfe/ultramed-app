@@ -1500,6 +1500,190 @@
     });
     return out;
   }
+  // ---- Month achievement, computed from plain data ----
+  // The SAME code serves the Today card, the reports and the daily e-mail, so
+  // every figure the team sees is one figure. `data` = { today, targets,
+  // erpSales (index with packed rows), clinics, erpMap, visits, tasks,
+  // events, dayPlans }.
+  function unpackErpRows(packed){ return (packed || []).map(function(a){ return { date: a[0], doc: a[1], type: a[2] ? 'return' : 'invoice', product: a[3], qty: a[4], gross: a[5], net: a[6], sret: a[7], salesman: a[8], brand: a[9], customer: a[10], cls: a[11], dsret: a[12] || 0, ref: a[13] || null }; }); }
+  function erpPeriodsOf(es){ return (es && Array.isArray(es.periods)) ? es.periods.filter(function(p){ return p && !p.rowsMissing; }) : []; }
+  function erpViewRowsOf(es, p, ctx){
+    var policy = (es && es.returnPolicy) === 'erp' ? 'erp' : 'origin';
+    return applyReturnPolicy(unpackErpRows(p.rows), policy, ctx);
+  }
+  function erpCtxOf(es){ var all = []; erpPeriodsOf(es).forEach(function(p){ unpackErpRows(p.rows).forEach(function(r){ all.push(r); }); }); return returnContext(all); }
+  // Net ERP sales in a range per rep (null when no file covers the range).
+  function erpRevenueRange(data, from, to, repFilter){
+    var es = data.erpSales, ps = erpPeriodsOf(es).filter(function(p){ return (!from || p.to >= from) && (!to || p.from <= to); });
+    if(!ps.length) return null;
+    var ctx = erpCtxOf(es), sum = 0;
+    ps.forEach(function(p){ erpViewRowsOf(es, p, ctx).forEach(function(r){
+      if(!inRange(r.date, from, to)) return;
+      var rep = erpRowRep(r, data.clinics || [], data.erpMap || {}, p.repMap || {});
+      if(!rep) return;
+      if(repFilter !== 'all' && rep !== repFilter) return;
+      sum += r.net; // DSR basis: every line of the rep's salesman, channels included
+    }); });
+    return Math.round(sum * 100) / 100;
+  }
+  // Month-to-date ERP sales per rep with each rep's as-of date.
+  function erpMtd(data){
+    var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales;
+    var sums = {}, asOf = {}, ctx = null;
+    erpPeriodsOf(es).filter(function(p){ return p.to >= mStart && p.from <= today; }).forEach(function(p){
+      ctx = ctx || erpCtxOf(es);
+      erpViewRowsOf(es, p, ctx).forEach(function(r){
+        if(r.date < mStart || r.date > today) return;
+        var rep = erpRowRep(r, data.clinics || [], data.erpMap || {}, p.repMap || {});
+        if(!rep) return;
+        sums[rep] = (sums[rep] || 0) + r.net;
+        if(!asOf[rep] || r.date > asOf[rep]) asOf[rep] = r.date;
+      });
+    });
+    var map = {};
+    Object.keys(sums).forEach(function(rep){ map[rep] = { amount: Math.round(sums[rep] * 100) / 100, asOf: asOf[rep] }; });
+    return map;
+  }
+  // ERP invoices dated AFTER the DSR's as-of date, within the current month.
+  function postDsrErpOf(data, rep, asOf){
+    if(!asOf) return 0;
+    var d = new Date(asOf + 'T00:00:00'); d.setDate(d.getDate() + 1);
+    var from = localDateStr(d), today = data.today;
+    if(from > today || from.slice(0, 7) !== today.slice(0, 7)) return 0;
+    return erpRevenueRange(data, from, today, rep) || 0;
+  }
+  // The month's achieved figure for one rep: the current-month DSR official
+  // figure, extended by every invoice line after its as-of date; else ERP
+  // month-to-date; else what the app logged.
+  function monthAchievement(rep, data, mtdMap){
+    var today = data.today, t = (data.targets || {})[rep] || {};
+    var em = (mtdMap || erpMtd(data))[rep];
+    var officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
+    var erpOk = em && em.amount != null;
+    if(officialOk){
+      var extra = postDsrErpOf(data, rep, t.achievedAsOf);
+      if(extra > 0){
+        var asOf2 = em && em.asOf > t.achievedAsOf ? em.asOf : t.achievedAsOf;
+        return { amount: Math.round((t.achieved + extra) * 100) / 100, src: 'DSR ' + fmtDate(t.achievedAsOf) + ' + ERP', asOf: asOf2 };
+      }
+      return { amount: t.achieved, src: 'DSR official ' + fmtDate(t.achievedAsOf), asOf: t.achievedAsOf };
+    }
+    if(erpOk) return { amount: em.amount, src: 'ERP invoices to ' + fmtDate(em.asOf), asOf: em.asOf };
+    var m = getMonthDates(today);
+    var s = rangeSummary(m[0], m[m.length - 1], rep, { visits: data.visits || [], clinics: data.clinics || [], tasks: data.tasks || [], events: data.events || [], dayPlans: data.dayPlans || {} });
+    return { amount: s.revenue, src: 'app-logged', asOf: null };
+  }
+  function teamAchievement(reps, data){
+    var mtd = erpMtd(data), rows = [];
+    (reps || []).forEach(function(r){ var t = (data.targets || {})[r] || {}; if(t.revenue > 0) rows.push({ rep: r, goal: t.revenue, ach: monthAchievement(r, data, mtd).amount }); });
+    var goal = rows.reduce(function(s, x){ return s + x.goal; }, 0), ach = rows.reduce(function(s, x){ return s + (x.ach || 0); }, 0);
+    return { n: rows.length, goal: Math.round(goal * 100) / 100, ach: Math.round(ach * 100) / 100, pct: goal > 0 ? Math.round(ach / goal * 100) : null, rows: rows };
+  }
+
+  // ---- Daily e-mail digest (morning / evening), pure ----
+  // Returns { subject, text, html } for one recipient: a rep (her own day) or
+  // the supervisor (the team). Arabic, figures and names as they are.
+  function dailyDigest(opts){
+    var kind = opts.kind === 'evening' ? 'evening' : 'morning';
+    var data = opts.data, today = data.today, reps = opts.reps || [], forRep = opts.rep || null;
+    var mtd = erpMtd(data);
+    var dayName = new Date(today + 'T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', { weekday: 'long', day: 'numeric', month: 'long' });
+    var clinicName = function(id){ var c = (data.clinics || []).find(function(x){ return x.id === id; }); return c ? c.name : id; };
+    var entryId = function(e){ return typeof e === 'string' ? e : e.id; };
+    var entryNote = function(e){ return typeof e === 'string' ? '' : (e.note || ''); };
+    var tomorrow = (function(){ var d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() + 1); return localDateStr(d); })();
+    var plansOf = function(rep, date){ var dObj = (data.dayPlans || {})[date] || {}; return (dObj[rep] || []).map(function(e){ return { id: entryId(e), note: entryNote(e) }; }); };
+    var visitsToday = (data.visits || []).filter(function(v){ return v.date === today; });
+    var targetLine = function(rep){
+      var t = (data.targets || {})[rep] || {};
+      if(!(t.revenue > 0)) return null;
+      var a = monthAchievement(rep, data, mtd), pct = Math.round(a.amount / t.revenue * 100);
+      var m = today.slice(0, 7), stale = (t.month || (t.achievedAsOf ? t.achievedAsOf.slice(0, 7) : m)) < m;
+      var dim = getMonthDates(today).length, day = parseInt(today.slice(8, 10), 10), left = dim - day;
+      var pace = day > 0 ? Math.round(a.amount / day * dim / t.revenue * 100) : null;
+      return { rep: rep, pct: pct, amount: a.amount, goal: t.revenue, src: a.src, asOf: a.asOf, stale: stale, left: left, pace: pace };
+    };
+    var repBlock = function(rep){
+      var b = { rep: rep, target: targetLine(rep) };
+      b.plan = plansOf(rep, today);
+      b.planTomorrow = plansOf(rep, tomorrow);
+      var mine = (data.clinics || []).filter(function(c){ return c.rep === rep && c.cls !== 'Closed'; });
+      b.overdue = mine.filter(function(c){ return followStatus(c.nextFollowUp, today) === 'overdue'; }).map(function(c){ return { name: c.name, date: c.nextFollowUp }; });
+      b.dueToday = mine.filter(function(c){ return followStatus(c.nextFollowUp, today) === 'today'; }).map(function(c){ return { name: c.name }; });
+      b.missed = missedPlans(data.dayPlans, data.visits, today, { daysBack: 14 }).filter(function(x){ return x.rep === rep; }).map(function(x){ return { name: clinicName(x.clinicId), date: x.date }; });
+      b.tasks = (data.tasks || []).filter(function(t){ return t.rep === rep && !t.done && t.dueDate && t.dueDate <= today; }).map(function(t){ return { text: t.text, date: t.dueDate }; });
+      var tv = visitsToday.filter(function(v){ return v.rep === rep || v.withRep === rep; });
+      var field = dedupeVisits(tv.filter(isFieldVisit)).unique;
+      var led = tv.filter(function(v){ return v.rep === rep; });
+      b.today = {
+        visits: field.length, calls: led.filter(function(v){ return v.callOnly; }).length, phoneOrders: led.filter(function(v){ return v.orderOnly; }).length,
+        orders: led.filter(function(v){ return v.orderTaken; }).length, sales: Math.round(led.reduce(function(s, v){ return s + (v.orderTotal || 0); }, 0) * 100) / 100,
+        contacts: field.reduce(function(s, v){ return s + contactCount(v); }, 0),
+        clinics: field.map(function(v){ return clinicName(v.clinicId) + (v.orderTaken ? ' (' + money(v.orderTotal) + ')' : ''); }),
+        reasons: led.filter(function(v){ return !v.orderTaken && v.noOrderReason; }).map(function(v){ return v.noOrderReason; }),
+        followUps: led.filter(function(v){ return v.nextFollowUp; }).map(function(v){ return clinicName(v.clinicId) + ' → ' + fmtDate(v.nextFollowUp); }),
+      };
+      var visitedIds = {}; tv.forEach(function(v){ visitedIds[v.clinicId] = 1; });
+      b.planDone = b.plan.filter(function(e){ return visitedIds[e.id]; }).length;
+      b.planMissedToday = b.plan.filter(function(e){ return !visitedIds[e.id]; }).map(function(e){ return clinicName(e.id); });
+      return b;
+    };
+    var blocks = (forRep ? [forRep] : reps).map(repBlock);
+    var team = forRep ? null : teamAchievement(reps, data);
+    var kd = function(n){ return money(n); };
+    var esc = function(x){ return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+    var L = [], H = [];
+    var h = function(t){ L.push(''); L.push('■ ' + t); H.push('<h3 style="margin:18px 0 6px;font-size:15px;color:#0b3d2e;">' + esc(t) + '</h3>'); };
+    var li = function(items, empty){
+      if(!items.length){ L.push('  ' + empty); H.push('<div style="color:#6b7280;">' + esc(empty) + '</div>'); return; }
+      items.forEach(function(x){ L.push('  • ' + x); });
+      H.push('<ul style="margin:4px 0;padding-inline-start:20px;">' + items.map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>');
+    };
+    var p = function(t){ L.push(t); H.push('<div style="margin:4px 0;">' + esc(t) + '</div>'); };
+    var tLine = function(t){
+      if(!t) return 'لا يوجد تارغت مبيعات لهذا الشهر';
+      var s = t.rep + ': ' + t.pct + '% — ' + kd(t.amount) + ' من ' + kd(t.goal) + ' (المصدر: ' + t.src + (t.asOf ? '، حتى ' + fmtDate(t.asOf) : '') + ')';
+      if(t.stale) s += ' ⚠️ التارغت من شهر سابق — ارفع DSR الشهر الجديد';
+      else if(t.pace != null) s += ' · على هذا الإيقاع تصل إلى ' + t.pace + '% بنهاية الشهر · متبقٍ ' + t.left + ' يوم';
+      return s;
+    };
+    var title = kind === 'morning' ? 'ملخص الصباح' : 'ملخص نهاية اليوم';
+    var subject = 'UltraMed · ' + title + ' · ' + dayName + (forRep ? ' · ' + forRep : ' · الفريق');
+    p(title + ' — ' + dayName);
+    if(team){
+      h('تحقيق الفريق');
+      p(team.n ? 'الفريق: ' + (team.pct == null ? '—' : team.pct + '%') + ' — ' + kd(team.ach) + ' من ' + kd(team.goal) + ' (' + team.n + ' مندوبات)' : 'لا يوجد تارغت مبيعات لهذا الشهر — ارفع ملف DSR');
+      blocks.forEach(function(b){ p(tLine(b.target)); });
+    }
+    blocks.forEach(function(b){
+      var who = forRep ? '' : b.rep + ' — ';
+      if(kind === 'morning'){
+        if(forRep){ h('التارغت'); p(tLine(b.target)); }
+        h(who + 'خطة اليوم (' + b.plan.length + ')');
+        li(b.plan.map(function(e){ return clinicName(e.id) + (e.note ? ' — ' + e.note : ''); }), 'لا توجد زيارات مخططة لليوم');
+        h(who + 'متابعات اليوم والمتأخرة');
+        li(b.dueToday.map(function(c){ return c.name + ' — اليوم'; }).concat(b.overdue.map(function(c){ return c.name + ' — متأخرة منذ ' + fmtDate(c.date); })), 'لا توجد متابعات مستحقة');
+        if(b.missed.length){ h(who + 'زيارات مخططة لم تتم (آخر 14 يومًا)'); li(b.missed.map(function(x){ return x.name + ' — كانت ' + fmtDate(x.date); }), ''); }
+        if(b.tasks.length){ h(who + 'مهام مستحقة'); li(b.tasks.map(function(t){ return t.text + ' — ' + fmtDate(t.date); }), ''); }
+      } else {
+        h(who + 'حصيلة اليوم');
+        p('زيارات ميدانية: ' + b.today.visits + ' · مكالمات: ' + b.today.calls + ' · طلبات هاتفية: ' + b.today.phoneOrders + ' · طلبات: ' + b.today.orders + ' · مبيعات مسجلة: ' + kd(b.today.sales) + ' · أشخاص قابلتهم: ' + b.today.contacts);
+        li(b.today.clinics, 'لم تُسجَّل أي زيارة اليوم');
+        h(who + 'الخطة مقابل الواقع');
+        p('مخطط: ' + b.plan.length + ' · تمت: ' + b.planDone + (b.planMissedToday.length ? ' · لم تتم: ' + b.planMissedToday.join('، ') : ''));
+        if(b.today.reasons.length){ h(who + 'أسباب عدم الطلب'); li(b.today.reasons, ''); }
+        if(b.today.followUps.length){ h(who + 'متابعات جُدولت اليوم'); li(b.today.followUps, ''); }
+        if(forRep){ h('التارغت بعد اليوم'); p(tLine(b.target)); }
+        h(who + 'خطة الغد (' + b.planTomorrow.length + ')');
+        li(b.planTomorrow.map(function(e){ return clinicName(e.id) + (e.note ? ' — ' + e.note : ''); }), 'لا توجد خطة للغد بعد — خططي الآن من التطبيق');
+      }
+    });
+    L.push(''); L.push('— UltraMed Field Ops · تقرير آلي');
+    var html = '<div dir="rtl" style="font-family:Segoe UI,Tahoma,Arial,sans-serif;font-size:14px;line-height:1.6;color:#111;max-width:640px;margin:0 auto;padding:16px;">'
+      + '<div style="font-weight:800;font-size:17px;color:#0b3d2e;margin-bottom:4px;">UltraMed · ' + esc(title) + '</div>'
+      + H.join('') + '<div style="margin-top:20px;color:#6b7280;font-size:12px;">UltraMed Field Ops · تقرير آلي</div></div>';
+    return { subject: subject, text: L.join('\n'), html: html, blocks: blocks, team: team };
+  }
   // Every sheet of a workbook that holds people, merged and de-duplicated.
   function parseContactWorkbook(sheets, specialties, opts){
     var all = [], perSheet = [], skipped = 0;
@@ -2952,6 +3136,7 @@
     matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
+    unpackErpRows, erpRevenueRange, erpMtd, monthAchievement, teamAchievement, dailyDigest,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
