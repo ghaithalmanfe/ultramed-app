@@ -1,7 +1,7 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const core = require('../www/js/core.js');
-const report = require('../netlify/functions/lib/daily-report.js');
+const report = require('../netlify/lib/daily-report.js');
 
 const pack = r => [r.date, r.doc, r.type === 'return' ? 1 : 0, r.product, r.qty, r.gross, r.net, r.sret, r.salesman, r.brand, r.customer, r.cls, r.dsret || 0, r.ref || ''];
 const today = '2026-09-24';
