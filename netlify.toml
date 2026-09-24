@@ -1,0 +1,16 @@
+[build]
+  publish = "www"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["www/js/core.js"]
+
+# Daily e-mail digests (cron is UTC; Kuwait = UTC+3).
+# Morning: 07:30 Kuwait · Evening: 18:30 Kuwait. Fridays/Saturdays are
+# skipped inside the function unless MAIL_ALL_DAYS=1.
+[functions."daily-morning"]
+  schedule = "30 4 * * *"
+
+[functions."daily-evening"]
+  schedule = "30 15 * * *"

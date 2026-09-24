@@ -124,3 +124,32 @@ macOS. Options when you're ready:
   macOS runners) that builds and signs the iOS app without you owning a Mac.
 Either way you'll also need an Apple Developer Program membership ($99/year).
 
+
+
+## Daily e-mail reports (v87)
+
+Two automatic digests go out every working day (Sunday–Thursday), Kuwait time:
+
+| When | What | Who gets it |
+|---|---|---|
+| 07:30 | Morning: target % (same basis as the Today card), today's plan, follow-ups due/overdue, missed plans, due tasks | each rep her own; the supervisor the whole team |
+| 18:30 | End of day: visits/calls/orders/sales logged today, plan vs. reality, no-order reasons, follow-ups scheduled, tomorrow's plan | same |
+
+The digest is built by `UMCore.dailyDigest` in `www/js/core.js` — the very code the app uses for its own
+figures — and sent by the Netlify scheduled functions `daily-morning` / `daily-evening`
+(`netlify/functions/lib/daily-report.js`). The app's Admin → **Email reports** tab shows the last run,
+previews any digest and can send one now.
+
+### One-time setup (Netlify → Site configuration → Environment variables)
+
+| Variable | Value |
+|---|---|
+| `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD` | an app login that may read the data (the supervisor's, or a dedicated read-only user created in Firebase Authentication) |
+| `RESEND_API_KEY` | API key from [resend.com](https://resend.com) (free tier: 3,000 e-mails/month) |
+| `MAIL_FROM` | e.g. `UltraMed Field Ops <reports@ultramed-kw.com>` — the domain must be verified in Resend (add the SPF/DKIM DNS records Resend shows) |
+| `MAIL_ALL_DAYS` | optional `1` to also send on Fridays/Saturdays |
+| `MAIL_TO_OVERRIDE` | optional, testing only: every digest goes to this one address |
+
+Recipients and their addresses come from Admin → Team (the `staff` list). Redeploy once after setting
+the variables; then use **Send now** in the app to confirm delivery. Each run is logged to the `mailLog`
+document (last 30 runs) and shown in the app.
