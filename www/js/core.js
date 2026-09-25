@@ -1684,6 +1684,59 @@
       + H.join('') + '<div style="margin-top:20px;color:#6b7280;font-size:12px;">UltraMed Field Ops · تقرير آلي</div></div>';
     return { subject: subject, text: L.join('\n'), html: html, blocks: blocks, team: team };
   }
+  // ---- Visits storage: one small LIVE document for the current month plus
+  // one ARCHIVE document per past month ----
+  // Everything used to sit in one cloud document, which has a hard 1 MB cap
+  // and grows with every visit and photo thumbnail — the same wall the sales
+  // file hit. The app still holds ONE in-memory list; these helpers decide
+  // which document each visit lives in and put the pieces back together.
+  var VISITS_ARCH_PREFIX = 'visitsArch:';
+  function visitMonth(v){ var d = v && v.date; return (typeof d === 'string' && /^\d{4}-\d{2}/.test(d)) ? d.slice(0, 7) : null; }
+  function visitsArchKey(month){ return VISITS_ARCH_PREFIX + month; }
+  // Where a visit belongs: 'live' for the current month (and any visit with
+  // no usable date, or dated in the future by mistake), else its month.
+  function visitHome(v, today){ var m = visitMonth(v); return (!m || m >= String(today).slice(0, 7)) ? 'live' : m; }
+  function visitsPartition(visits, today){
+    var live = [], months = {};
+    (visits || []).forEach(function(v){
+      if(!v) return;
+      var h = visitHome(v, today);
+      if(h === 'live') live.push(v); else (months[h] = months[h] || []).push(v);
+    });
+    return { live: live, months: months };
+  }
+  // Live + archives → one list. A visit can sit in two documents for a moment
+  // (its date was edited before the old document was tidied): keep the copy
+  // that lives where its date says it belongs, else the live copy.
+  function visitsAssemble(live, archives, today){
+    var out = [], at = {}, docAt = [];
+    var take = function(v, doc){
+      if(!v) return;
+      if(v.id == null){ out.push(v); docAt.push(doc); return; }
+      var i = at[v.id];
+      if(i === undefined){ at[v.id] = out.length; out.push(v); docAt.push(doc); return; }
+      var prevAtHome = visitHome(out[i], today) === docAt[i];
+      var thisAtHome = visitHome(v, today) === doc;
+      if(thisAtHome && !prevAtHome){ out[i] = v; docAt[i] = doc; } // else the first copy (live is read first) stays
+    };
+    (live || []).forEach(function(v){ take(v, 'live'); });
+    Object.keys(archives || {}).sort().forEach(function(m){ (archives[m] || []).forEach(function(v){ take(v, m); }); });
+    return out;
+  }
+  // Ids a document should shed: they are stored, per the local partition, in
+  // ANOTHER document that is confirmed to hold them (`storedIn` = id → doc key
+  // as last read or written). Nothing is ever dropped from a document unless
+  // its new home provably has it.
+  function visitsStrayIds(docKey, docArr, homeById, storedHas){
+    var stray = [];
+    (docArr || []).forEach(function(v){
+      if(!v || v.id == null) return;
+      var home = homeById[v.id];
+      if(!home || home === docKey) return;
+      if(storedHas(home, v.id)) stray.push(v.id);
+    });
+    return stray;
+  }
   // Every sheet of a workbook that holds people, merged and de-duplicated.
   function parseContactWorkbook(sheets, specialties, opts){
     var all = [], perSheet = [], skipped = 0;
@@ -3137,6 +3190,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpRevenueRange, erpMtd, monthAchievement, teamAchievement, dailyDigest,
+    visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,

@@ -11,7 +11,7 @@ figure that cannot be explained on screen.
 - `www/js/i18n.js` — the English → Arabic dictionary (exact-string matches).
 - Hosting is **GitHub only**: `.github/workflows/pages.yml` runs the unit tests and publishes `www/` to the `gh-pages` branch → https://ghaithalmanfe.github.io/ultramed-app/. The owner does not use Netlify. (A leftover Netlify site still builds `main`; only the AI-assistant proxy `www/netlify/functions/assistant.js` lives there, with no API key set, so the in-app assistant is inactive.)
 - Daily e-mail digests: `.github/workflows/daily-report.yml` (cron 07:30 and 18:30 Kuwait, Sun–Thu, plus a manual Run button) runs `scripts/daily-report/run.js`; secrets live in the repo's Actions secrets. Never print e-mail addresses in that log (the repo is public).
-- Storage: Firestore collection `state`, one document per key `{value: JSON string, updated}`; merge-safe lists (`visits`, `tasks`, `clinics`, `events`, `dayPlans`) go through an atomic read-merge-write; ERP rows live in chunk documents `erpRows:<period>:<rev>:<n>`.
+- Storage: Firestore collection `state`, one document per key `{value: JSON string, updated}`; merge-safe lists (`visits`, `tasks`, `clinics`, `events`, `dayPlans`) go through an atomic read-merge-write; ERP rows live in chunk documents `erpRows:<period>:<rev>:<n>`; visits are one live document (`visits`, the current month) plus `visitsArch:YYYY-MM` per past month and a `visitsIndex` (`loadVisits` / `persistVisits` in `04-sync.js` assemble and split them — the in-memory `visits` list is unchanged for every screen; `scripts/daily-report/report.js` assembles the same way).
 
 ## Tests (run before every push)
 - `npm test` — unit tests in `tests/*.test.js` (core helpers, daily report).

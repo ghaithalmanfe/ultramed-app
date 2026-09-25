@@ -1408,25 +1408,28 @@ async function renderBackupsList(){
 }
 async function restoreSnapshot(dateStr){
   if(!requireAdmin()) return; // a restore replaces the whole team's data
-  if(!confirm(`Restore data from ${dateStr}? This will replace all current clinics, visits, and tasks with that day's backup.`)) return;
+  if(!confirm(`Restore data from ${dateStr}? This will replace the current clinics, tasks and this month's visits with that day's backup (past months' visits are kept).`)) return;
   try{
     const res = await window.storage.get('snap_'+dateStr, true);
     if(!res){ showToast('Backup not found'); return; }
     const snap = JSON.parse(res.value);
     clinics = normalizeClinics(snap.clinics||[]); hidePlaceholderClinics();
     products = snap.products || products;
-    visits = Array.isArray(snap.visits) ? snap.visits : [];
+    // The backup holds the visits of ITS month; older months live in their
+    // own archive documents and are kept as they are.
+    visits = UMCore.visitsAssemble(Array.isArray(snap.visits) ? snap.visits : [], visitsArchivesObj(), todayStr());
     tasks = Array.isArray(snap.tasks) ? snap.tasks : [];
     _seedClinics = false; _bootCrashed = false;
     // Clear the delete log for every restored record FIRST — otherwise the
     // next merge or restart would silently delete them all over again.
     await untombMany({ clinics: clinics.map(c=>c.id), visits: visits.map(v=>v.id), tasks: tasks.map(t=>t.id) });
     // A restore is authoritative: write that day's copy exactly as it was.
-    for(const [k, val] of [['clinics',storedClinics()],['products',products],['visits',visits],['tasks',tasks]]){
+    for(const [k, val] of [['clinics',storedClinics()],['products',products],['tasks',tasks]]){
       const str = JSON.stringify(val);
       await window.storage.set(k, str, true);
       mirrorSave(k, str);
     }
+    await persistVisits({ authoritative: true });
     if(snap.erpIndex && Array.isArray(snap.erpIndex.periods)){
       // that day's sales index; its chunks are still in the cloud (7-day grace)
       await window.storage.set('erpSales', JSON.stringify(snap.erpIndex), true);
