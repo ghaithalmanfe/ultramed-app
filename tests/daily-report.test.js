@@ -120,3 +120,20 @@ describe('daily report run (fake cloud + fake mailer)', () => {
     await assert.rejects(() => report.run('morning', { env: { REPORT_LOGIN_EMAIL: 'a', REPORT_LOGIN_PASSWORD: 'b' }, manual: true, now: new Date('2026-09-24T04:30:00Z') }), /NO_RESEND_KEY/);
   });
 });
+
+describe('daily report reads the split visits storage', () => {
+  test('this month\'s document plus every archived month, assembled once', async () => {
+    const docs = { visits: [{ id: 's1', date: '2026-09-24', rep: 'Mariam', clinicId: 'c1' }], visitsIndex: { months: { '2026-08': { n: 1, rev: 5 }, '2026-07': { n: 1, rev: 4 } } },
+      'visitsArch:2026-08': [{ id: 'a1', date: '2026-08-03', rep: 'Mariam', clinicId: 'c1' }], 'visitsArch:2026-07': [{ id: 'j1', date: '2026-07-03', rep: 'Renova', clinicId: 'c3' }],
+      clinics: [], tasks: [], dayPlans: {}, events: [], targets: {}, staff: [], erpSales: { periods: [] }, erpMap: {} };
+    const origFetch = global.fetch;
+    global.fetch = async (url, init) => {
+      const names = JSON.parse(init.body).documents.map(n => decodeURIComponent(n.split('/').pop()));
+      return { ok: true, json: async () => names.map(n => n in docs ? { found: { name: 'x/' + n, fields: { value: { stringValue: JSON.stringify(docs[n]) } } } } : { missing: n }) };
+    };
+    try{
+      const data = await report.loadData('tok', '2026-09-24');
+      assert.deepEqual(data.visits.map(v => v.id).sort(), ['a1', 'j1', 's1']);
+    } finally { global.fetch = origFetch; }
+  });
+});

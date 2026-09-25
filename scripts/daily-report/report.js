@@ -57,7 +57,12 @@ async function writeDoc(idToken, key, value){
 }
 // The whole account, sales rows included (index + chunks), as the app holds it.
 async function loadData(idToken, today){
-  const base = await readDocs(idToken, ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'staff', 'erpSales', 'erpMap']);
+  const base = await readDocs(idToken, ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans', 'events', 'targets', 'staff', 'erpSales', 'erpMap']);
+  // visits: this month's document plus one archive document per past month
+  const months = Object.keys((base.visitsIndex && base.visitsIndex.months) || {});
+  const archives = months.length ? await readDocs(idToken, months.map(m => core.visitsArchKey(m))) : {};
+  const archObj = {}; months.forEach(m => { archObj[m] = archives[core.visitsArchKey(m)] || []; });
+  const visits = core.visitsAssemble(Array.isArray(base.visits) ? base.visits : [], archObj, today);
   let erpSales = base.erpSales || { periods: [] };
   const chunkKeys = core.erpChunkKeys(erpSales);
   if(chunkKeys.length){
@@ -66,7 +71,7 @@ async function loadData(idToken, today){
   }
   return {
     today, targets: base.targets || {}, erpSales, clinics: base.clinics || [], erpMap: base.erpMap || {},
-    visits: base.visits || [], tasks: base.tasks || [], events: base.events || [], dayPlans: base.dayPlans || {},
+    visits, tasks: base.tasks || [], events: base.events || [], dayPlans: base.dayPlans || {},
     staff: Array.isArray(base.staff) ? base.staff : [],
   };
 }
