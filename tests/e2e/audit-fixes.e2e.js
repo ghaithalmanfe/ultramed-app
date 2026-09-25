@@ -4,7 +4,7 @@
 // 2026-09-21 10:00 Kuwait.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, salesFixture } = require('./_env.js');
+const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const PORT = 8211;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const server = http.createServer((req,res)=>{
@@ -32,8 +32,7 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
   const dialogs = [];
   const mkPage = async (label, offset) => {
     const ctx = await browser.newContext();
-    await ctx.route('**/gstatic.com/**', r => r.abort());
-    await ctx.route('**/.netlify/**', r => r.abort());
+    await blockFirebase(ctx);
     const page = await ctx.newPage();
     errors[label] = [];
     page.on('pageerror', e => errors[label].push('pageerror: ' + e.message));

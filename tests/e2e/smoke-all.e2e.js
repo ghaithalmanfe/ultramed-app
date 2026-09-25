@@ -1,7 +1,7 @@
 // Whole-app smoke + invariants: every view and modal, both roles, seeded realistic data.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, salesFixture } = require('./_env.js');
+const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const PORT = 8199;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const server = http.createServer((req,res)=>{
@@ -24,8 +24,7 @@ const SEED = JSON.parse(fs.readFileSync(WWW + '/sales-seed-aug26.json', 'utf8'))
   await new Promise(r=>server.listen(PORT,r));
   const browser = await chromium.launch(launchOpts());
   const ctx = await browser.newContext();
-  await ctx.route('**/gstatic.com/**', r => r.abort());
-  await ctx.route('**/.netlify/**', r => r.abort());
+  await blockFirebase(ctx);
   const page = await ctx.newPage();
   let errors = []; const dialogs = []; let acceptDialogs = false;
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));

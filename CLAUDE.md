@@ -5,7 +5,7 @@ team sees must be true: never report "saved" when it did not land, never show a
 figure that cannot be explained on screen.
 
 ## Layout
-- `www/index.html` — the app (markup, CSS, and the inline app script). `APP_REV` at the top must match `CACHE` in `www/sw.js`; bump both on every release.
+- `www/index.html` — markup and CSS only. The app script is split by area into `www/js/app/01-config.js` … `14-ui-boot.js`, loaded in that order as classic scripts sharing ONE global scope (a function in file 07 may call one in file 12 at run time; only code that runs at load must not reference a later file). Add new code to the file whose area it belongs to. `APP_REV` (top of `01-config.js`) must match `CACHE` in `www/sw.js`, and every new file under `js/app` must be added to the service worker's `SHELL` list; bump both on every release.
 - `www/js/core.js` — pure, unit-tested helpers (dates, ERP parsing, merges, month achievement, the daily e-mail digest). Browser-free; `require`-able from Node.
 - `www/js/i18n.js` — the English → Arabic dictionary (exact-string matches).
 - `www/netlify/functions/` — the Netlify functions the site actually deploys (`assistant`, `daily-report`, scheduled `daily-morning` / `daily-evening`); shared code in `www/netlify/lib/`. There is deliberately no root `netlify/` folder and no `netlify.toml`: the site publishes `www` and picks functions up from `www/netlify/functions`.

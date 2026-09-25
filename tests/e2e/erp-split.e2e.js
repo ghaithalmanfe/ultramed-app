@@ -2,7 +2,7 @@
 // in a real browser, with a fake cloud that survives reloads and can fail.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, salesFixture } = require('./_env.js');
+const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const SALES_B64 = fs.readFileSync(salesFixture()).toString('base64');
 const SEED = JSON.parse(fs.readFileSync(WWW + '/sales-seed-aug26.json', 'utf8'));
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
@@ -30,7 +30,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   await new Promise(r=>server.listen(8188,r));
   const browser = await chromium.launch(launchOpts());
   const ctx = await browser.newContext();
-  await ctx.route('**/gstatic.com/**', r => r.abort()); // no real Firebase in the harness
+  await blockFirebase(ctx); // no real Firebase in the harness
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
