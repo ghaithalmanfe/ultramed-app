@@ -1,0 +1,50 @@
+name: Daily e-mail reports
+
+# Morning digest 07:30 and end-of-day digest 18:30 Kuwait time (UTC+3),
+# Sunday–Thursday. GitHub may start a scheduled run a few minutes late.
+on:
+  schedule:
+    - cron: '30 4 * * 0-4'
+    - cron: '30 15 * * 0-4'
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'Which digest to send now'
+        type: choice
+        options: [morning, evening]
+        default: morning
+
+concurrency:
+  group: daily-report
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Send the digest
+        env:
+          REPORT_LOGIN_EMAIL: ${{ secrets.REPORT_LOGIN_EMAIL }}
+          REPORT_LOGIN_PASSWORD: ${{ secrets.REPORT_LOGIN_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          MAIL_ALL_DAYS: ${{ vars.MAIL_ALL_DAYS }}
+          MAIL_TO_OVERRIDE: ${{ vars.MAIL_TO_OVERRIDE }}
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          KIND: ${{ inputs.kind }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            node scripts/daily-report/run.js "$KIND" --manual
+          elif [ "$SCHEDULE" = "30 4 * * 0-4" ]; then
+            node scripts/daily-report/run.js morning
+          else
+            node scripts/daily-report/run.js evening
+          fi
