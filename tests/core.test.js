@@ -2474,3 +2474,34 @@ describe('v86: whole-app audit fixes', () => {
     assert.deepEqual(m.products.map(x => x.id), ['p']);
   });
 });
+
+describe('v90: visits — one live document plus one archive per past month', () => {
+  const today = '2026-09-25';
+  test('partition: this month and undated/future visits stay live, older months go to their archive', () => {
+    const vs = [{ id: 'a', date: '2026-09-02' }, { id: 'b', date: '2026-08-30' }, { id: 'c', date: '2026-07-01' }, { id: 'd', date: '2026-08-01' }, { id: 'e' }, { id: 'f', date: '2026-10-03' }];
+    const p = core.visitsPartition(vs, today);
+    assert.deepEqual(p.live.map(v => v.id), ['a', 'e', 'f']);
+    assert.deepEqual(Object.keys(p.months).sort(), ['2026-07', '2026-08']);
+    assert.deepEqual(p.months['2026-08'].map(v => v.id), ['b', 'd']);
+    assert.equal(core.visitsArchKey('2026-08'), 'visitsArch:2026-08');
+    assert.equal(core.visitHome({ date: 'bad' }, today), 'live');
+  });
+  test('assemble: every document once, duplicates resolved to the copy living where its date says', () => {
+    const live = [{ id: 'a', date: '2026-09-02', notes: 'live' }, { id: 'x', date: '2026-08-05', notes: 'moved to Aug, live copy not tidied yet' }];
+    const arch = { '2026-08': [{ id: 'b', date: '2026-08-30' }, { id: 'x', date: '2026-08-05', notes: 'aug copy' }], '2026-07': [{ id: 'c', date: '2026-07-01' }, { id: 'y', date: '2026-09-09', notes: 'date edited to Sep, still in Jul doc' }] };
+    const all = core.visitsAssemble(live, arch, today);
+    assert.deepEqual(all.map(v => v.id).sort(), ['a', 'b', 'c', 'x', 'y']);
+    assert.equal(all.find(v => v.id === 'x').notes, 'aug copy');
+    assert.equal(all.find(v => v.id === 'y').notes, 'date edited to Sep, still in Jul doc');
+    // a plain legacy account: everything in the live document, no archives
+    assert.equal(core.visitsAssemble([{ id: 'a', date: '2026-07-01' }], {}, today).length, 1);
+  });
+  test('stray ids: a document sheds a visit only once its new home provably holds it', () => {
+    const homes = { a: 'live', x: '2026-08', y: 'live' };
+    const stored = new Set(['live|a', '2026-08|x']); // y not confirmed in its home yet
+    const has = (doc, id) => stored.has(doc + '|' + id);
+    assert.deepEqual(core.visitsStrayIds('live', [{ id: 'a' }, { id: 'x' }], homes, has), ['x']);
+    assert.deepEqual(core.visitsStrayIds('2026-07', [{ id: 'y' }], homes, has), []);
+    assert.deepEqual(core.visitsStrayIds('2026-08', [{ id: 'x' }], homes, has), []);
+  });
+});

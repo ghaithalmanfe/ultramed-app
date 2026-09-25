@@ -175,15 +175,11 @@ async function autoRestoreWipe(){
       restoredMsg.push(`${visits.length} زيارة`);
     }
     await untombMany(sets); // clear the delete log FIRST or the restore un-does itself
-    for(const k of Object.keys(sets)){
-      const val = k==='clinics' ? clinics : visits;
-      const str = JSON.stringify(val);
-      await window.storage.set(k, str, true);
-      mirrorSave(k, str);
-    }
+    { const str = JSON.stringify(clinics); await window.storage.set('clinics', str, true); mirrorSave('clinics', str); }
+    if(sets.visits) await persistVisits({ authoritative: true });
     // Today's automatic snapshot may have caught the wiped state — replace it
     // with the recovered one so no bad copy sits in the backup window.
-    await window.storage.set('snap_'+todayStr(), JSON.stringify({clinics: storedClinics(), products, visits, tasks, ts: new Date().toISOString()}), true).catch(()=>{});
+    await window.storage.set('snap_'+todayStr(), JSON.stringify({clinics: storedClinics(), products, visits: UMCore.visitsPartition(visits, todayStr()).live, tasks, ts: new Date().toISOString()}), true).catch(()=>{});
     erpSales.seeds = Object.assign({}, erpSales.seeds, { autoRestore_v64: true });
     await persist('erpSales'); // flag only AFTER success — a failure retries next open
     console.log(`auto-restore: recovered from snap_${best.d}`, restoredMsg.join(', '));
@@ -402,6 +398,208 @@ function erpMirrorSave(sales){
   const slim = Object.assign({}, sales, { periods: (sales.periods || []).map(p => (p && p.to && p.to < cutoff && p.rowsRef) ? (() => { const q = Object.assign({}, p); delete q.rows; return q; })() : p) });
   if(mirrorSave('erpSales', JSON.stringify(slim))) return true;
   return mirrorSave('erpSales', JSON.stringify(UMCore.erpSplitForStorage(sales).index));
+}
+// ---- Visits: one LIVE document (this month) + one ARCHIVE document per past month ----
+// The whole visit log used to be one cloud document — the same shape that
+// broke the sales file: a hard 1 MB cap, growing with every visit and every
+// photo thumbnail. Now the current month lives in `visits`, every past month
+// in `visitsArch:YYYY-MM`, and `visitsIndex` lists the months. The app still
+// holds ONE list in memory (assembled here), so every screen is unchanged.
+// Saving rules: a document is written with a union merge (never loses), a
+// visit whose date moved it to another month is shed from its old document
+// only once its new home provably holds it, and a month that could not be
+// read this session is never written. An old app version that writes the
+// whole list back into `visits` is harmless: the next save re-homes it.
+let _visitsLive = [];        // the live document as last read / written
+let _visitsLoaded = null;    // JSON of that live array (change detection)
+let _visitsArch = {};        // month → { rev, arr, json } as last read / written (json = change detection; the objects are shared with the list on screen)
+let _visitsBroken = [];      // months whose archive could not be read (never written, shown as a warning)
+let _visitsSaving = false;   // a save in flight: the refresh keeps its hands off the list
+let _visitsListed = false;   // the one-time archive listing for accounts without an index
+let _visitsSaveChain = Promise.resolve();
+function visitsMirrorSave(all){
+  if(mirrorSave('visits', JSON.stringify(all))) return true;
+  // device storage full: keep this quarter so the offline screen still has it
+  const cutoff = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+  return mirrorSave('visits', JSON.stringify((all || []).filter(v => v && (!v.date || v.date >= cutoff))));
+}
+function visitsArchivesObj(){ const o = {}; Object.keys(_visitsArch).forEach(m => { o[m] = _visitsArch[m].arr; }); return o; }
+async function loadVisits(){
+  if(_visitsSaving) return visits; // never swap the list underneath a save
+  const today = todayStr();
+  if(outboxHas('visits')){
+    const mm = UMCore.safeParse(mirrorGet('visits'), undefined);
+    if(Array.isArray(mm)){ _mirrorUsed.visits = true; return mm; } // queued offline edits win until flushed
+  }
+  let liveRes, idxRes;
+  try{
+    [liveRes, idxRes] = await Promise.all([
+      withTimeout(window.storage.get('visits', true), 8000),
+      withTimeout(window.storage.get('visitsIndex', true), 8000).catch(() => null),
+    ]);
+  }catch(e){
+    const m = UMCore.safeParse(mirrorGet('visits'), null);
+    if(Array.isArray(m)){ _mirrorUsed.visits = true; return m; }
+    _loadFailed.visits = true;
+    return [];
+  }
+  const liveArr = liveRes && liveRes.value != null ? (UMCore.safeParse(liveRes.value, null) || []) : [];
+  const index = idxRes && idxRes.value != null ? (UMCore.safeParse(idxRes.value, null) || {}) : {};
+  let months = Object.keys(index.months || {});
+  if((!idxRes || idxRes.value == null) && !_visitsListed){
+    // no index yet (legacy account, or its write failed): look for archives once per session
+    _visitsListed = true;
+    try{ const l = await withTimeout(window.storage.list(UMCore.VISITS_ARCH_PREFIX, true), 8000); months = (l && l.keys || []).map(k => k.slice(UMCore.VISITS_ARCH_PREFIX.length)); }catch(e){}
+  }
+  Object.keys(_visitsArch).forEach(m => { if(!months.includes(m)) months.push(m); });
+  const broken = [];
+  await Promise.all(months.map(async m => {
+    const rev = (index.months && index.months[m] && index.months[m].rev) || 0;
+    const have = _visitsArch[m];
+    if(have && have.rev === rev) return; // unchanged since last read / written by this device
+    try{
+      const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000);
+      const arr = r && r.value != null ? (UMCore.safeParse(r.value, null) || []) : [];
+      _visitsArch[m] = { rev, arr, json: JSON.stringify(arr) };
+    }catch(e){ if(!have) broken.push(m); } // an earlier copy is kept; a month never read is flagged
+  }));
+  _visitsBroken = broken;
+  _visitsLive = liveArr;
+  _visitsLoaded = JSON.stringify(liveArr);
+  const order = v => (v && v.ts) || (v && v.date ? new Date(v.date + 'T00:00:00').getTime() : 0);
+  const all = UMCore.visitsAssemble(liveArr, visitsArchivesObj(), today).sort((a, b) => order(a) - order(b)); // the same chronological order the single document had
+  // If the assembled log arrives FAR smaller than what this device saw last
+  // time, keep the old copy aside — it may be the only surviving one.
+  const prevRaw = mirrorGet('visits'), prev = UMCore.safeParse(prevRaw, null);
+  if(Array.isArray(prev) && prev.length >= 10 && all.length < prev.length / 3){ try{ localStorage.setItem('um_mirror_prev:visits', prevRaw); }catch(e){} }
+  visitsMirrorSave(all);
+  renderVisitsNudge();
+  return all;
+}
+function renderVisitsNudge(){
+  const el = document.getElementById('visitsNudge');
+  if(!el) return;
+  if(!_visitsBroken.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="card" style="border-inline-start:4px solid var(--amber); margin-bottom:12px;">
+    <div style="font-weight:700; font-size:13.5px;" dir="auto">⚠️ زيارات ${_visitsBroken.map(m => esc(m)).join('، ')} لم تُحمَّل من السحابة</div>
+    <div style="color:var(--muted); font-size:12.5px; margin-top:2px;" dir="auto">التقارير لهذه الأشهر ناقصة مؤقتًا. الحفظ يعمل ولن يلمس هذه الأشهر.</div>
+    <button class="chip small" style="margin-top:8px;" onclick="retryVisitsArchives()">🔄 إعادة المحاولة</button>
+  </div>`;
+}
+async function retryVisitsArchives(){
+  const all = await loadVisits();
+  if(!_visitsSaving){ visits = all.filter(v => !(v && tombSet('visits').has(v.id))); renderAll(); }
+  showToast(_visitsBroken.length ? '⚠️ ما زالت بعض الأشهر غير متاحة' : '✅ حُمِّلت كل الزيارات');
+}
+// One save at a time; throws on failure so persist() can queue it offline.
+function persistVisits(opts){
+  const run = () => persistVisitsInner(opts || {});
+  const p = _visitsSaveChain.then(run, run);
+  _visitsSaveChain = p.catch(() => {});
+  return p;
+}
+async function persistVisitsInner(opts){
+  _visitsSaving = true;
+  try{
+    const today = todayStr();
+    if(!opts.authoritative) await refreshTombs();
+    const ts = tombSet('visits');
+    const local = (visits || []).filter(v => v && !ts.has(v.id));
+    const part = UMCore.visitsPartition(local, today);
+    const homeById = {};
+    part.live.forEach(v => { if(v.id != null) homeById[v.id] = 'live'; });
+    Object.keys(part.months).forEach(m => part.months[m].forEach(v => { if(v.id != null) homeById[v.id] = m; }));
+    const stored = new Set(); // "doc|id" pairs the cloud is known to hold
+    const note = (doc, arr) => (arr || []).forEach(v => { if(v && v.id != null) stored.add(doc + '|' + v.id); });
+    note('live', _visitsLive); Object.keys(_visitsArch).forEach(m => note(m, _visitsArch[m].arr));
+    const keyOf = doc => doc === 'live' ? 'visits' : UMCore.visitsArchKey(doc);
+    const written = {};
+    // The cloud refuses a document above 1 MB. A month can only get there
+    // with a great many photos; say so plainly instead of retrying a save
+    // that can never land.
+    const VISITS_DOC_MAX = 950000;
+    const writeUnion = async (doc, arr) => {
+      let merged = arr, tooBig = false;
+      const res = await storageUpdate(keyOf(doc), cloudStr => {
+        const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
+        merged = (!opts.authoritative && Array.isArray(cloud)) ? mergeById('visits', arr, cloud).merged : arr.filter(v => v && !ts.has(v.id));
+        const str = JSON.stringify(merged);
+        if(str.length > VISITS_DOC_MAX){ tooBig = true; return null; }
+        return str;
+      }, 12000);
+      if(tooBig){
+        showToast(doc === 'live' ? '🛑 زيارات هذا الشهر كبيرة جدًا (صور كثيرة) — احذف بعض الصور من الزيارات ثم أعد المحاولة' : `🛑 زيارات شهر ${doc} كبيرة جدًا — احذف بعض صورها ثم أعد المحاولة`);
+        throw new Error('visits document too large: ' + doc);
+      }
+      if(res == null) throw new Error('visits update failed');
+      written[doc] = merged;
+      note(doc, merged);
+      return merged;
+    };
+    // Pass A — union writes of every document this device changed (never loses).
+    const dirty = [];
+    if(opts.authoritative || JSON.stringify(part.live) !== _visitsLoaded) dirty.push(['live', part.live]);
+    Object.keys(part.months).forEach(m => {
+      if(_visitsBroken.includes(m)) return; // a month we could not read is never written
+      const have = _visitsArch[m];
+      if(!have || JSON.stringify(part.months[m]) !== have.json) dirty.push([m, part.months[m]]);
+    });
+    const overflow = {}; // cloud-only entries found in a document that is not their home
+    for(const [doc, arr] of dirty){
+      const merged = await writeUnion(doc, arr);
+      merged.forEach(v => { if(v && v.id != null && !homeById[v.id]){ const h = UMCore.visitHome(v, today); homeById[v.id] = h; if(h !== doc) (overflow[h] = overflow[h] || []).push(v); } });
+    }
+    // Pass A2 — re-home what another (older) device left in the wrong document.
+    for(const h of Object.keys(overflow)){
+      if(h !== 'live' && _visitsBroken.includes(h)) continue;
+      const base = written[h] || (h === 'live' ? part.live : (part.months[h] || []));
+      const ids = new Set(base.map(v => v && v.id));
+      await writeUnion(h, base.concat(overflow[h].filter(v => !ids.has(v.id))));
+    }
+    // Pass B — tidy: shed a visit from a document once its home provably holds it.
+    const docs = new Set(['live', ...Object.keys(_visitsArch), ...Object.keys(written)]);
+    for(const doc of docs){
+      if(doc !== 'live' && _visitsBroken.includes(doc)) continue;
+      const arr = written[doc] || (doc === 'live' ? _visitsLive : _visitsArch[doc].arr);
+      const stray = UMCore.visitsStrayIds(doc, arr, homeById, (h, id) => stored.has(h + '|' + id));
+      if(!stray.length) continue;
+      const drop = new Set(stray);
+      let tidy = arr;
+      const res = await storageUpdate(keyOf(doc), cloudStr => {
+        const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
+        tidy = (Array.isArray(cloud) ? cloud : arr).filter(v => v && !drop.has(v.id) && !ts.has(v.id));
+        return JSON.stringify(tidy);
+      }, 12000);
+      if(res == null) throw new Error('visits tidy failed');
+      written[doc] = tidy;
+    }
+    // Pass C — the month index (what exists, and a revision per month for cheap refreshes).
+    const now = Date.now();
+    const writtenMonths = Object.keys(written).filter(d => d !== 'live');
+    if(writtenMonths.length || opts.authoritative){
+      const res = await storageUpdate('visitsIndex', cloudStr => {
+        const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
+        idx.months = Object.assign({}, idx.months || {});
+        writtenMonths.forEach(m => { idx.months[m] = { n: written[m].length, rev: now }; });
+        Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
+        idx.v = 1; idx.updated = now;
+        return JSON.stringify(idx);
+      }, 12000);
+      if(res == null) throw new Error('visits index failed');
+      writtenMonths.forEach(m => { _visitsArch[m] = { rev: now, arr: written[m], json: JSON.stringify(written[m]) }; });
+    }
+    if(written.live){ _visitsLive = written.live; _visitsLoaded = JSON.stringify(written.live); }
+    // Memory: this device's list in its own order, plus what other devices
+    // added (recovered by the unions), minus what the delete log removed.
+    const cloudAll = UMCore.visitsAssemble(_visitsLive, visitsArchivesObj(), today);
+    const cloudIds = new Set(cloudAll.map(v => v && v.id));
+    const mine = local.filter(v => cloudIds.has(v.id) || _visitsBroken.includes(homeById[v.id]));
+    const haveIds = new Set(mine.map(v => v.id));
+    visits = mine.concat(cloudAll.filter(v => v && !ts.has(v.id) && !haveIds.has(v.id)));
+    visitsMirrorSave(visits);
+    return true;
+  }finally{ _visitsSaving = false; }
 }
 async function loadErpSales(){
   const prevMirror = UMCore.safeParse(mirrorGet('erpSales'), null); // assembled copy from last time
@@ -652,7 +850,7 @@ async function loadAll(){
     const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em,en] = await Promise.all([
       g('clinics'),
       g('products'),
-      g('visits'),
+      loadVisits(), // live month + archived months, assembled (see persistVisits)
       g('tasks'),
       g('dayPlans'),
       g('staff'),
@@ -674,7 +872,7 @@ async function loadAll(){
     _seedClinics = !clinicsDoc; // factory list on screen — never allowed to overwrite live data
     products = UMCore.safeParse(p && p.value, null) || PRODUCTS_SEED;
     assignProductKeys();
-    visits = UMCore.safeParse(v && v.value, []).filter(notDeleted('visits'));
+    if(!_visitsSaving) visits = (Array.isArray(v) ? v : []).filter(notDeleted('visits'));
     tasks = UMCore.safeParse(t && t.value, []).filter(notDeleted('tasks'));
     dayPlans = UMCore.safeParse(dp && dp.value, {});
     if(!_loadFailed.dayPlans && !_mirrorUsed.dayPlans && !outboxHas('dayPlans')) _dpBase = JSON.stringify(dayPlans); // what the cloud held when we loaded — the base of the next three-way merge
@@ -1004,6 +1202,13 @@ async function persist(key, opts){
   let value = key === 'clinics' ? storedClinics() : map[key]; // hoisted: the catch mirrors the MERGED copy, not the pre-merge one
   _persistInfo[key] = null;
   try{
+    if(key === 'visits'){
+      await persistVisits(opts); // live + archives + index; throws when the cloud is unreachable
+      if(outboxHas('visits')) outboxRemove('visits');
+      _persistInfo.visits = { ok: true };
+      if(!Object.keys(_mirrorUsed).length && !_bootCrashed && !_seedClinics) maybeSnapshot();
+      return true;
+    }
     if(MERGE_KEYS[key] || key === 'dayPlans'){
       // The team's delete log first, so a record another device deleted since
       // our load is dropped from the union instead of being resurrected.
@@ -1143,7 +1348,11 @@ async function maybeSnapshot(){
     // The sales index is tiny and its chunks stay in the cloud for a week
     // after being replaced, so the daily backup can restore the sales files too.
     const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
-    await window.storage.set(key, JSON.stringify({clinics: storedClinics(), products, visits, tasks, erpIndex, ts: new Date().toISOString()}), true);
+    // Visits: this month only — past months sit in their own archive documents
+    // (untouched by day-to-day saves), which keeps the backup well under the cap.
+    const vp = UMCore.visitsPartition(visits, todayStr());
+    const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
+    await window.storage.set(key, JSON.stringify({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}), true);
     const list = await window.storage.list('snap_', true).catch(()=>null);
     if(list && list.keys && list.keys.length > 12){
       const sorted = list.keys.slice().sort();
