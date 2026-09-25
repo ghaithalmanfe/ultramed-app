@@ -1,5 +1,5 @@
-const CACHE = 'ultramed-field-ops-v88';
-const SHELL = ['./', './index.html', './js/core.js', './js/i18n.js', './manifest.json', './icons/icon-192.png', './icons/logo-green.png', './icons/icon-512.png'];
+const CACHE = 'ultramed-field-ops-v89';
+const SHELL = ['./', './index.html', './js/core.js', './js/i18n.js', './manifest.json', './icons/icon-192.png', './icons/logo-green.png', './icons/icon-512.png', './js/app/01-config.js', './js/app/02-doctors-model.js', './js/app/03-gate.js', './js/app/04-sync.js', './js/app/05-today-calendar.js', './js/app/06-log-visit.js', './js/app/07-clinics.js', './js/app/08-team-orders.js', './js/app/09-admin.js', './js/app/10-doctors-products.js', './js/app/11-erp.js', './js/app/12-reports.js', './js/app/13-exports.js', './js/app/14-ui-boot.js'];
 // The Firebase SDK lives on gstatic; without it a cached session cannot boot
 // offline at all, so precache it too (no-cors -> opaque, cached all the same).
 const EXTERNAL = [

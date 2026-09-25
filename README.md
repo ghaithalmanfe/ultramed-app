@@ -39,7 +39,7 @@ phones, connect it to a free Firebase project:
      appId: "1:123456789:web:abc123"
    };
    ```
-6. Open `www/index.html`, find `FIREBASE_CONFIG` near the top of the `<script>`
+6. Open `www/js/app/01-config.js`, find `FIREBASE_CONFIG` near the top
    block, and paste your real values in place of the `"YOUR_..."` placeholders.
 7. In Firestore, go to the **Rules** tab and set:
    ```
@@ -87,7 +87,7 @@ same. It behaves like an installed app: full-screen, own icon, offline-capable.
 ## 4. Real Android APK (native, not just a browser shortcut)
 
 The `android/` folder is a real native Android Studio project. To rebuild it after
-changing `www/index.html`:
+changing anything under `www/`:
 
 ```bash
 npx cap sync android

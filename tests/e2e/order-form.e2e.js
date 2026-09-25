@@ -1,7 +1,7 @@
 // Order form (v88): quantities typed straight into the box, 40% and custom discounts, both order flows.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, salesFixture } = require('./_env.js');
+const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const PORT = 8222;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0]); fs.readFile(f,(e,d)=>{ if(e){res.writeHead(404);res.end();return;} res.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'text/plain'}); res.end(d); }); });
@@ -13,7 +13,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   await new Promise(r=>server.listen(PORT,r));
   const browser = await chromium.launch(launchOpts());
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-  await ctx.route('**/gstatic.com/**', r => r.abort()); await ctx.route('**/.netlify/**', r => r.abort());
+  await blockFirebase(ctx);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -98,6 +98,35 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
     return { items: Object.assign({}, soItems), rows: document.querySelectorAll('#soQtyWrap .qty-row').length, chipsOn: document.querySelectorAll('#soProdChips .chip.on').length, total: document.getElementById('soTotal').innerText.replace(/\s+/g,' ') };
   }, setup);
   check('phone order: a cleared quantity drops the line (nothing stale saved), chip unlit, total updated', Object.keys(so2.items).length === 1 && so2.rows === 1 && so2.chipsOn === 1 && so2.total.includes((setup.ps[1].price).toFixed(2)), so2);
+  // ---- follow-ups from the data-flow review ----
+  const df = await page.evaluate(async (a) => {
+    closeModal(); switchView('log'); prepLogView(a.clinicId); pickClinic(a.clinicId); selectedDoctorIds = [clinics.find(c=>c.id===a.clinicId).doctors[0].id];
+    const p = products.find(x => x.price === 1.98) || products.filter(x=>x.price>0)[0]; const key = productKey(p);
+    toggleProductChip(key); setOrder(true); const oid = draftOrders[0].id;
+    setQty(oid, key, '2');
+    const inp = document.querySelector('#ordersContainer .disc-other'); inp.value = '12.5'; inp.dispatchEvent(new Event('change'));
+    const cardNet = [...document.querySelectorAll('#ordersContainer .row-between')].find(r => /Net/.test(r.innerText)).innerText.replace(/\s+/g,' ');
+    const total = document.getElementById('orderTotalDisplay').textContent;
+    const net = orderNet(draftOrders[0]);
+    // cleared box → no discount, None lit
+    inp.value = ''; inp.dispatchEvent(new Event('change'));
+    const cleared = { pct: draftOrders[0].discountPct, none: (document.querySelector('#ordersContainer .disc-chips .chip.on')||{}).dataset };
+    // Arabic: the dictionary walker rewrites the None chip's label to 'بدون' (setUiLang reloads the page, so mimic the walker here)
+    document.querySelector('#ordersContainer .disc-chips .chip[data-pct="0"]').textContent = UMI18N && UMI18N.tr ? (UMI18N.tr('None') || 'بدون') : 'بدون';
+    inp.value = '40'; inp.dispatchEvent(new Event('change'));
+    inp.value = '0'; inp.dispatchEvent(new Event('change'));
+    const ar = { pct: draftOrders[0].discountPct, onPct: (document.querySelector('#ordersContainer .disc-chips .chip.on')||{dataset:{}}).dataset.pct, label: (document.querySelector('#ordersContainer .disc-chips .chip.on')||{}).textContent };
+    return { price: p.price, cardNet, total, net, cleared, ar };
+  }, setup);
+  check('the card\'s Net line, the order total and the saved arithmetic agree to the cent (1.98 × 2 at 12.5%)', df.cardNet.includes(df.net.toFixed(2)) && df.total === df.net.toFixed(2) + ' KD', df);
+  check('clearing the Other box means no discount: 0% and the None chip lit', df.cleared.pct === 0 && df.cleared.none && df.cleared.none.pct === '0', df.cleared);
+  check('Arabic UI: a typed preset lights its chip by value (label is translated)', df.ar.pct === 0 && df.ar.onPct === '0', df.ar);
+  const ev = await page.evaluate(async (a) => {
+    window._lastVisitSaveAt = 0; setDraftDiscount(draftOrders[0].id, 40); setQty(draftOrders[0].id, productKey(products.find(x=>x.price===a.price)), '12'); await saveVisit();
+    const v = visits[visits.length-1]; openEditVisit(v.id); document.getElementById('evTotal').value = '20'; await saveEditVisit(v.id);
+    return { gross: v.orderGross, disc: v.orderDiscount, total: v.orderTotal, o: v.orders[0], sum: Math.round((v.orderGross - v.orderDiscount)*100)/100 };
+  }, { price: df.price });
+  check('an edited order total re-derives the discount so gross − discount = net in every export', ev.sum === ev.total && ev.o.discountAmount === ev.disc && Math.abs(ev.o.discountPct - ev.disc/ev.gross*100) < 0.01, ev);
   check('no page errors', errors.length === 0, errors.slice(0, 4));
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
   await browser.close(); server.close();

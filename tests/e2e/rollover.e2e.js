@@ -1,7 +1,7 @@
 // Month rollover: the same account opened on 2026-10-01 (clock shifted).
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, salesFixture } = require('./_env.js');
+const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const PORT = 8211;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0]); fs.readFile(f,(e,d)=>{ if(e){res.writeHead(404);res.end();return;} res.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'text/plain'}); res.end(d); }); });
@@ -20,7 +20,7 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
   await new Promise(r=>server.listen(PORT,r));
   const browser = await chromium.launch(launchOpts());
   const ctx = await browser.newContext();
-  await ctx.route('**/gstatic.com/**', r => r.abort());
+  await blockFirebase(ctx);
   const page = await ctx.newPage();
   const errors = []; let acceptDialogs = false;
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -57,7 +57,7 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
   check('Sep 21: figures as expected before the rollover', sep.today==='2026-09-21' && sep.pct.Mariam && sep.pct.Renova && /DSR Sep 5 \+ ERP/.test(sep.pct.Mariam.src), { today: sep.today, pct: sep.pct, team: sep.team.pct });
 
   // ---- October 1 morning: same account, clock moved on ----
-  const ctx2 = await browser.newContext(); await ctx2.route('**/gstatic.com/**', r => r.abort());
+  const ctx2 = await browser.newContext(); await blockFirebase(ctx2);
   const p2 = await ctx2.newPage();
   const errors2 = [];
   p2.on('pageerror', e => errors2.push('pageerror: ' + e.message));
