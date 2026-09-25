@@ -136,20 +136,22 @@ Two automatic digests go out every working day (Sunday–Thursday), Kuwait time:
 | 18:30 | End of day: visits/calls/orders/sales logged today, plan vs. reality, no-order reasons, follow-ups scheduled, tomorrow's plan | same |
 
 The digest is built by `UMCore.dailyDigest` in `www/js/core.js` — the very code the app uses for its own
-figures — and sent by the Netlify scheduled functions `daily-morning` / `daily-evening`
-(`www/netlify/lib/daily-report.js`). The app's Admin → **Email reports** tab shows the last run,
-previews any digest and can send one now.
+figures — and sent by the GitHub Actions workflow `.github/workflows/daily-report.yml`
+(`scripts/daily-report/`). The app's Admin → **Email reports** tab shows the last run, previews any
+digest, and its **Send now** button opens the workflow's page on GitHub (Run workflow → morning/evening).
+A run that fails is marked red on GitHub, which e-mails the repository owner.
 
-### One-time setup (Netlify → Site configuration → Environment variables)
+### One-time setup (GitHub → repository Settings → Secrets and variables → Actions)
 
-| Variable | Value |
+| Secret | Value |
 |---|---|
 | `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD` | an app login that may read the data (the supervisor's, or a dedicated read-only user created in Firebase Authentication) |
 | `RESEND_API_KEY` | API key from [resend.com](https://resend.com) (free tier: 3,000 e-mails/month) |
 | `MAIL_FROM` | e.g. `UltraMed Field Ops <reports@ultramed-kw.com>` — the domain must be verified in Resend (add the SPF/DKIM DNS records Resend shows) |
-| `MAIL_ALL_DAYS` | optional `1` to also send on Fridays/Saturdays |
-| `MAIL_TO_OVERRIDE` | optional, testing only: every digest goes to this one address |
+| `MAIL_ALL_DAYS` (a *variable*, not a secret) | optional `1` to also send on Fridays/Saturdays |
+| `MAIL_TO_OVERRIDE` (a *variable*) | optional, testing only: every digest goes to this one address |
 
-Recipients and their addresses come from Admin → Team (the `staff` list). Redeploy once after setting
-the variables; then use **Send now** in the app to confirm delivery. Each run is logged to the `mailLog`
+Recipients and their addresses come from Admin → Team (the `staff` list). After adding the secrets,
+use **Send now** in the app (or Actions → Daily e-mail reports → Run workflow) to confirm delivery.
+The Actions log is public for a public repository, so it prints names and outcomes only, never addresses. Each run is logged to the `mailLog`
 document (last 30 runs) and shown in the app.
