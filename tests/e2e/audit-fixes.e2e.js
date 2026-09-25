@@ -360,34 +360,26 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
   await A.page.evaluate(async (cid) => { closeModal(); await reassignClinic(cid, REPS[1]); }, m0[10].id);
   check('ADM-5: territory reassign with the sheet closed is clean', errors.A.length===before5, errors.A.slice(before5));
 
-  // ================= EMAIL REPORTS (v87) =================
+  // ================= EMAIL REPORTS (sent by GitHub Actions) =================
   await A.boot('Dr. Ghaith', 'supervisor');
-  let mailMode = 'unconfigured';
-  await A.page.route('**/daily-report', r => {
-    if(mailMode === 'unconfigured') return r.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'NOT_CONFIGURED' }) });
-    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ kind: 'morning', sent: 3, failed: 0, to: [] }) });
-  });
   const mail1 = await A.page.evaluate(async () => {
     openAdminPanel(); setAdminTab('mail'); await new Promise(r=>setTimeout(r,200));
     const tab = document.getElementById('apBody').innerText;
+    const send = document.getElementById('mailSendNow');
     previewDigest('morning'); const pm = document.getElementById('modalInner').innerText;
     previewDigest('evening', REPS[0]); const pe = document.getElementById('modalInner').innerText;
-    openAdminPanel(); setAdminTab('mail'); await new Promise(r=>setTimeout(r,100));
-    await sendDigestNow('morning'); const r1 = document.getElementById('mailSendResult').textContent;
-    return { tab, pm, pe, r1 };
+    return { tab, pm, pe, href: send && send.getAttribute('href'), target: send && send.getAttribute('target') };
   });
-  check('MAIL: admin tab lists recipients, schedule and status', /07:30/.test(mail1.tab) && /18:30/.test(mail1.tab) && /mariam@|@ultramed/.test(mail1.tab) && /لم يُرسَل أي تقرير بعد/.test(mail1.tab), mail1.tab.split('\n').slice(0,4));
+  check('MAIL: admin tab lists recipients, schedule and status', /07:30/.test(mail1.tab) && /18:30/.test(mail1.tab) && /mariam@|@ultramed/.test(mail1.tab) && /لم يُرسَل أي تقرير بعد/.test(mail1.tab) && /GitHub/.test(mail1.tab), mail1.tab.split('\n').slice(0,4));
   check('MAIL: team morning preview carries the team % and every rep\'s target line', /تحقيق الفريق/.test(mail1.pm) && /الفريق: \d+%/.test(mail1.pm) && (mail1.pm.match(/: \d+% — /g)||[]).length >= 2 && /خطة اليوم/.test(mail1.pm), mail1.pm.split('\n').slice(0,6));
   check('MAIL: rep evening preview shows her day only', /حصيلة اليوم/.test(mail1.pe) && /Mariam/.test(mail1.pe.split('\n')[0]) && !/Renova/.test(mail1.pe), mail1.pe.split('\n').slice(0,3));
-  check('MAIL: send-now explains an unconfigured service honestly', /غير مضبوطة/.test(mail1.r1), mail1.r1);
-  mailMode = 'ok';
+  check('MAIL: "send now" opens the GitHub Actions run page (no Netlify call)', mail1.href === 'https://github.com/ghaithalmanfe/ultramed-app/actions/workflows/daily-report.yml' && mail1.target === '_blank', mail1);
   cloud.mailLog = JSON.stringify({ last: { kind: 'morning', today, at: new Date().toISOString(), sent: 2, failed: 1, to: [{ to: 'a@x', name: 'Mariam', ok: true }, { to: 'b@x', name: 'Renova', ok: false, error: 'bounced' }] }, history: [] });
-  const mail2 = await A.page.evaluate(async () => { await sendDigestNow('evening'); const r = document.getElementById('mailSendResult').textContent; await new Promise(x=>setTimeout(x,300)); return { r, status: document.getElementById('mailStatusCard').innerText }; });
-  check('MAIL: a successful send reports the counts and the status card shows the last run', /✅ وصلت 3/.test(mail2.r) && /آخر إرسال/.test(mail2.status) && /bounced/.test(mail2.status), { r: mail2.r, status: mail2.status.split('\n').slice(0,3) });
+  const mail2 = await A.page.evaluate(async () => { openAdminPanel(); setAdminTab('mail'); await new Promise(r=>setTimeout(r,300)); return { status: document.getElementById('mailStatusCard').innerText }; });
+  check('MAIL: the status card shows the last run written by the sender', /آخر إرسال/.test(mail2.status) && /bounced/.test(mail2.status) && /1 فشلت/.test(mail2.status), mail2.status.split('\n').slice(0,3));
   // the e-mail's figure is the Today card's figure
   const same = await A.page.evaluate(() => { closeModal(); const d = UMCore.dailyDigest({ kind: 'morning', data: digestData(), reps: REPS }); const a = REPS.map(r => ({ r, mail: d.blocks.find(b=>b.rep===r).target, card: bestMonthRevenue(r) })); return a.map(x => ({ r: x.r, mail: x.mail && x.mail.amount, card: x.card.amount, team: d.team.pct, cardTeam: teamTargetNow().pct })); });
   check('MAIL: the e-mail figures equal the Today card figures (same code)', same.every(x => x.mail === x.card && x.team === x.cardTeam), same);
-  await A.page.unroute('**/daily-report');
 
   check('no page errors on device A', errors.A.filter(e=>!/boom/.test(e)).length===0, errors.A.slice(0,5));
   check('no page errors on device B', errors.B.length===0, errors.B.slice(0,5));

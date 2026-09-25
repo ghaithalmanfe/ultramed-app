@@ -4,7 +4,7 @@
 //                browser of the Claude cloud container, else Playwright's own
 //   salesFixture() path of the synthetic September ERP file (generated once per run)
 const fs = require('fs'), path = require('path');
-const WWW = process.env.WWW || path.join(__dirname, '..', '..', 'www');
+const WWW = path.resolve(process.env.WWW || path.join(__dirname, '..', '..', 'www'));
 const CLOUD_CHROME = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 function launchOpts(){
   const exe = process.env.CHROME_PATH || (fs.existsSync(CLOUD_CHROME) ? CLOUD_CHROME : null);

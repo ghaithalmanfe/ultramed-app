@@ -7,3 +7,6 @@ android/captures/
 android/.idea/
 *.log
 .netlify/
+
+# built site (scripts/build.js) — GitHub Pages publishes it
+dist/

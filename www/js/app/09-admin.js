@@ -38,7 +38,8 @@ function setAdminTab(tab){
   if(tab==='mail'){ body.innerHTML = adminMailHTML(); refreshMailStatus(); }
 }
 // -- Email reports tab: the automatic morning / end-of-day digests --
-const MAIL_ENDPOINT = 'https://resonant-granita-6e6cce.netlify.app/.netlify/functions/daily-report';
+// The digests are sent by GitHub Actions; "send now" is that workflow's Run button.
+const MAIL_WORKFLOW_URL = 'https://github.com/ghaithalmanfe/ultramed-app/actions/workflows/daily-report.yml';
 function adminMailHTML(){
   const people = staff.filter(s=>s && s.email);
   return `
@@ -53,11 +54,8 @@ function adminMailHTML(){
       ${REPS.map(r=>`<div class="chip small" onclick="previewDigest('evening','${esc(r)}')">🌙 ${esc(r)}</div>`).join('')}
     </div>
     <div class="section-title">Send now · إرسال الآن</div>
-    <div class="chip-row" style="margin-bottom:6px;">
-      <button class="chip small" id="mailSendMorning" onclick="sendDigestNow('morning')">☀️ أرسل ملخص الصباح الآن</button>
-      <button class="chip small" id="mailSendEvening" onclick="sendDigestNow('evening')">🌙 أرسل ملخص المساء الآن</button>
-    </div>
-    <div id="mailSendResult" style="font-size:12.5px; color:var(--muted);"></div>`;
+    <a class="btn secondary" id="mailSendNow" href="${MAIL_WORKFLOW_URL}" target="_blank" rel="noopener">▶️ أرسل الآن من GitHub</a>
+    <div id="mailSendResult" style="font-size:12.5px; color:var(--muted); margin-top:6px;" dir="auto">تفتح صفحة الإرسال في GitHub: اضغط <b>Run workflow</b> واختر morning أو evening. بعد دقيقة يظهر الإرسال في البطاقة أعلاه.</div>`;
 }
 async function refreshMailStatus(){
   const el = document.getElementById('mailStatusCard');
@@ -67,7 +65,7 @@ async function refreshMailStatus(){
   if(!document.getElementById('mailStatusCard')) return;
   if(!log || !log.last){
     el.innerHTML = `<div style="font-weight:700; font-size:13.5px;">لم يُرسَل أي تقرير بعد</div>
-      <div style="color:var(--muted); font-size:12.5px; margin-top:4px;" dir="auto">الإرسال يبدأ بعد ضبط الخدمة على Netlify (بيانات دخول للقراءة + مفتاح Resend + عنوان المرسل). جرّب "أرسل الآن" للتأكد.</div>`;
+      <div style="color:var(--muted); font-size:12.5px; margin-top:4px;" dir="auto">الإرسال يبدأ بعد إضافة أربعة أسرار في GitHub (Settings ← Secrets and variables ← Actions): بيانات دخول للقراءة، مفتاح Resend، وعنوان المرسل. ثم جرّب "أرسل الآن".</div>`;
     return;
   }
   const L = log.last;
@@ -85,27 +83,6 @@ function previewDigest(kind, rep){
     <div class="card" style="background:#fff; color:#111; max-height:60vh; overflow:auto;">${d.html}</div>
     <button class="btn secondary" onclick="openAdminPanel(); setAdminTab('mail')">Back</button>
   `);
-}
-async function sendDigestNow(kind){
-  if(!requireAdmin()) return;
-  const out = document.getElementById('mailSendResult');
-  const btn = document.getElementById(kind==='morning'?'mailSendMorning':'mailSendEvening');
-  if(btn) btn.disabled = true;
-  if(out) out.textContent = '⏳ جارٍ الإرسال…';
-  try{
-    let idToken = null;
-    try{ const u = FIREBASE_ENABLED && window.firebase && firebase.auth().currentUser; if(u) idToken = await u.getIdToken(); }catch(e){}
-    const res = await fetch(MAIL_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, idToken }) });
-    const j = await res.json().catch(()=>({}));
-    if(!res.ok){
-      const why = { NOT_CONFIGURED: 'الخدمة غير مضبوطة بعد على Netlify (REPORT_LOGIN_EMAIL / REPORT_LOGIN_PASSWORD / RESEND_API_KEY / MAIL_FROM)', NOT_SIGNED_IN: 'سجّل الدخول بحساب المشرف أولًا', SUPERVISOR_ONLY: 'الإرسال اليدوي للمشرف فقط' }[j.error] || (j.error || ('HTTP ' + res.status));
-      if(out) out.textContent = '❌ لم يُرسَل: ' + why;
-    } else {
-      if(out) out.textContent = j.skipped ? 'ℹ️ لم يُرسَل: ' + j.skipped : `✅ وصلت ${j.sent} · فشلت ${j.failed}`;
-      refreshMailStatus();
-    }
-  }catch(e){ if(out) out.textContent = '❌ تعذّر الوصول إلى الخدمة — تحقق من الاتصال'; }
-  if(btn) btn.disabled = false;
 }
 // -- Team tab (performance + roster management in one place) --
 function adminTeamHTML(){

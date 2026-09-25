@@ -1,7 +1,7 @@
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
 const core = require('../www/js/core.js');
-const report = require('../www/netlify/lib/daily-report.js');
+const report = require('../scripts/daily-report/report.js');
 
 const pack = r => [r.date, r.doc, r.type === 'return' ? 1 : 0, r.product, r.qty, r.gross, r.net, r.sret, r.salesman, r.brand, r.customer, r.cls, r.dsret || 0, r.ref || ''];
 const today = '2026-09-24';
@@ -104,6 +104,16 @@ describe('daily report run (fake cloud + fake mailer)', () => {
   test('Kuwait date: 22:30 UTC is already the next day in Kuwait', () => {
     assert.equal(report.kuwaitToday(new Date('2026-09-24T22:30:00Z')), '2026-09-25');
     assert.equal(report.kuwaitToday(new Date('2026-09-24T04:30:00Z')), '2026-09-24');
+  });
+  test('the public run log never carries an e-mail address', async () => {
+    const sent = [], written = {};
+    const io = fakeIo(sent, written);
+    io.sendMail = async (key, from, to) => { if(to === 'renova@x.com') throw new Error('Invalid `to` field: renova@x.com'); return 'ok'; };
+    const r = await report.run('evening', { env, now: new Date('2026-09-24T15:30:00Z'), io });
+    const txt = report.summarize(r);
+    assert.match(txt, /evening digest for 2026-09-24: 2 sent, 1 failed/);
+    assert.match(txt, /FAIL Renova — Invalid `to` field: <address>/);
+    assert.doesNotMatch(txt, /@/);
   });
   test('missing configuration fails loudly, never silently', async () => {
     await assert.rejects(() => report.run('morning', { env: {}, manual: true, now: new Date('2026-09-24T04:30:00Z') }), /NO_LOGIN/);

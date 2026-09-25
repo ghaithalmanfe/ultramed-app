@@ -28,9 +28,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Publish www/ to the gh-pages branch
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # www/js/app/*.js are inlined back into one self-contained index.html
+      - name: Build the site (www → dist)
+        run: node scripts/build.js
+      - name: Publish dist/ to the gh-pages branch
         run: |
-          cd www
+          cd dist
           touch .nojekyll
           git init -b gh-pages
           git config user.name "github-actions[bot]"
