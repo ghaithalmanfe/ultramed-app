@@ -1,15 +1,17 @@
-// UltraMed Field Ops — daily e-mail digest (morning / evening).
-// Reads the team's data straight from Firestore (REST, signed in as a normal
-// app user), builds each recipient's summary with the SAME code the app uses
-// for its own figures (www/js/core.js), and sends through Resend.
+// UltraMed Field Ops — daily e-mail digest (morning / end of day).
+// Run by GitHub Actions (.github/workflows/daily-report.yml) on a schedule, or
+// by hand from the Actions tab. Reads the team's data straight from Firestore
+// (REST, signed in as a normal app user), builds each recipient's summary
+// with the SAME code the app uses for its own figures (www/js/core.js), and
+// sends through Resend. Every run is logged to the `mailLog` document, which
+// the app's Admin → Email reports tab shows.
 //
-// Environment (Netlify site settings → Environment variables):
-//   REPORT_LOGIN_EMAIL / REPORT_LOGIN_PASSWORD  an app login that may read the data (the supervisor's, or a dedicated one)
+// Configuration — GitHub repo → Settings → Secrets and variables → Actions:
+//   REPORT_LOGIN_EMAIL / REPORT_LOGIN_PASSWORD  an app login that may read the data
 //   RESEND_API_KEY                              from resend.com
 //   MAIL_FROM                                   e.g. "UltraMed Field Ops <reports@ultramed-kw.com>" (domain verified in Resend)
-//   MAIL_ALL_DAYS=1                             also send on Fridays/Saturdays (default: skipped)
-//   MAIL_TO_OVERRIDE                            (testing) send every digest to this one address instead
-const core = require('../../js/core.js');
+// Optional: MAIL_ALL_DAYS=1 (also Fri/Sat), MAIL_TO_OVERRIDE=<one address> (testing).
+const core = require('../../www/js/core.js');
 
 const FIREBASE = { apiKey: 'AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4', projectId: 'ultramed-field-ops' };
 const DOCS = `https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents`;
@@ -25,14 +27,6 @@ async function signIn(email, password){
   const j = await r.json();
   if(!r.ok || !j.idToken) throw new Error('LOGIN_FAILED: ' + ((j.error && j.error.message) || r.status));
   return j.idToken;
-}
-async function whoIs(idToken){
-  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE.apiKey}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ idToken }),
-  });
-  const j = await r.json();
-  const u = j && j.users && j.users[0];
-  return u && u.email ? String(u.email).toLowerCase() : null;
 }
 // Reads several `state/<key>` documents in one request → { key: parsedValue|null }
 async function readDocs(idToken, keys){
@@ -125,25 +119,15 @@ async function run(kind, opts){
   }catch(e){ entry.logError = String(e.message || e); }
   return entry;
 }
-const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
-// Manual entry point: POST { kind, idToken } from the app — only a supervisor's login may trigger a send.
-async function manual(event){
-  if(event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS };
-  if(event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'METHOD_NOT_ALLOWED' }) };
-  let payload; try{ payload = JSON.parse(event.body || '{}'); }catch{ return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'BAD_JSON' }) }; }
-  const kind = payload.kind === 'evening' ? 'evening' : 'morning';
-  if(!process.env.REPORT_LOGIN_EMAIL || !process.env.RESEND_API_KEY) return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: 'NOT_CONFIGURED' }) };
-  try{
-    const email = payload.idToken ? await whoIs(payload.idToken) : null;
-    if(!email) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'NOT_SIGNED_IN' }) };
-    const probe = await signIn(process.env.REPORT_LOGIN_EMAIL, process.env.REPORT_LOGIN_PASSWORD);
-    const staff = (await readDocs(probe, ['staff'])).staff || [];
-    const isSup = staff.some(s => s && s.role === 'supervisor' && String(s.email || '').toLowerCase() === email);
-    if(!isSup) return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'SUPERVISOR_ONLY' }) };
-    const r = await run(kind, { manual: true });
-    return { statusCode: 200, headers: CORS, body: JSON.stringify(r) };
-  }catch(e){
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: String(e.message || e).slice(0, 300) }) };
-  }
+// A run summary safe for a PUBLIC log (the repository's Actions logs are
+// public): names and outcomes only — never an e-mail address.
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+function summarize(entry){
+  if(!entry) return '';
+  if(entry.skipped) return `${entry.kind || ''} ${entry.today}: skipped (${entry.skipped})`;
+  const lines = [`${entry.kind} digest for ${entry.today}: ${entry.sent} sent, ${entry.failed} failed${entry.manual ? ' (manual run)' : ''}`];
+  (entry.to || []).forEach(t => lines.push(`  ${t.ok ? 'OK  ' : 'FAIL'} ${t.name || '?'}${t.ok ? '' : ' — ' + String(t.error || '').replace(EMAIL_RE, '<address>')}`));
+  if(entry.logError) lines.push('  (could not write mailLog: ' + String(entry.logError).replace(EMAIL_RE, '<address>') + ')');
+  return lines.join('\n');
 }
-module.exports = { run, buildAll, manual, kuwaitToday, loadData, readDocs };
+module.exports = { run, buildAll, summarize, kuwaitToday, loadData, readDocs };
