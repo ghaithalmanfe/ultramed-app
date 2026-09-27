@@ -27,4 +27,4 @@ figure that cannot be explained on screen.
 ## House rules
 - Arabic replies to the user, plain language, no code in prose.
 - Reproduce a bug with a harness check before fixing it; keep the check.
-- Month figures: one code path (`UMCore.monthAchievement`) serves the Today card, the reports and the e-mail — never compute them elsewhere.
+- Month figures: one code path (`UMCore.monthAchievement`) serves the Today card, the reports, the monthly close and the e-mail — never compute them elsewhere. Rule (owner's decision): ONE source, never DSR + ERP added. The DSR is dated by its file name, the sales files by the last day they cover; the newer wins, DSR on a tie, and ERP stands alone only when its files cover the month from day 1. The other file's figure is shown beside it (`alt`), labelled "not added". DSR = targets and per-brand achieved; ERP = the invoice-level detail.
