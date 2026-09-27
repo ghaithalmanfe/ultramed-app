@@ -131,24 +131,7 @@ function digestData(){ return { today: todayStr(), targets, erpSales, clinics, e
 function erpMtdMap(){ return UMCore.erpMtd(digestData()); }
 // Month-to-date ERP sales per rep per normalized brand, plus the latest
 // invoice date — for brand tables that must follow the freshest upload.
-function erpBrandMtd(rep){
-  const today = todayStr(), mStart = today.slice(0,7)+'-01';
-  const out = {}; let asOf = null;
-  erpPeriods().filter(p => p.to >= mStart && p.from <= today).forEach(p => {
-    erpViewRows(p).forEach(r => {
-      if(r.date < mStart || r.date > today) return;
-      if(UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}) !== rep) return;
-      // Same scope as erpMtdMap (the DSR basis, every line) — so the brand
-      // rows sum exactly to the rep's headline achieved figure, and a
-      // channel-only brand like UNIVET shows its real number.
-      if(!erpRowCountsAsSales(r)) return;
-      const b = UMCore.normBrand(r.brand);
-      out[b] = (out[b]||0) + r.net;
-      if(!asOf || r.date > asOf) asOf = r.date;
-    });
-  });
-  return { byBrand: out, asOf };
-}
+function erpBrandMtd(rep){ const today = todayStr(); return erpBrandRange(rep, today.slice(0,7)+'-01', today); }
 // Best month-to-date sales for a rep. The DSR is the company's OFFICIAL
 // reconciled report — whenever one covers the current month it is
 // authoritative, even over more recent raw sales-detail invoices (which may
@@ -222,7 +205,7 @@ function targetPctNote(before, after){
   const tb = teamOf(before), ta = teamOf(after);
   if(ta.pct != null) parts.push(`<b>الفريق</b>: ${tb.pct != null ? tb.pct + '% → ' : ''}<b>${ta.pct}%</b> <span style="color:var(--muted);">· ${money(ta.ach)} من ${money(ta.goal)}</span>`);
   const none = reps.every(r => before[r] && before[r].pct === after[r].pct && before[r].amount === after[r].amount);
-  const why = none ? '<div style="font-size:11.5px; color:var(--muted); margin-top:3px;">لم تتغير النسبة: ملف DSR تاريخه أحدث من أو مساوٍ لآخر يوم يغطيه ملف المبيعات، فبقي هو المرجع. النظام يعتمد الملف الأحدث وحده ولا يجمع الاثنين.</div>' : '';
+  const why = none ? '<div style="font-size:11.5px; color:var(--muted); margin-top:3px;">لم تتغير النسبة: المحقق يُحسب من ملفات مبيعات ERP فقط. ملف DSR يحدّد التارغت (لكل براند ولكل مندوبة وللفريق) ولا يُستخدم كمصدر للمحقق.</div>' : '';
   return `🎯 <b>شاشة اليوم الآن:</b> ${parts.join(' · ')}${why}`;
 }
 // Shown on top of whichever modal is open right after an upload.
@@ -239,35 +222,40 @@ function erpShowImportNote(html){
   if(h3) h3.insertAdjacentElement('afterend', div); else box.prepend(div);
 }
 
-// The report's ONLY sales source: official uploads (DSR) or ERP invoices —
-// never app-logged orders. The same one-source rule as the Today card
-// (UMCore.monthAchievement): the newer of the two files, never their sum.
+// The report's ONLY sales source: the ERP sales files (owner's rule) — never
+// the DSR's achieved column, never app-logged orders.
 function officialRevenue(rep){
   const bm = bestMonthRevenue(rep);
-  if(bm.basis === 'app') return { amount: null, src: null, asOf: null, has: false };
-  return { amount: bm.amount, src: bm.src, asOf: bm.asOf, has: true, basis: bm.basis, alt: bm.alt };
+  if(bm.basis !== 'erp') return { amount: null, src: null, asOf: null, has: false };
+  return { amount: bm.amount, src: bm.src, asOf: bm.asOf, has: true, basis: bm.basis };
 }
-// targets with each rep's achieved set to that same one-source figure — what
-// every coach/insight consumer sees, so all screens agree with the Today card.
+// targets as the coach/insights see them: DSR targets, achieved from ERP only.
 function blendedTargets(){
   const out = {};
   Object.keys(targets).filter(k => !k.startsWith('_')).forEach(rep => {
     const t = Object.assign({}, targets[rep]);
     const bm = bestMonthRevenue(rep);
-    if(bm.basis !== 'app'){ t.achieved = bm.amount; t.achievedAsOf = bm.asOf; }
+    delete t.achievedBrands;
+    if(bm.basis === 'erp'){ t.achieved = bm.amount; t.achievedAsOf = bm.asOf; }
+    else { delete t.achieved; delete t.achievedAsOf; }
     out[rep] = t;
   });
   return out;
 }
-// One line that says which file the figure comes from and what the other
-// file says — both visible, never added together.
-function achievementSourceNote(bm, goal){
-  if(!bm || !bm.alt) return '';
-  const a = bm.alt, pct = goal > 0 ? ` (${Math.round(a.amount / goal * 100)}%)` : '';
-  const why = bm.why === 'erp-partial' ? 'ERP does not cover the whole month yet'
-    : bm.why === 'same-day' ? 'same date — DSR is the official one'
-    : `the ${bm.basis === 'erp' ? 'ERP' : 'DSR'} file is newer`;
-  return `${a.basis === 'dsr' ? 'DSR' : 'ERP'} ${fmtDate(a.asOf)}: ${money(a.amount)}${pct} · not added — ${why}`;
+// ERP net per normalized brand for a rep over [from, to] — the only
+// "achieved per brand" figure (the DSR gives the brand targets).
+function erpBrandRange(rep, from, to){
+  const out = {}; let asOf = null;
+  erpPeriods().filter(p => p.to >= from && p.from <= to).forEach(p => {
+    erpViewRows(p).forEach(r => {
+      if(r.date < from || r.date > to) return;
+      if(UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}) !== rep) return;
+      const b = UMCore.normBrand(r.brand);
+      out[b] = (out[b]||0) + r.net;
+      if(!asOf || r.date > asOf) asOf = r.date;
+    });
+  });
+  return { byBrand: out, asOf };
 }
 // ---- MONTHLY CLOSE REPORTS ----
 // Any month with archived DSR figures or uploaded invoices can be opened, on
@@ -310,15 +298,9 @@ function monthCloseData(m){
     if(cur && (cur.achievedAsOf||'').slice(0,7) === m &&
        (!t || (t.achievedAsOf||'') <= (cur.achievedAsOf||''))) t = cur;
     const erpMonth = erpRevenueForRange(mStart, mEnd, rep);
-    // The same one-source rule as the Today card, for that month: the newer of
-    // its DSR and its sales files, never the two added together.
-    const today = todayStr();
-    const a = UMCore.monthAchievement(rep, Object.assign(digestData(), { today: mEnd < today ? mEnd : today, targets: t ? { [rep]: t } : {} }));
-    let achieved = null, src = '';
-    if(a.basis !== 'app'){
-      achieved = a.amount;
-      src = a.src + (a.alt ? ` · لم يُجمع مع ${a.alt.basis === 'dsr' ? 'DSR' : 'ERP'} ${fmtDate(a.alt.asOf)}` : '');
-    }
+    // Achieved = the ERP sales files for that month only (owner's rule); the DSR gives the target.
+    const achieved = erpMonth;
+    const src = erpMonth != null ? 'ERP' : 'لا يوجد ملف مبيعات لهذا الشهر';
     const mv = UMCore.dedupeVisits(visits.filter(v => v && v.rep === rep && (v.date||'').slice(0,7) === m)).unique;
     return { rep, t, achieved, src, erpMonth,
       target: t && t.revenue > 0 ? t.revenue : null,
@@ -331,13 +313,15 @@ function monthCloseData(m){
 function renderMonthClose(m){
   const rows = monthCloseData(m);
   const brandBlock = r => {
-    const bt = (r.t && r.t.brands) || {}, ab = (r.t && r.t.achievedBrands) || {};
-    const names = [...new Set([...Object.keys(bt), ...Object.keys(ab)])].sort((a,b)=>(bt[b]||0)-(bt[a]||0));
+    const bt = (r.t && r.t.brands) || {};
+    const ab = erpBrandRange(r.rep, m + '-01', monthEndOf(m) < todayStr() ? monthEndOf(m) : todayStr()).byBrand; // achieved per brand = ERP
+    const tNorm = new Set(Object.keys(bt).map(n => UMCore.normBrand(n)));
+    const names = [...Object.keys(bt), ...Object.keys(ab).filter(n => !tNorm.has(n))].sort((a,b)=>(bt[b]||0)-(bt[a]||0));
     if(!names.length) return '';
     return `<div style="margin-top:6px; overflow-x:auto;"><table style="width:100%; font-size:11.5px; border-collapse:collapse;">
-      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق (DSR ${esc(fmtDate((r.t && r.t.achievedAsOf) || ''))})</td><td style="text-align:start;">%</td></tr>
+      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق (ERP)</td><td style="text-align:start;">%</td></tr>
       ${names.map(n=>{
-        const tv = bt[n]||0, av = ab[n]||0;
+        const tv = bt[n]||0, av = Math.round((ab[UMCore.normBrand(n)] || 0) * 100) / 100;
         const p = tv>0 ? Math.round(av/tv*100) : null;
         return `<tr style="border-top:1px dashed var(--line);"><td style="padding:2px 4px;">${esc(n)}</td>
           <td style="text-align:start;">${tv?money(tv):'—'}</td><td style="text-align:start;">${av?money(av):'—'}</td>
@@ -949,7 +933,7 @@ function openErpRecon(id){
       const pct = Math.min(100, Math.round(r.erp.net / t.revenue * 100));
       return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)</div>
         <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${pct>=100?'var(--sage)':pct>=60?'#FF9500':'var(--coral)'};"></div></div>
-        ${t.achieved!=null?`<div style="font-size:11.5px; color:var(--muted); margin-top:4px;">Official DSR MTD: ${money(t.achieved)}${t.achievedAsOf?` (as of ${fmtDate(t.achievedAsOf)})`:''}</div>`:''}`;
+`;
     })() : '';
     return `
     <div class="section-title">👤 ${esc(r.rep)}</div>
@@ -1018,11 +1002,7 @@ function openErpRecon(id){
       });
       const items = Object.entries(bt).filter(([,t])=>t>0).sort((a,b)=>b[1]-a[1]);
       if(!items.length) return '';
-      const ab = targets[r.rep].achievedBrands || {};
-      // The DSR's official brand MTD wins only while it is at least as fresh
-      // as this sales period; a newer weekly sales upload takes over.
-      const hasOfficial = Object.keys(ab).length > 0 &&
-        (targets[r.rep].achievedAsOf || '') >= (p.to || '');
+      const ab = {}, hasOfficial = false; // achieved = ERP only (owner's rule); the DSR gives the brand targets
       return `<div class="card">
         <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🎯 Brand targets vs achieved (${esc(r.rep)})</div>
         <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
@@ -1046,7 +1026,7 @@ function openErpRecon(id){
             </tr>`;
           }).join('')}
         </table></div>
-        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets & official MTD from the DSR file · invoiced from this ERP period${hasOfficial?' · Ach.% uses the official DSR figure when present':''}. Green ≥60%, orange ≥25%, red below.</div>
+        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets from the DSR file · achieved = invoiced in this ERP period. Green ≥60%, orange ≥25%, red below.</div>
       </div>`;
     })()}
     ${r.matched.length?`<div class="card" style="border-inline-start:4px solid var(--sage);">

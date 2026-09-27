@@ -383,26 +383,18 @@
     Object.keys(targets).filter(r => wantRep(r) && targets[r] && targets[r].revenue > 0).sort().forEach(rep => {
       const t = targets[rep];
       const goal = t.revenue;
-      // Target tracking is grounded in the supervisor's uploads, never in what
-      // the reps type by hand. The DSR is the company's OFFICIAL reconciled
-      // report — whenever one covers the current month it is authoritative,
-      // even over more recent raw sales-detail invoices (which may include
-      // rows the DSR excludes). Sales files only fill in when no current-month
-      // DSR exists. Pace math uses the winning source's as-of day so a
-      // mid-month upload isn't judged against today's calendar.
-      const officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
+      // Target tracking is measured ONLY by the uploaded ERP sales files
+      // (owner's rule); the DSR supplies the target. No sales file yet → no
+      // verdict on pace, just a prompt to upload one.
       const e = erpMtd[rep];
-      const erpOk = e && e.amount != null;
-      const official = officialOk;
-      const erp = !official && erpOk;
-      const mtd = official ? t.achieved
-        : erp ? e.amount
-        : visits.filter(v => v.rep === rep && v.date >= mStart && v.date <= today)
-          .reduce(function(sum, v){ return sum + (v.orderTotal || 0); }, 0);
-      const src = official ? ' (official DSR figure)' : erp ? ' (from uploaded sales)' : ' (app-logged — upload a sales file for the official figure)';
+      const erp = !!(e && e.amount != null);
+      const official = false;
+      if(!erp) return;
+      const mtd = e.amount;
+      const src = ' (ERP sales files)';
       // Pace runs on WORKING days only (Sun–Thu; Fri/Sat weekend) so the
       // required daily amount is realistic for days actually worked.
-      const asOfDate = official ? t.achievedAsOf : (erp && e.asOf ? e.asOf : today);
+      const asOfDate = e.covered || e.asOf || today;
       const monthEnd = today.slice(0, 7) + '-' + ('0' + daysInMonth).slice(-2);
       const totalWork = workingDaysBetween(mStart, monthEnd);
       const workedSoFar = Math.max(1, workingDaysBetween(mStart, asOfDate));
@@ -1563,31 +1555,28 @@
     });
     return map;
   }
-  // The month's achieved figure for one rep — ONE source, never a sum:
-  //  • the DSR (official, dated by its file name) and the ERP sales files
-  //    (every invoice line, dated by the last day they cover) are compared,
-  //    and the one with the LATER date is used on its own;
-  //  • on the same date the DSR wins (it is the company's official report);
-  //  • ERP can stand alone only when its files cover the month from day 1;
-  //  • with neither, what the app logged.
-  // `alt` carries the other source so the screen can show both, side by side.
+  // The last day the uploaded sales files cover in the current month (null = none).
+  function erpMonthCovered(data){
+    var today = data.today, mStart = today.slice(0, 7) + '-01', out = null;
+    erpPeriodsOf(data.erpSales).forEach(function(p){
+      if(!(p.to >= mStart && p.from <= today)) return;
+      var to = p.to > today ? today : p.to;
+      if(!out || to > out) out = to;
+    });
+    return out;
+  }
+  // The month's achieved figure for one rep. Owner's rule: the ERP sales
+  // files are the ONLY measure of achievement (every invoice line of the
+  // rep's salesman, day by day). The DSR supplies the targets only — per
+  // brand, per rep and for the team — and its achieved column is never used.
   function monthAchievement(rep, data, mtdMap){
-    var today = data.today, t = (data.targets || {})[rep] || {};
     var em = (mtdMap || erpMtd(data))[rep];
-    var dsr = (t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7))
-      ? { basis: 'dsr', amount: t.achieved, asOf: t.achievedAsOf, src: 'DSR ' + fmtDate(t.achievedAsOf) } : null;
-    var erp = (em && em.amount != null)
-      ? { basis: 'erp', amount: em.amount, asOf: em.covered, complete: em.complete, src: 'ERP to ' + fmtDate(em.covered) + (em.complete ? '' : ' (partial month)') } : null;
-    var pick = function(win, other, why){ return { amount: win.amount, src: win.src, asOf: win.asOf, basis: win.basis, why: why, alt: other || null }; };
-    if(dsr && erp){
-      if(erp.complete && erp.asOf > dsr.asOf) return pick(erp, dsr, 'newer');
-      return pick(dsr, erp, erp.complete ? (erp.asOf === dsr.asOf ? 'same-day' : 'newer') : 'erp-partial');
+    if(em && em.amount != null){
+      return { amount: em.amount, src: 'ERP to ' + fmtDate(em.covered) + (em.complete ? '' : ' (partial month)'), asOf: em.covered, basis: 'erp', complete: em.complete, alt: null };
     }
-    if(dsr) return pick(dsr, null, 'only');
-    if(erp) return pick(erp, null, 'only');
-    var m = getMonthDates(today);
-    var s = rangeSummary(m[0], m[m.length - 1], rep, { visits: data.visits || [], clinics: data.clinics || [], tasks: data.tasks || [], events: data.events || [], dayPlans: data.dayPlans || {} });
-    return { amount: s.revenue, src: 'app-logged', asOf: null, basis: 'app', why: 'none', alt: null };
+    var covered = erpMonthCovered(data);
+    if(covered) return { amount: 0, src: 'ERP to ' + fmtDate(covered), asOf: covered, basis: 'erp', complete: true, alt: null }; // files cover the month, no invoice for this rep yet
+    return { amount: 0, src: 'no ERP sales file for this month yet', asOf: null, basis: 'none', complete: false, alt: null };
   }
   function teamAchievement(reps, data){
     var mtd = erpMtd(data), rows = [];
@@ -1659,8 +1648,7 @@
     var tLine = function(t){
       if(!t) return 'لا يوجد تارغت مبيعات لهذا الشهر';
       var s = t.rep + ': ' + t.pct + '% — ' + kd(t.amount) + ' من ' + kd(t.goal) + ' (المصدر: ' + t.src + ')';
-      if(t.alt) s += ' · ' + (t.alt.basis === 'dsr' ? 'DSR' : 'ERP') + ' ' + fmtDate(t.alt.asOf) + ': ' + kd(t.alt.amount) + ' (' + Math.round(t.alt.amount / t.goal * 100) + '%) — لم يُجمع'
-        + (t.why === 'erp-partial' ? '، ملف المبيعات لا يغطي الشهر كاملًا' : t.why === 'same-day' ? '، نفس التاريخ والرسمي هو DSR' : '، اعتُمد الأحدث');
+      if(t.basis === 'none') s = t.rep + ': لا يوجد ملف مبيعات ERP لهذا الشهر بعد — التارغت ' + kd(t.goal);
       if(t.stale) s += ' ⚠️ التارغت من شهر سابق — ارفع DSR الشهر الجديد';
       else if(t.pace != null) s += ' · على هذا الإيقاع تصل إلى ' + t.pace + '% بنهاية الشهر · متبقٍ ' + t.left + ' يوم';
       return s;

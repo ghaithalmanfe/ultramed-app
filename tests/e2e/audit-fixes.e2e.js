@@ -371,7 +371,7 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
     return { tab, pm, pe, href: send && send.getAttribute('href'), target: send && send.getAttribute('target') };
   });
   check('MAIL: admin tab lists recipients, schedule and status', /07:30/.test(mail1.tab) && /18:30/.test(mail1.tab) && /mariam@|@ultramed/.test(mail1.tab) && /لم يُرسَل أي تقرير بعد/.test(mail1.tab) && /GitHub/.test(mail1.tab), mail1.tab.split('\n').slice(0,4));
-  check('MAIL: team morning preview carries the team % and every rep\'s target line', /تحقيق الفريق/.test(mail1.pm) && /الفريق: \d+%/.test(mail1.pm) && (mail1.pm.match(/: \d+% — /g)||[]).length >= 2 && /خطة اليوم/.test(mail1.pm), mail1.pm.split('\n').slice(0,6));
+  check('MAIL: team morning preview carries the team % and every rep\'s target line', /تحقيق الفريق/.test(mail1.pm) && /الفريق: \d+%/.test(mail1.pm) && ((mail1.pm.match(/: \d+% — /g)||[]).length + (mail1.pm.match(/لا يوجد ملف مبيعات ERP/g)||[]).length) >= 3 && /خطة اليوم/.test(mail1.pm), mail1.pm.split('\n').slice(0,6));
   check('MAIL: rep evening preview shows her day only', /حصيلة اليوم/.test(mail1.pe) && /Mariam/.test(mail1.pe.split('\n')[0]) && !/Renova/.test(mail1.pe), mail1.pe.split('\n').slice(0,3));
   check('MAIL: "send now" opens the GitHub Actions run page (no Netlify call)', mail1.href === 'https://github.com/ghaithalmanfe/ultramed-app/actions/workflows/daily-report.yml' && mail1.target === '_blank', mail1);
   cloud.mailLog = JSON.stringify({ last: { kind: 'morning', today, at: new Date().toISOString(), sent: 2, failed: 1, to: [{ to: 'a@x', name: 'Mariam', ok: true }, { to: 'b@x', name: 'Renova', ok: false, error: 'bounced' }] }, history: [] });
