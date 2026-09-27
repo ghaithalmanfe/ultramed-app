@@ -32,34 +32,29 @@ const data = () => ({
 });
 
 describe('daily digest: figures are the app\'s figures', () => {
-  test('one source, never a sum: the newer of DSR (file-name date) and ERP (last day covered) wins', () => {
-    // DSR 23 Sep is newer than the sales file (covers to 22 Sep) → DSR alone
+  test('achieved comes ONLY from the ERP sales files; the DSR supplies the targets and nothing else', () => {
+    // the DSR's achieved (3000, dated 23 Sep — newer than the file) is ignored
     const a = core.monthAchievement('Mariam', data());
-    assert.equal(a.amount, 3000); assert.equal(a.basis, 'dsr'); assert.equal(a.src, 'DSR Sep 23');
-    assert.equal(a.alt.basis, 'erp'); assert.equal(a.alt.amount, 80 + 90 + 60.5); assert.equal(a.alt.asOf, '2026-09-22');
+    assert.equal(a.amount, 80 + 90 + 60.5); assert.equal(a.basis, 'erp'); assert.equal(a.src, 'ERP to Sep 22'); assert.equal(a.alt, null);
+    // a rep with no invoice on the file's last day is measured to the file's last day
+    const r = core.monthAchievement('Renova', data());
+    assert.equal(r.amount, 70); assert.equal(r.asOf, '2026-09-22');
+    // team: DSR targets summed, ERP achieved summed
     const team = core.teamAchievement(['Mariam', 'Renova'], data());
-    assert.equal(team.goal, 22000); assert.equal(team.ach, 7000); assert.equal(team.pct, 32);
-    // DSR 14 Sep is older than the sales file → the sales file alone, the whole month from it
-    const d2 = data(); d2.targets.Mariam.achievedAsOf = '2026-09-14';
-    const b = core.monthAchievement('Mariam', d2);
-    assert.equal(b.amount, 230.5); assert.equal(b.basis, 'erp'); assert.equal(b.src, 'ERP to Sep 22'); assert.equal(b.alt.amount, 3000);
-    // same date → DSR (the official one)
-    const d3 = data(); d3.targets.Mariam.achievedAsOf = '2026-09-22';
-    assert.equal(core.monthAchievement('Mariam', d3).basis, 'dsr'); assert.equal(core.monthAchievement('Mariam', d3).why, 'same-day');
-    // the sales file does not reach back to the 1st → it cannot stand alone, DSR stays
-    const d4 = data(); d4.targets.Mariam.achievedAsOf = '2026-09-14'; d4.erpSales.periods[0].from = '2026-09-10';
-    const c = core.monthAchievement('Mariam', d4);
-    assert.equal(c.basis, 'dsr'); assert.equal(c.why, 'erp-partial'); assert.match(c.alt.src, /partial month/);
-    // a file covers every salesman to its last date, even a rep with no invoice that day
-    const r = core.monthAchievement('Renova', d2);
-    assert.equal(r.basis, 'dsr'); // Renova's DSR is still 23 Sep in d2
-    const d5 = data(); d5.targets.Renova.achievedAsOf = '2026-09-20';
-    assert.equal(core.monthAchievement('Renova', d5).asOf, '2026-09-22'); assert.equal(core.monthAchievement('Renova', d5).amount, 70);
+    assert.equal(team.goal, 22000); assert.equal(team.ach, 300.5); assert.equal(team.pct, 1);
+    // a sales file that starts mid-month is still the only source, labelled partial
+    const d4 = data(); d4.erpSales.periods[0].from = '2026-09-10';
+    assert.match(core.monthAchievement('Mariam', d4).src, /partial month/);
+    // no sales file for the month → 0 and says so (never the DSR, never app-logged orders)
+    const d6 = data(); d6.erpSales = { periods: [] };
+    const n = core.monthAchievement('Mariam', d6);
+    assert.equal(n.amount, 0); assert.equal(n.basis, 'none'); assert.match(n.src, /no ERP/);
   });
   test('morning digest for a rep: target line, plan with notes, follow-ups, missed plans, tasks', () => {
     const d = core.dailyDigest({ kind: 'morning', data: data(), reps: ['Mariam', 'Renova'], rep: 'Mariam' });
     assert.match(d.subject, /ملخص الصباح/); assert.match(d.subject, /Mariam/);
-    assert.match(d.text, /Mariam: 30% — 3000\.00 KD من 10000\.00 KD \(المصدر: DSR Sep 23\) · ERP Sep 22: 230\.50 KD \(2%\) — لم يُجمع/);
+    assert.match(d.text, /Mariam: 2% — 230\.50 KD من 10000\.00 KD \(المصدر: ERP to Sep 22\)/);
+    assert.doesNotMatch(d.text, /DSR Sep 23/);
     assert.match(d.text, /Dental 8 Clinic — bring samples/);
     assert.match(d.text, /Smile Care — اليوم/);
     assert.match(d.text, /Dental 8 Clinic — متأخرة منذ Sep 20/);
@@ -69,7 +64,7 @@ describe('daily digest: figures are the app\'s figures', () => {
   });
   test('evening digest for the supervisor: team %, per-rep tallies, plan vs reality, tomorrow', () => {
     const d = core.dailyDigest({ kind: 'evening', data: data(), reps: ['Mariam', 'Renova'] });
-    assert.match(d.text, /الفريق: 32% — 7000\.00 KD من 22000\.00 KD \(2 مندوبات\)/);
+    assert.match(d.text, /الفريق: 1% — 300\.50 KD من 22000\.00 KD \(2 مندوبات\)/);
     assert.match(d.text, /Mariam — حصيلة اليوم/);
     assert.match(d.text, /زيارات ميدانية: 2 · مكالمات: 1 · طلبات هاتفية: 0 · طلبات: 1 · مبيعات مسجلة: 45\.50 KD/); // joint visit counts for Mariam too
     assert.match(d.text, /مخطط: 2 · تمت: 1 · لم تتم: Smile Care/);

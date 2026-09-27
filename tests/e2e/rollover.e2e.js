@@ -90,7 +90,7 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
     closeModal();
     return { pct: targetPctMap(), card: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '', month: targets.Mariam.month, hist: Object.keys(targets._history||{}) };
   });
-  check('Oct 1: after uploading October\'s DSR the target is October\'s, the stale note and the month-inputs card disappear, Sep stays archived', afterDsr.month==='2026-10' && !/Target is from/.test(afterDsr.card) && !/المدخلات الشهرية/.test(afterDsr.nudge) && afterDsr.pct.Mariam.pct===1 && /^DSR Oct 1$/.test(afterDsr.pct.Mariam.src) && afterDsr.hist.includes('2026-09'), { pct: afterDsr.pct, month: afterDsr.month, hist: afterDsr.hist });
+  check('Oct 1: after uploading October\'s DSR the target is October\'s, the stale note and the month-inputs card disappear, Sep stays archived', afterDsr.month==='2026-10' && !/Target is from/.test(afterDsr.card) && !/المدخلات الشهرية/.test(afterDsr.nudge) && afterDsr.pct.Mariam.pct===0 && afterDsr.pct.Mariam.goal===9500 && /no ERP/.test(afterDsr.pct.Mariam.src) && afterDsr.hist.includes('2026-09'), { pct: afterDsr.pct, month: afterDsr.month, hist: afterDsr.hist });
   check('Oct 1: no page errors', errors2.length===0 && errors.length===0, errors2.concat(errors).slice(0,4));
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
