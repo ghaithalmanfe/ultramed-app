@@ -79,7 +79,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   cloud.erpSales = JSON.stringify(Object.assign(JSON.parse(cloud.erpSales), { returnPolicy: 'erp' }));
   await boot();
   let s = await state();
-  check('Today card names its source and as-of date', /Source: DSR/.test(s.target) && /as of/.test(s.target), s.target.split('\n').slice(0,6));
+  check('Today card names its source and its date', /Source: DSR Sep 14/.test(s.target), s.target.split('\n').slice(0,6));
   const pctBefore = await page.evaluate(() => targetPctMap());
   // Independent expectation straight from the xlsx: the DSR basis is EVERY
   // line of the rep's salesman (all customers, channels included), net.
@@ -87,16 +87,17 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   const sheets = await core.readXlsx(Buffer.from(SALES_B64, 'base64'));
   const toCsv = rows => rows.map(r => (r||[]).map(v => { const t = String(v == null ? '' : v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }).join(',')).join('\n');
   const fileRows = core.parseErpCsv(toCsv(sheets[0].rows)).rows;
-  const after14 = sm => Math.round(fileRows.filter(r => r.salesman === sm && r.date > '2026-09-14').reduce((t, r) => t + r.net, 0) * 100) / 100;
-  const expected = { Mariam: Math.round((3000 + after14('Mariam Zohair')) * 100) / 100, Renova: Math.round((4000 + after14('Ranova Ayman Mohammed')) * 100) / 100 };
+  const monthOf = sm => Math.round(fileRows.filter(r => r.salesman === sm && r.date >= '2026-09-01').reduce((t, r) => t + r.net, 0) * 100) / 100;
+  // the sales file (1–21 Sep) is newer than the DSR (14 Sep) → it is used ALONE, never added to the DSR
+  const expected = { Mariam: monthOf('Mariam Zohair'), Renova: monthOf('Ranova Ayman Mohammed') };
 
   // ---------- 1) import → Today moves, and the note says before → after ----------
   await importFile();
   s = await state();
   const pctAfter = await page.evaluate(() => targetPctMap());
   check('Sep file saved (2 periods)', s.periods.length===2 && s.periods[1].rows===146, s.periods);
-  check('Today % moved after the upload (DSR 14/9 + invoices 15–21/9)', pctAfter.Mariam.pct > pctBefore.Mariam.pct && /DSR .* \+ ERP/.test(pctAfter.Mariam.src), { before: pctBefore, after: pctAfter });
-  check('achieved = DSR + EVERY invoice line after the DSR date (channels included), to the cent', pctAfter.Mariam.amount===expected.Mariam && pctAfter.Renova.amount===expected.Renova, { shown: { Mariam: pctAfter.Mariam.amount, Renova: pctAfter.Renova.amount }, expected });
+  check('after the upload the newer sales file is the source (ERP to 21 Sep), not DSR + ERP', /^ERP to Sep 21$/.test(pctAfter.Mariam.src) && /^DSR Sep 14$/.test(pctBefore.Mariam.src), { before: pctBefore, after: pctAfter });
+  check('achieved = EVERY invoice line of the month in the sales file (channels included), to the cent — the DSR is not added', pctAfter.Mariam.amount===expected.Mariam && pctAfter.Renova.amount===expected.Renova, { shown: { Mariam: pctAfter.Mariam.amount, Renova: pctAfter.Renova.amount }, expected });
   const brandChk = await page.evaluate(() => { const b = erpBrandMtd('Renova'); const sum = Object.values(b.byBrand).reduce((a, x) => a + x, 0); return { sum: Math.round(sum * 100) / 100, mtd: erpMtdMap().Renova.amount, brands: Object.keys(b.byBrand) }; });
   check('brand MTD rows sum exactly to the rep\'s headline MTD (same basis)', Math.abs(brandChk.sum - brandChk.mtd) < 0.01, brandChk);
 
@@ -118,7 +119,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('reports: scorecards end with the Team target card', /Team · \w+ target/.test(team.sc) && new RegExp(expTeamPct + '%').test(team.sc), team.sc.split('\n').slice(-6));
   check('PDF cover: achieved sales KPI states the % of target', team.cover === String(expTeamPct), { cover: team.cover, expTeamPct });
   check('import note on the report modal shows the Today % before → after', /شاشة اليوم الآن/.test(s.modal) && new RegExp(pctBefore.Mariam.pct + '% → ' + pctAfter.Mariam.pct + '%').test(s.modal), s.modal.split('\n').slice(0,4));
-  check('Today card source now says DSR + ERP', /DSR .* \+ ERP/.test(s.target), s.target.split('\n').slice(0,6));
+  check('Today card says the sales file is used alone and shows the DSR figure beside it, not added', /Source: ERP to Sep 21 · used alone/.test(s.target) && /DSR Sep 14: 3000\.00 KD \(30%\) · not added — the ERP file is newer/.test(s.target), s.target.split('\n').slice(0,8));
   check('cloud index carries savedAt and is small', !!JSON.parse(cloud.erpSales).savedAt && cloud.erpSales.length < 3000, { bytes: cloud.erpSales.length });
 
   // ---------- 2) DSR file name sanity ----------
