@@ -1526,52 +1526,68 @@
     }); });
     return Math.round(sum * 100) / 100;
   }
-  // Month-to-date ERP sales per rep with each rep's as-of date.
+  function addDaysStr(d, n){ var x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return localDateStr(x); }
+  // Month-to-date ERP sales per rep. `asOf` = the rep's latest invoice;
+  // `covered` = the last day the uploaded files cover (a file covers every
+  // salesman up to its last invoice date, even on a day this rep sold
+  // nothing); `complete` = those files reach back to the start of the month
+  // without a gap, so the ERP figure can stand on its own for the month.
+  var ERP_GAP_DAYS = 3; // a weekend plus a holiday with no invoices is not a gap
   function erpMtd(data){
     var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales;
-    var sums = {}, asOf = {}, ctx = null;
+    var sums = {}, asOf = {}, spans = {}, ctx = null;
     erpPeriodsOf(es).filter(function(p){ return p.to >= mStart && p.from <= today; }).forEach(function(p){
       ctx = ctx || erpCtxOf(es);
+      var seen = {};
       erpViewRowsOf(es, p, ctx).forEach(function(r){
         if(r.date < mStart || r.date > today) return;
         var rep = erpRowRep(r, data.clinics || [], data.erpMap || {}, p.repMap || {});
         if(!rep) return;
         sums[rep] = (sums[rep] || 0) + r.net;
         if(!asOf[rep] || r.date > asOf[rep]) asOf[rep] = r.date;
+        seen[rep] = 1;
+      });
+      Object.keys(seen).forEach(function(rep){
+        (spans[rep] = spans[rep] || []).push({ from: p.from < mStart ? mStart : p.from, to: p.to > today ? today : p.to });
       });
     });
     var map = {};
-    Object.keys(sums).forEach(function(rep){ map[rep] = { amount: Math.round(sums[rep] * 100) / 100, asOf: asOf[rep] }; });
+    Object.keys(sums).forEach(function(rep){
+      var sp = (spans[rep] || []).sort(function(a, b){ return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
+      var complete = !!sp.length && sp[0].from <= addDaysStr(mStart, ERP_GAP_DAYS), end = sp.length ? sp[0].to : null;
+      for(var i = 1; complete && i < sp.length; i++){
+        if(sp[i].from > addDaysStr(end, ERP_GAP_DAYS + 1)) break; // a hole: coverage ends before it
+        if(sp[i].to > end) end = sp[i].to;
+      }
+      map[rep] = { amount: Math.round(sums[rep] * 100) / 100, asOf: asOf[rep], covered: end || asOf[rep], complete: complete };
+    });
     return map;
   }
-  // ERP invoices dated AFTER the DSR's as-of date, within the current month.
-  function postDsrErpOf(data, rep, asOf){
-    if(!asOf) return 0;
-    var d = new Date(asOf + 'T00:00:00'); d.setDate(d.getDate() + 1);
-    var from = localDateStr(d), today = data.today;
-    if(from > today || from.slice(0, 7) !== today.slice(0, 7)) return 0;
-    return erpRevenueRange(data, from, today, rep) || 0;
-  }
-  // The month's achieved figure for one rep: the current-month DSR official
-  // figure, extended by every invoice line after its as-of date; else ERP
-  // month-to-date; else what the app logged.
+  // The month's achieved figure for one rep — ONE source, never a sum:
+  //  • the DSR (official, dated by its file name) and the ERP sales files
+  //    (every invoice line, dated by the last day they cover) are compared,
+  //    and the one with the LATER date is used on its own;
+  //  • on the same date the DSR wins (it is the company's official report);
+  //  • ERP can stand alone only when its files cover the month from day 1;
+  //  • with neither, what the app logged.
+  // `alt` carries the other source so the screen can show both, side by side.
   function monthAchievement(rep, data, mtdMap){
     var today = data.today, t = (data.targets || {})[rep] || {};
     var em = (mtdMap || erpMtd(data))[rep];
-    var officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7);
-    var erpOk = em && em.amount != null;
-    if(officialOk){
-      var extra = postDsrErpOf(data, rep, t.achievedAsOf);
-      if(extra > 0){
-        var asOf2 = em && em.asOf > t.achievedAsOf ? em.asOf : t.achievedAsOf;
-        return { amount: Math.round((t.achieved + extra) * 100) / 100, src: 'DSR ' + fmtDate(t.achievedAsOf) + ' + ERP', asOf: asOf2 };
-      }
-      return { amount: t.achieved, src: 'DSR official ' + fmtDate(t.achievedAsOf), asOf: t.achievedAsOf };
+    var dsr = (t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0, 7) === today.slice(0, 7))
+      ? { basis: 'dsr', amount: t.achieved, asOf: t.achievedAsOf, src: 'DSR ' + fmtDate(t.achievedAsOf) } : null;
+    var erp = (em && em.amount != null)
+      ? { basis: 'erp', amount: em.amount, asOf: em.covered, complete: em.complete, src: 'ERP to ' + fmtDate(em.covered) + (em.complete ? '' : ' (partial month)') } : null;
+    var pick = function(win, other, why){ return { amount: win.amount, src: win.src, asOf: win.asOf, basis: win.basis, why: why, alt: other || null }; };
+    if(dsr && erp){
+      if(erp.complete && erp.asOf > dsr.asOf) return pick(erp, dsr, 'newer');
+      return pick(dsr, erp, erp.complete ? (erp.asOf === dsr.asOf ? 'same-day' : 'newer') : 'erp-partial');
     }
-    if(erpOk) return { amount: em.amount, src: 'ERP invoices to ' + fmtDate(em.asOf), asOf: em.asOf };
+    if(dsr) return pick(dsr, null, 'only');
+    if(erp) return pick(erp, null, 'only');
     var m = getMonthDates(today);
     var s = rangeSummary(m[0], m[m.length - 1], rep, { visits: data.visits || [], clinics: data.clinics || [], tasks: data.tasks || [], events: data.events || [], dayPlans: data.dayPlans || {} });
-    return { amount: s.revenue, src: 'app-logged', asOf: null };
+    return { amount: s.revenue, src: 'app-logged', asOf: null, basis: 'app', why: 'none', alt: null };
   }
   function teamAchievement(reps, data){
     var mtd = erpMtd(data), rows = [];
@@ -1601,7 +1617,7 @@
       var m = today.slice(0, 7), stale = (t.month || (t.achievedAsOf ? t.achievedAsOf.slice(0, 7) : m)) < m;
       var dim = getMonthDates(today).length, day = parseInt(today.slice(8, 10), 10), left = dim - day;
       var pace = day > 0 ? Math.round(a.amount / day * dim / t.revenue * 100) : null;
-      return { rep: rep, pct: pct, amount: a.amount, goal: t.revenue, src: a.src, asOf: a.asOf, stale: stale, left: left, pace: pace };
+      return { rep: rep, pct: pct, amount: a.amount, goal: t.revenue, src: a.src, asOf: a.asOf, stale: stale, left: left, pace: pace, alt: a.alt, why: a.why, basis: a.basis };
     };
     var repBlock = function(rep){
       var b = { rep: rep, target: targetLine(rep) };
@@ -1642,7 +1658,9 @@
     var p = function(t){ L.push(t); H.push('<div style="margin:4px 0;">' + esc(t) + '</div>'); };
     var tLine = function(t){
       if(!t) return 'لا يوجد تارغت مبيعات لهذا الشهر';
-      var s = t.rep + ': ' + t.pct + '% — ' + kd(t.amount) + ' من ' + kd(t.goal) + ' (المصدر: ' + t.src + (t.asOf ? '، حتى ' + fmtDate(t.asOf) : '') + ')';
+      var s = t.rep + ': ' + t.pct + '% — ' + kd(t.amount) + ' من ' + kd(t.goal) + ' (المصدر: ' + t.src + ')';
+      if(t.alt) s += ' · ' + (t.alt.basis === 'dsr' ? 'DSR' : 'ERP') + ' ' + fmtDate(t.alt.asOf) + ': ' + kd(t.alt.amount) + ' (' + Math.round(t.alt.amount / t.goal * 100) + '%) — لم يُجمع'
+        + (t.why === 'erp-partial' ? '، ملف المبيعات لا يغطي الشهر كاملًا' : t.why === 'same-day' ? '، نفس التاريخ والرسمي هو DSR' : '، اعتُمد الأحدث');
       if(t.stale) s += ' ⚠️ التارغت من شهر سابق — ارفع DSR الشهر الجديد';
       else if(t.pace != null) s += ' · على هذا الإيقاع تصل إلى ' + t.pace + '% بنهاية الشهر · متبقٍ ' + t.left + ' يوم';
       return s;

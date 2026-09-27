@@ -54,7 +54,7 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
   await page.waitForTimeout(300);
   await page.evaluate(async (b64) => { const buf = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)).buffer; openErpImport(); await erpImportXlsx(buf, 'Ultramed_Sales3_28.xlsx'); await new Promise(r => setTimeout(r, 300)); closeModal(); }, SALES_B64);
   const sep = await page.evaluate(() => ({ today: todayStr(), pct: targetPctMap(), team: teamTargetNow(), card: (document.getElementById('targetCard')||{}).innerText || '' }));
-  check('Sep 21: figures as expected before the rollover', sep.today==='2026-09-21' && sep.pct.Mariam && sep.pct.Renova && /DSR Sep 5 \+ ERP/.test(sep.pct.Mariam.src), { today: sep.today, pct: sep.pct, team: sep.team.pct });
+  check('Sep 21: figures as expected before the rollover', sep.today==='2026-09-21' && sep.pct.Mariam && sep.pct.Renova && /^ERP to Sep 21$/.test(sep.pct.Mariam.src), { today: sep.today, pct: sep.pct, team: sep.team.pct });
 
   // ---- October 1 morning: same account, clock moved on ----
   const ctx2 = await browser.newContext(); await blockFirebase(ctx2);
@@ -90,7 +90,7 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
     closeModal();
     return { pct: targetPctMap(), card: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '', month: targets.Mariam.month, hist: Object.keys(targets._history||{}) };
   });
-  check('Oct 1: after uploading October\'s DSR the target is October\'s, the stale note and the month-inputs card disappear, Sep stays archived', afterDsr.month==='2026-10' && !/Target is from/.test(afterDsr.card) && !/المدخلات الشهرية/.test(afterDsr.nudge) && afterDsr.pct.Mariam.pct===1 && /DSR official Oct 1/.test(afterDsr.pct.Mariam.src) && afterDsr.hist.includes('2026-09'), { pct: afterDsr.pct, month: afterDsr.month, hist: afterDsr.hist });
+  check('Oct 1: after uploading October\'s DSR the target is October\'s, the stale note and the month-inputs card disappear, Sep stays archived', afterDsr.month==='2026-10' && !/Target is from/.test(afterDsr.card) && !/المدخلات الشهرية/.test(afterDsr.nudge) && afterDsr.pct.Mariam.pct===1 && /^DSR Oct 1$/.test(afterDsr.pct.Mariam.src) && afterDsr.hist.includes('2026-09'), { pct: afterDsr.pct, month: afterDsr.month, hist: afterDsr.hist });
   check('Oct 1: no page errors', errors2.length===0 && errors.length===0, errors2.concat(errors).slice(0,4));
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
