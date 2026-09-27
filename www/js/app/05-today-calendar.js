@@ -499,8 +499,7 @@ function renderTargetCard(){
           <div style="font-size:16px; font-weight:800; color:${state[1]}; flex-shrink:0; min-width:48px; text-align:end;">${pct}%</div>
         </div>
         <div style="font-size:11.5px; color:var(--muted); margin-top:2px; ${sup?'padding-inline-start:68px;':''}">${money(bm.amount)} of ${money(t.revenue)} · ${state[0]}${vTxt}</div>
-        <div style="font-size:11px; color:var(--muted); margin-top:1px; ${sup?'padding-inline-start:68px;':''}">Source: ${esc(bm.src)}${bm.alt ? ' · used alone' : ''}</div>
-        ${bm.alt ? `<div style="font-size:11px; color:var(--muted); margin-top:1px; ${sup?'padding-inline-start:68px;':''}">${esc(achievementSourceNote(bm, t.revenue))}</div>` : ''}
+        <div style="font-size:11px; color:var(--muted); margin-top:1px; ${sup?'padding-inline-start:68px;':''}">Achieved: ${esc(bm.src)} · target: DSR</div>
         ${sup ? `<div style="padding-inline-start:68px;">${staleTargetNote(r)}</div>` : staleTargetNote(r)}
       </div>`;
     }).join('')}

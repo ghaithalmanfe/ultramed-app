@@ -541,25 +541,18 @@ function buildMasterReportBody(lang, format){
     </tbody></table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   const brandParts = repsList.map(rep=>{
-    const t = targets[rep]||{}; const bt = t.brands||{}; const ab = t.achievedBrands||{};
+    const t = targets[rep]||{}; const bt = t.brands||{};
     const items = Object.entries(bt).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
     if(!items.length) return '';
-    // Both files side by side, each under its own date; the % follows the
-    // file the headline uses (the newer one) — the two are never added.
+    // Target per brand from the DSR, achieved per brand from the ERP sales files only.
     const eb = erpBrandMtd(rep);
     const bm = bestMonthRevenue(rep);
-    const hasDsr = Object.keys(ab).length > 0 && (t.achievedAsOf||'').slice(0,7) === today.slice(0,7);
-    const hasErp = Object.keys(eb.byBrand).length > 0;
-    const useErp = bm.basis === 'erp' || (!hasDsr && hasErp);
-    const erpDate = bm.basis === 'erp' ? bm.asOf : (bm.alt && bm.alt.basis === 'erp' ? bm.alt.asOf : eb.asOf);
     return `<h3 class="mr-rep">${esc(rep)}</h3><table class="mr-tbl">
-      <thead><tr><th>${L.brandCol}</th><th>${L.target}</th>${hasDsr?`<th>DSR ${esc(fmtDate(t.achievedAsOf))}${useErp?'':' ✓'}</th>`:''}${hasErp?`<th>ERP ${esc(fmtDate(erpDate))}${useErp?' ✓':''}</th>`:''}<th>${L.ach}</th></tr></thead><tbody>
+      <thead><tr><th>${L.brandCol}</th><th>${L.target} (DSR)</th><th>${L.achieved} (${esc(bm.basis === 'erp' ? bm.src : 'ERP')})</th><th>${L.ach}</th></tr></thead><tbody>
       ${items.map(([br,tg])=>{
-        const d = ab[br]!=null ? ab[br] : 0;
-        const e = Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
-        const a = useErp ? e : d;
+        const a = Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
         const pct = Math.round(a/tg*100);
-        return `<tr><td>${esc(br)}</td><td><span class="num">${tg.toFixed(0)}</span></td>${hasDsr?`<td><span class="num">${d.toFixed(2)}</span></td>`:''}${hasErp?`<td><span class="num">${e.toFixed(2)}</span></td>`:''}
+        return `<tr><td>${esc(br)}</td><td><span class="num">${tg.toFixed(0)}</span></td><td><span class="num">${a.toFixed(2)}</span></td>
           <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
       }).join('')}</tbody></table>`;
   }).filter(Boolean);
