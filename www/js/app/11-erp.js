@@ -222,7 +222,7 @@ function targetPctNote(before, after){
   const tb = teamOf(before), ta = teamOf(after);
   if(ta.pct != null) parts.push(`<b>الفريق</b>: ${tb.pct != null ? tb.pct + '% → ' : ''}<b>${ta.pct}%</b> <span style="color:var(--muted);">· ${money(ta.ach)} من ${money(ta.goal)}</span>`);
   const none = reps.every(r => before[r] && before[r].pct === after[r].pct && before[r].amount === after[r].amount);
-  const why = none ? '<div style="font-size:11.5px; color:var(--muted); margin-top:3px;">لم تتغير النسبة: الرقم الرسمي (DSR) يغطي حتى تاريخ أحدث من أو مساوٍ لآخر فاتورة في هذا الملف — الفواتير بعد تاريخ DSR فقط هي التي تُضاف.</div>' : '';
+  const why = none ? '<div style="font-size:11.5px; color:var(--muted); margin-top:3px;">لم تتغير النسبة: ملف DSR تاريخه أحدث من أو مساوٍ لآخر يوم يغطيه ملف المبيعات، فبقي هو المرجع. النظام يعتمد الملف الأحدث وحده ولا يجمع الاثنين.</div>' : '';
   return `🎯 <b>شاشة اليوم الآن:</b> ${parts.join(' · ')}${why}`;
 }
 // Shown on top of whichever modal is open right after an upload.
@@ -240,54 +240,34 @@ function erpShowImportNote(html){
 }
 
 // The report's ONLY sales source: official uploads (DSR) or ERP invoices —
-// never app-logged orders. App-logged orders are a field follow-up signal,
-// not revenue, so they must never appear as "sales" in management figures.
+// never app-logged orders. The same one-source rule as the Today card
+// (UMCore.monthAchievement): the newer of the two files, never their sum.
 function officialRevenue(rep){
-  const t = targets[rep] || {};
-  const em = erpMtdMap()[rep];
-  const officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === todayStr().slice(0,7);
-  const erpOk = em && em.amount != null;
-  // BOTH uploads act: the current-month DSR anchors the official figure
-  // through its as-of date, and clinic-sales invoices dated AFTER that date
-  // extend it forward — each day counted from exactly one source, never both.
-  if(officialOk){
-    const extra = postDsrErp(rep, t.achievedAsOf);
-    if(extra > 0){
-      const asOf = em && em.asOf > t.achievedAsOf ? em.asOf : t.achievedAsOf;
-      return { amount: Math.round((t.achieved + extra)*100)/100,
-        src: `DSR ${fmtDate(t.achievedAsOf)} + ERP`, asOf, has: true };
-    }
-    return { amount: t.achieved, src: `DSR ${fmtDate(t.achievedAsOf)}`, asOf: t.achievedAsOf, has: true };
-  }
-  if(erpOk) return { amount: em.amount, src: `ERP ${fmtDate(em.asOf)}`, asOf: em.asOf, has: true };
-  return { amount: null, src: null, asOf: null, has: false };
+  const bm = bestMonthRevenue(rep);
+  if(bm.basis === 'app') return { amount: null, src: null, asOf: null, has: false };
+  return { amount: bm.amount, src: bm.src, asOf: bm.asOf, has: true, basis: bm.basis, alt: bm.alt };
 }
-// Clinic-sales invoices dated strictly AFTER the DSR's as-of day (this month).
-function postDsrErp(rep, asOf){
-  if(!asOf) return 0;
-  const d = new Date(asOf + 'T00:00:00'); d.setDate(d.getDate() + 1);
-  const from = localDateStr(d), today = todayStr();
-  if(from > today || from.slice(0,7) !== today.slice(0,7)) return 0;
-  return erpRevenueForRange(from, today, rep) || 0;
-}
-// targets with each rep's achieved extended by post-DSR invoices — what every
-// coach/insight consumer should see, so both uploads move every screen.
+// targets with each rep's achieved set to that same one-source figure — what
+// every coach/insight consumer sees, so all screens agree with the Today card.
 function blendedTargets(){
   const out = {};
   Object.keys(targets).filter(k => !k.startsWith('_')).forEach(rep => {
     const t = Object.assign({}, targets[rep]);
-    const officialOk = t.achieved != null && t.achievedAsOf && t.achievedAsOf.slice(0,7) === todayStr().slice(0,7);
-    if(officialOk){
-      const extra = postDsrErp(rep, t.achievedAsOf);
-      if(extra > 0){
-        const em = erpMtdMap()[rep];
-        t.achieved = Math.round((t.achieved + extra)*100)/100;
-        if(em && em.asOf > t.achievedAsOf) t.achievedAsOf = em.asOf;
-      }
-    }
+    const bm = bestMonthRevenue(rep);
+    if(bm.basis !== 'app'){ t.achieved = bm.amount; t.achievedAsOf = bm.asOf; }
     out[rep] = t;
   });
   return out;
+}
+// One line that says which file the figure comes from and what the other
+// file says — both visible, never added together.
+function achievementSourceNote(bm, goal){
+  if(!bm || !bm.alt) return '';
+  const a = bm.alt, pct = goal > 0 ? ` (${Math.round(a.amount / goal * 100)}%)` : '';
+  const why = bm.why === 'erp-partial' ? 'ERP does not cover the whole month yet'
+    : bm.why === 'same-day' ? 'same date — DSR is the official one'
+    : `the ${bm.basis === 'erp' ? 'ERP' : 'DSR'} file is newer`;
+  return `${a.basis === 'dsr' ? 'DSR' : 'ERP'} ${fmtDate(a.asOf)}: ${money(a.amount)}${pct} · not added — ${why}`;
 }
 // ---- MONTHLY CLOSE REPORTS ----
 // Any month with archived DSR figures or uploaded invoices can be opened, on
@@ -330,17 +310,14 @@ function monthCloseData(m){
     if(cur && (cur.achievedAsOf||'').slice(0,7) === m &&
        (!t || (t.achievedAsOf||'') <= (cur.achievedAsOf||''))) t = cur;
     const erpMonth = erpRevenueForRange(mStart, mEnd, rep);
-    // official DSR figure + any invoices dated after its as-of day, capped to the month
+    // The same one-source rule as the Today card, for that month: the newer of
+    // its DSR and its sales files, never the two added together.
+    const today = todayStr();
+    const a = UMCore.monthAchievement(rep, Object.assign(digestData(), { today: mEnd < today ? mEnd : today, targets: t ? { [rep]: t } : {} }));
     let achieved = null, src = '';
-    if(t && t.achieved != null){
-      const asOf = t.achievedAsOf || mStart;
-      const d = new Date(asOf + 'T00:00:00'); d.setDate(d.getDate() + 1);
-      const from = localDateStr(d);
-      const extra = (from <= mEnd && from.slice(0,7) === m) ? (erpRevenueForRange(from, mEnd, rep) || 0) : 0;
-      achieved = Math.round((t.achieved + extra) * 100) / 100;
-      src = `DSR ${fmtDate(asOf)}${extra > 0 ? ' + فواتير بعده' : ''}`;
-    } else if(erpMonth != null){
-      achieved = erpMonth; src = 'فواتير ERP فقط';
+    if(a.basis !== 'app'){
+      achieved = a.amount;
+      src = a.src + (a.alt ? ` · لم يُجمع مع ${a.alt.basis === 'dsr' ? 'DSR' : 'ERP'} ${fmtDate(a.alt.asOf)}` : '');
     }
     const mv = UMCore.dedupeVisits(visits.filter(v => v && v.rep === rep && (v.date||'').slice(0,7) === m)).unique;
     return { rep, t, achieved, src, erpMonth,
@@ -358,7 +335,7 @@ function renderMonthClose(m){
     const names = [...new Set([...Object.keys(bt), ...Object.keys(ab)])].sort((a,b)=>(bt[b]||0)-(bt[a]||0));
     if(!names.length) return '';
     return `<div style="margin-top:6px; overflow-x:auto;"><table style="width:100%; font-size:11.5px; border-collapse:collapse;">
-      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق</td><td style="text-align:start;">%</td></tr>
+      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق (DSR ${esc(fmtDate((r.t && r.t.achievedAsOf) || ''))})</td><td style="text-align:start;">%</td></tr>
       ${names.map(n=>{
         const tv = bt[n]||0, av = ab[n]||0;
         const p = tv>0 ? Math.round(av/tv*100) : null;
