@@ -601,6 +601,7 @@ describe('coachInsights', () => {
       { rep: 'Renova', clinicId: 'c5', date: '2026-08-10', doctorId: 'd1' },
     ],
     targets: { Mariam: { revenue: 1000 }, Renova: { revenue: 400 } },
+    erpMtd: { Mariam: { amount: 100, asOf: '2026-08-10', covered: '2026-08-10' }, Renova: { amount: 500, asOf: '2026-08-10', covered: '2026-08-10' } },
     dayPlans: { '2026-08-10': { Mariam: [{ id: 'c9', note: '' }] } },
   };
   const teamOpts = { ...range, today, repFilter: 'all', ...DATA };
@@ -1119,43 +1120,25 @@ describe('DSR achieved sales (MTD)', () => {
     assert.equal(tg.targets.Mariam.revenue, 11621.92);
     assert.equal(tg.targets.Renova.revenue, 12563.08);
   });
-  test('coach prefers the official achieved figure with as-of pacing', () => {
+  test('coach measures the target ONLY from the ERP sales files, paced to the day they cover', () => {
     const today = '2026-08-25';
-    const base = { from: '2026-08-01', to: today, today, repFilter: 'all',
-      visits: [], clinics: [], dayPlans: {} };
-    // No official figure: 0 logged revenue → far behind.
-    const plain = core.coachInsights({ ...base, targets: { Mariam: { revenue: 1000 } } })
+    const base = { from: '2026-08-01', to: today, today, repFilter: 'all', visits: [], clinics: [], dayPlans: {} };
+    // No sales file → no verdict (the DSR achieved column is never used, app orders neither)
+    const none = core.coachInsights({ ...base, targets: { Mariam: { revenue: 1000, achieved: 900, achievedAsOf: '2026-08-20' } } })
       .find(i => i.key === 'target-Mariam');
-    assert.equal(plain.level, 'act');
-    // Official figure says she already passed the prorated pace at its as-of date.
-    const official = core.coachInsights({ ...base, targets: {
-      Mariam: { revenue: 1000, achieved: 500, achievedAsOf: '2026-08-11' } } })
+    assert.equal(none, undefined);
+    // ERP covering to 11 Aug: 500 ≥ the prorated pace at that day → good
+    const ok = core.coachInsights({ ...base, targets: { Mariam: { revenue: 1000 } }, erpMtd: { Mariam: { amount: 500, asOf: '2026-08-11', covered: '2026-08-11' } } })
       .find(i => i.key === 'target-Mariam');
-    assert.equal(official.level, 'good'); // 500 ≥ 1000*11/31≈355
-    assert.match(official.detail, /official DSR figure/);
-    // A stale as-of (previous month) is ignored.
-    const stale = core.coachInsights({ ...base, targets: {
-      Mariam: { revenue: 1000, achieved: 500, achievedAsOf: '2026-07-11' } } })
-      .find(i => i.key === 'target-Mariam');
-    assert.equal(stale.level, 'act');
+    assert.equal(ok.level, 'good');
+    assert.match(ok.detail, /ERP sales files/);
   });
-  test('a current-month DSR is authoritative even over fresher ERP sales', () => {
+  test('a DSR achieved figure never replaces or adds to the ERP figure', () => {
     const today = '2026-08-25';
-    const base = { from: '2026-08-01', to: today, today, repFilter: 'all',
-      visits: [], clinics: [], dayPlans: {},
-      targets: { Mariam: { revenue: 1000, achieved: 200, achievedAsOf: '2026-08-11' } } };
-    // ERP upload covers LATER dates — the DSR still wins: it is the company's
-    // official reconciled figure, and raw invoices may include rows it excludes.
-    const dsrWins = core.coachInsights({ ...base,
-      erpMtd: { Mariam: { amount: 600, asOf: '2026-08-20' } } })
-      .find(i => i.key === 'target-Mariam');
-    assert.match(dsrWins.detail, /200\.00 KD \(official DSR figure\)/);
-    // No current-month DSR → ERP sales fill in.
-    const erpFills = core.coachInsights({ ...base,
-      targets: { Mariam: { revenue: 1000 } },
-      erpMtd: { Mariam: { amount: 600, asOf: '2026-08-20' } } })
-      .find(i => i.key === 'target-Mariam');
-    assert.match(erpFills.detail, /600\.00 KD \(from uploaded sales\)/);
+    const t = core.coachInsights({ from: '2026-08-01', to: today, today, repFilter: 'all', visits: [], clinics: [], dayPlans: {},
+      targets: { Mariam: { revenue: 1000, achieved: 200, achievedAsOf: '2026-08-24' } },
+      erpMtd: { Mariam: { amount: 600, asOf: '2026-08-20', covered: '2026-08-20' } } }).find(i => i.key === 'target-Mariam');
+    assert.match(t.detail, /^600\.00 KD \(ERP sales files\)/);
   });
 });
 
@@ -1719,6 +1702,7 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
       visits: [], dayPlans: {},
       clinics: [{ id: 'c1', name: 'Alpha', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-08-05' }],
       targets: { Mariam: { revenue: 1000 } },
+      erpMtd: { Mariam: { amount: 50, asOf: '2026-08-11', covered: '2026-08-11' } },
     });
     const fu = out.find(i => i.key === 'followups');
     assert.equal(fu.data.count, 1);
