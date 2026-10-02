@@ -39,6 +39,10 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   await page.exposeFunction('__cDel', api.del); await page.exposeFunction('__cList', api.list);
   await page.exposeFunction('__cSetMany', api.setMany);
   await page.addInitScript(() => {
+    // Fixed clock, 28 Sep 2026: the synthetic sales file is Sep 1–21, so the
+    // month-to-date checks must not depend on the real calendar.
+    const off = new Date(2026, 8, 28, 10, 0, 0).getTime() - Date.now(); // clock keeps ticking, shifted into September
+    const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
     window.storage = {
       get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; },
       set: async (k, v) => window.__cSet(k, v),

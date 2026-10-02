@@ -746,17 +746,28 @@
   }
   // ERP salesman names rarely equal app rep names ("Ranova Ayman Mohammed" vs
   // "Renova"). Guess by comparing each name token with edit distance ≤ 2.
+  // An ERP salesman name ("Ghaith Al Manfe", "Ranova Ayman Mohammed") is
+  // matched to an app rep by any name part: the rep's own name parts count
+  // too, so "Dr. Ghaith" in the app still finds "Ghaith Al Manfe" — titles
+  // (Dr, Mr, Mrs) and parts under 3 letters never match on their own.
+  var NAME_TITLES = { dr: 1, mr: 1, mrs: 1, ms: 1, miss: 1, eng: 1, prof: 1 };
+  function nameParts(s){
+    return String(s || '').toLowerCase().replace(/[^a-z؀-ۿ\s]+/g, ' ').split(/\s+/)
+      .filter(function(t){ return t.length >= 3 && !NAME_TITLES[t]; });
+  }
   function guessRepMap(salesmen, reps){
     var map = {};
     (salesmen || []).forEach(function(sm){
-      var tokens = String(sm).toLowerCase().split(/\s+/);
+      var tokens = nameParts(sm);
       var best = null, bestD = 99;
       (reps || []).forEach(function(rep){
-        var rl = String(rep).toLowerCase();
+        var parts = nameParts(rep);
+        if(!parts.length) parts = [String(rep).toLowerCase()];
         tokens.forEach(function(t){
-          if(!t) return;
-          var d = levenshtein(t, rl);
-          if(d < bestD && d <= 2){ best = rep; bestD = d; }
+          parts.forEach(function(p){
+            var d = levenshtein(t, p);
+            if(d < bestD && d <= 2){ best = rep; bestD = d; }
+          });
         });
       });
       map[sm] = best;
@@ -878,11 +889,18 @@
   // owns that clinic, whatever salesman name the ERP invoice carries. Only
   // when the customer isn't a matched clinic (channel / unmatched / ambiguous)
   // do we fall back to the file's salesman→rep mapping.
+  // A clinic handed to another rep keeps its history: `repSince` (YYYY-MM-DD)
+  // is the first day the new owner counts, and lines dated before it still
+  // belong to `prevRep` — so last month's closed figures never move.
+  function clinicRepOn(c, date){
+    if(c.repSince && c.prevRep && date && date < c.repSince) return c.prevRep;
+    return c.rep || null;
+  }
   function erpRowRep(r, clinics, erpMap, repMap){
     var m = matchCustomer((r.customer || '').trim(), clinics, erpMap);
     if(m.clinicId){
       for(var i = 0; i < (clinics || []).length; i++){
-        if(clinics[i].id === m.clinicId) return clinics[i].rep || (repMap || {})[r.salesman] || null;
+        if(clinics[i].id === m.clinicId) return clinicRepOn(clinics[i], r.date) || (repMap || {})[r.salesman] || null;
       }
     }
     return (repMap || {})[r.salesman] || null;
@@ -3192,7 +3210,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, erpDateOrder, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, erpRowRep, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
+    matchCustomer, erpRowRep, clinicRepOn, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpRevenueRange, erpMtd, monthAchievement, teamAchievement, dailyDigest,
