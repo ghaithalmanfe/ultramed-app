@@ -742,6 +742,29 @@ describe('rep and customer matching', () => {
     assert.equal(map['Mariam Zohair'], 'Mariam');
     assert.equal(map['Mr. Sundeep Kohli'], null); // not on the field team
   });
+  test('guessRepMap: a supervisor who also sells is found by a name part, titles never match', () => {
+    const map = core.guessRepMap(
+      ['Ghaith Al Manfe', 'Dr. John Shahatah', 'Reem Omar', 'Mariam Zohair'],
+      ['Mariam', 'Renova', 'Dr. Ghaith']);
+    assert.equal(map['Ghaith Al Manfe'], 'Dr. Ghaith');   // "Ghaith" part of "Dr. Ghaith"
+    assert.equal(map['Dr. John Shahatah'], null);         // "Dr." alone is not a match
+    assert.equal(map['Reem Omar'], null);
+    assert.equal(map['Mariam Zohair'], 'Mariam');
+  });
+  test('a clinic handed over keeps lines before repSince with the previous rep', () => {
+    const cl = [{ id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', prevRep: 'Mariam', repSince: '2026-10-01' }];
+    const row = d => ({ customer: 'Bayan Dental Center', salesman: 'Mariam Zohair', date: d, net: 10 });
+    assert.equal(core.erpRowRep(row('2026-09-30'), cl, {}, {}), 'Mariam');   // September stays hers
+    assert.equal(core.erpRowRep(row('2026-10-01'), cl, {}, {}), 'Dr. Ghaith'); // October is his
+    assert.equal(core.clinicRepOn({ rep: 'Renova' }, '2026-01-01'), 'Renova');  // no handover → owner
+    assert.equal(core.clinicRepOn({ rep: 'Renova', repSince: '2026-10-01' }, '2026-09-01'), 'Renova'); // no prevRep → owner
+    // month-to-date follows the same rule: a September file is still Mariam's
+    const data = { today: '2026-09-28', clinics: cl, erpMap: {}, erpSales: { periods: [{ id: 'p', from: '2026-09-01', to: '2026-09-27',
+      repMap: { 'Mariam Zohair': 'Mariam' }, rows: [[ '2026-09-20', 'SINV1', 0, 'x', 1, 100, 80, 0, 'Mariam Zohair', 'Intensiv', 'Bayan Dental Center', 'Clinics', 0, '' ]] }] } };
+    const mtd = core.erpMtd(data);
+    assert.equal(mtd.Mariam && mtd.Mariam.amount, 80);
+    assert.equal(mtd['Dr. Ghaith'], undefined);
+  });
   test('matchCustomer: channels, fuzzy clinic names, manual overrides', () => {
     const clinics = [
       { id: 'c1', name: 'Dr. Nael Al Hazeem Pharmacy ( Al Soor )' },

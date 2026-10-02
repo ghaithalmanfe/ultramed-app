@@ -15,6 +15,11 @@ function openStaffForm(idx){
       <div class="chip small ${s.role==='rep'?'on':''}" data-role="rep" onclick="pickModalCls(this)">🦷 Sales Rep</div>
       <div class="chip small ${s.role==='supervisor'?'on':''}" data-role="supervisor" onclick="pickModalCls(this)">⭐ Supervisor</div>
     </div>
+    <label>Also sells (own clinics and target)</label>
+    <div class="chip-row" id="sfSells">
+      <div class="chip small ${s.sells?'on':''}" onclick="this.classList.toggle('on')">🎯 Yes — counts like a rep</div>
+    </div>
+    <div style="color:var(--muted); font-size:11.5px; margin:-4px 0 8px;">For a supervisor who carries accounts: appears in targets, scorecards and clinic assignment. Reps always count.</div>
     <button class="btn" onclick="saveStaff(${editing?idx:-1})">Save</button>
     ${editing?`<button class="btn ghost" onclick="removeStaff(${idx})">Remove from team</button>`:''}
   `);
@@ -25,13 +30,14 @@ async function saveStaff(idx){
   const email = document.getElementById('sfEmail').value.trim().toLowerCase();
   const roleEl = document.querySelector('#sfRole .chip.on');
   const role = roleEl ? roleEl.dataset.role : 'rep';
+  const sells = role==='supervisor' && !!document.querySelector('#sfSells .chip.on');
   if(!name){ showToast('Enter a name'); return; }
   if(!email || !email.includes('@')){ showToast('Enter a valid email'); return; }
   const clash = staff.find((s,i)=>i!==idx && (s.name.toLowerCase()===name.toLowerCase() || s.email===email));
   if(clash){ showToast('That name or email is already used'); return; }
   if(idx>=0){
     const prevName = staff[idx].name;
-    staff[idx] = {...staff[idx], name, email, role};
+    staff[idx] = {...staff[idx], name, email, role, sells};
     if(prevName !== name){
       // Keep existing records pointing at this person
       clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; });
@@ -61,7 +67,7 @@ async function saveStaff(idx){
       await Promise.all([persist('clinics'), persist('visits'), persist('tasks'), persist('dayPlans'), persist('events'), persist('targets'), persist('erpSales')]);
     }
   } else {
-    staff.push({name, email, role, av:AVATARS[staff.length % AVATARS.length]});
+    staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
   }
   refreshStaff();
   await persist('staff');
