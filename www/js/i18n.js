@@ -43,6 +43,7 @@
     'Update password': 'تحديث كلمة المرور',
     'No team members yet.': 'لا يوجد أعضاء في الفريق بعد.',
     '🦷 Sales Rep': '🦷 مندوبة مبيعات',
+    'Not selling — Edit → “Also sells” gives them clinics, a target and a scorecard.': 'لا يبيع حالياً. Edit ثم «يبيع أيضاً» يعطيه عيادات وتارغت وبطاقة أداء.',
     'Also sells (own clinics and target)': 'يبيع أيضاً (عيادات وتارغت خاصة)',
     '🎯 Yes — counts like a rep': '🎯 نعم، يُحسب كمندوب',
     'For a supervisor who carries accounts: appears in targets, scorecards and clinic assignment. Reps always count.': 'لمشرف يحمل حسابات: يظهر في التارغت وبطاقات الأداء وتوزيع العيادات. المندوبات يُحسبن دائماً.',
