@@ -223,7 +223,7 @@ function renderAdminTerritory(){
     const vCount = visits.filter(v=>v.clinicId===c.id).length;
     return `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c.cls)};">
       <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}</div>
+      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}${c.repSince&&c.prevRep?` · since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})`:''}</div>
       <div class="chip-row">
         ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
       </div>
@@ -235,9 +235,18 @@ async function reassignClinic(clinicId, newRep){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || c.rep===newRep) return;
   const prev = c.rep;
+  // A handover counts from the 1st of the current month: this month's sales
+  // go to the new owner, earlier months stay with the previous one (ERP lines
+  // are attributed by date, see UMCore.clinicRepOn).
+  const since = todayStr().slice(0, 7) + '-01';
+  if(prev && REPS.includes(prev) && prev !== newRep){
+    if(c.prevRep && c.repSince === since && c.prevRep !== newRep){ /* re-done within the month: keep the original previous owner */ }
+    else if(c.prevRep && c.repSince === since && c.prevRep === newRep){ c.prevRep = null; c.repSince = null; } // handed back: no handover
+    else { c.prevRep = prev; c.repSince = since; }
+  }
   c.rep = newRep;
   await persist('clinics');
-  showToast(`${c.name} → ${newRep}`);
+  showToast(`${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
   renderAdminTerritory();
   renderAll();
 }

@@ -612,7 +612,9 @@ async function erpAutoImport(text){
       const guess = UMCore.guessRepMap(salesmen, REPS);
       // Zero-touch only for names the supervisor has already confirmed; a new
       // name — even one that looks like a rep's — is shown once for a click.
-      const known = sm => Object.prototype.hasOwnProperty.call(stored, sm);
+      // A name once ignored that now matches someone on the team (a supervisor
+      // who started selling) is asked about again rather than silently dropped.
+      const known = sm => Object.prototype.hasOwnProperty.call(stored, sm) && !(stored[sm] === null && guess[sm]);
       if(salesmen.every(known)){
         // An older export than what is already stored (e.g. last week's file
         // picked by mistake) would silently roll the figures back — ask first.
