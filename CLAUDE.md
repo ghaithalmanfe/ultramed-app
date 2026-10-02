@@ -27,4 +27,5 @@ figure that cannot be explained on screen.
 ## House rules
 - Arabic replies to the user, plain language, no code in prose.
 - Reproduce a bug with a harness check before fixing it; keep the check.
+- Team: `REPS` = every `rep` plus a supervisor with `sells: true` (Admin → Team), who then owns clinics and a target like a rep. A clinic handed over carries `prevRep` + `repSince` (1st of the month of the handover): ERP lines dated before `repSince` stay with `prevRep` (`UMCore.clinicRepOn`), so closed months never move.
 - Month figures: one code path (`UMCore.monthAchievement`) serves the Today card, the reports, the monthly close and the e-mail — never compute them elsewhere. Rule (owner's decision, v92): the ERP sales files are the ONLY measure of achieved — per rep, per brand, for the team, day by day. The DSR supplies the targets only (per brand, per rep total, team total); its achieved columns are stored but never used. No sales file for the month → achieved shows 0 with "no ERP sales file for this month yet".

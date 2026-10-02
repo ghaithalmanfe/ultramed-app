@@ -86,7 +86,7 @@ async function sendMail(apiKey, from, to, subject, html, text){
 }
 // Builds every recipient's digest from loaded data. Pure apart from `core`.
 function buildAll(kind, data){
-  const reps = data.staff.filter(s => s && s.role === 'rep' && s.name).map(s => s.name);
+  const reps = data.staff.filter(s => s && s.name && (s.role === 'rep' || (s.role === 'supervisor' && s.sells))).map(s => s.name);
   const out = [];
   data.staff.forEach(s => {
     if(!s || !s.email) return;
