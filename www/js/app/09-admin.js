@@ -186,6 +186,21 @@ function adminTeamStatsHTML(){
       ${openTasks?`<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">${openTasks} open task${openTasks===1?'':'s'}</div>`:''}
     </div>`;
   });
+  // Everyone else on the roster (a supervisor who does not sell) still needs a
+  // card with Edit — that is where "Also sells" is switched on. Without it the
+  // flag could never be reached: the supervisor only joins the list above once
+  // the flag is set.
+  staff.forEach(s=>{
+    if(REPS.includes(s.name)) return;
+    html += `<div class="card" style="margin-bottom:10px; border-inline-start:4px solid var(--line);">
+      <div class="row-between" style="margin-bottom:4px;">
+        <div class="clinic-name">${esc(s.name)} <span class="rep-tag">${esc(s.role)}</span></div>
+        <button class="chip small" style="flex-shrink:0;" onclick="openStaffForm(${staff.indexOf(s)})">Edit</button>
+      </div>
+      <div class="clinic-sub">${esc(s.email||'')}</div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:6px;">Not selling — Edit → “Also sells” gives them clinics, a target and a scorecard.</div>
+    </div>`;
+  });
   const unassigned = clinics.filter(c=>!c.rep || !REPS.includes(c.rep)).length;
   if(unassigned) html += `<div class="card" style="background:var(--amber-dim);"><strong>${unassigned}</strong> clinic${unassigned===1?'':'s'} not assigned to any rep — see Territory tab.</div>`;
   return html;

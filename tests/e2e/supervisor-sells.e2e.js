@@ -67,9 +67,16 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   await boot();
   let reps = await page.evaluate(() => REPS.slice());
   check('without the flag the supervisor is not a rep', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova']), reps);
+  // the Team tab must still show him with an Edit button — that is the only way to the flag
+  const team = await page.evaluate(() => { openAdminPanel(); setAdminTab('team'); const el = document.getElementById('apStaffList'); return { names: [...el.querySelectorAll('.clinic-name')].map(n => n.textContent.trim()), edits: el.querySelectorAll('button').length }; });
+  check('Team tab lists the non-selling supervisor with an Edit button', team.names.some(n => /Dr\. Ghaith/.test(n)) && team.edits >= 3, team);
+  // switch the flag on through the real form: Edit → "Also sells" → Save
+  await page.evaluate(async () => { openStaffForm(staff.findIndex(s => s.name === 'Dr. Ghaith')); document.querySelector('#sfSells .chip').classList.add('on'); await saveStaff(staff.findIndex(s => s.name === 'Dr. Ghaith')); });
+  const saved = JSON.parse(cloud.staff).find(s => s.name === 'Dr. Ghaith');
+  reps = await page.evaluate(() => REPS.slice());
+  check('saving the form stores sells:true and he joins REPS at once', saved.sells === true && saved.role === 'supervisor' && reps.includes('Dr. Ghaith'), { saved, reps });
 
-  // ---- 2) flag on (as Admin → Team would save it) → third rep everywhere ----
-  const st = JSON.parse(cloud.staff); st[2].sells = true; cloud.staff = JSON.stringify(st);
+  // ---- 2) flag on → third rep everywhere, also after a reload ----
   await boot();
   reps = await page.evaluate(() => REPS.slice());
   check('with sells:true the supervisor joins REPS', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova','Dr. Ghaith']), reps);
