@@ -19,13 +19,25 @@ function renderLogHistory(){
     </div>`;
   }).join('');
 }
+// Who a visit can be filed under. A supervisor visits clinics too, so his own
+// name always comes first — whether or not "Also sells" is switched on.
+function logAsOptions(){
+  return currentUser.role==='supervisor' ? [currentUser.name, ...REPS.filter(r=>r!==currentUser.name)] : [currentUser.name];
+}
+// Everyone who can be the second person on a joint visit: the sellers plus
+// the supervisors (a joint visit with the supervisor is the common case).
+function jointPeople(){
+  const sups = staff.filter(s=>s.role==='supervisor').map(s=>s.name);
+  return [...REPS, ...sups.filter(n=>!REPS.includes(n))];
+}
 function prepLogView(qClinicId){
   renderLogHistory();
-  logAsRep = currentUser.role==='rep' ? currentUser.name : (REPS.includes(logAsRep) ? logAsRep : REPS[0]);
+  const asOpts = logAsOptions();
+  logAsRep = asOpts.includes(logAsRep) ? logAsRep : (REPS.includes(currentUser.name) || !REPS.length ? currentUser.name : REPS[0]);
   const wrap = document.getElementById('logAsWrap');
   if(currentUser.role==='supervisor'){
     wrap.style.display = 'block';
-    document.getElementById('logAsChips').innerHTML = REPS.map(r=>`<div class="chip ${logAsRep===r?'on':''}" onclick="setLogAsRep('${r}')">${r}</div>`).join('');
+    document.getElementById('logAsChips').innerHTML = asOpts.map(r=>`<div class="chip ${logAsRep===r?'on':''}" onclick="setLogAsRep('${esc(r)}')">${esc(r)}</div>`).join('');
   } else {
     wrap.style.display = 'none';
   }
@@ -70,7 +82,7 @@ function renderJointChips(){
   const el = document.getElementById('jointChips');
   const wrap = document.getElementById('jointWrap');
   if(!el) return;
-  const options = REPS.filter(r=>r!==logAsRep);
+  const options = jointPeople().filter(r=>r!==logAsRep);
   if(wrap) wrap.style.display = options.length ? 'block' : 'none';
   el.innerHTML = `<div class="chip small ${!jointRep?'on':''}" onclick="setJointRep(null)">Solo</div>`
     + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${esc(r)}')">🤝 ${esc(r)}</div>`).join('');
@@ -441,7 +453,14 @@ async function saveVisit(){
   // Marking a colleague as joint stays open to everyone: both were there.
   const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
   const joint = jointRep;
-  if(currentUser.role === 'supervisor' && !REPS.includes(rep)){ window._lastVisitSaveAt = 0; showToast('Choose which rep you are logging for'); return; }
+  if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ window._lastVisitSaveAt = 0; showToast('Choose which rep you are logging for'); return; }
+  // A supervisor filing a visit under his own name is doing field work: from
+  // now on he counts as a seller ("Also sells" in Admin → Team, where it can be
+  // switched off), so his visits appear in every report like a rep's.
+  if(currentUser.role === 'supervisor' && rep === currentUser.name && !REPS.includes(rep)){
+    const me = staff.find(s=>s.name===rep);
+    if(me){ me.sells = true; refreshStaff(); await persist('staff'); }
+  }
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
     if(!name){ window._lastVisitSaveAt = 0; showToast('Enter a clinic name'); return; }
