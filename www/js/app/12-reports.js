@@ -979,7 +979,7 @@ function renderGuidanceBlock(rep, s){
   const items = [...n.opportunities, ...n.strengths];
   if(!items.length) return '';
   return `<div class="guidance-block">
-    <div class="guidance-head">${currentUser.role==='supervisor' ? I('target')+' Coaching guidance' : I('target')+' Your focus this period'}</div>
+    <div class="guidance-head">${currentUser.role==='supervisor' && rep!==currentUser.name ? I('target')+' Coaching guidance' : I('target')+' Your focus this period'}</div>
     ${n.opportunities.slice(0,3).map(x=>`<div class="pr-list-item"><div class="pr-icon opp">!</div><div>${x.opp}${x.action?`<div class="pr-action">→ ${x.action}</div>`:''}</div></div>`).join('')}
     ${n.opportunities.length===0 ? `<div class="pr-list-item"><div class="pr-icon good">✓</div><div>Every tracked metric is at or above target this period — excellent, consistent work.</div></div>` : ''}
   </div>`;

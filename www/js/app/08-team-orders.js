@@ -17,7 +17,7 @@ function openStaffForm(idx){
     </div>
     <label>Also sells (own clinics and target)</label>
     <div class="chip-row" id="sfSells">
-      <div class="chip small ${s.sells?'on':''}" onclick="this.classList.toggle('on')">🎯 Yes — counts like a rep</div>
+      <div class="chip small ${s.sells!==false?'on':''}" onclick="this.classList.toggle('on')">🎯 Yes — counts like a rep</div>
     </div>
     <div style="color:var(--muted); font-size:11.5px; margin:-4px 0 8px;">For a supervisor who carries accounts: appears in targets, scorecards and clinic assignment. Reps always count.</div>
     <button class="btn" onclick="saveStaff(${editing?idx:-1})">Save</button>

@@ -58,15 +58,16 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
     await new Promise(r => setTimeout(r, 300));
   }, SALES_B64);
 
-  // ---- 1) supervisor WITHOUT the flag: two reps, as before ----
+  // ---- 1) supervisor with "Also sells" switched OFF (sells:false): two reps ----
+  // (a supervisor sells by default since v95 — seller-parity.e2e.js covers that case)
   cloud.staff = JSON.stringify([
     {name:'Mariam', role:'rep', email:'m@x.com'}, {name:'Renova', role:'rep', email:'r@x.com'},
-    {name:'Dr. Ghaith', role:'supervisor', email:'g@x.com'}]);
+    {name:'Dr. Ghaith', role:'supervisor', email:'g@x.com', sells:false}]);
   cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
   cloud.erpSales = JSON.stringify({ periods: [], repMapGlobal: SEED.repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true } });
   await boot();
   let reps = await page.evaluate(() => REPS.slice());
-  check('without the flag the supervisor is not a rep', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova']), reps);
+  check('with "Also sells" switched off the supervisor is not a rep', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova']), reps);
   // even without the flag the supervisor can log a visit under his OWN name (he visits clinics too)
   cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A',doctors:[{id:'d1',name:'Dr. A'}]},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
   await boot();
@@ -81,10 +82,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   });
   const flagged = JSON.parse(cloud.staff).find(s => s.name === 'Dr. Ghaith');
   check('Log Visit offers the supervisor his own name first and saves the visit under it', own.chips[0] === 'Dr. Ghaith' && own.chips.includes('Mariam') && own.def === 'Dr. Ghaith' && own.rep === 'Dr. Ghaith', own);
-  check('logging under his own name switches "Also sells" on, so the visit counts in every report', flagged.sells === true && own.reps.includes('Dr. Ghaith'), { flagged, reps: own.reps });
-  cloud.staff = JSON.stringify([
-    {name:'Mariam', role:'rep', email:'m@x.com'}, {name:'Renova', role:'rep', email:'r@x.com'},
-    {name:'Dr. Ghaith', role:'supervisor', email:'g@x.com'}]);
+  check('switched off, he can still log under his own name, and his choice is left as he set it', flagged.sells === false, { flagged, reps: own.reps });
   await page.evaluate(async () => { await selectUser('Mariam', 'rep'); });
   const jointOpts = await page.evaluate(() => { switchView('log'); prepLogView('c1'); return [...document.querySelectorAll('#jointChips .chip')].map(c => c.textContent.trim()); });
   check('a rep can mark a joint visit with the supervisor', jointOpts.some(t => /Dr\. Ghaith/.test(t)), jointOpts);

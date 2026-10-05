@@ -23,4 +23,13 @@ async function blockFirebase(ctx){
   await ctx.route(/gstatic\.com\/firebasejs\//, r => r.abort());
   await ctx.route(/\.netlify\/functions\//, r => r.abort());
 }
-module.exports = { WWW, launchOpts, salesFixture, blockFirebase };
+// The roster these harnesses were written for: two reps and a supervisor who
+// does NOT sell (a supervisor sells by default since v95; the selling case is
+// covered by supervisor-sells.e2e.js).
+function twoRepStaff(){
+  return JSON.stringify([
+    {name:'Mariam', role:'rep', email:'mariam@ultramed-kw.com'},
+    {name:'Renova', role:'rep', email:'r.ayman@ultramed-kw.com'},
+    {name:'Dr. Ghaith', role:'supervisor', email:'drgaith@ultramed-kw.com', sells:false}]);
+}
+module.exports = { WWW, launchOpts, salesFixture, blockFirebase, twoRepStaff };
