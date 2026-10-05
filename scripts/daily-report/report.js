@@ -86,12 +86,18 @@ async function sendMail(apiKey, from, to, subject, html, text){
 }
 // Builds every recipient's digest from loaded data. Pure apart from `core`.
 function buildAll(kind, data){
-  const reps = data.staff.filter(s => s && s.name && (s.role === 'rep' || (s.role === 'supervisor' && s.sells))).map(s => s.name);
+  // A supervisor sells unless "Also sells" is switched off (sells: false), as in the app.
+  const sells = s => s.role === 'rep' || (s.role === 'supervisor' && s.sells !== false);
+  const reps = data.staff.filter(s => s && s.name && sells(s)).map(s => s.name);
   const out = [];
   data.staff.forEach(s => {
     if(!s || !s.email) return;
     if(s.role === 'rep') out.push({ to: s.email, name: s.name, role: 'rep', ...core.dailyDigest({ kind, data, reps, rep: s.name }) });
-    else if(s.role === 'supervisor') out.push({ to: s.email, name: s.name, role: 'supervisor', ...core.dailyDigest({ kind, data, reps }) });
+    else if(s.role === 'supervisor'){
+      out.push({ to: s.email, name: s.name, role: 'supervisor', ...core.dailyDigest({ kind, data, reps }) });
+      // a selling supervisor also gets his own day, exactly as a rep does
+      if(sells(s)) out.push({ to: s.email, name: s.name, role: 'rep', ...core.dailyDigest({ kind, data, reps, rep: s.name }) });
+    }
   });
   return out;
 }
