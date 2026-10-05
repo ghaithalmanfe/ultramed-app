@@ -454,13 +454,6 @@ async function saveVisit(){
   const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
   const joint = jointRep;
   if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ window._lastVisitSaveAt = 0; showToast('Choose which rep you are logging for'); return; }
-  // A supervisor filing a visit under his own name is doing field work: from
-  // now on he counts as a seller ("Also sells" in Admin → Team, where it can be
-  // switched off), so his visits appear in every report like a rep's.
-  if(currentUser.role === 'supervisor' && rep === currentUser.name && !REPS.includes(rep)){
-    const me = staff.find(s=>s.name===rep);
-    if(me){ me.sells = true; refreshStaff(); await persist('staff'); }
-  }
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
     if(!name){ window._lastVisitSaveAt = 0; showToast('Enter a clinic name'); return; }

@@ -9,6 +9,7 @@ const server = http.createServer((req,res)=>{
   fs.readFile(f,(e,d)=>{ if(e){res.writeHead(404);res.end();return;} res.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'text/plain'}); res.end(d); });
 });
 const cloud = {};
+cloud.staff = require('./_env.js').twoRepStaff(); // two reps + a non-selling supervisor, as these checks assume
 const api = {
   get: async k => k in cloud ? cloud[k] : null,
   set: async (k, v) => { cloud[k] = v; return true; },

@@ -186,10 +186,8 @@ function adminTeamStatsHTML(){
       ${openTasks?`<div style="font-size:12.5px; color:var(--muted); margin-top:8px;">${openTasks} open task${openTasks===1?'':'s'}</div>`:''}
     </div>`;
   });
-  // Everyone else on the roster (a supervisor who does not sell) still needs a
-  // card with Edit — that is where "Also sells" is switched on. Without it the
-  // flag could never be reached: the supervisor only joins the list above once
-  // the flag is set.
+  // Everyone else on the roster (a supervisor with "Also sells" switched off)
+  // still needs a card with Edit — that is where it is switched back on.
   staff.forEach(s=>{
     if(REPS.includes(s.name)) return;
     html += `<div class="card" style="margin-bottom:10px; border-inline-start:4px solid var(--line);">
