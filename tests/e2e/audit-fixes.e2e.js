@@ -133,8 +133,9 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
 
   // ================= CLINICS / VISITS =================
   // CV-3: supervisor logs for a real rep by default; a non-rep value is refused
-  const logAs = await A.page.evaluate(() => { logAsRep = 'Dr. Ghaith'; switchView('log'); prepLogView(); return logAsRep; });
-  check('CV-3: supervisor\'s Log defaults to a real rep', reps.includes(logAs), logAs);
+  // (v95: the supervisor may also log under his own name; a stale name that is neither falls back to a rep)
+  const logAs = await A.page.evaluate(() => { logAsRep = 'Ghost Rep'; switchView('log'); prepLogView(); const a = logAsRep; logAsRep = 'Dr. Ghaith'; prepLogView(); const b = logAsRep; logAsRep = REPS[0]; prepLogView(); return [a, b]; });
+  check('CV-3: supervisor\'s Log falls back to a real rep, and accepts his own name', reps.includes(logAs[0]) && logAs[1] === 'Dr. Ghaith', logAs);
   // CV-2: deselected product leaves the order and the totals
   const cv2 = await A.page.evaluate(async (args) => {
     const [clinicId, p0, p1] = args;
