@@ -89,18 +89,24 @@ describe('daily report run (fake cloud + fake mailer)', () => {
     readDocs: async () => ({ mailLog: { history: [{ kind: 'morning' }] } }),
     writeDoc: async (tok, key, value) => { written[key] = value; },
   });
-  test('sends one digest per recipient (reps their own, supervisor the team) and logs the outcome', async () => {
+  test('sends one digest per recipient (reps their own, supervisor the team + his own day) and logs the outcome', async () => {
     const sent = [], written = {};
     const r = await report.run('morning', { env, now: new Date('2026-09-24T04:30:00Z'), io: fakeIo(sent, written) });
     assert.equal(r.today, '2026-09-24');
-    assert.equal(sent.length, 3);
-    assert.deepEqual(sent.map(s => s.to).sort(), ['boss@x.com', 'mariam@x.com', 'renova@x.com']);
-    assert.match(sent.find(s => s.to === 'boss@x.com').subject, /الفريق/);
+    assert.equal(sent.length, 4);
+    assert.deepEqual(sent.map(s => s.to).sort(), ['boss@x.com', 'boss@x.com', 'mariam@x.com', 'renova@x.com']);
+    const boss = sent.filter(s => s.to === 'boss@x.com').map(s => s.subject);
+    assert.ok(boss.some(t => /الفريق/.test(t)) && boss.some(t => /Dr\. Ghaith/.test(t)), boss.join(' | '));
     assert.match(sent.find(s => s.to === 'mariam@x.com').subject, /Mariam/);
-    assert.equal(r.sent, 2); assert.equal(r.failed, 1);
+    assert.equal(r.sent, 3); assert.equal(r.failed, 1);
     assert.equal(written.mailLog.last.kind, 'morning');
     assert.equal(written.mailLog.history.length, 2);
     assert.equal(r.to.find(t => t.to === 'renova@x.com').error, 'bounced');
+  });
+  test('a supervisor with "Also sells" switched off gets the team digest only', () => {
+    const d = data(); d.staff[2].sells = false;
+    const all = report.buildAll('morning', d);
+    assert.deepEqual(all.map(x => x.to + ':' + x.role).sort(), ['boss@x.com:supervisor', 'mariam@x.com:rep', 'renova@x.com:rep']);
   });
   test('weekends are skipped on the schedule but not for a manual send; override address wins', async () => {
     const sent = [], written = {};
@@ -108,7 +114,7 @@ describe('daily report run (fake cloud + fake mailer)', () => {
     const r = await report.run('morning', { env, now: fri, io: fakeIo(sent, written) });
     assert.equal(r.skipped, 'weekend'); assert.equal(sent.length, 0);
     const r2 = await report.run('evening', { env: Object.assign({ MAIL_TO_OVERRIDE: 'test@x.com' }, env), now: fri, manual: true, io: fakeIo(sent, written) });
-    assert.equal(sent.length, 3); assert.ok(sent.every(s => s.to === 'test@x.com'));
+    assert.equal(sent.length, 4); assert.ok(sent.every(s => s.to === 'test@x.com'));
     assert.equal(r2.manual, true);
   });
   test('Kuwait date: 22:30 UTC is already the next day in Kuwait', () => {
@@ -121,7 +127,7 @@ describe('daily report run (fake cloud + fake mailer)', () => {
     io.sendMail = async (key, from, to) => { if(to === 'renova@x.com') throw new Error('Invalid `to` field: renova@x.com'); return 'ok'; };
     const r = await report.run('evening', { env, now: new Date('2026-09-24T15:30:00Z'), io });
     const txt = report.summarize(r);
-    assert.match(txt, /evening digest for 2026-09-24: 2 sent, 1 failed/);
+    assert.match(txt, /evening digest for 2026-09-24: 3 sent, 1 failed/);
     assert.match(txt, /FAIL Renova — Invalid `to` field: <address>/);
     assert.doesNotMatch(txt, /@/);
   });
