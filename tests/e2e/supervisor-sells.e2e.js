@@ -67,6 +67,28 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   await boot();
   let reps = await page.evaluate(() => REPS.slice());
   check('without the flag the supervisor is not a rep', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova']), reps);
+  // even without the flag the supervisor can log a visit under his OWN name (he visits clinics too)
+  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A',doctors:[{id:'d1',name:'Dr. A'}]},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
+  await boot();
+  const own = await page.evaluate(async () => {
+    switchView('log'); prepLogView('c1');
+    const chips = [...document.querySelectorAll('#logAsChips .chip')].map(c => c.textContent.trim());
+    setLogAsRep('Dr. Ghaith'); const def = logAsRep;
+    pickClinic('c1'); selectedDoctorIds = ['d1']; document.getElementById('visitNotes').value = 'own visit';
+    window._lastVisitSaveAt = 0; await saveVisit(); await new Promise(r => setTimeout(r, 300));
+    const v = visits.find(x => x.notes === 'own visit');
+    return { chips, def, rep: v && v.rep, reps: REPS.slice() };
+  });
+  const flagged = JSON.parse(cloud.staff).find(s => s.name === 'Dr. Ghaith');
+  check('Log Visit offers the supervisor his own name first and saves the visit under it', own.chips[0] === 'Dr. Ghaith' && own.chips.includes('Mariam') && own.def === 'Dr. Ghaith' && own.rep === 'Dr. Ghaith', own);
+  check('logging under his own name switches "Also sells" on, so the visit counts in every report', flagged.sells === true && own.reps.includes('Dr. Ghaith'), { flagged, reps: own.reps });
+  cloud.staff = JSON.stringify([
+    {name:'Mariam', role:'rep', email:'m@x.com'}, {name:'Renova', role:'rep', email:'r@x.com'},
+    {name:'Dr. Ghaith', role:'supervisor', email:'g@x.com'}]);
+  await page.evaluate(async () => { await selectUser('Mariam', 'rep'); });
+  const jointOpts = await page.evaluate(() => { switchView('log'); prepLogView('c1'); return [...document.querySelectorAll('#jointChips .chip')].map(c => c.textContent.trim()); });
+  check('a rep can mark a joint visit with the supervisor', jointOpts.some(t => /Dr\. Ghaith/.test(t)), jointOpts);
+  await boot();
   // the Team tab must still show him with an Edit button — that is the only way to the flag
   const team = await page.evaluate(() => { openAdminPanel(); setAdminTab('team'); const el = document.getElementById('apStaffList'); return { names: [...el.querySelectorAll('.clinic-name')].map(n => n.textContent.trim()), edits: el.querySelectorAll('button').length }; });
   check('Team tab lists the non-selling supervisor with an Edit button', team.names.some(n => /Dr\. Ghaith/.test(n)) && team.edits >= 3, team);
