@@ -751,6 +751,47 @@ describe('rep and customer matching', () => {
     assert.equal(map['Reem Omar'], null);
     assert.equal(map['Mariam Zohair'], 'Mariam');
   });
+  test('clinic distribution file: repeated headers, shared owners, totals and summary blocks skipped', () => {
+    const H = ['Name', 'Account', 'Previous rep', 'Now with', 'Avg / month (KD)'];
+    const sheets = [{ name: 'Clinic distribution', rows: [
+      ['Clinic distribution – October'], [],
+      H, ['Ghaith', 'Bayan Dental Center', 'Mariam', 'Ghaith', 2382], ['Ghaith', 'Aline Dental Centers', 'Renova', 'Ghaith', 1284],
+      ['Ghaith', 'NHC - Dr. Nael Al Hazeem Dental Centers', 'Mariam', 'Ghaith', 374], ['Ghaith total (3 accounts)', null, null, null, 4040],
+      H, ['Mariam', 'Dr. Nael Al Hazeem Pharmacy ( Al Soor )', 'Mariam', 'Mariam', 172], ['Mariam', 'Gulf Clinic', 'Mariam', 'Mariam', 90],
+      ['Renova', 'Dr.Teeth Dental Care Center Shaab', 'Renova', 'Renova', 2], ['Renova', 'Meena Dental Speciality Center', 'Renova', 'Renova', 2],
+      H, ['Shared', 'Ministry Of Health', 'Mariam', 'Mariam + Ghaith', 600], ['Shared', 'Jahra Hospital (MOH)', '—', 'Renova + Ghaith', 0],
+      ['Shared', 'Nowhere Clinic', 'Mariam', 'Somebody Else', 0],
+      ['Name', 'Accounts', 'Avg / month (KD)', 'Share'], ['Ghaith', 5, 5433, 0.48], ['Team', 57, 11161, 1]] }];
+    const reps = ['Mariam', 'Renova', 'Dr. Ghaith'];
+    const d = core.parseDistribution(sheets, reps);
+    assert.equal(d.rows.length, 9);                                            // summary block and totals ignored
+    assert.deepEqual(d.rows.find(r => r.account === 'Ministry Of Health').owners, ['Mariam', 'Dr. Ghaith']);
+    assert.equal(d.rows.find(r => r.account === 'Ministry Of Health').shared, true);
+    assert.deepEqual(d.badOwners, [{ account: 'Nowhere Clinic', owner: 'Somebody Else' }]);
+    const clinics = [
+      { id: 'b', name: 'Bayan Dental Center', rep: 'Mariam' },
+      { id: 'a1', name: 'Aline Dental Center Jahra', rep: 'Renova' }, { id: 'a2', name: 'Aline Dental Center Shaab', rep: 'Renova' },
+      { id: 'n1', name: 'Dr. Nael Al Hazeem Dental Center - Sharq', rep: 'Mariam' }, { id: 'np', name: 'Dr. Nael Al Hazeem Pharmacy ( Al Soor )', rep: 'Mariam' },
+      { id: 'g', name: 'Gulf Clinic', rep: 'Mariam' }, { id: 'gm', name: 'Gulf Medical Service', rep: 'Renova' },
+      { id: 't', name: 'Dr. Teeth Dental Care, Mangaf', rep: 'Mariam' }, { id: 'me', name: 'Meena Dental', rep: 'Renova' },
+      { id: 'moh', name: 'Ministry Of Health', rep: 'Mariam' }, { id: 'ih', name: 'International Hospital', rep: 'Renova' },
+      { id: 'x', name: 'Closed Clinic', rep: 'Mariam', cls: 'Closed' }];
+    const plan = core.planDistribution(d, clinics, {}, '2026-10-01');
+    const ch = Object.fromEntries(plan.changes.map(c => [c.clinicId, c]));
+    assert.deepEqual(Object.keys(ch).sort(), ['a1', 'a2', 'b', 'moh', 'n1']);  // both Aline branches, the NHC clinic, the ministry
+    assert.equal(ch.n1.to, 'Dr. Ghaith'); assert.equal(ch.moh.shared, true); assert.equal(ch.moh.to, 'Mariam');
+    assert.ok(!ch.np && !ch.t && !ch.gm && !ch.ih);                             // pharmacy, other Dr. Teeth branch, look-alikes untouched
+    assert.deepEqual(plan.missing.map(m => m.account).sort(), ['Dr.Teeth Dental Care Center Shaab', 'Jahra Hospital (MOH)']);
+    assert.ok(plan.same.some(x => x.clinicId === 'me'));                        // "Meena Dental" already Renova's: no change, not missing
+    const n = core.applyDistributionPlan(plan, clinics, reps);
+    assert.equal(n, 5);
+    const c = id => clinics.find(x => x.id === id);
+    assert.deepEqual([c('b').rep, c('b').prevRep, c('b').repSince], ['Dr. Ghaith', 'Mariam', '2026-10-01']);
+    assert.deepEqual([c('moh').rep, c('moh').shared, c('moh').sharedSince, c('moh').prevRep], ['Mariam', true, '2026-10-01', undefined]);
+    assert.equal(c('np').rep, 'Mariam');
+    // applying the same file again changes nothing
+    assert.equal(core.planDistribution(d, clinics, {}, '2026-10-01').changes.length, 0);
+  });
   test('a shared account counts each invoice for whoever issued it (from sharedSince)', () => {
     const cl = [{ id: 'moh', name: 'Ministry Of Health', rep: 'Mariam', shared: true, sharedSince: '2026-10-01' }];
     const rm = { 'Ghaith Al Manfe': 'Dr. Ghaith', 'Mariam Zohair': 'Mariam' };
