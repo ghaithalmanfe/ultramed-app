@@ -581,6 +581,7 @@ async function erpImportXlsx(buf, fname){
   }
   const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: dsrDateFromName(fname) || todayStr()});
   if(!tg.error){ await applyTargetsFile(tg); return; }
+  if(!UMCore.parseDistribution(sheets, REPS).error && openDistributionPreview(sheets)) return; // a clinic distribution file: preview, saved on tap
   erpStatus('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export', true);
 }
 // One entry point, zero-touch: detect sales vs targets and enter the data.

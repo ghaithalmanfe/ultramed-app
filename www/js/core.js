@@ -1819,6 +1819,132 @@
     });
     return { reps: map, areas: areas };
   }
+  // ---- CLINIC DISTRIBUTION FILE (who owns which clinic) ----
+  // Reads a sheet listing accounts and their owner: an "Account / Clinic"
+  // column and a "Now with / New rep / Owner" column (never the "Previous"
+  // one). Header rows may repeat (one block per person); total rows are
+  // skipped. "Mariam + Ghaith" = a SHARED account (first name keeps the
+  // clinic on her list; invoices count for whoever issues them).
+  function distributionHeader(row){
+    var accC = -1, ownC = -1, prevC = -1;
+    for(var j = 0; j < (row || []).length; j++){
+      var h = String(row[j] == null ? '' : row[j]).toLowerCase().trim();
+      if(!h) continue;
+      if(/prev|old|before|سابق/.test(h)){ if(prevC < 0) prevC = j; continue; }
+      if(accC < 0 && /^(account|clinic|customer|العميل|العيادة|الحساب)/.test(h)) accC = j;
+      else if(ownC < 0 && /now with|new rep|new owner|^owner|assigned|^with\b|^rep\b|المندوب الحالي|أصبحت مع|مع من/.test(h)) ownC = j;
+    }
+    return accC >= 0 && ownC >= 0 ? { accC: accC, ownC: ownC, prevC: prevC } : null;
+  }
+  function parseDistribution(sheets, reps){
+    var out = { rows: [], badOwners: [], error: null }, seen = {};
+    (sheets || []).forEach(function(sh){
+      var hd = null;
+      (sh.rows || []).forEach(function(row){
+        var h = distributionHeader(row);
+        if(h){ hd = h; return; }
+        if(!hd) return;
+        // another table's header (a summary block) ends the distribution table
+        if((row || []).some(function(v){ return /^(accounts?|clinics?|customers?|name)$/i.test(String(v == null ? '' : v).trim()); })){ hd = null; return; }
+        var acct = String(row[hd.accC] == null ? '' : row[hd.accC]).replace(/\s+/g, ' ').trim();
+        var own = String(row[hd.ownC] == null ? '' : row[hd.ownC]).trim();
+        if(!acct || !/[A-Za-z؀-ۿ]/.test(acct) || /total/i.test(acct) || /total/i.test(String(row[0] || ''))) return;
+        if(!own || /^[—\-–]+$/.test(own)) return;
+        var names = own.split(/\s*(?:\+|&|\/|,|،|\band\b|\sو\s)\s*/i).map(function(x){ return x.trim(); }).filter(Boolean);
+        var map = guessRepMap(names, reps), owners = [];
+        names.forEach(function(n){ var r = map[n]; if(r && owners.indexOf(r) < 0) owners.push(r); });
+        if(!owners.length){ out.badOwners.push({ account: acct, owner: own }); return; }
+        var key = acct.toLowerCase();
+        if(seen[key]) return; seen[key] = 1;
+        out.rows.push({ account: acct, owners: owners, shared: owners.length > 1, prev: hd.prevC >= 0 ? String(row[hd.prevC] || '').trim() : '' });
+      });
+    });
+    if(!out.rows.length && !out.badOwners.length) out.error = 'NO_DISTRIBUTION';
+    return out;
+  }
+  // Matches each distribution row to app clinics and returns the plan:
+  // exact names (or the ERP name map) first, then the branch-aware hint
+  // matcher, then a whole branch family ("Aline Dental Centers" → every Aline
+  // branch); a pharmacy is only taken when the account says pharmacy, and a
+  // clinic named exactly by one row is never swept up by another's family.
+  function planDistribution(dist, clinics, erpMap, since){
+    var live = (clinics || []).filter(function(c){ return c && c.cls !== 'Closed'; });
+    var key = function(x){ return String(x || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+    var byName = {}; live.forEach(function(c){ (byName[key(c.name)] = byName[key(c.name)] || []).push(c.id); });
+    var claimed = {}, found = {};
+    dist.rows.forEach(function(r, i){
+      var ids = (byName[key(r.account)] || []).slice();
+      var v = erpMap && erpMap[r.account];
+      if(!ids.length && v && v.charAt(0) !== '@' && live.some(function(c){ return c.id === v; })) ids = [v];
+      if(ids.length){ found[i] = { ids: ids, how: 'exact' }; ids.forEach(function(id){ claimed[id] = i; }); }
+    });
+    var isPh = function(n){ return /pharmac|صيدلية/i.test(n || ''); };
+    var toks = function(n){ return normClinicName(n).split(' ').filter(Boolean); };
+    var sub = function(a, b){ return a.length && a.every(function(t){ return b.indexOf(t) >= 0; }); };
+    dist.rows.forEach(function(r, i){
+      if(found[i]) return;
+      var wantsPh = isPh(r.account), free = live.filter(function(c){ return claimed[c.id] == null && isPh(c.name) === wantsPh; });
+      // A group account ("Aline Dental Centers", "NHC - Dr. Nael Al Hazeem
+      // Dental Centers") covers every branch whose name holds all its words;
+      // any other account must carry exactly the same words as one clinic, so
+      // "Dr.Teeth … Shaab" never lands on the Mangaf branch.
+      var group = /\b(centers|centres|clinics|branches)\b/i.test(r.account) || /^\s*[A-Z]{2,5}\s*-\s*/.test(r.account);
+      var ht = toks(r.account.replace(/\b(centers|centres|clinics|branches)\b/ig, '').replace(/^\s*[A-Z]{2,5}\s*-\s*/, ''));
+      var hits = free.filter(function(c){ var ct = toks(c.name); return group ? sub(ht, ct) : (sub(ht, ct) && sub(ct, ht)); });
+      if(!hits.length){
+        // Only a near name ("Meena Dental" for "Meena Dental Speciality
+        // Center"): never moved on a guess — fine if it is already right,
+        // otherwise listed for a manual look.
+        var GEN = ['hospital', 'moh', 'care', 'services', 'service', 'speciality', 'specialty', 'ph', 'health', 'centre', 'polyclinic'];
+        var dh = ht.filter(function(t){ return GEN.indexOf(t) < 0; });
+        var near = free.filter(function(c){ var ct = toks(c.name); return (sub(ht, ct) || sub(ct, ht)) && dh.some(function(t){ return ct.indexOf(t) >= 0; }); });
+        if(near.length && near.every(function(c){ return c.rep === r.owners[0] && !!c.shared === r.shared; })) found[i] = { ids: near.map(function(c){ return c.id; }), how: 'near' };
+        else if(near.length) found[i] = { ids: [], how: 'ambiguous', candidates: near.map(function(c){ return c.name; }) };
+        return;
+      }
+      var oneFamily = hits.every(function(c){ return c.rep === hits[0].rep; });
+      if(hits.length === 1 || (group && oneFamily)){
+        found[i] = { ids: hits.map(function(c){ return c.id; }), how: hits.length > 1 ? 'family' : 'match' };
+        hits.forEach(function(c){ claimed[c.id] = i; });
+      } else found[i] = { ids: [], how: 'ambiguous', candidates: hits.map(function(c){ return c.name; }) };
+    });
+    var plan = { changes: [], same: [], missing: [], ambiguous: [] };
+    dist.rows.forEach(function(r, i){
+      var f = found[i];
+      if(!f || !f.ids.length){ (f && f.how === 'ambiguous' ? plan.ambiguous : plan.missing).push({ account: r.account, owners: r.owners, shared: r.shared, candidates: f && f.candidates }); return; }
+      f.ids.forEach(function(id){
+        var c = live.find(function(x){ return x.id === id; });
+        var to = r.owners[0], wasShared = !!c.shared;
+        var item = { account: r.account, clinicId: id, clinic: c.name, from: c.rep || '', to: to, shared: r.shared, wasShared: wasShared, how: f.how };
+        if(c.rep === to && wasShared === r.shared) plan.same.push(item); else plan.changes.push(item);
+      });
+    });
+    plan.since = since;
+    return plan;
+  }
+  // Applies a plan to the clinic list in place (the same handover rule as a
+  // manual reassignment: from `since`, earlier lines stay with the previous
+  // owner). Returns the number of clinics changed.
+  function applyDistributionPlan(plan, clinics, reps){
+    var n = 0, since = plan.since;
+    plan.changes.forEach(function(ch){
+      var c = (clinics || []).find(function(x){ return x.id === ch.clinicId; });
+      if(!c) return;
+      var prev = c.rep;
+      if(prev !== ch.to){
+        if(prev && (reps || []).indexOf(prev) >= 0){
+          if(c.prevRep && c.repSince === since && c.prevRep !== ch.to){ /* changed again within the month: keep the first previous owner */ }
+          else if(c.prevRep && c.repSince === since && c.prevRep === ch.to){ c.prevRep = null; c.repSince = null; }
+          else { c.prevRep = prev; c.repSince = since; }
+        }
+        c.rep = ch.to;
+      }
+      if(ch.shared && !c.shared){ c.shared = true; c.sharedSince = since; }
+      if(!ch.shared && c.shared){ c.shared = false; c.sharedSince = null; }
+      n++;
+    });
+    return n;
+  }
   // A clinic hint from a sheet → app clinic, branch-aware: a tie between
   // branches is settled by the contact's area, and a dental hint never lands
   // on the clinic's pharmacy.
@@ -2470,7 +2596,9 @@
   // need (DataView + DecompressionStream). Returns [{name, rows[][]}].
   function xmlUnescape(s){
     return String(s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-      .replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/&#(\d+);|&#x([0-9a-f]+);/gi, function(m, d, h){ var n = d ? parseInt(d, 10) : parseInt(h, 16); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m; }) // "&#8212;" → "—"
+      .replace(/&amp;/g, '&');
   }
   async function inflateRaw(bytes){
     var ds = new DecompressionStream('deflate-raw');
@@ -3219,7 +3347,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, erpDateOrder, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
+    matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpRevenueRange, erpMtd, monthAchievement, teamAchievement, dailyDigest,
