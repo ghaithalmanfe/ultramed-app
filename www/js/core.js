@@ -1582,6 +1582,35 @@
     });
     return map;
   }
+  // Invoices a team member issued at ANOTHER rep's clinic this month (shared
+  // accounts excluded — those count for the issuer). They count for the
+  // clinic's owner; this list is what the app shows so nobody is surprised.
+  // Returns [{clinicId, clinic, issuer, owner, invoices, net, from, to}].
+  function crossInvoices(data){
+    var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales, clinics = data.clinics || [];
+    var byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
+    var out = {}, ctx = null;
+    erpPeriodsOf(es).filter(function(p){ return p.to >= mStart && p.from <= today; }).forEach(function(p){
+      ctx = ctx || erpCtxOf(es);
+      erpViewRowsOf(es, p, ctx).forEach(function(r){
+        if(r.date < mStart || r.date > today) return;
+        var issuer = (p.repMap || {})[r.salesman];
+        if(!issuer) return;
+        var m = matchCustomer((r.customer || '').trim(), clinics, data.erpMap || {});
+        var c = m.clinicId && byId[m.clinicId];
+        if(!c || clinicSharedOn(c, r.date)) return;
+        var owner = clinicRepOn(c, r.date);
+        if(!owner || owner === issuer) return;
+        var k = c.id + '|' + issuer + '|' + owner;
+        var a = out[k] || (out[k] = { clinicId: c.id, clinic: c.name, issuer: issuer, owner: owner, docs: {}, net: 0, from: r.date, to: r.date });
+        a.docs[r.doc] = 1; a.net += r.net;
+        if(r.date < a.from) a.from = r.date;
+        if(r.date > a.to) a.to = r.date;
+      });
+    });
+    return Object.keys(out).map(function(k){ var a = out[k]; return { clinicId: a.clinicId, clinic: a.clinic, issuer: a.issuer, owner: a.owner, invoices: Object.keys(a.docs).length, net: Math.round(a.net * 1000) / 1000, from: a.from, to: a.to }; })
+      .sort(function(x, y){ return y.net - x.net; });
+  }
   // The last day the uploaded sales files cover in the current month (null = none).
   // With a rep: only files that carry that rep's salesman — a file exported
   // for one salesman says nothing about the others' sales.
@@ -3355,7 +3384,7 @@
     matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpRevenueRange, erpMtd, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpRevenueRange, erpMtd, crossInvoices, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
