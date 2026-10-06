@@ -751,6 +751,19 @@ describe('rep and customer matching', () => {
     assert.equal(map['Reem Omar'], null);
     assert.equal(map['Mariam Zohair'], 'Mariam');
   });
+  test('a sales file holding only one salesman never reports the others as "0 to date"', () => {
+    const row = (d, sm, net) => [d, 'SINV' + d + sm.length, 0, 'x', 1, net, net, 0, sm, 'Intensiv', 'Some Customer', 'Clinics', 0, ''];
+    const data = (repMap, rows) => ({ today: '2026-10-07', clinics: [], erpMap: {}, erpSales: { periods: [{ id: 'p', from: '2026-10-05', to: '2026-10-05', repMap, rows }] } });
+    // his own export: Mariam's salesman is not in it at all
+    let d = data({ 'Ghaith Al Manfe': 'Dr. Ghaith' }, [row('2026-10-05', 'Ghaith Al Manfe', 21.25)]);
+    assert.equal(core.monthAchievement('Dr. Ghaith', d).amount, 21.25);
+    let m = core.monthAchievement('Mariam', d);
+    assert.equal(m.amount, 0); assert.doesNotMatch(m.src, /^ERP to/); assert.match(m.src, /no invoice/i); assert.equal(m.complete, false);
+    // a team export that carries her salesman but no line of hers that day: a true zero
+    d = data({ 'Ghaith Al Manfe': 'Dr. Ghaith', 'Mariam Zohair': 'Mariam' }, [row('2026-10-05', 'Ghaith Al Manfe', 21.25)]);
+    m = core.monthAchievement('Mariam', d);
+    assert.equal(m.amount, 0); assert.equal(m.src, 'ERP to Oct 5');
+  });
   test('clinic distribution file: repeated headers, shared owners, totals and summary blocks skipped', () => {
     const H = ['Name', 'Account', 'Previous rep', 'Now with', 'Avg / month (KD)'];
     const sheets = [{ name: 'Clinic distribution', rows: [
