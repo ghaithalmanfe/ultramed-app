@@ -513,9 +513,17 @@ function crossInvoiceNote(){
   const sup = currentUser.role==='supervisor';
   const list = UMCore.crossInvoices(digestData()).filter(x => sup || x.issuer===currentUser.name || x.owner===currentUser.name);
   if(!list.length) return '';
-  return `<div style="margin-top:8px; padding:8px 10px; border-radius:10px; background:var(--amber-dim, #FFF4D6); font-size:12px; line-height:1.55;">
+  const inv = d => `<div style="padding:3px 0 3px 10px; border-inline-start:2px solid var(--amber, #E0A800); margin:3px 0;">
+      <div><b>${esc(d.doc)}</b> · ${fmtDate(d.date)} · <b>${money(d.net)}</b></div>
+      ${d.items.map(it => `<div style="color:var(--muted);">${esc(it.product || '—')}${it.brand ? ' · ' + esc(it.brand) : ''} · ${+it.qty || 0} × · ${money(it.net)}</div>`).join('')}
+    </div>`;
+  return `<div onclick="event.stopPropagation()" style="margin-top:8px; padding:8px 10px; border-radius:10px; background:var(--amber-dim, #FFF4D6); font-size:12px; line-height:1.55; cursor:default;">
     <div style="font-weight:700;">⚠️ <span>Invoices on another rep's clinic this month</span></div>
-    ${list.map(x => `<div><b>${esc(x.issuer)}</b> <span>invoiced at</span> <b>${esc(x.clinic)}</b> · ${x.invoices} × · ${money(x.net)} · <span>counted for the clinic owner:</span> <b>${esc(x.owner)}</b></div>`).join('')}
+    ${list.map(x => `<details style="margin-top:4px;">
+      <summary style="cursor:pointer;"><b>${esc(x.issuer)}</b> <span>invoiced at</span> <b>${esc(x.clinic)}</b> · ${x.invoices} × · ${money(x.net)} · <span>counted for the clinic owner:</span> <b>${esc(x.owner)}</b></summary>
+      ${x.details.map(inv).join('')}
+    </details>`).join('')}
+    <div style="color:var(--muted); margin-top:3px;"><span>Tap a line to see its invoices.</span></div>
   </div>`;
 }
 
