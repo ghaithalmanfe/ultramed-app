@@ -896,11 +896,20 @@
     if(c.repSince && c.prevRep && date && date < c.repSince) return c.prevRep;
     return c.rep || null;
   }
+  // A SHARED account (hospitals, the ministry, a university…) has no single
+  // owner for sales: from `sharedSince` each invoice counts in full for the
+  // team member who issued it (the file's salesman); earlier lines keep the
+  // territory rule, so closed months never move.
+  function clinicSharedOn(c, date){
+    return !!(c && c.shared) && (!c.sharedSince || !date || date >= c.sharedSince);
+  }
   function erpRowRep(r, clinics, erpMap, repMap){
     var m = matchCustomer((r.customer || '').trim(), clinics, erpMap);
     if(m.clinicId){
       for(var i = 0; i < (clinics || []).length; i++){
-        if(clinics[i].id === m.clinicId) return clinicRepOn(clinics[i], r.date) || (repMap || {})[r.salesman] || null;
+        if(clinics[i].id !== m.clinicId) continue;
+        if(clinicSharedOn(clinics[i], r.date)) return (repMap || {})[r.salesman] || null;
+        return clinicRepOn(clinics[i], r.date) || (repMap || {})[r.salesman] || null;
       }
     }
     return (repMap || {})[r.salesman] || null;
@@ -3210,7 +3219,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, erpDateOrder, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, erpRowRep, clinicRepOn, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
+    matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpRevenueRange, erpMtd, monthAchievement, teamAchievement, dailyDigest,
