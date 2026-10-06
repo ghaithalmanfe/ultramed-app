@@ -100,6 +100,26 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   await page.evaluate(async () => { await toggleSharedClinic('moh'); });
   a = await ach();
   check('un-sharing gives the ministry back to its owner', a.g === 21.25 && a.m === 180, a);
+  // ---- uploading a clinic distribution file: preview first, saved on tap ----
+  const distCsv = ['Name,Account,Previous rep,Now with,Avg / month (KD)',
+    'Mariam,Dental 8 Clinic,Mariam,Renova,35', 'Shared,Ministry Of Health,Mariam,Mariam + Ghaith,600',
+    'Ghaith,Dr. Nael Al Hazeem Dental Center - Sharq,Mariam,Ghaith,374', 'Renova,White Dental Center,Renova,Renova,52',
+    'Ghaith total (1 account),,,,374'].join('\n');
+  const distPath = path.join(require('os').tmpdir(), 'dist-test.csv'); fs.writeFileSync(distPath, distCsv);
+  await page.evaluate(() => { openAdminPanel(); setAdminTab('territory'); });
+  await page.setInputFiles('#apDistFile', distPath);
+  await page.waitForTimeout(500);
+  const prev = await page.evaluate(() => document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '));
+  check('preview lists the 2 changes before anything is saved', /2 changes/.test(prev) && /Dental 8 Clinic/.test(prev) && /Mariam → Renova/.test(prev) && /shared/.test(prev), prev.slice(0, 500));
+  check('preview: NHC already his (no change); White Dental not in the app', /1 clinic already as in the file/.test(prev) && /White Dental Center/.test(prev) && /not in the app/.test(prev), prev.slice(0, 700));
+  check('nothing saved yet', JSON.parse(cloud.clinics).find(x => x.id === 'm1').rep === M);
+  await page.evaluate(async () => { const b = [...document.querySelectorAll('button')].find(b => /Save 2 changes/.test(b.textContent)); b.click(); await new Promise(r => setTimeout(r, 700)); });
+  const done = await page.evaluate(() => document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '));
+  const cl2 = JSON.parse(cloud.clinics);
+  const m1 = cl2.find(x => x.id === 'm1'), moh = cl2.find(x => x.id === 'moh');
+  check('saved: Dental 8 → Renova from 1 Oct, ministry shared again', /Distribution saved/.test(done) && m1.rep === 'Renova' && m1.prevRep === M && m1.repSince === '2026-10-01' && moh.shared === true && moh.rep === M, { done: done.slice(0, 120), m1, moh });
+  a = await ach();
+  check('after the upload: Mariam\'s 50 at Dental 8 is now Renova\'s; his ministry invoice is his', a.g === 121.25 && a.m === 30, a);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

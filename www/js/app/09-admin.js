@@ -207,6 +207,11 @@ function adminTeamStatsHTML(){
 function adminTerritoryHTML(){
   return `
     <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Move a clinic to a different rep. Visit history stays with the clinic.</p>
+    <div class="card" style="margin-bottom:10px; border-inline-start:4px solid var(--teal);">
+      <div style="font-weight:700; font-size:13.5px;">${I('download')} Upload a clinic distribution</div>
+      <div style="color:var(--muted); font-size:12px; margin:2px 0 8px;">Excel or CSV with an <b>Account</b> column and a <b>Now with</b> (or New rep / Owner) column. "Mariam + Ghaith" = shared. You see every change before it is saved.</div>
+      <input type="file" id="apDistFile" accept=".xlsx,.xls,.csv" onchange="distFilePicked(this)">
+    </div>
     <input type="text" id="apTerrSearch" placeholder="Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
     <div class="chip-row" style="margin-bottom:10px;" id="apTerrFilter">
       <div class="chip small on" data-f="all" onclick="setTerrFilter(this,'all')">All</div>
@@ -228,7 +233,9 @@ function renderAdminTerritory(){
   if(terrFilter==='__none') list = list.filter(c=>!c.rep || !REPS.includes(c.rep));
   else if(terrFilter!=='all') list = list.filter(c=>c.rep===terrFilter);
   if(q) list = list.filter(c=>c.name.toLowerCase().includes(q));
-  list = list.sort((a,b)=>a.name.localeCompare(b.name)).slice(0,40);
+  list = list.sort((a,b)=>a.name.localeCompare(b.name));
+  const total = list.length;
+  list = list.slice(0,40);
   const el = document.getElementById('apTerrBody');
   if(!el) return; // the sheet was closed (or another tab opened) before the save finished
   if(!list.length){ el.innerHTML = `<div class="empty">No clinics match.</div>`; return; }
@@ -242,7 +249,7 @@ function renderAdminTerritory(){
         <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
       </div>
     </div>`;
-  }).join('') + (clinics.filter(c=>c.cls!=='Closed').length>40 && !q ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Search to narrow down</div>` : '');
+  }).join('') + (total>40 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Showing 40 of ${total} — type a clinic name above to find the others</div>` : '');
 }
 // A shared account (hospital, ministry, university…): from the 1st of the
 // current month each invoice counts for the team member who issued it
@@ -257,6 +264,56 @@ async function toggleSharedClinic(clinicId){
   showToast(c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
   renderAdminTerritory();
   renderAll();
+}
+// ---- Clinic distribution upload: read → show every change → save on tap ----
+let _distPlan = null;
+async function distFilePicked(input){
+  const f = input && input.files && input.files[0];
+  if(!f) return;
+  try{
+    const sheets = /\.(xlsx|xls)$/i.test(f.name)
+      ? await UMCore.readXlsx(await f.arrayBuffer())
+      : [{ name: f.name, rows: UMCore.parseCsvText(await f.text()) }];
+    openDistributionPreview(sheets);
+  }catch(e){ showToast('❌ Could not open this file — save it as Excel (.xlsx) or CSV and retry'); }
+}
+function openDistributionPreview(sheets){
+  if(!requireAdmin()) return;
+  const dist = UMCore.parseDistribution(sheets, REPS);
+  if(dist.error){ showToast('❌ No "Account" + "Now with" columns found in this file'); return false; }
+  const plan = UMCore.planDistribution(dist, clinics, erpMap, todayStr().slice(0, 7) + '-01');
+  _distPlan = plan;
+  const own = x => x.shared ? `${esc(x.to)} <span class="chip small on" style="padding:1px 6px;">shared</span>` : esc(x.to);
+  const line = x => `<div style="font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--line, #eee);"><b>${esc(x.clinic)}</b>${x.clinic!==x.account?` <span style="color:var(--muted);">(file: ${esc(x.account)})</span>`:''}<br>${esc(x.from || 'unassigned')}${x.wasShared?' (shared)':''} → ${own(x)}</div>`;
+  const miss = plan.missing.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);">→ ${esc(x.owners.join(' + '))}${x.shared ? ' · not in the app: its invoices already count for whoever issues them' : ' · not in the app — add the clinic or check the name'}</span></div>`).join('');
+  const amb = plan.ambiguous.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);">— several clinics look alike (${esc((x.candidates || []).join(', '))}); set it by hand below</span></div>`).join('');
+  showModal(`
+    <h3 style="margin-top:0;">${I('download')} Clinic distribution — check before saving</h3>
+    <div style="color:var(--muted); font-size:12.5px; margin:-4px 0 10px;">Changes count from ${fmtDate(plan.since)}: this month's sales go to the new owner, earlier months stay with the previous one. Shared = each invoice counts for whoever issued it. Targets are not changed.</div>
+    <div class="card"><b>${plan.changes.length} change${plan.changes.length===1?'':'s'}</b>${plan.changes.length ? plan.changes.map(line).join('') : '<div style="color:var(--muted); font-size:12.5px;">The app already matches this file.</div>'}</div>
+    <div style="color:var(--muted); font-size:12px; margin:6px 0;">${plan.same.length} clinic${plan.same.length===1?'':'s'} already as in the file.${dist.badOwners.length ? ` ${dist.badOwners.length} row(s) skipped — owner not on the team: ${dist.badOwners.map(b=>esc(b.account)+' ('+esc(b.owner)+')').join(', ')}.` : ''}</div>
+    ${amb ? `<div class="nudge" style="margin-top:6px;"><b>Not moved — check by hand</b>${amb}</div>` : ''}
+    ${miss ? `<div class="card" style="margin-top:6px;"><b>Not in the app (${plan.missing.length})</b>${miss}</div>` : ''}
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      ${plan.changes.length ? `<button class="btn" onclick="applyDistributionUpload()">💾 Save ${plan.changes.length} change${plan.changes.length===1?'':'s'}</button>` : ''}
+      <button class="btn secondary" onclick="closeModal()">${plan.changes.length ? 'Cancel' : 'Close'}</button>
+    </div>`);
+  return true;
+}
+async function applyDistributionUpload(){
+  if(!requireAdmin() || !_distPlan) return;
+  const plan = _distPlan; _distPlan = null;
+  const before = JSON.stringify(clinics);
+  const n = UMCore.applyDistributionPlan(plan, clinics, REPS);
+  if(!await persist('clinics')){
+    clinics = JSON.parse(before);
+    showModal(`<h3 style="margin-top:0;">❌ Not saved</h3><div style="font-size:13px;">The clinic list could not be saved to the cloud — nothing was changed. Check the connection and upload the file again.</div><button class="btn" style="margin-top:12px;" onclick="closeModal()">OK</button>`);
+    return;
+  }
+  renderAll();
+  showModal(`<h3 style="margin-top:0;">✅ Distribution saved</h3>
+    <div style="font-size:13px;">${n} clinic${n===1?'':'s'} updated from ${fmtDate(plan.since)}. The Today card, reports and e-mails now count each clinic's sales for its new owner.</div>
+    <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn" onclick="openAdminPanel(); setAdminTab('territory');">Back to Territory</button><button class="btn secondary" onclick="closeModal()">Done</button></div>`);
 }
 async function reassignClinic(clinicId, newRep){
   if(!requireAdmin()) return;
