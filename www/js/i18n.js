@@ -822,6 +822,7 @@
     "Invoices on another rep's clinic this month": 'فواتير على عيادة مندوب آخر هذا الشهر',
     'invoiced at': 'فوتر على',
     'counted for the clinic owner:': 'تُحسب لصاحب العيادة:',
+    'Tap a line to see its invoices.': 'اضغط على السطر لرؤية الفواتير.',
     'Weekly sales file due': 'ملف المبيعات الأسبوعي مستحق',
     'Coaching guidance': 'إرشاد وتوجيه',
     'DO NOW': 'افعلها الآن',

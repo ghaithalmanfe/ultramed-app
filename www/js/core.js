@@ -1585,7 +1585,8 @@
   // Invoices a team member issued at ANOTHER rep's clinic this month (shared
   // accounts excluded — those count for the issuer). They count for the
   // clinic's owner; this list is what the app shows so nobody is surprised.
-  // Returns [{clinicId, clinic, issuer, owner, invoices, net, from, to}].
+  // Returns [{clinicId, clinic, issuer, owner, invoices, net, from, to,
+  //   details: [{doc, date, net, items: [{product, brand, qty, net}]}]}].
   function crossInvoices(data){
     var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales, clinics = data.clinics || [];
     var byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
@@ -1603,12 +1604,17 @@
         if(!owner || owner === issuer) return;
         var k = c.id + '|' + issuer + '|' + owner;
         var a = out[k] || (out[k] = { clinicId: c.id, clinic: c.name, issuer: issuer, owner: owner, docs: {}, net: 0, from: r.date, to: r.date });
-        a.docs[r.doc] = 1; a.net += r.net;
+        var d = a.docs[r.doc] || (a.docs[r.doc] = { doc: r.doc, date: r.date, net: 0, items: [] });
+        d.net += r.net; d.items.push({ product: r.product, brand: r.brand, qty: r.qty, net: r.net });
+        a.net += r.net;
         if(r.date < a.from) a.from = r.date;
         if(r.date > a.to) a.to = r.date;
       });
     });
-    return Object.keys(out).map(function(k){ var a = out[k]; return { clinicId: a.clinicId, clinic: a.clinic, issuer: a.issuer, owner: a.owner, invoices: Object.keys(a.docs).length, net: Math.round(a.net * 1000) / 1000, from: a.from, to: a.to }; })
+    return Object.keys(out).map(function(k){ var a = out[k];
+      var details = Object.keys(a.docs).map(function(n){ var d = a.docs[n]; return { doc: d.doc, date: d.date, net: Math.round(d.net * 1000) / 1000, items: d.items }; })
+        .sort(function(x, y){ return x.date < y.date ? -1 : x.date > y.date ? 1 : (x.doc < y.doc ? -1 : 1); });
+      return { clinicId: a.clinicId, clinic: a.clinic, issuer: a.issuer, owner: a.owner, invoices: details.length, net: Math.round(a.net * 1000) / 1000, from: a.from, to: a.to, details: details }; })
       .sort(function(x, y){ return y.net - x.net; });
   }
   // The last day the uploaded sales files cover in the current month (null = none).
