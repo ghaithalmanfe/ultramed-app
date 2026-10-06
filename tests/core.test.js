@@ -766,7 +766,11 @@ describe('rep and customer matching', () => {
     assert.equal(core.monthAchievement('Dr. Ghaith', data).amount, 12 + 9.25 + 233.75 + 100); // his + Mariam's at Bayan (his clinic) + his at the shared ministry
     assert.equal(core.monthAchievement('Mariam', data).amount, 50);                          // only her ministry invoice (shared → issuer)
     const x = core.crossInvoices(data);
-    assert.deepEqual(x, [{ clinicId: 'b', clinic: 'Bayan Dental Center', issuer: 'Mariam', owner: 'Dr. Ghaith', invoices: 2, net: 233.75, from: '2026-10-02', to: '2026-10-03' }]); // September line and the shared ministry are not listed
+    assert.equal(x.length, 1); // September line and the shared ministry are not listed
+    const { details, ...head } = x[0];
+    assert.deepEqual(head, { clinicId: 'b', clinic: 'Bayan Dental Center', issuer: 'Mariam', owner: 'Dr. Ghaith', invoices: 2, net: 233.75, from: '2026-10-02', to: '2026-10-03' });
+    assert.deepEqual(details.map(d => [d.doc, d.date, d.net]), [['S1', '2026-10-02', 200], ['S2', '2026-10-03', 33.75]]);
+    assert.deepEqual(details[0].items, [{ product: 'x', brand: 'Intensiv', qty: 1, net: 200 }]);
   });
   test('a sales file holding only one salesman never reports the others as "0 to date"', () => {
     const row = (d, sm, net) => [d, 'SINV' + d + sm.length, 0, 'x', 1, net, net, 0, sm, 'Intensiv', 'Some Customer', 'Clinics', 0, ''];
