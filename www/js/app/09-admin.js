@@ -236,12 +236,27 @@ function renderAdminTerritory(){
     const vCount = visits.filter(v=>v.clinicId===c.id).length;
     return `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c.cls)};">
       <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}${c.repSince&&c.prevRep?` · since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})`:''}</div>
+      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}${c.repSince&&c.prevRep?` · since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})`:''}${c.shared?` · <b>shared</b> – each invoice counts for whoever issued it${c.sharedSince?' (from '+fmtDate(c.sharedSince)+')':''}`:''}</div>
       <div class="chip-row">
         ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
+        <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
       </div>
     </div>`;
   }).join('') + (clinics.filter(c=>c.cls!=='Closed').length>40 && !q ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Search to narrow down</div>` : '');
+}
+// A shared account (hospital, ministry, university…): from the 1st of the
+// current month each invoice counts for the team member who issued it
+// (UMCore.clinicSharedOn); earlier months keep the owner's figures.
+async function toggleSharedClinic(clinicId){
+  if(!requireAdmin()) return;
+  const c = clinics.find(x=>x.id===clinicId);
+  if(!c) return;
+  if(c.shared){ c.shared = false; c.sharedSince = null; }
+  else { c.shared = true; c.sharedSince = todayStr().slice(0, 7) + '-01'; }
+  await persist('clinics');
+  showToast(c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
+  renderAdminTerritory();
+  renderAll();
 }
 async function reassignClinic(clinicId, newRep){
   if(!requireAdmin()) return;

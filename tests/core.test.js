@@ -751,6 +751,16 @@ describe('rep and customer matching', () => {
     assert.equal(map['Reem Omar'], null);
     assert.equal(map['Mariam Zohair'], 'Mariam');
   });
+  test('a shared account counts each invoice for whoever issued it (from sharedSince)', () => {
+    const cl = [{ id: 'moh', name: 'Ministry Of Health', rep: 'Mariam', shared: true, sharedSince: '2026-10-01' }];
+    const rm = { 'Ghaith Al Manfe': 'Dr. Ghaith', 'Mariam Zohair': 'Mariam' };
+    const row = (d, sm) => ({ customer: 'Ministry Of Health', salesman: sm, date: d, net: 10 });
+    assert.equal(core.erpRowRep(row('2026-10-05', 'Ghaith Al Manfe'), cl, {}, rm), 'Dr. Ghaith'); // his invoice is his
+    assert.equal(core.erpRowRep(row('2026-10-05', 'Mariam Zohair'), cl, {}, rm), 'Mariam');
+    assert.equal(core.erpRowRep(row('2026-10-05', 'Someone Else'), cl, {}, rm), null);           // not the team's: nobody's
+    assert.equal(core.erpRowRep(row('2026-09-20', 'Ghaith Al Manfe'), cl, {}, rm), 'Mariam');    // before sharing: the owner's, closed months never move
+    assert.equal(core.erpRowRep(row('2026-10-05', 'Ghaith Al Manfe'), [{ id: 'moh', name: 'Ministry Of Health', rep: 'Mariam' }], {}, rm), 'Mariam'); // not shared: territory rule
+  });
   test('a clinic handed over keeps lines before repSince with the previous rep', () => {
     const cl = [{ id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', prevRep: 'Mariam', repSince: '2026-10-01' }];
     const row = d => ({ customer: 'Bayan Dental Center', salesman: 'Mariam Zohair', date: d, net: 10 });
