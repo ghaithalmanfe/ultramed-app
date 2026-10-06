@@ -120,6 +120,13 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   check('saved: Dental 8 → Renova from 1 Oct, ministry shared again', /Distribution saved/.test(done) && m1.rep === 'Renova' && m1.prevRep === M && m1.repSince === '2026-10-01' && moh.shared === true && moh.rep === M, { done: done.slice(0, 120), m1, moh });
   a = await ach();
   check('after the upload: Mariam\'s 50 at Dental 8 is now Renova\'s; his ministry invoice is his', a.g === 121.25 && a.m === 30, a);
+  // ---- the girls' invoice at his clinic: counted for him, and the Today card says who invoiced for whom ----
+  const girlsCsv = [H, L('03/10/2026','SINV9101','Dr. Nael Al Hazeem Dental Center - Sharq','Clinics',60,'Mariam Zohair')].join('\n');
+  await page.evaluate(async (csv) => { window.confirm = () => true; openErpImport(); await erpAutoImport(csv); await new Promise(r => setTimeout(r, 600)); try{ closeModal(); }catch(e){} }, girlsCsv);
+  a = await ach();
+  check('Mariam\'s 60 at NHC (his clinic) counts for him', a.g === 181.25, a);
+  const note = await card();
+  check('Today card warns: Mariam invoiced at his clinic, counted for the owner', /Invoices on another rep's clinic this month/.test(note) && /Mariam invoiced at Dr\. Nael Al Hazeem Dental Center - Sharq · 1 × · 60\.00 KD · counted for the clinic owner: Dr\. Ghaith/.test(note), note.slice(-300));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

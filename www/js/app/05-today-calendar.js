@@ -504,6 +504,18 @@ function renderTargetCard(){
       </div>`;
     }).join('')}
     ${currentUser.role==='supervisor' ? teamTargetRow(teamTargetNow()) : ''}
+    ${crossInvoiceNote()}
+  </div>`;
+}
+// Someone invoiced at a clinic that belongs to another rep: the sale counts
+// for the clinic's owner (shared accounts aside) — say so, invoice by clinic.
+function crossInvoiceNote(){
+  const sup = currentUser.role==='supervisor';
+  const list = UMCore.crossInvoices(digestData()).filter(x => sup || x.issuer===currentUser.name || x.owner===currentUser.name);
+  if(!list.length) return '';
+  return `<div style="margin-top:8px; padding:8px 10px; border-radius:10px; background:var(--amber-dim, #FFF4D6); font-size:12px; line-height:1.55;">
+    <div style="font-weight:700;">⚠️ <span>Invoices on another rep's clinic this month</span></div>
+    ${list.map(x => `<div><b>${esc(x.issuer)}</b> <span>invoiced at</span> <b>${esc(x.clinic)}</b> · ${x.invoices} × · ${money(x.net)} · <span>counted for the clinic owner:</span> <b>${esc(x.owner)}</b></div>`).join('')}
   </div>`;
 }
 
