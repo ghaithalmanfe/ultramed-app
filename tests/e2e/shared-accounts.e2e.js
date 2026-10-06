@@ -130,6 +130,10 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   const det = await page.evaluate(() => { const d = document.querySelector('#targetCard details'); if(!d) return ''; d.querySelector('summary').click(); return d.innerText.replace(/\s+/g, ' '); });
   const view = await page.evaluate(() => activeView);
   check('tapping the line opens its invoices: number, date, amount and product', /SINV9101 · Oct 3 · 60\.00 KD/.test(det) && /Test product · Intensiv · 1 × · 60\.00 KD/.test(det) && view === 'today', { det, view });
+  // an older cached core.js (no invoice details) must not blank the Today screen
+  const stale = await page.evaluate(() => { const real = UMCore.crossInvoices; UMCore.crossInvoices = d => real(d).map(x => { const { details, ...rest } = x; return rest; });
+    let threw = null; try{ renderToday(); }catch(e){ threw = e.message; } const t = document.getElementById('targetCard').innerText; UMCore.crossInvoices = real; return { threw, card: /October target/.test(t), note: /another rep/.test(t) }; });
+  check('a stale core.js without invoice details still draws the Today card and the notice', !stale.threw && stale.card && stale.note, stale);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
