@@ -1,4 +1,4 @@
-const CACHE = 'ultramed-field-ops-v101';
+const CACHE = 'ultramed-field-ops-v102';
 const SHELL = ['./', './index.html', './js/core.js', './js/i18n.js', './manifest.json', './icons/icon-192.png', './icons/logo-green.png', './icons/icon-512.png'];
 // The Firebase SDK lives on gstatic; without it a cached session cannot boot
 // offline at all, so precache it too (no-cors -> opaque, cached all the same).
@@ -10,7 +10,7 @@ const EXTERNAL = [
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.all([
-    c.addAll(SHELL),
+    c.addAll(SHELL.map(u => new Request(u, {cache: 'reload'}))), // straight from the server: never a stale HTTP-cached file from the previous release
     // best-effort: a gstatic hiccup must not fail the whole install
     ...EXTERNAL.map(u => fetch(u, {mode:'no-cors'}).then(r => c.put(u, r)).catch(()=>{})),
   ])));
@@ -33,7 +33,7 @@ self.addEventListener('fetch', e => {
   if (url.origin !== self.location.origin && !firebaseSdk) return;
   e.respondWith(
     caches.match(e.request).then(cached => {
-      const network = fetch(e.request).then(res => {
+      const network = fetch(e.request, url.origin === self.location.origin ? {cache: 'no-cache'} : undefined).then(res => { // revalidate, so the background refresh never re-caches an old copy
         // Cross-origin <script> fetches (the Firebase SDK) come back OPAQUE
         // with ok:false — they must still be cached or offline boot dies.
         if (res && (res.ok || res.type === 'opaque')) caches.open(CACHE).then(c => c.put(e.request, res.clone()));
