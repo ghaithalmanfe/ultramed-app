@@ -751,6 +751,23 @@ describe('rep and customer matching', () => {
     assert.equal(map['Reem Omar'], null);
     assert.equal(map['Mariam Zohair'], 'Mariam');
   });
+  test('two files (the girls\' and his): a sale counts for the clinic owner, and every cross-invoice is listed', () => {
+    const cl = [{ id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', prevRep: 'Mariam', repSince: '2026-10-01' },
+      { id: 'moh', name: 'Ministry Of Health', rep: 'Mariam', shared: true, sharedSince: '2026-10-01' },
+      { id: 'n', name: 'Dr. Nael Al Hazeem Dental Center - Sharq', rep: 'Dr. Ghaith', prevRep: 'Mariam', repSince: '2026-10-01' }];
+    const row = (d, doc, sm, cust, net) => [d, doc, 0, 'x', 1, net, net, 0, sm, 'Intensiv', cust, 'Clinics', 0, ''];
+    const data = { today: '2026-10-07', clinics: cl, erpMap: {}, erpSales: { periods: [
+      { id: 'girls', from: '2026-10-01', to: '2026-10-05', repMap: { 'Mariam Zohair': 'Mariam', 'Ranova Ayman': 'Renova' },
+        rows: [row('2026-10-02', 'S1', 'Mariam Zohair', 'Bayan Dental Center', 200), row('2026-10-03', 'S2', 'Mariam Zohair', 'Bayan Dental Center', 33.75),
+               row('2026-10-03', 'S5', 'Mariam Zohair', 'Ministry Of Health', 50), row('2026-09-30', 'S0', 'Mariam Zohair', 'Bayan Dental Center', 999)] },
+      { id: 'his', from: '2026-10-05', to: '2026-10-05', repMap: { 'Ghaith Al Manfe': 'Dr. Ghaith' },
+        rows: [row('2026-10-05', 'S3', 'Ghaith Al Manfe', 'My Fatoorah', 12), row('2026-10-05', 'S4', 'Ghaith Al Manfe', 'Dr. Nael Al Hazeem Dental Center - Sharq', 9.25),
+               row('2026-10-05', 'S6', 'Ghaith Al Manfe', 'Ministry Of Health', 100)] }] } };
+    assert.equal(core.monthAchievement('Dr. Ghaith', data).amount, 12 + 9.25 + 233.75 + 100); // his + Mariam's at Bayan (his clinic) + his at the shared ministry
+    assert.equal(core.monthAchievement('Mariam', data).amount, 50);                          // only her ministry invoice (shared → issuer)
+    const x = core.crossInvoices(data);
+    assert.deepEqual(x, [{ clinicId: 'b', clinic: 'Bayan Dental Center', issuer: 'Mariam', owner: 'Dr. Ghaith', invoices: 2, net: 233.75, from: '2026-10-02', to: '2026-10-03' }]); // September line and the shared ministry are not listed
+  });
   test('a sales file holding only one salesman never reports the others as "0 to date"', () => {
     const row = (d, sm, net) => [d, 'SINV' + d + sm.length, 0, 'x', 1, net, net, 0, sm, 'Intensiv', 'Some Customer', 'Clinics', 0, ''];
     const data = (repMap, rows) => ({ today: '2026-10-07', clinics: [], erpMap: {}, erpSales: { periods: [{ id: 'p', from: '2026-10-05', to: '2026-10-05', repMap, rows }] } });
