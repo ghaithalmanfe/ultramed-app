@@ -1583,10 +1583,13 @@
     return map;
   }
   // The last day the uploaded sales files cover in the current month (null = none).
-  function erpMonthCovered(data){
+  // With a rep: only files that carry that rep's salesman — a file exported
+  // for one salesman says nothing about the others' sales.
+  function erpMonthCovered(data, rep){
     var today = data.today, mStart = today.slice(0, 7) + '-01', out = null;
     erpPeriodsOf(data.erpSales).forEach(function(p){
       if(!(p.to >= mStart && p.from <= today)) return;
+      if(rep && p.repMap && Object.keys(p.repMap).length && !Object.keys(p.repMap).some(function(sm){ return p.repMap[sm] === rep; })) return;
       var to = p.to > today ? today : p.to;
       if(!out || to > out) out = to;
     });
@@ -1601,8 +1604,10 @@
     if(em && em.amount != null){
       return { amount: em.amount, src: 'ERP to ' + fmtDate(em.covered) + (em.complete ? '' : ' (partial month)'), asOf: em.covered, basis: 'erp', complete: em.complete, alt: null };
     }
-    var covered = erpMonthCovered(data);
+    var covered = erpMonthCovered(data, rep);
     if(covered) return { amount: 0, src: 'ERP to ' + fmtDate(covered), asOf: covered, basis: 'erp', complete: true, alt: null }; // files cover the month, no invoice for this rep yet
+    var other = erpMonthCovered(data);
+    if(other) return { amount: 0, src: 'no invoice of this rep in the ERP files uploaded (to ' + fmtDate(other) + ')', asOf: null, basis: 'erp', complete: false, alt: null }; // files exist, but none carries this rep's salesman
     return { amount: 0, src: 'no ERP sales file for this month yet', asOf: null, basis: 'none', complete: false, alt: null };
   }
   function teamAchievement(reps, data){
