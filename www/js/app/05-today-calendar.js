@@ -323,7 +323,7 @@ function renderMore(){
     </div>`;
   el.innerHTML = `
     <div class="section-title">Reference</div>
-    ${tile(I('package'),'Products & prices','118 products, 13 brands',"switchView('products')")}
+    ${tile(I('package'),'Products & prices','Catalog, prices and specs',"switchView('products')")}
     ${tile(I('target'),'Clinic sales analysis','Per-clinic targets, purchases and next moves',"switchView('clanalysis')")}
     ${tile(I('chart'),'Product movement','Every brand → its products ranked by real sales: fast, mid, slow','openProductMovement()')}
     ${tile(I('stethoscope'),'Doctors database','Profiles, birthdays, follow-up rhythm & prescriptions',"switchView('doctors')")}

@@ -772,7 +772,13 @@
 
     // ---- More menu ----
     'Products & prices': 'المنتجات والأسعار',
-    '118 products, 13 brands': '118 منتجاً، 13 براند',
+    'Catalog, prices and specs': 'الكتالوج والأسعار والمواصفات',
+    'Missing from the catalog': 'غير موجود في الكتالوج',
+    'Add selected': 'أضف المحدد',
+    'Nothing missing from the catalog': 'لا يوجد منتج ناقص في الكتالوج',
+    'Tick at least one product': 'حدد منتجاً واحداً على الأقل',
+    '⚠️ Not saved — nothing was added. Try again with a connection.': '⚠️ لم يُحفظ — لم يُضف أي منتج. أعد المحاولة مع اتصال بالإنترنت.',
+    'Intensiv list': 'قائمة Intensiv',
     'Clinic sales analysis': 'تحليل مبيعات العيادات',
     'Clinic Sales Analysis': 'تحليل مبيعات العيادات',
     'Per-clinic targets, purchases and next moves': 'أهداف كل عيادة ومشترياتها والخطوة القادمة',
@@ -913,7 +919,7 @@
     'never visited': 'لم تُزر أبداً',
     'Everything in one place: planned visits, logged visits, follow-ups, tasks and team events.': 'كل شيء في مكان واحد: الزيارات المخططة، الزيارات المسجلة، المتابعات، المهام وفعاليات الفريق.',
     'Numbers aren’t a verdict — they’re a map. Every metric below is something you can move this week.': 'الأرقام ليست حكماً — بل خريطة. كل مؤشر بالأسفل يمكنك تحريكه هذا الأسبوع.',
-    '118 products, 13 brands. Know three of them cold and you can solve most conversations.': '118 منتجاً و13 براند. أتقن ثلاثة منها وستحل معظم المحادثات.',
+    'Know three products cold and you can solve most conversations.': 'أتقن ثلاثة منتجات وستحل معظم المحادثات.',
     'The wins, the road trips, the clinic visits — keep the story of this team somewhere real.': 'الانتصارات، الرحلات، زيارات العيادات — احفظ قصة هذا الفريق في مكان حقيقي.',
     'Walk in knowing what they care about. Preparation is the difference between a chat and an order.': 'ادخل وأنت تعرف ما يهمهم. التحضير هو الفرق بين دردشة وطلبية.',
     'Never visited — a priority clinic still waiting for a first impression': 'لم تُزر أبداً — عيادة مهمة ما زالت تنتظر الانطباع الأول',
