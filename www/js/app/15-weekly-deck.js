@@ -116,8 +116,17 @@ async function buildWeeklyDeck(end){
   s = content('The week at a glance', 'Summary');
   const tiles = [];
   const wkUp = up(team.week, team.prevWeek);
+  // the strongest TRUE comparison: on last week, else on the average of the
+  // earlier weeks, else the week's own breadth (invoices and accounts)
+  const HW = (W.history || []).filter(h => h.covered && !h.current), curH = (W.history || []).find(h => h.current) || {};
+  const avg8 = HW.length >= 3 ? HW.reduce((a, h) => a + h.sales, 0) / HW.length : null;
+  const vsAvg = avg8 > 0 ? (team.week - avg8) / avg8 : null;
   tiles.push({ big: W.salesCovered ? wdKD(team.week) : '—', label: 'Invoiced this week (ERP)',
-    sub: !W.salesCovered ? 'No sales file for this week uploaded yet' : (wkUp != null && wkUp > 0 ? '▲ ' + wdPct(wkUp) + ' on the week before' : 'Week before: ' + wdKD(team.prevWeek)), good: wkUp != null && wkUp > 0 });
+    sub: !W.salesCovered ? 'No sales file for this week uploaded yet'
+      : wkUp != null && wkUp > 0 ? '▲ ' + wdPct(wkUp) + ' on the week before'
+      : vsAvg != null && vsAvg > 0 ? '▲ ' + wdPct(vsAvg) + ' above the ' + HW.length + '-week average'
+      : (curH.invoices || 0) + ' invoice' + (curH.invoices === 1 ? '' : 's') + ' · ' + (curH.accounts || 0) + ' account' + (curH.accounts === 1 ? '' : 's') + ' served',
+    good: (wkUp != null && wkUp > 0) || (vsAvg != null && vsAvg > 0) });
   const dayN = parseInt(W.to.slice(8, 10), 10), dimN = UMCore.getMonthDates(W.to).length;
   tiles.push({ big: team.target ? wdPct(team.mtd / team.target) : wdKD(team.mtd), label: 'Of the month\'s target achieved',
     sub: wdKD(team.mtd) + ' of ' + wdKD(team.target) + ' · day ' + dayN + ' of ' + dimN, good: false });
@@ -131,17 +140,10 @@ async function buildWeeklyDeck(end){
     txt(s, t.label, { x: x + 0.25, y: 2.35, w: 2.45, h: 0.4, fontSize: 13, bold: true, color: WD.green });
     txt(s, t.sub, { x: x + 0.25, y: 2.75, w: 2.45, h: 0.55, fontSize: 11, color: t.good ? WD.pos : WD.muted, valign: 'top' });
   });
-  const hl = [];
-  if(W.salesCovered && sorted.length && P[sorted[0]].week > 0) hl.push(`${sorted[0]} led the week with ${wdKD(P[sorted[0]].week)} invoiced (${P[sorted[0]].invoices} invoice${P[sorted[0]].invoices === 1 ? '' : 's'}).`);
-  if(wins.newAccounts.length) hl.push(`${wins.newAccounts.length} new account${wins.newAccounts.length === 1 ? '' : 's'} placed a first order: ${wins.newAccounts.slice(0, 3).map(x => x.account).join(', ')}${wins.newAccounts.length > 3 ? '…' : ''}.`);
-  if(wins.placements.length) hl.push(`${wins.placements.length} new product placement${wins.placements.length === 1 ? '' : 's'} in existing accounts — e.g. ${wdCut(wins.placements[0].product, 40)} at ${wins.placements[0].account}.`);
-  if(wins.reactivated.length) hl.push(`${wins.reactivated.length} account${wins.reactivated.length === 1 ? '' : 's'} back after 60+ days without an order: ${wins.reactivated.slice(0, 3).map(x => x.account).join(', ')}.`);
-  const aT = R.reduce((a, r) => a + P[r].aTotal, 0), aV = R.reduce((a, r) => a + P[r].aVisited, 0);
-  if(aT) hl.push(`Key (A) accounts visited this month: ${aV} of ${aT}.`);
-  if(wins.invoices.length && wins.invoices[0].net > 0) hl.push(`Largest invoice of the week: ${wdKD(wins.invoices[0].net, 2)} — ${wins.invoices[0].account} (${wins.invoices[0].rep}).`);
+  const hl = UMCore.weeklyHighlights(W, { brandName: wdBrand });
   txt(s, 'Highlights', { x: 0.6, y: 3.75, w: 6, h: 0.4, fontFace: WD.head, fontSize: 18, bold: true, color: WD.dk });
-  const hlRuns = (hl.length ? hl.slice(0, 5) : ['Upload this week\'s sales files and log the visits to see the week\'s highlights here.']).map((t, i, a) => ({ text: t, options: { bullet: { code: '25CF' }, breakLine: i < a.length - 1, paraSpaceAfter: 6 } }));
-  txt(s, hlRuns, { x: 0.6, y: 4.2, w: 12.1, h: 2.6, fontSize: 15, color: WD.ink, valign: 'top' });
+  const hlRuns = (hl.length ? hl.slice(0, 6) : ['Upload this week\'s sales files and log the visits to see the week\'s highlights here.']).map((t, i, a) => ({ text: wdCut(t, 150), options: { bullet: { code: '25CF' }, breakLine: i < a.length - 1, paraSpaceAfter: 5 } }));
+  txt(s, hlRuns, { x: 0.6, y: 4.2, w: 12.1, h: 2.7, fontSize: 14, color: WD.ink, valign: 'top', fit: 'shrink' });
   s.addNotes(hl.join('\n'));
 
   // 3 — month to date against target
@@ -169,17 +171,33 @@ async function buildWeeklyDeck(end){
   txt(s, `Achieved = ERP invoices to ${wdDay(W.to)} (each sale counts for the clinic's owner; shared accounts for whoever invoiced). Targets: the month's DSR. "On pace for" = month-to-date sales projected to the month's end.`,
     { x: 7.05, y: 1.45 + 0.42 * tRows.length + 0.25, w: 5.65, h: 0.9, fontSize: 10, color: WD.muted, valign: 'top' });
 
-  // 4 — week by week
-  s = content('Week by week this month', 'Sales');
-  if(W.weeks.length && R.length){
-    s.addChart(pres.charts.BAR, R.map(r => ({ name: r, labels: W.weeks.map(w => wdRange(w.from, w.to).replace(/ \d{4}$/, '')), values: W.weeks.map(w => Math.round(w.byRep[r])) })),
-      { x: 0.6, y: 1.3, w: 12.1, h: 5.0, barDir: 'col', barGrouping: 'clustered', chartColors: [WD.dk, WD.gold, '5FA77E', WD.soft].slice(0, Math.max(1, R.length)),
-        showValue: true, dataLabelPosition: 'outEnd', dataLabelFormatCode: '#,##0;-#,##0;;', dataLabelFontSize: 10, dataLabelColor: WD.ink,
-        catAxisLabelColor: WD.ink, catAxisLabelFontSize: 12, valAxisLabelColor: WD.muted, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0',
-        valGridLine: { color: 'E6ECE8', size: 0.5 }, catGridLine: { style: 'none' }, showLegend: true, legendPos: 't', legendFontSize: 11,
+  // 4 — this week against the last 8 weeks
+  const HIS = W.history || [];
+  s = content('This week against the last ' + HIS.length + ' weeks', 'Sales');
+  if(HIS.length && R.length){
+    const hl8 = HIS.map(h => (h.current ? 'This week ' : '') + wdRange(h.from, h.to).replace(/ \d{4}$/, ''));
+    s.addChart(pres.charts.BAR, R.map(r => ({ name: r, labels: hl8, values: HIS.map(h => Math.round(h.byRep[r] || 0)) })),
+      { x: 0.6, y: 1.15, w: 12.1, h: 2.85, barDir: 'col', barGrouping: 'stacked', chartColors: [WD.dk, WD.gold, '5FA77E', WD.soft].slice(0, Math.max(1, R.length)),
+        showValue: true, dataLabelPosition: 'ctr', dataLabelFormatCode: '#,##0;-#,##0;;', dataLabelFontSize: 8, dataLabelColor: WD.white,
+        catAxisLabelColor: WD.ink, catAxisLabelFontSize: 10, valAxisLabelColor: WD.muted, valAxisLabelFontSize: 8, valAxisLabelFormatCode: '#,##0',
+        valGridLine: { color: 'E6ECE8', size: 0.5 }, catGridLine: { style: 'none' }, showLegend: true, legendPos: 'r', legendFontSize: 10,
         catAxisLabelFontFace: WD.body, valAxisLabelFontFace: WD.body, legendFontFace: WD.body, dataLabelFontFace: WD.body });
+    const measures = [['Sales (KD)', h => h.sales, v => Math.round(v).toLocaleString('en-US')], ['Invoices', h => h.invoices], ['Accounts invoiced', h => h.accounts],
+      ['New products placed', h => h.placements], ['New accounts', h => h.newAccounts], ['Back after 60+ days', h => h.reactivated], ['Samples placed', h => h.samples],
+      ['Field visits', h => h.fieldVisits], ['Doctors met', h => h.doctorsMet]];
+    const head = [{ text: 'Week', options: { bold: true, color: WD.white, fill: { color: WD.dk }, fontSize: 9.5 } }].concat(HIS.map((h, i) => ({ text: hl8[i], options: { bold: true, color: h.current ? WD.dk : WD.white, fill: { color: h.current ? WD.gold : WD.dk }, fontSize: 9, align: 'center' } })));
+    const body = measures.map(([lbl, f, fmt], ri) => {
+      const vals = HIS.map(f), top = Math.max(0, ...vals.filter(v => v != null));
+      return [{ text: lbl, options: { bold: true, fontSize: 9.5, color: WD.ink, fill: { color: ri % 2 ? WD.white : WD.paper } } }].concat(vals.map((v, i) => {
+        const isBest = v != null && top > 0 && v === top, cur = HIS[i].current;
+        return { text: v == null ? (HIS[i].covered ? '—' : 'no file') : (fmt ? fmt(v) : String(v)) + (isBest ? ' ★' : ''),
+          options: { fontSize: 9.5, align: 'center', bold: isBest || cur, color: v == null ? WD.muted : WD.ink, fill: { color: isBest ? 'F6E7C1' : cur ? WD.mint : ri % 2 ? WD.white : WD.paper } } };
+      }));
+    });
+    s.addTable([head].concat(body), { x: 0.6, y: 4.1, w: 12.1, colW: [1.9].concat(HIS.map(() => 10.2 / HIS.length)), rowH: 0.255, fontFace: WD.body, valign: 'middle', border: { type: 'solid', pt: 0.5, color: WD.line } });
   }
-  txt(s, 'KD invoiced per week (ERP). Weeks run Sunday to Saturday; the first and last are cut at the month\'s edges.', { x: 0.6, y: 6.45, w: 12.1, h: 0.4, fontSize: 10, color: WD.muted });
+  txt(s, `Gold column = this week (${wdRange(W.from, W.to)}, to the chosen day); the others run Sunday to Saturday. ★ = the best of the ${HIS.length} weeks. Sales = ERP invoices net of returns; "—" = not measurable yet (new accounts need a month of earlier invoices).`,
+    { x: 0.6, y: 6.72, w: 12.1, h: 0.3, fontSize: 9, color: WD.muted });
 
   // 5 — brands
   s = content('Brands this week and this month', 'Sales');
@@ -332,14 +350,15 @@ async function buildWeeklyDeck(end){
         { x: 0.6, y: 1.3, w: 12.1, colW: colWs, rowH: 0.38, fontFace: WD.body, valign: 'middle', border: { type: 'solid', pt: 0.5, color: WD.line } });
     }
   };
-  const winRows = []
-    .concat(wins.newAccounts.map(x => [wdDay(x.date), 'New account', x.account, x.rep, 'first order in our files', wdKD(x.net, 2)]))
+  const byNet = (a, b) => (b.net || 0) - (a.net || 0);
+  const winRows = []                                   // the biggest first, down to the smallest
+    .concat(wins.newAccounts.slice().sort(byNet).map(x => [wdDay(x.date), 'New account', x.account, x.rep, 'first order in our files', wdKD(x.net, 2)]))
     .concat(wins.reactivated.map(x => [wdDay(x.date), 'Back after 60+ days', x.account, x.rep, 'previous order ' + wdDay(x.lastBefore), '']))
-    .concat(wins.placements.map(x => [wdDay(x.date), 'New product placed', x.account, x.rep, wdCut(x.product, 48) + (x.brand ? ' (' + x.brand + ')' : ''), wdKD(x.net, 2)]))
+    .concat(wins.placements.slice().sort(byNet).map(x => [wdDay(x.date), 'New product placed', x.account, x.rep, wdCut(x.product, 48) + (x.brand ? ' (' + x.brand + ')' : ''), wdKD(x.net, 2)]))
     .concat(wins.samples.map(x => [wdDay(x.date), 'Samples', x.account, x.rep, wdCut(x.items.join(', '), 60), '']));
-  table('Appendix – every win of the week', ['Date', 'Type', 'Account', 'Person', 'Detail', 'KD'], winRows, [0.8, 1.6, 3.0, 1.3, 4.2, 1.2], 'No wins recorded in this week\'s files.');
-  table('Appendix – every invoice of the week', ['Date', 'Person', 'Invoice', 'Account', 'Brands', 'Lines', 'KD'],
-    wins.invoices.slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : b.net - a.net).map(i => [wdDay(i.date), i.rep, i.doc, wdCut(i.account, 40), wdCut(i.brands.map(wdBrand).join(', '), 40), i.lines, wdKD(i.net, 2)]),
+  table('Appendix – every win of the week, biggest first', ['Date', 'Type', 'Account', 'Person', 'Detail', 'KD'], winRows, [0.8, 1.6, 3.0, 1.3, 4.2, 1.2], 'No wins recorded in this week\'s files.');
+  table('Appendix – every invoice of the week, largest first', ['Date', 'Person', 'Invoice', 'Account', 'Brands', 'Lines', 'KD'],
+    wins.invoices.slice().sort((a, b) => b.net - a.net || (a.date < b.date ? -1 : 1)).map(i => [wdDay(i.date), i.rep, i.doc, wdCut(i.account, 40), wdCut(i.brands.map(wdBrand).join(', '), 40), i.lines, wdKD(i.net, 2)]),
     [0.8, 1.3, 1.4, 3.4, 3.0, 0.7, 1.5], 'No sales file for this week uploaded yet.');
   table('Appendix – every visit and call of the week', ['Date', 'Person', 'Clinic', 'Type', 'Doctors met', 'Products', 'Order', 'Follow-up'],
     W.visits.map(v => [wdDay(v.date), v.rep + (v.withRep ? ' + ' + v.withRep : ''), wdCut(v.clinic, 36), v.type, wdCut(v.doctors.join(', ') || '—', 34), v.products || '—', v.order ? wdKD(v.order, 2) : '—', v.followUp ? wdDay(v.followUp) : '—']),
