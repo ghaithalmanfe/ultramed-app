@@ -772,6 +772,53 @@ describe('rep and customer matching', () => {
     assert.deepEqual(details.map(d => [d.doc, d.date, d.net]), [['S1', '2026-10-02', 200], ['S2', '2026-10-03', 33.75]]);
     assert.deepEqual(details[0].items, [{ product: 'x', brand: 'Intensiv', qty: 1, net: 200 }]);
   });
+  test('weeklyReport: the Thursday deck figures – sales, month to date, wins, field work, next week', () => {
+    const row = (d, doc, sm, cust, net, product, brand, qty) => [d, doc, 0, product || 'P', qty == null ? 1 : qty, net, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [
+      { id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [{ id: 'd1', name: 'Dr. One' }], nextFollowUp: '2026-10-13' },
+      { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'A' },
+      { id: 'g', name: 'Gamma Center', rep: 'Dr. Ghaith', cls: 'B' },
+      { id: 'n', name: 'New Smile', rep: 'Dr. Ghaith', cls: 'C' }];
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 1000, brands: { Intensiv: 600, 'Philips Sonicare': 400 } }, 'Dr. Ghaith': { revenue: 2000, brands: { Intensiv: 2000 } } },
+      erpSales: { periods: [{ id: 'p', from: '2026-07-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam', 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [
+        row('2026-07-10', 'S0', 'Ghaith Al Manfe', 'Gamma Center', 50, 'Strip'),            // Gamma last bought in July
+        row('2026-09-28', 'S1', 'Mariam Zohair', 'Alpha Dental', 100, 'Strip'),             // last week
+        row('2026-10-01', 'S2', 'Mariam Zohair', 'Alpha Dental', 70, 'Strip'),              // this month, before the week
+        row('2026-10-05', 'S3', 'Mariam Zohair', 'Alpha Dental', 40, 'Strip'),              // this week, known product
+        row('2026-10-05', 'S3', 'Mariam Zohair', 'Alpha Dental', 25, 'Sonic 4300', 'Philips'), // this week, NEW product for Alpha
+        row('2026-10-06', 'S4', 'Ghaith Al Manfe', 'New Smile', 90, 'Strip'),               // first ever invoice
+        row('2026-10-07', 'S5', 'Ghaith Al Manfe', 'Gamma Center', 30, 'Strip'),            // back after 3 months
+        row('2026-10-07', 'S6', 'Ghaith Al Manfe', 'Beta Clinic', 0, 'Sample paste', 'Hismile'), // a free sample
+        row('2026-10-07', 'S7', 'Ghaith Al Manfe', 'My Fatoorah', 12, 'Strip')]}] },       // channel: sales yes, wins no
+      visits: [
+        { id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'a', doctorIds: ['d1'], products: ['x', 'y'], orderTaken: true, orderTotal: 40, nextFollowUp: '2026-10-13', photos: [{ id: 'p' }] },
+        { id: 'v2', date: '2026-10-06', rep: 'Dr. Ghaith', withRep: 'Mariam', clinicId: 'n', products: ['x'] },
+        { id: 'v3', date: '2026-10-07', rep: 'Mariam', clinicId: 'b', callOnly: true },
+        { id: 'v0', date: '2026-10-01', rep: 'Mariam', clinicId: 'b' }],
+      dayPlans: { '2026-10-12': { Mariam: ['b'] }, '2026-10-14': { 'Dr. Ghaith': [{ id: 'g', note: '' }] } } };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Dr. Ghaith'] });
+    assert.deepEqual([w.from, w.to, w.prevFrom, w.prevTo, w.nextFrom, w.nextTo], ['2026-10-04', '2026-10-08', '2026-09-27', '2026-10-01', '2026-10-11', '2026-10-17']);
+    const M = w.perRep.Mariam, G = w.perRep['Dr. Ghaith'];
+    assert.equal(M.week, 65); assert.equal(M.prevWeek, 170);     // last week = Sep 27 – Oct 1: 100 + 70
+    assert.equal(G.week, 132);                                   // 90 + 30 + 0 + 12 (channels count in sales)
+    assert.equal(M.mtd, 135); assert.equal(M.pct, 0.135);        // Oct 1–8: 70 + 40 + 25
+    assert.equal(w.team.week, 197); assert.equal(w.team.target, 3000);
+    assert.deepEqual(w.wins.newAccounts.map(x => [x.account, x.rep, x.net]), [['New Smile', 'Dr. Ghaith', 90]]);
+    assert.deepEqual(w.wins.reactivated.map(x => [x.account, x.lastBefore]), [['Gamma Center', '2026-07-10']]);
+    assert.deepEqual(w.wins.placements.map(x => [x.account, x.product, x.net]), [['Alpha Dental', 'Sonic 4300', 25]]);
+    assert.deepEqual(w.wins.samples.map(x => [x.account, x.items]), [['Beta Clinic', ['Sample paste']]]);
+    assert.equal(w.wins.invoices.length, 5); assert.equal(w.wins.invoices[0].net, 90);
+    assert.deepEqual([M.fieldVisits, M.calls, M.joint, M.clinics, M.doctorsMet, M.productsPresented, M.followUps, M.orders, M.orderValue, M.photos],
+      [2, 1, 1, 2, 1, 2, 1, 1, 40, 1]);                          // the joint visit counts for both
+    assert.deepEqual([M.aVisited, M.aTotal, M.aMissing], [2, 2, []]);
+    assert.deepEqual(w.brands.find(b => b.brand === 'intensiv'), { brand: 'intensiv', week: 172, mtd: 242, target: 2600 });
+    assert.deepEqual(w.weeks.map(x => [x.from, x.to, x.byRep.Mariam]), [['2026-10-01', '2026-10-03', 70], ['2026-10-04', '2026-10-08', 65]]);
+    assert.deepEqual(w.next.Mariam.planned, [{ date: '2026-10-12', clinic: 'Beta Clinic' }]);
+    assert.deepEqual(w.next.Mariam.followUps, [{ date: '2026-10-13', clinic: 'Alpha Dental' }]);
+    assert.equal(w.visits.length, 3); assert.deepEqual(w.visits[0].doctors, ['Dr. One']);
+    assert.equal(w.salesCovered, true);
+  });
   test('a sales file holding only one salesman never reports the others as "0 to date"', () => {
     const row = (d, sm, net) => [d, 'SINV' + d + sm.length, 0, 'x', 1, net, net, 0, sm, 'Intensiv', 'Some Customer', 'Clinics', 0, ''];
     const data = (repMap, rows) => ({ today: '2026-10-07', clinics: [], erpMap: {}, erpSales: { periods: [{ id: 'p', from: '2026-10-05', to: '2026-10-05', repMap, rows }] } });
