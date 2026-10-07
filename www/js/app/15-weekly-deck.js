@@ -205,6 +205,23 @@ async function buildWeeklyDeck(end){
   s.addTable(fRows, { x: 0.6, y: 2.85, w: 12.1, colW: [1.5, 1.05, 0.9, 1.1, 1.25, 1.05, 1.55, 1.35, 1.15, 1.2], rowH: 0.45, fontFace: WD.body, border: { type: 'solid', pt: 0.5, color: WD.line } });
   txt(s, 'A joint visit counts for both people who were there; orders and follow-ups for the person who logged the visit. Every visit is listed in the appendix.', { x: 0.6, y: 6.45, w: 12.1, h: 0.4, fontSize: 10, color: WD.muted });
 
+  // KPI scorecard — month to date (the same scores as the KPI screen)
+  if(typeof UMCore.kpiScorecard === 'function'){
+    s = content('KPI scorecard – month to date', 'Field work');
+    const kd = Object.assign(digestData(), { today: todayStr() }), krows = UMCore.erpAttributedRows(kd), kS = (typeof kpiSettings === 'function') ? kpiSettings() : {};
+    const K = R.map(r => UMCore.kpiScorecard(kd, { rep: r, from: W.monthStart, to: W.to, settings: kS, rows: krows }));
+    const sc = x => x == null ? '—' : Math.round(x * 100) + '%';
+    const fillOf = x => x == null ? WD.white : x >= 0.85 ? 'DDF1E3' : x >= 0.6 ? 'FFF1D6' : 'FBE3E2';
+    const kRows = [[hdr('KPI'), hdr('Weight')].concat(K.map(k => hdr(k.rep)))];
+    kRows.push([cell('Total score', { bold: true, fill: { color: WD.mint } }), cell('100%', { align: 'center', fill: { color: WD.mint } })].concat(K.map(k => cell(k.total == null ? '—' : k.total + ' / 100', { align: 'center', bold: true, fontSize: 13, color: WD.dk, fill: { color: WD.mint } }))));
+    (K[0] ? K[0].items : []).forEach((it, i) => kRows.push([cell(it.label), cell(it.weight + '%', { align: 'center', color: WD.muted })].concat(K.map(k => cell(sc(k.items[i].score), { align: 'center', bold: true, fill: { color: fillOf(k.items[i].score) } })))));
+    kRows.push([cell('Stands (tracked) – active · checked', { color: WD.muted }), cell('', {})].concat(K.map(k => cell(k.stands.active + ' · ' + k.stands.checked, { align: 'center', color: WD.muted }))));
+    const pw = Math.min(2.2, (12.1 - 4.3 - 0.8) / Math.max(1, R.length));
+    s.addTable(kRows, { x: 0.6, y: 1.3, w: 4.3 + 0.8 + pw * R.length, colW: [4.3, 0.8].concat(R.map(() => pw)), rowH: 0.36, fontFace: WD.body, fontSize: 11, border: { type: 'solid', pt: 0.5, color: WD.line } });
+    txt(s, `Scores from ${wdRange(W.monthStart, W.to)}: sales on pace and brands on track; field visits a day; plan saved before the first visit and complete visit reports; doctors met and decision makers known; invoices within the discount limits; escalations and returns; My Fatoorah growth; government accounts visited each week; new products and accounts; client requests answered on time. A measure with nothing to count yet is left out of the total.`,
+      { x: 0.6, y: 6.15, w: 12.1, h: 0.7, fontSize: 9.5, color: WD.muted, valign: 'top' });
+  }
+
   // 7 — wins
   s = content('Wins of the week', 'Field work');
   const boxes = [
