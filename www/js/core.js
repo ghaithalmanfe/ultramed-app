@@ -1701,7 +1701,7 @@
     var items = {};
     // 1 sales: projected month-end achievement (70%) and brands on track (30%)
     var d2 = {}; for(var k in data) d2[k] = data[k]; d2.today = to;
-    var t = (data.targets || {})[rep] || {}, ach = monthAchievement(rep, d2);
+    var t = targetOf(data, rep, to.slice(0, 7)), ach = monthAchievement(rep, d2);
     var dim = getMonthDates(to).length, day = parseInt(to.slice(8, 10), 10);
     if(t.revenue > 0){
       var pace = ach.amount / day * dim / t.revenue;
@@ -1832,7 +1832,7 @@
       field.forEach(function(v){ clin[v.clinicId] = 1; (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ docs[v.clinicId + '|' + id] = 1; }); (v.products || []).forEach(function(p){ prods[p] = 1; }); });
       var aAll = clinics.filter(function(c){ return c.rep === rep && c.cls === 'A'; });
       var aSeen = aAll.filter(function(c){ return visM.some(function(v){ return v.clinicId === c.id && repWasThere(v, rep); }); });
-      var t = (data.targets || {})[rep] || {};
+      var t = targetOf(data, rep, to.slice(0, 7));
       var ach = monthAchievement(rep, d2);
       var dim = getMonthDates(to).length, day = parseInt(to.slice(8, 10), 10);
       perRep[rep] = {
@@ -1858,7 +1858,7 @@
     rows.forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0) return; var b = normBrand(x.r.brand);
       if(x.r.date >= from && x.r.date <= to) bw[b] = (bw[b] || 0) + x.r.net;
       if(x.r.date >= mStart && x.r.date <= to) bm[b] = (bm[b] || 0) + x.r.net; });
-    reps.forEach(function(rep){ var br = ((data.targets || {})[rep] || {}).brands || {}; Object.keys(br).forEach(function(b){ var n = normBrand(b); bt[n] = (bt[n] || 0) + br[b]; }); });
+    reps.forEach(function(rep){ var br = targetOf(data, rep, to.slice(0, 7)).brands || {}; Object.keys(br).forEach(function(b){ var n = normBrand(b); bt[n] = (bt[n] || 0) + br[b]; }); });
     var brands = Object.keys(bw).concat(Object.keys(bt)).filter(function(b, i, a){ return a.indexOf(b) === i; })
       .map(function(b){ return { brand: b, week: rnd(bw[b] || 0), mtd: rnd(bm[b] || 0), target: bt[b] ? rnd(bt[b]) : null }; })
       .sort(function(a, b){ return b.week - a.week || b.mtd - a.mtd; });
@@ -1891,6 +1891,74 @@
           doctors: (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).map(function(id){ var c = byId[v.clinicId]; var d = c && (c.doctors || []).find(function(x){ return x.id === id; }); return d ? d.name : null; }).filter(Boolean),
           products: (v.products || []).length, order: v.orderTaken ? rnd(v.orderTotal || 0) : 0, followUp: v.nextFollowUp || null }; })
     };
+  }
+  // One rep's DSR target for a month: the live target when it belongs to that
+  // month (a target without a month is the current month's), otherwise the
+  // copy kept in targets._history[month]; {} when the month has none.
+  function targetOf(data, rep, m){
+    var T = data.targets || {}, t = T[rep], h = ((T._history || {})[m] || {})[rep];
+    if(t && t.month === m) return t;
+    if(h) return h;
+    if(t && !t.month && m === String(data.today || '').slice(0, 7)) return t;
+    return {};
+  }
+  // ---- MONTH BY MONTH (progress against earlier months) ----
+  // The last `months` months up to `end`, each with the same figures the app
+  // shows for a month: achieved from monthAchievement as of the month's last
+  // day (the running month: as of `end`), the month's own DSR target, the
+  // achievement to the same day of the month (a fair comparison with a month
+  // still running), field visits a working day, doctors met, new accounts and
+  // first-time products, and the KPI total. Sales are null for a month no
+  // sales file covers (never shown as a 0); new accounts are null for the
+  // first month of the files (every account would look new); the KPI score is
+  // null for a month the person logged no visit or call in. Leading months
+  // with no data at all are dropped. Pure.
+  function monthlyTrend(data, opts){
+    opts = opts || {};
+    var reps = opts.reps || [], end = opts.end || data.today; if(end > data.today) end = data.today;
+    var n = opts.months || 6, rows = opts.rows || erpAttributedRows(data), S = opts.settings || null;
+    var clinics = data.clinics || [], es = data.erpSales, dayN = parseInt(end.slice(8, 10), 10);
+    var earliest = rows.reduce(function(m, x){ return !m || x.r.date < m ? x.r.date : m; }, null);
+    var rnd = function(x){ return Math.round(x * 1000) / 1000; };
+    var out = [];
+    for(var i = n - 1; i >= 0; i--){
+      var m = addMonthsStr(end.slice(0, 7) + '-01', -i).slice(0, 7), from = m + '-01';
+      var dates = getMonthDates(from), mEnd = dates[dates.length - 1], to = mEnd > end ? end : mEnd;
+      var same = m + '-' + String(Math.min(dayN, dates.length)).padStart(2, '0'); if(same > to) same = to;
+      var covered = erpPeriodsOf(es).some(function(p){ return p.to >= from && p.from <= to; });
+      var d2 = {}; for(var k in data) d2[k] = data[k]; d2.today = to;
+      var d3 = {}; for(var k3 in data) d3[k3] = data[k3]; d3.today = same;
+      var mtd = erpMtd(d2), mtdSame = same === to ? mtd : erpMtd(d3), wins = erpWinsInRange(rows, from, to, clinics);
+      var vis = (data.visits || []).filter(function(v){ return v && v.date >= from && v.date <= to && isFieldVisit(v); });
+      var wd = 0; for(var dd = from; dd <= to; dd = addDaysStr(dd, 1)) if(isWorkday(dd)) wd++;
+      var row = { month: m, from: from, to: to, partial: to < mEnd, sameTo: same, covered: covered, workdays: wd, byRep: {} };
+      reps.forEach(function(rep){
+        var ach = monthAchievement(rep, d2, mtd), t = targetOf(data, rep, m);
+        var sales = covered && ach.basis === 'erp' && ach.asOf ? rnd(ach.amount) : null;   // a file without this rep's salesman says nothing about her
+        var sameDays = sales == null ? null : rnd(same === to ? ach.amount : monthAchievement(rep, d3, mtdSame).amount);
+        var mine = vis.filter(function(v){ return repWasThere(v, rep); }), docs = {};
+        mine.forEach(function(v){ (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ docs[v.clinicId + '|' + id] = 1; }); });
+        var newOk = covered && earliest && earliest < from;
+        var logged = (data.visits || []).some(function(v){ return v && v.date >= from && v.date <= to && repWasThere(v, rep); });
+        row.byRep[rep] = {
+          sales: sales, sameDays: sameDays, target: t.revenue > 0 ? t.revenue : null,
+          pct: sales != null && t.revenue > 0 ? sales / t.revenue : null,
+          fieldVisits: mine.length, perDay: wd ? Math.round(mine.length / wd * 10) / 10 : 0, doctorsMet: Object.keys(docs).length,
+          newAccounts: newOk ? wins.newAccounts.filter(function(x){ return x.rep === rep; }).length : null,
+          placements: newOk ? wins.placements.filter(function(x){ return x.rep === rep; }).length : null,
+          kpi: S && logged ? kpiScorecard(data, { rep: rep, from: from, to: to, settings: S, rows: rows }).total : null   // no visit or call logged that month: the app was not in use, no score
+        };
+      });
+      var sumOf = function(f){ var any = false, s = 0; reps.forEach(function(r){ var v = row.byRep[r][f]; if(v != null){ any = true; s += v; } }); return any ? rnd(s) : null; };
+      row.team = { sales: sumOf('sales'), sameDays: sumOf('sameDays'), target: sumOf('target'), fieldVisits: sumOf('fieldVisits'), doctorsMet: sumOf('doctorsMet'),
+        newAccounts: sumOf('newAccounts'), placements: sumOf('placements') };
+      var withT = reps.filter(function(r){ return row.byRep[r].target && row.byRep[r].sales != null; });   // as teamAchievement: reps with a target only
+      var tg = withT.reduce(function(a, r){ return a + row.byRep[r].target; }, 0), ts = withT.reduce(function(a, r){ return a + row.byRep[r].sales; }, 0);
+      row.team.pct = tg > 0 ? ts / tg : null;
+      out.push(row);
+    }
+    while(out.length > 1 && !out[0].covered && !out[0].team.fieldVisits) out.shift();
+    return { end: end, months: out, reps: reps };
   }
   // The last day the uploaded sales files cover in the current month (null = none).
   // With a rep: only files that carry that rep's salesman — a file exported
@@ -3666,7 +3734,7 @@
     matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, monthlyTrend, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,

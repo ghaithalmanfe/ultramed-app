@@ -871,6 +871,36 @@ describe('rep and customer matching', () => {
     assert.equal(w.visits.length, 3); assert.deepEqual(w.visits[0].doctors, ['Dr. One']);
     assert.equal(w.salesCovered, true);
   });
+  test('monthlyTrend: month by month with each month\'s own target, same-day comparison, no invented zeros', () => {
+    const row = (d, doc, cust, net, product) => [d, doc, 0, product || 'P', 1, net, net, 0, 'Mariam Zohair', 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 1000, month: '2026-10' }, _history: { '2026-09': { Mariam: { revenue: 800 } }, '2026-08': { Mariam: { revenue: 900 } } } },
+      erpSales: { periods: [{ id: 'p', from: '2026-08-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [
+        row('2026-08-03', 'S1', 'Alpha Dental', 100), row('2026-08-20', 'S2', 'Alpha Dental', 200),
+        row('2026-09-02', 'S3', 'Alpha Dental', 150), row('2026-09-06', 'S4', 'Beta Clinic', 50), row('2026-09-25', 'S5', 'Alpha Dental', 300),
+        row('2026-10-01', 'S6', 'Alpha Dental', 100), row('2026-10-05', 'S7', 'Alpha Dental', 80, 'Sonic 4300')] }] },
+      visits: [
+        { id: 'v1', date: '2026-08-04', rep: 'Mariam', clinicId: 'a', doctorIds: ['d1'] }, { id: 'v2', date: '2026-08-11', rep: 'Mariam', clinicId: 'a', doctorIds: ['d1'] },
+        { id: 'v3', date: '2026-09-07', rep: 'Mariam', clinicId: 'b' }, { id: 'v4', date: '2026-09-08', rep: 'Mariam', clinicId: 'b', callOnly: true },
+        { id: 'v5', date: '2026-10-04', rep: 'Mariam', clinicId: 'a', doctorIds: ['d1'] }, { id: 'v6', date: '2026-10-05', rep: 'Mariam', clinicId: 'a', doctorIds: ['d2'] },
+        { id: 'v7', date: '2026-10-06', rep: 'Mariam', clinicId: 'b' }] };
+    const tr = core.monthlyTrend(data, { reps: ['Mariam', 'Renova'], months: 4, settings: {} });
+    assert.deepEqual(tr.months.map(m => m.month), ['2026-08', '2026-09', '2026-10']);   // July: no file, no visit → dropped
+    const M = tr.months.map(m => m.byRep.Mariam);
+    assert.deepEqual(M.map(x => x.sales), [300, 500, 180]);
+    assert.deepEqual(M.map(x => x.target), [900, 800, 1000]);                           // each month's own DSR target
+    assert.deepEqual(M.map(x => x.sameDays), [100, 200, 180]);                          // 1st–8th of each month
+    assert.deepEqual(M.map(x => x.fieldVisits), [2, 1, 3]);                             // the call is not a field visit
+    assert.deepEqual(M.map(x => x.doctorsMet), [1, 0, 2]);
+    assert.deepEqual(M.map(x => x.newAccounts), [null, 1, 0]);                          // first month of the files: not measurable
+    assert.deepEqual(M.map(x => x.placements), [null, 0, 1]);
+    assert.equal(M[2].perDay, 0.5); assert.equal(tr.months[2].partial, true); assert.equal(tr.months[1].partial, false);
+    assert.equal(typeof M[2].kpi, 'number'); assert.equal(tr.months[0].byRep.Renova.kpi, null);   // nothing logged: no score
+    assert.ok(tr.months.every(m => m.byRep.Renova.sales === null));                     // her salesman is in no file: no figure, never 0
+    assert.equal(tr.months[1].team.pct, 0.625);
+    assert.deepEqual(core.targetOf(data, 'Mariam', '2026-07'), {});
+  });
   test('a sales file holding only one salesman never reports the others as "0 to date"', () => {
     const row = (d, sm, net) => [d, 'SINV' + d + sm.length, 0, 'x', 1, net, net, 0, sm, 'Intensiv', 'Some Customer', 'Clinics', 0, ''];
     const data = (repMap, rows) => ({ today: '2026-10-07', clinics: [], erpMap: {}, erpSales: { periods: [{ id: 'p', from: '2026-10-05', to: '2026-10-05', repMap, rows }] } });
