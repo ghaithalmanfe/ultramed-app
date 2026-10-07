@@ -872,6 +872,8 @@ describe('rep and customer matching', () => {
     assert.equal(w.visits.length, 3); assert.deepEqual(w.visits[0].doctors, ['Dr. One']);
     assert.equal(w.salesCovered, true);
     // the last 8 weeks: this one (Oct 4–8) last, each earlier one Sunday–Saturday
+    assert.deepEqual(w.products.slice(0, 2).map(x => [x.product, x.net, x.accounts]), [['Strip', 172, 4], ['Sonic 4300', 25, 1]]); // best sellers of the week; the zero-value sample and the marketing move are not
+    assert.deepEqual(w.photos.map(p => [p.id, p.clinic, p.rep]), [['p', 'Alpha Dental', 'Mariam']]);
     assert.equal(w.history.length, 8);
     assert.deepEqual([w.history[7].from, w.history[7].to, w.history[7].current, w.history[6].from, w.history[6].to], ['2026-10-04', '2026-10-08', true, '2026-09-27', '2026-10-03']);
     assert.deepEqual([w.history[7].sales, w.history[7].invoices, w.history[7].accounts, w.history[6].sales], [197, 4, 3, 170]); // invoices with a value; My Fatoorah is not an account
