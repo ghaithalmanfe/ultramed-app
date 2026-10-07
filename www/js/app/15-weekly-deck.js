@@ -58,6 +58,15 @@ async function downloadWeeklyDeck(){
     say('✅ Downloaded — open it in PowerPoint.');
   }catch(e){ console.error('weekly deck', e); say('❌ ' + (e && e.message ? e.message : e), true); }
 }
+// Month labels for the trend charts: "Aug", "Sep", "Oct (to 8th)".
+function wdMonth(row, withYear){
+  const n = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(row.month.slice(5, 7), 10) - 1] + (withYear ? ' ' + row.month.slice(0, 4) : '');
+  return row.partial ? n + ' (to ' + parseInt(row.to.slice(8, 10), 10) + ')' : n;
+}
+function wdTrend(end, months){
+  const d = Object.assign(digestData(), { today: todayStr() });
+  return UMCore.monthlyTrend(d, { end, reps: REPS.slice(), months: months || 6, settings: (typeof kpiSettings === 'function') ? kpiSettings() : {} });
+}
 function weeklyDeckData(end){
   return UMCore.weeklyReport(Object.assign(digestData(), { today: todayStr() }), { end, reps: REPS.slice() });
 }
@@ -189,6 +198,35 @@ async function buildWeeklyDeck(end){
   if(bT.length) s.addTable(bRows, { x: 7.0, y: 1.45, w: 5.7, colW: [2.0, 1.35, 1.25, 1.1], rowH: 0.42, fontFace: WD.body, border: { type: 'solid', pt: 0.5, color: WD.line } });
   txt(s, 'Brands ordered by progress toward their monthly target (DSR brand targets of the whole team).', { x: 7.0, y: 6.35, w: 5.7, h: 0.45, fontSize: 10, color: WD.muted });
 
+  // month by month — sales against earlier months (UMCore.monthlyTrend)
+  const TR = wdTrend(W.to), TM = TR.months;
+  const chartBase = () => ({ barDir: 'col', barGrouping: 'clustered', showValue: true, dataLabelPosition: 'outEnd', dataLabelFormatCode: '#,##0;-#,##0;;', dataLabelFontSize: 10, dataLabelColor: WD.ink,
+    catAxisLabelColor: WD.ink, catAxisLabelFontSize: 11, valAxisLabelColor: WD.muted, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0',
+    valGridLine: { color: 'E6ECE8', size: 0.5 }, catGridLine: { style: 'none' }, showLegend: true, legendPos: 't', legendFontSize: 10.5, showTitle: true, titleFontSize: 13, titleColor: WD.dk,
+    catAxisLabelFontFace: WD.body, valAxisLabelFontFace: WD.body, legendFontFace: WD.body, dataLabelFontFace: WD.body, titleFontFace: WD.body });
+  if(TM.length > 1){
+    s = content('Month by month: sales against earlier months', 'Sales');
+    const mLbl = TM.map(m => wdMonth(m));
+    s.addChart(pres.charts.BAR, [
+      { name: 'Achieved (ERP)', labels: mLbl, values: TM.map(m => Math.round(m.team.sales || 0)) },
+      { name: 'Target (DSR)', labels: mLbl, values: TM.map(m => Math.round(m.team.target || 0)) }],
+      Object.assign(chartBase(), { x: 0.6, y: 1.2, w: 7.3, h: 3.55, chartColors: [WD.dk, WD.soft], title: 'Team: achieved and target per month (KD)' }));
+    const dN = parseInt(W.to.slice(8, 10), 10), last = TM[TM.length - 1], prev = TM[TM.length - 2];
+    s.addChart(pres.charts.BAR, [{ name: 'Day 1–' + dN, labels: TM.map(m => wdMonth(m).replace(/ \(to \d+\)$/, '')), values: TM.map(m => Math.round(m.team.sameDays || 0)) }],
+      Object.assign(chartBase(), { x: 8.1, y: 1.2, w: 4.6, h: 3.55, chartColors: [WD.gold], showLegend: false, title: 'Same days of each month: day 1–' + dN + ' (KD)' }));
+    const ch = last.team.sameDays != null && prev.team.sameDays > 0 ? (last.team.sameDays - prev.team.sameDays) / prev.team.sameDays : null;
+    const tRowsM = [[hdr('Person')].concat(TM.map(m => hdr(wdMonth(m))))];
+    R.concat(['Team']).forEach((r, i) => { const f = { fill: { color: r === 'Team' ? WD.mint : i % 2 ? WD.white : WD.paper } }, b = r === 'Team';
+      tRowsM.push([cell(r, Object.assign({ bold: true }, f))].concat(TM.map(m => { const x = b ? m.team : m.byRep[r];
+        return cell(x.sales == null ? 'no file' : wdKD(x.sales) + (x.pct != null ? ' · ' + wdPct(x.pct) : ''), Object.assign({ align: 'center', bold: b, color: x.sales == null ? WD.muted : WD.ink, fontSize: 10.5 }, f)); }))); });
+    const rowHM = Math.min(0.32, 1.5 / tRowsM.length);
+    s.addTable(tRowsM, { x: 0.6, y: 4.9, w: 12.1, colW: [1.7].concat(TM.map(() => 10.4 / TM.length)), rowH: rowHM, fontFace: WD.body, border: { type: 'solid', pt: 0.5, color: WD.line } });
+    txt(s, (ch != null ? `Day 1–${dN}: ${wdKD(last.team.sameDays)} this month against ${wdKD(prev.team.sameDays)} in ${wdMonth(prev)} (${ch >= 0 ? '▲ +' : '▼ '}${wdPct(ch)}). ` : '') +
+      'Achieved = ERP invoices of each month (the running month to its last invoiced day); "no file" = no sales file of that person for that month in the app. % = of that month\'s own DSR target.',
+      { x: 0.6, y: 4.9 + rowHM * tRowsM.length + 0.08, w: 12.1, h: 0.45, fontSize: 9.5, color: ch != null && ch > 0 ? WD.pos : WD.muted, valign: 'top' });
+    s.addNotes(TM.map(m => `${wdMonth(m, true)}: ${m.team.sales == null ? 'no sales file' : wdKD(m.team.sales) + ' of ' + wdKD(m.team.target || 0)}; day 1–${dN}: ${m.team.sameDays == null ? '—' : wdKD(m.team.sameDays)}`).join('\n'));
+  }
+
   // 6 — field work
   pres.addSection({ title: 'Field work' });
   s = content('Field work this week', 'Field work');
@@ -220,6 +258,25 @@ async function buildWeeklyDeck(end){
     s.addTable(kRows, { x: 0.6, y: 1.3, w: 4.3 + 0.8 + pw * R.length, colW: [4.3, 0.8].concat(R.map(() => pw)), rowH: 0.36, fontFace: WD.body, fontSize: 11, border: { type: 'solid', pt: 0.5, color: WD.line } });
     txt(s, `Scores from ${wdRange(W.monthStart, W.to)}: sales on pace and brands on track; field visits a day; plan saved before the first visit and complete visit reports; doctors met and decision makers known; invoices within the discount limits; escalations and returns; My Fatoorah growth; government accounts visited each week; new products and accounts; client requests answered on time. A measure with nothing to count yet is left out of the total.`,
       { x: 0.6, y: 6.15, w: 12.1, h: 0.7, fontSize: 9.5, color: WD.muted, valign: 'top' });
+  }
+
+  // month by month — field work and KPI
+  if(TM.length > 1){
+    s = content('Month by month: field work and KPI', 'Field work');
+    const mLbl = TM.map(m => wdMonth(m)), cols = [WD.dk, WD.gold, '5FA77E', WD.soft];
+    s.addChart(pres.charts.BAR, R.map(r => ({ name: r, labels: mLbl, values: TM.map(m => m.byRep[r].perDay) })),
+      Object.assign(chartBase(), { x: 0.6, y: 1.2, w: 6.0, h: 3.6, chartColors: cols.slice(0, Math.max(1, R.length)), dataLabelFormatCode: '0.0;-0.0;;', valAxisLabelFormatCode: '0.0', title: 'Field visits a working day (target ' + ((typeof kpiSettings === 'function' ? kpiSettings() : {}).visitsPerDay || 5) + ')' }));
+    s.addChart(pres.charts.BAR, R.map(r => ({ name: r, labels: mLbl, values: TM.map(m => m.byRep[r].kpi || 0) })),
+      Object.assign(chartBase(), { x: 6.8, y: 1.2, w: 5.9, h: 3.6, chartColors: cols.slice(0, Math.max(1, R.length)), valAxisMaxVal: 100, valAxisMinVal: 0, title: 'KPI total score (out of 100)' }));
+    const fr = [[hdr('Team')].concat(TM.map(m => hdr(wdMonth(m))))];
+    const line = (lbl, f, i) => [cell(lbl, { bold: true, fill: { color: i % 2 ? WD.white : WD.paper } })].concat(TM.map(m => { const v = f(m); return cell(v == null ? '—' : String(v), { align: 'center', fill: { color: i % 2 ? WD.white : WD.paper } }); }));
+    fr.push(line('Field visits', m => m.team.fieldVisits, 0));
+    fr.push(line('Doctors met', m => m.team.doctorsMet, 1));
+    fr.push(line('New accounts', m => m.team.newAccounts, 2));
+    fr.push(line('New products placed', m => m.team.placements, 3));
+    s.addTable(fr, { x: 0.6, y: 4.95, w: 12.1, colW: [2.2].concat(TM.map(() => 9.9 / TM.length)), rowH: 0.3, fontFace: WD.body, fontSize: 10.5, border: { type: 'solid', pt: 0.5, color: WD.line } });
+    txt(s, 'Visits as logged in the app (a joint visit counts for both); KPI = the same 10 measures as the scorecard, scored month by month. "—" = not measurable yet (new accounts need an earlier month in the sales files). The running month counts to ' + wdDay(W.to) + '.',
+      { x: 0.6, y: 6.5, w: 12.1, h: 0.45, fontSize: 9.5, color: WD.muted, valign: 'top' });
   }
 
   // 7 — wins

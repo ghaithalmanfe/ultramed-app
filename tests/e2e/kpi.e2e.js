@@ -63,7 +63,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
     {id:'h', name:'Royale Hayat Hospital', rep:'Renova', cls:'B', doctors:[]}]);
   cloud.targets = JSON.stringify({ [M]: {revenue: 1000, month:'2026-10'} });
   cloud.benchmarks = JSON.stringify({ coverage: 70, priority: 90, conversion: 25, tasks: 85 });
-  cloud.visits = JSON.stringify([{id:'v1', date:'2026-10-05', ts: 1, rep:M, clinicId:'a', doctorIds:['d1'], products:['p1']}]);
+  cloud.visits = JSON.stringify([{id:'v0', date:'2026-09-14', ts: 0, rep:M, clinicId:'b', doctorIds:[], products:['p1']}, {id:'v1', date:'2026-10-05', ts: 1, rep:M, clinicId:'a', doctorIds:['d1'], products:['p1']}]);
   await page.goto('http://localhost:8202/index.html'); await page.waitForTimeout(300);
   await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(250);
   const tiles = await page.evaluate(() => { switchView('more'); return document.body.innerText; });
@@ -94,10 +94,18 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   // government flag in Territory
   await page.evaluate(async () => { openAdminPanel(); setAdminTab('territory'); await toggleGovClinic('h'); });
   check('marking the private hospital as government is saved', JSON.parse(cloud.clinics).find(c => c.id === 'h').gov === true);
+  // month by month
+  check('More has "Month by month"', await page.evaluate(() => { switchView('more'); return /Month by month/.test(document.body.innerText); }));
+  txt = await page.evaluate(() => { _mbmRep = 'Mariam'; openMonthByMonth(); return document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '); });
+  check('month by month (Mariam): September and October side by side, no invented sales, a KPI for each month she worked, the same-days comparison', /Sep 26/.test(txt) && /Oct 26 \(to 8\)/.test(txt) && !/Aug 26/.test(txt) && /no sales file/.test(txt) && /day 1–8/.test(txt) && /Sep 26 0 0 — — \d+ Oct 26 \(to 8\) 0\.2 1 — — \d+/.test(txt), txt.slice(0, 900));
+  txt = await page.evaluate(() => { _mbmRep = 'all'; openMonthByMonth(); return document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '); });
+  check('month by month (Team): team chip, per-person visits a day and the average KPI', /Team/.test(txt) && /Visits a day \(each\)/.test(txt) && /KPI \(avg\)/.test(txt), txt.slice(0, 300));
   // a rep sees only her own scorecard
   await page.evaluate(async () => { await selectUser('Mariam', 'rep'); }); await page.waitForTimeout(250);
   txt = await page.evaluate(() => { openKpiScorecard(); return document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '); });
   check('a rep sees her own scorecard only (no Team chip, no settings)', /Mariam · This month/.test(txt) && !/Team/.test(txt) && !/KPI settings/.test(txt), txt.slice(0, 200));
+  txt = await page.evaluate(() => { openMonthByMonth(); return document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '); });
+  check('a rep\'s month by month is her own (no Team chip)', !/Team/.test(txt) && /Sep 26/.test(txt), txt.slice(0, 200));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
