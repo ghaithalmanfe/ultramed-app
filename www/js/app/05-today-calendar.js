@@ -335,6 +335,7 @@ function renderMore(){
     ${tile(I('award'),'Achievements','Badges, streaks and milestones','openAchievements()')}
     <div class="section-title">Tools</div>
     ${tile(I('share'),'Export & share','CSV files and report sharing','openExport()')}
+    ${sup ? tile(I('chart'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : ''}
     ${tile(I('bot'),'Assistant','Ask anything about your data','openAssistant()')}
     ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
     ${sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}

@@ -1617,6 +1617,135 @@
       return { clinicId: a.clinicId, clinic: a.clinic, issuer: a.issuer, owner: a.owner, invoices: details.length, net: Math.round(a.net * 1000) / 1000, from: a.from, to: a.to, details: details }; })
       .sort(function(x, y){ return y.net - x.net; });
   }
+  // ---- WEEKLY MANAGEMENT UPDATE (the Thursday deck) ----
+  // Everything the deck shows, from the same data and the same rules as the
+  // rest of the app: ERP lines credited by erpRowRep, month figures from
+  // monthAchievement as of the week's last day, visits as logged. Pure.
+  // opts: { end: 'YYYY-MM-DD' (last day of the week shown), reps: [...] }
+  function weeklyReport(data, opts){
+    var reps = (opts && opts.reps) || [];
+    var end = (opts && opts.end) || data.today;
+    if(end > data.today) end = data.today;
+    var from = getWeekDates(end)[0], to = end;                       // Sunday → the chosen day
+    var pFrom = addDaysStr(from, -7), pTo = addDaysStr(to, -7);      // the same days a week earlier
+    var mStart = to.slice(0, 7) + '-01';
+    var d2 = {}; for(var k in data) d2[k] = data[k]; d2.today = to;   // month figures as of the week's end
+    var es = data.erpSales, clinics = data.clinics || [], erpMap = data.erpMap || {};
+    var byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
+    var ctx = erpCtxOf(es), rows = [];
+    erpPeriodsOf(es).forEach(function(p){ erpViewRowsOf(es, p, ctx).forEach(function(r){
+      var m = matchCustomer((r.customer || '').trim(), clinics, erpMap);
+      if(m.ignored) return;
+      rows.push({ r: r, rep: erpRowRep(r, clinics, erpMap, p.repMap || {}), clinicId: m.clinicId || null, channel: !!m.channel });
+    }); });
+    var covered = function(a, b){ return erpPeriodsOf(es).some(function(p){ return p.to >= a && p.from <= b; }); };
+    var sum = function(a, b, rep){ return Math.round(rows.reduce(function(s, x){ return s + (x.rep && (!rep || x.rep === rep) && x.r.date >= a && x.r.date <= b ? x.r.net : 0); }, 0) * 1000) / 1000; };
+    var custName = function(x){ return x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : (x.r.customer || '').trim(); };
+    var custKey = function(x){ return x.clinicId ? 'c:' + x.clinicId : 'n:' + (x.r.customer || '').trim().toLowerCase(); };
+    // first and last purchase per account (and per account+product) before the week
+    var firstSeen = {}, lastBefore = {}, prodSeen = {};
+    rows.forEach(function(x){
+      if(x.channel || !(x.r.net > 0) || x.r.type === 'return') return;
+      var k = custKey(x), pk = k + '|' + String(x.r.product || '').toLowerCase();
+      if(!firstSeen[k] || x.r.date < firstSeen[k]) firstSeen[k] = x.r.date;
+      if(!prodSeen[pk] || x.r.date < prodSeen[pk]) prodSeen[pk] = x.r.date;
+      if(x.r.date < from && (!lastBefore[k] || x.r.date > lastBefore[k])) lastBefore[k] = x.r.date;
+    });
+    var earliest = rows.reduce(function(m, x){ return !m || x.r.date < m ? x.r.date : m; }, null);
+    var week = rows.filter(function(x){ return x.rep && x.r.date >= from && x.r.date <= to; });
+    var wins = { newAccounts: {}, reactivated: {}, placements: {}, samples: {}, invoices: {} };
+    week.forEach(function(x){
+      var r = x.r, k = custKey(x), name = custName(x), pk = k + '|' + String(r.product || '').toLowerCase();
+      var inv = wins.invoices[r.doc] || (wins.invoices[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, account: name, channel: x.channel, net: 0, lines: 0, brands: {} });
+      inv.net += r.net; inv.lines++; if(r.brand) inv.brands[normBrand(r.brand)] = 1;
+      if(x.channel) return;
+      if(isFocRow(r)){ var sk = k + '|' + x.rep; var sm = wins.samples[sk] || (wins.samples[sk] = { rep: x.rep, account: name, date: r.date, items: [] }); sm.items.push(r.product); return; }
+      if(!(r.net > 0) || r.type === 'return') return;
+      if(firstSeen[k] >= from && !wins.newAccounts[k]) wins.newAccounts[k] = { rep: x.rep, account: name, date: firstSeen[k], net: 0 };
+      if(wins.newAccounts[k]) wins.newAccounts[k].net += r.net;
+      else if(lastBefore[k] && daysBetween(lastBefore[k], from) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, date: r.date, lastBefore: lastBefore[k] };
+      if(!wins.newAccounts[k] && prodSeen[pk] >= from && firstSeen[k] < from){
+        var pl = wins.placements[pk] || (wins.placements[pk] = { rep: x.rep, account: name, product: r.product, brand: r.brand, date: r.date, net: 0 });
+        pl.net += r.net;
+      }
+    });
+    var vals = function(o){ return Object.keys(o).map(function(k){ return o[k]; }); };
+    var rnd = function(n){ return Math.round(n * 1000) / 1000; };
+    var invoices = vals(wins.invoices).map(function(i){ i.net = rnd(i.net); i.brands = Object.keys(i.brands); return i; })
+      .sort(function(a, b){ return b.net - a.net; });
+    // visits of the week (and the month, for account coverage)
+    var vis = (data.visits || []).filter(function(v){ return v && v.date >= from && v.date <= to; });
+    var visM = (data.visits || []).filter(function(v){ return v && v.date >= mStart && v.date <= to && isFieldVisit(v); });
+    var perRep = {};
+    reps.forEach(function(rep){
+      var mine = vis.filter(function(v){ return repWasThere(v, rep); }), led = mine.filter(function(v){ return v.rep === rep; });
+      var field = mine.filter(isFieldVisit);
+      var docs = {}, prods = {}, clin = {};
+      field.forEach(function(v){ clin[v.clinicId] = 1; (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ docs[v.clinicId + '|' + id] = 1; }); (v.products || []).forEach(function(p){ prods[p] = 1; }); });
+      var aAll = clinics.filter(function(c){ return c.rep === rep && c.cls === 'A'; });
+      var aSeen = aAll.filter(function(c){ return visM.some(function(v){ return v.clinicId === c.id && repWasThere(v, rep); }); });
+      var t = (data.targets || {})[rep] || {};
+      var ach = monthAchievement(rep, d2);
+      var dim = getMonthDates(to).length, day = parseInt(to.slice(8, 10), 10);
+      perRep[rep] = {
+        week: sum(from, to, rep), prevWeek: sum(pFrom, pTo, rep),
+        mtd: ach.amount, mtdSrc: ach.src, target: t.revenue > 0 ? t.revenue : null,
+        pct: t.revenue > 0 ? ach.amount / t.revenue : null,
+        pace: t.revenue > 0 && day > 0 ? ach.amount / day * dim / t.revenue : null,
+        fieldVisits: field.length, calls: mine.filter(function(v){ return v.callOnly; }).length,
+        phoneOrders: mine.filter(function(v){ return v.orderOnly; }).length,
+        joint: field.filter(function(v){ return v.withRep; }).length,
+        clinics: Object.keys(clin).length, doctorsMet: Object.keys(docs).length, productsPresented: Object.keys(prods).length,
+        followUps: led.filter(function(v){ return v.nextFollowUp; }).length,
+        orders: led.filter(function(v){ return v.orderTaken; }).length,
+        orderValue: rnd(led.reduce(function(s, v){ return s + (v.orderTaken ? (v.orderTotal || 0) : 0); }, 0)),
+        photos: led.reduce(function(s, v){ return s + ((v.photos || []).length); }, 0),
+        aVisited: aSeen.length, aTotal: aAll.length,
+        aMissing: aAll.filter(function(c){ return aSeen.indexOf(c) < 0; }).map(function(c){ return c.name; }),
+        invoices: invoices.filter(function(i){ return i.rep === rep; }).length
+      };
+    });
+    // brands: this week (team) and month-to-date vs the DSR brand targets
+    var bw = {}, bm = {}, bt = {};
+    rows.forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0) return; var b = normBrand(x.r.brand);
+      if(x.r.date >= from && x.r.date <= to) bw[b] = (bw[b] || 0) + x.r.net;
+      if(x.r.date >= mStart && x.r.date <= to) bm[b] = (bm[b] || 0) + x.r.net; });
+    reps.forEach(function(rep){ var br = ((data.targets || {})[rep] || {}).brands || {}; Object.keys(br).forEach(function(b){ var n = normBrand(b); bt[n] = (bt[n] || 0) + br[b]; }); });
+    var brands = Object.keys(bw).concat(Object.keys(bt)).filter(function(b, i, a){ return a.indexOf(b) === i; })
+      .map(function(b){ return { brand: b, week: rnd(bw[b] || 0), mtd: rnd(bm[b] || 0), target: bt[b] ? rnd(bt[b]) : null }; })
+      .sort(function(a, b){ return b.week - a.week || b.mtd - a.mtd; });
+    // week by week this month (Sunday-start weeks, clipped to the month)
+    var weeks = [], w0 = getWeekDates(mStart)[0];
+    for(var ws = w0; ws <= to; ws = addDaysStr(ws, 7)){
+      var a = ws < mStart ? mStart : ws, b = addDaysStr(ws, 6) > to ? to : addDaysStr(ws, 6);
+      var row = { from: a, to: b, byRep: {} }; reps.forEach(function(rep){ row.byRep[rep] = sum(a, b, rep); }); weeks.push(row);
+    }
+    // next week: plans and follow-ups
+    var nFrom = addDaysStr(getWeekDates(to)[0], 7), nTo = addDaysStr(nFrom, 6), next = {};
+    reps.forEach(function(rep){
+      var planned = [];
+      Object.keys(data.dayPlans || {}).forEach(function(dt){ if(dt < nFrom || dt > nTo) return; ((data.dayPlans[dt] || {})[rep] || []).forEach(function(e){ var id = typeof e === 'string' ? e : e.id; if(byId[id]) planned.push({ date: dt, clinic: byId[id].name }); }); });
+      var fu = clinics.filter(function(c){ return c.rep === rep && c.cls !== 'Closed' && c.nextFollowUp && c.nextFollowUp >= nFrom && c.nextFollowUp <= nTo; }).map(function(c){ return { date: c.nextFollowUp, clinic: c.name }; });
+      next[rep] = { planned: planned.sort(function(x, y){ return x.date < y.date ? -1 : 1; }), followUps: fu.sort(function(x, y){ return x.date < y.date ? -1 : 1; }), aMissing: perRep[rep].aMissing };
+    });
+    var team = { week: sum(from, to), prevWeek: sum(pFrom, pTo), mtd: 0, target: 0 };
+    reps.forEach(function(rep){ team.mtd += perRep[rep].mtd; if(perRep[rep].target) team.target += perRep[rep].target; });
+    team.week = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].week; }, 0));
+    team.prevWeek = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].prevWeek; }, 0));
+    team.mtd = rnd(team.mtd); team.target = rnd(team.target);
+    return {
+      from: from, to: to, prevFrom: pFrom, prevTo: pTo, monthStart: mStart, nextFrom: nFrom, nextTo: nTo,
+      salesCovered: covered(from, to), prevCovered: covered(pFrom, pTo), historyFrom: earliest,
+      reps: reps, perRep: perRep, team: team, brands: brands, weeks: weeks, next: next,
+      wins: { newAccounts: vals(wins.newAccounts).map(function(x){ x.net = rnd(x.net); return x; }), reactivated: vals(wins.reactivated),
+        placements: vals(wins.placements).map(function(x){ x.net = rnd(x.net); return x; }).sort(function(a, b){ return b.net - a.net; }),
+        samples: vals(wins.samples), invoices: invoices },
+      visits: vis.slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).map(function(v){
+        return { date: v.date, rep: v.rep, withRep: v.withRep || null, clinic: (byId[v.clinicId] || {}).name || '—', type: v.callOnly ? 'call' : v.orderOnly ? 'phone order' : 'visit',
+          doctors: (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).map(function(id){ var c = byId[v.clinicId]; var d = c && (c.doctors || []).find(function(x){ return x.id === id; }); return d ? d.name : null; }).filter(Boolean),
+          products: (v.products || []).length, order: v.orderTaken ? rnd(v.orderTotal || 0) : 0, followUp: v.nextFollowUp || null }; })
+    };
+  }
   // The last day the uploaded sales files cover in the current month (null = none).
   // With a rep: only files that carry that rep's salesman — a file exported
   // for one salesman says nothing about the others' sales.
@@ -3390,7 +3519,7 @@
     matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpRevenueRange, erpMtd, crossInvoices, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
