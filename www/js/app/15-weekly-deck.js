@@ -67,6 +67,74 @@ function wdTrend(end, months){
   const d = Object.assign(digestData(), { today: todayStr() });
   return UMCore.monthlyTrend(d, { end, reps: REPS.slice(), months: months || 6, settings: (typeof kpiSettings === 'function') ? kpiSettings() : {} });
 }
+// ---- visuals, drawn in the browser at export time (no network needed) ----
+// Backgrounds: deep green with gold arcs, light rays and a large tooth outline.
+// Icons: the app's own line icons, gold on a dark disc (or the reverse).
+// Photos: catalog product photos (when the host allows it) and the team's own
+// visit photos. Anything that cannot load is simply left out.
+const WD_TOOTH = 'M12 5.3C10.6 3.6 8.1 2.7 6.1 3.9c-2.3 1.4-2.7 4.5-1.4 7.1 1.2 2.4 1.6 5.1 2.2 7.7.3 1.2 1.9 1.3 2.4.1.5-1.2.9-2.6 1.7-2.6s1.2 1.4 1.7 2.6c.5 1.2 2.1 1.1 2.4-.1.6-2.6 1-5.3 2.2-7.7 1.3-2.6.9-5.7-1.4-7.1-2-1.2-4.5-.3-5.9 1.4z';
+function wdData(url){ return String(url || '').replace(/^data:/, ''); }
+function wdArt(variant){
+  try{
+    const W = 1920, H = 1080, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    const lg = g.createLinearGradient(0, 0, W, H);
+    lg.addColorStop(0, '#011a0e'); lg.addColorStop(0.55, '#022917'); lg.addColorStop(1, variant === 'light' ? '#0f5132' : '#0B3D22');
+    g.fillStyle = lg; g.fillRect(0, 0, W, H);
+    const cx = variant === 'divider' ? W * 0.82 : W * 0.86, cy = variant === 'divider' ? H * 0.5 : H * 0.62;
+    const glow = g.createRadialGradient(cx, cy, 20, cx, cy, 900);
+    glow.addColorStop(0, 'rgba(201,166,100,0.32)'); glow.addColorStop(1, 'rgba(201,166,100,0)');
+    g.fillStyle = glow; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(201,166,100,0.28)';
+    for(let i = 0; i < 9; i++){ g.lineWidth = i % 3 === 0 ? 2.2 : 1; g.beginPath(); g.arc(cx, cy, 180 + i * 85, 0, Math.PI * 2); g.stroke(); }
+    g.fillStyle = 'rgba(255,255,255,0.06)';
+    for(let x = 60; x < W * 0.5; x += 46) for(let y = 60; y < H; y += 46){ g.beginPath(); g.arc(x, y, 2.2, 0, Math.PI * 2); g.fill(); }
+    g.save(); const sc = variant === 'divider' ? 24 : 30; g.translate(cx - 12 * sc, cy - 13 * sc); g.scale(sc, sc);
+    g.lineWidth = 0.22; g.strokeStyle = 'rgba(201,166,100,0.55)'; g.stroke(new Path2D(WD_TOOTH));
+    g.fillStyle = 'rgba(201,166,100,0.06)'; g.fill(new Path2D(WD_TOOTH)); g.restore();
+    const band = g.createLinearGradient(0, H - 10, W, H);
+    band.addColorStop(0, '#C9A664'); band.addColorStop(1, 'rgba(201,166,100,0)');
+    g.fillStyle = band; g.fillRect(0, H - 10, W, 10);
+    return wdData(c.toDataURL('image/jpeg', 0.88));
+  }catch(e){ return null; }
+}
+const _wdIconCache = {};
+async function wdIcon(name, fg, bg){
+  const key = name + fg + bg;
+  if(_wdIconCache[key] !== undefined) return _wdIconCache[key];
+  _wdIconCache[key] = null;
+  try{
+    const sym = document.getElementById('i-' + name); if(!sym) return null;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="256" height="256" fill="none" stroke="#${fg}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${sym.innerHTML}</svg>`;
+    const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    await new Promise((ok, bad) => { img.onload = ok; img.onerror = bad; setTimeout(bad, 3000); });
+    const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+    if(bg){ g.fillStyle = '#' + bg; g.beginPath(); g.arc(128, 128, 128, 0, Math.PI * 2); g.fill(); g.drawImage(img, 60, 60, 136, 136); }
+    else g.drawImage(img, 0, 0, 256, 256);
+    _wdIconCache[key] = wdData(c.toDataURL('image/png'));
+  }catch(e){ _wdIconCache[key] = null; }
+  return _wdIconCache[key];
+}
+// A remote or stored image → a square-ish JPEG data URL (max 600 px), or null.
+async function wdPhoto(src, timeoutMs){
+  if(!src) return null;
+  try{
+    let blob;
+    if(/^data:/.test(src)) blob = await (await fetch(src)).blob();
+    else{
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const t = setTimeout(() => ctl && ctl.abort(), timeoutMs || 4000);
+      const r = await fetch(src, { mode: 'cors', signal: ctl ? ctl.signal : undefined }); clearTimeout(t);
+      if(!r.ok) return null; blob = await r.blob();
+    }
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, 600 / Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.drawImage(bmp, 0, 0, w, h);
+    return { data: wdData(c.toDataURL('image/jpeg', 0.86)), w, h };
+  }catch(e){ return null; }
+}
+function wdCatalogImg(name){ try{ const p = typeof findCatalogProduct === 'function' ? findCatalogProduct(name) : null; return p && p.img ? p.img : null; }catch(e){ return null; } }
 function weeklyDeckData(end){
   return UMCore.weeklyReport(Object.assign(digestData(), { today: todayStr() }), { end, reps: REPS.slice() });
 }
@@ -101,16 +169,55 @@ async function buildWeeklyDeck(end){
   const wins = W.wins;
   const nWins = wins.newAccounts.length + wins.reactivated.length + wins.placements.length + wins.samples.length;
   const sorted = R.slice().sort((a, b) => P[b].week - P[a].week);
+  // visuals: drawn once, reused on every slide
+  const ART = { cover: wdArt('cover'), divider: wdArt('divider') };
+  const ICON = {};
+  for(const n of ['award', 'arrow-up', 'target', 'package', 'building', 'gift', 'file', 'stethoscope', 'chart', 'users', 'calendar', 'star', 'camera', 'refresh', 'sparkles', 'cart', 'check'])
+    ICON[n] = await wdIcon(n, 'C9A664', '022917');
+  const PCOL = [WD.dk, WD.gold, '5FA77E', '3D6B8C'];
+  const icon = (sl, name, x, y, d) => { if(ICON[name]) sl.addImage({ data: ICON[name], x, y, w: d, h: d }); };
+  const initials = n => String(n || '?').replace(/^(dr|mr|mrs|ms)\.?\s+/i, '').split(/\s+/).map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase();
+  const avatar = (sl, name, x, y, d, i) => {
+    sl.addShape(pres.shapes.OVAL, { x, y, w: d, h: d, fill: { color: PCOL[i % PCOL.length] }, line: { color: WD.white, width: 2 } });
+    txt(sl, initials(name), { x, y, w: d, h: d, align: 'center', valign: 'middle', fontFace: WD.head, fontSize: Math.round(d * 22), bold: true, color: WD.white });
+  };
+  const hlIcon = t => /^Best|^Most/.test(t) ? 'award' : /up \d+%|above the average/.test(t) ? 'arrow-up' : /target/.test(t) ? 'target' : /new account/.test(t) ? 'building'
+    : /again|back/i.test(t) ? 'refresh' : /placement|product/.test(t) ? 'package' : /invoice/i.test(t) ? 'file' : /Samples/.test(t) ? 'gift' : /visit|doctor/.test(t) ? 'stethoscope' : /key \(A\)/i.test(t) ? 'star' : 'sparkles';
+  const dark = (section) => { const sl = pres.addSlide({ masterName: 'UM_TITLE', sectionTitle: section }); if(ART.divider) sl.background = { data: ART.divider }; return sl; };
+  const divider = (section, kicker, title, sub, iconName) => {
+    const sl = dark(section);
+    txt(sl, kicker.toUpperCase(), { x: 0.9, y: 2.35, w: 8, h: 0.4, fontSize: 14, bold: true, color: WD.gold, charSpacing: 4 });
+    txt(sl, title, { x: 0.9, y: 2.8, w: 8.5, h: 1.2, fontFace: WD.head, fontSize: 48, bold: true, color: WD.white });
+    if(sub) txt(sl, sub, { x: 0.9, y: 4.05, w: 8.2, h: 0.9, fontSize: 18, color: WD.soft, valign: 'top' });
+    icon(sl, iconName, 10.2, 2.55, 1.9);
+    return sl;
+  };
 
   // 1 — title
   pres.addSection({ title: 'Summary' });
   let s = pres.addSlide({ masterName: 'UM_TITLE', sectionTitle: 'Summary' });
-  txt(s, 'Field Team Weekly Update', { x: 0.6, y: 2.2, w: 12, h: 1.0, fontFace: WD.head, fontSize: 44, bold: true, color: WD.white });
-  txt(s, 'Week of ' + weekLbl, { x: 0.6, y: 3.25, w: 12, h: 0.6, fontSize: 24, color: WD.gold });
-  txt(s, 'Kuwait clinical sales · ' + R.join(' · '), { x: 0.6, y: 3.95, w: 12, h: 0.5, fontSize: 16, color: WD.soft });
+  if(ART.cover) s.background = { data: ART.cover };
+  txt(s, 'KUWAIT CLINICAL SALES', { x: 0.6, y: 1.75, w: 9, h: 0.4, fontSize: 14, bold: true, color: WD.gold, charSpacing: 4 });
+  txt(s, 'Field Team Weekly Update', { x: 0.6, y: 2.2, w: 9.5, h: 1.0, fontFace: WD.head, fontSize: 46, bold: true, color: WD.white });
+  txt(s, 'Week of ' + weekLbl, { x: 0.6, y: 3.25, w: 9, h: 0.6, fontSize: 24, color: WD.gold });
+  R.forEach((r, i) => { const x = 0.6 + i * 2.3; avatar(s, r, x, 4.35, 0.7, i); txt(s, r, { x: x + 0.82, y: 4.45, w: 1.4, h: 0.5, fontSize: 14, bold: true, color: WD.white, valign: 'middle' }); });
   txt(s, 'Prepared by ' + (currentUser.name || 'the supervisor') + ' · Ultramed GCC', { x: 0.6, y: 6.3, w: 9, h: 0.4, fontSize: 13, color: WD.white });
   txt(s, 'Generated ' + wdDay(todayStr()) + ' from the UltraMed Field Ops app', { x: 0.6, y: 6.7, w: 9, h: 0.35, fontSize: 10, color: WD.soft });
   s.addNotes(`Week of ${weekLbl}. Sales this week ${wdKD(team.week)}; month to date ${wdKD(team.mtd)} of ${wdKD(team.target)}.`);
+  const hl = UMCore.weeklyHighlights(W, { brandName: wdBrand });
+  // the headlines: the three strongest achievements, big, on the dark art
+  if(hl.length){
+    s = dark('Summary');
+    txt(s, 'THIS WEEK\'S HEADLINES', { x: 1.6, y: 0.62, w: 9, h: 0.4, fontSize: 14, bold: true, color: WD.gold, charSpacing: 4 });
+    txt(s, 'What the team delivered', { x: 1.6, y: 0.98, w: 10.5, h: 0.75, fontFace: WD.head, fontSize: 34, bold: true, color: WD.white });
+    hl.slice(0, 3).forEach((t, i) => {
+      const y = 2.15 + i * 1.6;
+      s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 0.6, y, w: 11.2, h: 1.38, rectRadius: 0.14, fill: { color: WD.white, transparency: 90 }, line: { color: WD.gold, width: 1 } });
+      icon(s, hlIcon(t), 0.85, y + 0.24, 0.9);
+      txt(s, wdCut(t, 140), { x: 2.0, y: y + 0.12, w: 9.6, h: 1.14, fontSize: 21, color: WD.white, valign: 'middle', fit: 'shrink' });
+    });
+    s.addNotes(hl.join('\n'));
+  }
 
   // 2 — the week at a glance
   s = content('The week at a glance', 'Summary');
@@ -133,51 +240,67 @@ async function buildWeeklyDeck(end){
   const tv = R.reduce((a, r) => a + P[r].fieldVisits, 0), tc = R.reduce((a, r) => a + P[r].clinics, 0), td = R.reduce((a, r) => a + P[r].doctorsMet, 0);
   tiles.push({ big: String(tv), label: 'Field visits', sub: tc + ' clinic' + (tc === 1 ? '' : 's') + ' · ' + td + ' doctor' + (td === 1 ? '' : 's') + ' met', good: false });
   tiles.push({ big: String(nWins), label: 'Wins this week', sub: `${wins.newAccounts.length} new · ${wins.reactivated.length} back · ${wins.placements.length} new products · ${wins.samples.length} sampled`, good: nWins > 0 });
+  const tIcons = ['chart', 'target', 'stethoscope', 'award'];
   tiles.forEach((t, i) => {
     const x = 0.6 + i * 3.08;
-    card(s, x, 1.35, 2.88, 2.05);
-    txt(s, t.big, { x: x + 0.25, y: 1.5, w: 2.4, h: 0.85, fontFace: WD.head, fontSize: t.big.length > 9 ? 28 : 36, bold: true, color: WD.dk, fit: 'shrink' });
-    txt(s, t.label, { x: x + 0.25, y: 2.35, w: 2.45, h: 0.4, fontSize: 13, bold: true, color: WD.green });
-    txt(s, t.sub, { x: x + 0.25, y: 2.75, w: 2.45, h: 0.55, fontSize: 11, color: t.good ? WD.pos : WD.muted, valign: 'top' });
+    card(s, x, 1.3, 2.88, 2.2);
+    icon(s, tIcons[i], x + 0.22, 1.45, 0.55);
+    txt(s, t.big, { x: x + 0.22, y: 2.0, w: 2.5, h: 0.7, fontFace: WD.head, fontSize: t.big.length > 9 ? 26 : 32, bold: true, color: WD.dk, fit: 'shrink' });
+    txt(s, t.label, { x: x + 0.22, y: 2.68, w: 2.5, h: 0.35, fontSize: 12.5, bold: true, color: WD.green });
+    txt(s, t.sub, { x: x + 0.22, y: 3.0, w: 2.5, h: 0.45, fontSize: 10.5, color: t.good ? WD.pos : WD.muted, valign: 'top' });
   });
-  const hl = UMCore.weeklyHighlights(W, { brandName: wdBrand });
   txt(s, 'Highlights', { x: 0.6, y: 3.75, w: 6, h: 0.4, fontFace: WD.head, fontSize: 18, bold: true, color: WD.dk });
-  const hlRuns = (hl.length ? hl.slice(0, 6) : ['Upload this week\'s sales files and log the visits to see the week\'s highlights here.']).map((t, i, a) => ({ text: wdCut(t, 150), options: { bullet: { code: '25CF' }, breakLine: i < a.length - 1, paraSpaceAfter: 5 } }));
-  txt(s, hlRuns, { x: 0.6, y: 4.2, w: 12.1, h: 2.7, fontSize: 14, color: WD.ink, valign: 'top', fit: 'shrink' });
+  const hlList = hl.length ? hl.slice(0, 6) : ['Upload this week\'s sales files and log the visits to see the week\'s highlights here.'];
+  hlList.forEach((t, i) => {
+    const col = i % 2, row = Math.floor(i / 2), x = 0.6 + col * 6.1, y = 4.2 + row * 0.92;
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x, y, w: 5.95, h: 0.8, rectRadius: 0.1, fill: { color: WD.paper }, line: { color: WD.line, width: 0.75 } });
+    icon(s, hlIcon(t), x + 0.13, y + 0.14, 0.52);
+    txt(s, wdCut(t, 130), { x: x + 0.78, y: y + 0.06, w: 5.05, h: 0.68, fontSize: 11.5, color: WD.ink, valign: 'middle', fit: 'shrink' });
+  });
   s.addNotes(hl.join('\n'));
 
-  // 3 — month to date against target
-  s = content('Month to date against target', 'Sales');
-  const withT = R.filter(r => P[r].target);
-  if(withT.length){
-    s.addChart(pres.charts.BAR, [
-      { name: 'Achieved', labels: withT.map(r => r), values: withT.map(r => Math.round(P[r].mtd)) },
-      { name: 'Target', labels: withT.map(r => r), values: withT.map(r => Math.round(P[r].target)) }],
-      { x: 0.6, y: 1.3, w: 6.2, h: 5.4, barDir: 'col', barGrouping: 'clustered', chartColors: [WD.dk, WD.soft],
-        showValue: true, dataLabelPosition: 'outEnd', dataLabelFormatCode: '#,##0;-#,##0;;', dataLabelFontSize: 10, dataLabelColor: WD.ink,
-        catAxisLabelColor: WD.ink, catAxisLabelFontSize: 12, valAxisLabelColor: WD.muted, valAxisLabelFontSize: 9, valAxisLabelFormatCode: '#,##0',
-        valGridLine: { color: 'E6ECE8', size: 0.5 }, catGridLine: { style: 'none' }, showLegend: true, legendPos: 't', legendFontSize: 11,
-        catAxisLabelFontFace: WD.body, valAxisLabelFontFace: WD.body, legendFontFace: WD.body, dataLabelFontFace: WD.body });
-  } else txt(s, 'No targets uploaded for this month yet (DSR file).', { x: 0.6, y: 1.5, w: 6, h: 0.5, fontSize: 14, color: WD.muted });
   const hdr = (t) => ({ text: t, options: { bold: true, color: WD.white, fill: { color: WD.dk }, fontSize: 11, align: 'center', valign: 'middle' } });
   const cell = (t, o) => ({ text: String(t), options: Object.assign({ fontSize: 11, color: WD.ink, valign: 'middle' }, o || {}) });
-  const tRows = [[hdr('Person'), hdr('This week'), hdr('Month to date'), hdr('Target'), hdr('Achieved'), hdr('On pace for')]];
-  R.forEach((r, i) => { const f = { fill: { color: i % 2 ? WD.white : WD.paper } };
-    tRows.push([cell(r, Object.assign({ bold: true }, f)), cell(wdKD(P[r].week), Object.assign({ align: 'right' }, f)), cell(wdKD(P[r].mtd), Object.assign({ align: 'right' }, f)),
-      cell(P[r].target ? wdKD(P[r].target) : '—', Object.assign({ align: 'right' }, f)), cell(wdPct(P[r].pct), Object.assign({ align: 'center', bold: true, color: WD.dk }, f)), cell(wdPct(P[r].pace), Object.assign({ align: 'center' }, f))]); });
-  tRows.push([cell('Team', { bold: true, fill: { color: WD.mint } }), cell(wdKD(team.week), { align: 'right', bold: true, fill: { color: WD.mint } }), cell(wdKD(team.mtd), { align: 'right', bold: true, fill: { color: WD.mint } }),
-    cell(wdKD(team.target), { align: 'right', bold: true, fill: { color: WD.mint } }), cell(team.target ? wdPct(team.mtd / team.target) : '—', { align: 'center', bold: true, color: WD.dk, fill: { color: WD.mint } }), cell('', { fill: { color: WD.mint } })]);
-  s.addTable(tRows, { x: 7.05, y: 1.45, w: 5.65, colW: [1.15, 0.95, 1.05, 0.95, 0.8, 0.75], rowH: 0.42, fontFace: WD.body, border: { type: 'solid', pt: 0.5, color: WD.line } });
-  txt(s, `Achieved = ERP invoices to ${wdDay(W.to)} (each sale counts for the clinic's owner; shared accounts for whoever invoiced). Targets: the month's DSR. "On pace for" = month-to-date sales projected to the month's end.`,
-    { x: 7.05, y: 1.45 + 0.42 * tRows.length + 0.25, w: 5.65, h: 0.9, fontSize: 10, color: WD.muted, valign: 'top' });
+
+  // Sales — divider
+  pres.addSection({ title: 'Sales' });
+  divider('Sales', 'Section 1', 'Sales & targets',
+    team.target ? wdPct(team.mtd / team.target) + ' of the month\'s target reached by ' + wdDay(W.to) + ' · ' + wdKD(team.mtd) + ' invoiced this month' : wdKD(team.mtd) + ' invoiced this month', 'chart');
+
+  // 3 — month to date against target: one card per person, a ring for the month
+  s = content('Month to date against target', 'Sales');
+  const cw = (12.1 - 0.3 * (R.length - 1)) / Math.max(1, R.length);
+  R.forEach((r, i) => {
+    const p = P[r], x = 0.6 + i * (cw + 0.3), y = 1.25;
+    card(s, x, y, cw, 4.75);
+    avatar(s, r, x + 0.25, y + 0.22, 0.62, i);
+    txt(s, r, { x: x + 1.0, y: y + 0.22, w: cw - 1.2, h: 0.62, fontFace: WD.head, fontSize: 18, bold: true, color: WD.dk, valign: 'middle' });
+    if(p.target){
+      const ach = Math.max(0, p.mtd), left = Math.max(0, p.target - ach);
+      s.addChart(pres.charts.DOUGHNUT, [{ name: r, labels: ['Achieved', 'To go'], values: [Math.round(ach), Math.round(left)] }],
+        { x: x + (cw - 2.3) / 2, y: y + 0.95, w: 2.3, h: 2.3, holeSize: 72, chartColors: [p.pct >= 1 ? '1B7A36' : PCOL[i % PCOL.length], 'DCE6DF'], showLegend: false, showValue: false, showPercent: false, showLabel: false, dataBorder: { pt: 0, color: 'FFFFFF' } });
+      txt(s, wdPct(p.pct), { x: x + (cw - 2.3) / 2, y: y + 1.75, w: 2.3, h: 0.55, align: 'center', fontFace: WD.head, fontSize: 26, bold: true, color: WD.dk });
+      txt(s, 'of target', { x: x + (cw - 2.3) / 2, y: y + 2.25, w: 2.3, h: 0.3, align: 'center', fontSize: 10, color: WD.muted });
+    } else txt(s, 'No DSR target this month', { x: x + 0.25, y: y + 1.8, w: cw - 0.5, h: 0.5, align: 'center', fontSize: 12, color: WD.muted });
+    const lines = [
+      { text: wdKD(p.mtd) + (p.target ? ' of ' + wdKD(p.target) : ''), options: { bold: true, fontSize: 14, color: WD.dk, breakLine: true } },
+      { text: 'This week ' + wdKD(p.week), options: { fontSize: 12, color: WD.ink, breakLine: true } },
+      { text: p.pace != null ? 'On pace for ' + wdPct(p.pace) : '—', options: { fontSize: 12, color: p.pace >= 1 ? WD.pos : WD.ink, bold: p.pace >= 1 } }];
+    txt(s, lines, { x: x + 0.2, y: y + 3.4, w: cw - 0.4, h: 1.2, align: 'center', valign: 'top', paraSpaceAfter: 2 });
+  });
+  s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 0.6, y: 6.15, w: 12.1, h: 0.55, rectRadius: 0.1, fill: { color: WD.dk }, line: { color: WD.dk } });
+  txt(s, [{ text: 'Team  ', options: { bold: true, color: WD.gold } }, { text: wdKD(team.mtd) + ' of ' + wdKD(team.target) + (team.target ? ' · ' + wdPct(team.mtd / team.target) : '') + '   ·   this week ' + wdKD(team.week), options: { color: WD.white } }],
+    { x: 0.85, y: 6.15, w: 11.6, h: 0.55, fontSize: 14, valign: 'middle' });
+  txt(s, `ERP invoices to ${wdDay(W.to)}; each sale counts for the clinic's owner (shared accounts for whoever invoiced). Targets: the month's DSR. "On pace" = month to date projected to the month's end.`,
+    { x: 0.6, y: 6.75, w: 12.1, h: 0.28, fontSize: 9, color: WD.muted });
 
   // 4 — this week against the last 8 weeks
   const HIS = W.history || [];
   s = content('This week against the last ' + HIS.length + ' weeks', 'Sales');
   if(HIS.length && R.length){
-    const hl8 = HIS.map(h => (h.current ? 'This week ' : '') + wdRange(h.from, h.to).replace(/ \d{4}$/, ''));
+    const hl8 = HIS.map(h => h.current ? 'This week' : wdRange(h.from, h.to).replace(/ \d{4}$/, '').replace(/Sept/g, 'Sep'));
     s.addChart(pres.charts.BAR, R.map(r => ({ name: r, labels: hl8, values: HIS.map(h => Math.round(h.byRep[r] || 0)) })),
-      { x: 0.6, y: 1.15, w: 12.1, h: 2.85, barDir: 'col', barGrouping: 'stacked', chartColors: [WD.dk, WD.gold, '5FA77E', WD.soft].slice(0, Math.max(1, R.length)),
+      { x: 0.6, y: 1.12, w: 12.1, h: 2.7, barDir: 'col', barGrouping: 'stacked', chartColors: [WD.dk, WD.gold, '5FA77E', WD.soft].slice(0, Math.max(1, R.length)),
         showValue: true, dataLabelPosition: 'ctr', dataLabelFormatCode: '#,##0;-#,##0;;', dataLabelFontSize: 8, dataLabelColor: WD.white,
         catAxisLabelColor: WD.ink, catAxisLabelFontSize: 10, valAxisLabelColor: WD.muted, valAxisLabelFontSize: 8, valAxisLabelFormatCode: '#,##0',
         valGridLine: { color: 'E6ECE8', size: 0.5 }, catGridLine: { style: 'none' }, showLegend: true, legendPos: 'r', legendFontSize: 10,
@@ -194,14 +317,35 @@ async function buildWeeklyDeck(end){
           options: { fontSize: 9.5, align: 'center', bold: isBest || cur, color: v == null ? WD.muted : WD.ink, fill: { color: isBest ? 'F6E7C1' : cur ? WD.mint : ri % 2 ? WD.white : WD.paper } } };
       }));
     });
-    s.addTable([head].concat(body), { x: 0.6, y: 4.1, w: 12.1, colW: [1.9].concat(HIS.map(() => 10.2 / HIS.length)), rowH: 0.255, fontFace: WD.body, valign: 'middle', border: { type: 'solid', pt: 0.5, color: WD.line } });
+    s.addTable([head].concat(body), { x: 0.6, y: 3.9, w: 12.1, colW: [1.9].concat(HIS.map(() => 10.2 / HIS.length)), rowH: 0.255, fontFace: WD.body, valign: 'middle', border: { type: 'solid', pt: 0.5, color: WD.line } });
   }
   txt(s, `Gold column = this week (${wdRange(W.from, W.to)}, to the chosen day); the others run Sunday to Saturday. ★ = the best of the ${HIS.length} weeks. Sales = ERP invoices net of returns; "—" = not measurable yet (new accounts need a month of earlier invoices).`,
-    { x: 0.6, y: 6.72, w: 12.1, h: 0.3, fontSize: 9, color: WD.muted });
+    { x: 0.6, y: 6.74, w: 12.1, h: 0.28, fontSize: 8.5, color: WD.muted });
+
+  // best sellers of the week, with their photos
+  const topP = (W.products || []).slice(0, 6);
+  if(topP.length){
+    const photos = await Promise.all(topP.map(x => wdPhoto(wdCatalogImg(x.product), 7000)));
+    s = content('Best sellers of the week', 'Sales');
+    topP.forEach((x, i) => {
+      const col = i % 3, row = Math.floor(i / 3), cx = 0.6 + col * 4.1, cy = 1.25 + row * 2.75;
+      s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: cx, y: cy, w: 3.9, h: 2.55, rectRadius: 0.12, fill: { color: WD.white }, line: { color: WD.line, width: 1 } });
+      const ph = photos[i];
+      if(ph){ const k = Math.min(1.5 / ph.w, 1.5 / ph.h), w = ph.w * k, h = ph.h * k; s.addImage({ data: ph.data, x: cx + 0.2 + (1.5 - w) / 2, y: cy + 0.2 + (1.5 - h) / 2, w, h }); }
+      else { s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: cx + 0.2, y: cy + 0.2, w: 1.5, h: 1.5, rectRadius: 0.12, fill: { color: WD.paper }, line: { color: WD.paper } });
+        txt(s, wdBrand(x.brand).charAt(0), { x: cx + 0.2, y: cy + 0.2, w: 1.5, h: 1.5, align: 'center', valign: 'middle', fontFace: WD.head, fontSize: 48, bold: true, color: WD.gold }); }
+      txt(s, '#' + (i + 1), { x: cx + 1.85, y: cy + 0.2, w: 1.8, h: 0.4, fontFace: WD.head, fontSize: 20, bold: true, color: WD.gold });
+      txt(s, wdKD(x.net), { x: cx + 1.85, y: cy + 0.62, w: 1.95, h: 0.5, fontFace: WD.head, fontSize: 22, bold: true, color: WD.dk, fit: 'shrink' });
+      txt(s, x.qty + ' unit' + (x.qty === 1 ? '' : 's') + ' · ' + x.accounts + ' account' + (x.accounts === 1 ? '' : 's'), { x: cx + 1.85, y: cy + 1.12, w: 1.95, h: 0.35, fontSize: 10.5, color: WD.muted });
+      txt(s, wdCut(x.product, 70), { x: cx + 0.2, y: cy + 1.8, w: 3.5, h: 0.48, fontSize: 11, bold: true, color: WD.ink, valign: 'top', fit: 'shrink' });
+      txt(s, wdBrand(x.brand), { x: cx + 0.2, y: cy + 2.22, w: 3.5, h: 0.25, fontSize: 9.5, color: WD.green });
+    });
+    s.addNotes(topP.map((x, i) => `${i + 1}. ${x.product} (${wdBrand(x.brand)}) — ${wdKD(x.net)}, ${x.qty} units, ${x.accounts} accounts`).join('\n'));
+  }
 
   // 5 — brands
   s = content('Brands this week and this month', 'Sales');
-  const bWeek = W.brands.filter(b => b.week > 0).slice(0, 8);
+  const bWeek = W.brands.filter(b => b.week > 0 && !/maintenance|delivery|packaging|service|marketing/i.test(b.brand)).slice(0, 8);
   if(bWeek.length){
     s.addChart(pres.charts.BAR, [{ name: 'This week', labels: bWeek.map(b => wdBrand(b.brand)), values: bWeek.map(b => Math.round(b.week)) }],
       { x: 0.6, y: 1.3, w: 6.0, h: 5.4, barDir: 'bar', chartColors: [WD.dk], showValue: true, dataLabelPosition: 'outEnd', dataLabelFormatCode: '#,##0', dataLabelFontSize: 10,
@@ -247,12 +391,14 @@ async function buildWeeklyDeck(end){
 
   // 6 — field work
   pres.addSection({ title: 'Field work' });
-  s = content('Field work this week', 'Field work');
   const tf = { visits: tv, doctors: td, prods: R.reduce((a, r) => a + P[r].productsPresented, 0), orders: R.reduce((a, r) => a + P[r].orders, 0) };
-  [[String(tf.visits), 'field visit' + (tf.visits === 1 ? '' : 's')], [String(td), 'doctor' + (td === 1 ? '' : 's') + ' met'], [String(tf.prods), 'product' + (tf.prods === 1 ? '' : 's') + ' presented'], [String(tf.orders), 'order' + (tf.orders === 1 ? '' : 's') + ' logged in the app']].forEach((t, i) => {
+  divider('Field work', 'Section 2', 'In the field', tv ? tv + ' field visit' + (tv === 1 ? '' : 's') + ' · ' + td + ' doctor' + (td === 1 ? '' : 's') + ' met · ' + tc + ' clinic' + (tc === 1 ? '' : 's') + ' this week' : 'Visits, doctors, the KPI scorecard and the wins of the week', 'stethoscope');
+  s = content('Field work this week', 'Field work');
+  [[String(tf.visits), 'field visit' + (tf.visits === 1 ? '' : 's'), 'stethoscope'], [String(td), 'doctor' + (td === 1 ? '' : 's') + ' met', 'users'], [String(tf.prods), 'product' + (tf.prods === 1 ? '' : 's') + ' presented', 'package'], [String(tf.orders), 'order' + (tf.orders === 1 ? '' : 's') + ' logged in the app', 'cart']].forEach((t, i) => {
     const x = 0.6 + i * 3.08; card(s, x, 1.3, 2.88, 1.25);
-    txt(s, t[0], { x: x + 0.25, y: 1.38, w: 2.4, h: 0.7, fontFace: WD.head, fontSize: 32, bold: true, color: WD.dk });
-    txt(s, t[1], { x: x + 0.25, y: 2.05, w: 2.45, h: 0.4, fontSize: 12, color: WD.green, bold: true });
+    icon(s, t[2], x + 0.2, 1.5, 0.82);
+    txt(s, t[0], { x: x + 1.15, y: 1.38, w: 1.6, h: 0.7, fontFace: WD.head, fontSize: 32, bold: true, color: WD.dk });
+    txt(s, t[1], { x: x + 1.15, y: 2.02, w: 1.65, h: 0.45, fontSize: 11.5, color: WD.green, bold: true, valign: 'top' });
   });
   const fRows = [[hdr('Person'), hdr('Field visits'), hdr('Clinics'), hdr('Doctors met'), hdr('Products shown'), hdr('Joint visits'), hdr('Calls'), hdr('Orders (KD)'), hdr('Follow-ups set'), hdr('A-accounts this month')]];
   R.forEach((r, i) => { const p = P[r], f = { fill: { color: i % 2 ? WD.white : WD.paper }, align: 'center' };
@@ -260,6 +406,25 @@ async function buildWeeklyDeck(end){
       cell(p.orders ? p.orders + ' · ' + wdKD(p.orderValue) : '—', f), cell(p.followUps, f), cell(p.aTotal ? p.aVisited + ' of ' + p.aTotal : '—', f)]); });
   s.addTable(fRows, { x: 0.6, y: 2.85, w: 12.1, colW: [1.5, 1.05, 0.9, 1.1, 1.25, 1.05, 1.55, 1.35, 1.15, 1.2], rowH: 0.45, fontFace: WD.body, border: { type: 'solid', pt: 0.5, color: WD.line } });
   txt(s, 'A joint visit counts for both people who were there; orders and follow-ups for the person who logged the visit. Every visit is listed in the appendix.', { x: 0.6, y: 6.45, w: 12.1, h: 0.4, fontSize: 10, color: WD.muted });
+
+  // from the field: the photos taken on this week's visits
+  const wPh = (W.photos || []).slice(0, 6);
+  if(wPh.length){
+    const imgs = await Promise.all(wPh.map(async ph => { let src = null; try{ src = typeof loadPhotoBlob === 'function' ? await loadPhotoBlob(ph.id) : null; }catch(e){} return (await wdPhoto(src)) || (await wdPhoto(ph.thumb)); }));
+    const got = wPh.map((ph, i) => ({ ph, im: imgs[i] })).filter(x => x.im);
+    if(got.length){
+      s = content('From the field this week', 'Field work');
+      const n = got.length, cols = n <= 2 ? n : 3, rows = Math.ceil(n / cols), bw = (12.1 - 0.25 * (cols - 1)) / cols, bh = rows === 1 ? 4.6 : 2.45;
+      got.forEach(({ ph, im }, i) => {
+        const x = 0.6 + (i % cols) * (bw + 0.25), y = 1.25 + Math.floor(i / cols) * (bh + 0.2), ih = bh - 0.5;
+        const k = Math.min(bw / im.w, ih / im.h), w = im.w * k, h = im.h * k;
+        s.addShape(pres.shapes.RECTANGLE, { x, y, w: bw, h: ih, fill: { color: WD.paper }, line: { color: WD.paper } });
+        s.addImage({ data: im.data, x: x + (bw - w) / 2, y: y + (ih - h) / 2, w, h });
+        txt(s, [{ text: wdCut(ph.clinic, 40), options: { bold: true, color: WD.dk } }, { text: '  ' + ph.rep + ' · ' + wdDay(ph.date), options: { color: WD.muted } }], { x, y: y + ih + 0.06, w: bw, h: 0.36, fontSize: 11 });
+      });
+      if((W.photos || []).length > n) txt(s, '+ ' + ((W.photos || []).length - n) + ' more photos in the app', { x: 0.6, y: 6.72, w: 12.1, h: 0.3, fontSize: 10, color: WD.muted });
+    }
+  }
 
   // KPI scorecard — month to date (the same scores as the KPI screen)
   if(typeof UMCore.kpiScorecard === 'function'){
@@ -307,8 +472,9 @@ async function buildWeeklyDeck(end){
   boxes.forEach((b, i) => {
     const x = 0.6 + (i % 2) * 6.15, y = 1.3 + Math.floor(i / 2) * 2.75;
     card(s, x, y, 5.95, 2.6);
-    txt(s, [{ text: b[0] + '  ', options: { bold: true, fontFace: WD.head, fontSize: 17, color: WD.dk } }, { text: String(b[2].length), options: { bold: true, fontSize: 17, color: WD.gold } }], { x: x + 0.25, y: y + 0.15, w: 5.4, h: 0.45 });
-    txt(s, b[1], { x: x + 0.25, y: y + 0.58, w: 5.4, h: 0.3, fontSize: 10, color: WD.muted });
+    icon(s, ['building', 'refresh', 'package', 'file'][i], x + 0.2, y + 0.18, 0.62);
+    txt(s, [{ text: b[0] + '  ', options: { bold: true, fontFace: WD.head, fontSize: 17, color: WD.dk } }, { text: String(b[2].length), options: { bold: true, fontSize: 17, color: WD.gold } }], { x: x + 0.95, y: y + 0.15, w: 4.8, h: 0.45 });
+    txt(s, b[1], { x: x + 0.95, y: y + 0.58, w: 4.8, h: 0.3, fontSize: 10, color: WD.muted });
     const items = b[2].slice(0, 4);
     const runs = items.length ? items.map((it, k) => ({ text: it[0] + '  ', options: { bold: true, breakLine: false } })).reduce((acc, r, k) => acc.concat([r, { text: items[k][1], options: { color: WD.muted, breakLine: k < items.length - 1 } }]), [])
       : [{ text: 'None this week', options: { color: WD.muted, italic: true } }];
@@ -323,7 +489,8 @@ async function buildWeeklyDeck(end){
   R.forEach((r, i) => {
     const n = W.next[r], x = 0.6 + i * (colW + 0.25);
     card(s, x, 1.3, colW, 4.9);
-    txt(s, r, { x: x + 0.25, y: 1.42, w: colW - 0.5, h: 0.45, fontFace: WD.head, fontSize: 18, bold: true, color: WD.dk });
+    avatar(s, r, x + 0.22, 1.42, 0.5, i);
+    txt(s, r, { x: x + 0.85, y: 1.42, w: colW - 1.05, h: 0.5, fontFace: WD.head, fontSize: 18, bold: true, color: WD.dk, valign: 'middle' });
     const lines = [];
     lines.push({ text: n.planned.length + ' planned visit' + (n.planned.length === 1 ? '' : 's'), options: { bold: true, color: WD.green, breakLine: true } });
     n.planned.slice(0, 5).forEach(p => lines.push({ text: new Date(p.date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short' }) + ' · ' + wdCut(p.clinic, 30), options: { breakLine: true } }));
@@ -336,6 +503,21 @@ async function buildWeeklyDeck(end){
     (n.aMissing.length ? n.aMissing.slice(0, 4) : [P[r].aTotal ? 'All visited ✓' : 'No key (A) accounts assigned']).forEach((c, k, a) => lines.push({ text: wdCut(c, 34), options: { breakLine: k < a.length - 1 } }));
     txt(s, lines, { x: x + 0.25, y: 1.95, w: colW - 0.45, h: 4.1, fontSize: 12, valign: 'top', fit: 'shrink' });
   });
+
+  // closing: the week in three numbers, then the appendix
+  s = pres.addSlide({ masterName: 'UM_TITLE', sectionTitle: 'Field work' });
+  if(ART.cover) s.background = { data: ART.cover };
+  txt(s, 'THANK YOU', { x: 0.6, y: 1.55, w: 9, h: 0.4, fontSize: 14, bold: true, color: WD.gold, charSpacing: 4 });
+  txt(s, 'The week in three numbers', { x: 0.6, y: 1.92, w: 10, h: 0.75, fontFace: WD.head, fontSize: 36, bold: true, color: WD.white });
+  const nPlanned = R.reduce((a, r) => a + W.next[r].planned.length, 0), nFu = R.reduce((a, r) => a + W.next[r].followUps.length, 0);
+  [[W.salesCovered ? wdKD(team.week) : '—', 'invoiced this week', 'chart'], [team.target ? wdPct(team.mtd / team.target) : wdKD(team.mtd), team.target ? 'of the month\'s target' : 'this month', 'target'], [String(nWins), 'wins this week', 'award']].forEach((t, i) => {
+    const x = 0.6 + i * 3.6;
+    icon(s, t[2], x, 2.95, 0.75);
+    txt(s, t[0], { x, y: 3.78, w: 3.4, h: 0.9, fontFace: WD.head, fontSize: 40, bold: true, color: WD.gold, fit: 'shrink' });
+    txt(s, t[1], { x, y: 4.62, w: 3.4, h: 0.4, fontSize: 15, color: WD.white });
+  });
+  txt(s, 'Next week: ' + nPlanned + ' planned visit' + (nPlanned === 1 ? '' : 's') + ' · ' + nFu + ' follow-up' + (nFu === 1 ? '' : 's') + ' due · every detail of this week in the appendix',
+    { x: 0.6, y: 5.6, w: 10.5, h: 0.5, fontSize: 14, color: WD.soft });
 
   // appendix — every detail, in plain tables
   pres.addSection({ title: 'Appendix' });
