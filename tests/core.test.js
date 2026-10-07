@@ -871,6 +871,27 @@ describe('rep and customer matching', () => {
     assert.equal(w.visits.length, 3); assert.deepEqual(w.visits[0].doctors, ['Dr. One']);
     assert.equal(w.salesCovered, true);
   });
+  test('catalogGaps: the Intensiv list and products of brands the catalog lacks, priced from the invoices; services never', () => {
+    const products = [{ id: 'p1', name: 'Sonicare 4100', brand: 'Philips' }, { id: 'OS40M-DS/3', name: 'Old strip name', brand: 'Intensiv' }];
+    const R = (product, brand, qty, gross, date, type) => ({ product, brand, qty, gross, net: gross, date: date || '2026-10-01', type: type || 'invoice' });
+    const rows = [
+      R('OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', 'Intensiv', 2, 70, '2026-09-20'),
+      R('Bio Gel A', 'B&L Biotech', 1, 9), R('Bio Gel A', 'B&L Biotech', 2, 18, '2026-10-03'), R('Bio Gel A', 'B&L Biotech', 1, 12), R('Bio Gel A', 'B&L Biotech', 1, 0),
+      R('Bio Gel A', 'B&L Biotech', -1, -9, '2026-10-04', 'return'),
+      R('Sonicare 4300', 'Philips Export BV', 1, 49),                    // Philips is in the catalog: not offered
+      R('Inspection Fee for Intensiv Handpiece', 'Maintenance ', 1, 10), R('Delivery', 'Delivery Charge', 1, 2), R('Kit A', 'Combo/Bundle/Kit', 1, 30),
+      R('Tepe poster', 'Tepe - Marketing Materials / Items', 1, 0)];
+    const builtIn = [{ id: 'OS40M-DS/3', name: 'OS40M Intensiv Ortho-Strips Coarse, Double-Sided CONTOURING', brand: 'Intensiv', price: 35 },
+      { id: 'OS80XC-DS/3', name: 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', brand: 'Intensiv', price: 35 }];
+    const g = core.catalogGaps(products, rows, builtIn);
+    assert.deepEqual(g.map(x => [x.product.brand, x.product.name, x.product.price, x.source, x.sold]), [
+      ['B&L Biotech', 'Bio Gel A', 9, 'erp', 5],                            // usual price 9 (twice) over 12; the return is not "sold"
+      ['Intensiv', 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', 35, 'list', 2]]); // OS40M is in by its code
+    assert.equal(g[0].last, '2026-10-03'); assert.equal(g[1].last, '2026-09-20');
+    assert.equal(g[0].product.id, 'erp-bio-gel-a');
+    g[1].product.price = 1; assert.equal(builtIn[1].price, 35);          // a copy, never the list itself
+    assert.deepEqual(core.catalogGaps(products.concat(g.map(x => x.product)), rows, builtIn), []);
+  });
   test('monthlyTrend: month by month with each month\'s own target, same-day comparison, no invented zeros', () => {
     const row = (d, doc, cust, net, product) => [d, doc, 0, product || 'P', 1, net, net, 0, 'Mariam Zohair', 'Intensiv', cust, 'Clinics', 0, ''];
     const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];
