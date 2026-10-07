@@ -842,7 +842,8 @@ describe('rep and customer matching', () => {
         row('2026-10-06', 'S4', 'Ghaith Al Manfe', 'New Smile', 90, 'Strip'),               // first ever invoice
         row('2026-10-07', 'S5', 'Ghaith Al Manfe', 'Gamma Center', 30, 'Strip'),            // back after 3 months
         row('2026-10-07', 'S6', 'Ghaith Al Manfe', 'Beta Clinic', 0, 'Sample paste', 'Hismile'), // a free sample
-        row('2026-10-07', 'S7', 'Ghaith Al Manfe', 'My Fatoorah', 12, 'Strip')]}] },       // channel: sales yes, wins no
+        row('2026-10-07', 'S7', 'Ghaith Al Manfe', 'My Fatoorah', 12, 'Strip'),             // channel: sales yes, wins no
+        row('2026-10-07', 'S8', 'Mariam Zohair', 'Marketing Philips', 0, 'Demo brush', 'Philips')]}] }, // internal marketing stock: never a win, never listed
       visits: [
         { id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'a', doctorIds: ['d1'], products: ['x', 'y'], orderTaken: true, orderTotal: 40, nextFollowUp: '2026-10-13', photos: [{ id: 'p' }] },
         { id: 'v2', date: '2026-10-06', rep: 'Dr. Ghaith', withRep: 'Mariam', clinicId: 'n', products: ['x'] },
@@ -870,6 +871,23 @@ describe('rep and customer matching', () => {
     assert.deepEqual(w.next.Mariam.followUps, [{ date: '2026-10-13', clinic: 'Alpha Dental' }]);
     assert.equal(w.visits.length, 3); assert.deepEqual(w.visits[0].doctors, ['Dr. One']);
     assert.equal(w.salesCovered, true);
+    // the last 8 weeks: this one (Oct 4–8) last, each earlier one Sunday–Saturday
+    assert.equal(w.history.length, 8);
+    assert.deepEqual([w.history[7].from, w.history[7].to, w.history[7].current, w.history[6].from, w.history[6].to], ['2026-10-04', '2026-10-08', true, '2026-09-27', '2026-10-03']);
+    assert.deepEqual([w.history[7].sales, w.history[7].invoices, w.history[7].accounts, w.history[6].sales], [197, 4, 3, 170]); // invoices with a value; My Fatoorah is not an account
+    assert.equal(w.history[7].newAccounts, 1);               // files from 10 Jul: a month of history before this week
+    assert.equal(w.history[0].newAccounts, 0);               // week of 16 Aug: files from 10 Jul are a month earlier, so measurable (none)
+    assert.equal(core.weeklyReport(Object.assign({}, data, { today: '2026-10-08' }), { end: '2026-07-16', reps: ['Mariam'] }).history[7].newAccounts, null); // 12–16 Jul: files only from 10 Jul
+    assert.ok(!w.wins.samples.some(x => /Marketing/.test(x.account)) && !w.wins.invoices.some(i => i.doc === 'S8'));
+    const hl = core.weeklyHighlights(w);
+    assert.equal(hl[0], 'Best sales week of the last 8: KD 197 invoiced.');
+    assert.ok(hl.some(t => /^1 new account placed a first order: New Smile/.test(t)));
+    assert.ok(!hl.some(t => /0 of|down|below/i.test(t)));   // achievements only
+    // a weaker week: no "best", no growth line — the true positives remain
+    const w2 = JSON.parse(JSON.stringify(w)); w2.history[7].sales = 5; w2.history[6].sales = 170; w2.team.week = 5; w2.team.prevWeek = 170;
+    w2.history[7].byRep = { Mariam: 5, 'Dr. Ghaith': 0 };
+    const hl2 = core.weeklyHighlights(w2);
+    assert.ok(!hl2.some(t => /^Best sales week|^Sales up|above the average/.test(t)) && hl2.some(t => /new account/.test(t)));
   });
   test('catalogGaps: the Intensiv list and products of brands the catalog lacks, priced from the invoices; services never', () => {
     const products = [{ id: 'p1', name: 'Sonicare 4100', brand: 'Philips' }, { id: 'OS40M-DS/3', name: 'Old strip name', brand: 'Intensiv' }];
