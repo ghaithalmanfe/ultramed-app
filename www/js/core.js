@@ -1903,6 +1903,18 @@
         reactivated: newOk ? hw.reactivated.filter(mineW).length : null, samples: hcov ? hw.samples.filter(mineW).length : null,
         fieldVisits: hFv, doctorsMet: Object.keys(hDocs).length });
     }
+    // the week's best-selling products (team, invoices with a value; internal
+    // marketing moves excluded) and the photos taken on the week's visits
+    var pAgg = {};
+    rows.forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || r.date < from || r.date > to || !(r.net > 0) || r.type === 'return' || (!x.clinicId && isInternalAccount(r.customer))) return;
+      var k = String(r.product || '').trim(); if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(k)) return;   // services (inspection fees, delivery) are not best sellers
+      var a = pAgg[k] || (pAgg[k] = { product: k, brand: normBrand(r.brand), qty: 0, net: 0, accounts: {} });
+      a.qty += Number(r.qty) || 0; a.net += r.net; a.accounts[x.clinicId || r.customer] = 1; });
+    var products = Object.keys(pAgg).map(function(k){ var a = pAgg[k]; return { product: a.product, brand: a.brand, qty: a.qty, net: rnd(a.net), accounts: Object.keys(a.accounts).length }; })
+      .sort(function(a, b){ return b.net - a.net; });
+    var photos = [];
+    vis.slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).forEach(function(v){
+      (v.photos || []).forEach(function(ph){ if(ph && ph.id) photos.push({ id: ph.id, thumb: ph.thumb || null, date: v.date, rep: v.rep, clinic: (byId[v.clinicId] || {}).name || '—' }); }); });
     var team = { week: sum(from, to), prevWeek: sum(pFrom, pTo), mtd: 0, target: 0 };
     reps.forEach(function(rep){ team.mtd += perRep[rep].mtd; if(perRep[rep].target) team.target += perRep[rep].target; });
     team.week = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].week; }, 0));
@@ -1911,7 +1923,7 @@
     return {
       from: from, to: to, prevFrom: pFrom, prevTo: pTo, monthStart: mStart, nextFrom: nFrom, nextTo: nTo,
       salesCovered: covered(from, to), prevCovered: covered(pFrom, pTo), historyFrom: earliest,
-      reps: reps, perRep: perRep, team: team, brands: brands, weeks: weeks, next: next, history: history,
+      reps: reps, perRep: perRep, team: team, brands: brands, weeks: weeks, next: next, history: history, products: products, photos: photos,
       wins: winsR,
       visits: vis.slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).map(function(v){
         return { date: v.date, rep: v.rep, withRep: v.withRep || null, clinic: (byId[v.clinicId] || {}).name || '—', type: v.callOnly ? 'call' : v.orderOnly ? 'phone order' : 'visit',
