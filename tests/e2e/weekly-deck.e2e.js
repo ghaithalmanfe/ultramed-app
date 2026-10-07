@@ -109,6 +109,8 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   check('appendix lists every invoice of the week (5 with a value + the sample line)', /SINV7003/.test(all) && /SINV7004/.test(all) && /SINV7005/.test(all) && /SINV7006/.test(all) && /SINV7007/.test(all) && !/SINV7002/.test(all.split('every invoice')[1] || ''), '');
   check('appendix lists every visit and call with doctors met', /Alpha Dental Center visit Dr\. Huda Ali/.test(all) && /Dr\. Ghaith \+ Mariam/.test(all) && /Beta Clinic call/.test(all), '');
   check('next week shows the planned visits and follow-ups', /1 planned visit/.test(all) && /Mon · Beta Clinic/.test(all) && /13 Oct · Alpha Dental Center/.test(all), '');
+  const kpi = T.find(t => /KPI scorecard – month to date/.test(t)) || '';
+  check('KPI slide: the 10 measures with weights and a total out of 100 for each person', /Total score/.test(kpi) && /Sales achievement 30%/.test(kpi) && /Answering clients on time 5%/.test(kpi) && (kpi.match(/\d+ \/ 100/g) || []).length === 3, kpi.slice(0, 300));
   // the button downloads a real .pptx
   await page.evaluate(() => openWeeklyDeck());
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.evaluate(() => downloadWeeklyDeck())]);

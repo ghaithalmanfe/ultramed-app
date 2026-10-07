@@ -772,6 +772,58 @@ describe('rep and customer matching', () => {
     assert.deepEqual(details.map(d => [d.doc, d.date, d.net]), [['S1', '2026-10-02', 200], ['S2', '2026-10-03', 33.75]]);
     assert.deepEqual(details[0].items, [{ product: 'x', brand: 'Intensiv', qty: 1, net: 200 }]);
   });
+  test('kpiScorecard: the 10 management measures, each from the app\'s own data', () => {
+    // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
+    const row = (d, doc, cust, gross, net, product, brand, type) => [d, doc, type ? 1 : 0, product || 'P', 1, gross, net, 0, 'Mariam Zohair', brand || 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [
+      { id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [{ id: 'd1', name: 'Dr. One', influence: 'decider' }, { id: 'd2', name: 'Dr. Two' }] },
+      { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'A', doctors: [{ id: 'd3', name: 'Dr. Three' }] },
+      { id: 'c', name: 'Gamma Clinic', rep: 'Mariam', cls: 'B', doctors: [] },
+      { id: 'moh', name: 'Ministry Of Health', rep: 'Renova', shared: true, sharedWith: ['Renova', 'Mariam'], doctors: [] },
+      { id: 'h', name: 'Royale Hayat Hospital', rep: 'Mariam', cls: 'B', doctors: [] }];
+    const T = (d, h) => new Date(d + 'T' + h + ':00').getTime();
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 1000, brands: { Intensiv: 600, 'Philips Sonicare': 400 } } },
+      erpSales: { periods: [{ id: 'p', from: '2026-08-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [
+        row('2026-08-10', 'S0', 'Alpha Dental', 100, 60),
+        row('2026-09-05', 'F1', 'My Fatoorah', 20, 20, 'Strip'),
+        row('2026-10-01', 'S1', 'Alpha Dental', 300, 190),                 // 36.7% – A account, within 40%
+        row('2026-10-04', 'S2', 'Gamma Clinic', 100, 60),                  // 40% – B account, over 35%; Gamma's first order ever
+        row('2026-10-05', 'S3', 'Alpha Dental', 50, 50, 'Sonic 4300', 'Philips'), // new product for Alpha
+        row('2026-10-06', 'S4', 'Beta Clinic', 80, 56),                    // first order ever: new account, 30%
+        row('2026-10-07', 'R1', 'Alpha Dental', 0, -9, 'Strip', 'Intensiv', true), // a return: 9 of 386 sold = 2.3%
+        row('2026-10-07', 'F2', 'My Fatoorah', 30, 30, 'Strip')] }] },
+      visits: [
+        { id: 'v1', date: '2026-10-04', ts: T('2026-10-04', '09:00'), rep: 'Mariam', clinicId: 'a', doctorIds: ['d1', 'd2'], products: ['x'] },
+        { id: 'v2', date: '2026-10-05', ts: T('2026-10-05', '09:00'), rep: 'Mariam', clinicId: 'moh', doctorIds: [], products: [] },  // incomplete report
+        { id: 'v3', date: '2026-10-06', ts: T('2026-10-06', '10:00'), rep: 'Renova', withRep: 'Mariam', clinicId: 'b', doctorIds: ['d3'], orderTaken: true },
+        { id: 'v4', date: '2026-10-07', ts: T('2026-10-07', '09:00'), rep: 'Mariam', clinicId: 'c', doctorIds: ['x'], noOrderReason: 'stocked' }],
+      dayPlans: { '2026-10-04': { Mariam: [{ id: 'a', at: T('2026-10-04', '08:00') }] }, '2026-10-05': { Mariam: [{ id: 'moh', at: T('2026-10-05', '11:00') }] },
+        '2026-10-07': { Mariam: ['c'] } },                                 // 6 Oct: led no visit (joint only) → not counted
+      events: [
+        { id: 'e1', kind: 'issue', type: 'escalation', rep: 'Mariam', clinicId: 'a', at: '2026-10-05T10:00:00', text: 'called the office' },
+        { id: 'e2', kind: 'issue', type: 'request', rep: 'Mariam', clinicId: 'b', at: '2026-10-05T10:00:00', resolvedAt: '2026-10-05T18:00:00' },
+        { id: 'e3', kind: 'issue', type: 'request', rep: 'Mariam', clinicId: 'c', at: '2026-10-06T10:00:00', resolvedAt: '2026-10-08T10:00:00' },
+        { id: 'e4', kind: 'stand', rep: 'Mariam', clinicId: 'a', at: '2026-09-20', checks: ['2026-10-03'] }] };
+    const k = core.kpiScorecard(data, { rep: 'Mariam', to: '2026-10-08', nowMs: T('2026-10-08', '12:00') });
+    const it = Object.fromEntries(k.items.map(x => [x.key, x]));
+    assert.equal(k.items.reduce((a, x) => a + x.weight, 0), 100);
+    assert.equal(k.workdays, 6);                                           // Thu 1, Sun 4 – Thu 8 Oct
+    assert.match(it.sales.value, /^38% achieved · on pace for 146%/);      // 190+60+50+56+30−9 = 377 of 1000 by 8 Oct
+    assert.match(it.visits.value, /^0\.7 a day \(4 in 6 working days\)/); // the joint visit counts for her too
+    assert.match(it.discipline.value, /67% days planned before the first visit · 67% complete visit reports/); // 5 Oct planned after the visit; v2 incomplete
+    assert.match(it.doctors.value, /^4 doctors met · decision maker known in 1 of 2 A accounts/);
+    assert.match(it.discount.value, /1 of 4 invoices over the limit/); assert.equal(it.discount.over[0].doc, 'S2');
+    assert.match(it.issues.value, /^1 escalation · returns 2\.3% of sales/);
+    assert.match(it.rx.value, /KD 30 · \+50% on the same days last month/); assert.equal(it.rx.score, 1);
+    assert.match(it.gov.value, /^50% of 1 government accounts visited per week/); // Ministry seen in week 2 only; the private hospital is not government
+    assert.match(it.newbiz.value, /^1 new product placement · 2 new accounts/);
+    assert.match(it.response.value, /^1 of 2 answered within 24h/);
+    assert.deepEqual(k.stands, { active: 1, checked: 1 });
+    // doctors target scales with the period: 60 a month × 6 of 22 working days = 16. Plain-id plan entries (older data) have no time: a plan existed, not a miss
+    assert.match(it.discipline.value, /^67%/);
+    assert.equal(k.total, Math.round((0.85 * 30 + (4 / 6 / 5) * 10 + (2 / 3) * 10 + (0.6 * 4 / 16 + 0.4 * 0.5) * 10 + 0.75 * 10 + it.issues.score * 10 + 5 + 0.5 * 5 + 5 + 0.5 * 5)));
+  });
   test('weeklyReport: the Thursday deck figures – sales, month to date, wins, field work, next week', () => {
     const row = (d, doc, sm, cust, net, product, brand, qty) => [d, doc, 0, product || 'P', qty == null ? 1 : qty, net, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
     const clinics = [
