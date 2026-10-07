@@ -336,6 +336,8 @@ function renderMore(){
     <div class="section-title">Tools</div>
     ${tile(I('share'),'Export & share','CSV files and report sharing','openExport()')}
     ${sup ? tile(I('chart'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : ''}
+    ${tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()')}
+    ${tile(I('clipboard'),'Requests, escalations & stands','Log client requests, escalations and stands','openClientLog()')}
     ${tile(I('bot'),'Assistant','Ask anything about your data','openAssistant()')}
     ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
     ${sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}
@@ -816,7 +818,7 @@ async function togglePlanClinic(id){
   const today = todayStr();
   let entries = (window._planEntries || []).map(e => typeof e==='string' ? {id:e, note:''} : e);
   if(window._planMine.has(id)){ window._planMine.delete(id); entries = entries.filter(e=>planEntryId(e)!==id); }
-  else { window._planMine.add(id); if(!entries.some(e=>planEntryId(e)===id)) entries.push({id, note:''}); }
+  else { window._planMine.add(id); if(!entries.some(e=>planEntryId(e)===id)) entries.push({id, note:'', at: Date.now()}); } // `at`: when it was planned (KPI: plan before the first visit)
   window._planEntries = entries;
   dayPlans[today] = dayPlans[today] || {};
   if(entries.length) dayPlans[today][currentUser.name] = entries;
@@ -942,7 +944,7 @@ async function saveDatePlan(){
   await persist('dayPlans');
 }
 async function addDatePlanClinic(id){
-  window._dpMine.push({id, note:''});
+  window._dpMine.push({id, note:'', at: Date.now()});
   await saveDatePlan();
   renderDatePlanPicker();
   renderDatePlanSelected();

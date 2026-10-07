@@ -132,12 +132,12 @@ async function saveTargets(){
 }
 async function saveBenchmarks(){
   const clamp = v => Math.max(0, Math.min(100, parseInt(v)||0));
-  BENCHMARKS = {
+  BENCHMARKS = Object.assign({}, BENCHMARKS, { // keep the KPI settings saved in the same document
     coverage: clamp(document.getElementById('bmCoverage').value),
     priority: clamp(document.getElementById('bmPriority').value),
     conversion: clamp(document.getElementById('bmConversion').value),
     tasks: clamp(document.getElementById('bmTasks').value),
-  };
+  });
   await persist('benchmarks');
   showToast('✅ Evaluation targets updated');
   if(document.getElementById('scorecards')) renderScorecards();
@@ -247,6 +247,7 @@ function renderAdminTerritory(){
       <div class="chip-row">
         ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
         <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
+        <div class="chip small ${UMCore.isGovClinic(c)?'on':''}" onclick="toggleGovClinic('${c.id}')" title="Government account: must be visited every week">${I('building')} Gov</div>
       </div>
     </div>`;
   }).join('') + (total>40 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Showing 40 of ${total} — type a clinic name above to find the others</div>` : '');
