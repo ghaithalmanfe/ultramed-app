@@ -34,9 +34,10 @@ function renderProducts(){
   filtered.forEach(p=>{ const b = p.brand||'Other'; (byBrand[b]=byBrand[b]||[]).push(p); });
   const brands = Object.keys(byBrand).sort((a,b)=>byBrand[b].length-byBrand[a].length || a.localeCompare(b));
   brands.forEach(b=>byBrand[b].sort((x,y)=>(x.cat||'').localeCompare(y.cat||'')||x.name.localeCompare(y.name)));
-  if(brands.length===0){ wrap.innerHTML = `<div class="empty">No products found.</div>`; return; }
+  const gapNote = catalogGapNote();
+  if(brands.length===0){ wrap.innerHTML = gapNote + `<div class="empty">No products found.</div>`; return; }
   if(q) brands.forEach(b=>openBrands.add(b));
-  wrap.innerHTML = brands.map(b=>{
+  wrap.innerHTML = gapNote + brands.map(b=>{
     const open = openBrands.has(b);
     return `<div class="brand-group card" style="padding:6px 12px;">
       <div class="brand-head" onclick="toggleBrand('${esc(b).replace(/'/g,"\\'")}')">
@@ -100,6 +101,73 @@ async function submitAddProduct(){
   showToast('Product added');
 }
 
+
+// ---- MISSING FROM THE CATALOG (supervisor) ----
+// Products the team sells (ERP files) or should carry (the Intensiv list) that
+// the catalog does not have yet: shown on the Products screen, added only
+// when the supervisor ticks them and taps Add.
+let _gapMemo = { k: null, v: [] };
+function catalogGapList(){
+  const periods = UMCore.erpPeriodsOf(erpSales);
+  const k = products.length + '|' + products.map(p => p.id).join(',').length + '|' + periods.map(p => p.id + ':' + (p.rows || []).length).join(',');
+  if(_gapMemo.k === k) return _gapMemo.v;
+  const rows = []; periods.forEach(p => UMCore.unpackErpRows(p.rows).forEach(r => rows.push(r)));
+  _gapMemo = { k, v: UMCore.catalogGaps(products, rows, typeof INTENSIV_PRODUCTS !== 'undefined' ? INTENSIV_PRODUCTS : []) };
+  return _gapMemo.v;
+}
+function catalogGapNote(){
+  if(!currentUser || currentUser.role !== 'supervisor') return '';
+  let g; try{ g = catalogGapList(); }catch(e){ console.error('catalog gaps', e); return ''; }
+  if(!g.length) return '';
+  const byB = {}; g.forEach(x => { byB[x.product.brand] = (byB[x.product.brand] || 0) + 1; });
+  return `<div class="card clickable" style="margin-bottom:10px; border:1.5px solid var(--amber);" onclick="openCatalogGaps()">
+    <div style="font-weight:800; font-size:13.5px;">${g.length} product${g.length === 1 ? '' : 's'} missing from the catalog</div>
+    <div style="font-size:12px; color:var(--muted); margin-top:2px;">${Object.keys(byB).map(b => esc(b) + ' (' + byB[b] + ')').join(' · ')} — tap to review and add</div></div>`;
+}
+function openCatalogGaps(){
+  if(!requireAdmin()) return;
+  const g = catalogGapList();
+  if(!g.length){ showToast('Nothing missing from the catalog'); return; }
+  const byB = {}; g.forEach((x, i) => { (byB[x.product.brand] = byB[x.product.brand] || []).push(i); });
+  showModal(`
+    <h3 style="margin-top:0;">Missing from the catalog</h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Products sold in the ERP sales files under a brand the catalog has nothing of, and the Intensiv handpieces and Ortho-Strips. Price = the usual invoiced unit price. Untick anything you do not want, then tap Add.</p>
+    ${Object.keys(byB).map(b => `<div class="card" style="margin-bottom:8px; padding:8px 12px;">
+      <label style="display:flex; align-items:center; gap:8px; font-weight:800; margin:0;"><input type="checkbox" checked onchange="document.querySelectorAll('.cgap-${slugify(b)}').forEach(x => x.checked = this.checked)"> ${esc(b)} <span style="color:var(--muted); font-weight:400;">(${byB[b].length})</span></label>
+      ${byB[b].map(i => { const x = g[i], p = x.product; return `<label style="display:flex; align-items:flex-start; gap:8px; font-size:12.5px; margin:7px 0 0; font-weight:400;">
+        <input type="checkbox" class="cgap cgap-${slugify(b)}" data-i="${i}" checked style="margin-top:3px;">
+        <span style="flex:1;">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${p.cat && p.cat !== p.brand ? esc(p.cat) + ' · ' : ''}${x.sold ? x.sold + ' sold in the files' + (x.last ? ', last ' + fmtDate(x.last) : '') : x.source === 'list' ? 'Intensiv list' : ''}</span></span>
+        <b style="white-space:nowrap;">${p.price != null ? Number(p.price).toFixed(2) + ' KD' : '—'}</b></label>`; }).join('')}
+    </div>`).join('')}
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn" id="cgapAdd" onclick="addCatalogGaps()">Add selected</button>
+      <button class="btn secondary" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+async function addCatalogGaps(){
+  if(!requireAdmin()) return;
+  const g = catalogGapList();
+  const pick = [...document.querySelectorAll('.cgap')].filter(x => x.checked).map(x => g[+x.dataset.i]).filter(Boolean);
+  if(!pick.length){ showToast('Tick at least one product'); return; }
+  const btn = document.getElementById('cgapAdd'); if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  const ids = new Set(products.map(p => String(p.id)));
+  const added = pick.map(x => { const p = Object.assign({}, x.product); if(p.id == null || ids.has(String(p.id))) p.id = uid(); ids.add(String(p.id)); return p; });
+  products.push(...added);
+  assignProductKeys();
+  const ok = await persist('products');
+  if(ok === false){
+    const gone = new Set(added);
+    products = products.filter(p => !gone.has(p)); assignProductKeys();
+    if(btn){ btn.disabled = false; btn.textContent = 'Add selected'; }
+    showToast('⚠️ Not saved — nothing was added. Try again with a connection.');
+    return;
+  }
+  _gapMemo = { k: null, v: [] };
+  closeModal();
+  added.forEach(p => openBrands.add(p.brand));
+  if(document.getElementById('productListWrap')) renderProducts();
+  showToast(`✅ ${added.length} product${added.length === 1 ? '' : 's'} added to the catalog`);
+}
 
 // ---- PLAYBOOK ----
 // Visual guidance: every product suggestion carries its PHOTO. ERP product

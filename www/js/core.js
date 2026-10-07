@@ -3102,6 +3102,43 @@
     hismile: 'hismile', flash: 'flash', undo: 'undo', silonn: 'silonn',
     intensiv: 'intensiv', blbiotech: 'b&l biotech',
   };
+  // Products the catalog is missing: every item of `builtIn` (e.g. the
+  // Intensiv list) not in the catalog by name or code, plus every product sold
+  // in the ERP files under a brand the catalog has nothing of (services,
+  // delivery, packaging, marketing items and kits excluded). Each comes with
+  // the usual invoiced unit price (gross ÷ qty, most frequent), how many were
+  // sold and the last invoice date. Nothing is added here — the supervisor
+  // ticks what to add. Pure.
+  var NON_PRODUCT_RE = /maintenance|delivery|packaging|service|marketing|inspection fee|freight|shipping/i;
+  function catalogGaps(products, rows, builtIn){
+    var key = function(n){ return String(n || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+    var names = {}, ids = {}, brands = {};
+    (products || []).forEach(function(p){ if(!p) return; names[key(p.name)] = 1; if(p.id != null) ids[key(p.id)] = 1; brands[normBrand(p.brand)] = 1; });
+    var out = [], taken = {};
+    (builtIn || []).forEach(function(p){
+      if(names[key(p.name)] || (p.id != null && ids[key(p.id)])) return;
+      taken[key(p.name)] = 1;
+      var c = {}; for(var k in p) c[k] = p[k];
+      out.push({ product: c, source: 'list', sold: 0, last: null });
+    });
+    var agg = {}, listIdx = {};
+    out.forEach(function(x, i){ listIdx[key(x.product.name)] = i; });
+    (rows || []).forEach(function(r){
+      var b = normBrand(r.brand), k = key(r.product);
+      if(listIdx[k] != null && r.type !== 'return'){ var li = out[listIdx[k]]; li.sold += Number(r.qty) || 0; if(!li.last || r.date > li.last) li.last = r.date; }
+      if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(r.product || '') || b === 'bundles' || brands[b] || names[k] || taken[k]) return;
+      var a = agg[k] || (agg[k] = { name: String(r.product).replace(/\s+/g, ' ').trim(), brand: String(r.brand || 'Other').trim(), prices: {}, sold: 0, last: '' });
+      if(r.qty > 0 && r.gross > 0){ var u = Math.round(r.gross / r.qty * 1000) / 1000; a.prices[u] = (a.prices[u] || 0) + 1; }
+      if(r.type !== 'return'){ a.sold += Number(r.qty) || 0; if(r.date > a.last) a.last = r.date; }
+    });
+    Object.keys(agg).forEach(function(k){
+      var a = agg[k], best = null;
+      Object.keys(a.prices).forEach(function(u){ if(best == null || a.prices[u] > a.prices[best] || (a.prices[u] === a.prices[best] && +u > +best)) best = u; });
+      out.push({ product: { id: 'erp-' + slugify(a.name), name: a.name, brand: a.brand, cat: a.brand, price: best == null ? null : +best, stock: true },
+        source: 'erp', sold: a.sold, last: a.last || null });
+    });
+    return out.sort(function(x, y){ return x.product.brand.localeCompare(y.product.brand) || (x.source === y.source ? 0 : x.source === 'list' ? -1 : 1) || x.product.name.localeCompare(y.product.name); });
+  }
   function normBrand(s){
     var key = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     return BRAND_ALIASES[key] || String(s || '').toLowerCase().trim();
@@ -3734,7 +3771,7 @@
     matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, monthlyTrend, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
