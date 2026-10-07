@@ -167,3 +167,51 @@ async function toggleGovClinic(clinicId){
   showToast(`${c.name}: ${c.gov ? 'government account – visited every week' : 'not a government account'}`);
   renderAdminTerritory();
 }
+
+// Month by month: the same month figures as the rest of the app, side by side
+// for the last months (UMCore.monthlyTrend), so progress is visible at a glance.
+let _mbmRep = null, _mbmN = 6;
+function openMonthByMonth(){
+  const sup = currentUser.role === 'supervisor';
+  if(!_mbmRep || (!sup && _mbmRep !== currentUser.name)) _mbmRep = sup ? 'all' : currentUser.name;
+  const reps = sup ? REPS.slice() : [currentUser.name];
+  const T = UMCore.monthlyTrend(Object.assign(digestData(), { today: todayStr() }), { reps, months: _mbmN, settings: kpiSettings() });
+  const M = T.months, team = _mbmRep === 'all';
+  const of = m => team ? m.team : m.byRep[_mbmRep];
+  const name = m => { const n = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m.month.slice(5, 7), 10) - 1] + ' ' + m.month.slice(2, 4); return m.partial ? n + ' (to ' + parseInt(m.to.slice(8, 10), 10) + ')' : n; };
+  const kd = n => 'KD ' + Math.round(n).toLocaleString('en-US');
+  const arrow = (a, b) => a == null || b == null || !(b > 0) || a === b ? '' : a >= b ? `<span style="color:var(--sage-ink); font-weight:700;">▲ ${Math.round((a - b) / b * 100)}%</span>` : `<span style="color:var(--coral-ink); font-weight:700;">▼ ${Math.round((b - a) / b * 100)}%</span>`;
+  const bar = (x, max, color) => `<div style="height:8px; border-radius:4px; background:var(--paper); overflow:hidden; margin-top:3px;"><div style="width:${max > 0 && x ? Math.round(Math.min(1, x / max) * 100) : 0}%; height:100%; background:${color};"></div></div>`;
+  const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_mbmRep === x ? 'on' : ''}" onclick="_mbmRep='${esc(x)}'; openMonthByMonth()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
+  const per = [[6, '6 months'], [12, '12 months']].map(([k, l]) => `<div class="chip small ${_mbmN === k ? 'on' : ''}" onclick="_mbmN=${k}; openMonthByMonth()">${l}</div>`).join('');
+  const dayN = parseInt(T.end.slice(8, 10), 10);
+  const maxS = Math.max(0, ...M.map(m => Math.max(of(m).sales || 0, of(m).target || 0)));
+  const maxSame = Math.max(0, ...M.map(m => of(m).sameDays || 0));
+  const sales = M.map((m, i) => { const x = of(m), p = i ? of(M[i - 1]) : null;
+    return `<div style="margin-top:9px;"><div class="row-between" style="font-size:12.5px;"><b>${name(m)}</b><span>${x.sales == null ? '<span style="color:var(--muted);">no sales file</span>' : kd(x.sales) + (x.target ? ' of ' + kd(x.target) + ' · <b>' + Math.round(x.pct * 100) + '%</b>' : '')}</span></div>
+      ${bar(x.sales, maxS, 'var(--sage)')}${x.target ? bar(x.target, maxS, 'var(--line, #d9e2dc)') : ''}</div>`; }).join('');
+  const same = M.map((m, i) => { const x = of(m), p = i ? of(M[i - 1]) : null;
+    return `<div style="margin-top:8px;"><div class="row-between" style="font-size:12.5px;"><b>${name(m).replace(/ \(to \d+\)$/, '')}</b><span>${x.sameDays == null ? '<span style="color:var(--muted);">no sales file</span>' : kd(x.sameDays) + ' ' + arrow(x.sameDays, p && p.sameDays)}</span></div>${bar(x.sameDays, maxSame, 'var(--amber)')}</div>`; }).join('');
+  const nR = team ? reps.length : 1;
+  const kpiOf = m => { if(!team) return of(m).kpi; const v = reps.map(r => m.byRep[r].kpi).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
+  const perDay = m => m.workdays ? Math.round((of(m).fieldVisits || 0) / m.workdays / nR * 10) / 10 : 0;
+  const td = 'style="text-align:center; padding:5px 3px;"';
+  const rows = M.map((m, i) => `<tr style="border-top:1px solid var(--line, #eee);"><td style="padding:5px 3px; font-weight:700; white-space:nowrap;">${name(m)}</td>
+    <td ${td}>${perDay(m)} ${i ? arrow(perDay(m), perDay(M[i - 1])) : ''}</td><td ${td}>${of(m).doctorsMet || 0}</td>
+    <td ${td}>${of(m).newAccounts == null ? '—' : of(m).newAccounts}</td><td ${td}>${of(m).placements == null ? '—' : of(m).placements}</td>
+    <td ${td}><b>${kpiOf(m) == null ? '—' : kpiOf(m)}</b>${i && kpiOf(m) != null && kpiOf(M[i - 1]) != null ? ' ' + arrow(kpiOf(m), kpiOf(M[i - 1])) : ''}</td></tr>`).join('');
+  showModal(`
+    <h3 style="margin-top:0;">${I('chart')} Month by month</h3>
+    <div class="chip-row" style="margin-bottom:6px;">${chips}</div>
+    <div class="chip-row" style="margin-bottom:10px;">${per}</div>
+    ${M.length < 2 ? '<div class="nudge">Only one month of data in the app so far — earlier months appear here once their sales files and visits are in.</div>' : ''}
+    <div class="card"><b style="font-size:13.5px;">Sales against target</b><div style="font-size:11.5px; color:var(--muted);">ERP invoices of each month; grey bar = that month's own DSR target</div>${sales}</div>
+    <div class="card" style="margin-top:8px;"><b style="font-size:13.5px;">Same days of each month: day 1–${dayN}</b><div style="font-size:11.5px; color:var(--muted);">A fair comparison while this month is still running</div>${same}</div>
+    <div class="card" style="margin-top:8px; overflow-x:auto;"><b style="font-size:13.5px;">Field work and KPI</b>
+      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:6px;"><tr style="color:var(--muted); font-size:11px;"><th style="text-align:start; padding:3px;">Month</th><th>Visits a day${team ? ' (each)' : ''}</th><th>Doctors met</th><th>New accounts</th><th>New products</th><th>KPI${team ? ' (avg)' : ''}</th></tr>${rows}</table>
+      <div style="font-size:11px; color:var(--muted); margin-top:6px;">"—" = not measurable: new accounts need an earlier month in the sales files; no KPI for a month with no visit logged. The running month counts to today.</div></div>
+    <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+      <button class="btn secondary" onclick="openKpiScorecard()">${I('target')} KPI scorecard</button>
+      <button class="btn secondary" onclick="closeModal()">Close</button>
+    </div>`);
+}

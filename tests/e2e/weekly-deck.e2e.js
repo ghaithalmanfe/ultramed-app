@@ -61,7 +61,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
     {id:'c', name:'Crown Dental Center', rep:'Renova', cls:'A', doctors:[]},
     {id:'g', name:'Gamma Center', rep:G, cls:'B', doctors:[]},
     {id:'n', name:'New Smile Clinic', rep:G, cls:'C', doctors:[]}]);
-  cloud.targets = JSON.stringify({ [M]: {revenue: 4640.4, month:'2026-10', brands: {'Intensiv': 660, 'Philips Sonicare': 960}}, Renova: {revenue: 5278.45, month:'2026-10', brands: {'Waterpik': 846.3}}, [G]: {revenue: 9416.15, month:'2026-10', brands: {'Intensiv': 1339.25, 'B&L Biotech': 1461}} });
+  cloud.targets = JSON.stringify({ [M]: {revenue: 4640.4, month:'2026-10', brands: {'Intensiv': 660, 'Philips Sonicare': 960}}, Renova: {revenue: 5278.45, month:'2026-10', brands: {'Waterpik': 846.3}}, [G]: {revenue: 9416.15, month:'2026-10', brands: {'Intensiv': 1339.25, 'B&L Biotech': 1461}}, _history: { '2026-09': { [M]: {revenue: 500, month:'2026-09'} } } });
   cloud.visits = JSON.stringify([
     {id:'v1', date:'2026-10-05', rep:M, clinicId:'a', doctorIds:['d1'], products:['p1','p2'], orderTaken:true, orderTotal:40, nextFollowUp:'2026-10-13', ts:1},
     {id:'v2', date:'2026-10-06', rep:G, withRep:M, clinicId:'n', products:['p1'], ts:2},
@@ -98,7 +98,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   require('fs').writeFileSync(require('path').join(require('os').tmpdir(), 'weekly-deck-test.pptx'), Buffer.from(deck.b64, 'base64'));
   const T = deck.texts, all = T.join(' || ');
   check('the deck has its slides: title, glance, target, week by week, brands, field, wins, next week, appendix, method', T.length >= 12 && /Field Team Weekly Update/.test(T[0]) && /Week of 4 – 8 Oct 2026/.test(T[0]), T.map(t => t.slice(0, 40)));
-  check('three native charts (target, week by week, brands)', deck.charts === 3, deck.charts);
+  check('seven native charts (target, week by week, brands, 2 × sales month by month, 2 × field work month by month)', deck.charts === 7, deck.charts);
   const glance = T.find(t => /The week at a glance/.test(t)) || '';
   check('glance: KD 231 invoiced (65 + 120 + 46), up 131% on the week before (100), field visits and wins', /KD 231/.test(glance) && /▲ 131% on the week before/.test(glance) && /Field visits/.test(glance) && /Wins this week/.test(glance) && /2 new · 1 back · 1 new products · 1 sampled/.test(glance), glance.slice(0, 400));
   check('highlights name the week\'s leader and the new accounts (the sample at Beta is Mariam\'s clinic, so it is hers)', /Dr\. Ghaith led the week with KD 120 invoiced \(2 invoices\)/.test(glance) && /2 new accounts placed a first order: New Smile Clinic, Crown Dental Center/.test(glance), glance.slice(300, 900));
@@ -111,6 +111,10 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   check('next week shows the planned visits and follow-ups', /1 planned visit/.test(all) && /Mon · Beta Clinic/.test(all) && /13 Oct · Alpha Dental Center/.test(all), '');
   const kpi = T.find(t => /KPI scorecard – month to date/.test(t)) || '';
   check('KPI slide: the 10 measures with weights and a total out of 100 for each person', /Total score/.test(kpi) && /Sales achievement 30%/.test(kpi) && /Answering clients on time 5%/.test(kpi) && (kpi.match(/\d+ \/ 100/g) || []).length === 3, kpi.slice(0, 300));
+  const trS = T.find(t => /Month by month: sales against earlier months/.test(t)) || '';
+  check('month-by-month sales slide: Jul → Oct (empty months before dropped), Mariam\'s September against September\'s own target, the running month to the 8th', /Jul Aug Sep Oct \(to 8\)/.test(trS) && !/May|Jun/.test(trS) && /KD 100 · 20%/.test(trS), trS.slice(0, 700));
+  const trF = T.find(t => /Month by month: field work and KPI/.test(t)) || '';
+  check('month-by-month field slide: the team table month by month (the joint visit counts for both)', /Field visits 0 0 0 4/.test(trF) && /New accounts/.test(trF), trF.slice(0, 600));
   // the button downloads a real .pptx
   await page.evaluate(() => openWeeklyDeck());
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.evaluate(() => downloadWeeklyDeck())]);

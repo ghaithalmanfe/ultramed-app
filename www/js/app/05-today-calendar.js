@@ -337,6 +337,7 @@ function renderMore(){
     ${tile(I('share'),'Export & share','CSV files and report sharing','openExport()')}
     ${sup ? tile(I('chart'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : ''}
     ${tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()')}
+    ${tile(I('chart'),'Month by month','Sales, field work and KPI against earlier months','openMonthByMonth()')}
     ${tile(I('clipboard'),'Requests, escalations & stands','Log client requests, escalations and stands','openClientLog()')}
     ${tile(I('bot'),'Assistant','Ask anything about your data','openAssistant()')}
     ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
