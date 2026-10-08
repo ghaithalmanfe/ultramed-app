@@ -92,24 +92,83 @@ async function wdIcon(name, fg, bg){
   return _wdIconCache[key];
 }
 // A remote or stored image → a square-ish JPEG data URL (max 600 px), or null.
-async function wdPhoto(src, timeoutMs){
+// Google Drive thumbnail links send no CORS header (their redirect), so the
+// browser cannot read them; the same image on lh3.googleusercontent.com can.
+function wdFixSrc(src){
+  const m = String(src || '').match(/drive\.google\.com\/(?:thumbnail\?id=|file\/d\/|uc\?(?:export=\w+&)?id=)([\w-]{10,})/);
+  return m ? 'https://lh3.googleusercontent.com/d/' + m[1] + '=w600' : src;
+}
+// Fetch an image as a Blob: the app's own files and data URLs directly,
+// remote images with a time limit; remote ones are kept in Cache Storage so
+// the next export works offline.
+async function wdFetchBlob(src, timeoutMs){
   if(!src) return null;
+  src = wdFixSrc(src);
+  if(/^data:/.test(src)) return (await fetch(src)).blob();
+  const remote = /^https?:/.test(src) && !src.startsWith(location.origin);
+  let cache = null;
+  if(remote && typeof caches !== 'undefined'){ try{ cache = await caches.open('um-deck-img'); const hit = await cache.match(src); if(hit) return hit.blob(); }catch(e){ cache = null; } }
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const t = setTimeout(() => ctl && ctl.abort(), timeoutMs || 5000);
   try{
-    let blob;
-    if(/^data:/.test(src)) blob = await (await fetch(src)).blob();
-    else{
-      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const t = setTimeout(() => ctl && ctl.abort(), timeoutMs || 4000);
-      const r = await fetch(src, { mode: 'cors', signal: ctl ? ctl.signal : undefined }); clearTimeout(t);
-      if(!r.ok) return null; blob = await r.blob();
-    }
+    const r = await fetch(src, { mode: 'cors', signal: ctl ? ctl.signal : undefined });
+    if(!r.ok) return null;
+    if(cache){ try{ await cache.put(src, r.clone()); }catch(e){} }
+    return await r.blob();
+  }finally{ clearTimeout(t); }
+}
+// An image → a JPEG data URL. maxPx limits the long side (the source is
+// never enlarged); returns {data, w, h} or null when it cannot be loaded.
+async function wdPhoto(src, timeoutMs, maxPx){
+  try{
+    const blob = await wdFetchBlob(src, timeoutMs); if(!blob) return null;
     const bmp = await createImageBitmap(blob);
-    const k = Math.min(1, 600 / Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+    const k = Math.min(1, (maxPx || 600) / Math.max(bmp.width, bmp.height)), w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
     const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
     g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.drawImage(bmp, 0, 0, w, h);
-    return { data: wdData(c.toDataURL('image/jpeg', 0.86)), w, h };
+    return { data: wdData(c.toDataURL('image/jpeg', maxPx > 900 ? 0.82 : 0.86)), w, h, srcW: bmp.width, srcH: bmp.height };
   }catch(e){ return null; }
 }
+// An image fitted to a box of wIn × hIn inches at about 180 dpi: 'cover'
+// crops to fill (focus fx, fy), 'contain' fits whole on a background colour;
+// rounded corners are baked in the colour behind the box (PptxGenJS rounding
+// would draw an ellipse). Returns {data, w, h} sized for the box, or null.
+async function wdBoxImage(src, wIn, hIn, o){
+  o = o || {};
+  try{
+    const blob = await wdFetchBlob(src, o.timeout || 6000); if(!blob) return null;
+    const bmp = await createImageBitmap(blob);
+    const dpi = o.dpi || 180, W = Math.round(wIn * dpi), H = Math.round(hIn * dpi);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+    const r = Math.round((o.radius || 0) * dpi);
+    g.fillStyle = '#' + (o.behind || 'FFFFFF'); g.fillRect(0, 0, W, H);
+    g.save();
+    if(r){ g.beginPath(); g.moveTo(r, 0); g.arcTo(W, 0, W, H, r); g.arcTo(W, H, 0, H, r); g.arcTo(0, H, 0, 0, r); g.arcTo(0, 0, W, 0, r); g.closePath(); g.clip(); }
+    g.fillStyle = '#' + (o.bg || 'FFFFFF'); g.fillRect(0, 0, W, H);
+    if(o.mode === 'contain'){
+      const pad = Math.round((o.pad || 0) * dpi), k = Math.min((W - 2 * pad) / bmp.width, (H - 2 * pad) / bmp.height, o.upscale ? 99 : 1.6);
+      const w = bmp.width * k, h = bmp.height * k; g.drawImage(bmp, (W - w) / 2, (H - h) / 2, w, h);
+    }else{
+      const k = Math.max(W / bmp.width, H / bmp.height), sw = W / k, sh = H / k;
+      const sx = Math.max(0, Math.min(bmp.width - sw, (o.fx == null ? 0.5 : o.fx) * bmp.width - sw / 2)), sy = Math.max(0, Math.min(bmp.height - sh, (o.fy == null ? 0.4 : o.fy) * bmp.height - sh / 2));
+      g.drawImage(bmp, sx, sy, sw, sh, 0, 0, W, H);
+    }
+    g.restore();
+    return { data: wdData(c.toDataURL('image/jpeg', o.quality || 0.85)), w: W, h: H, srcW: bmp.width, srcH: bmp.height };
+  }catch(e){ return null; }
+}
+// The deck's image bundle (img/deck/manifest.json, loaded on demand):
+// products = ERP name → manufacturer photo bundled with the app (Intensiv,
+// SCHEU, B&L Biotech, Univet); store = ERP name → the official store photo
+// (ultramedgcc.com, CORS-enabled CDN); photos = free-licence clinic photos.
+let _wdManifest = null;
+async function wdAssets(){
+  if(_wdManifest) return _wdManifest;
+  try{ const r = await fetch('img/deck/manifest.json', { cache: 'no-cache' }); _wdManifest = r.ok ? await r.json() : {}; }catch(e){ _wdManifest = {}; }
+  return _wdManifest;
+}
+function wdProductSrc(name){ const M = _wdManifest || {}, n = String(name || '').trim(); return (M.products || {})[n] || (M.store || {})[n] || wdCatalogImg(n); }
+async function wdScene(key, shape){ const ph = ((_wdManifest || {}).photos || {})[key]; return ph && ph[shape] ? wdPhoto(ph[shape], 8000, shape === 'l' ? 1600 : 1300) : null; }
 function wdCatalogImg(name){ try{ const p = typeof findCatalogProduct === 'function' ? findCatalogProduct(name) : null; return p && p.img ? p.img : null; }catch(e){ return null; } }
 function weeklyDeckData(end){
   return UMCore.weeklyReport(Object.assign(digestData(), { today: todayStr() }), { end, reps: REPS.slice() });
@@ -153,7 +212,8 @@ async function buildWeeklyDeck(end){
   const BIG = {};
   for(const n of ['chart', 'stethoscope']) BIG[n] = await wdIcon(n, WD.dk, null);
   const topP = (W.products || []).slice(0, 6);
-  const topPhotos = await Promise.all(topP.map(x => wdPhoto(wdCatalogImg(x.product), 7000)));
+  await wdAssets();
+  const topPhotos = await Promise.all(topP.map(x => wdPhoto(wdProductSrc(x.product), 7000)));
   const PCOL = [WD.green, WD.gold, WD.sage, WD.dk];
   const icon = (sl, name, x, y, d) => { if(ICON[name]) sl.addImage({ data: ICON[name], x, y, w: d, h: d }); };
   const initials = n => String(n || '?').replace(/^(dr|mr|mrs|ms)\.?\s+/i, '').split(/\s+/).map(w => w.charAt(0)).join('').slice(0, 2).toUpperCase();

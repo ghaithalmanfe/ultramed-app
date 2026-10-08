@@ -1651,26 +1651,27 @@
     rows.filter(function(x){ return x.rep && x.r.date >= from && x.r.date <= to; }).forEach(function(x){
       var r = x.r, k = custKey(x), name = custName(x), pk = k + '|' + String(r.product || '').toLowerCase();
       var internal = !x.clinicId && isInternalAccount(r.customer);
-      var inv = wins.invoices[r.doc] || (wins.invoices[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, account: name, channel: x.channel, internal: internal, net: 0, lines: 0, brands: {} });
+      var inv = wins.invoices[r.doc] || (wins.invoices[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, account: name, clinicId: x.clinicId || null, channel: x.channel, internal: internal, net: 0, lines: 0, brands: {}, items: {} });
       inv.net += r.net; inv.lines++; if(r.brand) inv.brands[normBrand(r.brand)] = 1;
+      if(r.product && r.net > 0){ var it = inv.items[r.product] || (inv.items[r.product] = { product: String(r.product).trim(), brand: normBrand(r.brand), net: 0 }); it.net += r.net; }
       if(x.channel || internal) return;
       if(isFocRow(r)){ var sk = k + '|' + x.rep; var sm = wins.samples[sk] || (wins.samples[sk] = { rep: x.rep, account: name, date: r.date, items: [] }); sm.items.push(r.product); return; }
       if(!(r.net > 0) || r.type === 'return') return;
-      if(firstSeen[k] >= from && !wins.newAccounts[k]) wins.newAccounts[k] = { rep: x.rep, account: name, date: firstSeen[k], net: 0 };
-      if(wins.newAccounts[k]) wins.newAccounts[k].net += r.net;
-      else if(lastBefore[k] && daysBetween(lastBefore[k], from) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, date: r.date, lastBefore: lastBefore[k] };
+      if(firstSeen[k] >= from && !wins.newAccounts[k]) wins.newAccounts[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, date: firstSeen[k], doc: r.doc, net: 0, products: {} };
+      if(wins.newAccounts[k]){ var na = wins.newAccounts[k]; na.net += r.net; var np = na.products[r.product] || (na.products[r.product] = { product: String(r.product || '').trim(), brand: normBrand(r.brand), net: 0 }); np.net += r.net; }
+      else if(lastBefore[k] && daysBetween(lastBefore[k], from) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, date: r.date, doc: r.doc, lastBefore: lastBefore[k] };
       if(!wins.newAccounts[k] && prodSeen[pk] >= from && firstSeen[k] < from){
-        var pl = wins.placements[pk] || (wins.placements[pk] = { rep: x.rep, account: name, product: r.product, brand: r.brand, date: r.date, net: 0 });
+        var pl = wins.placements[pk] || (wins.placements[pk] = { rep: x.rep, account: name, clinicId: x.clinicId || null, product: r.product, brand: r.brand, date: r.date, doc: r.doc, net: 0 });
         pl.net += r.net;
       }
     });
     var vals = function(o){ return Object.keys(o).map(function(k){ return o[k]; }); };
     var rnd = function(n){ return Math.round(n * 1000) / 1000; };
     return {
-      newAccounts: vals(wins.newAccounts).map(function(x){ x.net = rnd(x.net); return x; }), reactivated: vals(wins.reactivated),
+      newAccounts: vals(wins.newAccounts).map(function(x){ x.net = rnd(x.net); x.products = vals(x.products).map(function(p){ p.net = rnd(p.net); return p; }).sort(function(a, b){ return b.net - a.net; }); return x; }), reactivated: vals(wins.reactivated),
       placements: vals(wins.placements).map(function(x){ x.net = rnd(x.net); return x; }).sort(function(a, b){ return b.net - a.net; }),
       samples: vals(wins.samples),
-      invoices: vals(wins.invoices).map(function(i){ i.net = rnd(i.net); i.brands = Object.keys(i.brands); return i; })
+      invoices: vals(wins.invoices).map(function(i){ i.net = rnd(i.net); i.brands = Object.keys(i.brands); i.items = vals(i.items).map(function(p){ p.net = rnd(p.net); return p; }).sort(function(a, b){ return b.net - a.net; }); return i; })
         .filter(function(i){ return !(i.internal && i.net === 0); })      // a zero-value move to a marketing account is not an invoice of the week
         .sort(function(a, b){ return b.net - a.net; })
     };
@@ -1814,6 +1815,8 @@
   // opts: { end: 'YYYY-MM-DD' (last day of the week shown), reps: [...] }
   function weeklyReport(data, opts){
     var reps = (opts && opts.reps) || [];
+    var KS = {}; Object.keys(KPI_DEFAULTS).forEach(function(k){ KS[k] = KPI_DEFAULTS[k]; });
+    Object.keys((opts && opts.settings) || {}).forEach(function(k){ if(opts.settings[k] != null && opts.settings[k] !== '') KS[k] = opts.settings[k]; });
     var end = (opts && opts.end) || data.today;
     if(end > data.today) end = data.today;
     var from = getWeekDates(end)[0], to = end;                       // Sunday → the chosen day
@@ -1823,7 +1826,38 @@
     var es = data.erpSales, clinics = data.clinics || [];
     var byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
     var rows = erpAttributedRows(data);
+    // Margin: the team's clinic invoices in a range (free goods inside a deal
+    // count as discount; an all-free document is a sample, not a sale), the
+    // gross-weighted discount and the share of invoices within their limit.
+    var discountIn = function(a, b){
+      var inv = {};
+      rows.forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || x.channel || r.type === 'return' || r.date < a || r.date > b || (!x.clinicId && isInternalAccount(r.customer))) return;
+        var i = inv[r.doc] || (inv[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, clinicId: x.clinicId, account: x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : String(r.customer || '').trim(), gross: 0, net: 0 });
+        i.gross += Number(r.gross) || 0; i.net += Number(r.net) || 0; });
+      var list = Object.keys(inv).map(function(k){ return inv[k]; }).filter(function(i){ return i.gross > 0 && i.net > 0; });
+      list.forEach(function(i){ i.pct = Math.round((i.gross - i.net) / i.gross * 1000) / 10; var c = i.clinicId && byId[i.clinicId];
+        i.limit = (KS.openDays || []).indexOf(i.date) >= 0 ? KS.discountOpenDay : (c && c.cls === 'A' ? KS.discountA : KS.discountOther); });
+      var g = list.reduce(function(t, i){ return t + i.gross; }, 0), n = list.reduce(function(t, i){ return t + i.net; }, 0);
+      var within = list.filter(function(i){ return i.pct <= i.limit + 0.05; });
+      return { invoices: list.length, gross: Math.round(g * 1000) / 1000, net: Math.round(n * 1000) / 1000, discount: g > 0 ? Math.round((g - n) / g * 1000) / 10 : null,
+        withinLimit: list.length ? within.length / list.length : null, over: list.filter(function(i){ return within.indexOf(i) < 0; }).map(function(i){ return { doc: i.doc, date: i.date, rep: i.rep, account: i.account, pct: i.pct, limit: i.limit }; }) };
+    };
     var covered = function(a, b){ return erpPeriodsOf(es).some(function(p){ return p.to >= a && p.from <= b; }); };
+    // a range counts for a person only when a file carrying that person's
+    // salesman covers it (a file exported for one salesman says nothing of the others)
+    var carries = function(p, rep){ return !p.repMap || !Object.keys(p.repMap).length || Object.keys(p.repMap).some(function(sm){ return p.repMap[sm] === rep; }); };
+    var repCovered = function(a, b, rep){ return erpPeriodsOf(es).some(function(p){ return p.to >= a && p.from <= b && carries(p, rep); }); };
+    // every day of [a, b] inside the files carrying this person's salesman (a
+    // file starting on 1 Oct does not cover the week of 27 Sep – 3 Oct)
+    var repCoveredFull = function(a, b, rep){
+      var ps = erpPeriodsOf(es).filter(function(p){ return carries(p, rep) && p.to >= a && p.from <= b; })
+        .sort(function(x, y){ return x.from < y.from ? -1 : x.from > y.from ? 1 : 0; });
+      var cur = a;
+      for(var i = 0; i < ps.length; i++){ if(ps[i].from > cur) return false; if(ps[i].to >= cur) cur = addDaysStr(ps[i].to, 1); if(cur > b) return true; }
+      return cur > b;
+    };
+    // the last day of the week the sales files reach (null: no file for the week)
+    var salesTo = erpPeriodsOf(es).reduce(function(m, p){ if(!(p.to >= from && p.from <= to)) return m; var t = p.to > to ? to : p.to; return !m || t > m ? t : m; }, null);
     var sum = function(a, b, rep){ return Math.round(rows.reduce(function(s, x){ return s + (x.rep && (!rep || x.rep === rep) && x.r.date >= a && x.r.date <= b ? x.r.net : 0); }, 0) * 1000) / 1000; };
     var earliest = rows.reduce(function(m, x){ return !m || x.r.date < m ? x.r.date : m; }, null);
     var winsR = erpWinsInRange(rows, from, to, clinics), invoices = winsR.invoices;
@@ -1835,8 +1869,8 @@
     reps.forEach(function(rep){
       var mine = vis.filter(function(v){ return repWasThere(v, rep); }), led = mine.filter(function(v){ return v.rep === rep; });
       var field = mine.filter(isFieldVisit);
-      var docs = {}, prods = {}, clin = {};
-      field.forEach(function(v){ clin[v.clinicId] = 1; (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ docs[v.clinicId + '|' + id] = 1; }); (v.products || []).forEach(function(p){ prods[p] = 1; }); });
+      var docs = {}, prods = {}, clin = {}, cdays = {};
+      field.forEach(function(v){ clin[v.clinicId] = 1; cdays[v.clinicId + '|' + v.date] = 1; (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ docs[v.clinicId + '|' + id] = 1; }); (v.products || []).forEach(function(p){ prods[p] = 1; }); });
       var aAll = clinics.filter(function(c){ return c.rep === rep && c.cls === 'A'; });
       var aSeen = aAll.filter(function(c){ return visM.some(function(v){ return v.clinicId === c.id && repWasThere(v, rep); }); });
       var t = targetOf(data, rep, to.slice(0, 7));
@@ -1847,7 +1881,7 @@
         mtd: ach.amount, mtdSrc: ach.src, target: t.revenue > 0 ? t.revenue : null,
         pct: t.revenue > 0 ? ach.amount / t.revenue : null,
         pace: t.revenue > 0 && day > 0 ? ach.amount / day * dim / t.revenue : null,
-        fieldVisits: field.length, calls: mine.filter(function(v){ return v.callOnly; }).length,
+        fieldVisits: Object.keys(cdays).length, logged: led.filter(isFieldVisit).length, calls: mine.filter(function(v){ return v.callOnly; }).length,
         phoneOrders: mine.filter(function(v){ return v.orderOnly; }).length,
         joint: field.filter(function(v){ return v.withRep; }).length,
         clinics: Object.keys(clin).length, doctorsMet: Object.keys(docs).length, productsPresented: Object.keys(prods).length,
@@ -1890,18 +1924,20 @@
       var hs = addDaysStr(from, -7 * hi), he = hi === 0 ? to : addDaysStr(hs, 6), hcov = covered(hs, he);
       var hw = erpWinsInRange(rows, hs, he, clinics), mineW = function(x){ return reps.indexOf(x.rep) >= 0; };
       var hv = (data.visits || []).filter(function(v){ return v && v.date >= hs && v.date <= he && isFieldVisit(v); });
-      var hByRep = {}, hFv = 0, hDocs = {};
-      reps.forEach(function(rep){ hByRep[rep] = hcov ? sum(hs, he, rep) : null;
-        hv.forEach(function(v){ if(!repWasThere(v, rep)) return; hFv++; (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ hDocs[v.clinicId + '|' + id] = 1; }); }); });
+      var hByRep = {}, hFv = {}, hDocs = {};   // a visit = one clinic on one day, however many people logged it
+      var hRepCov = {};
+      reps.forEach(function(rep){ hRepCov[rep] = hi === 0 ? repCovered(hs, he, rep) : repCoveredFull(hs, he, rep);   // this week may be partial: it can only understate
+        hByRep[rep] = hcov && hRepCov[rep] ? sum(hs, he, rep) : null;
+        hv.forEach(function(v){ if(!repWasThere(v, rep)) return; hFv[v.clinicId + '|' + v.date] = 1; (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ hDocs[v.clinicId + '|' + id] = 1; }); }); });
       var hInv = hw.invoices.filter(function(i){ return mineW(i) && i.net > 0; }), hAcc = {};
       hInv.forEach(function(i){ if(!i.channel) hAcc[i.account] = 1; });
       var newOk = hcov && earliest && earliest <= addDaysStr(hs, -28);
       history.push({ from: hs, to: he, current: hi === 0, covered: hcov,
-        sales: hcov ? rnd(reps.reduce(function(a, rep){ return a + hByRep[rep]; }, 0)) : null, byRep: hByRep,
+        sales: hcov ? rnd(reps.reduce(function(a, rep){ return a + (hByRep[rep] || 0); }, 0)) : null, byRep: hByRep,
         invoices: hcov ? hInv.length : null, accounts: hcov ? Object.keys(hAcc).length : null,
         placements: newOk ? hw.placements.filter(mineW).length : null, newAccounts: newOk ? hw.newAccounts.filter(mineW).length : null,
         reactivated: newOk ? hw.reactivated.filter(mineW).length : null, samples: hcov ? hw.samples.filter(mineW).length : null,
-        fieldVisits: hFv, doctorsMet: Object.keys(hDocs).length });
+        fieldVisits: Object.keys(hFv).length, doctorsMet: Object.keys(hDocs).length, discount: hcov ? discountIn(hs, he).discount : null, repCovered: hRepCov });
     }
     // the week's best-selling products (team, invoices with a value; internal
     // marketing moves excluded) and the photos taken on the week's visits
@@ -1910,20 +1946,63 @@
       var k = String(r.product || '').trim(); if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(k)) return;   // services (inspection fees, delivery) are not best sellers
       var a = pAgg[k] || (pAgg[k] = { product: k, brand: normBrand(r.brand), qty: 0, net: 0, accounts: {} });
       a.qty += Number(r.qty) || 0; a.net += r.net; a.accounts[x.clinicId || r.customer] = 1; });
-    var products = Object.keys(pAgg).map(function(k){ var a = pAgg[k]; return { product: a.product, brand: a.brand, qty: a.qty, net: rnd(a.net), accounts: Object.keys(a.accounts).length }; })
+    var products = Object.keys(pAgg).map(function(k){ var a = pAgg[k]; return { product: a.product, brand: a.brand, qty: a.qty, net: rnd(a.net), accounts: Object.keys(a.accounts).length, accountKeys: Object.keys(a.accounts) }; })
       .sort(function(a, b){ return b.net - a.net; });
     var photos = [];
     vis.slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).forEach(function(v){
       (v.photos || []).forEach(function(ph){ if(ph && ph.id) photos.push({ id: ph.id, thumb: ph.thumb || null, date: v.date, rep: v.rep, clinic: (byId[v.clinicId] || {}).name || '—' }); }); });
+    // margin this week, against the earlier weeks
+    var margin = discountIn(from, to);
+    var prevD = history.filter(function(h){ return !h.current && h.discount != null; });
+    margin.avgPrev = prevD.length ? Math.round(prevD.reduce(function(t, h){ return t + h.discount; }, 0) / prevD.length * 10) / 10 : null;
+    margin.limits = { A: KS.discountA, other: KS.discountOther, openDay: KS.discountOpenDay };
+    // expansion: the territory, the clinics buying (last 90 days), new this
+    // month, and clinics visited this week that are not buying yet (pipeline)
+    var since90 = addDaysStr(to, -89), buying = {};
+    rows.forEach(function(x){ if(x.clinicId && !x.channel && x.r.net > 0 && x.r.type !== 'return' && x.r.date >= since90 && x.r.date <= to) buying[x.clinicId] = 1; });
+    var territory = clinics.filter(function(c){ return c.cls !== 'Closed' && (reps.indexOf(c.rep) >= 0 || (c.sharedWith || []).some(function(r){ return reps.indexOf(r) >= 0; })); });
+    var mWins = erpWinsInRange(rows, mStart, to, clinics), monthNewOk = earliest && earliest <= addDaysStr(mStart, -28);
+    var pipe = {};
+    vis.forEach(function(v){ if(!isFieldVisit(v) || !v.clinicId || buying[v.clinicId] || !byId[v.clinicId]) return;
+      var p = pipe[v.clinicId] || (pipe[v.clinicId] = { clinic: byId[v.clinicId].name, rep: v.rep, visits: 0, last: v.date }); p.visits++; if(v.date > p.last) p.last = v.date; });
+    var expansion = { territory: territory.length, active: territory.filter(function(c){ return buying[c.id]; }).length,
+      newThisMonth: monthNewOk ? mWins.newAccounts.filter(function(x){ return reps.indexOf(x.rep) >= 0; }).map(function(x){ return { account: x.account, rep: x.rep, date: x.date, net: x.net }; }) : null,
+      placementsThisMonth: monthNewOk ? mWins.placements.filter(function(x){ return reps.indexOf(x.rep) >= 0; }).length : null,
+      pipeline: Object.keys(pipe).map(function(k){ return pipe[k]; }).sort(function(a, b){ return b.visits - a.visits || (a.clinic < b.clinic ? -1 : 1); }) };
+    // satisfaction signals: accounts that ordered again, requests answered in
+    // time, escalations, returns, and the doctors' mood on the visits
+    var firstBuy = {};
+    rows.forEach(function(x){ if(!x.clinicId || x.channel || !(x.r.net > 0) || x.r.type === 'return') return; if(!firstBuy[x.clinicId] || x.r.date < firstBuy[x.clinicId]) firstBuy[x.clinicId] = x.r.date; });
+    var repeatAcc = {};
+    rows.forEach(function(x){ if(x.clinicId && !x.channel && x.r.net > 0 && x.r.type !== 'return' && x.r.date >= from && x.r.date <= to && reps.indexOf(x.rep) >= 0 && firstBuy[x.clinicId] < from) repeatAcc[x.clinicId] = byId[x.clinicId] ? byId[x.clinicId].name : x.clinicId; });
+    var evW = (data.events || []).filter(function(e){ return e && e.kind === 'issue' && reps.indexOf(e.rep) >= 0 && String(e.at || '').slice(0, 10) >= from && String(e.at || '').slice(0, 10) <= to; });
+    var reqs = evW.filter(function(e){ return e.type === 'request'; });
+    var hrs = function(a, b){ return (new Date(String(b).replace(' ', 'T')).getTime() - new Date(String(a).replace(' ', 'T')).getTime()) / 3600000; };
+    var retNet = 0, saleNet = 0;
+    rows.forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0 || x.r.date < from || x.r.date > to) return; if(x.r.type === 'return' || x.r.net < 0) retNet += -x.r.net; else saleNet += x.r.net; });
+    var moods = { pleased: 0, neutral: 0, concerned: 0 };
+    vis.forEach(function(v){ if(v.mood && moods[v.mood] != null && reps.some(function(r){ return repWasThere(v, r); })) moods[v.mood]++; });
+    var satisfaction = { repeatAccounts: Object.keys(repeatAcc).map(function(k){ return repeatAcc[k]; }).sort(),
+      requests: reqs.length, answeredOnTime: reqs.filter(function(e){ return e.resolvedAt && hrs(e.at, e.resolvedAt) <= KS.responseHours; }).length, open: reqs.filter(function(e){ return !e.resolvedAt; }).length,
+      escalations: evW.filter(function(e){ return e.type === 'escalation'; }).length,
+      returnsPct: saleNet > 0 ? Math.round(retNet / saleNet * 1000) / 10 : null, moods: moods };
     var team = { week: sum(from, to), prevWeek: sum(pFrom, pTo), mtd: 0, target: 0 };
+    // team field counts are DISTINCT: a clinic on a day, a doctor, a clinic, a product — once each
+    var tDays = {}, tClin = {}, tDocs = {}, tProds = {}, tFu = {};
+    vis.forEach(function(v){ if(!isFieldVisit(v) || !reps.some(function(r){ return repWasThere(v, r); })) return;
+      tDays[v.clinicId + '|' + v.date] = 1; tClin[v.clinicId] = 1; (v.products || []).forEach(function(pid){ tProds[pid] = 1; });
+      (v.doctorIds && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : [])).forEach(function(id){ tDocs[v.clinicId + '|' + id] = 1; });
+      if(v.nextFollowUp && reps.indexOf(v.rep) >= 0) tFu[v.clinicId] = 1; });
+    team.fieldVisits = Object.keys(tDays).length; team.clinics = Object.keys(tClin).length; team.doctorsMet = Object.keys(tDocs).length;
+    team.productsPresented = Object.keys(tProds).length; team.followUpClinics = Object.keys(tFu).length;
     reps.forEach(function(rep){ team.mtd += perRep[rep].mtd; if(perRep[rep].target) team.target += perRep[rep].target; });
     team.week = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].week; }, 0));
     team.prevWeek = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].prevWeek; }, 0));
     team.mtd = rnd(team.mtd); team.target = rnd(team.target);
     return {
       from: from, to: to, prevFrom: pFrom, prevTo: pTo, monthStart: mStart, nextFrom: nFrom, nextTo: nTo,
-      salesCovered: covered(from, to), prevCovered: covered(pFrom, pTo), historyFrom: earliest,
-      reps: reps, perRep: perRep, team: team, brands: brands, weeks: weeks, next: next, history: history, products: products, photos: photos,
+      salesCovered: covered(from, to), salesTo: salesTo, prevCovered: covered(pFrom, pTo), historyFrom: earliest, settings: KS,
+      reps: reps, perRep: perRep, team: team, brands: brands, weeks: weeks, next: next, history: history, products: products, photos: photos, margin: margin, expansion: expansion, satisfaction: satisfaction,
       wins: winsR,
       visits: vis.slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).map(function(v){
         return { date: v.date, rep: v.rep, withRep: v.withRep || null, clinic: (byId[v.clinicId] || {}).name || '—', type: v.callOnly ? 'call' : v.orderOnly ? 'phone order' : 'visit',
@@ -1999,6 +2078,51 @@
     while(out.length > 1 && !out[0].covered && !out[0].team.fieldVisits) out.shift();
     return { end: end, months: out, reps: reps };
   }
+  // ---- THE STORY'S TRUTH GATES (R1–R7 of the weekly deck) ----
+  // Only a claim that passes these reaches the deck's main pages; everything
+  // else stays in the appendix. Values are week rows oldest → newest (this
+  // week last); null = the files cannot measure that week. Pure.
+  var storyGate = {
+    // R2: a rise needs +10% and +2 units (or +KD 100)
+    rise: function(cur, prev, money){ if(cur == null || prev == null || !(cur > prev)) return false; var d = cur - prev; return (prev > 0 ? d / prev >= 0.10 : true) && d >= (money ? 100 : 2); },
+    // R2: a % is printed only on a base of 10 units or KD 250
+    pctOk: function(base, money){ return base != null && base >= (money ? 250 : 10); },
+    // R3: best of N — strictly above every earlier measurable week, at least 3 of them, at least 2 above zero
+    record: function(vals){ var cur = vals[vals.length - 1], prev = vals.slice(0, -1).filter(function(v){ return v != null; });
+      return cur != null && cur > 0 && prev.length >= 3 && prev.filter(function(v){ return v > 0; }).length >= 2 && prev.every(function(v){ return cur > v; }); },
+    // above the average of the earlier measurable weeks (at least 3), by 10%
+    aboveAvg: function(vals){ var cur = vals[vals.length - 1], prev = vals.slice(0, -1).filter(function(v){ return v != null; });
+      if(cur == null || prev.length < 3) return null; var avg = prev.reduce(function(a, v){ return a + v; }, 0) / prev.length; return avg > 0 && cur >= 1.1 * avg ? avg : null; },
+    // R4: consecutive measurable weeks above zero, ending this week
+    streak: function(vals){ var n = 0; for(var i = vals.length - 1; i >= 0; i--){ if(vals[i] == null || !(vals[i] > 0)) break; n++; } return n; },
+    // R6: a brand target is material at KD 1,000 or 5% of the team target
+    material: function(brandTarget, teamTarget){ return brandTarget >= 1000 || (teamTarget > 0 && brandTarget >= 0.05 * teamTarget); },
+    // the rank of this week among the measurable weeks (1 = highest)
+    rank: function(vals){ var cur = vals[vals.length - 1]; if(cur == null) return null; return 1 + vals.slice(0, -1).filter(function(v){ return v != null && v > cur; }).length; }
+  };
+  // R1: team sales week by week for the SAME people — those this week's files
+  // carry; a week in which any of them is not fully covered is not measurable.
+  function teamSalesLikeForLike(W){
+    var H = W.history || [], cur = H[H.length - 1] || {}, people = (W.reps || []).filter(function(r){ return cur.byRep && cur.byRep[r] != null; });
+    return { people: people, values: H.map(function(h){ if(!people.length || people.some(function(r){ return h.byRep[r] == null; })) return null;
+      return Math.round(people.reduce(function(a, r){ return a + h.byRep[r]; }, 0) * 1000) / 1000; }) };
+  }
+  // Product lines that share one photo (one family) folded into one entry:
+  // familyOf(product) → {key, display} or null (stays on its own). Units and
+  // KD add up; clinics are counted once across the family. Pure.
+  function foldProducts(products, familyOf){
+    var out = [], byKey = {};
+    (products || []).forEach(function(p){
+      var f = familyOf ? familyOf(p) : null;
+      if(!f || !f.key){ out.push({ key: 'p:' + p.product, display: (f && f.display) || p.product, brand: p.brand, members: [p.product], qty: p.qty, net: p.net, accountKeys: (p.accountKeys || []).slice(), first: p.product }); return; }
+      var e = byKey[f.key];
+      if(!e){ e = byKey[f.key] = { key: f.key, display: f.display || p.product, brand: p.brand, members: [], qty: 0, net: 0, accountKeys: [], first: p.product }; out.push(e); }
+      e.members.push(p.product); e.qty += Number(p.qty) || 0; e.net = Math.round((e.net + (Number(p.net) || 0)) * 1000) / 1000;
+      (p.accountKeys || []).forEach(function(a){ if(e.accountKeys.indexOf(a) < 0) e.accountKeys.push(a); });
+    });
+    out.forEach(function(e){ e.accounts = e.accountKeys.length; });
+    return out.sort(function(a, b){ return b.net - a.net; });
+  }
   // The week's achievements for management, strongest first: only things that
   // went well and are true in the figures (a record against the last 8 weeks,
   // growth on last week, brands at target, people on pace, new accounts and
@@ -2011,7 +2135,8 @@
     var kd = function(n){ return 'KD ' + Math.round(n).toLocaleString('en-US'); };
     var pct = function(x){ return Math.round(x * 100) + '%'; };
     var add = function(score, text){ out.push({ score: score, text: text }); };
-    var best = function(f){ if(!cur || prev.length < 3) return false; var v = f(cur); return v > 0 && prev.every(function(h){ var p = f(h); return p == null || v > p; }); };
+    // a record needs at least 3 earlier weeks with a figure for the same measure (a week with no file is no figure)
+    var best = function(f){ if(!cur) return false; var v = f(cur), pv = prev.map(f).filter(function(p){ return p != null; }); return v > 0 && pv.length >= 3 && pv.every(function(p){ return v > p; }); };
     var wk = (w.history || []).length;
     // sales against earlier weeks
     if(w.salesCovered && cur){
@@ -2045,6 +2170,24 @@
     var fv = (w.reps || []).reduce(function(a, r){ return a + w.perRep[r].fieldVisits; }, 0), dm = (w.reps || []).reduce(function(a, r){ return a + w.perRep[r].doctorsMet; }, 0);
     if(cur && best(function(h){ return h.fieldVisits; })) add(74, 'Most field visits in ' + wk + ' weeks: ' + fv + '.');
     else if(fv) add(45, fv + ' field visit' + (fv === 1 ? '' : 's') + (dm ? ' and ' + dm + ' doctor' + (dm === 1 ? '' : 's') + ' met' : '') + ' this week.');
+    // margin kept, clients served well, the pipeline growing — only when true
+    var mg = w.margin;
+    if(mg && mg.discount != null && mg.invoices >= 2){
+      if(mg.avgPrev != null && mg.discount <= mg.avgPrev - 1) add(82, 'More margin kept: average discount ' + mg.discount + '% against ' + mg.avgPrev + '% over the previous weeks.');
+      if(mg.withinLimit === 1) add(71, 'Every invoice within the discount limits (' + mg.invoices + ' invoices, average ' + mg.discount + '%).');
+    }
+    var sat = w.satisfaction;
+    if(sat){
+      if(sat.repeatAccounts.length >= 2) add(66, sat.repeatAccounts.length + ' clinics ordered again this week: ' + sat.repeatAccounts.slice(0, 3).join(', ') + (sat.repeatAccounts.length > 3 ? '…' : '') + '.');
+      if(sat.requests && sat.answeredOnTime === sat.requests) add(64, 'Every client request answered on time (' + sat.requests + ').');
+      var rated = sat.moods.pleased + sat.moods.neutral + sat.moods.concerned;
+      if(rated >= 3 && sat.moods.pleased / rated >= 0.6) add(68, 'Doctors pleased on ' + sat.moods.pleased + ' of ' + rated + ' visits rated this week.');
+    }
+    var ex = w.expansion;
+    if(ex){
+      if(ex.newThisMonth && ex.newThisMonth.length >= 2) add(75, ex.newThisMonth.length + ' new clinics opened this month so far.');
+      if(ex.pipeline.length >= 2) add(52, ex.pipeline.length + ' clinics in the pipeline: visited this week, not buying yet — ' + ex.pipeline.slice(0, 3).map(function(p){ return p.clinic; }).join(', ') + (ex.pipeline.length > 3 ? '…' : '') + '.');
+    }
     var aT = (w.reps || []).reduce(function(a, r){ return a + w.perRep[r].aTotal; }, 0), aV = (w.reps || []).reduce(function(a, r){ return a + w.perRep[r].aVisited; }, 0);
     if(aT && aV) add(aV === aT ? 73 : 35, (aV === aT ? 'Every key (A) account visited this month: ' : 'Key (A) accounts visited this month: ') + aV + ' of ' + aT + '.');
     return out.sort(function(a, b){ return b.score - a.score; }).map(function(x){ return x.text; });
@@ -3860,7 +4003,7 @@
     matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,

@@ -773,6 +773,10 @@
     // ---- More menu ----
     'Products & prices': 'المنتجات والأسعار',
     'Catalog, prices and specs': 'الكتالوج والأسعار والمواصفات',
+    'How did the doctor feel about us today?': 'كيف كان انطباع الطبيب عنا اليوم؟',
+    '😊 Pleased': '😊 راضٍ',
+    '😐 Neutral': '😐 عادي',
+    '😟 Concerned': '😟 غير راضٍ',
     'Missing from the catalog': 'غير موجود في الكتالوج',
     'Add selected': 'أضف المحدد',
     'Nothing missing from the catalog': 'لا يوجد منتج ناقص في الكتالوج',
