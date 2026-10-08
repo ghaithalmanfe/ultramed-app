@@ -772,6 +772,22 @@ describe('rep and customer matching', () => {
     assert.deepEqual(details.map(d => [d.doc, d.date, d.net]), [['S1', '2026-10-02', 200], ['S2', '2026-10-03', 33.75]]);
     assert.deepEqual(details[0].items, [{ product: 'x', brand: 'Intensiv', qty: 1, net: 200 }]);
   });
+  test('kpiScorecard: a sample is not a discount; nothing to measure scores "—", never a free 100% or 40%', () => {
+    const row = (d, doc, cust, gross, net, rep) => [d, doc, 0, 'Strip', 1, gross, net, 0, rep || 'Mariam Zohair', 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];
+    const data = { today: '2026-10-08', clinics, erpMap: {}, targets: {},
+      erpSales: { periods: [{ id: 'p', from: '2026-09-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam', 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [
+        row('2026-10-02', 'S1', 'Alpha Dental', 90, 70), row('2026-10-03', 'S2', 'Beta Clinic', 80, 65),
+        row('2026-10-04', 'SMP', 'Beta Clinic', 4, 0)] }] },       // an all-free sample document
+      visits: [], dayPlans: {}, events: [] };
+    const k = core.kpiScorecard(data, { rep: 'Mariam', to: '2026-10-08' });
+    const d = k.items.find(i => i.key === 'discount');
+    assert.equal(d.score, 1);                                       // 2 of 2 paid invoices within their limits; the sample is left out
+    assert.ok(/^average 20\.6% · 0 of 2 invoices over the limit$/.test(d.value), d.value);
+    assert.equal(k.items.find(i => i.key === 'doctors').score, null);   // no field visit logged: nothing to measure
+    const g = core.kpiScorecard(data, { rep: 'Dr. Ghaith', to: '2026-10-08' });
+    assert.equal(g.items.find(i => i.key === 'issues').score, null);    // no sales and no escalation: not a free 100%
+  });
   test('kpiScorecard: the 10 management measures, each from the app\'s own data', () => {
     // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
     const row = (d, doc, cust, gross, net, product, brand, type) => [d, doc, type ? 1 : 0, product || 'P', 1, gross, net, 0, 'Mariam Zohair', brand || 'Intensiv', cust, 'Clinics', 0, ''];
@@ -858,6 +874,8 @@ describe('rep and customer matching', () => {
     assert.equal(M.mtd, 135); assert.equal(M.pct, 0.135);        // Oct 1–8: 70 + 40 + 25
     assert.equal(w.team.week, 197); assert.equal(w.team.target, 3000);
     assert.deepEqual(w.wins.newAccounts.map(x => [x.account, x.rep, x.net]), [['New Smile', 'Dr. Ghaith', 90]]);
+    assert.deepEqual([w.wins.newAccounts[0].doc, w.wins.newAccounts[0].products.map(p => p.product)], ['S4', ['Strip']]);
+    assert.equal(w.wins.placements[0].doc, 'S3');
     assert.deepEqual(w.wins.reactivated.map(x => [x.account, x.lastBefore]), [['Gamma Center', '2026-07-10']]);
     assert.deepEqual(w.wins.placements.map(x => [x.account, x.product, x.net]), [['Alpha Dental', 'Sonic 4300', 25]]);
     assert.deepEqual(w.wins.samples.map(x => [x.account, x.items]), [['Beta Clinic', ['Sample paste']]]);
@@ -865,7 +883,7 @@ describe('rep and customer matching', () => {
     assert.deepEqual([M.fieldVisits, M.calls, M.joint, M.clinics, M.doctorsMet, M.productsPresented, M.followUps, M.orders, M.orderValue, M.photos],
       [2, 1, 1, 2, 1, 2, 1, 1, 40, 1]);                          // the joint visit counts for both
     assert.deepEqual([M.aVisited, M.aTotal, M.aMissing], [2, 2, []]);
-    assert.deepEqual(w.brands.find(b => b.brand === 'intensiv'), { brand: 'intensiv', week: 172, mtd: 242, target: 2600 });
+    assert.deepEqual(w.brands.find(b => b.brand === 'intensiv'), { brand: 'intensiv', week: 172, mtd: 242, target: 2600, prevMonth: 100 });
     assert.deepEqual(w.weeks.map(x => [x.from, x.to, x.byRep.Mariam]), [['2026-10-01', '2026-10-03', 70], ['2026-10-04', '2026-10-08', 65]]);
     assert.deepEqual(w.next.Mariam.planned, [{ date: '2026-10-12', clinic: 'Beta Clinic' }]);
     assert.deepEqual(w.next.Mariam.followUps, [{ date: '2026-10-13', clinic: 'Alpha Dental' }]);
@@ -890,6 +908,268 @@ describe('rep and customer matching', () => {
     w2.history[7].byRep = { Mariam: 5, 'Dr. Ghaith': 0 };
     const hl2 = core.weeklyHighlights(w2);
     assert.ok(!hl2.some(t => /^Best sales week|^Sales up|above the average/.test(t)) && hl2.some(t => /new account/.test(t)));
+  });
+  test('weeklyReport: a week with no sales file of a person is no figure for that person, never a record "best week of 8"', () => {
+    const row = (d, doc, sm, net) => [d, doc, 0, 'P', 1, net, net, 0, sm, 'Intensiv', sm === 'Mariam Zohair' ? 'Alpha' : 'Gamma Clinic', 'Clinics', 0, '']; // Gamma is not in the app: the salesman's
+    const data = { today: '2026-10-08', clinics: [{ id: 'a', name: 'Alpha', rep: 'Mariam', cls: 'A' }], erpMap: {},
+      erpSales: { periods: [
+        { id: 'girls', from: '2026-07-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [row('2026-08-20', 'S1', 'Mariam Zohair', 100), row('2026-10-06', 'S2', 'Mariam Zohair', 50)] },
+        { id: 'his', from: '2026-10-05', to: '2026-10-05', repMap: { 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [row('2026-10-05', 'S3', 'Ghaith Al Manfe', 530)] }] } };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Dr. Ghaith'] });
+    assert.equal(w.history[7].byRep['Dr. Ghaith'], 530);
+    assert.ok(w.history.slice(0, 7).every(h => h.byRep['Dr. Ghaith'] === null), w.history.map(h => h.byRep['Dr. Ghaith']));  // his file covers 5 Oct only
+    assert.ok(w.history.slice(0, 7).every(h => h.byRep.Mariam !== null));                                                    // hers covers every week
+    const hl = core.weeklyHighlights(w);
+    assert.ok(!hl.some(t => /Best week of the last 8 for Dr\. Ghaith/.test(t)), hl);
+  });
+  test('weeklyReport: an earlier week counts for a person only when that person\'s files cover every day of it', () => {
+    const row = (d, doc, net) => [d, doc, 0, 'P', 1, net, net, 0, 'Ghaith Al Manfe', 'Intensiv', 'Gamma Clinic', 'Clinics', 0, ''];
+    const data = { today: '2026-10-08', clinics: [], erpMap: {},
+      erpSales: { periods: [{ id: 'his', from: '2026-10-01', to: '2026-10-08', repMap: { 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [row('2026-10-01', 'S1', 269), row('2026-10-05', 'S2', 530)] }] } };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Dr. Ghaith'] });
+    assert.equal(w.history[6].from, '2026-09-27');
+    assert.equal(w.history[6].byRep['Dr. Ghaith'], null);          // his file starts 1 Oct: 27 Sep – 3 Oct is not covered, so no "up from KD 269"
+    assert.equal(w.history[6].repCovered['Dr. Ghaith'], false);
+    assert.equal(w.history[7].byRep['Dr. Ghaith'], 530);           // this week may be partial: it can only understate
+    assert.equal(w.salesTo, '2026-10-08');
+  });
+  test('weeklyReport: team field counts are distinct — one clinic on one day is one visit, however many logged it', () => {
+    const clinics = [{ id: 'l', name: 'Light Dental', rep: 'Mariam', cls: 'B', doctors: [{ id: 'n', name: 'Dr. Noor' }] }, { id: 'b', name: 'Blue Dental', rep: 'Renova', cls: 'B', doctors: [{ id: 'a', name: 'Dr. Abir' }] }];
+    const data = { today: '2026-10-08', clinics, erpMap: {}, erpSales: { periods: [] },
+      visits: [
+        { id: 'v1', date: '2026-10-07', rep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p1'], nextFollowUp: '2026-10-14' },
+        { id: 'v2', date: '2026-10-07', rep: 'Dr. Ghaith', withRep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p1', 'p2'], nextFollowUp: '2026-10-10' },  // the same visit, logged again as his joint visit
+        { id: 'v3', date: '2026-10-07', rep: 'Renova', clinicId: 'b', doctorIds: ['a'], products: ['p2'] }] };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Renova', 'Dr. Ghaith'] });
+    assert.deepEqual([w.team.fieldVisits, w.team.clinics, w.team.doctorsMet, w.team.productsPresented, w.team.followUpClinics], [2, 2, 2, 2, 1]);
+    assert.deepEqual([w.perRep.Mariam.fieldVisits, w.perRep.Mariam.logged, w.perRep['Dr. Ghaith'].fieldVisits, w.perRep['Dr. Ghaith'].logged], [1, 1, 1, 1]);
+    assert.equal(w.history[7].fieldVisits, 2);
+  });
+  test('weeklyStory: the real-week shape — true wins lead; weak sales, a small brand target, samples and the presenter\'s one-file week never become headlines', () => {
+    const R = (d, doc, sm, cust, net, product, brand, gross) => [d, doc, 0, product || 'P', 1, gross == null ? net : gross, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
+    const M = 'Mariam Zohair', N = 'Ranova Ayman Mohammed', G = 'Ghaith Al Manfe';
+    const clinics = [
+      { id: 'l', name: 'Light Dental', rep: 'Mariam', cls: 'B', doctors: [{ id: 'n', name: 'Dr. Noor' }] },
+      { id: 'j', name: 'Jibla Dental Center', rep: 'Renova', cls: 'A', doctors: [] },
+      { id: 'h', name: 'Dr. Nael Al Hazeem Dental Center', rep: 'Dr. Ghaith', cls: 'A', doctors: [{ id: 'm', name: 'Dr. Maha' }] },
+      { id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', cls: 'A', doctors: [] }];
+    const girls = [];
+    ['2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'].forEach((d, i) => {
+      girls.push(R(d, 'G' + i, M, 'Light Dental', 2000, 'Strip')); girls.push(R(d, 'H' + i, N, 'Jibla Dental Center', 2400, 'Sonic', 'Philips')); });
+    girls.push(R('2026-10-05', 'SINV1', M, 'Light Dental', 25, 'IPR gauge'));                // a first-time product at Light Dental
+    girls.push(R('2026-10-06', 'SINV2', N, 'Salwa', 154.8, 'Imprelon S+', 'SCHEU'));         // a new account (not in the app: the salesman's)
+    const his = [R('2026-10-01', 'SINV0', G, 'Dr. Nael Al Hazeem Dental Center', 269, 'Strip'), R('2026-10-05', 'SINV3', G, 'Dr. Nael Al Hazeem Dental Center', 520, 'Swingle'),
+      R('2026-10-07', 'SINV4', G, 'Bayan Dental Center', 0, 'Sample mouthwash', 'The Breath Co.', 2)];
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 4640, month: '2026-10', brands: { Intensiv: 600 } }, Renova: { revenue: 10147, month: '2026-10', brands: { SCHEU: 100, Philips: 4000 } }, 'Dr. Ghaith': { revenue: 9416, month: '2026-10', brands: { Intensiv: 2750 } } },
+      erpSales: { periods: [{ id: 'girls', from: '2026-08-01', to: '2026-10-08', repMap: { [M]: 'Mariam', [N]: 'Renova' }, rows: girls }, { id: 'his', from: '2026-10-01', to: '2026-10-08', repMap: { [G]: 'Dr. Ghaith' }, rows: his }] },
+      visits: [{ id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p'], nextFollowUp: '2026-10-12' }, { id: 'v2', date: '2026-10-06', rep: 'Dr. Ghaith', clinicId: 'h', doctorIds: ['m'], products: ['q'] }] };
+    const W = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Renova', 'Dr. Ghaith'] });
+    const S = core.weeklyStory(W, { presenter: 'Dr. Ghaith', brandName: b => b === 'scheu' ? 'SCHEU' : b });
+    const keys = S.headline.map(i => i.key);
+    assert.ok(!keys.some(k => /^sales/.test(k)), keys);                                        // sales fell: not a headline
+    assert.ok(S.headline.some(i => i.kind === 'newbiz' && i.big === '2' && /Salwa/.test(i.detail)), S.headline.map(i => i.text)); // the new account and the first-time product; the sample is no win
+    assert.ok(!S.headline.some(i => /SCHEU/.test(i.headline)) && S.also.some(i => i.key === 'brand-small:scheu' && i.big === 'KD 155'));  // R6
+    assert.ok(S.headline.filter(i => i.rep === 'Dr. Ghaith').length <= 1);                   // R11
+    assert.ok(S.headline.every(i => i.big !== '0' && !/^0 /.test(i.big)));                     // R10
+    assert.equal(S.close, S.headline);                                                         // R12
+    assert.ok(S.all.some(i => i.key === 'seeds' && i.big === '1'));                            // samples are seeds
+    const g = S.people['Dr. Ghaith'];
+    assert.ok(g && !/best sales week|up from/.test(g.signature.line), g && g.signature);        // his file covers one week only
+    assert.equal(g.signature.big, 'KD 520');                                                   // the week's largest invoice
+    assert.ok(S.people.Renova.signature.line.startsWith('first order from a new account, Salwa'));
+    assert.ok(S.excluded.some(t => /^المبيعات/.test(t) && /\(A5\)$/.test(t)));               // the left-out sales figure is named, with its appendix page
+    assert.ok(S.excluded.some(t => /من المستهدف/.test(t)));
+  });
+  // the real week 4–8 Oct (the documents as exported) with two months of history before it
+  function realWeekData(){
+    // [date, doc, type, product, qty, gross, net, sret, salesman, brand, customer, class, dsret, ref]
+    const R = (d, doc, sm, cust, net, product, brand, gross) => [d, doc, 0, product || 'P', 1, gross == null ? net : gross, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
+    const M = 'Mariam Zohair', N = 'Ranova Ayman Mohammed', G = 'Ghaith Al Manfe';
+    const clinics = [
+      { id: 'l', name: 'Light Dental', rep: 'Mariam', cls: 'B', doctors: [{ id: 'n', name: 'Dr. Noor' }] },
+      { id: 'j', name: 'Jibla Dental Center', rep: 'Renova', cls: 'A', doctors: [] },
+      { id: 'k', name: 'Kaifan Dental', rep: 'Renova', cls: 'A', doctors: [] },
+      { id: 'u', name: 'Blue Dental', rep: 'Renova', cls: 'B', doctors: [{ id: 'q', name: 'Dr. Q' }] },
+      { id: 'f', name: 'Farwaniya Hospital Polyclinic', rep: 'Renova', cls: 'B', doctors: [] },
+      { id: 'h', name: 'Dr. Nael Al Hazeem Dental Center', rep: 'Dr. Ghaith', prevRep: 'Mariam', repSince: '2026-10-01', cls: 'A', doctors: [{ id: 'm', name: 'Dr. Maha' }] },
+      { id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', cls: 'A', doctors: [] },
+      { id: 's', name: 'Skydental Centre', rep: 'Dr. Ghaith', cls: 'B', doctors: [] }];
+    const girls = [];
+    ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'].forEach((d, i) => {
+      girls.push(R(d, 'G' + i, M, 'Light Dental', 700, 'Strip', 'Intensiv', 900)); girls.push(R(d, 'H' + i, N, 'Jibla Dental Center', 1100, 'Sonic', 'Philips', 1400));
+      girls.push(R(d, 'K' + i, N, 'Kaifan Dental', 300, 'Foil', 'SCHEU', 380)); girls.push(R(d, 'NH' + i, M, 'Dr. Nael Al Hazeem Dental Center', 60, 'Strip', 'Intensiv', 80)); });
+    girls.push(R('2026-09-29', 'SKY0', M, 'Skydental Centre', 40, 'Strip'));
+    // this week (the real documents)
+    girls.push(R('2026-10-05', 'SINV0077150', M, 'Light Dental', 105, 'Strip', 'Intensiv', 130), R('2026-10-05', 'SINV0077150', M, 'Light Dental', 25, 'IPR gauge', 'Intensiv', 30));
+    girls.push(R('2026-10-05', 'MF1', M, 'My Fatoorah', 20, 'Strip'));
+    girls.push(R('2026-10-06', 'SINV0077191', N, 'Salwa', 154.8, 'Imprelon S+', 'SCHEU', 190));          // a first order: Salwa is not in the app
+    girls.push(R('2026-10-06', 'IC1', N, 'Individual - Customers', 15.3, 'Brush', 'Philips'), R('2026-10-07', 'MF3', N, 'My Fatoorah', 14, 'Brush', 'Philips'));
+    girls.push(R('2026-10-06', 'SINV0077188', N, 'Pharmacy plus', 0, 'Sonicare 1100', 'Philips', 18));    // a sample: an all-free document
+    const his = [R('2026-10-01', 'SINV0', G, 'Dr. Nael Al Hazeem Dental Center', 269, 'Strip'),
+      R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 380, 'Swingle', 'Intensiv', 560), R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 105, 'Strip', 'Intensiv', 150),
+      R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 35, 'OS60/3', 'Intensiv', 50),
+      R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 0, 'Ortho-Strips Opener', 'Intensiv', 6),   // free inside the paid invoice: a deal, not a sample
+      R('2026-10-05', 'SINV0077226', G, 'Dr. Nael Al Hazeem Dental Center', 9.25, 'GP Pellet', 'B&L Biotech', 12),
+      R('2026-10-05', 'MF2', G, 'My Fatoorah', 12, 'Strip'),
+      ['2026-10-06', 'SRT0009635', 1, 'Strip', 1, 11.25, -11.25, 11.25, G, 'Intensiv', 'Skydental Centre', 'Clinics', 0, ''],
+      R('2026-10-07', 'SINV0077218', G, 'Bayan Dental Center', 0, 'Mouthwash', 'The Breath Co.', 4)];
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 4640, month: '2026-10', brands: { Intensiv: 600 } }, Renova: { revenue: 10147, month: '2026-10', brands: { SCHEU: 100, Philips: 4000 } }, 'Dr. Ghaith': { revenue: 9416, month: '2026-10', brands: { Intensiv: 2750 } },
+        _history: { '2026-09': { Mariam: { revenue: 9100, month: '2026-09' }, Renova: { revenue: 11571, month: '2026-09' } }, '2026-08': { Mariam: { revenue: 11551, month: '2026-08' }, Renova: { revenue: 12634, month: '2026-08' } } } },
+      erpSales: { periods: [{ id: 'girls', from: '2026-08-01', to: '2026-10-08', repMap: { [M]: 'Mariam', [N]: 'Renova' }, rows: girls }, { id: 'his', from: '2026-10-01', to: '2026-10-08', repMap: { [G]: 'Dr. Ghaith' }, rows: his }] },
+      visits: [
+        { id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p'], nextFollowUp: '2026-10-12' },
+        { id: 'v2', date: '2026-10-05', rep: 'Renova', clinicId: 'f', products: ['p'] },
+        { id: 'v3', date: '2026-10-06', rep: 'Renova', clinicId: 'u', doctorIds: ['q'], products: ['p'], orderTaken: true, orderTotal: 198 },
+        { id: 'v4', date: '2026-10-07', rep: 'Dr. Ghaith', withRep: 'Mariam', clinicId: 'l', doctorIds: ['n'] },
+        { id: 'v5', date: '2026-10-06', rep: 'Dr. Ghaith', clinicId: 'h', doctorIds: ['m'], products: ['q'] }],
+      dayPlans: { '2026-10-12': { Mariam: ['l'] }, '2026-10-13': { 'Dr. Ghaith': ['b'] } } };
+    const reps = ['Mariam', 'Renova', 'Dr. Ghaith'];
+    return { data, reps, clinics };
+  }
+  test('weeklyPages: the real week 4–8 Oct — the money ties to the ERP, samples are all-free documents, the month has a named plan', () => {
+    const { data, reps, clinics } = realWeekData();
+    const W = core.weeklyReport(data, { end: '2026-10-08', reps });
+    // the money ties out: 8 invoices with value + 2 sample documents + 1 return = the week
+    assert.equal(W.team.week, 864.1);
+    assert.deepEqual([W.mix.invoices, W.mix.withValue, W.mix.zeroDocs, W.mix.returnDocs, W.mix.returnsNet], [8, 875.35, 2, 1, -11.25]);
+    assert.deepEqual([W.mix.accounts, W.mix.channelAccounts], [3, 2]);                   // 3 clinics + 2 channel accounts, not "3 accounts"
+    assert.equal(Math.round((W.mix.existing + W.mix.newAccounts + W.mix.channel + W.mix.other + W.mix.returns) * 100) / 100, 864.1);
+    assert.deepEqual([W.mix.existing, W.mix.newAccounts, W.mix.channel, W.mix.returns], [659.25, 154.8, 61.3, -11.25]);
+    assert.equal(W.mix.top.account, 'Dr. Nael Al Hazeem Dental Center'); assert.ok(W.mix.top.share > 0.6 && W.mix.top.share < 0.62);
+    // samples are all-free documents (2), the free line inside SINV0077225 is part of that deal
+    assert.deepEqual(W.free.samples.list.map(x => x.doc), ['SINV0077188', 'SINV0077218']);
+    assert.deepEqual([W.free.deals.docs, W.free.deals.gross, W.free.deals.list[0].doc], [1, 6, 'SINV0077225']);
+    // his files start 1 Oct: his first-time products are not claimed (the four weeks before are not covered)
+    assert.deepEqual(W.wins.placements.filter(x => reps.includes(x.rep)).map(x => [x.rep, x.product]), [['Mariam', 'IPR gauge']]);
+    assert.equal(W.mix.firstTime, 25);
+    assert.deepEqual(W.fieldOrders.map(o => [o.clinic, o.value, o.invoiced]), [['Blue Dental', 198, false]]);
+    assert.deepEqual(W.team.govSites, ['Farwaniya Hospital Polyclinic']);
+    assert.ok(W.checks.some(c => c.key === 'no-plan:Renova'));                               // Renova has nothing saved for next week
+    assert.ok(W.checks.some(c => c.key === 'sample-no-visit:b'));                            // Bayan: samples but no visit logged this month
+    const trend = core.monthlyTrend(data, { reps, end: '2026-10-08', months: 3 });
+    const S = core.weeklyStory(W, { presenter: 'Dr. Ghaith', trend, ask: 'Approve two Sonicare demo units for Jibla and Kaifan' });
+    const PG = S.pages;
+    assert.deepEqual(PG.money.tiles.map(t => t.key), ['week', 'month', 'newbiz', 'price']);  // R13: the same four tiles every week
+    assert.equal(PG.money.tiles[0].big, 'KD 864');
+    assert.ok(/^last week KD [\d,]+/.test(PG.money.tiles[0].detail), PG.money.tiles[0].detail);   // a fixed yardstick every week
+    assert.equal(PG.money.tiles[2].big, 'KD 180');                                         // Salwa 154.80 + the IPR gauge 25
+    assert.equal(PG.money.recon, 'ERP 4–8 Oct: 8 invoices with value (KD 875.35) + 2 sample documents (KD 0) + 1 return (−KD 11.25) = KD 864.10');
+    assert.equal(PG.money.title, 'KD 864 invoiced, all clinic invoices within discount limits');
+    assert.ok(PG.money.concentration && PG.money.concentration.net === 529.25);
+    assert.deepEqual(PG.money.mix.map(m => m.key), ['existing', 'newAccounts', 'channel', 'returns']);
+    // the closed month (day 8): September for the two people with a file and a target
+    assert.ok(PG.closed && /^September closed at \d+% of target: KD [\d,]+ of KD 20,671$/.test(PG.closed.title), PG.closed && PG.closed.title);
+    const gc = PG.closed.people.find(p => p.rep === 'Dr. Ghaith');
+    assert.ok(gc.noTarget && !PG.closed.team.people.includes('Dr. Ghaith'));               // his clinics' September sales count, but he had no September target
+    // the month: the gap in KD and working days, and a plan with names
+    assert.deepEqual([PG.plan.workdays.total, PG.plan.workdays.done, PG.plan.workdays.left], [21, 6, 15]);
+    assert.ok(/^October: KD [\d,]+ to go in 15 working days — the plan$/.test(PG.plan.title), PG.plan.title);
+    assert.ok(PG.plan.levers.some(l => l.key === 'orders' && l.big === 'KD 198'));
+    assert.ok(PG.plan.levers.some(l => l.key === 'key' && /still to visit in October/.test(l.text)));
+    assert.equal(PG.plan.ask, 'Approve two Sonicare demo units for Jibla and Kaifan');
+    // new business in KD; the cover never leads with the presenter's own sale (R11)
+    assert.equal(PG.newBiz.title, 'KD 180 new business: 1 new account, 1 first-time product');
+    assert.equal(PG.cover, 'KD 180 of new business: new account Salwa and 1 first-time product');
+    // the people: the same rows for everyone, money first
+    const g = PG.people.find(p => p.rep === 'Dr. Ghaith'), r = PG.people.find(p => p.rep === 'Renova');
+    assert.deepEqual([g.money.big, r.money.big], ['KD 530', 'KD 184']);
+    assert.ok(/^New account Salwa/.test(r.signature.line) && r.signature.proof === 'SINV0077191');
+    assert.ok(/^Order at Dr\. Nael/.test(g.signature.line) && g.signature.big === 'KD 520');
+    assert.ok(PG.people.every(p => p.money && p.month && 'facts' in p));
+    // price: the samples (2 documents, list value) and the returns against the limit
+    assert.deepEqual([PG.price.samples.docs, PG.price.samples.gross, PG.price.returns.week], [2, 22, 1.3]);
+    // the close: commitments and the recap in page 2's words (R12)
+    assert.ok(PG.close.commits.length >= 2 && PG.close.recap.startsWith('This week: KD 864 invoiced · KD 180 new business'));
+    assert.equal(S.all.find(i => i.key === 'seeds').big, '2');
+    // the panel's rules: the plan says the fair yardstick and the plain arithmetic; the people share one month line
+    assert.equal(PG.plan.sameDays, 'Same days of September: KD 2,160 · September closed at KD 8,680');
+    assert.ok(/^Needed: KD [\d,]+ a working day · so far: KD [\d,]+ a working day$/.test(PG.plan.perDayLine), PG.plan.perDayLine);
+    assert.ok(PG.people.every(p => /^October to date: /.test(p.month.text)), PG.people.map(p => p.month.text));
+    assert.equal(PG.people.find(p => p.rep === 'Dr. Ghaith').closedLine, 'September closed: KD 40 (no target)');
+    assert.ok(/^Next week: 3 key accounts, 1 prospect and KD 198 to invoice$/.test(PG.next.title), PG.next.title);
+    assert.ok(/^Key accounts: 1 of the 3 booked; visit the rest, first Jibla Dental Center \(KD 9,900\)/.test(PG.close.commits[0].text), PG.close.commits[0].text);
+    assert.equal(S.momentum.length, 0);                                                         // the week's sales do not lead: no 8-week page
+  });
+  test('weeklyPages: an invoice above its discount limit is never the hero or a signature; the cover rule; the month counts to the ERP cut-off', () => {
+    const { data, reps } = realWeekData();
+    const W = core.weeklyReport(data, { end: '2026-10-08', reps });
+    const trend = core.monthlyTrend(data, { reps, end: '2026-10-08', months: 3 });
+    // Salwa's first order (SINV0077191) above its limit: the hero and Renova's signature move on to an invoice within limits
+    const W1 = JSON.parse(JSON.stringify(W)); W1.margin.over = [{ doc: 'SINV0077191', account: 'Salwa', pct: 45, limit: 35 }];
+    const P1 = core.weeklyStory(W1, { presenter: 'Dr. Ghaith', trend }).pages;
+    assert.notEqual(P1.newBiz.wins[0].doc, 'SINV0077191');
+    assert.ok(P1.newBiz.wins.find(w => w.doc === 'SINV0077191').overLimit);
+    assert.ok(!/Salwa/.test((P1.people.find(p => p.rep === 'Renova').signature || {}).line || ''));
+    // the presenter's own new business above half the figure: the cover falls back to the week's money line
+    const P2 = core.weeklyStory(W, { presenter: 'Renova', trend }).pages;
+    assert.equal(P2.cover, P2.money.title);
+    // a closed month that rose in KD and % leads the cover on days 1–10
+    const T3 = JSON.parse(JSON.stringify(trend)), sep = T3.months[T3.months.length - 2], aug = T3.months[T3.months.length - 3];
+    reps.forEach(r => { if(sep.byRep[r] && aug.byRep[r]){ aug.byRep[r].sales = 100; aug.byRep[r].target = 1000; aug.byRep[r].pct = 0.1; sep.byRep[r].target = 1000; sep.byRep[r].sales = 900; sep.byRep[r].pct = 0.9; } });
+    const P3 = core.weeklyStory(W, { presenter: 'Dr. Ghaith', trend: T3 }).pages;
+    assert.ok(/^September closed at 90% of target: KD [\d,]+ of KD [\d,]+ \(August 10%\)$/.test(P3.cover), P3.cover);
+    // the ERP stops on 7 Oct: day 7, 5 of 21 working days gone, 16 left
+    const W4 = JSON.parse(JSON.stringify(W)); W4.salesTo = '2026-10-07';
+    const P4 = core.weeklyStory(W4, { presenter: 'Dr. Ghaith', trend }).pages;
+    assert.deepEqual([P4.plan.day, P4.plan.workdays.done, P4.plan.workdays.left], [7, 5, 16]);
+  });
+  test('storyGate: rises, records, streaks and materiality follow the deck rules R2–R6', () => {
+    const g = core.storyGate;
+    assert.equal(g.rise(17, 14, false), true); assert.equal(g.rise(15, 14, false), false);        // +1 is not a rise
+    assert.equal(g.rise(4600, 4484, true), false); assert.equal(g.rise(5000, 4484, true), true);   // +2.6% is not; +11.5% and +KD 516 is
+    assert.equal(g.rise(5, null, false), false);                                                    // no baseline, no rise
+    assert.equal(g.record([null, null, null, null, null, null, 269, 530]), false);                  // one earlier week: no "best of 8"
+    assert.equal(g.record([7, 25, 13, 14, 31, 11, 14, 17]), false);
+    assert.equal(g.record([7, 25, 13, 14, 31, 11, 14, 32]), true);
+    assert.equal(g.record([0, 0, 0, 5, 6]), false);                                                 // a single earlier week above zero is no record
+    assert.equal(g.streak([null, null, 5, 16, 12, 6, 28, 3]), 6); assert.equal(g.streak([3, 0, 2]), 1); assert.equal(g.streak([3, 4, null]), 0);
+    assert.equal(g.material(100, 24204), false); assert.equal(g.material(1500, 24204), true); assert.equal(g.material(1300, 24204), true);
+    assert.equal(g.rank([7, 25, 13, 14, 31, 11, 14, 17]), 3);
+    assert.equal(g.pctOk(14, false), true); assert.equal(g.pctOk(9, false), false); assert.equal(g.pctOk(200, true), false);
+  });
+  test('teamSalesLikeForLike: weeks compare the same people only', () => {
+    const W = { reps: ['Mariam', 'Renova', 'Dr. Ghaith'], history: [
+      { byRep: { Mariam: 100, Renova: 200, 'Dr. Ghaith': null } }, { byRep: { Mariam: 150, Renova: null, 'Dr. Ghaith': null } }, { byRep: { Mariam: 50, Renova: 60, 'Dr. Ghaith': 530 } }] };
+    const t = core.teamSalesLikeForLike(W);                         // the people covered this week AND last week: Mariam only
+    assert.deepEqual(t.people, ['Mariam']); assert.deepEqual(t.values, [100, 150, 50]);
+  });
+  test('foldProducts: lines that share one photo become one family; clinics counted once', () => {
+    const P = [{ product: 'OS40M Strips', brand: 'intensiv', qty: 3, net: 105, accountKeys: ['a', 'b'] }, { product: 'Swingle', brand: 'intensiv', qty: 1, net: 380, accountKeys: ['a'] },
+      { product: 'OS80XC Strips', brand: 'intensiv', qty: 2, net: 70, accountKeys: ['b'] }, { product: 'Imprelon S+', brand: 'scheu', qty: 1, net: 155, accountKeys: ['s'] }];
+    const f = core.foldProducts(P, p => /Strips/.test(p.product) ? { key: 'strips', display: 'Intensiv Ortho-Strips' } : null);
+    assert.deepEqual(f.map(x => [x.display, x.qty, x.net, x.accounts, x.members.length]), [['Swingle', 1, 380, 1, 1], ['Intensiv Ortho-Strips', 5, 175, 2, 2], ['Imprelon S+', 1, 155, 1, 1]]);
+  });
+  test('weeklyReport: margin kept, expansion pipeline and satisfaction signals', () => {
+    const row = (d, doc, cust, gross, net, type) => [d, doc, type ? 1 : 0, 'P', 1, gross, net, 0, 'Mariam Zohair', 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [{ id: 'a', name: 'Alpha', rep: 'Mariam', cls: 'A' }, { id: 'b', name: 'Beta', rep: 'Mariam', cls: 'B' }, { id: 'c', name: 'Gamma', rep: 'Mariam', cls: 'B' }, { id: 'z', name: 'Zeta', rep: 'Mariam', cls: 'C' }];
+    const T = (d, h) => d + 'T' + h + ':00';
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      erpSales: { periods: [{ id: 'p', from: '2026-07-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [
+        row('2026-07-05', 'S0', 'Alpha', 100, 80), row('2026-07-06', 'S00', 'Beta', 100, 80),
+        row('2026-09-28', 'S1', 'Alpha', 100, 70),                       // last week: 30%
+        row('2026-10-05', 'S2', 'Alpha', 100, 80),                       // A: 20%, within 40
+        row('2026-10-06', 'S3', 'Beta', 50, 40),                         // B: 20%, within 35
+        row('2026-10-06', 'S4', 'Beta', 20, 0),                          // an all-free document: a sample, not a sale
+        row('2026-10-07', 'R1', 'Beta', 0, -6, true)] }] },             // a return: 6 of 120 sold = 5%
+      visits: [{ id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'a', mood: 'pleased' }, { id: 'v2', date: '2026-10-06', rep: 'Mariam', clinicId: 'z', mood: 'pleased' },
+        { id: 'v3', date: '2026-10-07', rep: 'Mariam', clinicId: 'z', mood: 'neutral' }, { id: 'v4', date: '2026-10-07', rep: 'Mariam', clinicId: 'c', mood: 'pleased' }],
+      events: [{ id: 'e1', kind: 'issue', type: 'request', rep: 'Mariam', clinicId: 'a', at: T('2026-10-05', '09:00'), resolvedAt: T('2026-10-05', '15:00') }] };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam'] });
+    assert.deepEqual([w.margin.invoices, w.margin.discount, w.margin.withinLimit], [2, 20, 1]);           // (150 − 120) / 150
+    assert.equal(w.history[6].discount, 30); assert.equal(w.margin.avgPrev, 30);
+    assert.deepEqual([w.expansion.territory, w.expansion.active], [4, 2]);
+    assert.deepEqual(w.expansion.pipeline.map(p => [p.clinic, p.visits]), [['Zeta', 2], ['Gamma', 1]]);   // visited, no invoice in 90 days
+    assert.deepEqual(w.satisfaction.repeatAccounts, ['Alpha', 'Beta']);
+    assert.deepEqual([w.satisfaction.requests, w.satisfaction.answeredOnTime, w.satisfaction.returnsPct], [1, 1, 5]);
+    assert.deepEqual(w.satisfaction.moods, { pleased: 3, neutral: 1, concerned: 0 });
+    const hl = core.weeklyHighlights(w);
+    assert.ok(hl.some(t => /^More margin kept: average discount 20% against 30%/.test(t)), hl);
+    assert.ok(hl.some(t => /^Every invoice within the discount limits \(2 invoices/.test(t)));
+    assert.ok(hl.some(t => /^Doctors pleased on 3 of 4 visits/.test(t)));
+    assert.ok(hl.some(t => /^2 clinics in the pipeline/.test(t)));
+    assert.ok(hl.some(t => /^Every client request answered on time \(1\)/.test(t)));
   });
   test('catalogGaps: the Intensiv list and products of brands the catalog lacks, priced from the invoices; services never', () => {
     const products = [{ id: 'p1', name: 'Sonicare 4100', brand: 'Philips' }, { id: 'OS40M-DS/3', name: 'Old strip name', brand: 'Intensiv' }];
