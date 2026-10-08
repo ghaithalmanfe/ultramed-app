@@ -858,6 +858,8 @@ describe('rep and customer matching', () => {
     assert.equal(M.mtd, 135); assert.equal(M.pct, 0.135);        // Oct 1–8: 70 + 40 + 25
     assert.equal(w.team.week, 197); assert.equal(w.team.target, 3000);
     assert.deepEqual(w.wins.newAccounts.map(x => [x.account, x.rep, x.net]), [['New Smile', 'Dr. Ghaith', 90]]);
+    assert.deepEqual([w.wins.newAccounts[0].doc, w.wins.newAccounts[0].products.map(p => p.product)], ['S4', ['Strip']]);
+    assert.equal(w.wins.placements[0].doc, 'S3');
     assert.deepEqual(w.wins.reactivated.map(x => [x.account, x.lastBefore]), [['Gamma Center', '2026-07-10']]);
     assert.deepEqual(w.wins.placements.map(x => [x.account, x.product, x.net]), [['Alpha Dental', 'Sonic 4300', 25]]);
     assert.deepEqual(w.wins.samples.map(x => [x.account, x.items]), [['Beta Clinic', ['Sample paste']]]);
@@ -890,6 +892,98 @@ describe('rep and customer matching', () => {
     w2.history[7].byRep = { Mariam: 5, 'Dr. Ghaith': 0 };
     const hl2 = core.weeklyHighlights(w2);
     assert.ok(!hl2.some(t => /^Best sales week|^Sales up|above the average/.test(t)) && hl2.some(t => /new account/.test(t)));
+  });
+  test('weeklyReport: a week with no sales file of a person is no figure for that person, never a record "best week of 8"', () => {
+    const row = (d, doc, sm, net) => [d, doc, 0, 'P', 1, net, net, 0, sm, 'Intensiv', sm === 'Mariam Zohair' ? 'Alpha' : 'Gamma Clinic', 'Clinics', 0, '']; // Gamma is not in the app: the salesman's
+    const data = { today: '2026-10-08', clinics: [{ id: 'a', name: 'Alpha', rep: 'Mariam', cls: 'A' }], erpMap: {},
+      erpSales: { periods: [
+        { id: 'girls', from: '2026-07-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [row('2026-08-20', 'S1', 'Mariam Zohair', 100), row('2026-10-06', 'S2', 'Mariam Zohair', 50)] },
+        { id: 'his', from: '2026-10-05', to: '2026-10-05', repMap: { 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [row('2026-10-05', 'S3', 'Ghaith Al Manfe', 530)] }] } };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Dr. Ghaith'] });
+    assert.equal(w.history[7].byRep['Dr. Ghaith'], 530);
+    assert.ok(w.history.slice(0, 7).every(h => h.byRep['Dr. Ghaith'] === null), w.history.map(h => h.byRep['Dr. Ghaith']));  // his file covers 5 Oct only
+    assert.ok(w.history.slice(0, 7).every(h => h.byRep.Mariam !== null));                                                    // hers covers every week
+    const hl = core.weeklyHighlights(w);
+    assert.ok(!hl.some(t => /Best week of the last 8 for Dr\. Ghaith/.test(t)), hl);
+  });
+  test('weeklyReport: an earlier week counts for a person only when that person\'s files cover every day of it', () => {
+    const row = (d, doc, net) => [d, doc, 0, 'P', 1, net, net, 0, 'Ghaith Al Manfe', 'Intensiv', 'Gamma Clinic', 'Clinics', 0, ''];
+    const data = { today: '2026-10-08', clinics: [], erpMap: {},
+      erpSales: { periods: [{ id: 'his', from: '2026-10-01', to: '2026-10-08', repMap: { 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [row('2026-10-01', 'S1', 269), row('2026-10-05', 'S2', 530)] }] } };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Dr. Ghaith'] });
+    assert.equal(w.history[6].from, '2026-09-27');
+    assert.equal(w.history[6].byRep['Dr. Ghaith'], null);          // his file starts 1 Oct: 27 Sep – 3 Oct is not covered, so no "up from KD 269"
+    assert.equal(w.history[6].repCovered['Dr. Ghaith'], false);
+    assert.equal(w.history[7].byRep['Dr. Ghaith'], 530);           // this week may be partial: it can only understate
+    assert.equal(w.salesTo, '2026-10-08');
+  });
+  test('weeklyReport: team field counts are distinct — one clinic on one day is one visit, however many logged it', () => {
+    const clinics = [{ id: 'l', name: 'Light Dental', rep: 'Mariam', cls: 'B', doctors: [{ id: 'n', name: 'Dr. Noor' }] }, { id: 'b', name: 'Blue Dental', rep: 'Renova', cls: 'B', doctors: [{ id: 'a', name: 'Dr. Abir' }] }];
+    const data = { today: '2026-10-08', clinics, erpMap: {}, erpSales: { periods: [] },
+      visits: [
+        { id: 'v1', date: '2026-10-07', rep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p1'], nextFollowUp: '2026-10-14' },
+        { id: 'v2', date: '2026-10-07', rep: 'Dr. Ghaith', withRep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p1', 'p2'], nextFollowUp: '2026-10-10' },  // the same visit, logged again as his joint visit
+        { id: 'v3', date: '2026-10-07', rep: 'Renova', clinicId: 'b', doctorIds: ['a'], products: ['p2'] }] };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Renova', 'Dr. Ghaith'] });
+    assert.deepEqual([w.team.fieldVisits, w.team.clinics, w.team.doctorsMet, w.team.productsPresented, w.team.followUpClinics], [2, 2, 2, 2, 1]);
+    assert.deepEqual([w.perRep.Mariam.fieldVisits, w.perRep.Mariam.logged, w.perRep['Dr. Ghaith'].fieldVisits, w.perRep['Dr. Ghaith'].logged], [1, 1, 1, 1]);
+    assert.equal(w.history[7].fieldVisits, 2);
+  });
+  test('storyGate: rises, records, streaks and materiality follow the deck rules R2–R6', () => {
+    const g = core.storyGate;
+    assert.equal(g.rise(17, 14, false), true); assert.equal(g.rise(15, 14, false), false);        // +1 is not a rise
+    assert.equal(g.rise(4600, 4484, true), false); assert.equal(g.rise(5000, 4484, true), true);   // +2.6% is not; +11.5% and +KD 516 is
+    assert.equal(g.rise(5, null, false), false);                                                    // no baseline, no rise
+    assert.equal(g.record([null, null, null, null, null, null, 269, 530]), false);                  // one earlier week: no "best of 8"
+    assert.equal(g.record([7, 25, 13, 14, 31, 11, 14, 17]), false);
+    assert.equal(g.record([7, 25, 13, 14, 31, 11, 14, 32]), true);
+    assert.equal(g.record([0, 0, 0, 5, 6]), false);                                                 // a single earlier week above zero is no record
+    assert.equal(g.streak([null, null, 5, 16, 12, 6, 28, 3]), 6); assert.equal(g.streak([3, 0, 2]), 1); assert.equal(g.streak([3, 4, null]), 0);
+    assert.equal(g.material(100, 24204), false); assert.equal(g.material(1500, 24204), true); assert.equal(g.material(1300, 24204), true);
+    assert.equal(g.rank([7, 25, 13, 14, 31, 11, 14, 17]), 3);
+    assert.equal(g.pctOk(14, false), true); assert.equal(g.pctOk(9, false), false); assert.equal(g.pctOk(200, true), false);
+  });
+  test('teamSalesLikeForLike: weeks compare the same people only', () => {
+    const W = { reps: ['Mariam', 'Renova', 'Dr. Ghaith'], history: [
+      { byRep: { Mariam: 100, Renova: 200, 'Dr. Ghaith': null } }, { byRep: { Mariam: 150, Renova: null, 'Dr. Ghaith': null } }, { byRep: { Mariam: 50, Renova: 60, 'Dr. Ghaith': 530 } }] };
+    const t = core.teamSalesLikeForLike(W);
+    assert.deepEqual(t.people, ['Mariam', 'Renova', 'Dr. Ghaith']); assert.deepEqual(t.values, [null, null, 640]);
+  });
+  test('foldProducts: lines that share one photo become one family; clinics counted once', () => {
+    const P = [{ product: 'OS40M Strips', brand: 'intensiv', qty: 3, net: 105, accountKeys: ['a', 'b'] }, { product: 'Swingle', brand: 'intensiv', qty: 1, net: 380, accountKeys: ['a'] },
+      { product: 'OS80XC Strips', brand: 'intensiv', qty: 2, net: 70, accountKeys: ['b'] }, { product: 'Imprelon S+', brand: 'scheu', qty: 1, net: 155, accountKeys: ['s'] }];
+    const f = core.foldProducts(P, p => /Strips/.test(p.product) ? { key: 'strips', display: 'Intensiv Ortho-Strips' } : null);
+    assert.deepEqual(f.map(x => [x.display, x.qty, x.net, x.accounts, x.members.length]), [['Swingle', 1, 380, 1, 1], ['Intensiv Ortho-Strips', 5, 175, 2, 2], ['Imprelon S+', 1, 155, 1, 1]]);
+  });
+  test('weeklyReport: margin kept, expansion pipeline and satisfaction signals', () => {
+    const row = (d, doc, cust, gross, net, type) => [d, doc, type ? 1 : 0, 'P', 1, gross, net, 0, 'Mariam Zohair', 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [{ id: 'a', name: 'Alpha', rep: 'Mariam', cls: 'A' }, { id: 'b', name: 'Beta', rep: 'Mariam', cls: 'B' }, { id: 'c', name: 'Gamma', rep: 'Mariam', cls: 'B' }, { id: 'z', name: 'Zeta', rep: 'Mariam', cls: 'C' }];
+    const T = (d, h) => d + 'T' + h + ':00';
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      erpSales: { periods: [{ id: 'p', from: '2026-07-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam' }, rows: [
+        row('2026-07-05', 'S0', 'Alpha', 100, 80), row('2026-07-06', 'S00', 'Beta', 100, 80),
+        row('2026-09-28', 'S1', 'Alpha', 100, 70),                       // last week: 30%
+        row('2026-10-05', 'S2', 'Alpha', 100, 80),                       // A: 20%, within 40
+        row('2026-10-06', 'S3', 'Beta', 50, 40),                         // B: 20%, within 35
+        row('2026-10-06', 'S4', 'Beta', 20, 0),                          // an all-free document: a sample, not a sale
+        row('2026-10-07', 'R1', 'Beta', 0, -6, true)] }] },             // a return: 6 of 120 sold = 5%
+      visits: [{ id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'a', mood: 'pleased' }, { id: 'v2', date: '2026-10-06', rep: 'Mariam', clinicId: 'z', mood: 'pleased' },
+        { id: 'v3', date: '2026-10-07', rep: 'Mariam', clinicId: 'z', mood: 'neutral' }, { id: 'v4', date: '2026-10-07', rep: 'Mariam', clinicId: 'c', mood: 'pleased' }],
+      events: [{ id: 'e1', kind: 'issue', type: 'request', rep: 'Mariam', clinicId: 'a', at: T('2026-10-05', '09:00'), resolvedAt: T('2026-10-05', '15:00') }] };
+    const w = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam'] });
+    assert.deepEqual([w.margin.invoices, w.margin.discount, w.margin.withinLimit], [2, 20, 1]);           // (150 − 120) / 150
+    assert.equal(w.history[6].discount, 30); assert.equal(w.margin.avgPrev, 30);
+    assert.deepEqual([w.expansion.territory, w.expansion.active], [4, 2]);
+    assert.deepEqual(w.expansion.pipeline.map(p => [p.clinic, p.visits]), [['Zeta', 2], ['Gamma', 1]]);   // visited, no invoice in 90 days
+    assert.deepEqual(w.satisfaction.repeatAccounts, ['Alpha', 'Beta']);
+    assert.deepEqual([w.satisfaction.requests, w.satisfaction.answeredOnTime, w.satisfaction.returnsPct], [1, 1, 5]);
+    assert.deepEqual(w.satisfaction.moods, { pleased: 3, neutral: 1, concerned: 0 });
+    const hl = core.weeklyHighlights(w);
+    assert.ok(hl.some(t => /^More margin kept: average discount 20% against 30%/.test(t)), hl);
+    assert.ok(hl.some(t => /^Every invoice within the discount limits \(2 invoices/.test(t)));
+    assert.ok(hl.some(t => /^Doctors pleased on 3 of 4 visits/.test(t)));
+    assert.ok(hl.some(t => /^2 clinics in the pipeline/.test(t)));
+    assert.ok(hl.some(t => /^Every client request answered on time \(1\)/.test(t)));
   });
   test('catalogGaps: the Intensiv list and products of brands the catalog lacks, priced from the invoices; services never', () => {
     const products = [{ id: 'p1', name: 'Sonicare 4100', brand: 'Philips' }, { id: 'OS40M-DS/3', name: 'Old strip name', brand: 'Intensiv' }];

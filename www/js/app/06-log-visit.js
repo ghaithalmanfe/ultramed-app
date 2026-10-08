@@ -59,6 +59,7 @@ function prepLogView(qClinicId){
   renderProductChips();
 
   noOrderReason = null;
+  visitMood = null; renderMoodChips();
   visitPhotos = [];
   renderVisitPhotos();
   setOrder(false);
@@ -498,6 +499,7 @@ async function saveVisit(){
   const allItems = savedOrders.flatMap(o=>o.items);
   const visit = {id:uid(), clinicId, rep, withRep: (joint && joint!==rep) ? joint : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorIds[0]||null, doctorIds: selectedDoctorIds.slice(), nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
     noOrderReason: (savedOrders.length===0) ? (noOrderReason || document.getElementById('noOrderOther').value.trim() || null) : null};
+  if(visitMood) visit.mood = visitMood;                // the doctor's satisfaction, as the rep read it (optional)
   if(visitPhotos.length){
     const ids=[];
     for(const ph of visitPhotos){ if(await savePhotoBlob(ph.id, ph.full)) ids.push({id:ph.id, thumb:ph.thumb}); }
@@ -592,3 +594,12 @@ async function clearFollowUp(clinicId){
   renderAll();
 }
 
+// The doctor's satisfaction on this visit, as the rep read it: optional, one
+// tap. Feeds "doctor satisfaction" in the weekly management deck.
+const VISIT_MOODS = [['pleased', '😊 Pleased'], ['neutral', '😐 Neutral'], ['concerned', '😟 Concerned']];
+let visitMood = null;
+function renderMoodChips(){
+  const el = document.getElementById('moodChips'); if(!el) return;
+  el.innerHTML = VISIT_MOODS.map(([k, l]) => `<div class="chip small ${visitMood === k ? 'on' : ''}" onclick="pickMood('${k}')">${l}</div>`).join('');
+}
+function pickMood(k){ visitMood = visitMood === k ? null : k; renderMoodChips(); }
