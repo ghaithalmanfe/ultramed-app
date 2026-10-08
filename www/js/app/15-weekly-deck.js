@@ -1104,7 +1104,7 @@ async function wdAppendix(pres, c){
     const lp = W.lastPlan;
     if(lp){ lp.plans.forEach(e => rows12.push([e.rep, dmy(e.date), t('This week\'s plan', 'المخطط هذا الأسبوع'), cut(e.clinic, 40) + (e.done ? t(' · done', ' · تمّت') : t(' · not visited', ' · لم تتم'))]));
       lp.followUpList.forEach(e => rows12.push([e.rep, dmy(e.due), t('Follow-up due this week', 'متابعة مستحقة هذا الأسبوع'), cut(e.clinic, 40) + (e.done ? t(' · done', ' · تمّت') : t(' · not yet', ' · لم تتم بعد'))])); }
-    table('A12', t('Next week in full, and this week\'s plan against what was done', 'الأسبوع القادم بالتفصيل، وهذا الأسبوع: المخطط مقابل الفعلي'), AR ? ['الفرد', 'اليوم', 'البند', 'العيادة'] : ['Person', 'Day', 'What', 'Clinic'], rows12, [1.6, 1.4, 2.6, 6.53], t('Nothing saved for next week yet.', 'لا شيء محفوظ للأسبوع القادم بعد.'), 14,
+    table('A12', t('Next week in full; this week: planned against done', 'الأسبوع القادم بالتفصيل، وهذا الأسبوع: المخطط مقابل الفعلي'), AR ? ['الفرد', 'اليوم', 'البند', 'العيادة'] : ['Person', 'Day', 'What', 'Clinic'], rows12, [1.6, 1.4, 2.6, 6.53], t('Nothing saved for next week yet.', 'لا شيء محفوظ للأسبوع القادم بعد.'), 14,
       lp ? t('This week: ' + lp.plannedDone + ' of ' + lp.planned + ' planned visits done; ' + lp.followUpsDone + ' of ' + lp.followUps + ' follow-ups done.', 'هذا الأسبوع، المخطط مقابل الفعلي: الزيارات ' + lp.plannedDone + ' من ' + lp.planned + '، والمتابعات ' + lp.followUpsDone + ' من ' + lp.followUps + '.') : ''); }
 
   // A13 · how these figures are built, and the picture credits

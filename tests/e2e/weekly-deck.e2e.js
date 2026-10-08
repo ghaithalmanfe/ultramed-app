@@ -31,6 +31,9 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   const browser = await chromium.launch(launchOpts());
   const ctx = await browser.newContext();
   await blockFirebase(ctx);
+  // hermetic: product photos on remote hosts (Drive, googleusercontent …) are never fetched here — in CI they
+  // answer 429 or fail CORS; the deck must then fall back to the bundled photos or a brand tile, as it does offline
+  await ctx.route(u => !/^(http:\/\/localhost[:/]|data:|blob:)/.test(u.href), r => r.abort());
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
