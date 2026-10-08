@@ -1,7 +1,10 @@
 // Weekly management deck: the supervisor's Thursday PowerPoint is built in the
-// browser from the app's own data — this builds one from a known week and
-// reads it back: every slide present, the right figures on them, every invoice,
-// visit and win of the week in the appendix, and a real file download.
+// browser from the app's own data — this builds one from a known week (4–8 Oct
+// 2026, day 8 of the month) and reads it back: the money page with its four
+// fixed figures that tie to the ERP, the closed month, the month's plan, new
+// business, brands, price, relationships, the people, next week and the
+// commitments; the appendix with every figure; Arabic notes; the dialog's
+// checklist and "Our ask"; and a real file download.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -43,7 +46,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
       delete: async k => window.__cDel(k),
       list: async p => ({ keys: await window.__cList(p) }),
     };
-    const off = new Date(2026, 9, 8, 10, 0, 0).getTime() - Date.now(); // 28 Sep 2026, ticking
+    const off = new Date(2026, 9, 8, 10, 0, 0).getTime() - Date.now(); // 8 Oct 2026, ticking
     const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
   });
   const boot = async (who, role) => {
@@ -58,70 +61,124 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   cloud.clinics = JSON.stringify([
     {id:'a', name:'Alpha Dental Center', rep:M, cls:'A', doctors:[{id:'d1', name:'Dr. Huda Ali'}], nextFollowUp:'2026-10-13'},
     {id:'b', name:'Beta Clinic', rep:M, cls:'A', doctors:[]},
-    {id:'c', name:'Crown Dental Center', rep:'Renova', cls:'A', doctors:[]},
+    {id:'c', name:'Crown Dental Center', rep:'Renova', cls:'A', doctors:[{id:'d2', name:'Dr. Sami'}]},
+    {id:'k', name:'Kaifan Dental', rep:'Renova', cls:'A', doctors:[]},
+    {id:'f', name:'Farwaniya Polyclinic', rep:'Renova', cls:'B', doctors:[]},
+    {id:'u', name:'Blue Dental', rep:'Renova', cls:'B', doctors:[{id:'d3', name:'Dr. Q'}]},
     {id:'g', name:'Gamma Center', rep:G, cls:'B', doctors:[]},
     {id:'n', name:'New Smile Clinic', rep:G, cls:'C', doctors:[]}]);
-  cloud.targets = JSON.stringify({ [M]: {revenue: 4640.4, month:'2026-10', brands: {'Intensiv': 660, 'Philips Sonicare': 960}}, Renova: {revenue: 5278.45, month:'2026-10', brands: {'Waterpik': 846.3}}, [G]: {revenue: 9416.15, month:'2026-10', brands: {'Intensiv': 1339.25, 'B&L Biotech': 1461}}, _history: { '2026-09': { [M]: {revenue: 500, month:'2026-09'} } } });
+  cloud.targets = JSON.stringify({ [M]: {revenue: 4640.4, month:'2026-10', brands: {'Intensiv': 660, 'Philips Sonicare': 960}}, Renova: {revenue: 5278.45, month:'2026-10', brands: {'Waterpik': 846.3}}, [G]: {revenue: 9416.15, month:'2026-10', brands: {'Intensiv': 1339.25, 'B&L Biotech': 1461}},
+    _history: { '2026-09': { [M]: {revenue: 1500, month:'2026-09'}, Renova: {revenue: 2500, month:'2026-09'} }, '2026-08': { [M]: {revenue: 1800, month:'2026-08'}, Renova: {revenue: 2600, month:'2026-08'} } } });
   cloud.visits = JSON.stringify([
-    {id:'v1', date:'2026-10-05', rep:M, clinicId:'a', doctorIds:['d1'], products:['p1','p2'], orderTaken:true, orderTotal:40, nextFollowUp:'2026-10-13', ts:1},
-    {id:'v2', date:'2026-10-06', rep:G, withRep:M, clinicId:'n', products:['p1'], ts:2},
-    {id:'v3', date:'2026-10-07', rep:'Renova', clinicId:'c', products:[], ts:3},
-    {id:'v4', date:'2026-10-07', rep:M, clinicId:'b', callOnly:true, ts:4}]);
-  cloud.dayPlans = JSON.stringify({ '2026-10-12': { [M]: ['b'] }, '2026-10-13': { Renova: ['c'] } });
+    {id:'v0', date:'2026-09-29', rep:M, clinicId:'a', doctorIds:['d1'], products:['p1'], nextFollowUp:'2026-10-06', ts:0},
+    {id:'v1', date:'2026-10-05', rep:M, clinicId:'a', doctorIds:['d1'], products:['p1','p2'], orderTaken:true, orderTotal:40, nextFollowUp:'2026-10-13', mood:'pleased', ts:1},
+    {id:'v2', date:'2026-10-06', rep:G, withRep:M, clinicId:'n', products:['p1'], mood:'pleased', ts:2},
+    {id:'v3', date:'2026-10-07', rep:'Renova', clinicId:'c', doctorIds:['d2'], products:[], mood:'neutral', ts:3},
+    {id:'v4', date:'2026-10-07', rep:M, clinicId:'b', callOnly:true, ts:4},
+    {id:'v5', date:'2026-10-05', rep:'Renova', clinicId:'f', products:['p3'], mood:'pleased', ts:5},
+    {id:'v6', date:'2026-10-06', rep:'Renova', clinicId:'u', doctorIds:['d3'], products:['p3'], orderTaken:true, orderTotal:198, ts:6}]);
+  cloud.dayPlans = JSON.stringify({ '2026-10-05': { [M]: ['a'] }, '2026-10-12': { [M]: ['b'] }, '2026-10-13': { [G]: ['g'] } });
   const H = ',Date,Type,,Invoice#,Date of Stock Issue,Stock Issue #,Code,Account,Customer Class,Code,AltCode,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name,Remarks,';
-  const L = (d, inv, acct, net, product, brand, sm) => `,${d},SalesInvoice,Credit,${inv},${d},MIV${inv},001,${acct},Clinics,X1,01/1,${product},1,${net},0,${net},0,0,${net},${brand},${sm},,`;
-  const csv = [H,
-    L('10/07/2026','SINV7001','Gamma Center',50,'Ortho Strips','Intensiv','Ghaith Al Manfe'),
-    L('28/09/2026','SINV7002','Alpha Dental Center',100,'Ortho Strips','Intensiv','Mariam Zohair'),
-    L('05/10/2026','SINV7003','Alpha Dental Center',40,'Ortho Strips','Intensiv','Mariam Zohair'),
-    L('05/10/2026','SINV7003','Alpha Dental Center',25,'Sonicare 4300','Philips Export BV','Mariam Zohair'),
-    L('06/10/2026','SINV7004','New Smile Clinic',90,'Ortho Strips','Intensiv','Ghaith Al Manfe'),
-    L('07/10/2026','SINV7005','Gamma Center',30,'Ortho Strips','Intensiv','Ghaith Al Manfe'),
-    L('07/10/2026','SINV7006','Crown Dental Center',46.06,'Cordless Plus','Waterpik','Ranova Ayman Mohammed'),
-    L('07/10/2026','SINV7007','Beta Clinic',0,'Sample toothpaste','Hismile','Ghaith Al Manfe')].join('\n');
+  const L = (d, inv, acct, net, product, brand, sm, gross) => { const g = gross == null ? net : gross; return `,${d},${/^SRT/.test(inv) ? 'SalesReturn' : 'SalesInvoice'},Credit,${inv},${d},MIV${inv},001,${acct},Clinics,X1,01/1,${product},1,${g},${Math.round((g - net) * 1000) / 1000},${net},0,0,${net},${brand},${sm},,`; };
+  const MZ = 'Mariam Zohair', RA = 'Ranova Ayman Mohammed', GA = 'Ghaith Al Manfe';
+  const lines = [H, L('10/07/2026','SINV7001','Gamma Center',50,'Ortho Strips','Intensiv',GA)];
+  ['03/08','10/08','17/08','24/08'].forEach((d, i) => lines.push(L(d + '/2026','SINV71' + i,'Alpha Dental Center',325,'Ortho Strips','Intensiv',MZ,430), L(d.replace(/^\d+/, x => String(+x + 1).padStart(2, '0')) + '/2026','SINV72' + i,'Crown Dental Center',500,'Cordless Plus','Waterpik',RA,650)));
+  ['01/09','08/09','15/09','22/09'].forEach((d, i) => lines.push(L(d + '/2026','SINV73' + i,'Alpha Dental Center',300,'Ortho Strips','Intensiv',MZ,400), L(d.replace(/^\d+/, x => String(+x + 1).padStart(2, '0')) + '/2026','SINV74' + i,'Crown Dental Center',500,'Cordless Plus','Waterpik',RA,650)));
+  lines.push(L('10/09/2026','SINV7501','Kaifan Dental',200,'Sonicare 3100','Philips Export BV',RA,260), L('24/09/2026','SINV7502','Kaifan Dental',200,'Sonicare 3100','Philips Export BV',RA,260));
+  lines.push(L('01/10/2026','SINV8000','Alpha Dental Center',70,'Ortho Strips','Intensiv',MZ,90));
+  // the week: a first-time product, a new account, a clinic back after 60+ days, a deal with a free line, a sample, a channel sale, a return
+  lines.push(L('05/10/2026','SINV8001','Alpha Dental Center',40,'Ortho Strips','Intensiv',MZ,50), L('05/10/2026','SINV8001','Alpha Dental Center',25,'Sonicare 4300','Philips Export BV',MZ,30),
+    L('06/10/2026','SINV8002','New Smile Clinic',90,'Ortho Strips','Intensiv',GA,110), L('07/10/2026','SINV8003','Gamma Center',30,'Ortho Strips','Intensiv',GA),
+    L('07/10/2026','SINV8004','Crown Dental Center',46.06,'Cordless Plus','Waterpik',RA,60), L('07/10/2026','SINV8004','Crown Dental Center',0,'Waterpik tips','Waterpik',RA,5),
+    L('07/10/2026','SINV8005','Beta Clinic',0,'Sample toothpaste','Hismile',GA,4), L('06/10/2026','SINV8006','My Fatoorah',20,'Ortho Strips','Intensiv',RA),
+    L('06/10/2026','SRT8007','Alpha Dental Center',-11.25,'Ortho Strips','Intensiv',MZ,-11.25));
+  const csv = lines.join('\n');
   await page.goto('http://localhost:8201/index.html'); await page.waitForTimeout(300);
   await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(250);
   await page.evaluate(async (csv) => { window.confirm = () => true; openErpImport(); await erpAutoImport(csv); await new Promise(r => setTimeout(r, 300));
     const b = [...document.querySelectorAll('button')].find(b => /Save & analyze/.test(b.textContent)); if(b) b.click(); await new Promise(r => setTimeout(r, 800)); try{ closeModal(); }catch(e){} }, csv);
   const tile = await page.evaluate(() => { switchView('more'); const el = document.getElementById('moreBody') || document.body; return /Weekly management deck/.test(el.innerText); });
   check('the supervisor has a "Weekly management deck" tile', tile);
-  // build it and read every slide back with the zip library the bundle ships
+  // the dialog: the checklist before the meeting and the optional ask
+  const dlg = await page.evaluate(() => { openWeeklyDeck(); const m = document.querySelector('#modalBack') || document.body; return { text: m.innerText, ask: !!document.getElementById('wdAsk') }; });
+  check('the dialog lists what to fix before the meeting (Renova has no visits planned next week) and offers "Our ask"', dlg.ask && /Renova has no visits planned for next week|لا توجد زيارات مخططة لـRenova/.test(dlg.text) && /Kaifan|key \(A\) account|حسابات رئيسية/.test(dlg.text), dlg.text.slice(0, 600));
+  // build it and read every slide (and its notes) back with the zip library the bundle ships
   const deck = await page.evaluate(async () => {
-    const pres = await buildWeeklyDeck('2026-10-08');
+    const pres = await buildWeeklyDeck('2026-10-08', { ask: 'Approve two Sonicare demo units for Crown and Kaifan' });
     const b64 = await pres.write({ outputType: 'base64' });
     const zip = await window.JSZip.loadAsync(b64, { base64: true });
-    const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => parseInt(a.match(/\d+/)) - parseInt(b.match(/\d+/)));
-    const texts = []; for(const n of names){ const x = await zip.file(n).async('string'); texts.push((x.match(/<a:t>([^<]*)<\/a:t>/g) || []).map(t => t.replace(/<\/?a:t>/g, '')).join(' ')); }
+    const num = n => parseInt(n.match(/(\d+)\.xml$/)[1], 10);
+    const dec = t => t.replace(/<\/?a:t>/g, '').replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\u00A0/g, ' ');
+    const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => num(a) - num(b));
+    const texts = []; for(const n of names){ const x = await zip.file(n).async('string'); texts.push((x.match(/<a:t>([^<]*)<\/a:t>/g) || []).map(dec).join(' ')); }
+    const nn = Object.keys(zip.files).filter(n => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(n)).sort((a, b) => num(a) - num(b));
+    const notes = []; for(const n of nn){ const x = await zip.file(n).async('string'); notes.push((x.match(/<a:t>([^<]*)<\/a:t>/g) || []).map(dec).join(' ')); }
     const charts = Object.keys(zip.files).filter(n => /^ppt\/charts\/chart\d+\.xml$/.test(n)).length;
-    return { b64len: b64.length, texts, charts, b64 };
+    const links = []; for(const n of Object.keys(zip.files).filter(n => /^ppt\/slides\/_rels\/slide\d+\.xml\.rels$/.test(n))){ const x = await zip.file(n).async('string'); (x.match(/Target="slide\d+\.xml"/g) || []).forEach(t => links.push(t)); }
+    return { texts, notes, charts, links: links.length, b64 };
   });
   require('fs').writeFileSync(require('path').join(require('os').tmpdir(), 'weekly-deck-test.pptx'), Buffer.from(deck.b64, 'base64'));
   const T = deck.texts, all = T.join(' || ');
-  check('the deck has its slides: title, headlines, glance, dividers, target, 8 weeks, best sellers, brands, field, wins, next week, closing, appendix, method', T.length >= 16 && /This week(&apos;|')s headlines/.test(T[1]) && /Sales (&amp;|&) targets/.test(all) && /In the field/.test(all) && /Best sellers of the week/.test(all) && /The week in three numbers/.test(all) && /Field team weekly update/.test(T[0]) && /Week of 4 – 8 Oct 2026/.test(T[0]), T.map(t => t.slice(0, 40)));
-  check('nine native charts (a target ring per person, 8 weeks, brands, 2 × sales month by month, 2 × field work month by month)', deck.charts === 9, deck.charts);
-  const glance = T.find(t => /The week at a glance/.test(t)) || '';
-  check('glance: KD 231 invoiced (65 + 120 + 46), up 131% on the week before (100), field visits and wins', /KD 231/.test(glance) && /▲ 131% on the week before/.test(glance) && /Field visits/.test(glance) && /Wins · 2 new, 1 back, 1 new products, 1 sampled/.test(glance), glance.slice(0, 400));
-  check('highlights lead with the records of the last 8 weeks, then the new accounts — achievements only, nothing weak', /Headline\s+Best sales week of the last 8: KD 231 invoiced\./.test(glance) && /Best week of the last 8 for Dr\. Ghaith: KD 120/.test(glance) && /2 new accounts placed a first order: New Smile Clinic, Crown Dental Center/.test(glance) && !/0 of|Week before/.test(glance), glance.slice(300, 1100));
-  const w8 = T.find(t => /This week against the last 8 weeks/.test(t)) || '';
-  check('8-week slide: every week since 16 Aug, this week marked, the best of each measure starred', /16 – 22 Aug/.test(w8) && /This week Sales \(KD\)/.test(w8) && /Gold column = this week \(4 – 8 Oct 2026/.test(w8) && /231 ★/.test(w8) && /Accounts invoiced/.test(w8) && /Doctors met/.test(w8), w8.slice(0, 700));
-  check('appendix: wins and invoices biggest first', /every win of the week, biggest first/.test(all) && /every invoice of the week, largest first/.test(all) && all.indexOf('SINV7004') < all.indexOf('SINV7003'), '');
-  const tgt = T.find(t => /Month to date against target/.test(t)) || '';
-  check('target cards: Mariam 1% of KD 4,640 with KD 65 this week; the team line', /Mariam 1% of target KD 65 of KD 4,640 This week KD 65/.test(tgt) && /Team\s+KD 231 of KD 19,335 · 1%/.test(tgt), tgt.slice(0, 400));
-  const wins = T.find(t => /Wins of the week/.test(t)) || '';
-  check('wins slide: new account, back after 60+ days, new product placed, largest invoice', /New Smile Clinic/.test(wins) && /Gamma Center/.test(wins) && /Sonicare 4300 — Alpha Dental Center/.test(wins) && /KD 90\.00/.test(wins), wins.slice(0, 600));
-  check('appendix lists every invoice of the week (5 with a value + the sample line)', /SINV7003/.test(all) && /SINV7004/.test(all) && /SINV7005/.test(all) && /SINV7006/.test(all) && /SINV7007/.test(all) && !/SINV7002/.test(all.split('every invoice')[1] || ''), '');
-  check('appendix lists every visit and call with doctors met', /Alpha Dental Center visit Dr\. Huda Ali/.test(all) && /Dr\. Ghaith \+ Mariam/.test(all) && /Beta Clinic call/.test(all), '');
-  check('next week shows the planned visits and follow-ups', /1 planned visit/.test(all) && /Mon · Beta Clinic/.test(all) && /13 Oct · Alpha Dental Center/.test(all), '');
-  const kpi = T.find(t => /KPI scorecard – month to date/.test(t)) || '';
-  check('KPI slide: the 10 measures with weights and a total out of 100 for each person', /Total score/.test(kpi) && /Sales achievement 30%/.test(kpi) && /Answering clients on time 5%/.test(kpi) && (kpi.match(/\d+ \/ 100/g) || []).length === 3, kpi.slice(0, 300));
-  const trS = T.find(t => /Month by month: sales against earlier months/.test(t)) || '';
-  check('month-by-month sales slide: Jul → Oct (empty months before dropped), Mariam\'s September against September\'s own target, the running month to the 8th', /Jul Aug Sep Oct \(to 8\)/.test(trS) && !/May|Jun/.test(trS) && /KD 100 · 20%/.test(trS), trS.slice(0, 700));
-  const trF = T.find(t => /Month by month: field work and KPI/.test(t)) || '';
-  check('month-by-month field slide: the team table month by month (the joint visit counts for both)', /Field visits 0 0 0 4/.test(trF) && /New accounts/.test(trF), trF.slice(0, 600));
+  const at = re => T.findIndex(t => re.test(t)), pg = re => T.find(t => re.test(t)) || '';
+  const iA0 = at(/Appendix — every figure behind the story/);
+  check('the main story is at most 12 pages, then the appendix', iA0 > 0 && iA0 <= 12, iA0);
+  check('cover: on day 8 the closed month that rose in KD and % leads (the presenter\'s own new account never does, R11)', /September closed at 90% of target: KD 3,600 of KD 4,000 \(August 75%\)/.test(T[0]) && /4 – 8 October 2026 · Field team weekly update/.test(T[0]) && !/New Smile/.test(T[0]), T[0].slice(0, 400));
+  const p2 = T[1];
+  check('page 2, the week on one page: the money title and the four fixed figures (week, month, new business, price)', /KD 240 invoiced, all clinic invoices within discount limits/.test(p2) && /KD\s+240/.test(p2) && /invoiced 4–7 Oct, returns netted/.test(p2) && /October to date, of a KD 19,335 target/.test(p2) && /new business this week/.test(p2) && /average discount, clinic invoices/.test(p2) && /4 of 4 within limits/.test(p2), p2.slice(0, 700));
+  check('page 2 ties to the ERP: 5 invoices with value + 1 sample document + 1 return = KD 239.81; the parts of the week add up', /ERP 4–7 Oct: 5 invoices with value \(KD 251\.06\) \+ 1 sample document \(KD 0\) \+ 1 return \(−KD 11\.25\) = KD 239\.81/.test(p2) && /Clinics that already buy/.test(p2) && /New accounts/.test(p2) && /My Fatoorah and individual customers/.test(p2) && /Returns/.test(p2), p2.slice(500, 1500));
+  const p3 = T.find((t, i) => i > 0 && /closed at \d+% of target/.test(t)) || '';
+  check('page 3, the closed month (day 8): September at 90% of target, KD 3,600 of KD 4,000; Renova\'s KD and % both up from August', /September closed at 90% of target: KD 3,600 of KD 4,000/.test(p3) && /August: KD 3,300 of KD 4,400 · 75%/.test(p3) && /KD and % up from Aug/.test(p3) && /no September target/.test(p3), p3.slice(0, 600));
+  const p4 = pg(/to go in \d+ working days — the plan/);
+  check('page 4, the month and the plan: counted to the ERP cut-off (7 Oct: 16 working days left), the same days of September, the plain arithmetic, the named levers', /October: KD 19,025 to go in 16 working days — the plan/.test(p4) && /Same days of September: KD 1,100 · September closed at KD 3,600/.test(p4) && /Needed: KD 1,189 a working day · so far: KD 62 a working day/.test(p4) && /How we close it/i.test(p4) && /key accounts still to visit in October/.test(p4) && /they bought KD 400/.test(p4) && /1 booked next week/.test(p4) && /KD 198/.test(p4) && /taken in the field, awaiting invoice/.test(p4) && /Intensiv · B&L Biotech/.test(p4) && !/Approve two Sonicare/.test(p4), p4.slice(0, 900));
+  const p5 = pg(/KD 115 new business:/);
+  check('page 5, new business in KD with its invoice; the prospects, government sites apart', /KD 115 new business: 1 new account, 1 first-time product/.test(p5) && /New Smile Clinic/.test(p5) && /Invoice SINV8002/.test(p5) && /Blue Dental/.test(p5) && /Government sites \(tenders\): Farwaniya Polyclinic/.test(p5) && /1 back after 60\+ days/.test(p5), p5.slice(0, 800));
+  const p6 = pg(/carried the week|led the week/);
+  check('page 6, what sold and the brands against their targets (material targets only, PUSH on the gaps)', /Intensiv carried the week: KD 169 of our KD 240/.test(p6) && /B&L Biotech/.test(p6) && /PUSH/.test(p6) && !/Philips Sonicare\s+KD/.test(p6), p6.slice(0, 700));
+  const p7 = pg(/Price discipline/i);
+  check('page 7, price discipline: realisation, the weekly discount, no invoice above its limit, the deal\'s free goods, the sample, the returns', /fils paid per KD 1 of list price/.test(p7) && /No clinic invoice above its limit/.test(p7) && /Free goods inside deals/.test(p7) && /Samples: 1 document/.test(p7) && /Returns/.test(p7) && !/margin/i.test(p7), p7.slice(0, 900));
+  const p8 = pg(/ordered again; doctors pleased|doctors and staff met;/);
+  check('page 8, doctors and clinics: repeat orders and the doctors\' mood lead (never the visit → sales share, which says it is not proof of cause); the field counted once; government sites', /3 clinics ordered again; doctors pleased on 3 of 4 rated visits/.test(p8) && /not proof of cause/.test(p8) && /clinic visits/.test(p8) && /doctors and staff met/.test(p8) && /government site visited/.test(p8), p8.slice(0, 900));
+  const p9 = pg(/What each of us invoiced and won this week/);
+  check('page 9, the people: the same rows for everyone, money first', /Mariam/.test(p9) && /Renova/.test(p9) && /Dr\. Ghaith/.test(p9) && /KD\s+54/.test(p9) && /KD\s+66/.test(p9) && /KD\s+120/.test(p9) && /New account New Smile Clinic: first order/.test(p9) && /First-time product at Alpha Dental Center/.test(p9), p9.slice(0, 1000));
+  const p12 = pg(/NEXT WEEK ·/);
+  check('next week titled on what we will do: key accounts (with their KD), the prospect, the order to invoice; Renova "no visits saved yet"', /Next week: 2 key accounts, 1 prospect and KD 198 to invoice/.test(p12) && /Kaifan Dental \(KD 400\)/.test(p12) && /No visits saved yet for 11 Oct – 15 Oct/.test(p12) && /Kaifan Dental/.test(p12) && /To invoice: Blue Dental KD 198 \(as logged\)/.test(p12), p12.slice(0, 900));
+  const pc = pg(/What you will see next Thursday/);
+  check('the close: three commitments by name, the ask in quotes (only here), the week in page 2\'s four figures', /OUR COMMITMENTS FOR 11–15 OCT/.test(pc) && /Key accounts: 1 of the 2 booked; visit the rest, first Kaifan Dental \(KD 400\)/.test(pc) && /Invoice the KD 198 taken in the field; push Intensiv and B&L Biotech \(KD 3,222 short\)/.test(pc) && /“Approve two Sonicare demo units for Crown and Kaifan”/.test(pc) && /KD\s+240/.test(pc) && /new business this week/.test(pc) && /average discount, clinic invoices/.test(pc), pc.slice(0, 900));
+  check('no "Up on last week" title, no NaN / undefined / null anywhere', !/Up on last week/.test(all) && !/NaN|undefined|\bnull\b/.test(all), (all.match(/.{40}(NaN|undefined|\bnull\b).{40}/) || [''])[0]);
+  check('appendix: contents with links, every invoice (with the tie-out), value per person, next week in full, how the figures are built', deck.links >= 10 && /Every invoice of the week, largest first/.test(all) && ['SINV8001', 'SINV8002', 'SINV8003', 'SINV8004', 'SINV8005', 'SINV8006', 'SRT8007'].every(d => all.includes(d)) && /Tie-out: ERP 4–7 Oct/.test(all) && /Value per person, the last 3 closed months/.test(all) && /Next week in full/.test(all) && /How these figures are built/.test(all), deck.links);
+  check('appendix: the seed (sample document) is listed with its list value, the deal\'s free line apart', /Seed \(samples\)/.test(all) && /Free inside a deal · SINV8004/.test(all), '');
+  check('native charts in the appendix (8 weeks, month by month)', deck.charts >= 2, deck.charts);
+  const N = deck.notes.join(' || ');
+  check('speaker notes in Arabic: the money, the closed month, the plan, the commitments', /فوترنا هذا الأسبوع 240 ديناراً/.test(N) && /أقفلنا سبتمبر على 90% من المستهدف/.test(N) && /خطتنا بالأسماء/.test(N) && /التزامنا للأسبوع القادم/.test(N), N.slice(0, 500));
+  // the Arabic deck: right to left, the glossary's terms, the team's names in Arabic, Latin data kept whole
+  const ar = await page.evaluate(async () => {
+    const pres = await buildWeeklyDeck('2026-10-08', { ask: 'موافقة على وحدتي عرض Sonicare لـCrown وKaifan', lang: 'ar' });
+    const b64 = await pres.write({ outputType: 'base64' });
+    const zip = await window.JSZip.loadAsync(b64, { base64: true });
+    const num = n => parseInt(n.match(/(\d+)\.xml$/)[1], 10);
+    const dec = t => t.replace(/<\/?a:t>/g, '').replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\u00A0/g, ' ');
+    const names = Object.keys(zip.files).filter(n => /^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b) => num(a) - num(b));
+    const texts = [], paras = []; let rtl = 0;
+    for(const n of names){ const x = await zip.file(n).async('string'); rtl += (x.match(/rtl="1"/g) || []).length;
+      texts.push((x.match(/<a:t>([^<]*)<\/a:t>/g) || []).map(dec).join(' '));
+      (x.match(/<a:p>.*?<\/a:p>/gs) || []).forEach(p => paras.push({ rtl: /rtl="1"/.test(p), t: (p.match(/<a:t>([^<]*)<\/a:t>/g) || []).map(dec).join('') })); }
+    return { texts, paras, rtl };
+  });
+  const TA = ar.texts.map(t => t.replace(/[\u200e\u200f]/g, '')), allA = TA.join(' || ');
+  check('Arabic deck: the pages run right to left, the same main story and appendix', ar.rtl > 200 && TA.length === T.length && /الملحق — تفاصيل كل رقم في العرض/.test(allA), [ar.rtl, TA.length, T.length]);
+  check('Arabic deck: the cover, the money page and the plan in the glossary\'s terms', /أقفلنا سبتمبر على 90% من المستهدف/.test(TA[0]) && /ملخص الأسبوع/.test(TA[1]) && /مبيعات مفوترة/.test(TA[1]) && /صافية من المرتجعات/.test(TA[1]) && /أكتوبر: المتبقي 19,025 د\.ك خلال 16 يوم عمل — الخطة/.test(allA) && /كيف نسدّ الفجوة/.test(allA) && /الإسقاط الخطي/.test(allA), TA[1].slice(0, 300));
+  check('Arabic deck: the team\'s names in Arabic (مريم، رانوفا، د. غيث), Latin clinic names kept as they are', /مريم/.test(allA) && /رانوفا/.test(allA) && /د\. غيث/.test(allA) && !/\bMariam\b|\bRenova\b|Dr\. Ghaith/.test(allA) && /New Smile Clinic/.test(allA), (allA.match(/.{30}(Mariam|Renova|Dr\. Ghaith).{30}/) || [''])[0]);
+  const enLeft = ar.paras.filter(p => p.rtl && /\b(invoiced|new business|first-time|to go|target|returns|this week|last week|planned|visited|of the|month to date)\b/.test(p.t)).map(p => p.t);
+  check('Arabic deck: no English words left in the Arabic text', enLeft.length === 0, enLeft.slice(0, 3));
+  check('Arabic deck: the ask in Arabic quotes on the close; no NaN / undefined', /«موافقة على وحدتي عرض Sonicare لـCrown وKaifan»/.test(allA) && !/NaN|undefined|\bnull\b/.test(allA), '');
   // the button downloads a real .pptx
   await page.evaluate(() => openWeeklyDeck());
-  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.evaluate(() => downloadWeeklyDeck())]);
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.evaluate(() => downloadWeeklyDeck())]);
   check('the button downloads UltraMed-Weekly-Update-<date>.pptx', /^UltraMed-Weekly-Update-2026-10-08\.pptx$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+  await page.evaluate(() => { openWeeklyDeck(); wdSetLang('ar'); });
+  const [dlA] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.evaluate(() => downloadWeeklyDeck())]);
+  check('with Arabic chosen the button downloads UltraMed-Weekly-Update-<date>-AR.pptx', /^UltraMed-Weekly-Update-2026-10-08-AR\.pptx$/.test(dlA.suggestedFilename()), dlA.suggestedFilename());
+  await page.evaluate(() => wdSetLang('en'));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
