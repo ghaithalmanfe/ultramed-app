@@ -772,6 +772,22 @@ describe('rep and customer matching', () => {
     assert.deepEqual(details.map(d => [d.doc, d.date, d.net]), [['S1', '2026-10-02', 200], ['S2', '2026-10-03', 33.75]]);
     assert.deepEqual(details[0].items, [{ product: 'x', brand: 'Intensiv', qty: 1, net: 200 }]);
   });
+  test('kpiScorecard: a sample is not a discount; nothing to measure scores "—", never a free 100% or 40%', () => {
+    const row = (d, doc, cust, gross, net, rep) => [d, doc, 0, 'Strip', 1, gross, net, 0, rep || 'Mariam Zohair', 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];
+    const data = { today: '2026-10-08', clinics, erpMap: {}, targets: {},
+      erpSales: { periods: [{ id: 'p', from: '2026-09-01', to: '2026-10-08', repMap: { 'Mariam Zohair': 'Mariam', 'Ghaith Al Manfe': 'Dr. Ghaith' }, rows: [
+        row('2026-10-02', 'S1', 'Alpha Dental', 90, 70), row('2026-10-03', 'S2', 'Beta Clinic', 80, 65),
+        row('2026-10-04', 'SMP', 'Beta Clinic', 4, 0)] }] },       // an all-free sample document
+      visits: [], dayPlans: {}, events: [] };
+    const k = core.kpiScorecard(data, { rep: 'Mariam', to: '2026-10-08' });
+    const d = k.items.find(i => i.key === 'discount');
+    assert.equal(d.score, 1);                                       // 2 of 2 paid invoices within their limits; the sample is left out
+    assert.ok(/^average 20\.6% · 0 of 2 invoices over the limit$/.test(d.value), d.value);
+    assert.equal(k.items.find(i => i.key === 'doctors').score, null);   // no field visit logged: nothing to measure
+    const g = core.kpiScorecard(data, { rep: 'Dr. Ghaith', to: '2026-10-08' });
+    assert.equal(g.items.find(i => i.key === 'issues').score, null);    // no sales and no escalation: not a free 100%
+  });
   test('kpiScorecard: the 10 management measures, each from the app\'s own data', () => {
     // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
     const row = (d, doc, cust, gross, net, product, brand, type) => [d, doc, type ? 1 : 0, product || 'P', 1, gross, net, 0, 'Mariam Zohair', brand || 'Intensiv', cust, 'Clinics', 0, ''];
@@ -963,9 +979,10 @@ describe('rep and customer matching', () => {
     assert.equal(g.signature.big, 'KD 520');                                                   // the week's largest invoice
     assert.ok(S.people.Renova.signature.line.startsWith('first order from a new account, Salwa'));
     assert.ok(S.excluded.some(t => /^المبيعات/.test(t) && /\(A5\)$/.test(t)));               // the left-out sales figure is named, with its appendix page
-    assert.ok(S.excluded.some(t => /من الهدف/.test(t)));
+    assert.ok(S.excluded.some(t => /من المستهدف/.test(t)));
   });
-  test('weeklyPages: the real week 4–8 Oct — the money ties to the ERP, samples are all-free documents, the month has a named plan', () => {
+  // the real week 4–8 Oct (the documents as exported) with two months of history before it
+  function realWeekData(){
     // [date, doc, type, product, qty, gross, net, sret, salesman, brand, customer, class, dsret, ref]
     const R = (d, doc, sm, cust, net, product, brand, gross) => [d, doc, 0, product || 'P', 1, gross == null ? net : gross, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
     const M = 'Mariam Zohair', N = 'Ranova Ayman Mohammed', G = 'Ghaith Al Manfe';
@@ -1009,6 +1026,10 @@ describe('rep and customer matching', () => {
         { id: 'v5', date: '2026-10-06', rep: 'Dr. Ghaith', clinicId: 'h', doctorIds: ['m'], products: ['q'] }],
       dayPlans: { '2026-10-12': { Mariam: ['l'] }, '2026-10-13': { 'Dr. Ghaith': ['b'] } } };
     const reps = ['Mariam', 'Renova', 'Dr. Ghaith'];
+    return { data, reps, clinics };
+  }
+  test('weeklyPages: the real week 4–8 Oct — the money ties to the ERP, samples are all-free documents, the month has a named plan', () => {
+    const { data, reps, clinics } = realWeekData();
     const W = core.weeklyReport(data, { end: '2026-10-08', reps });
     // the money ties out: 8 invoices with value + 2 sample documents + 1 return = the week
     assert.equal(W.team.week, 864.1);
@@ -1032,7 +1053,7 @@ describe('rep and customer matching', () => {
     const PG = S.pages;
     assert.deepEqual(PG.money.tiles.map(t => t.key), ['week', 'month', 'newbiz', 'price']);  // R13: the same four tiles every week
     assert.equal(PG.money.tiles[0].big, 'KD 864');
-    assert.equal(PG.money.tiles[0].detail, '8 invoices · 3 clinics · 2 channel accounts');
+    assert.ok(/^last week KD [\d,]+/.test(PG.money.tiles[0].detail), PG.money.tiles[0].detail);   // a fixed yardstick every week
     assert.equal(PG.money.tiles[2].big, 'KD 180');                                         // Salwa 154.80 + the IPR gauge 25
     assert.equal(PG.money.recon, 'ERP 4–8 Oct: 8 invoices with value (KD 875.35) + 2 sample documents (KD 0) + 1 return (−KD 11.25) = KD 864.10');
     assert.equal(PG.money.title, 'KD 864 invoiced, all clinic invoices within discount limits');
@@ -1062,6 +1083,37 @@ describe('rep and customer matching', () => {
     // the close: commitments and the recap in page 2's words (R12)
     assert.ok(PG.close.commits.length >= 2 && PG.close.recap.startsWith('This week: KD 864 invoiced · KD 180 new business'));
     assert.equal(S.all.find(i => i.key === 'seeds').big, '2');
+    // the panel's rules: the plan says the fair yardstick and the plain arithmetic; the people share one month line
+    assert.equal(PG.plan.sameDays, 'Same days of September: KD 2,160 · September closed at KD 8,680');
+    assert.ok(/^Needed: KD [\d,]+ a working day · so far: KD [\d,]+ a working day$/.test(PG.plan.perDayLine), PG.plan.perDayLine);
+    assert.ok(PG.people.every(p => /^October to date: /.test(p.month.text)), PG.people.map(p => p.month.text));
+    assert.equal(PG.people.find(p => p.rep === 'Dr. Ghaith').closedLine, 'September closed: KD 40 (no target)');
+    assert.ok(/^Next week: 3 key accounts, 1 prospect and KD 198 to invoice$/.test(PG.next.title), PG.next.title);
+    assert.ok(/^Key accounts: 1 of the 3 booked; visit the rest, first Jibla Dental Center \(KD 9,900\)/.test(PG.close.commits[0].text), PG.close.commits[0].text);
+    assert.equal(S.momentum.length, 0);                                                         // the week's sales do not lead: no 8-week page
+  });
+  test('weeklyPages: an invoice above its discount limit is never the hero or a signature; the cover rule; the month counts to the ERP cut-off', () => {
+    const { data, reps } = realWeekData();
+    const W = core.weeklyReport(data, { end: '2026-10-08', reps });
+    const trend = core.monthlyTrend(data, { reps, end: '2026-10-08', months: 3 });
+    // Salwa's first order (SINV0077191) above its limit: the hero and Renova's signature move on to an invoice within limits
+    const W1 = JSON.parse(JSON.stringify(W)); W1.margin.over = [{ doc: 'SINV0077191', account: 'Salwa', pct: 45, limit: 35 }];
+    const P1 = core.weeklyStory(W1, { presenter: 'Dr. Ghaith', trend }).pages;
+    assert.notEqual(P1.newBiz.wins[0].doc, 'SINV0077191');
+    assert.ok(P1.newBiz.wins.find(w => w.doc === 'SINV0077191').overLimit);
+    assert.ok(!/Salwa/.test((P1.people.find(p => p.rep === 'Renova').signature || {}).line || ''));
+    // the presenter's own new business above half the figure: the cover falls back to the week's money line
+    const P2 = core.weeklyStory(W, { presenter: 'Renova', trend }).pages;
+    assert.equal(P2.cover, P2.money.title);
+    // a closed month that rose in KD and % leads the cover on days 1–10
+    const T3 = JSON.parse(JSON.stringify(trend)), sep = T3.months[T3.months.length - 2], aug = T3.months[T3.months.length - 3];
+    reps.forEach(r => { if(sep.byRep[r] && aug.byRep[r]){ aug.byRep[r].sales = 100; aug.byRep[r].target = 1000; aug.byRep[r].pct = 0.1; sep.byRep[r].target = 1000; sep.byRep[r].sales = 900; sep.byRep[r].pct = 0.9; } });
+    const P3 = core.weeklyStory(W, { presenter: 'Dr. Ghaith', trend: T3 }).pages;
+    assert.ok(/^September closed at 90% of target: KD [\d,]+ of KD [\d,]+ \(August 10%\)$/.test(P3.cover), P3.cover);
+    // the ERP stops on 7 Oct: day 7, 5 of 21 working days gone, 16 left
+    const W4 = JSON.parse(JSON.stringify(W)); W4.salesTo = '2026-10-07';
+    const P4 = core.weeklyStory(W4, { presenter: 'Dr. Ghaith', trend }).pages;
+    assert.deepEqual([P4.plan.day, P4.plan.workdays.done, P4.plan.workdays.left], [7, 5, 16]);
   });
   test('storyGate: rises, records, streaks and materiality follow the deck rules R2–R6', () => {
     const g = core.storyGate;
