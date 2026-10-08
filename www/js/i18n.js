@@ -851,6 +851,7 @@
     'Building the presentation…': 'جارٍ تجهيز العرض…',
     "A PowerPoint for the Thursday meeting: the week's money first, the plan to close the month, then growth, relationships, the people and next week's commitments — every figure in the appendix. Built from the ERP files, the DSR targets and the visits in the app.": 'ملف PowerPoint لاجتماع الخميس: مال الأسبوع أولاً، ثم خطة إغلاق الشهر، ثم النمو والعلاقات والفريق والتزامات الأسبوع القادم — وكل رقم في الملحق. من ملفات مبيعات ERP وتارغت DSR والزيارات المسجلة في التطبيق.',
     'Our ask (optional)': 'طلبنا من الإدارة (اختياري)',
+    'Language of the slides': 'لغة الشرائح',
     'Reading the week…': 'قراءة بيانات الأسبوع…',
     'Preparing icons and photos…': 'تجهيز الأيقونات والصور…',
     'Loading photos…': 'تحميل الصور…',
