@@ -1630,7 +1630,8 @@
   }
   // Wins in [from, to] from attributed rows: accounts with a first order ever
   // (in the stored files), accounts back after 60+ days, products bought by an
-  // account for the first time, free samples, and every invoice.
+  // account for the first time, every invoice, and the free goods: samples
+  // (documents with free lines only) and deals (free lines on a paid invoice).
   // Company-internal accounts in the ERP ("Marketing Philips", "Marketing and
   // Advertisement"): stock moved for marketing, never a customer win.
   var INTERNAL_ACCT_RE = /^\s*marketing\b|advertis/i;
@@ -1647,31 +1648,40 @@
       if(!prodSeen[pk] || x.r.date < prodSeen[pk]) prodSeen[pk] = x.r.date;
       if(x.r.date < from && (!lastBefore[k] || x.r.date > lastBefore[k])) lastBefore[k] = x.r.date;
     });
-    var wins = { newAccounts: {}, reactivated: {}, placements: {}, samples: {}, invoices: {} };
+    var wins = { newAccounts: {}, reactivated: {}, placements: {}, invoices: {} };
+    // free lines, by document: a free line on a document that also carries a
+    // paid line is part of that deal (it is in the discount); a document with
+    // free lines only is a sample — a seed, never a win (R16)
+    var focDocs = {}, paidDoc = {};
     rows.filter(function(x){ return x.rep && x.r.date >= from && x.r.date <= to; }).forEach(function(x){
       var r = x.r, k = custKey(x), name = custName(x), pk = k + '|' + String(r.product || '').toLowerCase();
       var internal = !x.clinicId && isInternalAccount(r.customer);
-      var inv = wins.invoices[r.doc] || (wins.invoices[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, account: name, clinicId: x.clinicId || null, channel: x.channel, internal: internal, net: 0, lines: 0, brands: {}, items: {} });
-      inv.net += r.net; inv.lines++; if(r.brand) inv.brands[normBrand(r.brand)] = 1;
+      var inv = wins.invoices[r.doc] || (wins.invoices[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, account: name, clinicId: x.clinicId || null, channel: x.channel, internal: internal, net: 0, gross: 0, lines: 0, brands: {}, items: {} });
+      inv.net += r.net; inv.gross += Number(r.gross) || 0; inv.lines++; if(r.brand) inv.brands[normBrand(r.brand)] = 1;
       if(r.product && r.net > 0){ var it = inv.items[r.product] || (inv.items[r.product] = { product: String(r.product).trim(), brand: normBrand(r.brand), net: 0 }); it.net += r.net; }
+      if(r.net > 0 && r.type !== 'return') paidDoc[r.doc] = 1;
       if(x.channel || internal) return;
-      if(isFocRow(r)){ var sk = k + '|' + x.rep; var sm = wins.samples[sk] || (wins.samples[sk] = { rep: x.rep, account: name, date: r.date, items: [] }); sm.items.push(r.product); return; }
+      if(isFocRow(r)){ var fd = focDocs[r.doc] || (focDocs[r.doc] = { doc: r.doc, rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, date: r.date, items: [], lines: [], gross: 0 });
+        fd.items.push(r.product); fd.lines.push({ product: String(r.product || '').trim(), brand: normBrand(r.brand), qty: Number(r.qty) || 0, gross: Number(r.gross) || 0 }); fd.gross += Number(r.gross) || 0; return; }
       if(!(r.net > 0) || r.type === 'return') return;
-      if(firstSeen[k] >= from && !wins.newAccounts[k]) wins.newAccounts[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, date: firstSeen[k], doc: r.doc, net: 0, products: {} };
+      if(firstSeen[k] >= from && !wins.newAccounts[k]) wins.newAccounts[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, date: firstSeen[k], doc: r.doc, net: 0, products: {} };
       if(wins.newAccounts[k]){ var na = wins.newAccounts[k]; na.net += r.net; var np = na.products[r.product] || (na.products[r.product] = { product: String(r.product || '').trim(), brand: normBrand(r.brand), net: 0 }); np.net += r.net; }
-      else if(lastBefore[k] && daysBetween(lastBefore[k], from) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, date: r.date, doc: r.doc, lastBefore: lastBefore[k] };
+      else if(lastBefore[k] && daysBetween(lastBefore[k], from) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, date: r.date, doc: r.doc, lastBefore: lastBefore[k] };
       if(!wins.newAccounts[k] && prodSeen[pk] >= from && firstSeen[k] < from){
-        var pl = wins.placements[pk] || (wins.placements[pk] = { rep: x.rep, account: name, clinicId: x.clinicId || null, product: r.product, brand: r.brand, date: r.date, doc: r.doc, net: 0 });
+        var pl = wins.placements[pk] || (wins.placements[pk] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, product: r.product, brand: r.brand, date: r.date, doc: r.doc, net: 0 });
         pl.net += r.net;
       }
     });
     var vals = function(o){ return Object.keys(o).map(function(k){ return o[k]; }); };
     var rnd = function(n){ return Math.round(n * 1000) / 1000; };
+    var samples = [], deals = [];
+    vals(focDocs).forEach(function(f){ f.gross = rnd(f.gross); (paidDoc[f.doc] ? deals : samples).push(f); });
+    var byDate = function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.doc < b.doc ? -1 : 1); };
     return {
       newAccounts: vals(wins.newAccounts).map(function(x){ x.net = rnd(x.net); x.products = vals(x.products).map(function(p){ p.net = rnd(p.net); return p; }).sort(function(a, b){ return b.net - a.net; }); return x; }), reactivated: vals(wins.reactivated),
       placements: vals(wins.placements).map(function(x){ x.net = rnd(x.net); return x; }).sort(function(a, b){ return b.net - a.net; }),
-      samples: vals(wins.samples),
-      invoices: vals(wins.invoices).map(function(i){ i.net = rnd(i.net); i.brands = Object.keys(i.brands); i.items = vals(i.items).map(function(p){ p.net = rnd(p.net); return p; }).sort(function(a, b){ return b.net - a.net; }); return i; })
+      samples: samples.sort(byDate), deals: deals.sort(byDate),
+      invoices: vals(wins.invoices).map(function(i){ i.net = rnd(i.net); i.gross = rnd(i.gross); i.brands = Object.keys(i.brands); i.items = vals(i.items).map(function(p){ p.net = rnd(p.net); return p; }).sort(function(a, b){ return b.net - a.net; }); return i; })
         .filter(function(i){ return !(i.internal && i.net === 0); })      // a zero-value move to a marketing account is not an invoice of the week
         .sort(function(a, b){ return b.net - a.net; })
     };
@@ -1813,6 +1823,30 @@
   // rest of the app: ERP lines credited by erpRowRep, month figures from
   // monthAchievement as of the week's last day, visits as logged. Pure.
   // opts: { end: 'YYYY-MM-DD' (last day of the week shown), reps: [...] }
+  // The clinic invoices of some people in [a, b] — channel accounts, returns
+  // and internal moves left out; free goods inside a deal count as discount —
+  // each with its discount and the limit that applies to it (the supervisor's
+  // KPI settings: A clinics, others, open days). Pure.
+  function clinicInvoices(rows, reps, a, b, byId, KS){
+    var inv = {};
+    rows.forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || x.channel || r.type === 'return' || r.date < a || r.date > b || (!x.clinicId && isInternalAccount(r.customer))) return;
+      var i = inv[r.doc] || (inv[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, clinicId: x.clinicId, account: x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : String(r.customer || '').trim(), gross: 0, net: 0 });
+      i.gross += Number(r.gross) || 0; i.net += Number(r.net) || 0; });
+    var list = Object.keys(inv).map(function(k){ return inv[k]; }).filter(function(i){ return i.gross > 0 && i.net > 0; });
+    list.forEach(function(i){ i.gross = Math.round(i.gross * 1000) / 1000; i.net = Math.round(i.net * 1000) / 1000;
+      i.pct = Math.round((i.gross - i.net) / i.gross * 1000) / 10; var c = i.clinicId && byId[i.clinicId];
+      i.limit = (KS.openDays || []).indexOf(i.date) >= 0 ? KS.discountOpenDay : (c && c.cls === 'A' ? KS.discountA : KS.discountOther);
+      i.within = i.pct <= i.limit + 0.05; });
+    return list.sort(function(x, y){ return x.date < y.date ? -1 : x.date > y.date ? 1 : (x.doc < y.doc ? -1 : 1); });
+  }
+  // The gross-weighted discount of a list of clinic invoices and the share
+  // within their limits; `over` names the ones above. Pure.
+  function discountSummary(list){
+    var g = list.reduce(function(t, i){ return t + i.gross; }, 0), n = list.reduce(function(t, i){ return t + i.net; }, 0);
+    var within = list.filter(function(i){ return i.within; });
+    return { invoices: list.length, within: within.length, gross: Math.round(g * 1000) / 1000, net: Math.round(n * 1000) / 1000, discount: g > 0 ? Math.round((g - n) / g * 1000) / 10 : null,
+      withinLimit: list.length ? within.length / list.length : null, over: list.filter(function(i){ return !i.within; }).map(function(i){ return { doc: i.doc, date: i.date, rep: i.rep, account: i.account, pct: i.pct, limit: i.limit, gross: i.gross, net: i.net }; }) };
+  }
   function weeklyReport(data, opts){
     var reps = (opts && opts.reps) || [];
     var KS = {}; Object.keys(KPI_DEFAULTS).forEach(function(k){ KS[k] = KPI_DEFAULTS[k]; });
@@ -1829,19 +1863,7 @@
     // Margin: the team's clinic invoices in a range (free goods inside a deal
     // count as discount; an all-free document is a sample, not a sale), the
     // gross-weighted discount and the share of invoices within their limit.
-    var discountIn = function(a, b){
-      var inv = {};
-      rows.forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || x.channel || r.type === 'return' || r.date < a || r.date > b || (!x.clinicId && isInternalAccount(r.customer))) return;
-        var i = inv[r.doc] || (inv[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, clinicId: x.clinicId, account: x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : String(r.customer || '').trim(), gross: 0, net: 0 });
-        i.gross += Number(r.gross) || 0; i.net += Number(r.net) || 0; });
-      var list = Object.keys(inv).map(function(k){ return inv[k]; }).filter(function(i){ return i.gross > 0 && i.net > 0; });
-      list.forEach(function(i){ i.pct = Math.round((i.gross - i.net) / i.gross * 1000) / 10; var c = i.clinicId && byId[i.clinicId];
-        i.limit = (KS.openDays || []).indexOf(i.date) >= 0 ? KS.discountOpenDay : (c && c.cls === 'A' ? KS.discountA : KS.discountOther); });
-      var g = list.reduce(function(t, i){ return t + i.gross; }, 0), n = list.reduce(function(t, i){ return t + i.net; }, 0);
-      var within = list.filter(function(i){ return i.pct <= i.limit + 0.05; });
-      return { invoices: list.length, gross: Math.round(g * 1000) / 1000, net: Math.round(n * 1000) / 1000, discount: g > 0 ? Math.round((g - n) / g * 1000) / 10 : null,
-        withinLimit: list.length ? within.length / list.length : null, over: list.filter(function(i){ return within.indexOf(i) < 0; }).map(function(i){ return { doc: i.doc, date: i.date, rep: i.rep, account: i.account, pct: i.pct, limit: i.limit }; }) };
-    };
+    var discountIn = function(a, b){ return discountSummary(clinicInvoices(rows, reps, a, b, byId, KS)); };
     var covered = function(a, b){ return erpPeriodsOf(es).some(function(p){ return p.to >= a && p.from <= b; }); };
     // a range counts for a person only when a file carrying that person's
     // salesman covers it (a file exported for one salesman says nothing of the others)
@@ -1866,6 +1888,7 @@
     var keepWins = function(w, start){ var ok = {}; var f = function(x){ if(!(x.rep in ok)) ok[x.rep] = winsOk(x.rep, start); return ok[x.rep]; };
       w.newAccounts = w.newAccounts.filter(f); w.reactivated = w.reactivated.filter(f); w.placements = w.placements.filter(f); return w; };
     var winsR = keepWins(erpWinsInRange(rows, from, to, clinics), from), invoices = winsR.invoices;
+    var winsBlocked = reps.filter(function(r){ return !winsOk(r, from); });
     var rnd = function(n){ return Math.round(n * 1000) / 1000; };
     // visits of the week (and the month, for account coverage)
     var vis = (data.visits || []).filter(function(v){ return v && v.date >= from && v.date <= to; });
@@ -1896,7 +1919,12 @@
         photos: led.reduce(function(s, v){ return s + ((v.photos || []).length); }, 0),
         aVisited: aSeen.length, aTotal: aAll.length,
         aMissing: aAll.filter(function(c){ return aSeen.indexOf(c) < 0; }).map(function(c){ return c.name; }),
-        invoices: invoices.filter(function(i){ return i.rep === rep; }).length
+        aMissingIds: aAll.filter(function(c){ return aSeen.indexOf(c) < 0; }).map(function(c){ return c.id; }),
+        invoices: invoices.filter(function(i){ return i.rep === rep; }).length,
+        invoicesValue: invoices.filter(function(i){ return i.rep === rep && !i.internal && i.net > 0.0005; }).length,
+        weekCovered: repCovered(from, to, rep),
+        discountMtd: discountSummary(clinicInvoices(rows, [rep], mStart, to, byId, KS)),
+        govSites: Object.keys(clin).filter(function(id){ return isGovClinic(byId[id]); }).map(function(id){ return byId[id].name; })
       };
     });
     // brands: this week (team) and month-to-date vs the DSR brand targets
@@ -1905,8 +1933,10 @@
       if(x.r.date >= from && x.r.date <= to) bw[b] = (bw[b] || 0) + x.r.net;
       if(x.r.date >= mStart && x.r.date <= to) bm[b] = (bm[b] || 0) + x.r.net; });
     reps.forEach(function(rep){ var br = targetOf(data, rep, to.slice(0, 7)).brands || {}; Object.keys(br).forEach(function(b){ var n = normBrand(b); bt[n] = (bt[n] || 0) + br[b]; }); });
+    var pmStart = addMonthsStr(mStart, -1), pmEnd = addDaysStr(mStart, -1), pmCov = covered(pmStart, pmEnd), bp = {};
+    rows.forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0 || x.r.date < pmStart || x.r.date > pmEnd) return; var b = normBrand(x.r.brand); bp[b] = (bp[b] || 0) + x.r.net; });
     var brands = Object.keys(bw).concat(Object.keys(bt)).filter(function(b, i, a){ return a.indexOf(b) === i; })
-      .map(function(b){ return { brand: b, week: rnd(bw[b] || 0), mtd: rnd(bm[b] || 0), target: bt[b] ? rnd(bt[b]) : null }; })
+      .map(function(b){ return { brand: b, week: rnd(bw[b] || 0), mtd: rnd(bm[b] || 0), target: bt[b] ? rnd(bt[b]) : null, prevMonth: pmCov ? rnd(bp[b] || 0) : null }; })
       .sort(function(a, b){ return b.week - a.week || b.mtd - a.mtd; });
     // week by week this month (Sunday-start weeks, clipped to the month)
     var weeks = [], w0 = getWeekDates(mStart)[0];
@@ -1914,13 +1944,19 @@
       var a = ws < mStart ? mStart : ws, b = addDaysStr(ws, 6) > to ? to : addDaysStr(ws, 6);
       var row = { from: a, to: b, byRep: {} }; reps.forEach(function(rep){ row.byRep[rep] = sum(a, b, rep); }); weeks.push(row);
     }
-    // next week: plans and follow-ups
+    // next week: plans and follow-ups; a key account still due carries what it
+    // bought in the two months before this one (any person, our files)
+    var p2From = addMonthsStr(mStart, -2), p2To = addDaysStr(mStart, -1), kd2 = {};
+    rows.forEach(function(x){ if(x.clinicId && !x.channel && x.r.date >= p2From && x.r.date <= p2To) kd2[x.clinicId] = (kd2[x.clinicId] || 0) + x.r.net; });
     var nFrom = addDaysStr(getWeekDates(to)[0], 7), nTo = addDaysStr(nFrom, 6), next = {};
     reps.forEach(function(rep){
       var planned = [];
       Object.keys(data.dayPlans || {}).forEach(function(dt){ if(dt < nFrom || dt > nTo) return; ((data.dayPlans[dt] || {})[rep] || []).forEach(function(e){ var id = typeof e === 'string' ? e : e.id; if(byId[id]) planned.push({ date: dt, clinic: byId[id].name }); }); });
       var fu = clinics.filter(function(c){ return c.rep === rep && c.cls !== 'Closed' && c.nextFollowUp && c.nextFollowUp >= nFrom && c.nextFollowUp <= nTo; }).map(function(c){ return { date: c.nextFollowUp, clinic: c.name }; });
-      next[rep] = { planned: planned.sort(function(x, y){ return x.date < y.date ? -1 : 1; }), followUps: fu.sort(function(x, y){ return x.date < y.date ? -1 : 1; }), aMissing: perRep[rep].aMissing };
+      var plannedIds = {}; Object.keys(data.dayPlans || {}).forEach(function(dt){ if(dt < nFrom || dt > nTo) return; ((data.dayPlans[dt] || {})[rep] || []).forEach(function(e){ plannedIds[typeof e === 'string' ? e : e.id] = 1; }); });
+      var aInfo = perRep[rep].aMissingIds.map(function(id){ return { clinicId: id, name: byId[id].name, kd: rnd(kd2[id] || 0), planned: !!plannedIds[id] }; })
+        .sort(function(x, y){ return y.kd - x.kd || (x.name < y.name ? -1 : 1); });
+      next[rep] = { planned: planned.sort(function(x, y){ return x.date < y.date ? -1 : 1; }), followUps: fu.sort(function(x, y){ return x.date < y.date ? -1 : 1; }), aMissing: perRep[rep].aMissing, aMissingInfo: aInfo };
     });
     // the last 8 weeks (this one to the chosen day, the others Sunday–Saturday):
     // the same measures week by week, so this week can be read against them
@@ -2004,10 +2040,118 @@
     team.week = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].week; }, 0));
     team.prevWeek = rnd(reps.reduce(function(s, rep){ return s + perRep[rep].prevWeek; }, 0));
     team.mtd = rnd(team.mtd); team.target = rnd(team.target);
+    var govT = {}; vis.forEach(function(v){ if(isFieldVisit(v) && reps.some(function(r){ return repWasThere(v, r); }) && isGovClinic(byId[v.clinicId])) govT[byId[v.clinicId].name] = 1; });
+    team.govSites = Object.keys(govT).sort();
+    var mineX = function(x){ return reps.indexOf(x.rep) >= 0; };
+    var custKeyOf = function(x){ return x.clinicId ? 'c:' + x.clinicId : 'n:' + String(x.r.customer || '').trim().toLowerCase(); };
+    var nameOf = function(x){ return x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : String(x.r.customer || '').trim(); };
+    // ---- the money page: where the week's KD came from (the parts add up to
+    // team.week): accounts that bought before the week (their first-time
+    // products inside), new accounts, channel accounts (My Fatoorah,
+    // individual customers), internal moves, returns
+    var newKeys = {}, plKeys = {};
+    winsR.newAccounts.filter(mineX).forEach(function(x){ newKeys[x.key] = 1; });
+    winsR.placements.filter(mineX).forEach(function(x){ plKeys[x.key + '|' + String(x.product || '').toLowerCase()] = 1; });
+    var mx = { existing: 0, firstTime: 0, newAccounts: 0, channel: 0, other: 0, returns: 0 }, accNet = {};
+    rows.forEach(function(x){ var r = x.r; if(!x.rep || !mineX(x) || r.date < from || r.date > to) return;
+      var net = Number(r.net) || 0, k = custKeyOf(x);
+      if(r.type === 'return' || net < 0){ mx.returns += net; return; }
+      if(x.channel) mx.channel += net;
+      else if(!x.clinicId && isInternalAccount(r.customer)) mx.other += net;
+      else { if(newKeys[k]) mx.newAccounts += net; else { mx.existing += net; if(plKeys[k + '|' + String(r.product || '').toLowerCase()]) mx.firstTime += net; }
+        accNet[nameOf(x)] = (accNet[nameOf(x)] || 0) + net; } });
+    var invW = winsR.invoices.filter(function(i){ return mineX(i) && !i.internal; });
+    var withValue = invW.filter(function(i){ return i.net > 0.0005; }), negDocs = invW.filter(function(i){ return i.net < -0.0005; }), zeroDocs = invW.filter(function(i){ return Math.abs(i.net) <= 0.0005; });
+    var uniq = function(a){ return a.filter(function(v, i){ return a.indexOf(v) === i; }); };
+    var topAcc = Object.keys(accNet).sort(function(a, b){ return accNet[b] - accNet[a]; })[0];
+    var mix = { existing: rnd(mx.existing), firstTime: rnd(mx.firstTime), newAccounts: rnd(mx.newAccounts), channel: rnd(mx.channel), other: rnd(mx.other), returns: rnd(mx.returns), total: team.week,
+      invoices: withValue.length, withValue: rnd(withValue.reduce(function(t, i){ return t + i.net; }, 0)), zeroDocs: zeroDocs.length, returnDocs: negDocs.length,
+      returnsNet: rnd(negDocs.reduce(function(t, i){ return t + i.net; }, 0)),
+      accounts: uniq(withValue.filter(function(i){ return !i.channel; }).map(function(i){ return i.account; })).length,
+      channelAccounts: uniq(withValue.filter(function(i){ return i.channel; }).map(function(i){ return i.account; })).length,
+      top: topAcc && team.week > 0 ? { account: topAcc, net: rnd(accNet[topAcc]), share: accNet[topAcc] / team.week } : null,
+      topInvoice: withValue[0] && team.week > 0 ? { doc: withValue[0].doc, account: withValue[0].account, rep: withValue[0].rep, net: withValue[0].net, share: withValue[0].net / team.week } : null };
+    // free goods: samples (all-free documents, at list price) and free lines
+    // inside paid invoices (part of the deal: already in the discount)
+    var sampW = winsR.samples.filter(mineX), dealW = winsR.deals.filter(mineX);
+    var free = { samples: { docs: sampW.length, accounts: uniq(sampW.map(function(x){ return x.account; })), gross: rnd(sampW.reduce(function(t, x){ return t + x.gross; }, 0)), list: sampW },
+      deals: { docs: dealW.length, lines: dealW.reduce(function(t, x){ return t + x.lines.length; }, 0), gross: rnd(dealW.reduce(function(t, x){ return t + x.gross; }, 0)), list: dealW } };
+    // samples in the 8 weeks before this one: did the clinic buy that brand
+    // within 30 days? (a follow-through, not proof that the sample caused it)
+    var sFrom = addDaysStr(from, -56), sTo = addDaysStr(from, -1); if(earliest && earliest > sFrom) sFrom = earliest;
+    var paidAll = {}; rows.forEach(function(x){ if(x.r.net > 0 && x.r.type !== 'return') paidAll[x.r.doc] = 1; });
+    var sampled = {};
+    rows.forEach(function(x){ var r = x.r; if(!x.rep || !mineX(x) || x.channel || r.date < sFrom || r.date > sTo || (!x.clinicId && isInternalAccount(r.customer)) || !isFocRow(r) || paidAll[r.doc]) return;
+      var key = custKeyOf(x) + '|' + normBrand(r.brand); if(!sampled[key] || r.date < sampled[key].date) sampled[key] = { date: r.date, account: nameOf(x), cust: custKeyOf(x), brand: normBrand(r.brand), kd: 0 }; });
+    rows.forEach(function(x){ var r = x.r; if(x.channel || !(r.net > 0) || r.type === 'return') return; var sm = sampled[custKeyOf(x) + '|' + normBrand(r.brand)];
+      if(sm && r.date > sm.date && r.date <= addDaysStr(sm.date, 30) && r.date <= to) sm.kd += r.net; });
+    var sPairs = Object.keys(sampled).map(function(k){ var x = sampled[k]; x.kd = rnd(x.kd); return x; }).sort(function(a, b){ return a.date < b.date ? -1 : 1; });
+    var sampleConversion = sFrom <= sTo && sPairs.length ? { from: sFrom, to: sTo, clinics: uniq(sPairs.map(function(x){ return x.cust; })).length,
+      converted: uniq(sPairs.filter(function(x){ return x.kd > 0; }).map(function(x){ return x.cust; })).length, kd: rnd(sPairs.reduce(function(t, x){ return t + x.kd; }, 0)), list: sPairs } : null;
+    // how much rests on one clinic: shares of the clinics' sales since the window start
+    var since = earliest && earliest > since90 ? earliest : since90, cNet = {};
+    rows.forEach(function(x){ if(!x.clinicId || x.channel || x.r.date < since || x.r.date > to) return; cNet[x.clinicId] = (cNet[x.clinicId] || 0) + x.r.net; });
+    var cList = Object.keys(cNet).filter(function(id){ return cNet[id] > 0; }).sort(function(a, b){ return cNet[b] - cNet[a]; }), cTot = cList.reduce(function(t, id){ return t + cNet[id]; }, 0);
+    expansion.since = since;
+    expansion.spread = cTot > 0 ? { total: rnd(cTot), clinics: cList.length, top: { clinic: byId[cList[0]] ? byId[cList[0]].name : cList[0], net: rnd(cNet[cList[0]]), share: cNet[cList[0]] / cTot },
+      top5: cList.slice(0, 5).reduce(function(t, id){ return t + cNet[id]; }, 0) / cTot } : null;
+    expansion.pipeline.forEach(function(p){ var c = clinics.filter(function(c){ return c.name === p.clinic; })[0]; p.kind = isGovClinic(c) ? 'gov' : /pharmac|صيدل/i.test(p.clinic) ? 'pharmacy' : 'clinic'; });
+    // last month's new accounts: did they order again, and for how much since
+    var prevMonthNew = null;
+    if(pmCov && reps.some(function(r){ return winsOk(r, pmStart); })){
+      var pmW = keepWins(erpWinsInRange(rows, pmStart, pmEnd, clinics), pmStart);
+      var pmList = pmW.newAccounts.filter(mineX).map(function(x){
+        var later = rows.filter(function(y){ return !y.channel && custKeyOf(y) === x.key && y.r.date > x.date && y.r.date <= to; });
+        var again = later.some(function(y){ return y.r.net > 0 && y.r.type !== 'return'; });
+        return { account: x.account, rep: x.rep, first: x.date, firstNet: x.net, again: again, kdSince: rnd(later.reduce(function(t, y){ return t + y.r.net; }, 0)) }; });
+      prevMonthNew = { month: pmStart.slice(0, 7), count: pmList.length, orderedAgain: pmList.filter(function(a){ return a.again; }).length,
+        kdSince: rnd(pmList.filter(function(a){ return a.again; }).reduce(function(t, a){ return t + a.kdSince; }, 0)), accounts: pmList };
+    }
+    expansion.prevMonthNew = prevMonthNew;
+    // orders taken in the field this week (as logged): invoiced since, or awaiting
+    var fieldOrders = vis.filter(function(v){ return v.orderTaken && reps.indexOf(v.rep) >= 0 && !v.callOnly; }).map(function(v){
+      var inv = rows.some(function(x){ return x.clinicId && x.clinicId === v.clinicId && x.r.net > 0 && x.r.type !== 'return' && x.r.date >= v.date; });
+      return { date: v.date, rep: v.rep, clinic: (byId[v.clinicId] || {}).name || '—', clinicId: v.clinicId || null, value: rnd(v.orderTotal || 0), invoiced: inv }; });
+    // the month's clinic sales (invoice lines, before returns) from clinics visited this month (visit → invoice)
+    var visitedM = {}; visM.forEach(function(v){ if(reps.some(function(r){ return repWasThere(v, r); })) visitedM[v.clinicId] = 1; });
+    var lnAll = 0, lnVis = 0, lnClin = {};
+    rows.forEach(function(x){ if(!x.clinicId || x.channel || !x.rep || !mineX(x) || x.r.date < mStart || x.r.date > to || !(x.r.net > 0) || x.r.type === 'return') return; lnAll += x.r.net; if(visitedM[x.clinicId]){ lnVis += x.r.net; lnClin[x.clinicId] = 1; } });
+    var linkage = lnAll > 0 ? { from: mStart, to: to, clinicNet: rnd(lnAll), visitedNet: rnd(lnVis), pct: lnVis / lnAll, clinics: Object.keys(lnClin).length } : null;
+    // this week's plan (saved last week) against what was done, and the
+    // follow-ups that fell due this week (the latest earlier visit sets each date)
+    var pl0 = {};
+    Object.keys(data.dayPlans || {}).forEach(function(dt){ if(dt < from || dt > to) return; reps.forEach(function(rep){ ((data.dayPlans[dt] || {})[rep] || []).forEach(function(e){ var id = typeof e === 'string' ? e : e.id; if(byId[id]) pl0[rep + '|' + id] = { rep: rep, clinicId: id, date: dt }; }); }); });
+    var plList = Object.keys(pl0).map(function(k){ var e = pl0[k]; e.clinic = byId[e.clinicId].name; e.done = vis.some(function(v){ return v.clinicId === e.clinicId && isFieldVisit(v) && repWasThere(v, e.rep); }); return e; });
+    var lastV = {}; (data.visits || []).forEach(function(v){ if(!v || !v.clinicId || v.date >= from) return; if(!lastV[v.clinicId] || v.date > lastV[v.clinicId].date) lastV[v.clinicId] = v; });
+    var fuList = Object.keys(lastV).filter(function(id){ var v = lastV[id]; return byId[id] && v.nextFollowUp && v.nextFollowUp >= from && v.nextFollowUp <= to && reps.some(function(r){ return repWasThere(v, r); }); })
+      .map(function(id){ return { clinicId: id, clinic: byId[id].name, rep: lastV[id].rep, due: lastV[id].nextFollowUp, done: vis.some(function(v){ return v.clinicId === id; }) }; });
+    var lastPlan = plList.length || fuList.length ? { planned: plList.length, plannedDone: plList.filter(function(e){ return e.done; }).length, followUps: fuList.length, followUpsDone: fuList.filter(function(e){ return e.done; }).length, plans: plList, followUpList: fuList } : null;
+    // returns month to date
+    var retM = 0, saleM = 0;
+    rows.forEach(function(x){ if(!x.rep || !mineX(x) || x.r.date < mStart || x.r.date > to) return; if(x.r.type === 'return' || x.r.net < 0) retM += -x.r.net; else saleM += x.r.net; });
+    satisfaction.returnsPctMtd = saleM > 0 ? Math.round(retM / saleM * 1000) / 10 : null;
+    satisfaction.returnsKd = rnd(retNet); satisfaction.salesKd = rnd(saleNet);
+    var marginMtd = discountIn(mStart, to);
+    // before the meeting: what the supervisor should fix in the app first
+    var checks = [];
+    if(!covered(from, to)) checks.push({ key: 'no-file', level: 'warn', text: 'No ERP sales file covers this week yet — upload it first.', ar: 'لا يوجد ملف مبيعات ERP يغطي هذا الأسبوع بعد — ارفعه أولاً.' });
+    if(!(team.target > 0)) checks.push({ key: 'no-target', level: 'warn', text: 'No DSR target for this month yet — the month pages will be left out.', ar: 'لا يوجد تارغت DSR لهذا الشهر بعد — ستُحذف صفحات الشهر من العرض.' });
+    reps.forEach(function(rep){
+      if(!next[rep].planned.length) checks.push({ key: 'no-plan:' + rep, level: 'warn', rep: rep, text: rep + ' has no visits planned for next week (' + nFrom + ' to ' + addDaysStr(nFrom, 4) + ').', ar: 'لا توجد زيارات مخططة لـ' + rep + ' في الأسبوع القادم (' + nFrom + ' إلى ' + addDaysStr(nFrom, 4) + ').' });
+      var un = next[rep].aMissingInfo.filter(function(a){ return !a.planned; });
+      if(un.length) checks.push({ key: 'a-unplanned:' + rep, level: 'info', rep: rep, text: rep + ': ' + un.length + ' key (A) account' + (un.length === 1 ? '' : 's') + ' not visited this month and not in next week\'s plan.', ar: rep + ': حسابات رئيسية (A) لم تُزر هذا الشهر وليست في خطة الأسبوع القادم: ' + un.length + '.' }); });
+    var sampM = keepWins(erpWinsInRange(rows, mStart, to, clinics), mStart).samples.filter(mineX);
+    sampM.forEach(function(sm){ var c = sm.clinicId && byId[sm.clinicId]; if(!c || c.cls !== 'A') return;
+      if(!(data.visits || []).some(function(v){ return v && v.clinicId === c.id && v.date >= mStart && v.date <= to; }))
+        checks.push({ key: 'sample-no-visit:' + c.id, level: 'warn', text: c.name + ': samples invoiced on ' + sm.date + ' (' + sm.doc + ') but no visit or call logged this month — log it, or it counts as a key account still to visit.', ar: c.name + ': عينات بتاريخ ' + sm.date + ' (' + sm.doc + ') دون زيارة أو مكالمة مسجلة هذا الشهر — سجّلها، وإلا ستُحسب حساباً رئيسياً لم يُزر.' }); });
+    var moodN = satisfaction.moods.pleased + satisfaction.moods.neutral + satisfaction.moods.concerned;
+    if(team.fieldVisits && !moodN) checks.push({ key: 'no-mood', level: 'info', text: 'No doctor mood was tapped on this week\'s visits.', ar: 'لم يُسجَّل رضا الطبيب في أي زيارة هذا الأسبوع.' });
     return {
       from: from, to: to, prevFrom: pFrom, prevTo: pTo, monthStart: mStart, nextFrom: nFrom, nextTo: nTo,
       salesCovered: covered(from, to), salesTo: salesTo, prevCovered: covered(pFrom, pTo), historyFrom: earliest, settings: KS,
       reps: reps, perRep: perRep, team: team, brands: brands, weeks: weeks, next: next, history: history, products: products, photos: photos, margin: margin, expansion: expansion, satisfaction: satisfaction,
+      marginMtd: marginMtd, winsBlocked: winsBlocked, mix: mix, free: free, sampleConversion: sampleConversion, fieldOrders: fieldOrders, linkage: linkage, lastPlan: lastPlan, checks: checks,
+      prevMonth: { from: pmStart, to: pmEnd, covered: pmCov }, prev2: { from: p2From, to: p2To },
       wins: winsR,
       visits: vis.slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; }).map(function(v){
         return { date: v.date, rep: v.rep, withRep: v.withRep || null, clinic: (byId[v.clinicId] || {}).name || '—', type: v.callOnly ? 'call' : v.orderOnly ? 'phone order' : 'visit',
@@ -2099,6 +2243,12 @@
     aboveAvg: function(vals, money){ var cur = vals[vals.length - 1], prev = vals.slice(0, -1).filter(function(v){ return v != null; });
       if(cur == null || prev.length < 3) return null; var avg = prev.reduce(function(a, v){ return a + v; }, 0) / prev.length;
       return avg > 0 && cur >= 1.1 * avg && cur - avg >= (money ? 100 : 2) ? avg : null; },
+    // R2 (amended): "up from last week" only when this week is also at least
+    // 1.1 × the average of the earlier measurable weeks (2 or more) and last
+    // week was not below that average — never a rise from a weak week
+    fairRise: function(vals, money){ var c = vals[vals.length - 1], p = vals.length > 1 ? vals[vals.length - 2] : null;
+      if(!storyGate.rise(c, p, money)) return false; var prev = vals.slice(0, -1).filter(function(v){ return v != null; });
+      if(prev.length < 2) return false; var avg = prev.reduce(function(a, v){ return a + v; }, 0) / prev.length; return c >= 1.1 * avg && p >= avg; },
     // R4: consecutive measurable weeks above zero, ending this week
     streak: function(vals){ var n = 0; for(var i = vals.length - 1; i >= 0; i--){ if(vals[i] == null || !(vals[i] > 0)) break; n++; } return n; },
     // R6: a brand target is material at KD 1,000 or 5% of the team target
@@ -2154,7 +2304,7 @@
       var sAvg = storyGate.aboveAvg(sv, true);
       if(storyGate.record(sv)) add({ key: 'sales-record', kind: 'sales', big: kd(sCur), headline: 'Best sales week of the last ' + measured(sv) + ' weeks', detail: 'above every earlier week our sales files cover', basis: 'ERP invoices, the same people every week', icon: 'award', evidence: { values: sv, frame: 'record' }, score: 100,
         ar: 'أفضل أسبوع مبيعات منذ ' + measured(sv) + ' أسابيع: ' + num(sCur) + ' ديناراً.' });
-      else if(storyGate.rise(sCur, sPrev, true)) add({ key: 'sales-rise', kind: 'sales', big: kd(sCur), headline: 'Sales up on last week', detail: 'up from ' + kd(sPrev) + ' (' + lastWk + ')' + (storyGate.pctOk(sPrev, true) ? ', +' + pct((sCur - sPrev) / sPrev) : ''), basis: 'ERP invoices, the same people both weeks', icon: 'arrow-up', evidence: { values: sv, frame: 'rise' }, score: 90,
+      else if(storyGate.fairRise(sv, true)) add({ key: 'sales-rise', kind: 'sales', big: kd(sCur), headline: 'Sales up on last week', detail: 'up from ' + kd(sPrev) + ' (' + lastWk + ')' + (storyGate.pctOk(sPrev, true) ? ', +' + pct((sCur - sPrev) / sPrev) : ''), basis: 'ERP invoices, the same people both weeks', icon: 'arrow-up', evidence: { values: sv, frame: 'rise' }, score: 90,
         ar: 'المبيعات ارتفعت إلى ' + num(sCur) + ' ديناراً مقابل ' + num(sPrev) + ' الأسبوع الماضي.' });
       else if(sAvg != null) add({ key: 'sales-avg', kind: 'sales', big: kd(sCur), headline: 'Above the average of the earlier weeks', detail: 'against an average of ' + kd(sAvg) + ' a week', basis: 'ERP invoices, the same people every week', icon: 'chart', evidence: { values: sv, frame: 'avg' }, score: 80,
         ar: 'مبيعات الأسبوع ' + num(sCur) + ' ديناراً، فوق متوسط الأسابيع السابقة (' + num(sAvg) + ').' });
@@ -2192,26 +2342,28 @@
       var parts = [];
       if(NA.length) parts.push(NA.length === 1 ? 'a new account (' + cut(NA[0].account, 30) + ', first order ' + kd(NA[0].net) + ')' : NA.length + ' new accounts');
       if(RA.length) parts.push(RA.length === 1 ? cut(RA[0].account, 30) + ' ordering again after 60+ days' : RA.length + ' accounts ordering again after 60+ days');
-      if(PL.length) parts.push(PL.length === 1 ? 'a new product placed in a clinic that already buys from us' : PL.length + ' new products placed in clinics that already buy from us');
+      if(PL.length) parts.push(PL.length === 1 ? 'a first-time product in a clinic that already buys from us' : PL.length + ' first-time products in clinics that already buy from us');
       var detail = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
       add({ key: 'newbiz', kind: 'newbiz', big: String(nWins), headline: nWins === 1 ? 'business win this week' : 'business wins this week', detail: detail.charAt(0).toUpperCase() + detail.slice(1), basis: 'new = first order in our sales files, which start ' + dm(W.historyFrom || W.from), icon: 'sparkles', score: NA.length ? 86 : 76,
         ar: nWins + ' مكاسب جديدة هذا الأسبوع' + (NA.length ? '، منها ' + (NA.length === 1 ? 'حساب جديد هو ' + NA[0].account + ' بأول طلب قيمته ' + num(NA[0].net) + ' ديناراً' : NA.length + ' حسابات جديدة') : '') + (PL.length ? '، و' + PL.length + ' منتجات جديدة دخلت عيادات تتعامل معنا' : '') + '.' });
     }
     // 4 · field work: records, above the average, or a rise — visits and doctors met
     var fieldCands = [];
-    [['fieldVisits', 'field visits', 'زيارة ميدانية', 'stethoscope'], ['doctorsMet', 'doctors met', 'طبيباً قابلناهم', 'users']].forEach(function(m){
+    [['fieldVisits', 'field visits', 'زيارة ميدانية', 'stethoscope'], ['doctorsMet', 'doctors and staff met', 'من الأطباء والعاملين قابلناهم', 'users']].forEach(function(m){
       var vals = fromFirstUse(H.map(function(h){ return h[m[0]]; })), c = vals[vals.length - 1], p = vals.length > 1 ? vals[vals.length - 2] : null;
       if(!(c > 0)) return;
       var avg = storyGate.aboveAvg(vals), rk = storyGate.rank(vals);
       if(storyGate.record(vals)) fieldCands.push({ key: 'field-record:' + m[0], kind: 'field', big: String(c), headline: m[1] + ', the most in ' + measured(vals) + ' weeks', detail: 'more than any earlier week logged in the app', basis: 'a visit = one clinic on one day; each doctor counted once', icon: m[3], evidence: { values: vals, frame: 'record' }, score: 84, rank: rk, ar: c + ' ' + m[2] + '، الأعلى منذ ' + measured(vals) + ' أسابيع.' });
-      else if(storyGate.rise(c, p, false)) fieldCands.push({ key: 'field-rise:' + m[0], kind: 'field', big: String(c), headline: m[1] + ', up from ' + p + ' last week', detail: (storyGate.pctOk(p, false) ? '+' + pct((c - p) / p) + ' on ' + lastWk : 'against ' + p + ' on ' + lastWk), basis: 'a visit = one clinic on one day; each doctor counted once', icon: m[3], evidence: { values: vals, frame: 'rise' }, score: 70, rank: rk, ar: c + ' ' + m[2] + ' مقابل ' + p + ' الأسبوع الماضي.' });
+      else if(storyGate.fairRise(vals, false)) fieldCands.push({ key: 'field-rise:' + m[0], kind: 'field', big: String(c), headline: m[1] + ', up from ' + p + ' last week', detail: (storyGate.pctOk(p, false) ? '+' + pct((c - p) / p) + ' on ' + lastWk : 'against ' + p + ' on ' + lastWk), basis: 'a visit = one clinic on one day; each doctor counted once', icon: m[3], evidence: { values: vals, frame: 'rise' }, score: 70, rank: rk, ar: c + ' ' + m[2] + ' مقابل ' + p + ' الأسبوع الماضي.' });
       else if(avg != null) fieldCands.push({ key: 'field-avg:' + m[0], kind: 'field', big: String(c), headline: m[1] + ', above the weekly average', detail: 'against an average of ' + Math.round(avg) + ' a week', basis: 'a visit = one clinic on one day; each doctor counted once', icon: m[3], evidence: { values: vals, frame: 'avg' }, score: 72, rank: rk, ar: c + ' ' + m[2] + '، فوق متوسط الأسابيع السابقة.' });
     });
     fieldCands.sort(function(a, b){ return b.score - a.score || a.rank - b.rank; }).forEach(function(c, i){ if(i > 0) c.score -= 20; add(c); });
     // 5 · streaks (R4) — new accounts, back after 60+ days, new products
-    var streaks = [];
-    [['placements', 'new products placed', 'منتج جديد دخل عيادة'], ['newAccounts', 'a new account', 'حساب جديد'], ['reactivated', 'an account back after 60+ days', 'حساب عاد بعد انقطاع']].forEach(function(m){
-      var vals = H.map(function(h){ return h[m[0]]; }), n = storyGate.streak(vals);
+    var streaks = [], streakFrom = W.historyFrom ? addDaysStr(W.historyFrom, 90) : null;
+    // R4 (amended): a week counts in a streak only with 90 days of files before it ("first" is not knowable sooner)
+    var streakVals = function(f){ return H.map(function(h){ return streakFrom && h.from >= streakFrom ? h[f] : null; }); };
+    [['placements', 'first-time products', 'منتج يدخل عيادة لأول مرة'], ['newAccounts', 'a new account', 'حساب جديد'], ['reactivated', 'an account back after 60+ days', 'حساب عاد بعد انقطاع']].forEach(function(m){
+      var vals = streakVals(m[0]), n = storyGate.streak(vals);
       if(n >= 3) streaks.push(add({ key: 'streak:' + m[0], kind: 'streak', big: String(n), headline: 'weeks in a row with ' + m[1], detail: 'every week our files can measure' + (cur[m[0]] ? '; ' + cur[m[0]] + ' this week' : ''), basis: 'measurable weeks: ' + measured(vals) + ' of the last ' + vals.length, icon: 'refresh', evidence: { values: vals, frame: 'streak' }, score: n >= 4 ? 74 : 54, headlineOk: n >= 4, ar: n + ' أسابيع متتالية فيها ' + m[2] + '.' }));
     });
     // 6 · brands at their month target: a headline only when material (R6)
@@ -2231,8 +2383,8 @@
     if(sat.requests >= 2 && sat.answeredOnTime === sat.requests) add({ key: 'service', kind: 'service', big: sat.requests + ' of ' + sat.requests, headline: 'client requests answered on time', detail: 'within ' + KS.responseHours + ' hours', basis: 'requests logged in the app', icon: 'chat', score: 50, headlineOk: false, ar: 'كل طلبات العملاء (' + sat.requests + ') تم الرد عليها في الوقت.' });
     var moods = sat.moods || {}, rated = (moods.pleased || 0) + (moods.neutral || 0) + (moods.concerned || 0);
     if(rated >= 3 && moods.pleased / rated >= 0.6) add({ key: 'mood', kind: 'mood', big: moods.pleased + ' of ' + rated, headline: 'visits where the doctor was pleased', detail: 'as the rep recorded it on each visit', basis: 'the visit form\'s satisfaction tap', icon: 'star', score: 62, headlineOk: false, ar: 'الأطباء كانوا راضين في ' + moods.pleased + ' من ' + rated + ' زيارات قيّمناها.' });
-    var seeds = (W.wins.samples || []).filter(mine);
-    if(seeds.length) add({ key: 'seeds', kind: 'seeds', big: String(seeds.length), headline: seeds.length === 1 ? 'clinic given samples' : 'clinics given samples', detail: 'seeds: ' + cut(seeds.map(function(x){ return x.account; }).join(', '), 60), basis: 'zero-value invoice lines', icon: 'gift', score: 36, headlineOk: false, ar: 'وزعنا عينات على ' + seeds.length + ' عيادات لفتح طلبات قادمة.' });
+    var seeds = (W.wins.samples || []).filter(mine), seedAcc = seeds.map(function(x){ return x.account; }).filter(function(a, i, l){ return l.indexOf(a) === i; });
+    if(seeds.length) add({ key: 'seeds', kind: 'seeds', big: String(seedAcc.length), headline: seedAcc.length === 1 ? 'account given samples' : 'accounts given samples', detail: 'seeds: ' + cut(seedAcc.join(', '), 60), basis: 'documents with free goods only (a free line on a paid invoice is part of that deal)', icon: 'gift', score: 36, headlineOk: false, ar: 'وزعنا عينات على ' + seedAcc.length + ' حسابات لفتح طلبات قادمة.' });
     var ex = W.expansion || {};
     if((ex.pipeline || []).length >= 2) add({ key: 'pipeline', kind: 'pipeline', big: String(ex.pipeline.length), headline: 'prospects visited', detail: 'no invoice in the last 90 days: ' + cut(ex.pipeline.slice(0, 3).map(function(x){ return x.clinic; }).join(', '), 60), basis: 'clinics visited this week with no invoice in 90 days', icon: 'compass', score: 46, headlineOk: false, ar: 'زرنا ' + ex.pipeline.length + ' عيادات لا تشتري منا حالياً: هذه خطة التوسع.' });
     if(ex.newThisMonth && ex.newThisMonth.length >= 2) add({ key: 'new-month', kind: 'newclinics', big: String(ex.newThisMonth.length), headline: 'new accounts this month', detail: cut(ex.newThisMonth.map(function(x){ return x.account; }).join(', '), 60), basis: 'first order in our files', icon: 'building', score: 64, headlineOk: false, ar: ex.newThisMonth.length + ' حسابات جديدة منذ بداية الشهر.' });
@@ -2261,7 +2413,7 @@
       var rv = H.map(function(h){ return h.byRep ? h.byRep[r] : null; }), rc = rv[rv.length - 1], rp = rv.length > 1 ? rv[rv.length - 2] : null;
       if(W.salesCovered && rc > 0){
         if(storyGate.record(rv)) c.push({ kind: 'sales', big: kd(rc), line: 'best sales week of the last ' + measured(rv) + ' weeks', icon: 'award', score: 86, ar: 'أفضل أسبوع مبيعات لـ' + r + ' منذ ' + measured(rv) + ' أسابيع.' });
-        else if(storyGate.rise(rc, rp, true)) c.push({ kind: 'sales', big: kd(rc), line: 'invoiced, up from ' + kd(rp) + ' last week', icon: 'arrow-up', score: 80, ar: r + ' رفع مبيعاته إلى ' + num(rc) + ' مقابل ' + num(rp) + '.' });
+        else if(storyGate.fairRise(rv, true)) c.push({ kind: 'sales', big: kd(rc), line: 'invoiced, up from ' + kd(rp) + ' last week', icon: 'arrow-up', score: 80, ar: r + ' رفع مبيعاته إلى ' + num(rc) + ' مقابل ' + num(rp) + '.' });
       }
       NA.filter(function(x){ return x.rep === r; }).forEach(function(x){ c.push({ kind: 'new', big: kd(x.net), line: 'first order from a new account, ' + cut(x.account, 28), icon: 'building', score: 84, ar: 'حساب جديد: ' + x.account + ' بأول طلب ' + num(x.net) + ' ديناراً.' }); });
       RA.filter(function(x){ return x.rep === r; }).forEach(function(x){ c.push({ kind: 'back', big: '1', line: cut(x.account, 28) + ' ordering again after 60+ days', icon: 'refresh', score: 74, ar: x.account + ' عاد للطلب بعد انقطاع.' }); });
@@ -2269,7 +2421,7 @@
       if(myPl.length >= 2 || plKd >= 100) c.push({ kind: 'placements', big: String(myPl.length), line: myPl.length === 1 ? 'first-time product: ' + cut(myPl[0].product, 30) : 'products placed for the first time in clinics', icon: 'package', score: 66, ar: myPl.length + ' منتجات دخلت عيادات لأول مرة.' });
       else if(myPl.length === 1) c.push({ kind: 'placements', big: kd(myPl[0].net), line: 'first-time product at ' + cut(myPl[0].account, 26), icon: 'package', score: 40, ar: 'منتج جديد دخل ' + myPl[0].account + '.' });
       if(closedRep[r]){ var cr = closedRep[r]; c.push({ kind: 'month', big: pct(cr.pct), line: STORY_MONTHS_LONG[parseInt(cr.month.slice(5, 7), 10) - 1] + ' closed at ' + pct(cr.pct) + ', up from ' + pct(cr.pctPrev), icon: 'target', score: 62, ar: r + ' أغلق الشهر الماضي بنسبة ' + pct(cr.pct) + ' مقابل ' + pct(cr.pctPrev) + '، والمبيعات أعلى أيضاً.' }); }
-      [['fieldVisits', 'field visits, the most on the team', 'stethoscope', 'زيارات ميدانية، الأكثر في الفريق'], ['doctorsMet', 'doctors met, the most on the team', 'users', 'طبيباً، الأكثر في الفريق'], ['productsPresented', 'products presented, the most on the team', 'layers', 'منتجات عُرضت، الأكثر في الفريق'], ['followUps', 'follow-up dates set, the most on the team', 'calendar', 'مواعيد متابعة، الأكثر في الفريق']].forEach(function(m, k){
+      [['fieldVisits', 'field visits, the most on the team', 'stethoscope', 'زيارات ميدانية، الأكثر في الفريق'], ['doctorsMet', 'doctors and staff met, the most on the team', 'users', 'من الأطباء والعاملين، الأكثر في الفريق'], ['productsPresented', 'products presented, the most on the team', 'layers', 'منتجات عُرضت، الأكثر في الفريق'], ['followUps', 'follow-up dates set, the most on the team', 'calendar', 'مواعيد متابعة، الأكثر في الفريق']].forEach(function(m, k){
         if(most(m[0], r) && p[m[0]] >= 3) c.push({ kind: 'most:' + m[0], big: String(p[m[0]]), line: m[1], icon: m[2], score: 50 - k, ar: p[m[0]] + ' ' + m[3] + '.' }); });
       if(p.logged >= 3 && p.followUps === p.logged) c.push({ kind: 'discipline', big: p.followUps + ' of ' + p.logged, line: 'visits logged with a follow-up date', icon: 'calendar', score: 44, ar: 'كل زيارة سجلها لها موعد متابعة.' });
       var K = opts.kpi && opts.kpi[r];
@@ -2283,18 +2435,22 @@
     // ---- against the last 8 weeks: favourable frames only, one per measure
     var momentum = [];
     var mMeasures = [['sales', 'Sales', sv, true], ['invoices', 'Invoices', H.map(function(h){ return h.invoices; }), false], ['accounts', 'Clinic accounts invoiced', H.map(function(h){ return h.accounts; }), false],
-      ['placements', 'New products placed', H.map(function(h){ return h.placements; }), false], ['newAccounts', 'New accounts', H.map(function(h){ return h.newAccounts; }), false],
-      ['fieldVisits', 'Field visits', fromFirstUse(H.map(function(h){ return h.fieldVisits; })), false], ['doctorsMet', 'Doctors met', fromFirstUse(H.map(function(h){ return h.doctorsMet; })), false]];
+      ['placements', 'First-time products', H.map(function(h){ return h.placements; }), false], ['newAccounts', 'New accounts', H.map(function(h){ return h.newAccounts; }), false],
+      ['fieldVisits', 'Field visits', fromFirstUse(H.map(function(h){ return h.fieldVisits; })), false], ['doctorsMet', 'Doctors and staff met', fromFirstUse(H.map(function(h){ return h.doctorsMet; })), false]];
     mMeasures.forEach(function(m){
       var vals = m[2], c = vals[vals.length - 1], p = vals.length > 1 ? vals[vals.length - 2] : null;
       if(m[0] === 'sales' && !W.salesCovered) return;
       var big = m[3] ? kd(c || 0) : String(c), rk = storyGate.rank(vals);
       if(c > 0 && storyGate.record(vals)) momentum.push({ key: m[0], label: m[1], big: big, chip: '★ best of ' + measured(vals) + ' weeks', frame: 'record', values: vals, score: 4, rank: rk });
       else if(c > 0 && storyGate.aboveAvg(vals, m[3]) != null) momentum.push({ key: m[0], label: m[1], big: big, chip: 'above the ' + (measured(vals) - 1) + '-week average', frame: 'avg', values: vals, score: 3, rank: rk, avg: storyGate.aboveAvg(vals, m[3]) });
-      else if(['placements', 'newAccounts'].indexOf(m[0]) >= 0 && storyGate.streak(vals) >= 3) momentum.push({ key: m[0], label: m[1], big: String(storyGate.streak(vals)), chip: storyGate.streak(vals) + ' weeks in a row', frame: 'streak', values: vals, score: 2, rank: rk });
-      else if(storyGate.rise(c, p, m[3])) momentum.push({ key: m[0], label: m[1], big: big, chip: '▲ up from ' + (m[3] ? kd(p) : p) + ' last week', frame: 'rise', values: vals, score: 1, rank: rk });
+      else if(['placements', 'newAccounts'].indexOf(m[0]) >= 0 && storyGate.streak(streakVals(m[0])) >= 3){ var sk = storyGate.streak(streakVals(m[0])); momentum.push({ key: m[0], label: m[1], big: String(sk), chip: sk + ' weeks in a row', frame: 'streak', values: streakVals(m[0]), score: 2, rank: rk }); }
+      else if(storyGate.fairRise(vals, m[3])) momentum.push({ key: m[0], label: m[1], big: big, chip: '▲ up from ' + (m[3] ? kd(p) : p) + ' last week', frame: 'rise', values: vals, score: 1, rank: rk });
     });
     momentum.sort(function(a, b){ return b.score - a.score || a.rank - b.rank; }); momentum = momentum.slice(0, 4);
+    // R15: the page title names its measure — never "Up on last week"
+    var mt = momentum[0], momentumTitle = !mt ? null : mt.frame === 'record' ? mt.label + ': ' + mt.big + ', the most in ' + measured(mt.values) + ' weeks'
+      : mt.frame === 'avg' ? mt.label + ': ' + mt.big + ', above the ' + (measured(mt.values) - 1) + '-week average'
+      : mt.frame === 'streak' ? mt.label + ' every week for ' + mt.big + ' weeks' : mt.label + ': ' + mt.big + ', ' + mt.chip.replace(/^▲ /, '');
     // ---- the wins of the week, biggest first (every one with its invoice)
     var winsList = [].concat(NA.map(function(x){ return { type: 'new', account: x.account, clinicId: x.clinicId, rep: x.rep, date: x.date, doc: x.doc, net: x.net, product: x.products && x.products[0] ? x.products[0].product : null, brand: x.products && x.products[0] ? x.products[0].brand : null }; }),
       RA.map(function(x){ return { type: 'back', account: x.account, clinicId: x.clinicId, rep: x.rep, date: x.date, doc: x.doc, net: null, lastBefore: x.lastBefore }; }),
@@ -2321,9 +2477,11 @@
     if(aT > 0 && aV < aT) excluded.push('عيادات الفئة A التي زرناها هذا الشهر: ' + aV + ' من ' + aT + ' (A2)');
     (W.brands || []).filter(function(b){ return b.target > 0 && b.mtd < b.target; }).length && excluded.push('براندات تحت هدفها الشهري (A3)');
     if(mg.over && mg.over.length) excluded.push('فواتير فوق حد الخصم: ' + mg.over.length + ' (A11)');
-    return { headline: headline, close: headline, also: also, people: people, momentum: momentum, wins: winsList, nWins: nWins, newOk: newOk, sold: sold, field: field, month: month, next: next,
+    var out = { headline: headline, close: headline, also: also, people: people, momentum: momentum, momentumTitle: momentumTitle, wins: winsList, nWins: nWins, newOk: newOk, sold: sold, field: field, month: month, next: next,
       all: items.slice().sort(function(a, b){ return b.score - a.score; }), excluded: excluded, salesLikeForLike: tl, workingDays: wdays,
       cover: headline[0] ? (headline[0].big ? headline[0].big + ' ' : '') + headline[0].headline : null };
+    out.pages = weeklyPages(W, out, opts);
+    return out;
   }
   // Product lines that share one photo (one family) folded into one entry:
   // familyOf(product) → {key, display} or null (stays on its own). Units and
@@ -2340,6 +2498,329 @@
     });
     out.forEach(function(e){ e.accounts = e.accountKeys.length; });
     return out.sort(function(a, b){ return b.net - a.net; });
+  }
+  // ---- VALUE PER PERSON (the appendix page management reads for raises and
+  // commission): for each of the last `months` closed months, per person —
+  // ERP net (returns netted), % of the month's own DSR target, the clinic
+  // invoices' gross-weighted discount and the share within the limits,
+  // returns as a share of sales, new accounts and first-time products, the
+  // KPI total, and the commission base: ERP net minus the invoices above
+  // their discount limit. null where the files cannot say. Pure.
+  function valuePerPerson(data, opts){
+    opts = opts || {};
+    var reps = opts.reps || [], end = opts.end || data.today, n = opts.months || 3, S = opts.settings || null;
+    var KS = {}; Object.keys(KPI_DEFAULTS).forEach(function(k){ KS[k] = KPI_DEFAULTS[k]; });
+    Object.keys(S || {}).forEach(function(k){ if(S[k] != null && S[k] !== '') KS[k] = S[k]; });
+    var rows = opts.rows || erpAttributedRows(data), byId = {}; (data.clinics || []).forEach(function(c){ byId[c.id] = c; });
+    var lastClosed = addDaysStr(end.slice(0, 7) + '-01', -1);
+    var T = monthlyTrend(data, { reps: reps, end: lastClosed, months: n, rows: rows, settings: S });
+    var rnd = function(x){ return Math.round(x * 1000) / 1000; };
+    return { reps: reps, months: T.months.map(function(m){
+      var out = { month: m.month, from: m.from, to: m.to, byRep: {} };
+      reps.forEach(function(rep){
+        var t = m.byRep[rep] || {}, has = t.sales != null;
+        var inv = has ? clinicInvoices(rows, [rep], m.from, m.to, byId, KS) : [], ds = discountSummary(inv);
+        var ret = 0, sale = 0;
+        if(has) rows.forEach(function(x){ if(x.rep !== rep || x.r.date < m.from || x.r.date > m.to) return; if(x.r.type === 'return' || x.r.net < 0) ret += -x.r.net; else sale += x.r.net; });
+        var overNet = inv.filter(function(i){ return !i.within; }).reduce(function(a, i){ return a + i.net; }, 0);
+        out.byRep[rep] = { sales: has ? t.sales : null, target: t.target || null, pct: has ? t.pct : null,
+          discount: has ? ds.discount : null, withinLimit: has ? ds.withinLimit : null, invoices: has ? ds.invoices : null, over: has ? ds.over.length : null,
+          returnsPct: has && sale > 0 ? Math.round(ret / sale * 1000) / 10 : null,
+          newAccounts: has ? t.newAccounts : null, placements: has ? t.placements : null, kpi: t.kpi != null ? t.kpi : null,
+          base: has ? rnd(t.sales - overNet) : null };
+      });
+      return out; }) };
+  }
+  // ---- THE PAGES OF THE WEEKLY DECK (money first, then the month and its
+  // plan, growth, price, relationships, the people, the commitments) ----
+  // From weeklyReport's W and weeklyStory's S: each page's title, figures and
+  // Arabic speaker lines, so the deck only lays them out. The money tiles are
+  // the same every week whatever the direction (R13); titles choose the true
+  // positive framing; activity never carries a title alone (R14); comparison
+  // words name their measure (R15); samples are all-free documents (R16).
+  // Pure. opts: {presenter, brandName, trend (monthlyTrend), kpi, ask}.
+  function weeklyPages(W, S, opts){
+    opts = opts || {};
+    var reps = W.reps || [], P = W.perRep || {}, bn = opts.brandName || function(b){ return b; }, presenter = opts.presenter || null;
+    var KS = W.settings || KPI_DEFAULTS;
+    var mi = function(d){ return parseInt(String(d).slice(5, 7), 10) - 1; };
+    var dm = function(d){ return parseInt(d.slice(8, 10), 10) + ' ' + STORY_MONTHS[mi(d)]; };
+    var dmAr = function(d){ return parseInt(d.slice(8, 10), 10) + ' ' + STORY_MONTHS_AR[mi(d)]; };
+    var range = function(a, b){ return a.slice(0, 7) === b.slice(0, 7) ? parseInt(a.slice(8, 10), 10) + '–' + dm(b) : dm(a) + ' – ' + dm(b); };
+    var kd = function(n){ return (n < -0.5 ? '−' : '') + 'KD ' + Math.round(Math.abs(n)).toLocaleString('en-US'); };
+    var kd2 = function(n){ return 'KD ' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    var num = function(n){ return Math.round(n).toLocaleString('en-US'); };
+    var pct = function(x){ return Math.round(x * 100) + '%'; };
+    var pl = function(n, one, many){ return n + ' ' + (n === 1 ? one : many); };
+    var cut = function(t, n){ t = String(t == null ? '' : t); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+    var andList = function(a){ return a.length <= 1 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; };
+    var andAr = function(a){ return a.length <= 1 ? (a[0] || '') : a.slice(0, -1).join('، ') + ' و' + a[a.length - 1]; };
+    var uniq = function(a){ return a.filter(function(v, i){ return a.indexOf(v) === i; }); };
+    var sum = function(a, f){ return a.reduce(function(t, x){ return t + (Number(f(x)) || 0); }, 0); };
+    // Arabic counted nouns: 1, 2, 3–10, 11+ take different forms
+    var arN = function(n, one, two, few, many){ return n === 1 ? one : n === 2 ? two : n >= 3 && n <= 10 ? n + ' ' + few : n + ' ' + many; };
+    var mName = STORY_MONTHS_LONG[mi(W.to)], mAr = STORY_MONTHS_AR[mi(W.to)];
+    var day = parseInt(W.to.slice(8, 10), 10), dates = getMonthDates(W.to), dim = dates.length;
+    var wdTot = 0, wdDone = 0; dates.forEach(function(d){ if(isWorkday(d)){ wdTot++; if(d <= W.to) wdDone++; } });
+    var wdLeft = wdTot - wdDone;
+    var TM = opts.trend && opts.trend.months ? opts.trend.months : [];
+    var curM = TM.length && TM[TM.length - 1].month === W.to.slice(0, 7) ? TM[TM.length - 1] : null;
+    var prevM = curM && TM.length >= 2 ? TM[TM.length - 2] : null, prev2M = curM && TM.length >= 3 ? TM[TM.length - 3] : null;
+    var nameOfM = function(m){ return STORY_MONTHS_LONG[mi(m.month + '-01')]; }, arOfM = function(m){ return STORY_MONTHS_AR[mi(m.month + '-01')]; };
+    var mx = W.mix || {}, mg = W.margin || {}, mm = W.marginMtd || {}, sat = W.satisfaction || {}, ex = W.expansion || {};
+    var fr = W.free || { samples: { docs: 0, accounts: [], gross: 0, list: [] }, deals: { docs: 0, lines: 0, gross: 0, list: [] } };
+    var cov = !!W.salesCovered, week = W.team.week;
+    var wins = S.wins || [], NA = wins.filter(function(w){ return w.type === 'new'; }), PL = wins.filter(function(w){ return w.type === 'product'; }), BA = wins.filter(function(w){ return w.type === 'back'; });
+    var newKd = sum(NA, function(w){ return w.net; }), firstKd = sum(PL, function(w){ return w.net; }), nbKd = Math.round((newKd + firstKd) * 1000) / 1000;
+    var withT = reps.filter(function(r){ return P[r] && P[r].target > 0; });
+    var tMtd = sum(withT, function(r){ return P[r].mtd; }), tTgt = sum(withT, function(r){ return P[r].target; });
+    var nbParts = [], nbAr = [];
+    if(NA.length){ nbParts.push(pl(NA.length, 'new account', 'new accounts')); nbAr.push(arN(NA.length, 'حساب جديد', 'حسابان جديدان', 'حسابات جديدة', 'حساباً جديداً')); }
+    if(PL.length){ nbParts.push(pl(PL.length, 'first-time product', 'first-time products')); nbAr.push(arN(PL.length, 'منتج يدخل عيادة لأول مرة', 'منتجان يدخلان عيادات لأول مرة', 'منتجات تدخل عيادات لأول مرة', 'منتجاً يدخل عيادات لأول مرة')); }
+    if(BA.length){ nbParts.push(BA.length + ' back after 60+ days'); nbAr.push(arN(BA.length, 'حساب عاد بعد انقطاع', 'حسابان عادا بعد انقطاع', 'حسابات عادت بعد انقطاع', 'حساباً عاد بعد انقطاع')); }
+    var lim = mg.limits || { A: KS.discountA, other: KS.discountOther, openDay: KS.discountOpenDay };
+    var p1 = function(x){ return x == null ? '—' : (Math.round(x * 10) / 10).toFixed(1) + '%'; };
+    var limText = 'A clinics ' + lim.A + '% · others ' + lim.other + '%';
+    var retMax = Math.round((KS.returnsMax || 0.02) * 100);
+
+    // ======== the week on one page (fixed tiles, R13)
+    var money = { covered: cov, salesTo: W.salesTo };
+    money.tiles = [
+      { key: 'week', big: cov ? kd(week) : '—', label: cov ? 'invoiced ' + range(W.from, W.salesTo || W.to) + ', returns netted' : 'ERP file for this week not in the app yet',
+        detail: cov ? pl(mx.invoices || 0, 'invoice', 'invoices') + ' · ' + pl(mx.accounts || 0, 'clinic', 'clinics') + (mx.channelAccounts ? ' · ' + pl(mx.channelAccounts, 'channel account', 'channel accounts') : '') : '' },
+      { key: 'month', big: kd(tTgt > 0 ? tMtd : W.team.mtd), label: mName + ' to date' + (tTgt > 0 ? ', of a ' + kd(tTgt) + ' target' : ''),
+        detail: 'day ' + day + ' of ' + dim + ' · ' + wdDone + ' of ' + wdTot + ' working days' },
+      { key: 'newbiz', big: cov ? kd(nbKd) : '—', label: 'new business this week', detail: cov ? (nbParts.length ? nbParts.join(' + ') : 'none this week · prospects on the new business page') : '' },
+      { key: 'price', big: cov && mg.discount != null ? p1(mg.discount) : '—', label: 'average discount, clinic invoices',
+        detail: cov && mg.invoices ? mg.within + ' of ' + mg.invoices + ' within limits' + (sat.returnsPct != null ? ' · returns ' + sat.returnsPct + '% (limit ' + retMax + '%)' : '') : '' }];
+    var mixParts = [['existing', 'clinics that already buy', 'عيادات تشتري منا'], ['newAccounts', 'new accounts', 'حسابات جديدة'], ['channel', 'My Fatoorah and individual customers', 'My Fatoorah والأفراد'], ['other', 'internal moves', 'حركات داخلية'], ['returns', 'returns', 'مرتجعات']];
+    var grossSales = ['existing', 'newAccounts', 'channel', 'other'].reduce(function(t, k){ return t + Math.max(0, mx[k] || 0); }, 0);
+    // shares of the sales before returns, so the bar adds up to 100%; returns are their own share of those sales
+    money.mix = cov && grossSales > 0 ? mixParts.filter(function(m){ return Math.abs(mx[m[0]] || 0) >= 0.005; }).map(function(m){ return { key: m[0], label: m[1], ar: m[2], kd: mx[m[0]], share: mx[m[0]] / grossSales }; }) : [];
+    money.salesBeforeReturns = Math.round(grossSales * 1000) / 1000;
+    money.firstTimeKd = mx.firstTime || 0;
+    money.concentration = cov && mx.top && mx.top.share >= 0.5 ? mx.top : null;
+    money.recon = cov ? 'ERP ' + range(W.from, W.salesTo || W.to) + ': ' + pl(mx.invoices || 0, 'invoice', 'invoices') + ' with value (' + kd2(mx.withValue || 0) + ')' +
+      (mx.zeroDocs ? ' + ' + pl(mx.zeroDocs, 'sample document', 'sample documents') + ' (KD 0)' : '') + (mx.returnDocs ? ' + ' + pl(mx.returnDocs, 'return', 'returns') + ' (' + kd2(mx.returnsNet).replace('KD -', '−KD ') + ')' : '') + ' = ' + kd2(week) : 'No ERP sales file covers this week in the app yet';
+    money.title = !cov ? 'The week on one page'
+      : mg.withinLimit === 1 && mg.invoices >= 2 ? kd(week) + ' invoiced, all clinic invoices within discount limits'
+      : nbKd > 0 && week > 0 && nbKd >= 0.2 * week ? kd(week) + ' invoiced; ' + kd(nbKd) + ' of it new business'
+      : kd(week) + ' invoiced, ERP to ' + dm(W.salesTo || W.to);
+    money.ar = cov ? 'فوترنا هذا الأسبوع ' + num(week) + ' ديناراً حسب ملف الـERP' + (money.mix.length ? ': ' + money.mix.filter(function(m){ return m.kd > 0; }).map(function(m){ return num(m.kd) + ' من ' + m.ar; }).join('، ') : '') + '.'
+        + (nbKd > 0 ? ' منها ' + num(nbKd) + ' ديناراً أعمال جديدة.' : '')
+        + (mg.withinLimit === 1 && mg.invoices >= 2 ? ' وكل فواتير العيادات ضمن حدود الخصم المعتمدة، بمتوسط ' + mg.discount + '%.' : mg.discount != null ? ' متوسط الخصم ' + mg.discount + '%.' : '')
+        + (sat.returnsPct != null ? ' والمرتجعات ' + sat.returnsPct + '% من المبيعات (الحد ' + retMax + '%).' : '')
+        + (tTgt > 0 ? ' ووصلنا في ' + mAr + ' إلى ' + num(tMtd) + ' ديناراً من هدف ' + num(tTgt) + '.' : '')
+      : 'ملف مبيعات هذا الأسبوع غير موجود في التطبيق بعد.';
+    var prevWk = (W.history || []).length > 1 ? W.history[W.history.length - 2] : null;
+    money.askedLastWeek = cov && prevWk && prevWk.sales != null ? 'إذا سُئلت عن الأسبوع الماضي: ' + num(prevWk.sales) + ' ديناراً (' + dmAr(prevWk.from) + ' – ' + dmAr(prevWk.to) + ')' +
+      (prevWk.from.slice(0, 7) !== prevWk.to.slice(0, 7) ? '، وكان فيه إغلاق شهر ' + STORY_MONTHS_AR[mi(prevWk.from)] + '.' : '.') : '';
+
+    // ======== the closed month (days 1–10)
+    var closed = null;
+    if(day <= 10 && prevM){
+      var cPeople = reps.filter(function(r){ var b = prevM.byRep[r]; return b && b.sales != null && b.target > 0; });
+      if(cPeople.length){
+        var cKd = sum(cPeople, function(r){ return prevM.byRep[r].sales; }), cTg = sum(cPeople, function(r){ return prevM.byRep[r].target; });
+        var pPeople = prev2M ? reps.filter(function(r){ var b = prev2M.byRep[r]; return b && b.sales != null && b.target > 0; }) : [];
+        var pKd = sum(pPeople, function(r){ return prev2M.byRep[r].sales; }), pTg = sum(pPeople, function(r){ return prev2M.byRep[r].target; });
+        closed = { month: prevM.month, name: nameOfM(prevM), prevName: prev2M ? nameOfM(prev2M) : null, team: { kd: cKd, target: cTg, pct: cKd / cTg, people: cPeople },
+          prev: pPeople.length ? { kd: pKd, target: pTg, pct: pKd / pTg, people: pPeople } : null,
+          people: reps.map(function(r){ var b = prevM.byRep[r], a = prev2M ? prev2M.byRep[r] : null;
+            if(!b || b.sales == null) return { rep: r, noFile: true, first: !!(curM && curM.byRep[r] && curM.byRep[r].sales != null) };
+            if(!(b.target > 0)) return { rep: r, kd: b.sales, target: null, pct: null, kpi: b.kpi, noTarget: true, up: false };
+            return { rep: r, kd: b.sales, target: b.target, pct: b.pct, kpi: b.kpi, prevKd: a && a.sales != null ? a.sales : null, prevPct: a && a.pct != null ? a.pct : null,
+              up: !!(a && a.sales != null && a.pct != null && b.pct != null && b.sales > a.sales && b.pct > a.pct) }; }) };
+        closed.title = closed.name + ' closed at ' + pct(closed.team.pct) + ' of target: ' + kd(cKd) + ' of ' + kd(cTg);
+        var miss = reps.filter(function(r){ return cPeople.indexOf(r) < 0; });
+        closed.basis = 'ERP month totals, returns netted, against each month\'s own DSR target' + (miss.length ? ' · team = ' + andList(cPeople) + ' (no ' + closed.name + ' file for ' + andList(miss) + ')' : '');
+        closed.ar = 'أغلقنا ' + arOfM(prevM) + ' عند ' + pct(closed.team.pct) + ' من الهدف: ' + num(cKd) + ' من ' + num(cTg) + ' ديناراً' + (closed.prev ? '، مقابل ' + pct(closed.prev.pct) + ' في ' + arOfM(prev2M) + ' (' + num(pKd) + ' من ' + num(pTg) + ')' : '') + '.'
+          + closed.people.filter(function(p){ return p.up; }).map(function(p){ return ' ' + p.rep + ': ' + pct(p.pct) + ' من الهدف بـ' + num(p.kd) + ' ديناراً، أعلى من الشهر الذي قبله في المبلغ والنسبة معاً.'; }).join('');
+      }
+    }
+
+    // ======== the month: the gap and the plan
+    var nx = W.next || {}, aInfo = reps.map(function(r){ return { rep: r, list: (nx[r] && nx[r].aMissingInfo) || [] }; });
+    var K = sum(aInfo, function(a){ return a.list.length; }), aKd = sum(aInfo, function(a){ return sum(a.list, function(x){ return x.kd; }); }), booked = sum(aInfo, function(a){ return a.list.filter(function(x){ return x.planned; }).length; });
+    var pipeAll = ex.pipeline || [], pipe = pipeAll.filter(function(p){ return p.kind !== 'gov' && p.kind !== 'pharmacy'; });
+    var awaiting = (W.fieldOrders || []).filter(function(o){ return !o.invoiced && o.value > 0; }), awKd = sum(awaiting, function(o){ return o.value; });
+    var push = (W.brands || []).filter(function(b){ return b.target > 0 && storyGate.material(b.target, tTgt) && b.mtd < b.target && !NON_PRODUCT_RE.test(b.brand); })
+      .sort(function(a, b){ return (b.target - b.mtd) - (a.target - a.mtd); }).slice(0, 4);
+    var pushKd = sum(push, function(b){ return b.target - b.mtd; });
+    var p2 = W.prev2 ? STORY_MONTHS[mi(W.prev2.from)] + '–' + STORY_MONTHS[mi(W.prev2.to)] : '';
+    var plan = null, prevTargets = !!(prevM && reps.some(function(r){ return prevM.byRep[r] && prevM.byRep[r].target > 0; }));
+    if(tTgt > 0){
+      var toGo = Math.max(0, tTgt - tMtd);
+      var after = TM.filter(function(m){ return !m.partial && m.month < W.to.slice(0, 7) && m.team.sales > 0 && m.team.sameDays != null; }).slice(-2)
+        .map(function(m){ return { month: m.month, name: STORY_MONTHS[mi(m.month + '-01')], share: 1 - m.team.sameDays / m.team.sales, people: reps.filter(function(r){ return m.byRep[r] && m.byRep[r].sales != null; }) }; });
+      var levers = [];
+      if(K) levers.push({ key: 'key', big: String(K), text: (K === 1 ? 'key account' : 'key accounts') + ' still to visit in ' + mName,
+        detail: aInfo.filter(function(a){ return a.list.length; }).map(function(a){ return a.rep + ' ' + a.list.length; }).join(' · ') + (aKd > 0 ? ' · they bought ' + kd(aKd) + ' in ' + p2 : '') + (booked ? ' · ' + booked + ' booked next week' : ''),
+        names: [].concat.apply([], aInfo.map(function(a){ return a.list; })).sort(function(x, y){ return y.kd - x.kd; }).slice(0, 5).map(function(x){ return x.name; }),
+        ar: arN(K, 'حساب رئيسي واحد لم نزره بعد هذا الشهر', 'حسابان رئيسيان لم نزرهما بعد هذا الشهر', 'حسابات رئيسية لم نزرها بعد هذا الشهر', 'حساباً رئيسياً لم نزرها بعد هذا الشهر') + (aKd > 0 ? '، اشترت منا ' + num(aKd) + ' ديناراً في ' + STORY_MONTHS_AR[mi(W.prev2.from)] + ' و' + STORY_MONTHS_AR[mi(W.prev2.to)] : '') });
+      if(pipe.length) levers.push({ key: 'pipeline', big: String(pipe.length), text: (pipe.length === 1 ? 'prospect clinic' : 'prospect clinics') + ' visited this week', detail: 'no invoice since ' + dm(ex.since || W.from) + ' · ' + cut(pipe.slice(0, 3).map(function(p){ return p.clinic; }).join(' · '), 70),
+        ar: arN(pipe.length, 'عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة') + ' زرناها هذا الأسبوع ولا تشتري منا بعد' });
+      if(awKd > 0) levers.push({ key: 'orders', big: kd(awKd), text: 'taken in the field, awaiting invoice (as logged)', detail: cut(uniq(awaiting.map(function(o){ return o.clinic; })).join(' · '), 70),
+        ar: num(awKd) + ' ديناراً طلبات ميدانية تنتظر الفوترة' });
+      if(push.length) levers.push({ key: 'brands', big: kd(pushKd), text: 'to go on ' + pl(push.length, 'push brand', 'push brands') + ' this month', detail: push.map(function(b){ return bn(b.brand); }).join(' · '),
+        ar: 'العلامات التي نركّز عليها (' + push.length + ') ينقصها ' + num(pushKd) + ' ديناراً لتبلغ أهدافها' });
+      plan = { monthName: mName, day: day, dim: dim, workdays: { total: wdTot, done: wdDone, left: wdLeft },
+        team: { mtd: tMtd, target: tTgt, pct: tMtd / tTgt, toGo: toGo },
+        people: reps.filter(function(r){ return P[r] && (P[r].target > 0 || P[r].mtd > 0); }).map(function(r){ var p = P[r] || {}, b = prevM ? prevM.byRep[r] : null;
+          // "first month with a target" only when last month's targets are in the app for others but not for this person
+          return { rep: r, mtd: p.mtd || 0, target: p.target || null, pct: p.pct, src: p.mtdSrc, last: b && b.sales != null && b.pct != null ? { kd: b.sales, pct: b.pct } : null, first: !!(prevTargets && !(b && b.target > 0) && p.target > 0) }; }),
+        after: after, levers: levers, ask: opts.ask ? cut(String(opts.ask).trim(), 90) : '',
+        split: mName + ' targets: ' + withT.map(function(r){ return r + ' ' + num(P[r].target); }).join(' · '),
+        perDay: wdLeft > 0 ? toGo / wdLeft : null, pace: day > 0 ? tMtd / tTgt / day * dim : null };
+      plan.title = tMtd >= tTgt ? 'The team is past the ' + mName + ' target: ' + kd(tMtd) + ' of ' + kd(tTgt)
+        : wdLeft > 0 ? mName + ': ' + kd(toGo) + ' to go in ' + pl(wdLeft, 'working day', 'working days') + ' — the plan' : mName + ': ' + kd(toGo) + ' to go — the plan';
+      plan.afterLine = after.length ? 'In ' + andList(after.map(function(a){ return a.name; })) + ', ' + andList(after.map(function(a){ return pct(a.share); })) + ' of the month was invoiced after day ' + day +
+        (after[0].people.length < reps.length ? ' (' + andList(after[0].people) + ')' : '') : '';
+      plan.ar = 'في اليوم ' + day + ' من ' + mAr + ' فوترنا ' + num(tMtd) + ' ديناراً من هدف ' + num(tTgt) + '، والمتبقي ' + num(toGo) + ' ديناراً في ' + wdLeft + ' يوم عمل.'
+        + (after.length ? ' وفي ' + andAr(after.map(function(a){ return STORY_MONTHS_AR[mi(a.month + '-01')]; })) + ' جاءت ' + andAr(after.map(function(a){ return pct(a.share); })) + ' من مبيعات الشهر بعد اليوم ' + day + '.' : '')
+        + (levers.length ? ' خطتنا بالأسماء: ' + andAr(levers.map(function(l){ return l.ar; })) + '.' : '');
+      plan.notes = (plan.perDay ? 'الحساب الصريح: نحتاج نحو ' + num(plan.perDay) + ' ديناراً في كل يوم عمل متبقٍ.' : '') + (plan.pace != null ? ' الوتيرة الخطية حتى اليوم ' + pct(plan.pace) + ' (A3) — لا نعد برقم، نلتزم بالخطة ونعرض نتيجتها كل خميس.' : '');
+    }
+
+    // ======== new business and pipeline
+    var newBiz = { kd: nbKd, newKd: newKd, firstKd: firstKd, share: cov && week > 0 ? nbKd / week : null, wins: wins, newAccounts: NA, firstTime: PL, back: BA,
+      pipeline: { clinics: pipe, gov: pipeAll.filter(function(p){ return p.kind === 'gov'; }), pharmacy: pipeAll.filter(function(p){ return p.kind === 'pharmacy'; }), since: ex.since || null },
+      buying: ex.territory ? { active: ex.active, territory: ex.territory, since: ex.since || null } : null,
+      month: ex.newThisMonth ? { newAccounts: ex.newThisMonth.length, placements: ex.placementsThisMonth } : null, prevMonthNew: ex.prevMonthNew || null };
+    newBiz.title = S.nWins ? kd(nbKd) + ' new business: ' + nbParts.slice(0, 2).join(', ')
+      : newBiz.month && (newBiz.month.newAccounts || newBiz.month.placements) ? pl(newBiz.month.newAccounts, 'new account', 'new accounts') + ' and ' + pl(newBiz.month.placements || 0, 'first-time product', 'first-time products') + ' since 1 ' + mName
+      : newBiz.buying && newBiz.buying.active ? 'Expansion: ' + newBiz.buying.active + ' of ' + newBiz.buying.territory + ' clinics in our list buying since ' + dm(newBiz.buying.since || W.from) : 'New business and prospects';
+    newBiz.qualifies = !!(S.nWins || pipeAll.length || (newBiz.month && (newBiz.month.newAccounts || newBiz.month.placements)));
+    newBiz.ar = S.nWins ? 'أعمال جديدة هذا الأسبوع بقيمة ' + num(nbKd) + ' ديناراً' + (cov && week > 0 ? '، أي ' + pct(nbKd / week) + ' من مبيعات الأسبوع' : '') + ': ' + andAr(nbAr) + '.'
+        + NA.map(function(w){ return ' ' + w.account + ' حساب جديد بأول طلب ' + num(w.net) + ' ديناراً (' + w.rep + '، ' + w.doc + ').'; }).join('')
+      : (newBiz.month ? 'منذ بداية ' + mAr + ': ' + (newBiz.month.newAccounts || 0) + ' حسابات جديدة و' + (newBiz.month.placements || 0) + ' منتجات تدخل عيادات لأول مرة.' : '');
+    if(pipe.length) newBiz.ar += ' وعلى قائمة الفرص ' + arN(pipe.length, 'عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة') + ' زرناها هذا الأسبوع ولم تشترِ منا منذ ' + dmAr(ex.since || W.from) + '، وهي أول ما نتابعه.';
+
+    // ======== what sold and the brands against their targets
+    var bw = (W.brands || []).filter(function(b){ return b.week > 0 && !NON_PRODUCT_RE.test(b.brand); }).sort(function(a, b){ return b.week - a.week; });
+    var top = bw[0] || null, sampBy = {};
+    (fr.samples.list || []).forEach(function(sm){ sm.lines.forEach(function(l){ (sampBy[l.brand] = sampBy[l.brand] || []).push(sm.account); }); });
+    var meters = (W.brands || []).filter(function(b){ return b.target > 0 && storyGate.material(b.target, tTgt) && !NON_PRODUCT_RE.test(b.brand); })
+      .map(function(b){ return { brand: b.brand, label: bn(b.brand), mtd: b.mtd, target: b.target, toGo: Math.max(0, b.target - b.mtd), week: b.week, prevMonth: b.prevMonth, past: b.mtd >= b.target,
+        push: push.indexOf(b) >= 0, samples: uniq(sampBy[b.brand] || []) }; })
+      .sort(function(a, b){ return (b.past - a.past) || (a.past ? b.mtd / b.target - a.mtd / a.target : b.toGo - a.toGo); });
+    var allBT = sum((W.brands || []).filter(function(b){ return b.target > 0; }), function(b){ return b.target; });
+    var brands = { top: top ? { brand: top.brand, label: bn(top.brand), week: top.week, share: week > 0 ? top.week / week : null } : null, items: S.sold ? S.sold.items : [], more: S.sold ? S.sold.more : 0,
+      meters: meters, targetsTotal: allBT, teamTarget: tTgt, small: (W.brands || []).filter(function(b){ return b.target > 0 && !storyGate.material(b.target, tTgt); }).length };
+    brands.title = top ? bn(top.brand) + (week > 0 && top.week / week >= 0.4 ? ' carried the week: ' : ' led the week: ') + kd(top.week) + ' of our ' + kd(week) : 'Brands against their ' + mName + ' targets';
+    brands.qualifies = cov && !!(brands.items.length || meters.length);
+    brands.ar = (top ? bn(top.brand) + ' تصدّر الأسبوع بـ' + num(top.week) + ' ديناراً من أصل ' + num(week) + '.' : '')
+      + (meters.filter(function(m){ return m.past; }).length ? ' ' + andAr(meters.filter(function(m){ return m.past; }).map(function(m){ return m.label; })) + ' تجاوز هدفه لهذا الشهر.' : '')
+      + (push.length ? ' والعلامات التي نركّز عليها (' + andAr(push.map(function(b){ return bn(b.brand); })) + ') ينقصها ' + num(pushKd) + ' ديناراً لتبلغ أهدافها هذا الشهر.' : '');
+
+    // ======== price discipline (never called margin: there are no costs here)
+    var fils = mg.gross > 0 ? Math.round(mg.net / mg.gross * 1000) : null;
+    var lastDay = function(d){ var ds = getMonthDates(d); return ds[ds.length - 1]; };
+    var price = { discount: mg.discount, avgPrev: mg.avgPrev, invoices: mg.invoices || 0, within: mg.within || 0, gross: mg.gross || 0, net: mg.net || 0, fils: fils, limits: lim, limText: limText,
+      history: (W.history || []).map(function(h){ return { from: h.from, to: h.to, discount: h.discount, current: !!h.current, monthEnd: h.from.slice(0, 7) !== h.to.slice(0, 7) || h.to === lastDay(h.to) }; }),
+      over: mg.over || [], mtd: { invoices: mm.invoices || 0, within: mm.within || 0, withinLimit: mm.withinLimit, discount: mm.discount },
+      deals: fr.deals, samples: fr.samples, conversion: W.sampleConversion || null, conversionOk: !!(W.sampleConversion && W.sampleConversion.converted >= 1),
+      returns: { week: sat.returnsPct, mtd: sat.returnsPctMtd, max: retMax, kd: sat.returnsKd || 0 } };
+    price.title = mg.discount != null && mg.avgPrev != null && mg.invoices >= 2 && mg.discount <= mg.avgPrev - 1 ? 'Average discount down to ' + p1(mg.discount) + ' from ' + p1(mg.avgPrev)
+      : mm.withinLimit === 1 && mm.invoices >= 3 && !(mg.withinLimit === 1 && mg.invoices >= 2) ? 'Every ' + mName + ' clinic invoice within the discount limits'
+      : fils != null ? 'Of every KD 1 at list price, clinics paid ' + fils + ' fils' : 'Discounts, samples and returns';
+    price.qualifies = cov && !!(mg.invoices || fr.samples.docs || sat.returnsPct != null);
+    price.ar = (fils != null ? 'من كل دينار بسعر القائمة دفعت العيادات ' + fils + ' فلساً هذا الأسبوع (متوسط الخصم ' + mg.discount + '%' + (mg.avgPrev != null ? ' مقابل ' + mg.avgPrev + '% في الأسابيع السابقة' : '') + ').' : '')
+      + (mg.invoices ? (mg.over && mg.over.length ? ' ' + arN(mg.over.length, 'فاتورة واحدة تجاوزت', 'فاتورتان تجاوزتا', 'فواتير تجاوزت', 'فاتورة تجاوزت') + ' حد الخصم، مذكورة بالاسم.' : ' ولم تتجاوز أي فاتورة عيادة حدود الخصم: ' + lim.A + '% لعيادات A و' + lim.other + '% لغيرها.') : '')
+      + (fr.deals.gross > 0 ? ' البضاعة المجانية داخل الصفقات ' + num(fr.deals.gross) + ' ديناراً بسعر القائمة، وهي محسوبة ضمن الخصم.' : '')
+      + (fr.samples.docs ? ' والعينات ' + arN(fr.samples.docs, 'مستند واحد', 'مستندان', 'مستندات', 'مستنداً') + ' بقيمة ' + num(fr.samples.gross) + ' ديناراً بسعر القائمة إلى ' + andAr(fr.samples.accounts) + '.' : '')
+      + (sat.returnsPct != null ? ' والمرتجعات ' + sat.returnsPct + '% من المبيعات هذا الأسبوع' + (sat.returnsPctMtd != null ? ' و' + sat.returnsPctMtd + '% منذ بداية الشهر' : '') + '، والحد ' + retMax + '%.' : '');
+
+    // ======== doctors and clinics (relationships, the clinic base, the field)
+    var F = S.field, ln = W.linkage, rep = (sat.repeatAccounts || []), moods = sat.moods || {}, rated = (moods.pleased || 0) + (moods.neutral || 0) + (moods.concerned || 0);
+    var base = { field: F, active: ex.active || 0, territory: ex.territory || 0, since: ex.since || null, spread: ex.spread || null, linkage: ln, repeat: rep, gov: (W.team && W.team.govSites) || [],
+      requests: { n: sat.requests || 0, onTime: sat.answeredOnTime || 0, open: sat.open || 0 }, moods: { rated: rated, pleased: moods.pleased || 0 },
+      newThisMonth: ex.newThisMonth ? ex.newThisMonth.length : null };
+    base.title = ln && ln.pct >= 0.5 && ln.clinicNet >= 250 ? pct(ln.pct) + ' of ' + mName + '\'s clinic sales came from clinics we visited'
+      : F && rep.length >= 2 ? F.doctors + ' doctors and staff met; ' + rep.length + ' clinics ordered again'
+      : base.active ? base.active + ' clinics have bought from us since ' + dm(base.since || W.from)
+      : F ? F.clinics + ' clinics visited and ' + F.doctors + ' doctors and staff met' : 'Our clinics';
+    base.qualifies = !!(F || base.active);
+    base.ar = (F ? 'زرنا هذا الأسبوع ' + arN(F.clinics, 'عيادة واحدة', 'عيادتين', 'عيادات', 'عيادة') + ' وقابلنا ' + F.doctors + ' من الأطباء والعاملين' + (F.followUpClinics ? '، وحددنا موعد متابعة في ' + arN(F.followUpClinics, 'عيادة واحدة', 'عيادتين', 'عيادات', 'عيادة') : '') + '.' : '')
+      + (rep.length ? ' وطلبت منا مرة أخرى: ' + andAr(rep.slice(0, 4)) + '.' : '')
+      + (base.gov.length ? ' وغطّينا ' + arN(base.gov.length, 'جهة حكومية واحدة', 'جهتين حكوميتين', 'جهات حكومية', 'جهة حكومية') + '.' : '')
+      + (base.active ? ' اشترت منا منذ ' + dmAr(base.since || W.from) + ' ' + base.active + ' من أصل ' + base.territory + ' عيادة في قائمتنا.' : '')
+      + (ln && ln.clinicNet > 0 ? ' و' + pct(ln.pct) + ' من مبيعات العيادات هذا الشهر جاءت من عيادات زرناها.' : '');
+
+    // ======== the people: the same rows for everyone, money first (R5, R11)
+    var K0 = opts.kpi || {}, invAll = (W.wins && W.wins.invoices) || [];
+    var people = reps.map(function(r){
+      var p = P[r] || {}, row = { rep: r };
+      row.money = p.weekCovered ? { big: kd(p.week), line: pl(p.invoicesValue || 0, 'invoice', 'invoices') + ' with value this week' } : { big: '—', line: 'no ERP file for ' + r + ' this week yet' };
+      var cRow = closed ? closed.people.filter(function(x){ return x.rep === r; })[0] : null;
+      row.month = cRow && !cRow.noFile && !cRow.noTarget ? { text: closed.name + ': ' + kd(cRow.kd) + ' · ' + pct(cRow.pct) + ' of target', up: cRow.up ? 'KD and % both up from ' + closed.prevName : '' }
+        : p.mtdSrc && /no ERP sales file|no invoice of this rep/.test(p.mtdSrc) && !(p.mtd > 0) ? { text: p.target ? mName + ' target ' + kd(p.target) + ' · no sales file yet' : 'No ' + mName + ' target in the app', up: '' }
+        : { text: mName + ' to date: ' + kd(p.mtd || 0) + (p.target ? ' of ' + kd(p.target) : '') + (cRow && (cRow.noFile || cRow.noTarget) && p.target ? ' (first month with a target)' : ''), up: '' };
+      var myNA = NA.filter(function(w){ return w.rep === r; }), myPL = PL.filter(function(w){ return w.rep === r; });
+      var myInv = invAll.filter(function(i){ return i.rep === r && !i.channel && !i.internal && i.net >= 100; })[0];
+      var met = function(n){ return pl(n, 'doctor or staff member met', 'doctors and staff met'); };
+      if(myNA.length) row.signature = { big: kd(myNA[0].net), line: 'New account ' + cut(myNA[0].account, 34) + ': first order', proof: myNA[0].doc, ar: 'حساب جديد هو ' + myNA[0].account + ' بأول طلب ' + num(myNA[0].net) + ' ديناراً' };
+      else if(myInv){ var inDoc = myPL.filter(function(w){ return w.doc === myInv.doc; }).length;
+        row.signature = { big: kd(myInv.net), line: 'Order at ' + cut(myInv.account, 38) + (inDoc ? ' with ' + pl(inDoc, 'first-time product', 'first-time products') : ''), proof: myInv.doc,
+          ar: 'طلب ' + myInv.account + ' بـ' + num(myInv.net) + ' ديناراً' + (inDoc ? ' فيه ' + arN(inDoc, 'منتج جديد للعيادة', 'منتجان جديدان للعيادة', 'منتجات جديدة للعيادة', 'منتجاً جديداً للعيادة') : '') }; }
+      else if(myPL.length) row.signature = { big: kd(sum(myPL, function(w){ return w.net; })), line: myPL.length === 1 ? 'First-time product at ' + cut(myPL[0].account, 34) : pl(myPL.length, 'first-time product', 'first-time products') + ' in clinics that already buy', proof: myPL[0].doc,
+          ar: arN(myPL.length, 'منتج يدخل ' + myPL[0].account + ' لأول مرة', 'منتجان يدخلان عيادات لأول مرة', 'منتجات تدخل عيادات لأول مرة', 'منتجاً يدخل عيادات لأول مرة') };
+      else if(p.fieldVisits) row.signature = { big: String(p.fieldVisits), line: (p.fieldVisits === 1 ? 'clinic visit' : 'clinic visits') + (p.doctorsMet ? ', ' + met(p.doctorsMet) : ''), proof: '', ar: arN(p.fieldVisits, 'زيارة ميدانية واحدة', 'زيارتان ميدانيتان', 'زيارات ميدانية', 'زيارة ميدانية') };
+      else row.signature = null;
+      row.field = p.fieldVisits ? pl(p.fieldVisits, 'clinic visit', 'clinic visits') + (p.doctorsMet ? ' · ' + met(p.doctorsMet) : '') + (p.joint ? ' · ' + pl(p.joint, 'joint visit', 'joint visits') : '') : (p.calls ? pl(p.calls, 'call', 'calls') + ' logged' : 'no visits logged this week');
+      if(row.signature && !row.signature.proof) row.field = p.joint ? pl(p.joint, 'joint visit', 'joint visits') + (p.followUps ? ' · ' + pl(p.followUps, 'follow-up date set', 'follow-up dates set') : '') : (p.followUps ? pl(p.followUps, 'follow-up date set', 'follow-up dates set') : '');   // the signature already says the visits
+      var facts = [], dmx = p.discountMtd || {};
+      if(dmx.invoices >= 2 && dmx.withinLimit === 1) facts.push((dmx.invoices === 2 ? 'Both clinic invoices' : 'All ' + dmx.invoices + ' clinic invoices') + ' this month within the discount limits');
+      if(p.logged >= 3 && p.followUps === p.logged) facts.push('Follow-up date set on all ' + p.logged + ' visits logged');
+      if((p.govSites || []).length) facts.push(pl(p.govSites.length, 'government site', 'government sites') + ' visited: ' + cut(p.govSites.join(' · '), 60));
+      var hasDisc = facts.length && /discount limits/.test(facts[0]);
+      var Kr = K0[r]; if(Kr && Kr.items){ var best = Kr.items.filter(function(it){ return it.score != null && it.score >= 0.85 && it.key !== 'sales' && !(hasDisc && it.key === 'discount'); }).sort(function(a, b){ return b.weight - a.weight || b.score - a.score; })[0];
+        if(best) facts.push(best.label + ': ' + pct(best.score) + ' (KPI, month to date)'); }
+      row.facts = facts.slice(0, 2);
+      row.ar = r + ': ' + (p.weekCovered ? num(p.week) + ' ديناراً هذا الأسبوع' : 'لا يوجد ملف مبيعات لهذا الأسبوع بعد') + (row.signature && row.signature.proof ? '، أبرزها ' + row.signature.ar : '') + '.'
+        + (cRow && !cRow.noFile && !cRow.noTarget ? ' ' + arOfM(prevM) + ': ' + pct(cRow.pct) + ' من الهدف' + (cRow.up ? '، أعلى من الشهر الذي قبله في المبلغ والنسبة' : '') + '.' : '');
+      return row; });
+
+    // ======== next week, by name, and last week's plan against what was done
+    var lp = W.lastPlan, lpN = lp ? lp.planned + lp.followUps : 0, lpD = lp ? lp.plannedDone + lp.followUpsDone : 0;
+    var next = { planned: (S.next || {}).planned || 0, followUps: (S.next || {}).followUps || 0, from: W.nextFrom, to: W.nextTo, keyDue: K, booked: booked,
+      people: reps.map(function(r){ var n = nx[r] || { planned: [], followUps: [], aMissingInfo: [] }; return { rep: r, planned: n.planned, followUps: n.followUps, keyDue: n.aMissingInfo || [] }; }),
+      toInvoice: awaiting, lastPlan: lp, lastPlanOk: !!(lp && lpN >= 3 && lpD / lpN >= 0.7) };
+    var nParts = []; if(next.planned) nParts.push(pl(next.planned, 'visit planned', 'visits planned')); if(next.followUps) nParts.push(pl(next.followUps, 'follow-up due', 'follow-ups due'));
+    next.title = nParts.length ? 'Next week: ' + nParts.join(' and ') : K ? 'Next week: ' + pl(K, 'key account', 'key accounts') + ' still to visit in ' + mName : 'Next week';
+    next.ar = 'الأسبوع القادم: ' + (next.planned ? arN(next.planned, 'زيارة واحدة مخططة', 'زيارتان مخططتان', 'زيارات مخططة', 'زيارة مخططة') : 'لا زيارات محفوظة بعد') + (next.followUps ? ' و' + arN(next.followUps, 'متابعة واحدة مستحقة', 'متابعتان مستحقتان', 'متابعات مستحقة', 'متابعة مستحقة') : '')
+      + (K ? '، وأولويتنا ' + arN(K, 'حساب رئيسي واحد لم نزره', 'حسابان رئيسيان لم نزرهما', 'حسابات رئيسية لم نزرها', 'حساباً رئيسياً لم نزرها') + ' هذا الشهر' : '') + '.'
+      + (awKd > 0 ? ' ونفوتر طلبات ميدانية بقيمة ' + num(awKd) + ' ديناراً.' : '');
+
+    // ======== the close: three commitments, the optional ask, the recap
+    var commits = [];
+    if(K) commits.push(booked ? { text: 'Key accounts: ' + booked + ' of the ' + K + ' still due ' + (booked === 1 ? 'is' : 'are') + ' booked for next week; the rest by name', ar: 'الحسابات الرئيسية: ' + booked + ' من ' + K + ' محجوزة للأسبوع القادم، والباقي بالأسماء' }
+      : { text: 'Key accounts: book the ' + K + ' still due in ' + mName + ' (names on the next-week page)', ar: 'الحسابات الرئيسية: نحجز الـ' + K + ' المتبقية هذا الشهر بالأسماء' });
+    if(next.followUps || pipe.length) commits.push({ text: 'Follow-ups: ' + [next.followUps ? (next.followUps === 1 ? 'the one due next week' : 'the ' + next.followUps + ' due next week') : '', pipe.length ? (pipe.length === 1 ? 'the prospect clinic visited this week' : 'the ' + pipe.length + ' prospect clinics visited this week') : ''].filter(Boolean).join(', plus '),
+      ar: 'المتابعات: ' + [next.followUps ? arN(next.followUps, 'متابعة واحدة مستحقة', 'متابعتان مستحقتان', 'متابعات مستحقة', 'متابعة مستحقة') : '', pipe.length ? arN(pipe.length, 'عيادة فرص واحدة', 'عيادتا فرص', 'عيادات فرص', 'عيادة فرص') : ''].filter(Boolean).join(' و') });
+    var mny = []; if(awKd > 0) mny.push('invoice the ' + kd(awKd) + ' taken in the field'); if(push.length) mny.push('push ' + andList(push.slice(0, 3).map(function(b){ return bn(b.brand); })));
+    if(mny.length) commits.push({ text: mny[0].charAt(0).toUpperCase() + mny[0].slice(1) + (mny[1] ? '; ' + mny[1] : ''), ar: [awKd > 0 ? 'فوترة ' + num(awKd) + ' ديناراً من الطلبات الميدانية' : '', push.length ? 'دفع ' + andAr(push.slice(0, 3).map(function(b){ return bn(b.brand); })) : ''].filter(Boolean).join(' و') });
+    var close = { title: 'What you will see from us next Thursday', kicker: 'Our commitments for ' + range(W.nextFrom, addDaysStr(W.nextFrom, 4)), commits: commits.slice(0, 3), ask: opts.ask ? cut(String(opts.ask).trim(), 90) : '',
+      recap: 'This week: ' + [cov ? money.tiles[0].big + ' invoiced' : '', cov ? money.tiles[2].big + ' new business' : '', cov && mg.discount != null ? p1(mg.discount) + ' average discount' : '', tTgt > 0 ? kd(tMtd) + ' of ' + kd(tTgt) + ' in ' + mName : ''].filter(Boolean).join(' · ') };
+    close.ar = 'التزامنا للأسبوع القادم ونعرض نتيجته يوم الخميس: ' + andAr(close.commits.map(function(c){ return c.ar; })) + '.' + (close.ask ? ' وطلبنا من الإدارة: ' + close.ask + '.' : '');
+
+    // ======== the cover line: money, never the presenter's own sale (R11)
+    // the team's new business (the presenter's own part unnamed); when all of
+    // it is the presenter's, the week's money leads instead
+    var naNP = NA.filter(function(w){ return w.rep !== presenter; }), nbNP = naNP.length + PL.filter(function(w){ return w.rep !== presenter; }).length;
+    var cover = !nbNP ? (cov ? money.title : null)
+      : naNP.length === 1 && NA.length === 1 ? kd(nbKd) + ' of new business: new account ' + cut(naNP[0].account, 24) + (PL.length ? ' and ' + pl(PL.length, 'first-time product', 'first-time products') : '')
+      : kd(nbKd) + ' of new business: ' + nbParts.slice(0, 2).join(' and ');
+
+    // ======== left out of the main pages (the notes say where it is)
+    var excluded = [];
+    if(plan && plan.pace != null) excluded.push('الوتيرة الخطية للشهر ' + pct(plan.pace) + ' (A3)');
+    var H = W.history || [], hc = H[H.length - 1] || {}, hp = H.length > 1 ? H[H.length - 2] : null;
+    if(hp && hc.sales != null && hp.sales != null) excluded.push('المبيعات مقابل الأسبوع الماضي: ' + num(hc.sales) + ' مقابل ' + num(hp.sales) + ' (A5)');
+    if(hp && hc.invoices != null && hp.invoices != null && hc.invoices < hp.invoices) excluded.push('الفواتير ' + hc.invoices + ' مقابل ' + hp.invoices + ' (A5)');
+    if(hp && hc.placements != null && hp.placements != null && hc.placements < hp.placements) excluded.push('المنتجات التي دخلت عيادات لأول مرة ' + hc.placements + ' مقابل ' + hp.placements + ' (A5)');
+    if(brands.small) excluded.push('أهداف العلامات الصغيرة (A10)');
+    return { money: money, closed: closed, plan: plan, newBiz: newBiz, brands: brands, price: price, base: base, people: people, next: next, close: close, cover: cover ? cut(cover, 70) : null, excluded: excluded, checks: W.checks || [] };
   }
   // The week's achievements for management, strongest first: only things that
   // went well and are true in the figures (a record against the last 8 weeks,
@@ -4221,7 +4702,7 @@
     matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
