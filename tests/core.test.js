@@ -867,7 +867,7 @@ describe('rep and customer matching', () => {
     assert.deepEqual([M.fieldVisits, M.calls, M.joint, M.clinics, M.doctorsMet, M.productsPresented, M.followUps, M.orders, M.orderValue, M.photos],
       [2, 1, 1, 2, 1, 2, 1, 1, 40, 1]);                          // the joint visit counts for both
     assert.deepEqual([M.aVisited, M.aTotal, M.aMissing], [2, 2, []]);
-    assert.deepEqual(w.brands.find(b => b.brand === 'intensiv'), { brand: 'intensiv', week: 172, mtd: 242, target: 2600 });
+    assert.deepEqual(w.brands.find(b => b.brand === 'intensiv'), { brand: 'intensiv', week: 172, mtd: 242, target: 2600, prevMonth: 100 });
     assert.deepEqual(w.weeks.map(x => [x.from, x.to, x.byRep.Mariam]), [['2026-10-01', '2026-10-03', 70], ['2026-10-04', '2026-10-08', 65]]);
     assert.deepEqual(w.next.Mariam.planned, [{ date: '2026-10-12', clinic: 'Beta Clinic' }]);
     assert.deepEqual(w.next.Mariam.followUps, [{ date: '2026-10-13', clinic: 'Alpha Dental' }]);
@@ -964,6 +964,104 @@ describe('rep and customer matching', () => {
     assert.ok(S.people.Renova.signature.line.startsWith('first order from a new account, Salwa'));
     assert.ok(S.excluded.some(t => /^المبيعات/.test(t) && /\(A5\)$/.test(t)));               // the left-out sales figure is named, with its appendix page
     assert.ok(S.excluded.some(t => /من الهدف/.test(t)));
+  });
+  test('weeklyPages: the real week 4–8 Oct — the money ties to the ERP, samples are all-free documents, the month has a named plan', () => {
+    // [date, doc, type, product, qty, gross, net, sret, salesman, brand, customer, class, dsret, ref]
+    const R = (d, doc, sm, cust, net, product, brand, gross) => [d, doc, 0, product || 'P', 1, gross == null ? net : gross, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
+    const M = 'Mariam Zohair', N = 'Ranova Ayman Mohammed', G = 'Ghaith Al Manfe';
+    const clinics = [
+      { id: 'l', name: 'Light Dental', rep: 'Mariam', cls: 'B', doctors: [{ id: 'n', name: 'Dr. Noor' }] },
+      { id: 'j', name: 'Jibla Dental Center', rep: 'Renova', cls: 'A', doctors: [] },
+      { id: 'k', name: 'Kaifan Dental', rep: 'Renova', cls: 'A', doctors: [] },
+      { id: 'u', name: 'Blue Dental', rep: 'Renova', cls: 'B', doctors: [{ id: 'q', name: 'Dr. Q' }] },
+      { id: 'f', name: 'Farwaniya Hospital Polyclinic', rep: 'Renova', cls: 'B', doctors: [] },
+      { id: 'h', name: 'Dr. Nael Al Hazeem Dental Center', rep: 'Dr. Ghaith', prevRep: 'Mariam', repSince: '2026-10-01', cls: 'A', doctors: [{ id: 'm', name: 'Dr. Maha' }] },
+      { id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', cls: 'A', doctors: [] },
+      { id: 's', name: 'Skydental Centre', rep: 'Dr. Ghaith', cls: 'B', doctors: [] }];
+    const girls = [];
+    ['2026-08-03', '2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'].forEach((d, i) => {
+      girls.push(R(d, 'G' + i, M, 'Light Dental', 700, 'Strip', 'Intensiv', 900)); girls.push(R(d, 'H' + i, N, 'Jibla Dental Center', 1100, 'Sonic', 'Philips', 1400));
+      girls.push(R(d, 'K' + i, N, 'Kaifan Dental', 300, 'Foil', 'SCHEU', 380)); girls.push(R(d, 'NH' + i, M, 'Dr. Nael Al Hazeem Dental Center', 60, 'Strip', 'Intensiv', 80)); });
+    girls.push(R('2026-09-29', 'SKY0', M, 'Skydental Centre', 40, 'Strip'));
+    // this week (the real documents)
+    girls.push(R('2026-10-05', 'SINV0077150', M, 'Light Dental', 105, 'Strip', 'Intensiv', 130), R('2026-10-05', 'SINV0077150', M, 'Light Dental', 25, 'IPR gauge', 'Intensiv', 30));
+    girls.push(R('2026-10-05', 'MF1', M, 'My Fatoorah', 20, 'Strip'));
+    girls.push(R('2026-10-06', 'SINV0077191', N, 'Salwa', 154.8, 'Imprelon S+', 'SCHEU', 190));          // a first order: Salwa is not in the app
+    girls.push(R('2026-10-06', 'IC1', N, 'Individual - Customers', 15.3, 'Brush', 'Philips'), R('2026-10-07', 'MF3', N, 'My Fatoorah', 14, 'Brush', 'Philips'));
+    girls.push(R('2026-10-06', 'SINV0077188', N, 'Pharmacy plus', 0, 'Sonicare 1100', 'Philips', 18));    // a sample: an all-free document
+    const his = [R('2026-10-01', 'SINV0', G, 'Dr. Nael Al Hazeem Dental Center', 269, 'Strip'),
+      R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 380, 'Swingle', 'Intensiv', 560), R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 105, 'Strip', 'Intensiv', 150),
+      R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 35, 'OS60/3', 'Intensiv', 50),
+      R('2026-10-05', 'SINV0077225', G, 'Dr. Nael Al Hazeem Dental Center', 0, 'Ortho-Strips Opener', 'Intensiv', 6),   // free inside the paid invoice: a deal, not a sample
+      R('2026-10-05', 'SINV0077226', G, 'Dr. Nael Al Hazeem Dental Center', 9.25, 'GP Pellet', 'B&L Biotech', 12),
+      R('2026-10-05', 'MF2', G, 'My Fatoorah', 12, 'Strip'),
+      ['2026-10-06', 'SRT0009635', 1, 'Strip', 1, 11.25, -11.25, 11.25, G, 'Intensiv', 'Skydental Centre', 'Clinics', 0, ''],
+      R('2026-10-07', 'SINV0077218', G, 'Bayan Dental Center', 0, 'Mouthwash', 'The Breath Co.', 4)];
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 4640, month: '2026-10', brands: { Intensiv: 600 } }, Renova: { revenue: 10147, month: '2026-10', brands: { SCHEU: 100, Philips: 4000 } }, 'Dr. Ghaith': { revenue: 9416, month: '2026-10', brands: { Intensiv: 2750 } },
+        _history: { '2026-09': { Mariam: { revenue: 9100, month: '2026-09' }, Renova: { revenue: 11571, month: '2026-09' } }, '2026-08': { Mariam: { revenue: 11551, month: '2026-08' }, Renova: { revenue: 12634, month: '2026-08' } } } },
+      erpSales: { periods: [{ id: 'girls', from: '2026-08-01', to: '2026-10-08', repMap: { [M]: 'Mariam', [N]: 'Renova' }, rows: girls }, { id: 'his', from: '2026-10-01', to: '2026-10-08', repMap: { [G]: 'Dr. Ghaith' }, rows: his }] },
+      visits: [
+        { id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p'], nextFollowUp: '2026-10-12' },
+        { id: 'v2', date: '2026-10-05', rep: 'Renova', clinicId: 'f', products: ['p'] },
+        { id: 'v3', date: '2026-10-06', rep: 'Renova', clinicId: 'u', doctorIds: ['q'], products: ['p'], orderTaken: true, orderTotal: 198 },
+        { id: 'v4', date: '2026-10-07', rep: 'Dr. Ghaith', withRep: 'Mariam', clinicId: 'l', doctorIds: ['n'] },
+        { id: 'v5', date: '2026-10-06', rep: 'Dr. Ghaith', clinicId: 'h', doctorIds: ['m'], products: ['q'] }],
+      dayPlans: { '2026-10-12': { Mariam: ['l'] }, '2026-10-13': { 'Dr. Ghaith': ['b'] } } };
+    const reps = ['Mariam', 'Renova', 'Dr. Ghaith'];
+    const W = core.weeklyReport(data, { end: '2026-10-08', reps });
+    // the money ties out: 8 invoices with value + 2 sample documents + 1 return = the week
+    assert.equal(W.team.week, 864.1);
+    assert.deepEqual([W.mix.invoices, W.mix.withValue, W.mix.zeroDocs, W.mix.returnDocs, W.mix.returnsNet], [8, 875.35, 2, 1, -11.25]);
+    assert.deepEqual([W.mix.accounts, W.mix.channelAccounts], [3, 2]);                   // 3 clinics + 2 channel accounts, not "3 accounts"
+    assert.equal(Math.round((W.mix.existing + W.mix.newAccounts + W.mix.channel + W.mix.other + W.mix.returns) * 100) / 100, 864.1);
+    assert.deepEqual([W.mix.existing, W.mix.newAccounts, W.mix.channel, W.mix.returns], [659.25, 154.8, 61.3, -11.25]);
+    assert.equal(W.mix.top.account, 'Dr. Nael Al Hazeem Dental Center'); assert.ok(W.mix.top.share > 0.6 && W.mix.top.share < 0.62);
+    // samples are all-free documents (2), the free line inside SINV0077225 is part of that deal
+    assert.deepEqual(W.free.samples.list.map(x => x.doc), ['SINV0077188', 'SINV0077218']);
+    assert.deepEqual([W.free.deals.docs, W.free.deals.gross, W.free.deals.list[0].doc], [1, 6, 'SINV0077225']);
+    // his files start 1 Oct: his first-time products are not claimed (the four weeks before are not covered)
+    assert.deepEqual(W.wins.placements.filter(x => reps.includes(x.rep)).map(x => [x.rep, x.product]), [['Mariam', 'IPR gauge']]);
+    assert.equal(W.mix.firstTime, 25);
+    assert.deepEqual(W.fieldOrders.map(o => [o.clinic, o.value, o.invoiced]), [['Blue Dental', 198, false]]);
+    assert.deepEqual(W.team.govSites, ['Farwaniya Hospital Polyclinic']);
+    assert.ok(W.checks.some(c => c.key === 'no-plan:Renova'));                               // Renova has nothing saved for next week
+    assert.ok(W.checks.some(c => c.key === 'sample-no-visit:b'));                            // Bayan: samples but no visit logged this month
+    const trend = core.monthlyTrend(data, { reps, end: '2026-10-08', months: 3 });
+    const S = core.weeklyStory(W, { presenter: 'Dr. Ghaith', trend, ask: 'Approve two Sonicare demo units for Jibla and Kaifan' });
+    const PG = S.pages;
+    assert.deepEqual(PG.money.tiles.map(t => t.key), ['week', 'month', 'newbiz', 'price']);  // R13: the same four tiles every week
+    assert.equal(PG.money.tiles[0].big, 'KD 864');
+    assert.equal(PG.money.tiles[0].detail, '8 invoices · 3 clinics · 2 channel accounts');
+    assert.equal(PG.money.tiles[2].big, 'KD 180');                                         // Salwa 154.80 + the IPR gauge 25
+    assert.equal(PG.money.recon, 'ERP 4–8 Oct: 8 invoices with value (KD 875.35) + 2 sample documents (KD 0) + 1 return (−KD 11.25) = KD 864.10');
+    assert.equal(PG.money.title, 'KD 864 invoiced, all clinic invoices within discount limits');
+    assert.ok(PG.money.concentration && PG.money.concentration.net === 529.25);
+    assert.deepEqual(PG.money.mix.map(m => m.key), ['existing', 'newAccounts', 'channel', 'returns']);
+    // the closed month (day 8): September for the two people with a file and a target
+    assert.ok(PG.closed && /^September closed at \d+% of target: KD [\d,]+ of KD 20,671$/.test(PG.closed.title), PG.closed && PG.closed.title);
+    const gc = PG.closed.people.find(p => p.rep === 'Dr. Ghaith');
+    assert.ok(gc.noTarget && !PG.closed.team.people.includes('Dr. Ghaith'));               // his clinics' September sales count, but he had no September target
+    // the month: the gap in KD and working days, and a plan with names
+    assert.deepEqual([PG.plan.workdays.total, PG.plan.workdays.done, PG.plan.workdays.left], [21, 6, 15]);
+    assert.ok(/^October: KD [\d,]+ to go in 15 working days — the plan$/.test(PG.plan.title), PG.plan.title);
+    assert.ok(PG.plan.levers.some(l => l.key === 'orders' && l.big === 'KD 198'));
+    assert.ok(PG.plan.levers.some(l => l.key === 'key' && /still to visit in October/.test(l.text)));
+    assert.equal(PG.plan.ask, 'Approve two Sonicare demo units for Jibla and Kaifan');
+    // new business in KD; the cover never leads with the presenter's own sale (R11)
+    assert.equal(PG.newBiz.title, 'KD 180 new business: 1 new account, 1 first-time product');
+    assert.equal(PG.cover, 'KD 180 of new business: new account Salwa and 1 first-time product');
+    // the people: the same rows for everyone, money first
+    const g = PG.people.find(p => p.rep === 'Dr. Ghaith'), r = PG.people.find(p => p.rep === 'Renova');
+    assert.deepEqual([g.money.big, r.money.big], ['KD 530', 'KD 184']);
+    assert.ok(/^New account Salwa/.test(r.signature.line) && r.signature.proof === 'SINV0077191');
+    assert.ok(/^Order at Dr\. Nael/.test(g.signature.line) && g.signature.big === 'KD 520');
+    assert.ok(PG.people.every(p => p.money && p.month && 'facts' in p));
+    // price: the samples (2 documents, list value) and the returns against the limit
+    assert.deepEqual([PG.price.samples.docs, PG.price.samples.gross, PG.price.returns.week], [2, 22, 1.3]);
+    // the close: commitments and the recap in page 2's words (R12)
+    assert.ok(PG.close.commits.length >= 2 && PG.close.recap.startsWith('This week: KD 864 invoiced · KD 180 new business'));
+    assert.equal(S.all.find(i => i.key === 'seeds').big, '2');
   });
   test('storyGate: rises, records, streaks and materiality follow the deck rules R2–R6', () => {
     const g = core.storyGate;
