@@ -929,6 +929,42 @@ describe('rep and customer matching', () => {
     assert.deepEqual([w.perRep.Mariam.fieldVisits, w.perRep.Mariam.logged, w.perRep['Dr. Ghaith'].fieldVisits, w.perRep['Dr. Ghaith'].logged], [1, 1, 1, 1]);
     assert.equal(w.history[7].fieldVisits, 2);
   });
+  test('weeklyStory: the real-week shape — true wins lead; weak sales, a small brand target, samples and the presenter\'s one-file week never become headlines', () => {
+    const R = (d, doc, sm, cust, net, product, brand, gross) => [d, doc, 0, product || 'P', 1, gross == null ? net : gross, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
+    const M = 'Mariam Zohair', N = 'Ranova Ayman Mohammed', G = 'Ghaith Al Manfe';
+    const clinics = [
+      { id: 'l', name: 'Light Dental', rep: 'Mariam', cls: 'B', doctors: [{ id: 'n', name: 'Dr. Noor' }] },
+      { id: 'j', name: 'Jibla Dental Center', rep: 'Renova', cls: 'A', doctors: [] },
+      { id: 'h', name: 'Dr. Nael Al Hazeem Dental Center', rep: 'Dr. Ghaith', cls: 'A', doctors: [{ id: 'm', name: 'Dr. Maha' }] },
+      { id: 'b', name: 'Bayan Dental Center', rep: 'Dr. Ghaith', cls: 'A', doctors: [] }];
+    const girls = [];
+    ['2026-08-10', '2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28'].forEach((d, i) => {
+      girls.push(R(d, 'G' + i, M, 'Light Dental', 2000, 'Strip')); girls.push(R(d, 'H' + i, N, 'Jibla Dental Center', 2400, 'Sonic', 'Philips')); });
+    girls.push(R('2026-10-05', 'SINV1', M, 'Light Dental', 25, 'IPR gauge'));                // a first-time product at Light Dental
+    girls.push(R('2026-10-06', 'SINV2', N, 'Salwa', 154.8, 'Imprelon S+', 'SCHEU'));         // a new account (not in the app: the salesman's)
+    const his = [R('2026-10-01', 'SINV0', G, 'Dr. Nael Al Hazeem Dental Center', 269, 'Strip'), R('2026-10-05', 'SINV3', G, 'Dr. Nael Al Hazeem Dental Center', 520, 'Swingle'),
+      R('2026-10-07', 'SINV4', G, 'Bayan Dental Center', 0, 'Sample mouthwash', 'The Breath Co.', 2)];
+    const data = { today: '2026-10-08', clinics, erpMap: {},
+      targets: { Mariam: { revenue: 4640, month: '2026-10', brands: { Intensiv: 600 } }, Renova: { revenue: 10147, month: '2026-10', brands: { SCHEU: 100, Philips: 4000 } }, 'Dr. Ghaith': { revenue: 9416, month: '2026-10', brands: { Intensiv: 2750 } } },
+      erpSales: { periods: [{ id: 'girls', from: '2026-08-01', to: '2026-10-08', repMap: { [M]: 'Mariam', [N]: 'Renova' }, rows: girls }, { id: 'his', from: '2026-10-01', to: '2026-10-08', repMap: { [G]: 'Dr. Ghaith' }, rows: his }] },
+      visits: [{ id: 'v1', date: '2026-10-05', rep: 'Mariam', clinicId: 'l', doctorIds: ['n'], products: ['p'], nextFollowUp: '2026-10-12' }, { id: 'v2', date: '2026-10-06', rep: 'Dr. Ghaith', clinicId: 'h', doctorIds: ['m'], products: ['q'] }] };
+    const W = core.weeklyReport(data, { end: '2026-10-08', reps: ['Mariam', 'Renova', 'Dr. Ghaith'] });
+    const S = core.weeklyStory(W, { presenter: 'Dr. Ghaith', brandName: b => b === 'scheu' ? 'SCHEU' : b });
+    const keys = S.headline.map(i => i.key);
+    assert.ok(!keys.some(k => /^sales/.test(k)), keys);                                        // sales fell: not a headline
+    assert.ok(S.headline.some(i => i.kind === 'newbiz' && i.big === '2' && /Salwa/.test(i.detail)), S.headline.map(i => i.text)); // the new account and the first-time product; the sample is no win
+    assert.ok(!S.headline.some(i => /SCHEU/.test(i.headline)) && S.also.some(i => i.key === 'brand-small:scheu' && i.big === 'KD 155'));  // R6
+    assert.ok(S.headline.filter(i => i.rep === 'Dr. Ghaith').length <= 1);                   // R11
+    assert.ok(S.headline.every(i => i.big !== '0' && !/^0 /.test(i.big)));                     // R10
+    assert.equal(S.close, S.headline);                                                         // R12
+    assert.ok(S.all.some(i => i.key === 'seeds' && i.big === '1'));                            // samples are seeds
+    const g = S.people['Dr. Ghaith'];
+    assert.ok(g && !/best sales week|up from/.test(g.signature.line), g && g.signature);        // his file covers one week only
+    assert.equal(g.signature.big, 'KD 520');                                                   // the week's largest invoice
+    assert.ok(S.people.Renova.signature.line.startsWith('first order from a new account, Salwa'));
+    assert.ok(S.excluded.some(t => /^المبيعات/.test(t) && /\(A5\)$/.test(t)));               // the left-out sales figure is named, with its appendix page
+    assert.ok(S.excluded.some(t => /من الهدف/.test(t)));
+  });
   test('storyGate: rises, records, streaks and materiality follow the deck rules R2–R6', () => {
     const g = core.storyGate;
     assert.equal(g.rise(17, 14, false), true); assert.equal(g.rise(15, 14, false), false);        // +1 is not a rise
@@ -946,8 +982,8 @@ describe('rep and customer matching', () => {
   test('teamSalesLikeForLike: weeks compare the same people only', () => {
     const W = { reps: ['Mariam', 'Renova', 'Dr. Ghaith'], history: [
       { byRep: { Mariam: 100, Renova: 200, 'Dr. Ghaith': null } }, { byRep: { Mariam: 150, Renova: null, 'Dr. Ghaith': null } }, { byRep: { Mariam: 50, Renova: 60, 'Dr. Ghaith': 530 } }] };
-    const t = core.teamSalesLikeForLike(W);
-    assert.deepEqual(t.people, ['Mariam', 'Renova', 'Dr. Ghaith']); assert.deepEqual(t.values, [null, null, 640]);
+    const t = core.teamSalesLikeForLike(W);                         // the people covered this week AND last week: Mariam only
+    assert.deepEqual(t.people, ['Mariam']); assert.deepEqual(t.values, [100, 150, 50]);
   });
   test('foldProducts: lines that share one photo become one family; clinics counted once', () => {
     const P = [{ product: 'OS40M Strips', brand: 'intensiv', qty: 3, net: 105, accountKeys: ['a', 'b'] }, { product: 'Swingle', brand: 'intensiv', qty: 1, net: 380, accountKeys: ['a'] },
