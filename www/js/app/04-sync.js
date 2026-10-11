@@ -3,13 +3,17 @@
 // ---- LOAD / PERSIST (shared team data) ----
 let _docRemap = {}; // duplicate doctor id → surviving id, filled while clinics normalize
 // Visits that named a duplicate doctor record now name the surviving one, so
-// every doctor's history stays whole. Returns how many visits changed.
+// every doctor's history stays whole — the people met and the prescription
+// pads given to them (UMCore.remapVisitDoctors; lines that then name the same
+// type and person are added together). Returns how many visits changed.
 function applyDoctorRemap(){
   const ids = Object.keys(_docRemap);
   if(!ids.length) return 0;
   let changed = 0;
+  const viaCore = typeof UMCore.remapVisitDoctors === 'function'; // an old cached core.js: the people met only, as before
   (visits || []).forEach(v => {
     if(!v) return;
+    if(viaCore){ if(UMCore.remapVisitDoctors(v, _docRemap)) changed++; return; }
     let hit = false;
     if(Array.isArray(v.doctorIds)){
       const next = [...new Set(v.doctorIds.map(id => _docRemap[id] || id))];
@@ -862,13 +866,14 @@ async function cloudGet(key){
 async function loadAll(){
   try{
     const mapGen0 = _erpMapGen; // a link saved while this read runs is newer than what it brings back
+    const rxGen0 = _rxTypesGen; // likewise a prescription-types save
     dropQueuedErpMap();        // before cloudGet: a queued key would make it serve this device's stale copy
     _loadFailed = {};
     _mirrorUsed = {};
     _seedClinics = false;
     _bootCrashed = false;
     const g = cloudGet;
-    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em,en] = await Promise.all([
+    const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em,en,rt] = await Promise.all([
       g('clinics'),
       g('products'),
       loadVisits(), // live month + archived months, assembled (see persistVisits)
@@ -883,6 +888,7 @@ async function loadAll(){
       loadErpSales(), // index document + row chunks, assembled (see persistErpSales)
       g('erpMap'),
       g('erpNotes'),
+      g('rxTypes'), // the supervisor's prescription types — read only; never seeded, never written from here
       refreshTombs(), // the team's delete log, read alongside the lists so a deleted record never reaches the screen
     ]);
     // Each key parses independently: one corrupt entry falls back alone instead
@@ -916,6 +922,16 @@ async function loadAll(){
       delete _loadFailed.erpMap; delete _mirrorUsed.erpMap; // memory holds the copy the cloud confirmed
     }
     erpNotes = UMCore.safeParse(en && en.value, {}) || {};
+    // Prescription types: a read that failed keeps what memory had (a fresh
+    // phone then shows the built-in forms with a note); a document that does
+    // not exist yet is null (the built-in forms); a save confirmed while this
+    // read ran is newer than what it brings back.
+    if(!_loadFailed.rxTypes){
+      if(!_rxSaving && rxGen0 === _rxTypesGen){
+        const rtVal = UMCore.safeParse(rt && rt.value, null);
+        rxTypesDoc = rtVal && typeof rtVal === 'object' ? rtVal : null;
+      } else console.warn('rxTypes: refresh skipped — the list was saved while it read');
+    }
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
     const rbVal = UMCore.safeParse(rb && rb.value, null);
@@ -1237,6 +1253,10 @@ async function persist(key, opts){
   // link another device saved meanwhile — refused, and loudly, so a caller
   // that tries it is caught by the harnesses' console checks.
   if(key === 'erpMap'){ console.error("erpMap is saved per account by saveErpLink — persist('erpMap') refused"); return false; }
+  // The prescription types are the supervisor's, saved only by saveRxTypes
+  // (10-doctors-products.js) as a compare-and-set — never a blind write, never
+  // queued offline, never from a rep's phone.
+  if(key === 'rxTypes'){ console.error("rxTypes is saved by saveRxTypes — persist('rxTypes') refused"); return false; }
   // The factory clinic list must never be written over a live account. It can
   // be on screen only because a boot went wrong — saving from that state is
   // exactly how a whole team's list gets destroyed.

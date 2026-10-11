@@ -627,7 +627,16 @@
     <input type="text" id="prodSearchLog" placeholder="Search products..." oninput="renderProductChips()" style="margin-bottom:8px;">
     <div class="chip-row" id="productChips" style="max-height:180px; overflow-y:auto;"></div>
 
-    <div class="step-h"><span class="n">4</span> Any order?</div>
+    <div id="rxWrap">
+      <div class="step-h"><span class="n">4</span> Prescriptions given? <span class="hint">the pads you left today</span></div>
+      <div class="toggle-row">
+        <div class="chip" id="rxYes" onclick="setRx(true)">Yes</div>
+        <div class="chip on" id="rxNo" onclick="setRx(false)">No</div>
+      </div>
+      <div id="rxBlocks" style="display:none; margin-top:10px;"></div>
+    </div>
+
+    <div class="step-h"><span class="n">5</span> Any order?</div>
     <div class="toggle-row">
       <div class="chip" id="orderYes" onclick="setOrder(true)">Yes</div>
       <div class="chip on" id="orderNo" onclick="setOrder(false)">No</div>
@@ -645,11 +654,11 @@
       </div>
     </div>
 
-    <div class="step-h"><span class="n">5</span> When is the next visit? <span class="hint">a promise is a pipeline</span></div>
+    <div class="step-h"><span class="n">6</span> When is the next visit? <span class="hint">a promise is a pipeline</span></div>
     <div class="quickdate" id="quickDates"></div>
     <input type="date" id="followUpDate">
 
-    <div class="step-h"><span class="n">6</span> Notes &amp; extras <span class="hint">optional</span></div>
+    <div class="step-h"><span class="n">7</span> Notes &amp; extras <span class="hint">optional</span></div>
     <label style="margin-top:2px;">How did the doctor feel about us today?</label>
     <div class="chip-row" id="moodChips" style="margin-bottom:10px;"></div>
     <textarea id="visitNotes" dir="auto" placeholder="Anything worth remembering next visit..."></textarea>

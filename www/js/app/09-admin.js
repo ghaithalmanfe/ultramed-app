@@ -473,7 +473,8 @@ function visitLogRows(){
   if(q){
     rows = rows.filter(v=>{
       const c = clinics.find(x=>x.id===v.clinicId);
-      return (c && c.name.toLowerCase().includes(q)) || (v.notes||'').toLowerCase().includes(q);
+      return (c && c.name.toLowerCase().includes(q)) || (v.notes||'').toLowerCase().includes(q)
+        || (rxPadsOf(v) > 0 && rxTextOf(v, c).toLowerCase().includes(q)); // the prescription types and who got them
     });
   }
   return rows.sort((a,b)=>b.date.localeCompare(a.date));
@@ -486,9 +487,11 @@ function renderVisitLog(){
   const orders = rows.filter(v=>v.orderTaken);
   const revenue = rows.reduce((s,v)=>s+(v.orderTotal||0),0);
   const uniqueClinics = new Set(rows.map(v=>v.clinicId)).size;
+  const pads = rows.reduce((s,v)=>s+rxPadsOf(v),0); // the rows listed below (field visits only carry them)
   document.getElementById('vlSummary').innerHTML = `
     <div class="card" style="background:var(--teal-dim); margin-bottom:12px;">
       <div class="row-between"><span style="font-size:13px;">Field visits</span><strong>${fieldVisits.length}</strong></div>
+      ${pads?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>${I('pill')} <span>Prescription pads given</span></span><span>${pads}</span></div>`:''}
       ${orderOnly.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Phone/remote orders</span><span>${orderOnly.length}</span></div>`:''}
       ${calls.length?`<div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>${I('phone')} Calls logged</span><span>${calls.length}</span></div>`:''}
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Contacts seen</span><span>${rows.reduce((s,v)=>s+UMCore.contactCount(v),0)}</span></div>
@@ -517,6 +520,7 @@ function renderVisitLog(){
           <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
           <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
+          ${rxLinesHTML(v,c)}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
           ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
@@ -553,6 +557,7 @@ function copyVisitLog(){
     const c = clinics.find(x=>x.id===v.clinicId);
     text += `${v.date} · ${clinicNameOf(v.clinicId)}${v.orderTaken?' · '+money(v.orderTotal):''}${currentUser.role==='supervisor'?' · '+v.rep:''}\n`;
     if(v.notes) text += `   ${v.notes}\n`;
+    if(rxPadsOf(v)) text += `   Prescription pads: ${rxTextOf(v, c)}\n`;
   });
   text += `\nTotal: ${rows.length} visits · ${money(rows.reduce((s,v)=>s+(v.orderTotal||0),0))}`;
   navigator.clipboard.writeText(text).then(()=>showToast('📋 Log copied')).catch(()=>showToast('Could not copy'));

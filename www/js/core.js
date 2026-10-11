@@ -3691,31 +3691,316 @@
     if(next < today) next = (y + 1) + '-' + md;
     return daysBetween(today, next);
   }
-  function handoverTotals(handovers, today){
-    var t = { prescription: 0, sample: 0, gift: 0, other: 0,
-      rxWeek: 0, rxLastWeek: 0, rxMonth: 0, rxLastMonth: 0, count: (handovers || []).length, last: null };
-    var wkStart = (function(){ var d = new Date(today + 'T00:00:00'); d.setDate(d.getDate() - d.getDay()); return localDateStr(d); })();
-    var wkPrev = (function(){ var d = new Date(wkStart + 'T00:00:00'); d.setDate(d.getDate() - 7); return localDateStr(d); })();
-    var mStart = today.slice(0, 7) + '-01';
-    var pm = new Date(mStart + 'T00:00:00'); pm.setMonth(pm.getMonth() - 1);
-    var pmStart = localDateStr(pm);
-    (handovers || []).forEach(function(h){
-      var kind = t[h.kind] != null ? h.kind : 'other';
-      var q = h.qty > 0 ? h.qty : 1;
-      t[kind] += q;
-      if(!t.last || h.date > t.last) t.last = h.date;
-      if(h.kind === 'prescription'){
-        if(h.date >= wkStart) t.rxWeek += q;
-        else if(h.date >= wkPrev) t.rxLastWeek += q;
-        if(h.date >= mStart) t.rxMonth += q;
-        else if(h.date >= pmStart) t.rxLastMonth += q;
+  // ==== PRESCRIPTIONS GIVEN ON A VISIT (v114) ====
+  // The printed prescription forms left on a field visit live on the visit:
+  //   v.rx = [{ type, name, qty, doctorId }]   (field visits only; never [])
+  // type = an id from the supervisor's `rxTypes` list (until he saves one,
+  // the owner's two printed forms are the built-in list); name = the type's
+  // name when saved (only a fallback for display); qty = whole PADS, 1–999
+  // (the owner counts pads; sheets per pad are not known); doctorId = the person met who got
+  // them, or null = left at the clinic with no one person. One line per type
+  // and person, so a visit with two doctors is never counted twice.
+  // ONE path for everything: screens read the lines through visitRxLines,
+  // saves go through cleanVisitRx, and every figure is counted from rxLedger,
+  // which also carries the older doctor-profile entries of kind
+  // 'prescription' (no type) — each exactly once.
+  var RX_MAX = 999;
+  // The owner's printed prescription forms (his answer, 11 Oct 2026), in the
+  // order the reps see them — the list until the supervisor saves his own.
+  var RX_DEFAULT_TYPES = Object.freeze([
+    Object.freeze({ id: 'ultramed', name: 'Ultramed fast moving products', active: true }),
+    Object.freeze({ id: 'tepe', name: 'Tepe prescription', active: true }),
+  ]);
+  // A typed quantity, cleaned like the order form's box: whole pads, never
+  // negative, capped ("12 pcs" → 12, "2.9" → 2, "-4" → 0, junk → 0).
+  function rxQty(v){
+    var n = Number(String(v == null ? '' : v).trim());
+    if(!isFinite(n)) n = Number(String(v).replace(/[^\d.]/g, ''));
+    n = Math.floor(n);
+    if(!isFinite(n) || n < 0) return 0;
+    return Math.min(RX_MAX, n);
+  }
+  // An old doctor-profile entry's quantity, counted as it always was: a whole
+  // number above 0, else 1 — always a number ('3' used to be added as text).
+  function handoverQty(q){ var n = Math.floor(Number(q)); return isFinite(n) && n > 0 ? n : 1; }
+  // Ids as stored on a line: a type id is a trimmed string ('' = none); a
+  // doctor id is a non-empty string, else null (the clinic).
+  function rxTypeId(x){ return typeof x === 'string' ? x.trim() : (typeof x === 'number' && isFinite(x) ? String(x) : ''); }
+  function rxDoctorId(x){ return typeof x === 'string' ? (x || null) : (typeof x === 'number' && isFinite(x) ? String(x) : null); }
+  function rxIn(d, a, b){ return !!d && d >= a && d <= b; }
+  // The supervisor's types (the `rxTypes` document or its bare list), ready
+  // to use: ids trimmed (a repeated id: the first wins), names trimmed
+  // ('' → 'Prescription'), active unless marked false, the order kept (it is
+  // the order on the visit form), any other field kept (room for brands).
+  // Missing, damaged or empty → the built-in list (RX_DEFAULT_TYPES). A list
+  // whose types are all retired comes back as it is: nothing is switched back on.
+  function rxTypeList(doc){
+    var src = Array.isArray(doc) ? doc : (doc && typeof doc === 'object' && Array.isArray(doc.types) ? doc.types : []);
+    var out = [], seen = Object.create(null);
+    src.forEach(function(t){
+      if(!t || typeof t !== 'object' || Array.isArray(t)) return;
+      var id = typeof t.id === 'string' ? t.id.trim() : '';
+      if(!id || seen[id]) return;
+      seen[id] = 1;
+      var c = {};
+      Object.keys(t).forEach(function(k){ if(k !== '__proto__') c[k] = t[k]; });
+      c.id = id;
+      c.name = String(t.name == null ? '' : t.name).trim() || 'Prescription';
+      c.active = t.active !== false;
+      out.push(c);
+    });
+    return out.length ? out : RX_DEFAULT_TYPES.map(function(t){ return { id: t.id, name: t.name, active: true }; });
+  }
+  function rxTypeIndex(list){ var idx = Object.create(null); list.forEach(function(t){ idx[t.id] = t; }); return idx; }
+  function rxNameIn(idx, id, snapshot){
+    var t = id == null ? null : idx[rxTypeId(id)];
+    if(t) return t.name;
+    var s = snapshot == null || typeof snapshot === 'object' ? '' : String(snapshot).trim();
+    return s || 'Prescription';
+  }
+  // A type's name on screen: its current name by id, else the name saved on
+  // the line, else 'Prescription'.
+  function rxTypeName(id, list, snapshot){ return rxNameIn(rxTypeIndex(rxTypeList(list)), id, snapshot); }
+  // Why the supervisor's edited list cannot be saved, or null: every name
+  // filled in, at most 40 characters, no two alike (ignoring case and
+  // repeated spaces — retired ones included), at least one type active.
+  function rxTypesProblem(types){
+    var src = Array.isArray(types) ? types : (types && typeof types === 'object' && Array.isArray(types.types) ? types.types : []);
+    var seen = Object.create(null), active = 0;
+    for(var i = 0; i < src.length; i++){
+      var t = src[i] && typeof src[i] === 'object' ? src[i] : {};
+      var n = String(t.name == null ? '' : t.name).trim();
+      if(!n) return 'name-empty';
+      if(n.length > 40) return 'name-long';
+      var k = n.replace(/\s+/g, ' ').toLowerCase();
+      if(seen[k]) return 'name-duplicate';
+      seen[k] = 1;
+      if(t.active !== false) active++;
+    }
+    return active ? null : 'no-active';
+  }
+  function rxNormLine(l){
+    if(!l || typeof l !== 'object') return null;
+    var type = rxTypeId(l.type), qty = rxQty(l.qty);
+    if(!type || !qty) return null;
+    return { type: type, name: l.name == null || typeof l.name === 'object' ? '' : String(l.name), qty: qty, doctorId: rxDoctorId(l.doctorId) };
+  }
+  // THE read path for a visit's lines (every screen, every count): field
+  // visits only — a call or a phone order never carries prescriptions — with
+  // whole quantities and junk lines dropped.
+  function visitRxLines(v){
+    if(!isFieldVisit(v) || !Array.isArray(v.rx)) return [];
+    var out = [];
+    v.rx.forEach(function(l){ var n = rxNormLine(l); if(n) out.push(n); });
+    return out;
+  }
+  // The lines to store on a visit, from what was typed (THE save path):
+  // whole quantities (0 dropped, capped at 999); types on the list — a
+  // retired type is still accepted, a type the list does not know only when
+  // it is already on the visit being edited (opts.keep), under the name it
+  // was saved with; a named person only if met (opts.doctorIds), the clinic
+  // (null) always; one line per type and person (repeats added together);
+  // people in the order met with the clinic last, then types in list order.
+  // opts: { types (document or list), doctorIds, keep (the visit's lines) }
+  function cleanVisitRx(lines, opts){
+    opts = opts || {};
+    var list = rxTypeList(opts.types), idx = rxTypeIndex(list), order = Object.create(null);
+    list.forEach(function(t, i){ order[t.id] = i; });
+    var kept = Object.create(null);
+    (Array.isArray(opts.keep) ? opts.keep : []).forEach(function(l){
+      var id = l && typeof l === 'object' ? rxTypeId(l.type) : '';
+      if(id && !kept[id]) kept[id] = l.name == null || typeof l.name === 'object' ? '' : String(l.name);
+    });
+    var met = Object.create(null);
+    (Array.isArray(opts.doctorIds) ? opts.doctorIds : []).forEach(function(d, i){ var id = rxDoctorId(d); if(id != null && !(id in met)) met[id] = i; });
+    var out = [], acc = Object.create(null);
+    (Array.isArray(lines) ? lines : []).forEach(function(l){
+      if(!l || typeof l !== 'object') return;
+      var type = rxTypeId(l.type), q = rxQty(l.qty), doc = rxDoctorId(l.doctorId);
+      if(!type || !q) return;
+      if(!(type in idx) && !(type in kept)) return;
+      if(doc != null && !(doc in met)) return;
+      var k = type + '\u0001' + (doc == null ? '' : doc);
+      if(acc[k]){ acc[k].qty = Math.min(RX_MAX, acc[k].qty + q); return; }
+      out.push(acc[k] = { type: type, name: type in idx ? idx[type].name : kept[type], qty: q, doctorId: doc });
+    });
+    var dpos = function(l){ return l.doctorId == null ? Infinity : met[l.doctorId]; };
+    var tpos = function(l){ return l.type in order ? order[l.type] : list.length; };
+    return out.sort(function(a, b){ return (dpos(a) - dpos(b)) || (tpos(a) - tpos(b)) || (a.type < b.type ? -1 : a.type > b.type ? 1 : 0); });
+  }
+  // What the lines are, for comparing two visits or an edit: 'type:doctor:qty'
+  // sorted — names and order do not matter.
+  function rxSig(lines){
+    return (Array.isArray(lines) ? lines : []).filter(function(l){ return l && typeof l === 'object'; })
+      .map(function(l){ return l.type + ':' + (l.doctorId == null ? '' : l.doctorId) + ':' + l.qty; }).sort().join(',');
+  }
+  // The lines as one plain English sentence (CSV, Excel, "copy as text"):
+  // "Dr. Huda Ali: Ortho care prescription ×5, Whitening prescription ×2;
+  //  the clinic (no one person): General prescription ×1".
+  // opts: { list (the types, for current names), doctorName(id) → the
+  // person's name, or null when no longer on file }
+  function rxText(lines, opts){
+    opts = opts || {};
+    var idx = rxTypeIndex(rxTypeList(opts.list));
+    var nameOf = typeof opts.doctorName === 'function' ? opts.doctorName : function(){ return null; };
+    var groups = [], by = Object.create(null);
+    (Array.isArray(lines) ? lines : []).forEach(function(raw){
+      var l = rxNormLine(raw);
+      if(!l) return;
+      var key = l.doctorId == null ? '' : '#' + l.doctorId, g = by[key];
+      if(!g){
+        var who = 'the clinic (no one person)';
+        if(l.doctorId != null){ var n = nameOf(l.doctorId); who = n ? String(n) : 'a doctor no longer listed'; }
+        g = by[key] = { who: who, items: [] };
+        groups.push(g);
       }
+      g.items.push(rxNameIn(idx, l.type, l.name) + ' ×' + l.qty);
+    });
+    return groups.map(function(g){ return g.who + ': ' + g.items.join(', '); }).join('; ');
+  }
+  // Duplicate doctor records were merged (remap: duplicate id → surviving
+  // id): the visit's people met, its legacy doctorId and its prescription
+  // lines now name the survivor. Lines that then name the same type and
+  // person are added together (cap 999), and the lines stay grouped by
+  // person in the order met. Changes v in place; true when anything changed.
+  function remapVisitDoctors(v, remap){
+    if(!v || typeof v !== 'object' || !remap || typeof remap !== 'object') return false;
+    var own = Object.prototype.hasOwnProperty;
+    var to = function(id){ return id != null && own.call(remap, id) && remap[id] ? remap[id] : id; };
+    var hit = false;
+    if(Array.isArray(v.doctorIds)){
+      var next = Array.from(new Set(v.doctorIds.map(to)));
+      if(JSON.stringify(next) !== JSON.stringify(v.doctorIds)){ v.doctorIds = next; hit = true; }
+    }
+    if(v.doctorId && to(v.doctorId) !== v.doctorId){ v.doctorId = to(v.doctorId); hit = true; }
+    var moves = function(l){ return l && typeof l === 'object' && to(l.doctorId) !== l.doctorId; };
+    if(Array.isArray(v.rx) && v.rx.some(moves)){
+      var out = [], at = Object.create(null);
+      v.rx.forEach(function(l){
+        if(!l || typeof l !== 'object'){ out.push(l); return; }
+        var m = Object.assign({}, l);
+        if(to(l.doctorId) !== l.doctorId) m.doctorId = to(l.doctorId);
+        var type = rxTypeId(m.type);
+        if(!type){ out.push(m); return; }
+        var k = type + '\u0001' + (rxDoctorId(m.doctorId) || '');
+        if(at[k]){ at[k].qty = Math.min(RX_MAX, rxQty(at[k].qty) + rxQty(m.qty)); return; }
+        out.push(at[k] = m);
+      });
+      var met = Array.isArray(v.doctorIds) ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
+      var pos = function(l){
+        if(!l || typeof l !== 'object') return met.length + 2;
+        if(rxDoctorId(l.doctorId) == null) return met.length + 1;
+        var i = met.indexOf(l.doctorId);
+        return i < 0 ? met.length : i;
+      };
+      v.rx = out.map(function(l, i){ return [l, i]; })
+        .sort(function(a, b){ return pos(a[0]) - pos(b[0]) || a[1] - b[1]; })
+        .map(function(x){ return x[0]; });
+      hit = true;
+    }
+    return hit;
+  }
+  // The comparison windows (house rule since v105: the same days): this week
+  // = Sunday to today against the same days 7 earlier; this month = day 1 to
+  // today against day 1 to the same day of last month (clamped: 31 Oct →
+  // 1–30 Sep, 30 Mar → 1–28 Feb).
+  function rxWindows(today){
+    var weekFrom = getWeekDates(today)[0], monthFrom = today.slice(0, 7) + '-01';
+    return { weekFrom: weekFrom, weekTo: today, prevWeekFrom: addDaysStr(weekFrom, -7), prevWeekTo: addDaysStr(today, -7),
+      monthFrom: monthFrom, monthTo: today, prevMonthFrom: addMonthsStr(monthFrom, -1), prevMonthTo: addMonthsStr(today, -1) };
+  }
+  // The clinics a prescription view covers: the current owner's (repFilter
+  // 'all' or none = everyone), each id once.
+  function rxClinicsFor(clinics, rf){
+    var out = [], seen = Object.create(null);
+    (Array.isArray(clinics) ? clinics : []).forEach(function(c){
+      if(!c || typeof c !== 'object' || c.id == null || seen[c.id]) return;
+      if(rf && rf !== 'all' && c.rep !== rf) return;
+      seen[c.id] = 1;
+      out.push(c);
+    });
+    return out;
+  }
+  // EVERY prescription figure is counted from these rows, one per line:
+  //   { source: 'visit'|'profile', id, visitId, date, clinicId, doctorId,
+  //     listed, type, name, qty, rep, withRep }
+  // Visit rows: each line of a field visit (double-saves collapsed), for a
+  // clinic in the view — the clinic's current owner, whoever handed the
+  // forms over (as the rest of the Doctors page). listed = the person is on
+  // the clinic's current doctor list (false for null = the clinic). rep =
+  // who logged the visit (a joint visit is one record). Profile rows: each
+  // old doctor-profile entry of kind 'prescription' (type null, rep = who
+  // handed it). Samples, gifts, calls and phone orders never.
+  function rxLedger(data, opts){
+    data = data || {}; opts = opts || {};
+    var rows = [], byId = Object.create(null);
+    rxClinicsFor(data.clinics, opts.repFilter).forEach(function(c){
+      var docs = (Array.isArray(c.doctors) ? c.doctors : []).filter(function(d){ return d && typeof d === 'object'; });
+      var onFile = Object.create(null);
+      docs.forEach(function(d){ if(d.id != null) onFile[d.id] = 1; });
+      byId[c.id] = { c: c, onFile: onFile };
+      docs.forEach(function(d){
+        (Array.isArray(d.handovers) ? d.handovers : []).forEach(function(h, i){
+          if(!h || typeof h !== 'object' || h.kind !== 'prescription') return;
+          rows.push({ source: 'profile', id: h.id != null && h.id !== '' ? String(h.id) : c.id + '|' + d.id + '|' + i, visitId: null,
+            date: String(h.date || ''), clinicId: c.id, doctorId: d.id, listed: true, type: null, name: null,
+            qty: handoverQty(h.qty), rep: h.by ? String(h.by) : '', withRep: null });
+        });
+      });
+    });
+    // only the visits of these clinics (the duplicate key holds the clinic, so
+    // collapsing double-saves after this filter gives the same visits)
+    var visits = (Array.isArray(data.visits) ? data.visits : []).filter(function(v){ return v && typeof v === 'object' && byId[v.clinicId]; });
+    dedupeVisits(visits).unique.forEach(function(v){
+      var k = byId[v.clinicId];
+      visitRxLines(v).forEach(function(l, i){
+        rows.push({ source: 'visit', id: v.id + ':' + i, visitId: v.id == null ? null : v.id, date: String(v.date || ''),
+          clinicId: k.c.id, doctorId: l.doctorId, listed: l.doctorId != null && !!k.onFile[l.doctorId],
+          type: l.type, name: l.name, qty: l.qty, rep: v.rep ? String(v.rep) : '', withRep: v.withRep || null });
+      });
+    });
+    return rows;
+  }
+  // A doctor's handover figures. Samples, gifts and other items come from the
+  // profile entries of those kinds; EVERY prescription figure comes from his
+  // ledger rows (his visit lines and his old profile prescription entries,
+  // which are never added a second time here). Week and month are compared
+  // with the same days before (rxWindows).
+  function handoverTotals(handovers, today, rxRows){
+    var w = rxWindows(today);
+    var t = { prescription: 0, rxWeek: 0, rxPrevWeek: 0, rxMonth: 0, rxPrevMonth: 0,
+      sample: 0, gift: 0, other: 0, count: 0, last: null };
+    var dated = function(d){ if(d && (!t.last || d > t.last)) t.last = d; };
+    (Array.isArray(handovers) ? handovers : []).forEach(function(h){
+      if(!h || typeof h !== 'object' || h.kind === 'prescription') return;
+      t[h.kind === 'sample' || h.kind === 'gift' ? h.kind : 'other'] += handoverQty(h.qty);
+      t.count++;
+      dated(String(h.date || ''));
+    });
+    (Array.isArray(rxRows) ? rxRows : []).forEach(function(r){
+      var q = Number(r.qty) || 0;
+      t.prescription += q;
+      t.count++;
+      dated(r.date);
+      if(rxIn(r.date, w.weekFrom, w.weekTo)) t.rxWeek += q;
+      if(rxIn(r.date, w.prevWeekFrom, w.prevWeekTo)) t.rxPrevWeek += q;
+      if(rxIn(r.date, w.monthFrom, w.monthTo)) t.rxMonth += q;
+      if(rxIn(r.date, w.prevMonthFrom, w.prevMonthTo)) t.rxPrevMonth += q;
     });
     return t;
   }
   function doctorAnalytics(opts){
     var today = opts.today, out = [];
     var vis = dedupeVisits(opts.visits || []).unique;
+    // Prescriptions from the one ledger, built once: a row belongs to the one
+    // doctor on file who received the forms. Lines left at the clinic, or to
+    // a doctor no longer on file, belong to no doctor (rxGrowth shows them).
+    var rxBy = Object.create(null);
+    rxLedger({ clinics: opts.clinics, visits: opts.visits }, { repFilter: opts.repFilter }).forEach(function(r){
+      if(!r.listed) return;
+      var byDoc = rxBy[r.clinicId] || (rxBy[r.clinicId] = Object.create(null));
+      (byDoc[r.doctorId] || (byDoc[r.doctorId] = [])).push(r);
+    });
     (opts.clinics || []).forEach(function(c){
       if(opts.repFilter && opts.repFilter !== 'all' && c.rep !== opts.repFilter) return;
       (c.doctors || []).forEach(function(d){
@@ -3744,7 +4029,7 @@
           lastVisit: lastVisit, fieldVisits: dv.filter(isFieldVisit).length,
           calls: dv.filter(function(v){ return v.callOnly; }).length,
           birthdayIn: daysToBirthday(d.birthday, today),
-          handovers: handoverTotals(d.handovers, today),
+          handovers: handoverTotals(d.handovers, today, (rxBy[c.id] && rxBy[c.id][d.id]) || []),
           visitLog: dv.sort(function(a, b){ return b.date.localeCompare(a.date); }),
         });
       });
@@ -3816,44 +4101,104 @@
     return res;
   }
 
-  // Prescriptions distributed — the growth view: weekly and monthly counts
-  // per DOCTOR and per CLINIC (center), with growth vs the previous period.
+  // Prescriptions given — the Doctors page's Prescriptions tab and its export,
+  // counted from rxLedger only. This week (Sunday to today) and this month
+  // (day 1 to today), each against the same days before (rxWindows). Growth
+  // = a whole percentage, only when there is something to grow from
+  // (previous > 0) and both windows are complete — a window that touches a
+  // month whose visits did not load (opts.brokenMonths, 'YYYY-MM') is marked
+  // in totals.incomplete and gets no growth anywhere. Lines left at the clinic
+  // and lines to a doctor no longer on file count for the clinic, the type
+  // and the total but for no doctor, so in every window
+  //   doctors + left at the clinic + no longer listed = centers = types = total.
+  // opts: { clinics, visits, today, repFilter, types (the rxTypes document or
+  // list), brokenMonths }
+  // → { windows, totals, byType, byDoctor, byClinic, rows (newest first) }
   function rxGrowth(opts){
-    var docs = doctorAnalytics(opts);
-    var pct = function(cur, prev){ return prev > 0 ? Math.round((cur - prev) / prev * 100) : (cur > 0 ? 100 : 0); };
-    var byDoctor = docs.filter(function(d){ return d.handovers.prescription > 0; }).map(function(d){
-      return { name: d.name, clinicName: d.clinicName, rep: d.rep,
-        week: d.handovers.rxWeek, lastWeek: d.handovers.rxLastWeek, weekGrowth: pct(d.handovers.rxWeek, d.handovers.rxLastWeek),
-        month: d.handovers.rxMonth, lastMonth: d.handovers.rxLastMonth, monthGrowth: pct(d.handovers.rxMonth, d.handovers.rxLastMonth),
-        total: d.handovers.prescription };
-    }).sort(function(a, b){ return b.month - a.month || b.total - a.total; });
-    var byClinicMap = {};
-    docs.forEach(function(d){
-      if(!(d.handovers.prescription > 0)) return;
-      var a = byClinicMap[d.clinicId] || (byClinicMap[d.clinicId] = { name: d.clinicName, rep: d.rep, week: 0, lastWeek: 0, month: 0, lastMonth: 0, total: 0, doctors: 0 });
-      a.week += d.handovers.rxWeek; a.lastWeek += d.handovers.rxLastWeek;
-      a.month += d.handovers.rxMonth; a.lastMonth += d.handovers.rxLastMonth;
-      a.total += d.handovers.prescription; a.doctors++;
+    opts = opts || {};
+    var w = rxWindows(opts.today), list = rxTypeList(opts.types), rf = opts.repFilter;
+    var broken = (Array.isArray(opts.brokenMonths) ? opts.brokenMonths : []).map(function(m){ return String(m).slice(0, 7); });
+    var touches = function(a, b){ a = a.slice(0, 7); b = b.slice(0, 7); return broken.some(function(m){ return m >= a && m <= b; }); };
+    var incomplete = { week: touches(w.weekFrom, w.weekTo), prevWeek: touches(w.prevWeekFrom, w.prevWeekTo),
+      month: touches(w.monthFrom, w.monthTo), prevMonth: touches(w.prevMonthFrom, w.prevMonthTo), total: broken.length > 0 };
+    var pct = function(cur, prev){ return prev > 0 ? Math.round((cur - prev) / prev * 100) : null; };
+    var acc = function(){ return { week: 0, prevWeek: 0, month: 0, prevMonth: 0, total: 0 }; };
+    var add = function(a, r){
+      a.total += r.qty;
+      if(rxIn(r.date, w.weekFrom, w.weekTo)) a.week += r.qty;
+      if(rxIn(r.date, w.prevWeekFrom, w.prevWeekTo)) a.prevWeek += r.qty;
+      if(rxIn(r.date, w.monthFrom, w.monthTo)) a.month += r.qty;
+      if(rxIn(r.date, w.prevMonthFrom, w.prevMonthTo)) a.prevMonth += r.qty;
+    };
+    // the figures onto a row: with growth (doctors, centers, totals) or without (types)
+    var put = function(o, a, growth){
+      o.week = a.week; o.prevWeek = a.prevWeek;
+      if(growth) o.weekGrowth = incomplete.week || incomplete.prevWeek ? null : pct(a.week, a.prevWeek);
+      o.month = a.month; o.prevMonth = a.prevMonth;
+      if(growth) o.monthGrowth = incomplete.month || incomplete.prevMonth ? null : pct(a.month, a.prevMonth);
+      o.total = a.total;
+      return o;
+    };
+    var byMonth = function(a, b){ return b.month - a.month || b.total - a.total; };
+    var clinicList = rxClinicsFor(opts.clinics, rf);
+    // newest first (the sort is stable: rows of one day keep the ledger's order)
+    var rows = rxLedger({ clinics: clinicList, visits: opts.visits }).sort(function(a, b){ return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
+    var all = acc(), byTypeId = Object.create(null), unknown = [], profile = null;
+    var perClinic = Object.create(null), perDoctor = Object.create(null);
+    list.forEach(function(t){ byTypeId[t.id] = { t: t, a: acc() }; });
+    rows.forEach(function(r){
+      add(all, r);
+      var ty;
+      if(r.type == null) ty = profile || (profile = { a: acc() });
+      else if(!(ty = byTypeId[r.type])){ ty = byTypeId[r.type] = { id: r.type, name: '', a: acc() }; unknown.push(ty); }
+      if(!ty.t && ty.id != null && !ty.name && r.name) ty.name = String(r.name).trim(); // not on this list: its newest saved name
+      add(ty.a, r);
+      var c = perClinic[r.clinicId] || (perClinic[r.clinicId] = { a: acc(), unnamed: 0, unlisted: 0 });
+      add(c.a, r);
+      if(r.doctorId == null) c.unnamed += r.qty;
+      else if(!r.listed) c.unlisted += r.qty;
+      else {
+        var ds = perDoctor[r.clinicId] || (perDoctor[r.clinicId] = Object.create(null));
+        add(ds[r.doctorId] || (ds[r.doctorId] = acc()), r);
+      }
     });
-    var byClinic = Object.keys(byClinicMap).map(function(k){
-      var a = byClinicMap[k];
-      a.weekGrowth = pct(a.week, a.lastWeek); a.monthGrowth = pct(a.month, a.lastMonth);
-      return a;
-    }).sort(function(a, b){ return b.month - a.month || b.total - a.total; });
-    var sum = function(list, f){ return list.reduce(function(s2, x){ return s2 + x[f]; }, 0); };
-    return { byDoctor: byDoctor, byClinic: byClinic,
-      totals: { week: sum(byDoctor, 'week'), lastWeek: sum(byDoctor, 'lastWeek'),
-        weekGrowth: pct(sum(byDoctor, 'week'), sum(byDoctor, 'lastWeek')),
-        month: sum(byDoctor, 'month'), lastMonth: sum(byDoctor, 'lastMonth'),
-        monthGrowth: pct(sum(byDoctor, 'month'), sum(byDoctor, 'lastMonth')),
-        total: sum(byDoctor, 'total') } };
+    var byDoctor = [], byClinic = [];
+    clinicList.forEach(function(c){
+      var pc = perClinic[c.id];
+      if(!pc) return;
+      var ds = perDoctor[c.id] || Object.create(null), done = Object.create(null), n = 0;
+      (Array.isArray(c.doctors) ? c.doctors : []).forEach(function(d){
+        if(!d || typeof d !== 'object' || d.id == null || done[d.id] || !ds[d.id]) return;
+        done[d.id] = 1; n++;
+        byDoctor.push(put({ clinicId: c.id, doctorId: d.id, name: d.name || '', clinicName: c.name || '', rep: c.rep || '' }, ds[d.id], true));
+      });
+      byClinic.push(put({ clinicId: c.id, name: c.name || '', rep: c.rep || '', doctors: n, unnamed: pc.unnamed, unlisted: pc.unlisted }, pc.a, true));
+    });
+    // by type: every active type (at 0 too), then retired ones that have
+    // lines, both in list order; then types this list does not know (by
+    // volume); then the old profile entries, which carry no type
+    var byType = [];
+    var typeRow = function(x){ return put({ type: x.t.id, name: x.t.name, active: x.t.active }, x.a, false); };
+    list.forEach(function(t){ if(t.active) byType.push(typeRow(byTypeId[t.id])); });
+    list.forEach(function(t){ if(!t.active && byTypeId[t.id].a.total > 0) byType.push(typeRow(byTypeId[t.id])); });
+    unknown.sort(function(a, b){ return b.a.total - a.a.total || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); }).forEach(function(x){
+      byType.push(put({ type: x.id, name: x.name || 'Prescription', active: null }, x.a, false));
+    });
+    if(profile) byType.push(put({ type: null, name: 'Type not recorded (doctor profile)', active: null }, profile.a, false));
+    var totals = put({}, all, true);
+    totals.incomplete = incomplete;
+    return { windows: w, totals: totals, byType: byType, byDoctor: byDoctor.sort(byMonth), byClinic: byClinic.sort(byMonth), rows: rows };
   }
   // Duplicate saves show up as identical visit rows; collapse them for fair counts.
+  // The prescriptions given are part of what a visit is (v114): a second
+  // visit the same day that differs only in its lines is its own visit, while
+  // an exact double-save still collapses. Visits without lines all get the
+  // same empty last part, so they group exactly as before.
   function dedupeVisits(visits){
     var seen = {}, unique = [], dup = 0;
     (visits || []).forEach(function(v){
       var key = [v.date, v.rep, v.clinicId, v.callOnly ? 1 : 0, v.orderTotal || 0,
-        (v.notes || ''), (v.orders || []).length].join('|');
+        (v.notes || ''), (v.orders || []).length, rxSig(visitRxLines(v))].join('|');
       if(seen[key]){ dup++; return; }
       seen[key] = 1; unique.push(v);
     });
@@ -5055,7 +5400,9 @@
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
-    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth, daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
+    forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
+    RX_MAX, RX_DEFAULT_TYPES, rxQty, rxTypeList, rxTypeName, rxTypesProblem, visitRxLines, cleanVisitRx, rxSig, rxText, remapVisitDoctors, rxWindows, rxLedger,
+    daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
     productMovement, pmNormName

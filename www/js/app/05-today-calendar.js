@@ -125,7 +125,7 @@ function renderCalAgenda(){
       <span class="tag" style="background:var(--sage-dim); color:var(--sage-ink);">${kind}</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(cname(v.clinicId))}${repTag(v.rep)}${jointTag(v)}</div>
-        <div style="font-size:12px; color:var(--muted);">${v.orderTaken?'Order taken · '+money(v.orderTotal||0):(v.callOnly?'Remote follow-up':'No order')}</div>
+        <div style="font-size:12px; color:var(--muted);">${v.orderTaken?'Order taken · '+money(v.orderTotal||0):(v.callOnly?'Remote follow-up':'No order')}${rxShortHTML(v)}</div>
         ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(cname(v.clinicId))}')">`).join('')}</div>`:''}
       </div>
     </div>`);
@@ -703,7 +703,7 @@ function renderToday(){
         <div class="row-between">
           <div>
             <div class="clinic-name">${v.callOnly?(CHANNEL_LABELS[v.channel]||'📞')+' ':''}${esc(clinic ? clinic.name : clinicLabel(v.clinicId, v))}</div>
-            <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken ? ' · '+money(v.orderTotal) : ''}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}</div>
+            <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken ? ' · '+money(v.orderTotal) : ''}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${rxShortHTML(v)}</div>
           </div>
         </div>
       </div>`;
