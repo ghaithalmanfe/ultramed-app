@@ -657,8 +657,10 @@ async function retryErpRows(opts){
 }
 // The same for an account link (saveErpLink, 11-erp.js): the screen kept the
 // old link when the cloud did not confirm in time, so when the save lands
-// after all, the cloud copy is read and every figure follows it. `info` names
-// the change that landed, so an editor still open on it can finish.
+// after all, the cloud copy is read and every figure follows it. `info.s` is
+// the save that landed: its own page finishes it if still on screen, else a
+// toast names the account (elAfterLateLanding); `info.quiet`: a retry of the
+// same change was already confirmed and told — only the figures follow.
 async function erpMapReloadFromCloud(info){
   try{
     const r = await withTimeout(window.storage.get('erpMap', true), 8000);
@@ -668,9 +670,27 @@ async function erpMapReloadFromCloud(info){
     mirrorSave('erpMap', r.value);
     delete _loadFailed.erpMap; delete _mirrorUsed.erpMap; // the cloud copy is in hand
     renderAll();
-    showToast('☁️ وصل تغيير الربط إلى السحابة بعد تأخير — تم تحديث الأرقام');
-    if(info && typeof elAfterLateLanding === 'function') elAfterLateLanding(info);
+    if(info && info.quiet) return;
+    if(info && info.s && typeof elAfterLateLanding === 'function'){ elAfterLateLanding(info); return; }
+    showToast('☁️ An account link reached the cloud late — the figures are updated', 6000);
   }catch(e){ console.warn('erpMap reload after a late-landing link save', e); }
+}
+// A clinic this device just added (a new branch made from the ERP account
+// editor) must survive a background refresh whose read of the clinic list
+// started before the save landed: loadAll puts it back until a refresh reads
+// it from the cloud (or it was deleted meanwhile — then it is let go).
+const _clinicsKeep = new Map(); // id → the clinic as saved
+function keepClinicOnRefresh(c){ if(c && c.id != null) _clinicsKeep.set(c.id, c); }
+function forgetKeptClinic(id){ _clinicsKeep.delete(id); }
+function reinsertKeptClinics(prev){
+  if(!_clinicsKeep.size) return;
+  const ts = tombSet('clinics');
+  _clinicsKeep.forEach((c, id) => {
+    if(ts.has(id) || clinics.some(x => x && x.id === id)){ _clinicsKeep.delete(id); return; } // removed since, or the cloud has it now
+    const mine = (prev || []).find(x => x && x.id === id) || c;                                  // the copy in memory, edits included
+    clinics.push(normalizeClinic(Object.assign({}, mine)));
+    console.warn('clinics: a refresh read the list before a just-saved clinic landed — kept', id);
+  });
 }
 // A save the app had given up on (timeout) can still land minutes later: the
 // screen was rolled back, so the moment it lands the cloud copy is re-read
@@ -889,8 +909,10 @@ async function loadAll(){
     // of throwing and resetting every collection to seed data.
     const notDeleted = key => { const ts = tombSet(key); return x => !(x && ts.has(x.id)); };
     const clinicsDoc = UMCore.safeParse(c && c.value, null);
+    const clinicsBefore = clinics;
     clinics = normalizeClinics((clinicsDoc || CLINICS_SEED.map(x=>({...x}))).filter(notDeleted('clinics')).map(dropTombedDoctors));
     _seedClinics = !clinicsDoc; // factory list on screen — never allowed to overwrite live data
+    if(clinicsDoc) reinsertKeptClinics(clinicsBefore); // a branch saved while this read was on its way stays
     products = UMCore.safeParse(p && p.value, null) || PRODUCTS_SEED;
     assignProductKeys();
     if(!_visitsSaving) visits = (Array.isArray(v) ? v : []).filter(notDeleted('visits'));
