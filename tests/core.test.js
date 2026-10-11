@@ -3047,3 +3047,287 @@ describe('v90: visits — one live document plus one archive per past month', ()
     assert.deepEqual(core.visitsStrayIds('2026-08', [{ id: 'x' }], homes, has), []);
   });
 });
+
+describe('ERP account links (v113)', () => {
+  // The owner's case: Aline has three branches, all his; a fourth (Khairan)
+  // opened before it was in the app, so its ERP account was linked by hand to
+  // Salmiya. Mariam owns Dental 8. September is closed; today is 11 October.
+  const G = 'Dr. Ghaith', M = 'Mariam', GS = 'Ghaith Al Manfe', MS = 'Mariam Zohair';
+  const KH = 'Aline Dental Clinic - Khairan';
+  // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
+  const row = (d, doc, cust, net, sm, gross) => [d, doc, 0, 'Intensiv Ortho-Strips', 1, gross == null ? net : gross, net, 0, sm || GS, 'Intensiv', cust, 'Clinics', 0, ''];
+  const ret = (d, doc, cust, net, sm, ref) => [d, doc, 1, 'Intensiv Ortho-Strips', -1, 0, net, -net, sm || GS, 'Intensiv', cust, 'Clinics', 0, ref];
+  const repMap = { [GS]: G, [MS]: M };
+  const SEP = [row('2026-09-14', 'SINV7001', 'Aline Dental Clinic - Salmiya', 100), row('2026-09-21', 'SINV7002', KH, 60, GS, 96), // 37.5% off
+    row('2026-09-22', 'SINV7003', 'Dental 8 Clinic', 25, MS)];
+  const OCT = [row('2026-10-04', 'SINV7101', 'Aline Dental Clinic - Salmiya', 50), row('2026-10-05', 'SINV7102', 'Aline Dental Clinic - Hawally', 30),
+    row('2026-10-06', 'SINV7103', KH, 80), row('2026-10-07', 'SINV7104', KH, 15.5), row('2026-10-06', 'SINV7105', 'Dental 8 Clinic', 40, MS)];
+  const CLINICS = [
+    { id: 'al1', name: 'Aline Dental Clinic - Salmiya', rep: G, cls: 'A' }, { id: 'al2', name: 'Aline Dental Clinic - Hawally', rep: G, cls: 'B' },
+    { id: 'al3', name: 'Aline Dental Clinic - Jabriya', rep: G, cls: 'B' }, { id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A' }];
+  const MAP = { [KH]: 'al1', 'Marketing Philips': '@ignore' };
+  const fixture = (o = {}) => ({ today: '2026-10-11', targets: {}, clinics: o.clinics || CLINICS, erpMap: o.erpMap || MAP,
+    erpSales: { returnPolicy: 'origin', periods: [
+      { id: 'sep', from: '2026-09-01', to: '2026-09-30', repMap, rows: SEP.concat(o.sep || []) },
+      { id: 'oct', from: '2026-10-01', to: '2026-10-08', repMap, rows: OCT.concat(o.oct || []) }].concat(o.periods || []) } });
+  const at = (d, day) => Object.assign({}, d, { today: day });
+  const ach = (rep, d, day) => core.monthAchievement(rep, day ? at(d, day) : d).amount;
+  const nb = extra => Object.assign({ id: 'zz-new', name: KH, rep: G, cls: 'A' }, extra || {});
+  // The rule the preview promises: for every month M and every person P,
+  // Σ moves to P − Σ moves from P = monthAchievement(P) after − before, as of the end of M.
+  const assertInvariant = (data, pv, label) => {
+    assert.equal(pv.error, null, label);
+    const after = Object.assign({}, data, pv.draft), months = new Set(pv.moves.map(m => m.month));
+    data.erpSales.periods.forEach(p => core.unpackErpRows(p.rows).forEach(r => months.add(r.date.slice(0, 7))));
+    const people = new Set([G, M].concat(pv.moves.map(m => m.from), pv.moves.map(m => m.to)).filter(Boolean));
+    for(const mo of months){
+      const end = core.getMonthDates(mo + '-01').slice(-1)[0];
+      for(const P of people){
+        const moved = pv.moves.filter(m => m.month === mo).reduce((s, m) => s + (m.to === P ? m.net : 0) - (m.from === P ? m.net : 0), 0);
+        const delta = ach(P, after, end) - ach(P, data, end);
+        assert.ok(Math.abs(moved - delta) < 0.005, `${label}: ${mo} ${P}: moves ${moved} vs monthAchievement ${delta}`);
+      }
+    }
+  };
+
+  test('erpRowRep: a link to a clinic counts for its owner; a link to a removed clinic counts for the salesman who issued it', () => {
+    const r = { customer: KH, salesman: MS, date: '2026-10-06', net: 80 };      // Mariam issued it
+    assert.equal(core.erpRowRep(r, CLINICS, { [KH]: 'al1' }, repMap), G);       // his branch → his
+    assert.equal(core.erpRowRep(r, CLINICS, { [KH]: 'm1' }, repMap), M);
+    assert.equal(core.erpRowRep(r, CLINICS, { [KH]: 'gone1' }, repMap), M);     // removed clinic → the issuer
+    assert.equal(core.erpRowRep(Object.assign({}, r, { salesman: 'Someone Else' }), CLINICS, { [KH]: 'gone1' }, repMap), null);
+    assert.equal(core.erpRowRep(Object.assign({}, r, { customer: '  ' + KH + ' ' }), CLINICS, { [KH]: 'al1' }, repMap), G); // matched trimmed
+    // erpRepOfMatch is the same rule on a match already made (the split of v113)
+    const lines = core.unpackErpRows(SEP.concat(OCT)).concat([r, Object.assign({}, r, { salesman: 'Someone Else' })]);
+    for(const map of [MAP, {}, { [KH]: 'm1' }, { [KH]: 'gone1' }, { [KH]: '@channel', 'Dental 8 Clinic': '@ignore' }]){
+      for(const l of lines) assert.equal(core.erpRepOfMatch(core.matchCustomer((l.customer || '').trim(), CLINICS, map), l, CLINICS, repMap), core.erpRowRep(l, CLINICS, map, repMap));
+    }
+  });
+
+  test('erpAccounts: every status, where each account counts, and the order (removed clinic first, then the ones to link, then the most KD)', () => {
+    const clinics = CLINICS.concat([{ id: 'sh1', name: 'Shifa Clinic - Salmiya', rep: M, cls: 'B' }, { id: 'sh2', name: 'Shifa Clinic - Hawally', rep: G, cls: 'B' },
+      { id: 'sm1', name: 'Smile Dental Clinic', rep: G, cls: 'Closed' }]);
+    const erpMap = Object.assign({ 'Old Aline Branch': 'gone1', 'Online Shop Kuwait': '@channel', 'Closed Account Nobody Buys': 'al2' }, MAP);
+    const data = fixture({ clinics, erpMap,
+      sep: [row('2026-09-23', 'SINV7004', 'Aline Dental Clinic', 20)],
+      oct: [ret('2026-10-08', 'SRET7101', KH, -10, GS, 'SINV7103'), row('2026-10-02', 'SINV7120', 'Old Aline Branch', 5), row('2026-10-02', 'SINV7121', 'Old Aline Branch', 3, MS),
+        row('2026-10-02', 'SINV7122', 'Shifa Clinic', 12, MS), row('2026-10-02', 'SINV7123', 'Totally Unknown Co', 7, 'Stranger'),
+        row('2026-10-02', 'SINV7124', 'My Fatoorah', 9), row('2026-10-02', 'SINV7125', 'Online Shop Kuwait', 3), row('2026-10-02', 'SINV7126', 'Marketing Philips', 0, GS, 30),
+        row('2026-10-02', 'SINV7127', 'Alinesalmiya Dental', 1), row('2026-10-02', 'SINV7128', 'Smile Dental Clinic', 4),
+        row('2026-10-02', 'SINV7129', 'ALINE DENTAL CLINIC - KHAIRAN', 6), row('2026-10-02', 'SINV7130', 'Aline Dental Clinic-Khairan', 2),
+        row('2026-10-02', 'SINV7131', '', 11), row('2026-10-02', 'SINV7132', '   ', 1)] });
+    const res = core.erpAccounts(data), by = n => res.accounts.find(a => a.name === n);
+    const st = n => { const a = by(n); return [a.status, a.clinicId, a.byHand, a.link]; };
+    assert.deepEqual(st(KH), ['hand', 'al1', true, 'al1']);
+    assert.deepEqual(st('Old Aline Branch'), ['gone', null, true, 'gone1']);
+    assert.deepEqual(st('Aline Dental Clinic - Salmiya'), ['name', 'al1', false, null]);            // token match
+    assert.deepEqual(st('Alinesalmiya Dental'), ['name', 'al1', false, null]);                      // fuzzy match
+    assert.deepEqual(st('Aline Dental Clinic'), ['family', 'al1', false, null]);                    // the group name lands on the first branch
+    assert.deepEqual([by('Aline Dental Clinic').familyLabel, by('Aline Dental Clinic').branches], ['Aline', 3]);
+    assert.deepEqual(st('My Fatoorah'), ['channel', null, false, null]);
+    assert.deepEqual(st('Online Shop Kuwait'), ['channel', null, true, '@channel']);
+    assert.deepEqual(st('Marketing Philips'), ['ignored', null, true, '@ignore']);
+    assert.deepEqual(st('Shifa Clinic'), ['ambiguous', null, false, null]);
+    assert.deepEqual(by('Shifa Clinic').candidates, ['sh1', 'sh2']);
+    assert.deepEqual(st('Totally Unknown Co'), ['none', null, false, null]);
+    assert.deepEqual([by('Smile Dental Clinic').closed, by(KH).closed], [true, false]);
+    assert.deepEqual([by('Marketing Philips').internal, by('My Fatoorah').channelName, by('Online Shop Kuwait').channelName, by(KH).internal], [true, true, false, false]);
+    assert.deepEqual(res.accounts.map(a => a.name), [
+      'Old Aline Branch',                                                                          // removed clinic
+      'Shifa Clinic', 'Totally Unknown Co', 'ALINE DENTAL CLINIC - KHAIRAN', 'Aline Dental Clinic-Khairan', // need a link, most KD first
+      'Aline Dental Clinic - Salmiya', KH, 'Dental 8 Clinic', 'Aline Dental Clinic - Hawally', 'Aline Dental Clinic', 'My Fatoorah',
+      'Smile Dental Clinic', 'Online Shop Kuwait', 'Alinesalmiya Dental', 'Marketing Philips']);
+  });
+
+  test('erpAccounts: invoices, returns, KD, dates and people; nameless lines apart; stale links; spelling variants', () => {
+    const data = fixture({ erpMap: Object.assign({ 'Old Aline Branch': 'gone1', 'Closed Account Nobody Buys': 'al2' }, MAP),
+      oct: [ret('2026-10-08', 'SRET7101', KH, -10, GS, 'SINV7103'), row('2026-10-02', 'SINV7120', 'Old Aline Branch', 5), row('2026-10-02', 'SINV7121', 'Old Aline Branch', 3, MS),
+        row('2026-10-02', 'SINV7123', 'Totally Unknown Co', 7, 'Stranger'), row('2026-10-02', 'SINV7129', 'ALINE DENTAL CLINIC - KHAIRAN', 6),
+        row('2026-10-02', 'SINV7130', 'Aline Dental Clinic-Khairan', 2), row('2026-10-02', 'SINV7131', '', 11), row('2026-10-02', 'SINV7132', '   ', 1)] });
+    const res = core.erpAccounts(data), by = n => res.accounts.find(a => a.name === n);
+    const k = by(KH);
+    assert.deepEqual([k.lines, k.invoices, k.returns, k.net, k.first, k.last, k.monthNet], [4, 3, 1, 145.5, '2026-09-21', '2026-10-08', 85.5]);
+    assert.deepEqual(k.people, [{ rep: G, net: 145.5 }]);
+    assert.deepEqual(by('Old Aline Branch').people, [{ rep: G, net: 5 }, { rep: M, net: 3 }]);   // a removed clinic: each issuer
+    assert.deepEqual(by('Totally Unknown Co').people, [{ rep: null, net: 7 }]);                   // a salesman outside the team
+    assert.deepEqual(by('Dental 8 Clinic').people, [{ rep: M, net: 65 }]);
+    assert.deepEqual(k.variants, ['ALINE DENTAL CLINIC - KHAIRAN', 'Aline Dental Clinic-Khairan']);
+    assert.deepEqual(by('Aline Dental Clinic-Khairan').variants, ['ALINE DENTAL CLINIC - KHAIRAN', KH]);
+    assert.deepEqual(by('Dental 8 Clinic').variants, []);
+    assert.deepEqual(res.nameless, { lines: 2, net: 12, link: null });                            // never listed, never linkable
+    assert.ok(!res.accounts.some(a => !a.name.trim()));
+    assert.deepEqual(res.stale, [{ name: 'Closed Account Nobody Buys', link: 'al2', status: 'hand' }, { name: 'Marketing Philips', link: '@ignore', status: 'ignored' }]);
+    assert.deepEqual([res.files, res.rowsMissing], [2, 0]);
+    // every KD once: the accounts plus the nameless lines are the files' total, each account's people its net
+    const total = data.erpSales.periods.reduce((s, p) => s + core.unpackErpRows(p.rows).reduce((t, r) => t + r.net, 0), 0);
+    assert.ok(Math.abs(res.accounts.reduce((s, a) => s + a.net, 0) + res.nameless.net - total) < 1e-9);
+    res.accounts.forEach(a => assert.ok(Math.abs(a.people.reduce((s, x) => s + x.net, 0) - a.net) < 1e-9, a.name));
+    // a file whose rows did not load is skipped and counted apart; no files at all is not an error
+    const miss = core.erpAccounts(fixture({ periods: [{ id: 'aug', from: '2026-08-01', to: '2026-08-31', repMap, rows: [], rowsMissing: true }] }));
+    assert.deepEqual([miss.files, miss.rowsMissing], [2, 1]);
+    const none = core.erpAccounts({ today: '2026-10-11', clinics: CLINICS, erpMap: { '': 'm1' } });
+    assert.deepEqual([none.accounts, none.stale, none.files, none.nameless], [[], [], 0, { lines: 0, net: 0, link: 'm1' }]);
+  });
+
+  test("the owner's case: a new branch takes the account — September 1 × 60 (closed), October 2 × 95.5, and nobody's month changes", () => {
+    const data = fixture();
+    const pv = core.erpLinkPreview(data, { name: KH, to: 'zz-new', addClinic: nb() }, { settings: {} });
+    assert.equal(pv.error, null);
+    assert.deepEqual(pv.months, [{ month: '2026-09', invoices: 1, net: 60, closed: true }, { month: '2026-10', invoices: 2, net: 95.5, closed: false }]);
+    assert.deepEqual([pv.lines, pv.invoices, pv.net, pv.first, pv.last], [3, 3, 155.5, '2026-09-21', '2026-10-07']);
+    assert.deepEqual(pv.moves, []);
+    assert.deepEqual(pv.people, [{ rep: G, net: 155.5 }]);
+    assert.deepEqual([pv.before.value, pv.before.status, pv.before.clinicId, pv.after.value, pv.after.status, pv.after.clinicId], ['al1', 'hand', 'al1', 'zz-new', 'hand', 'zz-new']);
+    assert.deepEqual([pv.others, pv.limitFlips, pv.ledger], [[], [], { returns: 0, free: 0 }]); // class copied (A): 37.5% stays within 40%
+    // the draft is what the screen runs monthAchievement on; the input is untouched
+    assert.deepEqual(pv.draft.erpMap, { [KH]: 'zz-new', 'Marketing Philips': '@ignore' });
+    assert.deepEqual(pv.draft.clinics.map(c => c.id), ['al1', 'al2', 'al3', 'm1', 'zz-new']);
+    assert.deepEqual([data.erpMap[KH], data.clinics.length], ['al1', 4]);
+    const after = Object.assign({}, data, pv.draft);
+    for(const rep of [G, M]) for(const day of ['2026-09-30', '2026-10-11']) assert.equal(ach(rep, after, day), ach(rep, data, day), rep + ' ' + day);
+    assert.deepEqual([ach(G, data), ach(G, data, '2026-09-30'), ach(M, data), ach(M, data, '2026-09-30')], [175.5, 160, 40, 25]);
+    // a retry after the branch already landed: it is in the list once, the preview is the same
+    const again = core.erpLinkPreview(Object.assign({}, data, { clinics: CLINICS.concat([nb()]) }), { name: KH, to: 'zz-new', addClinic: nb() });
+    assert.deepEqual([again.error, again.draft.clinics.filter(c => c.id === 'zz-new').length, again.moves.length], [null, 1, 0]);
+  });
+
+  test("to another rep's clinic: each month that changes hands, closed months flagged — and the moves equal the change in monthAchievement", () => {
+    const data = fixture();
+    const pv = core.erpLinkPreview(data, { name: KH, to: 'm1' });
+    assert.deepEqual(pv.moves, [{ month: '2026-09', from: G, to: M, net: 60, invoices: 1, closed: true }, { month: '2026-10', from: G, to: M, net: 95.5, invoices: 2, closed: false }]);
+    assert.deepEqual(pv.people, [{ rep: M, net: 155.5 }]);
+    const after = Object.assign({}, data, pv.draft);
+    assert.deepEqual([ach(G, after, '2026-09-30'), ach(M, after, '2026-09-30'), ach(G, after), ach(M, after)], [100, 85, 80, 135.5]);
+    assertInvariant(data, pv, 'cross-rep');
+    // The invariant over many changes, on files with a family name, a line Mariam issued at his branch, a salesman
+    // outside the team, and a return of a September invoice booked in the October file: the origin policy dates it
+    // back to September, which the October file does not cover, so it counts in no month figure — and in no move.
+    const rich = fixture({ sep: [row('2026-09-23', 'SINV7004', 'Aline Dental Clinic', 20)],
+      oct: [row('2026-10-08', 'SINV7106', KH, 10, MS), ret('2026-10-03', 'SRET7001', KH, -12, GS, 'SINV7002'), row('2026-10-02', 'SINV7107', 'Totally Unknown Co', 7, 'Stranger')] });
+    const handed = CLINICS.map(c => c.id === 'm1' ? Object.assign({}, c, { rep: G, prevRep: M, repSince: '2026-10-01' }) : c);
+    const shared = CLINICS.map(c => c.id === 'm1' ? Object.assign({}, c, { shared: true, sharedSince: '2026-10-01' }) : c);
+    const cases = [
+      [rich, { name: KH, to: 'm1' }], [rich, { name: KH, to: null }], [rich, { name: KH, to: '@channel' }], [rich, { name: KH, to: '@ignore' }],
+      [rich, { name: KH, to: 'zz-new', addClinic: nb({ rep: M }) }], [rich, { name: KH, to: 'zz-new', addClinic: nb() }],
+      [rich, { name: 'Dental 8 Clinic', to: 'al1' }], [rich, { name: 'Aline Dental Clinic', to: 'm1' }], [rich, { name: 'Totally Unknown Co', to: 'al2' }],
+      [Object.assign({}, rich, { clinics: handed }), { name: KH, to: 'm1' }], [Object.assign({}, rich, { clinics: shared }), { name: KH, to: 'm1' }]];
+    cases.forEach(([d, change], i) => assertInvariant(d, core.erpLinkPreview(d, change), 'case ' + i + ' ' + JSON.stringify(change.to)));
+    const rx = core.erpLinkPreview(rich, { name: KH, to: 'm1' });
+    assert.deepEqual(rx.months.map(m => [m.month, m.invoices, m.net]), [['2026-09', 1, 48], ['2026-10', 3, 105.5]]); // the return moves with the account
+    assert.deepEqual(rx.moves.map(m => [m.month, m.from, m.to, m.net]), [['2026-09', G, M, 60], ['2026-10', G, M, 105.5]]);
+    assert.deepEqual(rx.ledger, { returns: 1, free: 0 });
+  });
+
+  test('automatic matching: with no branch the account counts for the salesman who issued each invoice; once the Khairan clinic exists it matches by name', () => {
+    const pv = core.erpLinkPreview(fixture(), { name: KH, to: null });
+    assert.deepEqual([pv.after.value, pv.after.status, pv.after.clinicId, pv.after.method], [null, 'none', null, 'none']);
+    assert.deepEqual([pv.moves, pv.people], [[], [{ rep: G, net: 155.5 }]]);       // his own salesman issued every line
+    assert.equal(pv.draft.erpMap[KH], undefined);
+    const withMariamLine = fixture({ oct: [row('2026-10-08', 'SINV7106', KH, 10, MS)] });
+    assert.deepEqual(core.erpLinkPreview(withMariamLine, { name: KH, to: null }).moves, [{ month: '2026-10', from: G, to: M, net: 10, invoices: 1, closed: false }]);
+    const withKh = CLINICS.concat([{ id: 'al4', name: KH, rep: G, cls: 'B' }]);
+    const pv2 = core.erpLinkPreview(fixture({ clinics: withKh }), { name: KH, to: null });
+    assert.deepEqual([pv2.after.status, pv2.after.clinicId, pv2.after.method], ['name', 'al4', 'token']);
+    assert.equal(core.matchCustomer(KH, withKh, MAP).clinicId, 'al1');              // the bug in one line: the old link outlives the new branch
+  });
+
+  test('a handover on the target keeps lines before repSince with prevRep; a shared target counts each line for its issuer from sharedSince', () => {
+    const extra = { oct: [row('2026-10-08', 'SINV7106', KH, 10, MS)] };           // Mariam issued one October line at his branch
+    const handed = fixture(Object.assign({ clinics: CLINICS.map(c => c.id === 'm1' ? Object.assign({}, c, { rep: G, prevRep: M, repSince: '2026-10-01' }) : c) }, extra));
+    const ph = core.erpLinkPreview(handed, { name: KH, to: 'm1' });
+    assert.deepEqual(ph.moves.map(m => [m.month, m.from, m.to, m.net]), [['2026-09', G, M, 60]]);   // September was still Mariam's clinic; October is his
+    assertInvariant(handed, ph, 'handover');
+    const shared = fixture(Object.assign({ clinics: CLINICS.map(c => c.id === 'm1' ? Object.assign({}, c, { shared: true, sharedSince: '2026-10-01' }) : c) }, extra));
+    const ps = core.erpLinkPreview(shared, { name: KH, to: 'm1' });
+    assert.deepEqual(ps.moves.map(m => [m.month, m.from, m.to, m.net]), [['2026-09', G, M, 60], ['2026-10', G, M, 10]]); // October: whoever issued it
+    assertInvariant(shared, ps, 'shared');
+  });
+
+  test('a new branch under another rep turns the group name "Aline Dental Clinic" ambiguous and lists it; with the same rep and type words nothing else changes', () => {
+    const data = fixture({ sep: [row('2026-09-23', 'SINV7004', 'Aline Dental Clinic', 20)] });
+    const other = { name: 'Aline Dental Clinic', before: { status: 'family', clinicId: 'al1' }, after: { status: 'ambiguous', clinicId: null }, net: 20 };
+    const pm = core.erpLinkPreview(data, { name: KH, to: 'zz-new', addClinic: nb({ rep: M }) });
+    assert.deepEqual(pm.others, [other]);
+    assert.deepEqual(pm.moves.map(m => [m.month, m.from, m.to, m.net]), [['2026-09', G, M, 60], ['2026-10', G, M, 95.5]]); // the group line still counts for its issuer (him)
+    assert.deepEqual(core.erpLinkPreview(data, { name: KH, to: 'zz-new', addClinic: nb() }).others, []);                     // joins the family: Aline (4)
+    assert.deepEqual(core.erpLinkPreview(data, { name: KH, to: 'zz-new', addClinic: nb({ name: 'Aline Center - Khairan' }) }).others, [other]); // other type words
+    assert.deepEqual(core.erpLinkPreview(data, { name: KH, to: 'al2' }).others, []);   // no new clinic: no other account can change
+    // a spelling variant nobody linked matches the new branch by name once it exists — listed, and its KD moves
+    const variant = fixture({ oct: [row('2026-10-02', 'SINV7129', 'ALINE DENTAL CLINIC - KHAIRAN', 6, MS)] });
+    const pv = core.erpLinkPreview(variant, { name: KH, to: 'zz-new', addClinic: nb() });
+    assert.deepEqual(pv.others, [{ name: 'ALINE DENTAL CLINIC - KHAIRAN', before: { status: 'none', clinicId: null }, after: { status: 'name', clinicId: 'zz-new' }, net: 6 }]);
+    assert.deepEqual(pv.moves.map(m => [m.month, m.from, m.to, m.net]), [['2026-10', M, G, 6]]);   // Mariam issued it; now it counts for the branch's owner
+    assertInvariant(variant, pv, 'variant');
+  });
+
+  test('limitFlips: the new branch in class B turns SINV7002 (37.5% off) from within 40% to over 35%, in closed September', () => {
+    const flip = { doc: 'SINV7002', date: '2026-09-21', pct: 37.5, net: 60, before: { limit: 40, within: true }, after: { limit: 35, within: false }, closed: true };
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'zz-new', addClinic: nb({ cls: 'B' }) }, { settings: {} }).limitFlips, [flip]);
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }).limitFlips, [flip]);                   // Hawally is class B
+    // the supervisor's limits, read as weeklyReport reads them (an empty value keeps the default)
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }, { settings: { discountOther: 38 } }).limitFlips, []);
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }, { settings: { discountOther: '' } }).limitFlips, [flip]);
+    // channel accounts leave the discount check: every invoice of the account goes out of it
+    const ch = core.erpLinkPreview(fixture(), { name: KH, to: '@channel' }).limitFlips;
+    assert.deepEqual(ch.map(f => [f.doc, f.before && f.before.within, f.after, f.closed]), [['SINV7002', true, null, true], ['SINV7103', true, null, false], ['SINV7104', true, null, false]]);
+  });
+
+  test("firstInvoice: the new branch's first invoice (21 Sep) — new-account wins follow it", () => {
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'zz-new', addClinic: nb() }).firstInvoice,
+      [{ key: 'c:zz-new', label: KH, before: null, after: '2026-09-21' }]);
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: null }).firstInvoice,               // unlinked: an account by its own name
+      [{ key: 'n:aline dental clinic - khairan', label: KH, before: null, after: '2026-09-21' }]);
+    // a branch's own first invoice moves with its account
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: 'Aline Dental Clinic - Salmiya', to: 'al2' }).firstInvoice, [
+      { key: 'c:al2', label: 'Aline Dental Clinic - Hawally', before: '2026-10-05', after: '2026-09-14' },
+      { key: 'c:al1', label: 'Aline Dental Clinic - Salmiya', before: '2026-09-14', after: '2026-09-21' }]);
+  });
+
+  test('guards: NO_NAME, SAME, NO_CLINIC, NOT_A_CLINIC_ACCOUNT', () => {
+    const d = fixture(), err = c => core.erpLinkPreview(d, c).error;
+    assert.equal(err({ name: '', to: 'al2' }), 'NO_NAME');
+    assert.equal(err({ name: '   ', to: 'al2' }), 'NO_NAME');
+    assert.equal(err({ name: '(no name)', to: 'al2' }), 'NO_NAME');
+    assert.equal(err({ name: KH, to: 'al1' }), 'SAME');
+    assert.equal(err({ name: '  ' + KH + ' ', to: 'al1' }), 'SAME');                 // names are trimmed
+    assert.equal(err({ name: 'Dental 8 Clinic', to: null }), 'SAME');               // no link already: automatic
+    assert.equal(err({ name: 'Marketing Philips', to: '@ignore' }), 'SAME');
+    assert.equal(err({ name: KH, to: 'nope' }), 'NO_CLINIC');
+    assert.equal(err({ name: KH, to: '@auto' }), 'NO_CLINIC');                      // only @channel and @ignore are not clinics
+    assert.equal(err({ name: KH, to: 42 }), 'NO_CLINIC');
+    assert.equal(err({ name: KH, to: 'zz-new', addClinic: { name: KH, rep: G } }), 'NO_CLINIC'); // a new branch needs its id
+    assert.equal(err({ name: 'My Fatoorah', to: 'al1' }), 'NOT_A_CLINIC_ACCOUNT');
+    assert.equal(err({ name: 'Marketing Philips', to: 'al1' }), 'NOT_A_CLINIC_ACCOUNT');
+    assert.equal(err({ name: 'Marketing Philips', to: 'zz-new', addClinic: nb({ name: 'Marketing Philips' }) }), 'NOT_A_CLINIC_ACCOUNT');
+    assert.equal(err({ name: 'My Fatoorah', to: '@ignore' }), null);                // not a clinic: allowed
+    assert.equal(err({ name: 'Marketing Philips', to: null }), null);
+    // an error keeps where it counts now for the screen, and nothing else
+    const s = core.erpLinkPreview(d, { name: KH, to: 'al1' });
+    assert.deepEqual([s.name, s.before.clinicId, s.before.status, s.after, s.draft, s.moves, s.lines], [KH, 'al1', 'hand', null, null, [], 0]);
+    assert.equal(core.erpLinkPreview(d, { name: '', to: 'al1' }).before, null);
+    // a link with no invoice in the saved files: allowed, 0 lines (it applies to future uploads)
+    const stale = core.erpLinkPreview(Object.assign({}, d, { erpMap: { 'Closed Account Nobody Buys': 'al2' } }), { name: 'Closed Account Nobody Buys', to: 'al3' });
+    assert.deepEqual([stale.error, stale.lines, stale.months, stale.moves, stale.after.clinicId], [null, 0, [], [], 'al3']);
+  });
+
+  test('erpBranchCandidates: where it counts now, its branch family, the automatic matches, the same first word — Closed clinics left out', () => {
+    assert.deepEqual(core.erpBranchCandidates(KH, CLINICS, MAP), ['al1', 'al2', 'al3']);   // Salmiya, Hawally, Jabriya
+    const closed = CLINICS.concat([{ id: 'al0', name: 'Aline Dental Clinic - Jahra', rep: G, cls: 'Closed' }]);
+    assert.deepEqual(core.erpBranchCandidates(KH, closed, MAP), ['al1', 'al2', 'al3']);
+    assert.deepEqual(core.erpBranchCandidates(KH, closed, { [KH]: 'al0' }), ['al0', 'al1', 'al2', 'al3']);  // except the one it counts at now
+    // linked to the wrong rep's clinic: that one first, then the Aline branches by name
+    assert.deepEqual(core.erpBranchCandidates(KH, CLINICS, { [KH]: 'm1' }), ['m1', 'al2', 'al3', 'al1']);
+    // the same first word outside the family (another rep) comes after it
+    const kids = CLINICS.concat([{ id: 'ak1', name: 'Aline Kids Center', rep: M, cls: 'B' }]);
+    assert.deepEqual(core.erpBranchCandidates(KH, kids, MAP), ['al1', 'al2', 'al3', 'ak1']);
+    // no link and a tie across reps: the tied clinics
+    const shifa = CLINICS.concat([{ id: 'sh1', name: 'Shifa Clinic - Salmiya', rep: M }, { id: 'sh2', name: 'Shifa Clinic - Hawally', rep: G }]);
+    assert.deepEqual(core.erpBranchCandidates('Shifa Clinic', shifa, {}), ['sh1', 'sh2']);
+    // at most 8; a first word under 4 letters is not a clue
+    const many = Array.from({ length: 12 }, (_, i) => ({ id: 'b' + String(i).padStart(2, '0'), name: 'Aline Dental Clinic - Area ' + i, rep: G }));
+    assert.equal(core.erpBranchCandidates(KH, many, {}).length, 8);
+    // (neither name matches its clinic automatically: one shared word of two is not enough)
+    assert.deepEqual(core.erpBranchCandidates('SN Clinic 360', CLINICS.concat([{ id: 'sn1', name: 'SN Smile Center', rep: M }]), {}), []);
+    assert.deepEqual(core.erpBranchCandidates('Noor Clinic 360', CLINICS.concat([{ id: 'nr1', name: 'Noor Smile Center', rep: M }]), {}), ['nr1']);
+  });
+});

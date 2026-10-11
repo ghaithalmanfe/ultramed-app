@@ -903,9 +903,11 @@
   function clinicSharedOn(c, date){
     return !!(c && c.shared) && (!c.sharedSince || !date || date >= c.sharedSince);
   }
-  function erpRowRep(r, clinics, erpMap, repMap){
-    var m = matchCustomer((r.customer || '').trim(), clinics, erpMap);
-    if(m.clinicId){
+  // The person one ERP line counts for, given its customer's match (the
+  // matchCustomer result): erpRowRep's rule, split out so a caller can match
+  // each distinct name once and then credit every line (v113).
+  function erpRepOfMatch(m, r, clinics, repMap){
+    if(m && m.clinicId){
       for(var i = 0; i < (clinics || []).length; i++){
         if(clinics[i].id !== m.clinicId) continue;
         if(clinicSharedOn(clinics[i], r.date)) return (repMap || {})[r.salesman] || null;
@@ -913,6 +915,9 @@
       }
     }
     return (repMap || {})[r.salesman] || null;
+  }
+  function erpRowRep(r, clinics, erpMap, repMap){
+    return erpRepOfMatch(matchCustomer((r.customer || '').trim(), clinics, erpMap), r, clinics, repMap);
   }
   // Split a rep's monthly brand targets (from the uploaded DSR) across her
   // clinics: each clinic's share of a brand's target follows its share of that
@@ -1685,6 +1690,257 @@
         .filter(function(i){ return !(i.internal && i.net === 0); })      // a zero-value move to a marketing account is not an invoice of the week
         .sort(function(a, b){ return b.net - a.net; })
     };
+  }
+  // ---- ERP ACCOUNT LINKS (v113): which branch an ERP account counts at ----
+  // erpMap holds the links set by hand, { trimmed ERP customer name: clinicId |
+  // '@channel' | '@ignore' }; every other name is matched by matchCustomer.
+  // These helpers list every account of the saved files and preview a change of
+  // link before anything is saved. Their lines are the rows monthAchievement
+  // reads (the returns policy applied, files whose rows did not load skipped);
+  // each line is credited by erpRepOfMatch (erpRowRep's rule) and each distinct
+  // name is matched once per state, never once per line.
+  var ERP_NO_NAME = '(no name)';      // the screens' label for a line with no customer: never an account
+  function erpOwn(o, k){ return !!o && Object.prototype.hasOwnProperty.call(o, k); }
+  function erpR3(x){ return Math.round(x * 1000) / 1000; }
+  function erpCmp(a, b){ a = a == null ? '\uffff' : String(a); b = b == null ? '\uffff' : String(b); return a < b ? -1 : a > b ? 1 : 0; }
+  function erpClinicById(clinics, id){
+    for(var i = 0; i < (clinics || []).length; i++) if(clinics[i].id === id) return clinics[i];
+    return null;
+  }
+  // Two spellings of one account: equal once lower-cased with every run of
+  // non-letters / non-digits collapsed to one space.
+  function erpNameKey(s){ return String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
+  // Every view row of the saved files, with its file and trimmed customer name.
+  function erpEachLine(es, fn){
+    var ctx = erpCtxOf(es);
+    erpPeriodsOf(es).forEach(function(p){
+      erpViewRowsOf(es, p, ctx).forEach(function(r){ fn(r, p, (r.customer || '').trim()); });
+    });
+  }
+  // matchCustomer once per distinct name, for one state (clinics + erpMap).
+  function erpMatcher(clinics, erpMap){
+    var memo = Object.create(null);
+    return function(name){ return memo[name] || (memo[name] = matchCustomer(name, clinics, erpMap)); };
+  }
+  // The clinic a match counts at, or null — then each line counts for the
+  // salesman who issued it. A link to a removed clinic counts at no clinic.
+  function erpMatchClinic(m, clinics){ return m && m.clinicId && erpClinicById(clinics, m.clinicId) ? m.clinicId : null; }
+  // A name's link or match in the screens' words: 'hand' | 'gone' (linked to a
+  // removed clinic) | 'name' | 'family' | 'channel' | 'ignored' | 'ambiguous' | 'none'.
+  function erpLinkStatus(m, clinics){
+    if(m.method === 'map') return m.channel ? 'channel' : m.ignored ? 'ignored' : erpMatchClinic(m, clinics) ? 'hand' : 'gone';
+    return m.method === 'channel' ? 'channel' : (m.method === 'token' || m.method === 'fuzzy') ? 'name'
+      : m.method === 'family' ? 'family' : m.method === 'ambiguous' ? 'ambiguous' : 'none';
+  }
+  function erpLinkSide(m, clinics, value){
+    var id = erpMatchClinic(m, clinics), c = id ? erpClinicById(clinics, id) : null;
+    return { value: value, status: erpLinkStatus(m, clinics), clinicId: id, method: m.method || null, familyLabel: m.familyLabel || null,
+      branches: m.branches || null, candidates: m.candidates ? m.candidates.slice() : null, closed: !!(c && c.cls === 'Closed') };
+  }
+  // { rep ('' = nobody in the team): net } → [{rep|null, net}], largest first.
+  function erpPeopleList(o){
+    return Object.keys(o).map(function(k){ return { rep: k || null, net: erpR3(o[k]) }; })
+      .sort(function(x, y){ return y.net - x.net || erpCmp(x.rep, y.rep); });
+  }
+  // Does a line count in its own month's figure? erpMtd (as of the month's
+  // last day) reads only the files that overlap the month, so a return that
+  // the 'origin' policy dates back before its own file's first day counts in
+  // no month. A preview's moves follow the same rule, so they always equal
+  // the change in monthAchievement.
+  function erpLineInMonthFigure(r, p){
+    var mo = String(r.date || '').slice(0, 7);
+    if(!/^\d{4}-\d{2}$/.test(mo)) return false;
+    var first = mo + '-01', last = mo + '-' + String(new Date(+mo.slice(0, 4), +mo.slice(5, 7), 0).getDate()).padStart(2, '0');
+    return p.to >= first && p.from <= last && r.date >= first && r.date <= last;
+  }
+  // Every ERP account (customer name) of the saved files: where it counts now
+  // and why, its invoices and KD, and whom it counts for. data = { today,
+  // clinics, erpMap, erpSales } (digestData()). Pure.
+  function erpAccounts(data){
+    data = data || {};
+    var es = data.erpSales, clinics = data.clinics || [], erpMap = data.erpMap || {};
+    var today = String(data.today || ''), mStart = today.slice(0, 7) + '-01';
+    var match = erpMatcher(clinics, erpMap), acc = Object.create(null), names = [], nameless = { lines: 0, net: 0 };
+    erpEachLine(es, function(r, p, name){
+      var net = Number(r.net) || 0;
+      if(!name || name === ERP_NO_NAME){ nameless.lines++; nameless.net += net; return; }
+      var a = acc[name];
+      if(!a){ a = acc[name] = { lines: 0, inv: Object.create(null), ret: Object.create(null), net: 0, first: null, last: null, monthNet: 0, people: Object.create(null) }; names.push(name); }
+      a.lines++; a.net += net;
+      (r.type === 'return' ? a.ret : a.inv)[r.doc] = 1;
+      if(r.date){ if(!a.first || r.date < a.first) a.first = r.date; if(!a.last || r.date > a.last) a.last = r.date; }
+      if(r.date >= mStart && r.date <= today) a.monthNet += net;          // this month to date, as the month figures count it
+      var rep = erpRepOfMatch(match(name), r, clinics, p.repMap || {}) || '';
+      a.people[rep] = (a.people[rep] || 0) + net;
+    });
+    var groups = Object.create(null);
+    names.forEach(function(n){ var k = erpNameKey(n); if(k) (groups[k] = groups[k] || []).push(n); });
+    var accounts = names.map(function(name){
+      var a = acc[name], s = erpLinkSide(match(name), clinics, null), byHand = erpOwn(erpMap, name);
+      return { name: name, link: byHand ? erpMap[name] : null, byHand: byHand, status: s.status, clinicId: s.clinicId, closed: s.closed,
+        familyLabel: s.familyLabel, branches: s.branches, candidates: s.candidates,
+        lines: a.lines, invoices: Object.keys(a.inv).length, returns: Object.keys(a.ret).length,
+        net: erpR3(a.net), first: a.first, last: a.last, monthNet: erpR3(a.monthNet), people: erpPeopleList(a.people),
+        internal: isInternalAccount(name), channelName: isErpChannel(name),
+        variants: (groups[erpNameKey(name)] || []).filter(function(v){ return v !== name; }).sort() };
+    });
+    // the ones that need a link first (a removed clinic before all), then the most KD
+    var rank = function(s){ return s === 'gone' ? 0 : (s === 'ambiguous' || s === 'none') ? 1 : 2; };
+    accounts.sort(function(x, y){ return rank(x.status) - rank(y.status) || Math.abs(y.net) - Math.abs(x.net) || erpCmp(x.name, y.name); });
+    // links no loaded line carries (they apply to future uploads); a link
+    // stored for an empty name is reported on `nameless`, never listed
+    var stale = Object.keys(erpMap).filter(function(k){ var t = k.trim(); return !acc[k] && t && t !== ERP_NO_NAME; }).sort()
+      .map(function(k){ return { name: k, link: erpMap[k], status: erpLinkStatus(match(k), clinics) }; });
+    var all = (es && Array.isArray(es.periods)) ? es.periods : [];
+    return { accounts: accounts, nameless: { lines: nameless.lines, net: erpR3(nameless.net), link: erpOwn(erpMap, '') ? erpMap[''] : null },
+      stale: stale, files: erpPeriodsOf(es).length, rowsMissing: all.filter(function(p){ return p && p.rowsMissing; }).length };
+  }
+  // What changes when one account's link changes, before anything is saved.
+  // change = { name, to: clinicId | '@channel' | '@ignore' | null (= no link:
+  // automatic matching), addClinic: a clinic not saved yet (the new branch),
+  // which joins the clinic list of the "after" state }. opts = { settings }
+  // (the KPI settings: the discount limits). Pure.
+  //  moves      every line whose person changes (this account and side effects),
+  //             by month|from|to — only lines that count in a month figure, so
+  //             for every month and person they equal the change in monthAchievement
+  //  others     other accounts whose clinic changes (only a new branch can do that)
+  //  limitFlips invoices whose discount check changes (within ↔ over, or in ↔ out)
+  //  firstInvoice  accounts / clinics whose first paid invoice date changes (new-account wins follow it)
+  // On an error only `before` is filled (not for NO_NAME); after and draft are null.
+  function erpLinkPreview(data, change, opts){
+    data = data || {}; change = change || {};
+    var name = String(change.name == null ? '' : change.name).trim();
+    var es = data.erpSales, clinics0 = data.clinics || [], map0 = data.erpMap || {};
+    var month0 = String(data.today || '').slice(0, 7);
+    var out = { error: null, name: name, before: null, after: null, draft: null, lines: 0, invoices: 0, net: 0, first: null, last: null,
+      months: [], people: [], moves: [], others: [], limitFlips: [], firstInvoice: [], ledger: { returns: 0, free: 0 } };
+    if(!name || name === ERP_NO_NAME){ out.error = 'NO_NAME'; return out; }
+    var match0 = erpMatcher(clinics0, map0), from = erpOwn(map0, name) ? map0[name] : null;
+    out.before = erpLinkSide(match0(name), clinics0, from);
+    var to = change.to == null ? null : change.to;
+    // a branch already in the list (saved by an earlier tap) is not added twice
+    var add = change.addClinic && change.addClinic.id != null && !erpClinicById(clinics0, change.addClinic.id) ? change.addClinic : null;
+    var clinics1 = add ? clinics0.concat([add]) : clinics0.slice();
+    if(to === from){ out.error = 'SAME'; return out; }
+    var special = to === '@channel' || to === '@ignore';
+    if(to !== null && !special && (typeof to !== 'string' || !erpClinicById(clinics1, to))){ out.error = 'NO_CLINIC'; return out; }
+    if(to !== null && !special && (isInternalAccount(name) || isErpChannel(name))){ out.error = 'NOT_A_CLINIC_ACCOUNT'; return out; }
+    var map1 = {}; Object.keys(map0).forEach(function(k){ map1[k] = map0[k]; });
+    if(to === null) delete map1[name]; else map1[name] = to;
+    var match1 = erpMatcher(clinics1, map1);
+    out.after = erpLinkSide(match1(name), clinics1, to);
+    out.draft = { erpMap: map1, clinics: clinics1 };
+    var acctInv = Object.create(null), acctNet = 0, months = Object.create(null), people = Object.create(null);
+    var moves = Object.create(null), others = Object.create(null), othersList = [], att0 = [], att1 = [];
+    erpEachLine(es, function(r, p, n){
+      var repMap = p.repMap || {}, net = Number(r.net) || 0, mo = String(r.date || '').slice(0, 7);
+      // an erpMap change to one name never changes how another name matches:
+      // only a new clinic can, so without one the other lines keep their match
+      var a = match0(n), b = (n === name || add) ? match1(n) : a;
+      var ra = erpRepOfMatch(a, r, clinics0, repMap), rb = b === a && !add ? ra : erpRepOfMatch(b, r, clinics1, repMap);
+      if(n === name){
+        out.lines++; acctNet += net;
+        if(r.type !== 'return') acctInv[r.doc] = 1;
+        if(r.date){ if(!out.first || r.date < out.first) out.first = r.date; if(!out.last || r.date > out.last) out.last = r.date; }
+        if(mo.length === 7){
+          var M = months[mo] || (months[mo] = { inv: Object.create(null), net: 0 });
+          M.net += net; if(r.type !== 'return') M.inv[r.doc] = 1;
+        }
+        people[rb || ''] = (people[rb || ''] || 0) + net;
+        if(returnValue(r) > 0) out.ledger.returns++;
+        if(isFocRow(r)) out.ledger.free++;
+      } else if(add && n && n !== ERP_NO_NAME){
+        var o = others[n];
+        if(o === undefined){
+          var sa = erpLinkSide(a, clinics0, null), sb = erpLinkSide(b, clinics1, null);
+          o = others[n] = sa.status !== sb.status || sa.clinicId !== sb.clinicId
+            ? { name: n, before: { status: sa.status, clinicId: sa.clinicId }, after: { status: sb.status, clinicId: sb.clinicId }, net: 0 } : null;
+          if(o) othersList.push(o);
+        }
+        if(o) o.net += net;
+      }
+      if(ra !== rb && erpLineInMonthFigure(r, p)){
+        var k = mo + '\u0001' + (ra || '') + '\u0001' + (rb || '');
+        var v = moves[k] || (moves[k] = { month: mo, from: ra, to: rb, net: 0, inv: Object.create(null) });
+        v.net += net; if(r.type !== 'return') v.inv[r.doc] = 1;
+      }
+      // the attributed rows of both states, in erpAttributedRows' shape
+      if(!a.ignored) att0.push({ r: r, rep: ra, clinicId: a.clinicId || null, channel: !!a.channel });
+      if(!b.ignored) att1.push({ r: r, rep: rb, clinicId: b.clinicId || null, channel: !!b.channel });
+    });
+    out.invoices = Object.keys(acctInv).length; out.net = erpR3(acctNet);
+    out.months = Object.keys(months).sort().map(function(mo){ return { month: mo, invoices: Object.keys(months[mo].inv).length, net: erpR3(months[mo].net), closed: mo < month0 }; });
+    out.people = erpPeopleList(people);
+    out.moves = Object.keys(moves).map(function(k){ var v = moves[k];
+      return { month: v.month, from: v.from, to: v.to, net: erpR3(v.net), invoices: Object.keys(v.inv).length, closed: v.month < month0 }; })
+      .sort(function(x, y){ return erpCmp(x.month, y.month) || erpCmp(x.from, y.from) || erpCmp(x.to, y.to); });
+    out.others = othersList.map(function(o){ o.net = erpR3(o.net); return o; })
+      .sort(function(x, y){ return Math.abs(y.net) - Math.abs(x.net) || erpCmp(x.name, y.name); });
+    // discount check: clinicInvoices on both states, compared by document (the
+    // limits as weeklyReport reads them: the defaults, then the set values)
+    var KS = {}; Object.keys(KPI_DEFAULTS).forEach(function(k){ KS[k] = KPI_DEFAULTS[k]; });
+    var S = (opts && opts.settings) || {};
+    Object.keys(S).forEach(function(k){ if(S[k] != null && S[k] !== '') KS[k] = S[k]; });
+    var repSet = {}; att0.forEach(function(x){ if(x.rep) repSet[x.rep] = 1; }); att1.forEach(function(x){ if(x.rep) repSet[x.rep] = 1; });
+    var reps = Object.keys(repSet);
+    var byId = function(list){ var o = {}; list.forEach(function(c){ o[c.id] = c; }); return o; };
+    var byId0 = byId(clinics0), byId1 = byId(clinics1);
+    var inv0 = clinicInvoices(att0, reps, '0000-01-01', '9999-12-31', byId0, KS), inv1 = clinicInvoices(att1, reps, '0000-01-01', '9999-12-31', byId1, KS);
+    var was = Object.create(null), seen = Object.create(null), flips = [];
+    var flip = function(i, b, a){ return { doc: i.doc, date: i.date, pct: i.pct, net: i.net, before: b ? { limit: b.limit, within: b.within } : null,
+      after: a ? { limit: a.limit, within: a.within } : null, closed: String(i.date).slice(0, 7) < month0 }; };
+    inv0.forEach(function(i){ was[i.doc] = i; });
+    inv1.forEach(function(i){ seen[i.doc] = 1; var b = was[i.doc]; if(!b || b.within !== i.within) flips.push(flip(i, b, i)); });
+    inv0.forEach(function(i){ if(!seen[i.doc]) flips.push(flip(i, i, null)); });
+    out.limitFlips = flips.sort(function(x, y){ return erpCmp(x.date, y.date) || erpCmp(x.doc, y.doc); });
+    // first paid invoice per account key, with erpWinsInRange's key and filter
+    var firstPaid = function(rows, ids){
+      var f = Object.create(null);
+      rows.forEach(function(x){
+        if(x.channel || !(x.r.net > 0) || x.r.type === 'return' || (!x.clinicId && isInternalAccount(x.r.customer))) return;
+        var k = x.clinicId ? 'c:' + x.clinicId : 'n:' + (x.r.customer || '').trim().toLowerCase();
+        if(!f[k] || x.r.date < f[k].date) f[k] = { date: x.r.date, label: x.clinicId && ids[x.clinicId] ? ids[x.clinicId].name : (x.r.customer || '').trim() };
+      });
+      return f;
+    };
+    var f0 = firstPaid(att0, byId0), f1 = firstPaid(att1, byId1), keys = Object.create(null), fi = [];
+    Object.keys(f0).concat(Object.keys(f1)).forEach(function(k){
+      if(keys[k]) return; keys[k] = 1;
+      var d0 = f0[k] ? f0[k].date : null, d1 = f1[k] ? f1[k].date : null;
+      if(d0 !== d1) fi.push({ key: k, label: (f1[k] || f0[k]).label, before: d0, after: d1 });
+    });
+    out.firstInvoice = fi.sort(function(x, y){ return erpCmp(x.after || x.before, y.after || y.before) || erpCmp(x.label, y.label); });
+    return out;
+  }
+  // The branches offered first when an account moves (clinic ids, at most 8):
+  // where it counts now, the rest of that clinic's branch family, what name
+  // matching alone would pick, then the clinics whose first distinctive name
+  // word is the account's (4+ letters). Closed clinics are left out, except
+  // the one it counts at now. Pure.
+  function erpBranchCandidates(name, clinics, erpMap){
+    name = String(name == null ? '' : name).trim(); clinics = clinics || [];
+    var out = [], seen = Object.create(null);
+    var cur = erpMatchClinic(matchCustomer(name, clinics, erpMap || {}), clinics);
+    var push = function(id){
+      if(out.length >= 8 || id == null || seen[id]) return;
+      var c = erpClinicById(clinics, id);
+      if(!c || (c.cls === 'Closed' && id !== cur)) return;
+      seen[id] = 1; out.push(id);
+    };
+    if(cur){
+      push(cur);
+      var fam = clinicFamilies(clinics), key = fam.byClinic[cur];
+      if(key) fam.fams[key].ids.forEach(push);
+    }
+    var auto = matchCustomer(name, clinics, {});
+    (auto.candidates || (auto.clinicId ? [auto.clinicId] : [])).forEach(push);
+    var word = normClinicName(name).split(' ')[0] || '';
+    if(word.length >= 4){
+      clinics.filter(function(c){ return (normClinicName(c.name).split(' ')[0] || '') === word; })
+        .sort(function(x, y){ return erpCmp(String(x.name || '').toLowerCase(), String(y.name || '').toLowerCase()) || erpCmp(x.id, y.id); })
+        .forEach(function(c){ push(c.id); });
+    }
+    return out;
   }
   // ---- KPI SCORECARD (management's 10 measures, weights agreed Oct 2026) ----
   // Each item: score 0..1 (null = nothing to measure, its weight is then spread
@@ -4793,7 +5049,7 @@
     contactCount, coachInsights,
     erpNum, erpDate, erpDateOrder, parseCsvText, detectErpColumns, parseErpCsv, parseErpPdfText,
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
-    matchCustomer, erpRowRep, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
+    matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
