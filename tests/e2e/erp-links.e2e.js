@@ -13,7 +13,11 @@
 // or new-account wins, each said apart); automatic matching; names with
 // quotes; links to removed clinics; Closed clinics; a background refresh
 // during a save; a rep sees nothing; Arabic; and an old queued whole-map save
-// in the offline outbox is dropped.
+// in the offline outbox is dropped. Section 21 is the safety pass: a name
+// with a CR inside, an account named "__proto__", the change log's size, a
+// Closed clinic through saveErpLink itself, a long name with no space, a
+// clinic name with a quote and code in it as a photo caption, and customers
+// named like built-in object properties in the reconciliation.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -32,7 +36,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // getDelay answers a read late with the value it had when it was asked — a
 // background refresh that read before a save landed.
 const cloud = {};
-const mode = { failSet: null, falseSet: null, failGet: null, delay: null, getDelay: null, sets: [] };
+// maxBytes: { re, bytes } — a document bigger than that is refused, as Firestore refuses one over 1 MiB
+const mode = { failSet: null, falseSet: null, failGet: null, delay: null, getDelay: null, maxBytes: null, sets: [] };
 const api = {
   get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get');
     const v = k in cloud ? cloud[k] : null;
@@ -40,6 +45,7 @@ const api = {
     return v; },
   set: async (k, v) => { mode.sets.push(k);
     if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set');
+    if(mode.maxBytes && mode.maxBytes.re.test(k) && Buffer.byteLength(String(v)) > mode.maxBytes.bytes) throw new Error('boom-set: the document exceeds the maximum size');
     if(mode.falseSet && mode.falseSet.test(k)) return false;
     if(mode.delay && mode.delay.re.test(k)) await sleep(mode.delay.ms);
     cloud[k] = v; return true; },
@@ -78,6 +84,18 @@ const SPLIT_SMILE = makeSplit(SEP, OCT.concat([row('2026-10-08','SINV7108',SMILE
 const SPLIT_VAR = makeSplit(SEP, OCT.concat([row('2026-10-02','SINV7129',VARIANT,6,MS)]));             // matches a new Khairan branch by name
 const SPLIT_RET = makeSplit(SEP, OCT.concat([ret('2026-10-03','SRET7001',KH,-12,GS,'SINV7002')]));      // a September invoice returned in the October file
 const SPLIT_NONAME = makeSplit(SEP, OCT.concat([row('2026-10-02','SINV7131','',11,GS)]));               // a line with no customer name, his salesman
+// ---- names that test the plumbing (section 21) ----
+const CRN = 'Smile Clinic\r\nFintas';               // a two-line cell: CSV and XLSX keep the CR inside a name
+const EVIL = "Smile');window.__xss=(window.__xss||0)+1;//";   // a quote and code: as a clinic name it must stay text
+const WORD = 'X'.repeat(420);                       // a long name with no space to break at
+const BIG = ('Al Salam International Hospital Dental Department ').repeat(700).slice(0, 32000).trim(); // Excel's cell limit is 32,767
+const PROTO_NAMES = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'];
+const SPLIT_CR = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7141',CRN,70,GS), row('2026-10-08','SINV7142',CRN,30,GS)]));
+const SPLIT_PROTO = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7151','__proto__',33,GS)]));
+const SPLIT_PN = makeSplit(SEP, OCT.concat(PROTO_NAMES.map((n, i) => row('2026-10-07', 'SINV716' + i, n, 11 + i, GS))));
+const SPLIT_EVIL = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7171',EVIL,9,GS)]));
+const SPLIT_WORD = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7181',WORD,9,GS)]));
+const SPLIT_BIG = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7191',BIG,9,GS)]));
 const CLINICS = [
   {id:'al1', name:'Aline Dental Clinic - Salmiya', rep:G, cls:'A', doctors:[]},
   {id:'al2', name:'Aline Dental Clinic - Hawally', rep:G, cls:'B', doctors:[]},
@@ -96,7 +114,7 @@ function reseed(o = {}){
   cloud.staff = JSON.stringify([{name:M, role:'rep', email:'m@x.com'}, {name:'Renova', role:'rep', email:'r@x.com'}, {name:G, role:'supervisor', email:'g@x.com'}]); // he sells (default)
   cloud.clinics = JSON.stringify(o.clinics || CLINICS);
   cloud.targets = JSON.stringify({ [G]: { revenue: 2000, month: '2026-10', brands: { Intensiv: 1500 } }, [M]: { revenue: 1000, month: '2026-10', brands: { Intensiv: 800 } } });
-  Object.assign(mode, { failSet: null, falseSet: null, failGet: null, delay: null, getDelay: null });
+  Object.assign(mode, { failSet: null, falseSet: null, failGet: null, delay: null, getDelay: null, maxBytes: null });
 }
 reseed();
 
@@ -638,6 +656,121 @@ reseed();
     try{ openManageClinics(); mgToggle('al1', true); await bulkDeleteClinics(); } finally { window.confirm = orig; }
     return { msgs, still: clinics.some(c => c.id === 'al1') }; });
   check('[D7] Manage clinics → bulk delete says which ERP accounts are linked by hand (count and names) before deleting', bd.msgs.length === 1 && /linked by hand/.test(bd.msgs[0]) && bd.msgs[0].includes(KH) && /\b1\b/.test(bd.msgs[0]) && bd.still, bd);
+
+  // =============== 21) [S] safety: a name reaches the cloud exactly as the file has it, and stays text ===============
+  // (1) a CR inside a name: an HTML attribute turns CR / CRLF into a line feed, so a name carried in data-*
+  //     keeps its CR only as &#13; — otherwise another key is saved while the screen says "Saved"
+  const keysLike = re => Object.keys(cloudMap()).filter(k => re.test(k)).map(k => JSON.stringify(k));
+  const crCarried = () => page.evaluate(n => [...document.querySelectorAll('#modalInner [data-erp-link]')].filter(b => /Fintas/.test(b.dataset.erpLink)).map(b => b.dataset.erpLink === n), CRN);
+  reseed({ split: SPLIT_CR, erpMap: { [KH]: 'al1', [BYSTANDER]: '@ignore', [CRN]: 'al1' } }); await boot();
+  await ui('card', 'al1'); const crCard = await crCarried();
+  await ui('list'); const crList = await crCarried();
+  await page.evaluate(() => openErpRecon('oct')); const crAudit = await crCarried();
+  check('[S1] a name with a line break inside (a two-line ERP cell): the clinic card, the account list and the audit carry it exactly, CR and all',
+    crCard.length === 1 && crList.length === 1 && crAudit.length === 1 && crCard.concat(crList, crAudit).every(Boolean), { crCard, crList, crAudit });
+  await ui('card', 'al1');
+  await page.evaluate(() => { const b = [...document.querySelectorAll('#clinicErpAccounts [data-erp-link]')].find(x => /Fintas/.test(x.dataset.erpLink)); if(b) b.click(); });
+  await page.waitForTimeout(150);
+  const crEd = await page.evaluate(n => ({ exact: !!_el && _el.name === n, lines: _el ? _el.acc.lines : null, status: _el ? _el.acc.status : null, shownOld: _el ? _el.shownOld : null }), CRN);
+  check('[S1] …Move… opens the editor on that very account: 2 invoices, linked by hand to Salmiya', crEd.exact && crEd.lines === 2 && crEd.status === 'hand' && crEd.shownOld === 'al1', crEd);
+  await ui('pick', 'al2'); await ui('tick'); a = await ui('save');
+  f = await figs();
+  check('[S1] …moved to Hawally: its real key changes and no second key appears — Salmiya 145.50, Hawally 130.00, his month 275.50',
+    !a.err && cloudMap()[CRN] === 'al2' && keysLike(/Fintas/).length === 1 && f.al1 === 145.5 && f.al2 === 130 && f.g === 275.5, { a, keys: keysLike(/Fintas/), f });
+  reseed({ split: SPLIT_CR }); await boot();
+  const crU = await page.evaluate(n => { openErpRecon('oct'); return { listed: _erpUnmatched.includes(n), carried: [...document.querySelectorAll('#modalInner [data-erp-link]')].filter(b => /Fintas/.test(b.dataset.erpLink)).map(b => b.dataset.erpLink === n) }; }, CRN);
+  check('[S1] not linked: it is under "Unrecognized customer names", and its Link… carries the exact name', crU.listed && crU.carried.length === 2 && crU.carried.every(Boolean), crU);
+  await page.evaluate(() => { const b = [...document.querySelectorAll('#modalInner [data-erp-link]')].filter(x => /Fintas/.test(x.dataset.erpLink)).pop(); if(b) b.click(); });
+  await page.waitForTimeout(150);
+  await ui('pick', 'al2'); await ui('tick'); a = await ui('save');
+  const crU2 = await page.evaluate(n => { openErpRecon('oct'); return _erpUnmatched.includes(n); }, CRN);
+  check('[S1] …Link… → Hawally: saved under its real key, it leaves the list, Hawally 130.00', !a.err && cloudMap()[CRN] === 'al2' && keysLike(/Fintas/).length === 1 && !crU2 && (await figs()).al2 === 130, { a, keys: keysLike(/Fintas/), crU2 });
+  const crG = await page.evaluate(() => { closeModal(); _el = null; openErpLinkEdit('Smile Clinic\nFintas', 'links');
+    const r = { el: !!_el, sheet: document.getElementById('modalBack').classList.contains('show') };
+    closeModal(); _el = null; openErpLinkPreviewFor('Smile Clinic\nFintas', 'al3', 'links'); r.el2 = !!_el; r.sheet2 = document.getElementById('modalBack').classList.contains('show'); return r; });
+  check('[S1] a name that is neither an account of the files nor a stored link (a copy changed on its way) opens no editor — nothing can be saved under it', !crG.el && !crG.sheet && !crG.el2 && !crG.sheet2, crG);
+
+  // (2) an account named "__proto__": assigning that key to a plain object is ignored, and Object.assign drops it
+  reseed({ split: SPLIT_PROTO }); await boot();
+  await ui('list'); a = await ui('openFrom', '__proto__');
+  await ui('pick', 'al2'); pv = await ui('preview');
+  const ppv = await page.evaluate(() => _elPv && _elPv.after ? [_elPv.after.status, _elPv.after.clinicId] : null);
+  check('[S2] an account named "__proto__": the check says it will count at Hawally, by hand', !a.err && JSON.stringify(ppv) === '["hand","al2"]' && /Hawally/.test(pv.text || ''), { a, ppv, text: (pv.text || '').slice(0, 160) });
+  a = await ui('save'); note = await ui('note'); await sleep(300);
+  const pMem = await page.evaluate(() => Object.prototype.hasOwnProperty.call(erpMap, '__proto__') ? erpMap['__proto__'] : null);
+  const pLog = JSON.parse(cloud.erpMapLog || '[]')[0] || {};
+  f = await figs();
+  check('[S2] …saved: the cloud and memory hold its own key, Hawally counts its 33.00 (63.00), the note and the log name Hawally',
+    !a.err && Object.prototype.hasOwnProperty.call(cloudMap(), '__proto__') && cloudMap()['__proto__'] === 'al2' && pMem === 'al2' && f.al2 === 63 && /Hawally/.test(note.text || '') && pLog.n === '__proto__' && pLog.t === 'al2',
+    { a, map: cloud.erpMap, pMem, al2: f.al2, note: note.text, pLog });
+  a = await ui('undo');
+  check('[S2] …Undo takes that key out again and leaves the other links alone', !a.err && !Object.prototype.hasOwnProperty.call(cloudMap(), '__proto__') && cloudMap()[KH] === 'al1' && cloudMap()[BYSTANDER] === '@ignore' && (await figs()).al2 === 30, { a, map: cloud.erpMap });
+  reseed({ split: SPLIT_PROTO }); cloud.erpMap = '{"__proto__":"al3",' + JSON.stringify({ [KH]: 'al1', [BYSTANDER]: '@ignore' }).slice(1); await boot();
+  const p3 = await page.evaluate(() => (UMCore.erpAccounts(digestData()).accounts.find(x => x.name === '__proto__') || {}).clinicId || null);
+  await ui('edit', KH); await ui('pick', 'al2'); await ui('tick'); a = await ui('save');
+  const p3m = await page.evaluate(() => Object.prototype.hasOwnProperty.call(erpMap, '__proto__') ? erpMap['__proto__'] : null);
+  check('[S2] the cloud already links "__proto__" to Jabriya: saving another account keeps that link, in the cloud and in memory',
+    p3 === 'al3' && !a.err && cloudMap()[KH] === 'al2' && Object.prototype.hasOwnProperty.call(cloudMap(), '__proto__') && cloudMap()['__proto__'] === 'al3' && p3m === 'al3', { p3, a, map: cloud.erpMap, p3m });
+
+  // (3) the change log is bounded by its size, not only by its count: one long name cannot fill a document
+  reseed({ split: SPLIT_BIG }); await boot();
+  mode.maxBytes = { re: /^erpMapLog$/, bytes: 1048576 };   // a Firestore document holds at most 1 MiB
+  await page.evaluate(async n => { for(let i = 0; i < 40; i++) erpLinkLog(n, i % 2 ? 'al1' : 'al2', i === 39 ? 'al3' : i % 2 ? 'al2' : 'al1'); await _elLogChain; await erpLinkLog('Dental 8 Clinic', null, 'al3'); }, BIG);
+  mode.maxBytes = null;
+  const lgs = cloud.erpMapLog || '', lg = JSON.parse(lgs || '[]');
+  check('[S3] 40 changes to an account with a 32,000-character name: the log stays far below a document\'s 1 MiB and records every one of them, and the next change too',
+    Buffer.byteLength(lgs) < 262144 && lg.length === 41 && lg[0].n === 'Dental 8 Clinic' && lg[0].t === 'al3' && lg[1].f === 'al1' && lg[1].t === 'al3', { bytes: Buffer.byteLength(lgs), entries: lg.length, top: lg.slice(0, 2).map(e => [String(e.n).slice(0, 24), e.f, e.t]) });
+  await ui('edit', BIG); await sleep(300);
+  const lastBig = await page.evaluate(() => { const e = document.getElementById('elLast'); return e && e.offsetParent ? e.innerText.replace(/\s+/g, ' ') : null; });
+  check('[S3] …and that account\'s editor still finds its last change in the log', /Last change:/.test(lastBig || '') && /Dr\. Ghaith/.test(lastBig || '') && /Salmiya/.test(lastBig || ''), lastBig);
+
+  // (4) a Closed clinic is never a new target, not even through saveErpLink itself; Undo still restores a link it had
+  reseed({ clinics: CL_EXTRA }); await boot();
+  const s4 = await page.evaluate(n => saveErpLink(n, 'cl1', 'al1'), KH);
+  check('[S4] saveErpLink refuses a Closed clinic as a new target (a console call, a page left open): nothing is written', !!s4 && !s4.ok && cloudMap()[KH] === 'al1' && (await figs()).link === 'al1', { s4, map: cloudMap() });
+  reseed({ clinics: CL_EXTRA, erpMap: { [KH]: 'al1', [BYSTANDER]: '@ignore', 'Dental 8 Clinic': 'cl1' } }); await boot();
+  await ui('edit', 'Dental 8 Clinic'); await ui('pick', 'm1'); await ui('tick'); a = await ui('save');
+  const s4b = cloudMap()['Dental 8 Clinic'];
+  a = await ui('undo');
+  check('[S4] an account linked to a Closed clinic is moved away — and Undo puts it back there (Undo restores; a Closed clinic is never offered)', s4b === 'm1' && !a.err && cloudMap()['Dental 8 Clinic'] === 'cl1', { s4b, a, map: cloudMap() });
+
+  // (5) a long name with no space wraps instead of pushing a sheet sideways
+  reseed({ split: SPLIT_WORD }); await boot();
+  await ui('edit', WORD); await ui('pick', 'al2');
+  a = await ui('fits'); pv = await ui('preview');
+  check('[S5] a 420-letter name with no space: the check page, with its first-invoice note, fits a phone', a.page && a.sheet && !a.wide.length && /first invoice/.test(pv.text || ''), a);
+  const rcFit = await page.evaluate(() => { openErpRecon('oct'); const s = document.getElementById('modalContent'); return { page: document.documentElement.scrollWidth <= window.innerWidth, sheet: s.scrollWidth <= s.clientWidth + 1, w: s.scrollWidth }; });
+  check('[S5] …and the reconciliation sheet never scrolls sideways', rcFit.page && rcFit.sheet, rcFit);
+
+  // (6) a branch made from an ERP name with a quote and code in it: its photo caption is text everywhere
+  reseed({ split: SPLIT_EVIL }); await boot();
+  await ui('edit', EVIL); await ui('pick', '@new'); await ui('tick'); a = await ui('save');
+  const evb = cloudClinics().find(c => c.name === EVIL);
+  const lb = await page.evaluate(async id => {
+    visits.push({ id: 'vxss1', clinicId: id, rep: 'Dr. Ghaith', date: todayStr(), ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: {}, orderTotal: 0, doctorIds: [], notes: '',
+      photos: [{ id: 'phx1', thumb: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }] });
+    await persist('visits');
+    const tap = sel => { const img = document.querySelector(sel); if(!img) return 'no photo'; img.click(); const cap = document.getElementById('lbCap').textContent; document.getElementById('lightbox').classList.remove('show'); return cap; };
+    const out = {};
+    openClinicDetail(id); out.card = tap('#modalInner .photo-thumb');
+    closeModal(); switchView('calendar'); calGoToday(); out.calendar = tap('#calAgenda .photo-thumb');
+    openVisitLog(); out.visitLog = tap('#vlBody .photo-thumb');
+    openPhotoGallery(); out.gallery = tap('#modalInner img[onclick]');
+    await new Promise(r => setTimeout(r, 100));
+    out.xss = window.__xss || 0;
+    closeModal(); switchView('today');
+    return out;
+  }, evb ? evb.id : null);
+  check('[S6] a new branch named after an ERP account with a quote and code in it: its visit photo shows that name as the caption and runs nothing — clinic card, calendar, visit log, photo gallery',
+    !!evb && lb.xss === 0 && lb.card === EVIL && lb.calendar === EVIL && lb.visitLog === EVIL && String(lb.gallery).indexOf(EVIL + ' · ') === 0, { made: !!evb, a, lb });
+
+  // (7) customers named like built-in object properties: the reconciliation opens, and nothing leaks into every object
+  reseed({ split: SPLIT_PN }); await boot();
+  const pn = await page.evaluate(names => { let err = null; try{ openErpRecon('oct'); }catch(e){ err = e.message; }
+    const n = name => [...document.querySelectorAll('#modalInner [data-erp-link]')].filter(b => b.dataset.erpLink === name).length;
+    return { err, h3: (document.querySelector('#modalInner h3') || {}).innerText || null, unr: names.filter(x => (_erpUnmatched || []).includes(x)), buttons: names.map(n), leaked: ['net', 'sret', 'docs'].filter(k => k in {}) }; }, PROTO_NAMES);
+  check('[S7] customers named constructor, toString, __proto__, hasOwnProperty, valueOf: the reconciliation opens, each has its audit row and its Link… under "Unrecognized customer names", and nothing leaks into every object',
+    !pn.err && /ERP reconciliation/.test(pn.h3 || '') && pn.unr.length === PROTO_NAMES.length && pn.buttons.every(x => x === 2) && !pn.leaked.length, pn);
 
   // =============== 11) a rep sees nothing of this ===============
   reseed(); await boot(M, 'rep');
