@@ -28,6 +28,11 @@ describe('esc (HTML escaping)', () => {
   test('leaves safe text untouched', () => {
     assert.equal(core.esc('Dr. Ahmed - Salmiya Clinic'), 'Dr. Ahmed - Salmiya Clinic');
   });
+  test('keeps a CR as &#13; — an HTML attribute would turn it into a line feed (a name carried in data-* must come back exactly)', () => {
+    assert.equal(core.esc('Smile Clinic\r\nFintas'), 'Smile Clinic&#13;\nFintas');
+    assert.equal(core.esc('A\rB'), 'A&#13;B');
+    assert.equal(core.esc('A\nB\tC'), 'A\nB\tC');
+  });
 });
 
 describe('safeUrl', () => {
@@ -1438,6 +1443,16 @@ describe('reconcileErp', () => {
     assert.ok(renova);
     assert.equal(renova.matched.length, 1);        // owned by Renova + jointly visited → matched
     assert.equal(renova.invoicedNoVisit.length, 0);
+  });
+  test('customers named like built-in object properties are listed and counted — no crash, nothing leaks into every object (v113 safety)', () => {
+    const names = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf'];
+    const rows = names.map((n, i) => ({ date: '2026-10-07', doc: 'SINV' + i, type: 'invoice', net: 10 + i, sret: 0, salesman: 'Mariam Zohair', customer: n, brand: 'TEPE', cls: 'Clinics' }));
+    const rec = core.reconcileErp({ rows, visits: [], clinics: [], erpMap: {}, repMap: { 'Mariam Zohair': 'Mariam' }, from: '2026-10-01', to: '2026-10-31' });
+    assert.deepEqual(rec.unmatchedCustomers.slice().sort(), names.slice().sort());
+    const mariam = rec.perRep.find(r => r.rep === 'Mariam');
+    assert.equal(mariam.erp.net, 60);
+    assert.deepEqual(mariam.invoicedNoVisit.map(x => [x.customer, x.net]).sort(), names.map((n, i) => [n, 10 + i]).sort());
+    assert.deepEqual([({}).net, ({}).sret, ({}).docs], [undefined, undefined, undefined]);
   });
 });
 
@@ -3353,6 +3368,30 @@ describe('ERP account links (v113)', () => {
     // a link with no invoice in the saved files: allowed, 0 lines (it applies to future uploads)
     const stale = core.erpLinkPreview(Object.assign({}, d, { erpMap: { 'Closed Account Nobody Buys': 'al2' } }), { name: 'Closed Account Nobody Buys', to: 'al3' });
     assert.deepEqual([stale.error, stale.lines, stale.months, stale.moves, stale.after.clinicId], [null, 0, [], [], 'al3']);
+  });
+
+  test('safety: accounts named "__proto__" or "constructor" — the draft map holds their own keys, and an own "__proto__" link read from the cloud survives another account\'s change', () => {
+    const d = fixture({ oct: [row('2026-10-07', 'SINV7151', '__proto__', 33), row('2026-10-07', 'SINV7152', 'constructor', 7)] });
+    const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined;
+    const pv = core.erpLinkPreview(d, { name: '__proto__', to: 'al2' });
+    assert.equal(pv.error, null);
+    assert.deepEqual([pv.after.status, pv.after.clinicId], ['hand', 'al2']);
+    assert.equal(own(pv.draft.erpMap, '__proto__'), 'al2');
+    assert.equal(own(JSON.parse(JSON.stringify(pv.draft.erpMap)), '__proto__'), 'al2');            // what a save would write
+    const acc = core.erpAccounts(Object.assign({}, d, pv.draft)).accounts.find(a => a.name === '__proto__');
+    assert.deepEqual([acc.status, acc.clinicId, acc.byHand, acc.link], ['hand', 'al2', true, 'al2']);
+    assertInvariant(d, pv, '__proto__ → Hawally');
+    const pc = core.erpLinkPreview(d, { name: 'constructor', to: 'al3' });
+    assert.deepEqual([pc.error, pc.after.status, pc.after.clinicId, own(pc.draft.erpMap, 'constructor')], [null, 'hand', 'al3', 'al3']);
+    // the cloud copy already links "__proto__" (JSON.parse keeps it as an own key): another account's change keeps it
+    const d2 = Object.assign({}, d, { erpMap: JSON.parse('{"__proto__":"al3","' + KH + '":"al1"}') });
+    assert.equal(core.erpAccounts(d2).accounts.find(a => a.name === '__proto__').clinicId, 'al3');
+    const p2 = core.erpLinkPreview(d2, { name: KH, to: 'al2' });
+    assert.equal(p2.error, null);
+    assert.deepEqual([own(p2.draft.erpMap, '__proto__'), own(p2.draft.erpMap, KH)], ['al3', 'al2']);
+    // and taking the "__proto__" link out removes exactly that key
+    const p3 = core.erpLinkPreview(d2, { name: '__proto__', to: null });
+    assert.deepEqual([p3.error, own(p3.draft.erpMap, '__proto__'), own(p3.draft.erpMap, KH), p3.after.status], [null, undefined, 'al1', 'none']);
   });
 
   test('erpBranchCandidates: where it counts now, its branch family, the automatic matches, the same first word — Closed clinics left out', () => {

@@ -519,7 +519,7 @@ function renderVisitLog(){
           ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
-          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>`:''}
         </div>
         ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
       </div>
@@ -539,7 +539,7 @@ function openPhotoGallery(){
         <div style="margin-bottom:14px;">
           <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;">${fmtDate(v.date)} · ${esc(cname(v.clinicId))}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
-            ${v.photos.map(ph=>`<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" onclick="showLightbox('${ph.id}','${esc(cname(v.clinicId))} · ${fmtDate(v.date)}')">`).join('')}
+            ${v.photos.map(ph=>`<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${ph.id}', this.dataset.cap)">`).join('')}
           </div>
         </div>`).join('')}
     <button class="btn" onclick="closeModal()">Done</button>

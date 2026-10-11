@@ -487,7 +487,7 @@ function openClinicDetail(id){
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
       cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.mood?' · '+({pleased:'😊',neutral:'😐',concerned:'😟'}[v.mood]||''):''}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber-ink); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
-        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c.name)}')">`).join('')}</div>`:''}
+        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c.name)}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>`:''}
       </div>`).join('')}
   `);
 }
@@ -607,7 +607,7 @@ function clinicErpAccountsHTML(c){
     const fam = fams.fams[key];
     if(fam.ids[0] !== c.id && res.accounts.some(a => a.status === 'family' && fam.ids.includes(a.clinicId))){
       const land = clinics.find(x => x.id === fam.ids[0]);
-      famLine = `<div class="clinic-sub" style="padding-top:6px; line-height:1.5;"><span>Accounts named after the whole group count once, on</span> <b dir="auto">${esc(land ? land.name : '')}</b></div>`;
+      famLine = `<div class="clinic-sub" style="padding-top:6px; line-height:1.5;"><span>Accounts named after the whole group count once, on</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(land ? land.name : '')}</b></div>`;
     }
   }
   return `<div class="section-title" style="margin-top:20px;"><span>ERP accounts counted here</span> <span class="link" onclick="openErpLinks({back:'clinic:${c.id}'})">All accounts</span></div>

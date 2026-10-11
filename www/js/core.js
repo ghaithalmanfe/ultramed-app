@@ -21,7 +21,10 @@
   function todayStr(){ return localDateStr(new Date()); }
   function fmtDate(d){ const dt = new Date(d + 'T00:00:00'); return dt.toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
   function daysBetween(a,b){ return Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000); }
-  function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  // A CR becomes &#13;: the HTML parser turns a raw CR (or CR LF) into a line
+  // feed, so a name carried in a data-* attribute (an ERP cell can hold a
+  // line break) would come back as another string — and be saved as another key.
+  function esc(s){ return (s||'').replace(/[&<>"'\r]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','\r':'&#13;'}[m])); }
   // Only http(s) links are ever rendered as href — blocks javascript:/data: URI injection via saved fields.
   function safeUrl(u){ u=(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
   function initials(n){ return n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
@@ -1839,8 +1842,11 @@
     if(to !== null && !special && (typeof to !== 'string' || !erpClinicById(clinics1, to))){ out.error = 'NO_CLINIC'; return out; }
     if(to !== null && !special && (isInternalAccount(name) || isErpChannel(name))){ out.error = 'NOT_A_CLINIC_ACCOUNT'; return out; }
     if(to !== null && !special && erpClinicById(clinics1, to).cls === 'Closed'){ out.error = 'CLOSED_CLINIC'; return out; }
-    var map1 = {}; Object.keys(map0).forEach(function(k){ map1[k] = map0[k]; });
-    if(to === null) delete map1[name]; else map1[name] = to;
+    // every key is defined, never assigned: an account named "__proto__" is a
+    // key like any other (assigning that key to a plain object is ignored)
+    var map1 = {}, put = function(k, v){ Object.defineProperty(map1, k, { value: v, enumerable: true, writable: true, configurable: true }); };
+    Object.keys(map0).forEach(function(k){ put(k, map0[k]); });
+    if(to === null) delete map1[name]; else put(name, to);
     var match1 = erpMatcher(clinics1, map1);
     out.after = erpLinkSide(match1(name), clinics1, to);
     out.draft = { erpMap: map1, clinics: clinics1 };
@@ -3982,28 +3988,32 @@
     var dd = dedupeVisits(filterVisitsByRange(opts.visits, opts.from, opts.to));
     var out = { perRep: [], unmatchedCustomers: [], window: { from: opts.from, to: opts.to } };
     var attr = function(r){ return erpRowRep(r, clinics, opts.erpMap, repMap); };
-    var reps = {};
+    // every map here is keyed by a name or a number (customers from the file,
+    // reps, clinic ids, documents): no prototype, so a customer named
+    // "constructor" or "__proto__" is a key like any other — never a crash,
+    // never a value leaked into every object
+    var reps = Object.create(null);
     rows.forEach(function(r){ var rep = attr(r); if(rep) reps[rep] = 1; });
     dd.unique.forEach(function(v){ if(v.rep) reps[v.rep] = 1; if(v.withRep) reps[v.withRep] = 1; });
-    var unmatchedSet = {};
+    var unmatchedSet = Object.create(null);
     Object.keys(reps).sort().forEach(function(rep){
       var erpRows = rows.filter(function(r){ return attr(r) === rep; });
       // A visit means a FIELD visit, and a joint attendee is credited too —
       // so calls/remote orders never fake a visit→invoice link, and a joint
       // rep's real visit isn't flagged as "invoiced with no visit".
       var appVisits = dd.unique.filter(function(v){ return repWasThere(v, rep) && isFieldVisit(v); });
-      var byCust = {};
+      var byCust = Object.create(null);
       erpRows.forEach(function(r){
-        var c = byCust[r.customer] || (byCust[r.customer] = { net: 0, sret: 0, docs: {} });
+        var c = byCust[r.customer] || (byCust[r.customer] = { net: 0, sret: 0, docs: Object.create(null) });
         c.net += r.net; c.sret += returnValue(r); c.docs[r.doc] = 1;
       });
-      var visitsByClinic = {};
+      var visitsByClinic = Object.create(null);
       appVisits.forEach(function(v){
         var c = visitsByClinic[v.clinicId] || (visitsByClinic[v.clinicId] = { visits: 0, orders: 0, logged: 0 });
         c.visits++; if(v.orderTaken){ c.orders++; c.logged += v.orderTotal || 0; }
       });
       var matched = [], invoicedNoVisit = [], channelNet = 0, ignoredNet = 0;
-      var matchedClinicIds = {};
+      var matchedClinicIds = Object.create(null);
       Object.keys(byCust).forEach(function(cust){
         var m = matchCustomer(cust, clinics, opts.erpMap);
         var agg = byCust[cust];
@@ -4039,7 +4049,7 @@
         rep: rep,
         erp: {
           net: Math.round(erpNet * 1000) / 1000,
-          invoices: Object.keys(erpRows.reduce(function(a, r){ if(r.type !== 'return') a[r.doc] = 1; return a; }, {})).length,
+          invoices: Object.keys(erpRows.reduce(function(a, r){ if(r.type !== 'return') a[r.doc] = 1; return a; }, Object.create(null))).length,
           returns: Math.round(erpRows.reduce(function(s, r){ return s + (isExRec(r) ? 0 : returnValue(r)); }, 0) * 1000) / 1000,
           exchanged: Math.round(erpRows.reduce(function(s, r){ return s + (isExRec(r) ? returnValue(r) : 0); }, 0) * 1000) / 1000,
           channelNet: Math.round(channelNet * 1000) / 1000,
