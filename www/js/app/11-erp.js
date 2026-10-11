@@ -66,16 +66,18 @@ async function setSalesmanMap(name, value){
   showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : value ? `${name} → ${value}` : `${name} ignored${removed ? ` — ${removed} stored lines removed` : ''}`);
   openErpImport();
 }
+// A salesman's name comes from the ERP file: it reaches setSalesmanMap through
+// data-salesman (and the rep through data-rep), never inside the onclick
+// string — an apostrophe would break the tap, a quote with code would run.
 function salesmenCard(){
   const map = (erpSales && erpSales.repMapGlobal) || {};
   const names = Object.keys(map).sort();
   if(!names.length) return '';
-  const q = n => esc(n).replace(/'/g, "\\'");
   return `<div class="section-title">Salesmen in your files</div>
     <p style="color:var(--muted); font-size:12px; margin:-2px 0 8px;">Ignored salesmen are not read at all: their lines are dropped on import and removed from stored files. To bring one back, include them and re-upload the file.</p>
     ${names.map(n => `<div class="card" style="padding:10px 12px; margin-bottom:6px;">
       <div style="font-weight:700; font-size:13px; ${map[n]===null?'color:var(--muted);':''}">${esc(n)}${map[n]===null?' <span style="font-weight:400; font-size:11.5px;">· ignored — not read</span>':''}</div>
-      <div class="chip-row" style="margin-top:6px;">${REPS.map(r => `<div class="chip small ${map[n]===r?'on':''}" onclick="setSalesmanMap('${q(n)}','${esc(r)}')">${esc(r)}</div>`).join('')}<div class="chip small ${map[n]===null?'on':''}" onclick="setSalesmanMap('${q(n)}', null)">Ignore</div></div>
+      <div class="chip-row" style="margin-top:6px;">${REPS.map(r => `<div class="chip small ${map[n]===r?'on':''}" data-salesman="${esc(n)}" data-rep="${esc(r)}" onclick="setSalesmanMap(this.dataset.salesman, this.dataset.rep)">${esc(r)}</div>`).join('')}<div class="chip small ${map[n]===null?'on':''}" data-salesman="${esc(n)}" onclick="setSalesmanMap(this.dataset.salesman, null)">Ignore</div></div>
     </div>`).join('')}`;
 }
 // Prior-invoice returns inside one uploaded period, for the reconciliation sheet.
@@ -1141,6 +1143,12 @@ let _elPv = null;                // its check-before-saving figures, as last sho
 let _elUndo = null;              // the last confirmed change, for Undo
 let _elUndoSeq = 0;
 let _elBusy = false;             // a Save (new branch, then link) or an Undo is running
+// Links this device asked for whose write the app stopped waiting for (a
+// timeout): if the cloud later holds one of them, a refused save says "your
+// earlier change landed meanwhile", never "changed on another device".
+const _elOwnLate = Object.create(null);   // name → [values]
+function elOwnLateAdd(name, v){ const a = _elOwnLate[name] || (_elOwnLate[name] = []); if(a.indexOf(v) < 0) a.push(v); if(a.length > 6) a.shift(); }
+function elOwnLateHas(name, v){ return !!(_elOwnLate[name] && _elOwnLate[name].indexOf(v) >= 0); }
 let _elStep = null;              // 'list' | 'edit' | 'preview' — the editor sheet last drawn
 let _elSheet = 0;                // the stamp of that sheet (elOnScreen)
 let _elSheetSeq = 0;
@@ -1164,6 +1172,8 @@ const EL_TXT = {
   notSaved: 'Not saved — nothing changed. Check the connection and tap Save again.',
   conflict: "This account's link was changed on another device — nothing was saved. Open it again to see where it counts now.",
   conflictAfterBranch: "The new branch was added, but this account's link was changed on another device meanwhile — the link was not saved. Open it again to see where it counts now.",
+  conflictOwn: "Your earlier change to this account reached the cloud meanwhile — nothing else was saved. Open it again to see where it counts now.",
+  conflictOwnAfterBranch: "The new branch was added, and your earlier change to this account reached the cloud meanwhile — the link was not saved again. Open it again to see where it counts now.",
   stale: 'Where this account counts changed since this page opened — nothing was saved. Open it again to see where it counts now.',
   timeout: 'No confirmation from the cloud yet — the screen still shows the old link. If the save lands later, the figures update and a message appears.',
   notLoaded: 'Account links were not loaded from the cloud on this device — changes are paused. Reopen the app with a connection.',
@@ -1177,6 +1187,7 @@ const EL_TXT = {
   noCheck: 'The check could not be made — nothing can be saved from here.',
   undoGone: 'This change can no longer be undone from here — open the account to change it again.',
   saving: 'A save is still on its way — tap again in a moment.',
+  stillTakes: "The branch matches this account's name, so it still takes it — remove the branch from its clinic card to go back.",
 };
 // One status vocabulary for the list, the editor and the clinic card.
 const EL_STATUS = {
@@ -1653,7 +1664,7 @@ function elUpdateSave(){
 // Save reads "Saving…", ‹ Pick another and the new-branch fields are locked.
 function elSavingUi(on){
   const s = document.getElementById('elSave'), b = document.getElementById('elBack'), f = document.getElementById('elNewFields'), n = document.getElementById('elNewName');
-  if(s){ s.disabled = true; s.textContent = on ? 'Saving…' : 'Save'; }
+  if(s){ s.disabled = true; s.textContent = on ? 'Saving…' : 'Save'; s.dataset.saving = on ? '1' : ''; }
   if(b) b.disabled = !!on;
   if(f){ f.style.pointerEvents = on ? 'none' : ''; f.style.opacity = on ? '.6' : ''; }
   if(n) n.disabled = !!on;
@@ -1796,8 +1807,10 @@ async function elSave(){
   if(elPvSig(_elPv) !== shown){ elShowErr(`<span>${EL_TXT.changed}</span>`); return; }
   if(!elCanSave()){ elUpdateSave(); return; }
   // Everything below reads this snapshot, never _el / _elPv: the person may
-  // leave this page while the cloud answers, and open anything else.
-  const s = { tok: _el.tok, el: _el, flow: _el.flow, name: _el.name, to: _el.to, shownOld: _el.shownOld, back: _el.back,
+  // leave this page while the cloud answers, and open anything else (its page:
+  // elPageOf). `flow` is shared by every attempt of this edit (a retry, ‹ Pick
+  // another): a change is told once and logged once, whichever attempt lands first.
+  const s = { el: _el, flow: _el.flow, name: _el.name, to: _el.to, shownOld: _el.shownOld, back: _el.back,
     nb: _el.addClinic && !_el.clinicSaved ? Object.assign({}, _el.addClinic) : null, pv: _elPv };
   _elBusy = true;
   elSavingUi(true);
@@ -1808,7 +1821,9 @@ async function elSave(){
     if(r.ok) r = await saveErpLink(s.name, s.to, s.shownOld, s);
   }catch(e){ console.error('ERP link save', e); r = { failed: true }; }
   _elBusy = false;
-  if(r.ok) elConfirmed(s); else elAfterFail(s, r);
+  try{ if(r.ok) elConfirmed(s); else elAfterFail(s, r); }
+  catch(e){ console.error('ERP link save: the result', e); if(elPageOf(s)) elSavingUi(false); }
+  elRefreshSaveState(); // an editor opened meanwhile (another account) gets its Save back
 }
 // The new branch: it must land in the cloud before any link points at it.
 async function elSaveBranch(s){
@@ -1838,26 +1853,35 @@ async function elSaveBranch(s){
   forgetKeptClinic(nb.id);
   return { failed: true };
 }
+// This edit's check page, if it is still the sheet on screen. The page may have
+// been redrawn since Save was tapped (a failed attempt redraws it with the new
+// branch as text; the rows' retry redraws it): every redraw of the same edit
+// stamps _el.tok, so a save that ends — in time or late — finds its page.
+function elPageOf(s){ return !!(s && s.el && _el === s.el && elOnScreen(s.el.tok)); }
 // A save that did not (fully) land. Its page — if it is still the one on
 // screen — says what happened and where the account counts NOW (computed,
 // never assumed); a branch that exists by now is redrawn as text, so the next
-// Save retries the link only. A page the person left is not redrawn: a toast.
+// Save retries the link only. A page the person left is not redrawn: a toast,
+// which names the new branch when one was added.
 function elAfterFail(s, r){
-  if(elToldAlready(s)) return;                      // an earlier attempt of this very change landed and was told
+  if(elToldAlready(s)){ elFinishPage(s); return; }  // an earlier attempt of this very change landed and was told: its page says "Saved" too
   const now = erpLinkSideNow(s.name);
   const msg = elFailMsg(s, r, now);
   if(r.conflict) s.el.conflict = msg;               // nothing can be saved from that page any more
-  if(elOnScreen(s.tok) && _el === s.el){
+  if(elPageOf(s)){
     if(r.dup){ elSavingUi(false); elRenderMoves(); return; }   // the name was taken meanwhile: said under the field
-    if(s.el.clinicSaved || r.queued) openErpLinkPreview();      // the branch exists now: fresh figures, fields as text
+    if(s.el.clinicSaved || r.queued) openErpLinkPreview();      // the branch exists now: fresh figures, fields as text (still this edit's page: a late landing finishes it)
     else elSavingUi(false);
     elShowErr(msg, !!r.conflict);
     elUpdateSave();
     return;
   }
-  showToast(r.queued ? `📴 The new branch uploads when the connection is back; the link was not saved — ${s.name}: ${elWhereText(now)}.`
-    : r.timeout ? `⏳ No confirmation from the cloud yet — ${s.name}: ${elWhereText(now)}.`
-    : `⚠️ Not saved — ${s.name}: ${elWhereText(now)}.`, 6000);
+  const where = `${s.name}: ${elWhereText(now)}.`, bn = s.el.branch && s.el.branch.name ? s.el.branch.name : s.name;
+  showToast(r.queued ? `📴 The new branch uploads when the connection is back; the link was not saved — ${where}`
+    : s.el.clinicSaved && r.timeout ? `⏳ The new branch ${bn} was added; the link has no confirmation from the cloud yet — ${where}`
+    : s.el.clinicSaved ? `⚠️ The new branch ${bn} was added, but the link was not saved — ${where}`
+    : r.timeout ? `⏳ No confirmation from the cloud yet — ${where}`
+    : `⚠️ Not saved — ${where}`, 6000);
 }
 function elFailMsg(s, r, now){
   const where = `<div style="margin-top:4px;">${elWhereHtml(now, 'current')}</div>`; // where it counts at this moment, on its own line
@@ -1865,11 +1889,11 @@ function elFailMsg(s, r, now){
   if(r.dup) return `<span>A clinic with this name already exists — choose it from the branches (‹ Pick another).</span>`;
   if(!s.el.clinicSaved) return elSaveErrMsg(r);
   if(r.timeout) return `<span>The new branch was added.</span> ${elSaveErrMsg(r)}${where}`;
-  if(r.conflict) return `<span>${EL_TXT.conflictAfterBranch}</span>${where}`;
+  if(r.conflict) return `<span>${r.own ? EL_TXT.conflictOwnAfterBranch : EL_TXT.conflictAfterBranch}</span>${where}`;
   return `<span>The new branch was added, but the link was not saved.</span> <span>Tap Save to try again.</span>` + (r.failed ? '' : ' ' + elSaveErrMsg(r)) + where;
 }
 function elSaveErrMsg(r){
-  return `<span>${r.conflict ? EL_TXT.conflict : r.timeout ? EL_TXT.timeout : r.notLoaded ? EL_TXT.notLoaded : r.noClinic ? EL_TXT.noClinic : r.closedTarget ? EL_TXT.closedTarget : r.clinicsPending ? EL_TXT.clinicsPending : EL_TXT.notSaved}</span>`;
+  return `<span>${r.conflict ? (r.own ? EL_TXT.conflictOwn : EL_TXT.conflict) : r.timeout ? EL_TXT.timeout : r.notLoaded ? EL_TXT.notLoaded : r.noClinic ? EL_TXT.noClinic : r.closedTarget ? EL_TXT.closedTarget : r.clinicsPending ? EL_TXT.clinicsPending : EL_TXT.notSaved}</span>`;
 }
 // The same change (same account, from the same link to the same target) was
 // already confirmed and told by another attempt of this edit.
@@ -1880,31 +1904,61 @@ function elUndoBtn(u){ return `<button class="chip small" id="elUndo" data-undo=
 // screen. Otherwise nothing is redrawn and _el is not touched: a toast names
 // the account and where it counts now, and the Undo waits in the account list.
 function elConfirmed(s){
-  if(elToldAlready(s)) return;                       // a retry and a late landing of one change: told once
+  if(elToldAlready(s)){ elFinishPage(s); return; }  // a retry and a late landing of one change: told once — and no page of it is left on "Saving…"
   s.flow.confirmed = { next: s.to, shownOld: s.shownOld };
   const made = s.el.clinicSaved && s.el.branch && s.to === s.el.branch.id ? s.el.branch : null;
   const pv0 = made && s.el.branchPv ? s.el.branchPv : s.pv; // the account as it was before this change (and its branch)
-  const u = _elUndo = { id: String(++_elUndoSeq), name: s.name, prev: s.shownOld, now: s.to, back: s.back,
+  _elUndo = { id: String(++_elUndoSeq), name: s.name, prev: s.shownOld, now: s.to, back: s.back,
     branch: made ? made.id : null, branchName: made ? made.name : null,
     before: pv0 && pv0.before ? { status: pv0.before.status, clinicId: pv0.before.clinicId || null } : null,
     others: made && pv0 ? (pv0.others || []).map(o => ({ name: o.name, before: o.before })) : [] };
   renderAll();
-  const now = erpLinkSideNow(s.name);
-  if(elOnScreen(s.tok) && _el === s.el){
-    _el = null; _elPv = null;
-    elReturnTo(s.back, `✅ <span>Saved</span> — <b dir="auto" style="overflow-wrap:anywhere;">${esc(s.name)}</b> ${elWhereHtml(now, 'now')} ${elUndoBtn(u)}`);
-  } else showToast(`✅ Saved — ${s.name}: ${elWhereText(now)}. Undo: ERP account links.`, 6000);
+  if(!elFinishPage(s)) showToast(`✅ Saved — ${s.name}: ${elWhereText(erpLinkSideNow(s.name))}. Undo: ERP account links.`, 6000);
 }
-// A save the app stopped waiting for landed after all (erpMapReloadFromCloud
-// has read the cloud copy into memory): finish it like a confirmed save.
-function elAfterLateLanding(info){ if(info && info.s) elConfirmed(info.s); }
+// A confirmed change's page, if it is still on screen (whichever attempt of the
+// edit drew it last — or a later page of the same edit, after ‹ Pick another,
+// showing this very change): back where the edit started, with "Saved", where
+// the account counts now and — while it is still the last change — its Undo.
+// false: the page is gone (closed, or another sheet opened), nothing redrawn.
+function elFinishPage(s){
+  const same = !!(_el && s && (_el === s.el || (_el.flow === s.flow && _el.to === s.to && _el.shownOld === s.shownOld)));
+  if(!same || !elOnScreen(_el.tok)) return false;
+  const u = _elUndo && _elUndo.name === s.name && _elUndo.prev === s.shownOld && _elUndo.now === s.to ? _elUndo : null;
+  _el = null; _elPv = null;
+  elReturnTo(s.back, `✅ <span>Saved</span> — <b dir="auto" style="overflow-wrap:anywhere;">${esc(s.name)}</b> ${elWhereHtml(erpLinkSideNow(s.name), 'now')}${u ? ' ' + elUndoBtn(u) : ''}`);
+  return true;
+}
+// A save or an Undo ended (in time or late, or another attempt told it): the
+// editor page on screen, if any — another account's, opened meanwhile — gets
+// its Save back as elCanSave says, without being redrawn. A page left reading
+// "Saving…" while nothing runs is released; one whose account changed
+// meanwhile says so (nothing can be saved from it).
+function elRefreshSaveState(){
+  if(!_el || !elOnScreen(_el.tok)) return;
+  const idle = !_elBusy && !_erpLinkSaving, sv = document.getElementById('elSave');
+  if(idle && sv && sv.dataset.saving === '1') elSavingUi(false);
+  if(idle && !_el.conflict && elStale() && !document.querySelector('#modalInner #elReopen')) elShowErr(`<span>${EL_TXT.stale}</span>`, true);
+  elUpdateSave();
+}
+// A save or an Undo the app stopped waiting for landed after all
+// (erpMapReloadFromCloud has read the cloud copy into memory): it finishes as
+// an in-time one would. true: said here (no generic toast).
+function elAfterLateLanding(info){
+  if(!info) return false;
+  if(info.quiet){ elRefreshSaveState(); return true; }   // the same change was already confirmed and told: only the figures follow
+  if(info.undo){ elUndoFinish(info.undo, info.btn, true).catch(e => console.error('undo: a late landing', e)); return true; }
+  if(info.s){ elConfirmed(info.s); elRefreshSaveState(); return true; }
+  return false;
+}
 // One account, compare-and-set in the cloud. next / shownOld: clinicId |
 // '@channel' | '@ignore' | null (no link). The cloud must still hold what the
 // screen showed (or already what we write); every other account is written
 // back exactly as the cloud has it. Memory and the device copy follow only a
 // confirmed write. `s`: the editor's save snapshot (none for an Undo).
-// `opts.undo`: an Undo putting back the link it had — the one way a link may
-// point at a Closed clinic again; no change ever makes one a new target.
+// `opts.undo`: an Undo putting back the link it had (its record, from
+// undoErpLink) — the one way a link may point at a Closed clinic again; no
+// change ever makes one a new target. `opts.btn`: the Undo button tapped, so a
+// write that lands late still reports on its note while that is on screen.
 async function saveErpLink(name, next, shownOld, s, opts){
   name = String(name == null ? '' : name).trim();
   if(!requireAdmin()) return { failed: true };
@@ -1917,6 +1971,8 @@ async function saveErpLink(name, next, shownOld, s, opts){
   if(isClinic(next) && !target) return { noClinic: true };
   if(target && target.cls === 'Closed' && next !== shownOld && !(opts && opts.undo)) return { closedTarget: true };
   if(isClinic(next) && outboxHas('clinics')) return { clinicsPending: true }; // never a link to a clinic the cloud may not have
+  const undo = opts && opts.undo && typeof opts.undo === 'object' ? opts.undo : null; // an Undo's record (undoErpLink)
+  const once = s ? s.flow : undo;     // shared by every attempt of one change: it is logged once
   const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   let conflict = false, committed = null, seen = null;
   const fn = cloudStr => { // Firestore may run this more than once: every run starts clean
@@ -1943,23 +1999,37 @@ async function saveErpLink(name, next, shownOld, s, opts){
   catch(e){
     timedOut = /timeout/.test(String(e && e.message));
     if(!timedOut) console.warn('account link not saved', e);
-    // the write the app stopped waiting for can still land: when it does, the screen follows the cloud
+    // the write the app stopped waiting for can still land: when it does, the screen follows the cloud,
+    // and the change finishes as an in-time one would — its page, or an Undo's branch and its report
     else op.then(v => {
       if(v == null) return;
-      const dup = !!(s && elToldAlready(s));
-      if(!dup) erpLinkLog(name, shownOld, next);    // a retry of the same change already confirmed (and logged) it
-      erpMapReloadFromCloud(dup ? { quiet: true } : { name, next, shownOld, s });
+      const told = s ? elToldAlready(s) : !!(undo && undo.done); // a retry of the same change was confirmed and told first
+      elLogOnce(once, name, shownOld, next);
+      erpMapReloadFromCloud(told ? { quiet: true } : { name, next, shownOld, s: s || null, undo, btn: (opts && opts.btn) || null });
     }).catch(() => {});
   }
   finally{ _erpLinkSaving = false; }
   if(written == null){
     if(conflict && seen){ erpMap = seen; _erpMapGen++; mirrorSave('erpMap', JSON.stringify(seen)); renderAll(); } // what the cloud holds now: reopened, the editor shows it
-    return conflict ? { conflict: true } : timedOut ? { timeout: true } : { failed: true };
+    if(timedOut) elOwnLateAdd(name, next);
+    const own = conflict && seen && elOwnLateHas(name, has(seen, name) ? seen[name] : null); // the cloud holds this device's own earlier change
+    return conflict ? (own ? { conflict: true, own: true } : { conflict: true }) : timedOut ? { timeout: true } : { failed: true };
   }
   erpMap = committed; _erpMapGen++;
   mirrorSave('erpMap', written); _persistInfo.erpMap = { ok: true };
-  erpLinkLog(name, shownOld, next); // best effort: a failed log write never fails or undoes the link
+  elLogOnce(once, name, shownOld, next); // best effort: a failed log write never fails or undoes the link
   return { ok: true };
+}
+// One change, one log entry — whichever of its attempts (a retry, a write that
+// landed late) is confirmed first. `once`: the edit's flow, or an Undo's record.
+function elLogOnce(once, name, from, to){
+  if(once){
+    const k = JSON.stringify([from == null ? null : from, to == null ? null : to]);
+    once.logged = once.logged || {};
+    if(once.logged[k]) return;
+    once.logged[k] = 1;
+  }
+  erpLinkLog(name, from, to);
 }
 
 // ---- Undo ----
@@ -1969,36 +2039,74 @@ async function saveErpLink(name, next, shownOld, s, opts){
 // (recycle bin, the team's delete log). Otherwise it stays — then the note
 // says why, and where the account counts now (a branch named after the
 // account still takes it by name). Every word of the note is worked out after
-// the undo, from memory as it is.
+// the undo, from memory as it is. An Undo whose write the app stopped waiting
+// for finishes the same way when the write lands (elUndoFinish, late).
 async function undoErpLink(btn){
   if(!requireAdmin()) return;
   const u = _elUndo, id = btn && btn.dataset ? btn.dataset.undo : null;
   if(!u || (id && u.id !== id)){ showToast('⚠️ ' + EL_TXT.undoGone); return; }
   if(_elBusy || _erpLinkSaving){ showToast('⏳ ' + EL_TXT.saving); return; }
   _elBusy = true;
-  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
-  let r = null, br = null;
-  try{ r = await saveErpLink(u.name, u.prev, u.now, null, { undo: true }); }catch(e){ console.error('undo account link', e); r = { failed: true }; }
-  if(r.ok){
-    _elUndo = null;
-    if(u.branch){ try{ br = await elUndoBranch(u); }catch(e){ console.error('undo: the new branch', e); br = { kept: { why: 'check' } }; } }
-  }
-  _elBusy = false;
-  renderAll();
-  const now = erpLinkSideNow(u.name);
-  const back = document.getElementById('modalBack');
-  const here = !!(btn && btn.isConnected && back && back.classList.contains('show'));
-  if(!r.ok){
-    if(here){
-      const d = document.createElement('div'); d.style.cssText = 'color:var(--coral-ink); font-weight:600; margin-top:6px;';
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; u.btn = btn; } // the latest tap's note is where a late landing reports
+  let r = null;
+  try{ r = await saveErpLink(u.name, u.prev, u.now, null, { undo: u, btn }); }catch(e){ console.error('undo account link', e); r = { failed: true }; }
+  try{
+    // confirmed — or an earlier tap's write landed meanwhile and finishes it: told once
+    if(r.ok || u.done){ await elUndoFinish(u, btn, false); return; }
+    renderAll();
+    const now = erpLinkSideNow(u.name);
+    if(elNoteOn(btn)){
+      const old = btn.parentElement && btn.parentElement.querySelector('.el-undo-err'); if(old) old.remove(); // a second failed tap: one message
+      const d = document.createElement('div'); d.className = 'el-undo-err'; d.style.cssText = 'color:var(--coral-ink); font-weight:600; margin-top:6px;';
       d.innerHTML = '⚠️ ' + elSaveErrMsg(r) + `<div style="margin-top:2px;">${elWhereHtml(now, 'current')}</div>`;
       (btn.parentElement || btn).appendChild(d);
       btn.disabled = false; btn.textContent = 'Undo';
-    } else showToast(`⚠️ Not saved — ${u.name}: ${elWhereText(now)}.`, 6000);
-    return;
+    } else showToast(r.timeout ? `⏳ No confirmation from the cloud yet — ${u.name}: ${elWhereText(now)}.` : `⚠️ Not saved — ${u.name}: ${elWhereText(now)}.`, 6000);
+  }finally{
+    _elBusy = false;
+    elRefreshSaveState(); // an editor opened meanwhile gets its Save back
   }
-  if(here) elReturnTo(u.back, elUndoNote(u, br, now));
-  else showToast(`↩️ Undone — ${u.name}: ${elWhereText(now)}.`, 6000);
+}
+// The Undo button's note is still on screen (its sheet was not closed or replaced).
+function elNoteOn(btn){ const back = document.getElementById('modalBack'); return !!(btn && btn.isConnected && back && back.classList.contains('show')); }
+// An Undo the cloud confirmed — in time (undoErpLink), or late: its write
+// landed after the app stopped waiting (elAfterLateLanding). Finished once,
+// whichever comes first: the branch made in the undone change goes while
+// nothing of its own hangs on it, and the result is said — on the note while
+// its sheet is open, else in a toast naming the account, what happened to the
+// branch and where the account counts now. A late one never runs alongside
+// another save or Undo (one could be linking an account to that branch): it
+// waits for it, and if it cannot, the branch stays and the report says so.
+async function elUndoFinish(u, btn, late){
+  if(u.done) return;
+  u.done = true;
+  if(_elUndo === u) _elUndo = null;
+  const tapped = () => [u.btn, btn].find(elNoteOn) || null; // the note of the latest tap (or of the one that landed), if still on screen
+  if(late && tapped()) tapped().disabled = true;            // landed: that Undo has nothing left to do (the note is redrawn below)
+  let br = null;
+  if(u.branch){
+    let mine = false;
+    try{
+      if(late){
+        for(let i = 0; i < 300 && (_elBusy || _erpLinkSaving); i++) await new Promise(r => setTimeout(r, 100));
+        if(_elBusy || _erpLinkSaving){ console.warn('undo: another save is still running — the new branch stays'); br = { kept: { why: 'check' } }; }
+        else _elBusy = mine = true;
+      }
+      if(!br) br = await elUndoBranch(u);
+    }catch(e){ console.error('undo: the new branch', e); br = { kept: { why: 'check' } }; }
+    finally{ if(mine) _elBusy = false; }
+  }
+  renderAll();
+  const now = erpLinkSideNow(u.name), t = tapped(), inNote = t && t.closest ? t.closest('#erpImportNote') : null;
+  const toast = () => showToast(elUndoToast(u, br, now), br && (br.removed || br.kept) ? 9000 : 6000);
+  if(t && late){        // landed late: the person kept working on this sheet — change only the note, never rebuild it
+    if(inNote) inNote.innerHTML = elUndoNote(u, br, now) + ' <span style="color:var(--muted);">Reopen this page to see the updated figures.</span>';
+    else toast();
+  }
+  else if(t && !inNote && document.getElementById('elList')) elReturnTo('links', elUndoNote(u, br, now)); // tapped on the list's "Last change" card: stay on the list
+  else if(t) elReturnTo(u.back, elUndoNote(u, br, now));
+  else toast();
+  if(late) elRefreshSaveState();
 }
 // Can the branch made in the undone change go? null = yes; else why it stays.
 function elBranchKeeps(c, name){
@@ -2042,12 +2150,32 @@ function elUndoNote(u, br, now){
   } else if(br && br.kept){
     const k = br.kept;
     h += `<span>The new branch</span> ${bn} <span>stays in the clinic list:</span> <span>${EL_KEEP[k.why] || EL_KEEP.check}</span>${k.account != null ? ` <b dir="auto" style="overflow-wrap:anywhere;">${esc(k.account)}</b>` : ''}. ${acct}`;
-    if(now && now.clinicId === u.branch && now.status !== 'hand' && now.status !== 'gone')
-      h += ` <span>The branch matches this account's name, so it still takes it — remove the branch from its clinic card to go back.</span>`;
-    const still = (u.others || []).filter(o => { const x = erpLinkSideNow(o.name); return x && o.before && (x.status !== o.before.status || (x.clinicId || null) !== (o.before.clinicId || null)); }).map(o => o.name);
+    if(elBranchStillTakes(u, now)) h += ` <span>${EL_TXT.stillTakes}</span>`;
+    const still = elStillOthers(u);
     if(still.length) h += ` <span>These accounts still count differently because of the branch:</span> ${still.map(n => `<b dir="auto" style="overflow-wrap:anywhere;">${esc(n)}</b>`).join(', ')}.`;
   } else h += acct;
   return h;
+}
+// The branch the undone change made still takes the account (by its name, or as its group's landing branch).
+function elBranchStillTakes(u, now){ return !!(u.branch && now && now.clinicId === u.branch && now.status !== 'hand' && now.status !== 'gone'); }
+// Other accounts that the kept branch still makes count differently.
+function elStillOthers(u){
+  return (u.others || []).filter(o => { const x = erpLinkSideNow(o.name); return x && o.before && (x.status !== o.before.status || (x.clinicId || null) !== (o.before.clinicId || null)); }).map(o => o.name);
+}
+// The same as a toast, for a person who left the note's sheet: plain text (the
+// Arabic patterns are in i18n.js), naming what Undo did to the new branch.
+function elUndoToast(u, br, now){
+  let t = `↩️ Undone — ${u.name}: ${elWhereText(now)}.`;
+  const bn = u.branchName || u.name;
+  if(br && br.removed) t += br.queued ? ` The new branch ${bn} was removed on this device — the removal uploads when the connection is back.` : ` The new branch ${bn} was removed (it is in the recycle bin).`;
+  else if(br && br.kept){
+    const k = br.kept;
+    t += ` The new branch ${bn} stays in the clinic list: ${EL_KEEP[k.why] || EL_KEEP.check}${k.account != null ? ' ' + k.account : ''}.`;
+    if(elBranchStillTakes(u, now)) t += ' ' + EL_TXT.stillTakes;
+    const n = elStillOthers(u).length;
+    if(n) t += ` Other accounts that still count differently because of the branch: ${n}.`;
+  }
+  return t;
 }
 function elReturn(note){ return elReturnTo(_el ? _el.back : _elListOpts.back, note); }
 function elReturnTo(back, note){

@@ -3424,4 +3424,23 @@ describe('ERP account links (v113)', () => {
     assert.equal(i18n.tr('⚠️ Not saved — nothing changed. Check the connection and tap Save again.'), '⚠️ لم يُحفظ — لم يتغير شيء. تحقق من الاتصال واضغط «حفظ» مرة أخرى.');
     assert.equal(i18n.tr(KH), null);                                                   // an account name is data
   });
+
+  test('i18n: a toast said after the person left names the new branch — a link not saved after the branch was added, and what Undo did to the branch', () => {
+    const i18n = require('../www/js/i18n.js'), S = 'Smile Care Fintas';
+    assert.equal(i18n.tr(`⚠️ The new branch ${S} was added, but the link was not saved — ${S}: ${S} (by name).`),
+      `⚠️ أُضيف الفرع الجديد ${S}، لكن الربط لم يُحفظ — ${S}: ${S} (بالاسم).`);
+    assert.equal(i18n.tr(`⏳ The new branch ${S} was added; the link has no confirmation from the cloud yet — ${S}: ${S} (by name).`),
+      `⏳ أُضيف الفرع الجديد ${S}، ولم يصل تأكيد حفظ الربط من السحابة بعد — ${S}: ${S} (بالاسم).`);
+    assert.equal(i18n.tr(`↩️ Undone — ${S}: not linked. The new branch ${S} was removed (it is in the recycle bin).`),
+      `↩️ تم التراجع — ${S}: غير مربوط. الفرع الجديد ${S} حُذف (موجود في سلة المحذوفات).`);
+    assert.equal(i18n.tr(`↩️ Undone — ${S}: not linked. The new branch ${S} was removed on this device — the removal uploads when the connection is back.`),
+      `↩️ تم التراجع — ${S}: غير مربوط. الفرع الجديد ${S} حُذف على هذا الجهاز — يصل الحذف إلى السحابة عند عودة الاتصال.`);
+    assert.equal(i18n.tr(`↩️ Undone — ${S}: ${S} (by name). The new branch ${S} stays in the clinic list: it has a logged visit. The branch matches this account's name, so it still takes it — remove the branch from its clinic card to go back.`),
+      `↩️ تم التراجع — ${S}: ${S} (بالاسم). الفرع الجديد ${S} يبقى في قائمة العيادات: عليه زيارة مسجلة. اسم الفرع يطابق اسم هذا الحساب، فما زال يأخذه — للعودة كما كان احذف الفرع من بطاقة العيادة.`);
+    // the reason names another account (a dot inside its name), and other accounts still count differently
+    assert.equal(i18n.tr(`↩️ Undone — ${KH}: Aline Dental Clinic - Salmiya (by hand). The new branch ${KH} stays in the clinic list: another ERP account counts there: Dr. Ali Clinic. Other accounts that still count differently because of the branch: 2.`),
+      `↩️ تم التراجع — ${KH}: Aline Dental Clinic - Salmiya (ربط يدوي). الفرع الجديد ${KH} يبقى في قائمة العيادات: حساب فواتير آخر يُحسب عليه: Dr. Ali Clinic. حسابات أخرى ما زالت تُحسب بشكل مختلف بسبب الفرع: 2.`);
+    assert.equal(i18n.tr(`↩️ Undone — ${S}: not linked.`), `↩️ تم التراجع — ${S}: غير مربوط.`);          // no branch: unchanged
+    assert.equal(i18n.tr('No ERP account counts here in the files loaded on this device.'), 'لا يُحسب أي حساب فواتير على هذا الفرع في الملفات المحمّلة على هذا الجهاز.');
+  });
 });

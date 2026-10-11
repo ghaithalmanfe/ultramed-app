@@ -543,12 +543,15 @@ function isExchangeLine(r){
   const n = erpNotes[erpNoteKey('ret', r)];
   return !!(n && n.kind === 'exchange');
 }
+// The line's key holds the ERP product name: it reaches the handler through
+// data-key, never inside the onclick string (an apostrophe in a name would
+// break the tap, and a quote with code in it would run).
 function retKindChips(r){
   const key = erpNoteKey('ret', r);
   const k = (erpNotes[key] && erpNotes[key].kind) === 'exchange' ? 'exchange' : 'return';
   return `<div class="chip-row" style="margin-top:6px;" onclick="event.stopPropagation()">
-    <div class="chip small ${k==='return'?'on':''}" onclick="saveRetKind('${esc(key)}','return',this)">↩️ Return / مرتجع</div>
-    <div class="chip small ${k==='exchange'?'on':''}" onclick="saveRetKind('${esc(key)}','exchange',this)">🔁 Exchange / تبديل</div>
+    <div class="chip small ${k==='return'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'return',this)">↩️ Return / مرتجع</div>
+    <div class="chip small ${k==='exchange'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'exchange',this)">🔁 Exchange / تبديل</div>
   </div>`;
 }
 async function saveRetKind(key, kind, el){
@@ -565,8 +568,8 @@ async function saveRetKind(key, kind, el){
 function focKindChips(key, def){
   const k = focKindOf(key, def);
   return `<div class="chip-row" style="margin-top:6px;" onclick="event.stopPropagation()">
-    <div class="chip small ${k==='deal'?'on':''}" onclick="saveErpNoteKind('${esc(key)}','deal',this)">🤝 Deal bonus</div>
-    <div class="chip small ${k==='sample'?'on':''}" onclick="saveErpNoteKind('${esc(key)}','sample',this)">🎁 Sample / marketing</div>
+    <div class="chip small ${k==='deal'?'on':''}" data-key="${esc(key)}" onclick="saveErpNoteKind(this.dataset.key,'deal',this)">🤝 Deal bonus</div>
+    <div class="chip small ${k==='sample'?'on':''}" data-key="${esc(key)}" onclick="saveErpNoteKind(this.dataset.key,'sample',this)">🎁 Sample / marketing</div>
   </div>`;
 }
 async function saveNoSaleReason(clinicId, val){
@@ -613,7 +616,7 @@ function clinicErpAccountsHTML(c){
   return `<div class="section-title" style="margin-top:20px;"><span>ERP accounts counted here</span> <span class="link" onclick="openErpLinks({back:'clinic:${c.id}'})">All accounts</span></div>
     <div class="card" id="clinicErpAccounts" data-clinic="${esc(c.id)}" style="padding:8px 12px 12px;">
       ${here.map(a => row(a, false)).join('')}${staleHere.map(s => row({ name: s.name, status: s.status }, true)).join('')}
-      ${here.length || staleHere.length ? '' : `<div class="clinic-sub" style="padding:6px 0;">No ERP account counts here yet.</div>`}
+      ${here.length || staleHere.length ? '' : `<div class="clinic-sub" style="padding:6px 0;">${missing ? 'No ERP account counts here in the files loaded on this device.' : 'No ERP account counts here yet.'}</div>`}
       ${here.length ? `<div class="clinic-sub" style="padding-top:8px;"><span>Total counted here</span> · ${inv} × · <span dir="ltr">${money(net)}</span>${missing ? '' : ' <span>(all saved files)</span>'}</div>` : ''}
       ${missing ? `<div id="clinicErpMissing" style="color:var(--amber-ink); font-weight:600; font-size:12px; line-height:1.55; padding-top:6px;">⚠️ ${missing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="clinicErpRetry(this.closest('#clinicErpAccounts').dataset.clinic)">🔄 <span>Load them again</span></span></div>` : ''}
       ${famLine}

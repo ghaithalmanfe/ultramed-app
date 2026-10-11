@@ -657,10 +657,12 @@ async function retryErpRows(opts){
 }
 // The same for an account link (saveErpLink, 11-erp.js): the screen kept the
 // old link when the cloud did not confirm in time, so when the save lands
-// after all, the cloud copy is read and every figure follows it. `info.s` is
-// the save that landed: its own page finishes it if still on screen, else a
-// toast names the account (elAfterLateLanding); `info.quiet`: a retry of the
-// same change was already confirmed and told — only the figures follow.
+// after all, the cloud copy is read and every figure follows it. Then the
+// change finishes as an in-time one would (elAfterLateLanding): `info.s` is
+// the editor's save — its own page finishes it if still on screen, else a
+// toast names the account; `info.undo` is an Undo — its new branch goes (or
+// the report says why it stays), on its note or in a toast; `info.quiet`: a
+// retry of the same change was already confirmed and told — only the figures follow.
 async function erpMapReloadFromCloud(info){
   try{
     const r = await withTimeout(window.storage.get('erpMap', true), 8000);
@@ -670,8 +672,8 @@ async function erpMapReloadFromCloud(info){
     mirrorSave('erpMap', r.value);
     delete _loadFailed.erpMap; delete _mirrorUsed.erpMap; // the cloud copy is in hand
     renderAll();
+    if(typeof elAfterLateLanding === 'function' && elAfterLateLanding(info)) return;
     if(info && info.quiet) return;
-    if(info && info.s && typeof elAfterLateLanding === 'function'){ elAfterLateLanding(info); return; }
     showToast('☁️ An account link reached the cloud late — the figures are updated', 6000);
   }catch(e){ console.warn('erpMap reload after a late-landing link save', e); }
 }
