@@ -3906,3 +3906,176 @@ describe('ERP account links (v113)', () => {
     assert.equal(i18n.tr('No ERP account counts here in the files loaded on this device.'), 'لا يُحسب أي حساب فواتير على هذا الفرع في الملفات المحمّلة على هذا الجهاز.');
   });
 });
+
+describe('Clinics card = the month figure (v115)', () => {
+  // The owner saw one figure on the Clinics screen and another on Today. The
+  // card now reads the month figure's own lines and splits each person's
+  // month into clinics + online / channels + ignored accounts.
+  const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova', GS = 'Ghaith Al Manfe', MS = 'Mariam Zohair', RS = 'Renova Ayman';
+  const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Intensiv Ortho-Strips', 1, net, net, 0, sm, 'Intensiv', cust, 'Clinics', 0, ''];
+  const ret = (d, doc, cust, net, sm, ref) => [d, doc, 1, 'Intensiv Ortho-Strips', -1, 0, net, -net, sm, 'Intensiv', cust, 'Clinics', 0, ref];
+  const repMap = { [GS]: G, [MS]: M, [RS]: R };
+  const SEPOCT = [row('2026-09-20', 'SINV8001', 'Dental 8 Clinic', 100, MS), row('2026-09-25', 'SINV8002', 'Meena Dental', 70, RS),
+    row('2026-10-01', 'SINV8003', 'My Fatoorah', 12, MS), row('2026-10-02', 'SINV8004', 'Dental 8 Clinic', 40, MS)];
+  const OCT = [row('2026-10-05', 'SINV8101', 'Dental 8 Clinic', 25, MS), row('2026-10-06', 'SINV8102', 'Meena Dental', 30, RS),
+    row('2026-10-06', 'SINV8103', 'Marketing Philips', 5, MS), row('2026-10-06', 'SINV8104', 'Unknown Trading Co', 9, MS),
+    row('2026-10-05', 'SINV8105', 'Bayan Dental Center', 50, GS), ret('2026-10-07', 'SRET8106', 'Dental 8 Clinic', -20, MS, 'SINV8001'),
+    row('2026-10-06', 'SINV8107', 'Some Clinic Abroad', 44, 'Not In The Team')];
+  const CLINICS = [{ id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A' }, { id: 'm2', name: 'Bright Smile Clinic', rep: M, cls: 'B' },
+    { id: 'r1', name: 'Meena Dental', rep: R, cls: 'B' }, { id: 'g1', name: 'Bayan Dental Center', rep: G, cls: 'A' }];
+  const data = (o = {}) => ({ today: o.today || '2026-10-08', targets: {}, clinics: o.clinics || CLINICS, erpMap: o.erpMap || { 'Marketing Philips': '@ignore' },
+    erpSales: { returnPolicy: 'origin', periods: (o.periods || [
+      { id: 'sepoct', from: '2026-09-15', to: '2026-10-03', repMap, rows: SEPOCT },
+      { id: 'oct', from: '2026-10-04', to: '2026-10-08', repMap, rows: OCT.concat(o.oct || []) }]).concat(o.more || []) } });
+  const by = (list, k) => Object.fromEntries(list.map(x => [x[k], x]));
+
+  test('the month\'s lines only: a file running into the month adds nothing from before it, a return of an earlier month\'s invoice counts in that month', () => {
+    const ms = core.monthCustomerSales(data(), { rep: M });
+    assert.equal(ms.month, '2026-10'); assert.equal(ms.current, true); assert.equal(ms.fallback, false);
+    assert.equal(ms.from, '2026-10-01'); assert.equal(ms.to, '2026-10-08'); assert.equal(ms.files, 2); assert.equal(ms.missing, 0);
+    const acc = by(ms.accounts, 'name');
+    assert.equal(acc['Dental 8 Clinic'].net, 65);                     // 40 + 25 — not September's 100, not the −20 return of it
+    assert.equal(acc['Dental 8 Clinic'].invoices, 2); assert.equal(acc['Dental 8 Clinic'].ret, 0);
+    assert.equal(acc['Unknown Trading Co'].net, 9); assert.equal(acc['Unknown Trading Co'].clinicId, null);
+    assert.equal(acc['My Fatoorah'].channel, true); assert.equal(acc['My Fatoorah'].net, 12);
+    assert.equal(acc['Marketing Philips'], undefined);                 // ignored: never in the list
+    assert.deepEqual(ms.accounts.map(a => a.name), ['Dental 8 Clinic', 'My Fatoorah', 'Unknown Trading Co']);
+    assert.equal(ms.last, '2026-10-06'); assert.equal(ms.covered, '2026-10-08');
+    assert.deepEqual(ms.people, [{ rep: M, total: 91, clinics: 74, channels: 12, ignored: 5 }]);
+    assert.deepEqual(ms.totals, { total: 91, clinics: 74, channels: 12, ignored: 5 });
+    assert.equal(core.monthAchievement(M, data()).amount, 91);         // the Today figure
+  });
+
+  test('everyone: each person\'s total is their month figure; a line of nobody in the team is in neither', () => {
+    const d = data(), ms = core.monthCustomerSales(d, { rep: 'all' });
+    const pp = by(ms.people, 'rep');
+    [M, R, G].forEach(p => assert.equal(pp[p].total, core.monthAchievement(p, d).amount, p));
+    assert.deepEqual(ms.people.map(x => [x.rep, x.total]), [[M, 91], [G, 50], [R, 30]]);
+    assert.deepEqual(ms.totals, { total: 171, clinics: 154, channels: 12, ignored: 5 });
+    assert.ok(!ms.accounts.some(a => a.name === 'Some Clinic Abroad'));
+    assert.deepEqual(core.monthCustomerSales(d).totals, ms.totals);   // 'all' is the default
+    assert.deepEqual(core.monthCustomerSales(d, { rep: 'Nobody' }).people, []);
+  });
+
+  test('a shared account invoiced by two people is one line naming both; each part counts for its issuer', () => {
+    const cl = CLINICS.concat([{ id: 'moh', name: 'Ministry Of Health', rep: M, cls: 'B', shared: true, sharedSince: '2026-10-01' }]);
+    const d = data({ clinics: cl, oct: [row('2026-10-06', 'SINV8201', 'Ministry Of Health', 100, GS), row('2026-10-07', 'SINV8202', 'Ministry Of Health', 30, MS)] });
+    const ms = core.monthCustomerSales(d, { rep: 'all' }), moh = ms.accounts.find(a => a.name === 'Ministry Of Health');
+    assert.deepEqual(moh.reps, [G, M]); assert.equal(moh.net, 130); assert.equal(moh.invoices, 2);
+    assert.equal(by(ms.people, 'rep')[G].total, core.monthAchievement(G, d).amount);
+    assert.equal(by(ms.people, 'rep')[G].total, 150);
+    const mine = core.monthCustomerSales(d, { rep: M }).accounts.find(a => a.name === 'Ministry Of Health');
+    assert.deepEqual(mine.reps, [M]); assert.equal(mine.net, 30);    // her view: only her part
+  });
+
+  test('branches of one clinic roll up to one line; a hand link stays its own line', () => {
+    const cl = [{ id: 'a1', name: 'Aline Dental Clinic - Salmiya', rep: G }, { id: 'a2', name: 'Aline Dental Clinic - Hawally', rep: G }];
+    const d = data({ clinics: cl, erpMap: { 'Aline Khairan Branch': 'a1' }, periods: [{ id: 'o', from: '2026-10-01', to: '2026-10-08', repMap, rows: [
+      row('2026-10-02', 'S1', 'Aline Dental Clinic - Salmiya', 10, GS), row('2026-10-03', 'S2', 'Aline Dental Clinic - Hawally', 20, GS),
+      row('2026-10-04', 'S3', 'Aline Dental Clinic', 5, GS), row('2026-10-05', 'S4', 'Aline Khairan Branch', 7, GS)] }] });
+    const ms = core.monthCustomerSales(d, { rep: G });
+    assert.deepEqual(ms.accounts.map(a => [a.name, a.net, a.family ? 'fam' : '-']), [['Aline (2)', 35, 'fam'], ['Aline Khairan Branch', 7, '-']]);
+    assert.equal(ms.totals.total, 42); assert.equal(ms.totals.total, core.monthAchievement(G, d).amount);
+  });
+
+  test('no file for this month yet: the last month that has one, to its last day — and a file that did not load is never "no file"', () => {
+    const d = data({ today: '2026-11-03' });
+    assert.equal(core.monthCustomerSales(d, { rep: M }).people.length, 0);   // no fallback asked: November, empty
+    const ms = core.monthCustomerSales(d, { rep: M, fallback: true });
+    assert.equal(ms.month, '2026-10'); assert.equal(ms.fallback, true); assert.equal(ms.current, false);
+    assert.equal(ms.from, '2026-10-01'); assert.equal(ms.to, '2026-10-31');
+    assert.equal(ms.totals.total, core.monthAchievement(M, Object.assign({}, d, { today: '2026-10-31' })).amount);
+    assert.equal(ms.totals.total, 91);
+    // a November file whose rows did not load on this device: November stays, said
+    const miss = data({ today: '2026-11-03', more: [{ id: 'nov', from: '2026-11-01', to: '2026-11-02', repMap, rows: [], rowsMissing: true }] });
+    const m2 = core.monthCustomerSales(miss, { rep: M, fallback: true });
+    assert.equal(m2.month, '2026-11'); assert.equal(m2.fallback, false); assert.equal(m2.files, 0); assert.equal(m2.missing, 1);
+    // nothing saved at all
+    const none = core.monthCustomerSales({ today: '2026-11-03', erpSales: null }, { fallback: true });
+    assert.equal(none.month, '2026-11'); assert.equal(none.files, 0); assert.deepEqual(none.totals, { total: 0, clinics: 0, channels: 0, ignored: 0 });
+  });
+
+  test('an exchange is left out of the returned value, never out of the net', () => {
+    const d = data({ periods: [{ id: 'o', from: '2026-10-01', to: '2026-10-08', repMap, rows: [
+      row('2026-10-02', 'S1', 'Dental 8 Clinic', 50, MS), ret('2026-10-03', 'R1', 'Dental 8 Clinic', -10, MS, 'S1'), ret('2026-10-04', 'R2', 'Dental 8 Clinic', -4, MS, 'S1')] }] });
+    const a = core.monthCustomerSales(d, { rep: M, isExchange: r => r.doc === 'R2' }).accounts[0];
+    assert.equal(a.net, 36); assert.equal(a.ret, 10); assert.equal(a.invoices, 3);
+  });
+
+  test('centsSplit: the parts as shown add up to the total as shown, each within a cent, a zero stays zero', () => {
+    assert.deepEqual(core.centsSplit([74, 12, 5], 91), [74, 12, 5]);
+    assert.deepEqual(core.centsSplit([0.005, 0.005], 0.01), [0.01, 0]);
+    assert.deepEqual(core.centsSplit([1.234, 0, 2.345], 3.58), [1.23, 0, 2.35]);
+    assert.deepEqual(core.centsSplit([-0.005, 0.02], 0.02), [0, 0.02]);
+    const sp = core.centsSplit([10.004, -3.336, 0], 6.67);                 // a tie: either part may take the cent
+    assert.equal(Math.round(sp[0] * 100) + Math.round(sp[1] * 100), 667); assert.equal(sp[2], 0);
+    assert.ok(Math.abs(sp[0] - 10.004) < 0.01 && Math.abs(sp[1] + 3.336) < 0.01, JSON.stringify(sp));
+  });
+
+  // The previous erpMtd, line for line: the shared pass must give the same map.
+  function erpMtdBefore(dt){
+    const today = dt.today, mStart = today.slice(0, 7) + '-01', es = dt.erpSales;
+    const sums = {}, asOf = {}, spans = {}; let ctx = null;
+    core.erpPeriodsOf(es).filter(p => p.to >= mStart && p.from <= today).forEach(p => {
+      ctx = ctx || (() => { const all = []; core.erpPeriodsOf(es).forEach(q => core.unpackErpRows(q.rows).forEach(r => all.push(r))); return core.returnContext(all); })();
+      const seen = {};
+      core.applyReturnPolicy(core.unpackErpRows(p.rows), es.returnPolicy === 'erp' ? 'erp' : 'origin', ctx).forEach(r => {
+        if(r.date < mStart || r.date > today) return;
+        const rep = core.erpRowRep(r, dt.clinics || [], dt.erpMap || {}, p.repMap || {});
+        if(!rep) return;
+        sums[rep] = (sums[rep] || 0) + r.net;
+        if(!asOf[rep] || r.date > asOf[rep]) asOf[rep] = r.date;
+        seen[rep] = 1;
+      });
+      Object.keys(seen).forEach(rep => { (spans[rep] = spans[rep] || []).push({ from: p.from < mStart ? mStart : p.from, to: p.to > today ? today : p.to }); });
+    });
+    const map = {};
+    Object.keys(sums).forEach(rep => {
+      const sp = (spans[rep] || []).sort((a, b) => a.from < b.from ? -1 : a.from > b.from ? 1 : 0);
+      let complete = !!sp.length && sp[0].from <= core.addDaysStr(mStart, 3), end = sp.length ? sp[0].to : null;
+      for(let i = 1; complete && i < sp.length; i++){ if(sp[i].from > core.addDaysStr(end, 4)) break; if(sp[i].to > end) end = sp[i].to; }
+      map[rep] = { amount: Math.round(sums[rep] * 100) / 100, asOf: asOf[rep], covered: end || asOf[rep], complete };
+    });
+    return map;
+  }
+
+  test('random months: erpMtd is unchanged, and every person\'s parts add up to their month figure to the cent', () => {
+    let s = 20261011; const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const pick = a => a[Math.floor(rnd() * a.length)];
+    const custs = ['Dental 8 Clinic', 'Meena Dental', 'Bayan Dental Center', 'Bright Smile Clinic', 'My Fatoorah', 'Talabat Mart', 'Marketing Philips',
+      'Unknown Trading Co', 'Ministry Of Health', 'Aline Dental Clinic - Salmiya', 'Aline Dental Clinic - Hawally', 'Aline Dental Clinic', '', 'Dental 8 Clinic WF'];
+    const sms = [GS, MS, RS, 'Not In The Team'];
+    const cl = CLINICS.concat([{ id: 'moh', name: 'Ministry Of Health', rep: M, shared: true, sharedSince: '2026-10-01' },
+      { id: 'a1', name: 'Aline Dental Clinic - Salmiya', rep: G }, { id: 'a2', name: 'Aline Dental Clinic - Hawally', rep: G, prevRep: R, repSince: '2026-10-01' }]);
+    for(let t = 0; t < 60; t++){
+      const periods = [], n = 1 + Math.floor(rnd() * 3); let docN = 1000 * (t + 1);
+      for(let k = 0; k < n; k++){
+        const from = pick(['2026-08-20', '2026-09-01', '2026-09-15', '2026-10-01', '2026-10-04']), to = pick(['2026-09-30', '2026-10-03', '2026-10-06', '2026-10-08']);
+        if(to < from) continue;
+        const rows = [], lines = 3 + Math.floor(rnd() * 25);
+        for(let i = 0; i < lines; i++){
+          const d = pick(['2026-08-25', '2026-09-03', '2026-09-20', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-05', '2026-10-07', '2026-10-08']);
+          if(d < from || d > to) continue;
+          const net = Math.round((rnd() * 300 - 20) * 1000) / 1000, doc = 'SINV' + (docN++);
+          if(rnd() < 0.15 && rows.length){ const o = pick(rows); rows.push(ret(d, 'SRET' + docN, o[10], -Math.round(rnd() * 50 * 1000) / 1000, o[8], o[1])); }
+          else rows.push(row(d, doc, pick(custs), net, pick(sms)));
+        }
+        periods.push({ id: 'p' + k, from, to, repMap, rows });
+      }
+      const d = { today: pick(['2026-10-03', '2026-10-08', '2026-10-11']), clinics: cl, erpMap: { 'Marketing Philips': '@ignore', 'Talabat Mart': '@channel' },
+        erpSales: { returnPolicy: rnd() < 0.5 ? 'origin' : 'erp', periods } };
+      assert.deepEqual(core.erpMtd(d), erpMtdBefore(d), 'erpMtd #' + t);
+      const ms = core.monthCustomerSales(d, { rep: 'all' });
+      let tc = 0;
+      ms.people.forEach(p => {
+        assert.equal(p.total, core.monthAchievement(p.rep, d).amount, `#${t} ${p.rep} total`);
+        assert.equal(Math.round(p.clinics * 100) + Math.round(p.channels * 100) + Math.round(p.ignored * 100), Math.round(p.total * 100), `#${t} ${p.rep} parts`);
+        tc += Math.round(p.total * 100);
+        const one = core.monthCustomerSales(d, { rep: p.rep });
+        assert.deepEqual(one.people, [p], `#${t} ${p.rep} alone`);
+      });
+      assert.equal(Math.round(ms.totals.total * 100), tc, '#' + t + ' total');
+      Object.keys(core.erpMtd(d)).forEach(r => assert.ok(ms.people.some(p => p.rep === r), `#${t} ${r} listed`));
+    }
+  });
+});

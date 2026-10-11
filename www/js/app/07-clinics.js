@@ -25,44 +25,21 @@ function clinicStats(c){
     docs:(c.doctors||[]).length};
 }
 // ---- ERP CUSTOMER SALES DASHBOARD (who bought / who didn't) ----
-// Built from the supervisor's uploaded sales files: every ERP customer with
-// net + invoices + last invoice date, matched to app clinics; app clinics
-// with no invoice in the period surface as the follow-up list.
+// Built from the supervisor's uploaded sales files: every ERP customer of the
+// month with net + invoices + last invoice date, matched to app clinics; app
+// clinics with no invoice in the month surface as the follow-up list. The
+// lines are the month figure's own (UMCore.monthCustomerSales, v115): the
+// card adds up to the Today figure and says how — clinics + online / channels
+// + ignored accounts. Early in a month with no sales file yet it shows the
+// last month that has one, and says so.
 let erpDashTab = 'not';
 function erpDashData(repOverride){
   const effRep = repOverride || clinicRepFilter;
-  const today = todayStr(), mStart = today.slice(0,7)+'-01';
-  let ps = erpPeriods().filter(p => p.to >= mStart && p.from <= today);
-  let periodLabel = 'This month';
-  if(!ps.length){ // early in a new month, fall back to the latest upload
-    const latest = erpPeriods().slice().sort((a,b)=>(b.to||'').localeCompare(a.to||''))[0];
-    if(latest){ ps = [latest]; periodLabel = fmtDate(latest.from)+' – '+fmtDate(latest.to); }
-  }
-  const cust = {}; let maxDate = '';
+  const ms = UMCore.monthCustomerSales(digestData(), { rep: effRep, fallback: true, isExchange: isExchangeLine });
   const fams = UMCore.clinicFamilies(clinics);
-  ps.forEach(p => erpViewRows(p).forEach(r => {
-    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{});
-    if(!rep) return; // salesmen outside the team stay out of the girls' lists
-    if(effRep !== 'all' && rep !== effRep) return;
-    let key = (r.customer||'').trim() || '(no name)';
-    const m = UMCore.matchCustomer(key, clinics, erpMap);
-    if(m.ignored) return;
-    // Branch deliveries of one clinic family roll up to ONE line, counted
-    // once — never "invoiced twice" because two branches took stock. An
-    // explicit erpMap override stays its own line: it is the supervisor's
-    // un-merge tool when a grouping is not wanted.
-    const famKey = (m.clinicId && m.method !== 'map') ? (m.family || fams.byClinic[m.clinicId]) : null;
-    let dispName = key;
-    if(famKey && fams.fams[famKey]){ key = '@fam:'+famKey; dispName = fams.fams[famKey].label + ' ('+fams.fams[famKey].count+')'; }
-    const a = cust[key] || (cust[key] = {name:dispName, net:0, ret:0, docs:new Set(), last:'', rep, clinicId:m.clinicId, channel:m.channel, family:famKey||null});
-    a.net += r.net; if(!isExchangeLine(r)) a.ret += UMCore.returnValue(r); a.docs.add(r.doc);
-    if(r.date > a.last) a.last = r.date;
-    if(r.date > maxDate) maxDate = r.date;
-  }));
-  const buyers = Object.values(cust)
-    .map(a=>({name:a.name, rep:a.rep, clinicId:a.clinicId, channel:a.channel, family:a.family,
-      invoices:a.docs.size, last:a.last, net:Math.round(a.net*100)/100, ret:Math.round(a.ret*100)/100}))
-    .sort((x,y)=>y.net-x.net);
+  // a shared account invoiced by two people is one line naming both
+  const buyers = ms.accounts.map(a => ({ name: a.name, rep: a.reps.join(' + '), clinicId: a.clinicId, channel: a.channel, family: a.family,
+    invoices: a.invoices, last: a.last, net: a.net, ret: a.ret }));
   const boughtIds = new Set(buyers.filter(b=>b.clinicId).map(b=>b.clinicId));
   // A family purchase covers every branch — branch #2 must not show "didn't
   // buy" when the family's invoice simply shipped to branch #1.
@@ -78,16 +55,79 @@ function erpDashData(repOverride){
     const d = order[followStatus(a.c.nextFollowUp)] - order[followStatus(b.c.nextFollowUp)];
     return d !== 0 ? d : String(a.c.cls||'Z').localeCompare(String(b.c.cls||'Z'));
   });
-  return {buyers, nonBuyers, periodLabel, maxDate, hasData: ps.length>0};
+  return {buyers, nonBuyers, periodLabel: ms.current ? 'This month' : monthLabel(ms.month), maxDate: ms.last,
+    hasData: ms.files > 0 || ms.missing > 0, ms, rep: effRep};
+}
+function erpDashRecon(d){
+  try{ return erpDashReconHTML(d); }catch(e){ console.error('clinics card reconciliation', e); return ''; }
+}
+// How the card adds up to the month's sales (v115): clinics (the Bought list,
+// linked to a clinic or not) + online / channels + ignored accounts = each
+// person's month. For the running month that is the Today screen's figure —
+// compared here, never assumed; for an earlier month, the Months report's.
+function erpDashReconHTML(d){
+  const ms = d.ms;
+  if(!ms) return '';
+  const sup = currentUser.role === 'supervisor';
+  const hasTarget = r => { const t = targets[r] || {}; return t.revenue > 0; };
+  const amt = v => `<b dir="ltr" style="white-space:nowrap;">${money(v)}</b>`;
+  const line = (part, label, v, extra) => `<div class="row-between" data-part="${part}" style="gap:10px; padding:2px 0;${extra || ''}"><span>${label}</span>${amt(v)}</div>`;
+  const one = d.rep !== 'all';
+  const p0 = { rep: d.rep, total: 0, clinics: 0, channels: 0, ignored: 0 };
+  const parts = one ? (ms.people[0] || p0) : ms.totals;
+  // the Today screen's own figure for a person — null when it shows none
+  const todayFig = r => (ms.current && hasTarget(r)) ? bestMonthRevenue(r).amount : null;
+  const off = [];   // a person whose figure here is not the Today screen's: said, never hidden
+  let totalLabel;
+  if(one){
+    const tf = todayFig(d.rep);
+    if(tf != null && tf !== parts.total) off.push({ rep: d.rep, today: tf });
+    totalLabel = ms.current
+      ? `<span><b>${esc(d.rep)}</b> · <span>${tf != null && tf === parts.total ? "Month's sales — the Today screen figure" : "Month's sales"}</span></span>`
+      : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>sales as in the Months report</span></span>`;
+  } else {
+    totalLabel = ms.current ? `<span>Month's sales — everyone</span>` : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>everyone's sales as in the Months report</span></span>`;
+  }
+  let people = '';
+  if(!one){
+    people = ms.people.map(p => {
+      const tf = todayFig(p.rep);
+      if(tf != null && tf !== p.total) off.push({ rep: p.rep, today: tf });
+      const note = ms.current && !hasTarget(p.rep) ? ` <span style="color:var(--muted); font-size:11px;">· <span>no sales target — not on the Today screen</span></span>` : '';
+      return `<div class="row-between" data-person="${esc(p.rep)}" style="gap:10px; padding:1px 0;"><span><span>${esc(p.rep)}</span>${note}</span>${amt(p.total)}</div>`;
+    }).join('');
+    if(people) people = `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${people}
+      <div style="color:var(--muted); font-size:11.5px; margin-top:2px;"><span>${ms.current ? "Each person's figure is the one on the Today screen." : "Each person's figure is the one in the Months report."}</span></div></div>`;
+  }
+  let team = '';
+  if(!one && ms.current && sup){
+    const tt = teamTargetNow();
+    if(tt.n >= 1 && tt.pct != null && Math.round(tt.ach * 100) !== Math.round(ms.totals.total * 100))
+      team = `<div data-part="team" style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>The Team line on the Today screen counts only the people with a sales target:</span> ${amt(tt.ach)}</div>`;
+  }
+  const offNote = off.map(x => `<div style="color:var(--coral-ink); font-size:11.5px; margin-top:4px;">⚠️ <b>${esc(x.rep)}</b> · <span>The Today screen shows</span> ${amt(x.today)} · <span>please report this difference.</span></div>`).join('');
+  const noFile = ms.fallback ? `<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;"><span>No sales file for this month yet: the Today screen shows 0 until one is uploaded.</span></div>` : '';
+  const missing = ms.missing ? `<div id="erpDashMissing" style="color:var(--amber-ink); font-weight:600; font-size:11.5px; line-height:1.55; margin-top:4px;">⚠️ ${ms.missing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="retryErpRows().then(() => { if(activeView === 'clinics' && clinicMode === 'dash') renderClinicDash(); }).catch(e => console.warn('retry sales rows', e))">🔄 <span>Load them again</span></span></div>` : '';
+  return `<div id="erpDashRecon" style="margin:10px 0 4px; padding:9px 11px; border-radius:10px; background:var(--paper); font-size:12.5px; line-height:1.5;">
+    <div style="font-weight:700; margin-bottom:4px;">🧮 <span>How this card adds up to the month's sales</span></div>
+    ${line('clinics', 'Clinics — the Bought list', parts.clinics)}
+    ${line('channels', 'Online / channels', parts.channels)}
+    ${line('ignored', 'Ignored accounts', parts.ignored)}
+    <div class="row-between" data-part="total" style="gap:10px; padding:4px 0 0; margin-top:3px; border-top:1px solid var(--line); font-weight:700;">${totalLabel}${amt(parts.total)}</div>
+    ${people}${team}${offNote}
+    <div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>Online / channel and ignored accounts count in the month for the salesman who issued them; they are not in the clinic lists.</span></div>
+    ${noFile}${missing}
+  </div>`;
 }
 function erpDashSection(){
   const d = erpDashData();
   if(!d.hasData) return `<div class="chartcard"><h4>🧾 Customer sales (ERP)</h4>
     <div class="csub">Upload a sales file in Report → 📥 Import and every customer's buying status appears here.</div></div>`;
   const clinicBuyers = d.buyers.filter(b=>!b.channel);
-  const channels = d.buyers.filter(b=>b.channel);
-  const channelNet = Math.round(channels.reduce((s,b)=>s+b.net,0)*100)/100;
-  const buyersNet = Math.round(clinicBuyers.reduce((s,b)=>s+b.net,0)*100)/100;
+  // the tiles are the reconciliation's own lines, so they add up on screen
+  const recParts = d.rep !== 'all' ? (d.ms.people[0] || { clinics: 0, channels: 0 }) : d.ms.totals;
+  const channelNet = recParts.channels;
+  const buyersNet = recParts.clinics;
   const returnedTotal = Math.round(d.buyers.reduce((s,b)=>s+(b.ret||0),0)*100)/100;
   const donut = svgDonut(Object.assign([
     {l:'Bought', v: clinicBuyers.length, c:'#2E784C'},
@@ -129,16 +169,17 @@ function erpDashSection(){
   return `
   <div class="chartcard" style="border-inline-start:4px solid var(--gold);">
     <h4>🧾 Customer sales — who bought & who didn't</h4>
-    <div class="csub">${d.periodLabel} · from the uploaded sales files${d.maxDate?' · to '+fmtDate(d.maxDate):''}</div>
+    <div class="csub">${d.ms.current ? '<span>This month</span>' : `<b>${esc(d.periodLabel)}</b> · <span>the last month with a sales file</span>`}${d.ms.covered ? ` · <span>sales files to</span> ${fmtDate(d.ms.covered)}` : ''}</div>
     <div class="kpi4" style="margin:10px 0 4px;">
       <div class="k"><div class="ki">${I('cart')}</div><div class="kn">${clinicBuyers.length}</div><div class="kl">Bought · ${money(buyersNet)}</div></div>
       <div class="k"><div class="ki">${I('target')}</div><div class="kn" style="color:${d.nonBuyers.length?'var(--coral-ink)':'var(--sage-ink)'};">${d.nonBuyers.length}</div><div class="kl">Didn't buy yet</div></div>
       <div class="k"><div class="ki">${I('globe')}</div><div class="kn">${money(channelNet)}</div><div class="kl">Online / channels</div></div>
       <div class="k"><div class="ki">${I('refresh')}</div><div class="kn" style="color:${returnedTotal>0?'var(--coral-ink)':'var(--sage-ink)'};">${money(returnedTotal)}</div><div class="kl">Returned</div></div>
     </div>
+    ${erpDashRecon(d)}
     ${donut}
   </div>
-  <div class="chartcard"><h4>🏆 Top buyers</h4><div class="csub">Net KD in the period</div>${topBars}</div>
+  <div class="chartcard"><h4>🏆 Top buyers</h4><div class="csub">${d.ms.current ? 'Net KD this month' : 'Net KD in the period'}</div>${topBars}</div>
   <div class="chartcard"><h4>⭕ Didn't buy — by class</h4><div class="csub">A/B first: the money is there</div>${clsBars}</div>
   <div class="chip-row" style="margin:12px 0 10px;">
     <div class="chip small ${erpDashTab==='not'?'on':''}" onclick="erpDashTab='not'; renderClinicDash();">⭕ Didn't buy (${d.nonBuyers.length})</div>
@@ -192,7 +233,7 @@ function renderClinicDash(){
   el.innerHTML = `
   <div class="kpi4">
     <div class="k"><div class="ki">${I('building')}</div><div class="kn">${pool.length}</div><div class="kl">Active clinics</div></div>
-    <div class="k"><div class="ki">${I('chart')}</div><div class="kn">${money(totRev)}</div><div class="kl">Total sales</div></div>
+    <div class="k"><div class="ki">${I('chart')}</div><div class="kn">${money(totRev)}</div><div class="kl">Orders logged in visits · all time</div></div>
     <div class="k"><div class="ki">${I('calendar')}</div><div class="kn">${totVisits}</div><div class="kl">Visits logged</div></div>
     <div class="k"><div class="ki">${I('cart')}</div><div class="kn">${totOrders}</div><div class="kl">Orders \u00b7 ${totVisits?Math.round(totOrders/totVisits*100):0}% conv.</div></div>
     <div class="k"><div class="ki">${I('stethoscope')}</div><div class="kn">${totDocs}</div><div class="kl">Doctors on file</div></div>
@@ -235,12 +276,12 @@ function renderClinicDash(){
     ])}
   </div>
 
-  ${topRev.length?`<div class="chartcard"><h4>\u{1F3C6} Top clinics by sales</h4><div class="csub">Where the money actually comes from</div>
+  ${topRev.length?`<div class="chartcard"><h4>\u{1F3C6} Top clinics by orders logged</h4><div class="csub">Orders typed in visits, all time — invoices are in Customer sales above</div>
     ${topRev.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${x.s.orders} order${x.s.orders===1?'':'s'} \u00b7 ${x.s.conv}% conv.`, money(x.s.rev))).join('')}
   </div>`:''}
 
   ${topVis.length?`<div class="chartcard"><h4>\u{1F45F} Most visited</h4><div class="csub">Where your time goes \u2014 compare against sales above</div>
-    ${topVis.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${money(x.s.rev)} earned`, x.s.visits)).join('')}
+    ${topVis.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${money(x.s.rev)} ordered`, x.s.visits)).join('')}
   </div>`:''}
 
   ${dormant.length?`<div class="chartcard"><h4>\u{1F4A4} Going quiet</h4><div class="csub">Visited before, but not recently</div>

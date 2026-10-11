@@ -242,6 +242,8 @@ en: {
   capTargets:'Official monthly target vs achieved sales for each rep, with pace and month-end forecast.',
   capBuyers:(w)=>`Every account with at least one invoice in the sales files — ${w}.`,
   capNonBuyers:(w)=>`Active accounts with no invoice yet — ${w} — with the working model and the reason recorded per clinic.`,
+  thisMonth:'this month', lastFileMonth:(m)=>`${m} (no sales file for this month yet)`,
+  buyersRecon:(a,b,c,t)=>`Month's sales: clinics ${a} + online / channels ${b} + ignored accounts ${c} = ${t}. Online / channel and ignored accounts count for the salesman who issued them; they are not in the clinic lists.`,
   capRetDetail:(w)=>`Each returned item in the period ${w}: which clinic returned it, when, its value, and the recorded justification.`,
   capRetBrand:'Total returned value grouped by brand (top 5).',
   capRetCust:'Total returned value grouped by clinic (top 5).',
@@ -295,6 +297,8 @@ ar: {
   capTargets:'الهدف الشهري الرسمي مقابل المبيعات المحققة لكل مندوبة، مع الوتيرة وتوقع نهاية الشهر.',
   capBuyers:(w)=>`كل حساب لديه فاتورة واحدة على الأقل في ملفات المبيعات — ${w}.`,
   capNonBuyers:(w)=>`الحسابات النشطة بلا فواتير بعد — ${w} — مع طريقة التعامل والسبب المسجل لكل عيادة.`,
+  thisMonth:'هذا الشهر', lastFileMonth:(m)=>`${m} (لا يوجد ملف مبيعات لهذا الشهر بعد)`,
+  buyersRecon:(a,b,c,t)=>`مبيعات الشهر: العيادات ${a} + أونلاين / قنوات ${b} + حسابات متجاهَلة ${c} = ${t}. حسابات الأونلاين / القنوات والحسابات المتجاهَلة تُحسب لمن أصدر فاتورتها، ولا تظهر في قوائم العيادات.`,
   capRetDetail:(w)=>`كل صنف مرتجع في الفترة ${w}: العيادة التي أرجعته، التاريخ، القيمة، والمبرر المسجل.`,
   capRetBrand:'إجمالي قيمة المرتجعات حسب البراند (أعلى 5).',
   capRetCust:'إجمالي قيمة المرتجعات حسب العيادة (أعلى 5).',
@@ -661,6 +665,10 @@ function buildMasterReportBody(lang, format){
   // working model and the reason the team recorded, framed as pipeline.
   const dash = erpDashData(repFilter);
   const dashBuyers = dash.buyers.filter(b=>!b.channel);
+  // the month the card reads (v115): this month, or the last month with a sales file — said
+  const dashMonth = !dash.ms ? '' : dash.ms.current ? L.thisMonth
+    : L.lastFileMonth(new Date(dash.ms.month + '-01T00:00:00').toLocaleDateString(rtl ? 'ar-KW-u-nu-latn' : 'en-US', {month:'long', year:'numeric'}));
+  const dashParts = !dash.ms ? null : repFilter !== 'all' ? (dash.ms.people[0] || {clinics:0, channels:0, ignored:0, total:0}) : dash.ms.totals;
   const buySec = dash.hasData ? `<div class="mr-kpis">
       <div class="mr-kpi"><div class="n"><span class="num">${dashBuyers.length}</span></div><div class="l">${L.boughtLbl}</div></div>
       <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.length}</span></div><div class="l">${L.notBoughtLbl}</div></div>
@@ -668,13 +676,13 @@ function buildMasterReportBody(lang, format){
       <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.filter(x=>x.c.noSaleReason).length}</span></div><div class="l">${L.reasonedLbl}</div></div>
     </div>
     <h3 class="mr-rep">${L.boughtLbl} (${dashBuyers.length})</h3>
-    ${cap(L.capBuyers(dash.periodLabel))}
+    ${cap(L.capBuyers(dashMonth))}
     <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.colInv}</th><th>${L.colValue}</th></tr></thead><tbody>
     ${dashBuyers.slice(0,25).map(b=>`<tr><td>${esc(b.name)}</td><td>${esc(b.rep||'')}</td><td><span class="num">${b.invoices}</span></td><td>${mrMoney(b.net,lang)}</td></tr>`).join('')}
     ${dashBuyers.length>25?`<tr><td colspan="4"><span class="mr-note">+${dashBuyers.length-25}</span></td></tr>`:''}
-    </tbody></table>
+    </tbody></table>${dashParts ? `<div class="mr-note">${L.buyersRecon(mrMoney(dashParts.clinics,lang), mrMoney(dashParts.channels,lang), mrMoney(dashParts.ignored,lang), mrMoney(dashParts.total,lang))}</div>` : ''}
     <h3 class="mr-rep">${L.notBoughtLbl} (${dash.nonBuyers.length})</h3>
-    ${cap(L.capNonBuyers(dash.periodLabel))}
+    ${cap(L.capNonBuyers(dashMonth))}
     <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.colModel}</th><th>${L.colReason}</th></tr></thead><tbody>
     ${dash.nonBuyers.slice(0,40).map(x=>`<tr><td>${esc(x.c.name)}</td><td>${esc(x.c.rep||'')}</td>
       <td>${clinicIsRx(x.c)?`<span class="mr-pill g">${L.rxModel}</span>${clinicIsDirect(x.c)?' + '+L.directModel:''}`:clinicIsDirect(x.c)?L.directModel:'—'}</td>
