@@ -982,7 +982,7 @@ const _rxMyWids = new Set();
 // The list did not come from the cloud on this phone (the read failed and
 // there is no device copy): the built-in forms in memory are not the team's
 // list, so the editor waits for the list instead of offering them for editing.
-function rxTypesUnread(){ return !!_loadFailed.rxTypes && !rxTypesDoc; }
+function rxTypesUnread(){ return _rxTypesRead !== 'read' && !rxTypesDoc; } // never read yet (failed, or still reading): not "Not set up yet"
 // Is this editor the sheet on screen? Cancel clears _rxEd; a tap outside the
 // sheet, or another sheet opened since, does not — so the screen is asked too.
 function rxEdOnScreen(ed){
@@ -1017,14 +1017,16 @@ async function rxTypesLoad(ed){
   ed.loading = true;
   renderRxTypesWaiting(ed);
   let r = null, ok = false;
+  const gen0 = _rxTypesGen;
   try{ r = await withTimeout(window.storage.get('rxTypes', true), 8000); ok = true; }
   catch(e){ console.warn('prescription types: read failed', e); }
   ed.loading = false;
-  if(ok && rxTypesUnread()){ // (a background refresh may have brought it meanwhile)
+  // keep what the read brought unless a save on this phone confirmed a newer list meanwhile
+  if(ok && (!rxTypesDoc || gen0 === _rxTypesGen)){
     const v = UMCore.safeParse(r && r.value, null);
     rxTypesDoc = v && typeof v === 'object' && !Array.isArray(v) ? v : null; _rxTypesGen++;
     if(r && r.value != null) mirrorSave('rxTypes', r.value);
-    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes; _rxTypesRead = 'read';
     rxTypesChanged();
   }
   if(!rxEdOnScreen(ed)) return; // closed meanwhile
@@ -1203,7 +1205,7 @@ async function saveRxTypes(){
   if((written != null && committed) || already){
     rxTypesDoc = already ? seen : committed; _rxTypesGen++;
     mirrorSave('rxTypes', already ? JSON.stringify(seen) : written);
-    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes; _rxTypesRead = 'read';
     if(_rxEd === ed) _rxEd = null;
     if(onScreen) closeModal();
     showToast('✅ Prescription types saved');
@@ -1214,7 +1216,7 @@ async function saveRxTypes(){
     // what the cloud holds now: in memory and on the device; the editor, if still on screen, reopens on it
     rxTypesDoc = seen && typeof seen === 'object' && !Array.isArray(seen) ? seen : null; _rxTypesGen++;
     if(seen != null) mirrorSave('rxTypes', JSON.stringify(seen));
-    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes; _rxTypesRead = 'read';
     // this phone's own earlier save (from an editor since closed) that landed late — never "another device"
     const mine = !!(rxTypesDoc && typeof rxTypesDoc.wid === 'string' && _rxMyWids.has(rxTypesDoc.wid));
     if(onScreen){

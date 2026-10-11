@@ -700,6 +700,42 @@ function reseed(o = {}){
     mode.failGet = null; await ev(() => { _rxEd = null; closeModal(); });
     check('F4 …in Arabic: the note and its buttons translated, no English left', !a4.left.length && /تعذّر تحميل أنواع البريسكريبشن/.test(a4.text) && !/لم تُحدَّد بعد/.test(a4.text), a4);
 
+    // F4b — the editor waits after a failed read; then a slow background refresh starts reading the list: the
+    // editor must keep saying the list could not be loaded (never "Not set up yet"), and "Try again" with a read
+    // that answers while the refresh is still held must open the team's list, not throw that read away
+    reseed(); mode.failGet = /^rxTypes$/; await boot(G, 'supervisor');
+    await ev(() => { closeModal(); openRxTypes(); }); await sleep(400);         // its own read fails: "could not be loaded" + Try again
+    mode.failGet = null; mode.holdGet = /^rxTypes$/;                          // a slow link: the refresh's read waits
+    await ev(() => { window.__lp4 = loadAll(); }); await sleep(300);
+    const w4 = await ev(() => { const s = document.getElementById('rxtSave'); return { text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), save: !!s && !s.disabled,
+      rows: document.querySelectorAll('#rxtList input.rxt-name').length, retry: !!document.getElementById('rxtRetry') }; });
+    check('F4b while a slow refresh is still reading: the editor still says the list could not be loaded (never "Not set up yet"), Save paused',
+      /could not be loaded/.test(w4.text) && !/Not set up yet/.test(w4.text) && !w4.save && w4.rows === 0 && w4.retry, w4);
+    mode.holdGet = null;                                                       // the link recovers: a new read answers at once; the refresh's stays held
+    if(await page.locator('#rxtRetry').count()) await page.locator('#rxtRetry').tap();
+    await sleep(500);
+    const t4 = await ev(() => { const s = document.getElementById('rxtSave'); return { rows: [...document.querySelectorAll('#rxtList input.rxt-name')].map(i => i.value), save: !!s && !s.disabled,
+      text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), mem: rxTypesDoc && rxTypesDoc.rev }; });
+    check('F4b …"Try again" answers while that refresh is still held: the team\'s list opens (rev 3), saving resumes',
+      t4.save && t4.rows.length === 3 && t4.mem === 3 && !/Not set up yet|could not be loaded/.test(t4.text), t4);
+    release(); await ev(async () => { try{ await window.__lp4; }catch(e){} }); await sleep(200);
+    const t4b = await ev(() => ({ mem: rxTypesDoc && rxTypesDoc.rev, text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' ') }));
+    check('F4b …the held refresh lands afterwards: still the team\'s list, never "Not set up yet"', t4b.mem === 3 && !/Not set up yet/.test(t4b.text), t4b);
+    await ev(() => { _rxEd = null; closeModal(); });
+    // F4c — the editor is OPENED while that slow refresh is reading (the list never read on this phone): it waits
+    // ("Loading…" / "could not be loaded"), never offers the built-in forms as "Not set up yet"; the list opens when the read lands
+    reseed(); mode.failGet = /^rxTypes$/; await boot(G, 'supervisor');
+    mode.failGet = null; mode.holdGet = /^rxTypes$/;
+    await ev(() => { window.__lp5 = loadAll(); }); await sleep(300);
+    await ev(() => { closeModal(); openRxTypes(); }); await sleep(300);
+    const c4 = await ev(() => { const s = document.getElementById('rxtSave'); return { text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), save: !!s && !s.disabled, rows: document.querySelectorAll('#rxtList input.rxt-name').length }; });
+    check('F4c editor opened during a slow refresh on a phone that never read the list: it waits — never "Not set up yet" with the built-in forms',
+      /Loading the prescription types|could not be loaded/.test(c4.text) && !/Not set up yet/.test(c4.text) && !c4.save && c4.rows === 0, c4);
+    mode.holdGet = null; release(); await ev(async () => { try{ await window.__lp5; }catch(e){} }); await sleep(500);
+    const c4b = await ev(() => ({ rows: [...document.querySelectorAll('#rxtList input.rxt-name')].map(i => i.value), mem: rxTypesDoc && rxTypesDoc.rev }));
+    check('F4c …when the reads land the team\'s list opens (rev 3)', c4b.mem === 3 && c4b.rows.length === 3, c4b);
+    await ev(() => { _rxEd = null; closeModal(); });
+
     // F3 — "No answer from the cloud yet", then the write lands after all: this phone's own save, never "another device"
     const slowSave = async () => { // the app gives up waiting (its timeouts shortened here so the check runs fast); the write lands right after
       mode.holdSet = /^rxTypes$/; await toasts();
