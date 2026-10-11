@@ -1117,7 +1117,7 @@ function visitTypeLabel(v){
 }
 function rowsToCsv(rows){ return rows.map(r=>r.map(csvEscape).join(',')).join('\n'); }
 function buildVisitsCSV(range){
-  const rows = [['Date','Rep','Joint With','Type','Channel','Clinic','Class','Contacts Seen','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes']];
+  const rows = [['Date','Rep','Joint With','Type','Channel','Clinic','Class','Contacts Seen','Order #','Products Discussed','Order Items','Subtotal (KD)','Discount %','Discount (KD)','Net Total (KD)','Order Notes','No-Order Reason','Next Follow-up','Visit Notes','Prescription pads given','Prescription pads detail']];
   const base = visibleVisits(); // reps export only their own book
   const inRange = range ? UMCore.filterVisitsByRange(base, range.from, range.to) : base;
   // The export must MATCH the statistics: double-saved duplicates collapse
@@ -1132,13 +1132,16 @@ function buildVisitsCSV(range){
     const channel = v.callOnly ? (v.channel||'call') : '';
     const type = visitTypeLabel(v);
     const prodNames = (v.products||[]).map(pid=>productName(pid)).filter(Boolean).join('; ');
+    // Prescription pads given on the visit: the total and who got which form —
+    // on the visit's first row only, like its notes (field visits only).
+    const pads = rxPadsOf(v), padsCell = pads || '', padsDetail = pads ? rxTextOf(v, c) : '';
     const orders = v.orders||[];
     if(orders.length===0){
-      rows.push([v.date, v.rep, v.withRep||'', type, channel, cname, c?c.cls||'':'', seen, '', prodNames, '', '', '', '', '0.00', '', v.noOrderReason||'', v.nextFollowUp||'', v.notes||'']);
+      rows.push([v.date, v.rep, v.withRep||'', type, channel, cname, c?c.cls||'':'', seen, '', prodNames, '', '', '', '', '0.00', '', v.noOrderReason||'', v.nextFollowUp||'', v.notes||'', padsCell, padsDetail]);
     } else {
       orders.forEach((o,i)=>{
         const items = (o.items||[]).map(it=>orderItemName(it)+' x'+it.qty).join('; ');
-        rows.push([v.date, v.rep, v.withRep||'', type, channel, cname, c?c.cls||'':'', i===0?seen:'', i+1, i===0?prodNames:'', items, (o.gross||0).toFixed(2), o.discountPct||0, (o.discountAmount||0).toFixed(2), (o.total||0).toFixed(2), o.notes||'', '', i===0?(v.nextFollowUp||''):'', i===0?(v.notes||''):'']);
+        rows.push([v.date, v.rep, v.withRep||'', type, channel, cname, c?c.cls||'':'', i===0?seen:'', i+1, i===0?prodNames:'', items, (o.gross||0).toFixed(2), o.discountPct||0, (o.discountAmount||0).toFixed(2), (o.total||0).toFixed(2), o.notes||'', '', i===0?(v.nextFollowUp||''):'', i===0?(v.notes||''):'', i===0?padsCell:'', i===0?padsDetail:'']);
       });
     }
   });
