@@ -526,11 +526,14 @@ async function saveVisit(){
   visits.push(visit);
   if(clinic){ clinic.lastVisit = todayStr(); clinic.nextFollowUp = followUp; }
 
-  const [okVisits] = await Promise.all([persist('visits'), persist('clinics')]);
+  // This save's own outcome, read the moment its visits write settles: the
+  // offline queue may send visits again while the follow-up step runs, and
+  // that later save is not this one (persistFor / sentSince, 04).
+  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
   if(navigator.vibrate) navigator.vibrate(12); // a small physical "saved" cue in the field
-  const outcome = persistOutcome('visits');
-  if(okVisits) showToast(visitSavedMsg());
+  const outcome = vs.outcome;
+  if(vs.ok || sentSince('visits', vs)) showToast(visitSavedMsg()); // queued here, sent by the queue meanwhile = saved
   else if(outcome.queued && outcome.mirrored) showToast('📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال');
   else showToast('⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال');
   renderAll();
@@ -637,7 +640,9 @@ let rxOn = false;
 // its presence means its block is shown. Edited in place, so the 20-second
 // refresh (which redraws only the history on this tab) never loses it.
 const rxDrafts = { log: {}, edit: {} };
-let _rxEdit = null; // the edit sheet: { visitId, clinicId, names: {typeId: the name saved on the visit} }
+// the edit sheet: { visitId, clinicId, names: {typeId: the name saved on the visit},
+//   held: the people who already had pads on the visit when the sheet opened, in line order }
+let _rxEdit = null;
 const RX_STALE_MSG = 'Reopen the app to finish updating — prescriptions can be logged after that.';
 // An old cached core.js (the v102 lesson) has none of the helpers: the step
 // then says so and the visit still saves, without prescriptions.
@@ -671,11 +676,12 @@ function rxClinic(scope){
 }
 // The people who can be given pads in this scope, in the order met, then the
 // clinic when its block was added (or, for a new customer, only the clinic).
-// null = no clinic picked yet.
+// The edit sheet also keeps anyone who already had pads on the visit without
+// being marked as met (rxEditUnmet). null = no clinic picked yet.
 function rxRecipients(scope){
   const draft = rxDrafts[scope] || {};
   let keys;
-  if(scope === 'edit') keys = [...new Set((window._editDocIds || []).filter(id => id != null && id !== '').map(String))];
+  if(scope === 'edit') keys = [...new Set((window._editDocIds || []).filter(id => id != null && id !== '').map(String))].concat(rxEditUnmet());
   else if(newClinicMode) return [''];
   else if(!selectedClinicId || !clinics.some(c => c.id === selectedClinicId)) return null;
   else keys = [...new Set(selectedDoctorIds.map(String))];
@@ -746,12 +752,16 @@ function rxBlocksHTML(scope, recips, clinic){
   list.forEach(t => { byId[t.id] = t; });
   const active = list.filter(t => t.active).map(t => t.id);
   const draft = rxDrafts[scope] || {};
+  // the edit sheet: a doctor on the clinic's list who has pads on the visit but
+  // is not marked as met says so ("A doctor no longer listed" says enough)
+  const listed = new Set(((clinic && clinic.doctors) || []).filter(d => d && d.id != null).map(d => String(d.id)));
+  const unmet = new Set(scope === 'edit' ? rxEditUnmet().filter(id => listed.has(id)) : []);
   return (recips || []).map(key => {
     const b = draft[key] || {};
     const ids = active.slice();
     Object.keys(b).forEach(id => { if(!ids.includes(id) && ((Number(b[id]) || 0) > 0 || !byId[id] || !byId[id].active)) ids.push(id); });
     return `<div class="card rx-doc" data-rx-scope="${scope}" data-rx-doc="${esc(key)}" style="padding:6px 12px 4px; margin-bottom:8px;">
-      <div class="rx-who" style="font-weight:700; font-size:13.5px; padding:4px 0 2px; overflow-wrap:anywhere;">${rxWhoHTML(key, clinic)}</div>
+      <div class="rx-who" style="font-weight:700; font-size:13.5px; padding:4px 0 2px; overflow-wrap:anywhere;">${rxWhoHTML(key, clinic)}${unmet.has(key) ? ' <span class="rx-unmet" style="color:var(--muted); font-weight:500; font-size:11.5px; white-space:nowrap;">(not marked as met)</span>' : ''}</div>
       ${ids.map(id => rxRowHTML(scope, key, id, byId[id], Number(b[id]) || 0)).join('')}
     </div>`;
   }).join('');
@@ -825,22 +835,42 @@ function rxDraftLines(scope){
   return out;
 }
 // ---- the edit sheet (08: openEditVisit / toggleEditDoc / saveEditVisit) ----
+// Every person who has pads on the visit gets a block, also someone no longer
+// marked as met (a phone on an older version un-tapped them, or a doctor record
+// was merged or removed): shown "(not marked as met)" — or "A doctor no longer
+// listed" — and kept on save. Their pads go only through the explicit drop
+// (tap them as met, then un-tap: rxDropPerson, with its toast) or by setting
+// the counts to 0 — never silently because the sheet did not show them.
 function rxEditInit(v){
-  _rxEdit = { visitId: v.id, clinicId: v.clinicId, names: {} };
+  _rxEdit = { visitId: v.id, clinicId: v.clinicId, names: {}, held: [] };
   rxDrafts.edit = {};
   if(rxReady()) UMCore.visitRxLines(v).forEach(l => {
     const k = l.doctorId == null ? '' : String(l.doctorId);
     const b = rxDrafts.edit[k] || (rxDrafts.edit[k] = {});
     b[l.type] = UMCore.rxQty((Number(b[l.type]) || 0) + l.qty);
     if(!_rxEdit.names[l.type] && l.name) _rxEdit.names[l.type] = l.name;
+    if(k !== '' && !_rxEdit.held.includes(k)) _rxEdit.held.push(k);
   });
   renderRxEdit();
+}
+// People with pads on the visit who are not (or no longer) marked as met in
+// the sheet, and whose pads were not dropped: their blocks stay.
+function rxEditUnmet(){
+  const met = new Set((window._editDocIds || []).filter(id => id != null).map(String)), draft = rxDrafts.edit || {};
+  return ((_rxEdit && _rxEdit.held) || []).filter(id => !met.has(id) && _rxHas(draft, id));
+}
+// Whose lines an edit may keep (UMCore.cleanVisitRx doctorIds): the people met
+// and everyone who already had pads on the visit.
+function rxEditPeople(){
+  const out = [...new Set((window._editDocIds || []).filter(id => id != null && id !== '').map(String))];
+  ((_rxEdit && _rxEdit.held) || []).forEach(id => { if(!out.includes(id)) out.push(id); });
+  return out;
 }
 function renderRxEdit(){
   const el = document.getElementById('evRx');
   if(!el) return;
   if(!rxReady()){ el.innerHTML = rxNoteHTML('rxStaleNote', RX_STALE_MSG, true); return; }
-  const recips = rxRecipients('edit');
+  const recips = rxRecipients('edit'); // the people met + anyone who still has pads on the visit
   rxPrune('edit', recips);
   let html = '';
   if(!rxActiveTypes().length) html += rxNoteHTML('rxNoActiveNote', 'No prescription type is active — ask the supervisor to add one.', true);

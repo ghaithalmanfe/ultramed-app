@@ -930,8 +930,15 @@ async function loadAll(){
       if(!_rxSaving && rxGen0 === _rxTypesGen){
         const rtVal = UMCore.safeParse(rt && rt.value, null);
         rxTypesDoc = rtVal && typeof rtVal === 'object' ? rtVal : null;
-      } else console.warn('rxTypes: refresh skipped — the list was saved while it read');
+      } else {
+        console.warn('rxTypes: refresh skipped — the list was saved while it read');
+        // Memory holds the list the cloud confirmed after this read began; the
+        // read itself already wrote its older copy to the device — put the
+        // confirmed one back, so the next start without a connection shows it.
+        if(rxGen0 !== _rxTypesGen && rxTypesDoc){ mirrorSave('rxTypes', JSON.stringify(rxTypesDoc)); delete _mirrorUsed.rxTypes; }
+      }
     }
+    if(typeof rxTypesRefreshed === 'function'){ try{ rxTypesRefreshed(); }catch(e){ console.warn('types editor refresh', e); } } // a types editor waiting for the list (10)
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
     const rbVal = UMCore.safeParse(rb && rb.value, null);
@@ -1268,11 +1275,15 @@ async function persist(key, opts){
   const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap, erpNotes};
   let value = key === 'clinics' ? storedClinics() : map[key]; // hoisted: the catch mirrors the MERGED copy, not the pre-merge one
   _persistInfo[key] = null;
+  // What THIS call did — kept for persistOutcome, and told to its own caller
+  // (opts.told, see persistFor): another save of the same key can start before
+  // that caller gets to read persistOutcome.
+  const tell = info => { _persistInfo[key] = info; if(typeof opts.told === 'function'){ try{ opts.told(info); }catch(e){} } };
   try{
     if(key === 'visits'){
       await persistVisits(opts); // live + archives + index; throws when the cloud is unreachable
       if(outboxHas('visits')) outboxRemove('visits');
-      _persistInfo.visits = { ok: true };
+      tell({ ok: true });
       if(!Object.keys(_mirrorUsed).length && !_bootCrashed && !_seedClinics) maybeSnapshot();
       return true;
     }
@@ -1327,7 +1338,7 @@ async function persist(key, opts){
       if(key === 'dayPlans') _dpBase = written; // the cloud now holds exactly this
       mirrorSave(key, written);
       if(outboxHas(key)) outboxRemove(key);
-      _persistInfo[key] = { ok: true };
+      tell({ ok: true });
       if(['clinics','visits','tasks'].includes(key) && !Object.keys(_mirrorUsed).length &&
          !_bootCrashed && !_seedClinics) maybeSnapshot(); // never snapshot stale or partial state
       return true;
@@ -1367,7 +1378,7 @@ async function persist(key, opts){
     if(!res){ showToast('Save failed, try again'); return false; }
     mirrorSave(key, str);
     if(outboxHas(key)) outboxRemove(key);
-    _persistInfo[key] = { ok: true };
+    tell({ ok: true });
     return true;
   }catch(e){
     // Cloud unreachable. Merge-safe lists queue for an automatic, union-based
@@ -1387,7 +1398,7 @@ async function persist(key, opts){
       offlineToast(mOk ? '📴 No connection — retry this save when back online'
                        : '⚠️ Device storage full — retry this save when back online');
     }
-    _persistInfo[key] = { ok: false, queued: !!queueable, mirrored: mOk };
+    tell({ ok: false, queued: !!queueable, mirrored: mOk });
     return false;
   }
 }
@@ -1396,6 +1407,21 @@ async function persist(key, opts){
 // celebrating a save that never reached anywhere.
 const _persistInfo = {};
 function persistOutcome(key){ return _persistInfo[key] || { ok: false, queued: false, mirrored: false }; }
+// persist(key) with what THAT save did ({ ok, outcome }), read the moment it
+// settles. A screen that awaits more work before telling the user (a
+// follow-up task, a day plan) must not read persistOutcome later: the outbox
+// flush or a refresh can start another save of the same key meanwhile, and
+// that one's state (in flight = null, or already uploaded) is not this save's.
+function persistFor(key, opts){
+  let info = null;
+  const told = ok => ({ ok: ok === true, outcome: info || persistOutcome(key) }); // (an early refusal tells nothing: the outcome as it stands then)
+  return persist(key, Object.assign({}, opts || {}, { told: x => { info = x; } }))
+    .then(told, e => { console.warn('save of ' + key + ' failed', e); return told(false); });
+}
+// A save that was queued on this device has gone up since — the outbox sent
+// it (a later save of the same list carries it, since the list in memory
+// holds it): it is saved.
+function sentSince(key, r){ return !!r && !r.ok && !!(r.outcome && r.outcome.queued) && !outboxHas(key) && persistOutcome(key).ok === true; }
 // Atomic read-merge-write where the storage supports it; a plain (non-atomic)
 // read → fn → write otherwise, with the same contract.
 async function storageUpdate(key, fn, ms){

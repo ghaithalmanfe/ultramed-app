@@ -9,7 +9,13 @@
 // delete / restore, a joint visit, refused saves, Arabic, the supervisor's
 // types editor (compare-and-set), the built-in forms, and the edges (merged
 // and removed doctors, same-day visits, calls, the background refresh, the
-// KPI, an unreadable month, phone width). RX_ONLY=P0,P3 runs some phases only.
+// KPI, an unreadable month, phone width). P10–P11 reproduce the review's
+// findings and keep them as checks (F1–F9): the edit sheet keeps the pads of
+// someone not marked as met; a save's toast tells that save's own outcome; the
+// types editor adds a name left in its box, recognises its own late-landing
+// save, waits for a list that did not load, never closes or replaces a sheet
+// opened after Cancel, keeps the device copy on a just-saved list, and reads
+// right to left in Arabic. RX_ONLY=P0,P3 runs some phases only.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -24,12 +30,23 @@ const ONLY = (process.env.RX_ONLY || '').split(',').map(s => s.trim()).filter(Bo
 // ---- fake cloud (Node side: survives reloads; can refuse, throw or be unreadable per key) ----
 // No `update` method: storageUpdate goes get → fn → set, so failSet / falseSet hit visit saves
 // too, and a change "made on another device" between the read and the write is visible.
+// holdGet / holdGetOnce / holdSet keep matching reads or writes waiting until release(): a slow
+// link. A held read answers with what the cloud held when it was asked; a held write lands when
+// released (or fails then, if failSet matches by that time). release(false) drops them unanswered.
 const cloud = {};
-const mode = { failSet: null, falseSet: null, failGet: null, hangSet: null, sets: [] };
+const mode = { failSet: null, falseSet: null, failGet: null, hangSet: null, holdGet: null, holdGetOnce: null, holdSet: null, sets: [] };
+const held = [];
+const hold = () => new Promise(r => held.push(r)); // → true: go on; false: dropped (the page that asked is gone)
+const release = (go = true) => held.splice(0).forEach(r => r(go));
 let actor = null; const typeWrites = [], repTypeWrites = []; // writes of state/rxTypes since the last reseed, with who was signed in; and any from a rep, ever
 const api = {
-  get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
+  get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get');
+    const v = k in cloud ? cloud[k] : null;
+    if(mode.holdGetOnce && mode.holdGetOnce.test(k)){ mode.holdGetOnce = null; if(!(await hold())) return null; }
+    else if(mode.holdGet && mode.holdGet.test(k)){ if(!(await hold())) return null; }
+    return v; },
   set: async (k, v) => { mode.sets.push(k); if(k === 'rxTypes'){ typeWrites.push(actor); if(actor !== 'supervisor') repTypeWrites.push(actor); }
+    if(mode.holdSet && mode.holdSet.test(k)){ if(!(await hold())) return false; }
     if(mode.hangSet && mode.hangSet.test(k)) return new Promise(() => {}); // never answers
     if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set');
     if(mode.falseSet && mode.falseSet.test(k)) return false;
@@ -85,7 +102,8 @@ function reseed(o = {}){
   if(o.rxTypes !== null) cloud.rxTypes = JSON.stringify(o.rxTypes || TYPES());
   cloud.recycleBin = JSON.stringify({ clinics: [], products: [], visits: [] });
   cloud.erpSales = JSON.stringify({ periods: [], seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true } });
-  Object.assign(mode, { failSet: null, falseSet: null, failGet: null, hangSet: null }); mode.sets.length = 0; typeWrites.length = 0;
+  Object.assign(mode, { failSet: null, falseSet: null, failGet: null, hangSet: null, holdGet: null, holdGetOnce: null, holdSet: null }); mode.sets.length = 0; typeWrites.length = 0;
+  release(false); // nothing from the last phase stays waiting — or lands in the new seed
 }
 
 (async () => {
@@ -102,6 +120,8 @@ function reseed(o = {}){
     if(m.type() === 'error' && !/gstatic|firebase|net::ERR|Failed to load resource|boom-(set|get)|set failed|update failed/i.test(t)) errors.push('console: ' + t.slice(0, 200)); });
   page.on('dialog', async d => { dialogs.push(d.message()); await d.dismiss(); });
   for(const [n, f] of Object.entries({ __cGet: api.get, __cSet: api.set, __cDel: api.del, __cList: api.list, __cSetMany: api.setMany })) await page.exposeFunction(n, f);
+  // the page can change the cloud's behaviour mid-step (e.g. the signal comes back during a save): { key: 'regex source' | null }
+  await page.exposeFunction('__mode', spec => { Object.keys(spec || {}).forEach(k => { mode[k] = spec[k] == null ? null : new RegExp(spec[k]); }); return true; });
   await page.addInitScript(() => {
     window.storage = { get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; }, set: async (k, v) => window.__cSet(k, v),
       setMany: async e => window.__cSetMany(e), delete: async k => window.__cDel(k), list: async p => ({ keys: await window.__cList(p) }) };
@@ -113,6 +133,13 @@ function reseed(o = {}){
     actor = role;
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(120);
     await page.evaluate(l => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){} }, local || null);
+    await page.goto(`http://localhost:${PORT}/index.html`); await sleep(200);
+    await page.evaluate(async ({ who, role }) => { await selectUser(who, role); window.__toasts = []; const real = showToast; window.showToast = m => { window.__toasts.push(String(m)); real(m); }; }, { who, role });
+    await sleep(200);
+  };
+  // The same phone opened again: what it kept (the device copies) stays.
+  const reopen = async (who, role) => {
+    actor = role;
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(200);
     await page.evaluate(async ({ who, role }) => { await selectUser(who, role); window.__toasts = []; const real = showToast; window.showToast = m => { window.__toasts.push(String(m)); real(m); }; }, { who, role });
     await sleep(200);
@@ -424,6 +451,7 @@ function reseed(o = {}){
     await page.locator('#rxtNewName').fill('Sensitivity prescription'); await page.locator('#rxtAdd').tap(); await sleep(50); await toasts();
     await page.locator('#rxtNewName').fill('  whitening & CARE prescription '); await page.locator('#rxtAdd').tap(); await sleep(50); const dup = await toasts();
     const kept = await ev(() => [...document.querySelectorAll('#rxtList input.rxt-name')].map(i => i.value));
+    await page.locator('#rxtNewName').fill(''); // the refused name is cleared first: a name left in the box is part of the save (F8, P11)
     await page.locator('#rxtSave').tap(); await sleep(400); const st = await toasts();
     const L = J('rxTypes'), byId = id => L.types.find(t => t.id === id);
     check('a duplicate name is refused; the typed rename survived the redraws', dup.some(t => /same name/.test(t)) && kept.includes('Whitening & care prescription') && kept.filter(n => /whitening/i.test(n)).length === 1, { dup, kept });
@@ -533,7 +561,227 @@ function reseed(o = {}){
     check('phone width (390): 2 blocks × 3 rows and a 40-character name fit — no sideways scroll; the steppers stay thumb-sized', w.doc <= 390 && w.body <= 390 && w.rx <= 390 && w.rows === 6 && w.btn[0] >= 34 && w.btn[1] >= 34, w);
   });
 
-  if(!ONLY.length || ONLY.includes('P0') || ONLY.includes('P7')) check('persist("rxTypes") was never called (the tripwire stayed silent)', guard.length === 0, guard.slice(0, 3));
+  // ======================= P10 — review fixes: the edit sheet, and what a save's toast says =======================
+  await phase('P10', 'the edit sheet keeps every person\'s pads; a save\'s toast tells that save\'s outcome', async () => {
+    // F1/F2 — a visit whose people met no longer include everyone who got pads: a phone still on the
+    // older version un-tapped Omar (it rewrites the people met and leaves the lines alone), and a
+    // doctor record was removed. Omar keeps 3 Whitening pads, the removed doctor 1 Ortho pad.
+    const vx = V('vX', 'm1', M, '2026-10-12', ['m1-d1'], [line(T.ortho, 2, 'm1-d1'), line(T.white, 3, 'm1-d2'), line(T.ortho, 1, 'm1-gone')]);
+    reseed({ oct: OCT().concat([vx]) }); await boot(M, 'rep');
+    const before = await figs(); // Mariam 9 + 6 = 15 · Huda 8 + 2 = 10 · Omar 1 + 3 = 4
+    await ev(() => { closeModal(); openEditVisit('vX'); });
+    const sh = await ev(() => { const q = s => document.querySelector('#evRx ' + s), txt = el => el ? el.innerText.replace(/\s+/g, ' ').trim() : '', val = s => q(s) ? +q(s).value : null;
+      return { blocks: [...document.querySelectorAll('#evRx .rx-doc')].map(b => b.dataset.rxDoc), omar: txt(q('[data-rx-doc="m1-d2"] .rx-who')), gone: txt(q('[data-rx-doc="m1-gone"] .rx-who')),
+        omarWhite: val('[data-rx-doc="m1-d2"] [data-rx-type="twhite"] input.rx-qty'), goneOrtho: val('[data-rx-doc="m1-gone"] [data-rx-type="tortho"] input.rx-qty'), total: txt(document.getElementById('rxTotal-edit')) }; });
+    check('F1 the edit sheet shows the pads of everyone on the visit, people not marked as met included: Omar by name ("not marked as met") and "A doctor no longer listed"; total 6 pads',
+      JSON.stringify(sh.blocks) === '["m1-d1","m1-d2","m1-gone"]' && /Dr\. Omar Saleh/.test(sh.omar) && /not marked as met/.test(sh.omar) && sh.gone === 'A doctor no longer listed' && sh.omarWhite === 3 && sh.goneOrtho === 1 && /6 pads/.test(sh.total), sh);
+    await toasts();
+    await ev(async () => { document.getElementById('evNotes').value = 'typo fixed'; await saveEditVisit('vX'); }); await sleep(150);
+    const nt = await toasts(), after = await figs(), c = copies('vX')[0] || {};
+    check('F2 a notes-only edit keeps every line and every figure (cloud: the same three lines, the people met unchanged; Mariam 15, Huda 10, Omar 4); "✅ Changes saved"; no prescriptions entry in the edit history',
+      c.notes === 'typo fixed' && JSON.stringify(sig(c)) === JSON.stringify(sig(vx)) && JSON.stringify(c.doctorIds) === '["m1-d1"]' && before.totals.total === 15 && after.totals.total === 15
+      && after.huda.total === 10 && after.omar.total === 4 && nt.includes('✅ Changes saved') && !(c.editHistory || []).some(h => h.prevRx),
+      { sig: sig(c), doctorIds: c.doctorIds, before: before.totals.total, after: after.totals.total, huda: after.huda, omar: after.omar, nt });
+    // removing Omar's pads takes the explicit drop: tap him as met, then un-tap him — with its toast
+    await ev(() => { closeModal(); openEditVisit('vX'); });
+    await page.locator('#editDocChips .chip', { hasText: 'Dr. Omar Saleh' }).tap(); await sleep(60); await toasts();
+    await page.locator('#editDocChips .chip', { hasText: 'Dr. Omar Saleh' }).tap(); await sleep(60);
+    const dt = await toasts(), blocks2 = await ev(() => [...document.querySelectorAll('#evRx .rx-doc')].map(b => b.dataset.rxDoc));
+    await ev(() => saveEditVisit('vX')); await sleep(150); const dropped = await figs();
+    check('F2 …a person\'s pads go only through the explicit drop (un-tapped, with its toast): then the cloud keeps Huda\'s and the unlisted doctor\'s lines (Omar 4 → 1, Mariam 15 → 12)',
+      dt.some(t => /typed for that person were cleared/.test(t)) && JSON.stringify(blocks2) === '["m1-d1","m1-gone"]'
+      && JSON.stringify(sig(copies('vX')[0])) === '["tortho|Ortho care prescription|2|m1-d1","tortho|Ortho care prescription|1|m1-gone"]' && dropped.omar.total === 1 && dropped.totals.total === 12,
+      { dt, blocks2, sig: sig(copies('vX')[0]), omar: dropped.omar, total: dropped.totals.total });
+    reseed({ oct: OCT().concat([vx]) }); await boot(M, 'rep', { ultramed_lang: 'ar' });
+    await ev(() => { closeModal(); openEditVisit('vX'); }); await sleep(100);
+    const ar1 = await ev(() => { const w = document.getElementById('evRx'), left = [];
+      const walk = document.createTreeWalker(w, NodeFilter.SHOW_TEXT);
+      for(let n = walk.nextNode(); n; n = walk.nextNode()){ const t = n.nodeValue.trim(); if(t && !n.parentElement.closest('[dir="auto"]') && /[A-Za-z]/.test(t)) left.push(t); }
+      return { left, omar: ((w.querySelector('[data-rx-doc="m1-d2"] .rx-who') || {}).innerText || '').replace(/\s+/g, ' '), gone: ((w.querySelector('[data-rx-doc="m1-gone"] .rx-who') || {}).innerText || '').trim() }; });
+    await ev(() => closeModal());
+    check('F1 …in Arabic: "not marked as met" and "a doctor no longer listed" translated, no English left apart from names and type names',
+      !ar1.left.length && /غير محدد ضمن من قابلتهم/.test(ar1.omar) && /طبيب لم يعد في القائمة/.test(ar1.gone), ar1);
+
+    // F7 — the toast tells what happened to THIS save, even when the offline queue is being sent
+    // while the follow-up step still runs: 'stuck' = Wi-Fi without internet (that upload hangs),
+    // 'back' = the signal returned (that upload goes through).
+    reseed(); await boot(M, 'rep');
+    const flushDuringFollowUp = variant => ev(variant => { const real = scheduleFollowUp;
+      window.scheduleFollowUp = async (...a) => { window.scheduleFollowUp = real;
+        if(variant === 'stuck'){ await window.__mode({ failSet: null, holdSet: '^visits' }); flushOutbox(); await new Promise(r => setTimeout(r, 150)); }
+        else { await window.__mode({ failSet: null }); await flushOutbox(); }
+        return real(...a); };
+      _lastOfflineToast = 0; window.__toasts.length = 0; }, variant);
+    const settle = async () => { mode.holdSet = null; mode.failSet = null; release();
+      for(let i = 0; i < 60 && await ev(() => _flushing || outboxList().length > 0); i++){ if(i % 10 === 9) await ev(() => { flushOutbox(); }); await sleep(100); } };
+    const editPads = async (qty, variant, follow) => {
+      await ev(() => { closeModal(); openEditVisit('vO1'); }); await typeQty('m1-d1', 'tortho', qty, '#evRx');
+      await ev(follow => { document.getElementById('evFollow').value = follow; }, follow);
+      await flushDuringFollowUp(variant); mode.failSet = /^visits/;
+      await ev(() => saveEditVisit('vO1')); await sleep(250); return toasts();
+    };
+    let e7 = await editPads(4, 'stuck', '2026-10-20');
+    const q7 = await ev(() => ({ queued: outboxHas('visits'), kept: ((JSON.parse(localStorage.getItem('um_mirror:visits') || '[]').find(v => v.id === 'vO1') || {}).rx || []).map(l => l.qty) }));
+    check('F7 an edit queued on the phone while the queue is being sent (Wi-Fi without internet) says "📴 Changes kept on this device", never "not saved on this device (storage full)"',
+      e7[e7.length - 1] === '📴 Changes kept on this device — they upload automatically when back online' && !e7.some(t => /storage full/.test(t)) && q7.queued && q7.kept.includes(4), { e7, q7 });
+    await settle();
+    check('F7 …and it lands once the queue goes through (cloud: Ortho ×4)', ((copies('vO1')[0] || {}).rx || []).some(l => l.type === 'tortho' && l.qty === 4), copies('vO1')[0] && copies('vO1')[0].rx);
+    e7 = await editPads(6, 'back', '2026-10-21');
+    check('F7 …when the queue went through during the follow-up step, the edit is in the cloud and the toast says "✅ Changes saved" (never "storage full")',
+      e7[e7.length - 1] === '✅ Changes saved' && !e7.some(t => /storage full/.test(t)) && ((copies('vO1')[0] || {}).rx || []).some(l => l.type === 'tortho' && l.qty === 6), { e7, rx: copies('vO1')[0] && copies('vO1')[0].rx });
+    await settle();
+    // a new visit takes the same steps (saveVisit)
+    await form('m1', ['m1-d1']); await typeQty('m1-d1', 'twhite', 2); await flushDuringFollowUp('stuck'); mode.failSet = /^visits/;
+    const s7 = await save('queued while sending');
+    check('F7 a new visit queued on the phone while the queue is being sent says it is kept on this device, never "storage full"',
+      s7.toasts.some(t => /الزيارة محفوظة على هذا الجهاز/.test(t)) && !s7.toasts.some(t => /الذاكرة ممتلئة/.test(t)), s7.toasts);
+    await settle();
+    check('F7 …and it lands once the queue goes through', !!(s7.v && copies(s7.v.id).length === 1), s7.v && s7.v.id);
+  });
+
+  // ======================= P11 — review fixes: the types editor =======================
+  await phase('P11', 'types editor: a name not added yet, a late landing, an unread list, after Cancel, the device copy, the Arabic line', async () => {
+    const mirrorRev = () => ev(() => { try{ const d = JSON.parse(localStorage.getItem('um_mirror:rxTypes') || 'null'); return d && d.rev; }catch(e){ return null; } });
+    const editorOpen = () => ev(() => !!document.getElementById('rxtSave') && document.getElementById('modalBack').classList.contains('show'));
+    const tapCancel = async () => { const b = page.locator('#modalInner button', { hasText: 'Cancel' }); if(await editorOpen() && await b.count()) await b.first().tap(); else await ev(() => { _rxEd = null; closeModal(); }); };
+    // F8 — a name typed in the new-type box and not added with "+ Add a type"
+    reseed(); await boot(G, 'supervisor'); await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('Sensitivity prescription'); await toasts();
+    await page.locator('#rxtSave').tap(); await sleep(400); const p8 = await toasts(), L8 = J('rxTypes');
+    const mem8 = await ev(() => rxTypes().filter(t => t.name === 'Sensitivity prescription').length);
+    check('F8 a name typed in the new-type box and not added yet is added on Save (cloud and memory, once, active) — never dropped under "saved"',
+      p8.includes('✅ Prescription types saved') && L8.rev === 4 && L8.types.filter(t => t.name === 'Sensitivity prescription').length === 1
+      && L8.types.find(t => t.name === 'Sensitivity prescription').active !== false && mem8 === 1, { p8, L8, mem8 });
+    await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('  whitening PRESCRIPTION '); await toasts();
+    await page.locator('#rxtSave').tap(); await sleep(300); const d8 = await toasts();
+    check('F8 …a pending name that repeats a type is refused ("Two types have the same name"): nothing written, the editor stays open',
+      d8.some(t => /same name/.test(t)) && !d8.some(t => /✅/.test(t)) && J('rxTypes').rev === 4 && await editorOpen(), { d8, rev: J('rxTypes').rev });
+    if(!(await editorOpen())) await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('Gum care prescription'); await page.locator('#rxtNewName').press('Enter'); await sleep(80);
+    const e8 = await ev(() => ({ rows: [...document.querySelectorAll('#rxtList input.rxt-name')].map(i => i.value), box: (document.getElementById('rxtNewName') || {}).value }));
+    check('F8 …and Enter in the box adds the type to the list', e8.rows.includes('Gum care prescription') && e8.box === '', e8);
+    await tapCancel();
+
+    // F9 — Arabic: "Last changed by" reads right to left: the label, the name, then the date (day and month together)
+    reseed(); await boot(G, 'supervisor', { ultramed_lang: 'ar' }); await ev(() => { closeModal(); openRxTypes(); }); await sleep(150);
+    const b9 = await ev(() => {
+      const p = [...document.querySelectorAll('#modalInner p')].find(x => /Ghaith/.test(x.textContent));
+      if(!p) return null;
+      const at = w => { const walk = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+        for(let n = walk.nextNode(); n; n = walk.nextNode()){ const i = n.nodeValue.indexOf(w); if(i >= 0){ const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + w.length); return Math.round(r.getBoundingClientRect().left); } }
+        return null; };
+      return { text: p.textContent.replace(/\s+/g, ' ').trim(), dir: getComputedStyle(p).direction, label: at('آخر تعديل'), name: at('Dr. Ghaith'), day: at('1'), month: at('أكتوبر') }; });
+    await ev(() => { _rxEd = null; closeModal(); });
+    check('F9 Arabic: "آخر تعديل: Dr. Ghaith · 1 أكتوبر" reads right to left in that order — the date stays whole after the name',
+      !!b9 && b9.dir === 'rtl' && !/Last changed/.test(b9.text) && [b9.label, b9.name, b9.day, b9.month].every(x => x != null) && b9.label > b9.name && b9.name > b9.day && b9.day > b9.month, b9);
+
+    // F4 — the list could not be read on a fresh phone: the editor says so, and saving waits until it loads
+    reseed(); mode.failGet = /^rxTypes$/; await boot(G, 'supervisor');
+    await ev(() => { closeModal(); switchView('doctors'); ddTab = 'rx'; renderDoctorsDb(); });
+    await page.locator('#rxTypesBtn').tap(); await sleep(300); await toasts();
+    const n4 = await ev(() => { const s = document.getElementById('rxtSave'); return { text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), save: !!s && !s.disabled, rows: document.querySelectorAll('#rxtList input.rxt-name').length }; });
+    await ev(() => { const s = document.getElementById('rxtSave'); if(s) s.click(); }); await sleep(250);
+    check('F4 the list could not be read: the editor says so (never "Not set up yet — reps see the two built-in forms"), Save is paused, nothing is written',
+      /could not be loaded/.test(n4.text) && !/Not set up yet/.test(n4.text) && !n4.save && n4.rows === 0 && !typeWrites.length && JSON.parse(cloud.rxTypes).rev === 3, n4);
+    mode.failGet = null;
+    if(await page.locator('#rxtRetry').count()) await page.locator('#rxtRetry').tap();
+    await sleep(300);
+    const r4 = await ev(() => { const s = document.getElementById('rxtSave'); return { rows: [...document.querySelectorAll('#rxtList input.rxt-name')].map(i => i.value), save: !!s && !s.disabled,
+      text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), mem: rxTypesDoc && rxTypesDoc.rev }; });
+    check('F4 …"Try again" once the cloud answers: the team\'s list (who changed it last), and saving resumes',
+      r4.save && JSON.stringify(r4.rows) === JSON.stringify(['Ortho care prescription', 'Whitening prescription', 'وصفة العناية بالزراعة']) && /Last changed by/.test(r4.text) && !/could not be loaded/.test(r4.text) && r4.mem === 3, r4);
+    await ev(() => { _rxEd = null; closeModal(); });
+    reseed(); mode.failGet = /^rxTypes$/; await boot(G, 'supervisor', { ultramed_lang: 'ar' }); await ev(() => { closeModal(); openRxTypes(); }); await sleep(300);
+    const a4 = await ev(() => { const m = document.getElementById('modalInner'), left = [];
+      const walk = document.createTreeWalker(m, NodeFilter.SHOW_TEXT);
+      for(let n = walk.nextNode(); n; n = walk.nextNode()){ const t = n.nodeValue.trim(); if(t && !n.parentElement.closest('[dir="auto"]') && /[A-Za-z]{2,}/.test(t)) left.push(t); }
+      return { left, text: m.innerText.replace(/\s+/g, ' ') }; });
+    mode.failGet = null; await ev(() => { _rxEd = null; closeModal(); });
+    check('F4 …in Arabic: the note and its buttons translated, no English left', !a4.left.length && /تعذّر تحميل أنواع البريسكريبشن/.test(a4.text) && !/لم تُحدَّد بعد/.test(a4.text), a4);
+
+    // F3 — "No answer from the cloud yet", then the write lands after all: this phone's own save, never "another device"
+    const slowSave = async () => { // the app gives up waiting (its timeouts shortened here so the check runs fast); the write lands right after
+      mode.holdSet = /^rxTypes$/; await toasts();
+      await ev(() => { window.__realWT = window.__realWT || withTimeout; window.withTimeout = (p, ms) => window.__realWT(p, Math.min(ms, 400)); });
+      await page.locator('#rxtSave').tap(); await sleep(800);
+      await ev(() => { window.withTimeout = window.__realWT; });
+      const t = await toasts(); mode.holdSet = null; release(); await sleep(150); return t;
+    };
+    reseed(); await boot(G, 'supervisor'); await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('Kids care prescription'); await page.locator('#rxtAdd').tap(); await sleep(50);
+    const a1 = await slowSave(), landed = J('rxTypes');
+    await page.locator('#rxtSave').tap(); await sleep(300); const a2 = await toasts();
+    const a3 = { open: await editorOpen(), mem: await ev(() => rxTypesDoc && rxTypesDoc.rev), mirror: await mirrorRev() };
+    check('F3 a save the app stopped waiting for lands late; Save again recognises this phone\'s own write: "✅ Prescription types saved" (never "Changed on another device"), memory and the device copy on it, nothing written twice',
+      a1.some(t => /^No answer from the cloud yet/.test(t)) && landed.rev === 4 && landed.types.some(t => t.name === 'Kids care prescription') && a2.includes('✅ Prescription types saved') && !a2.some(t => /another device/.test(t))
+      && !a3.open && a3.mem === 4 && a3.mirror === 4 && J('rxTypes').rev === 4 && typeWrites.length === 1, { a1, a2, a3, rev: J('rxTypes').rev, writes: typeWrites.length });
+    await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('[data-rxt="twhite"] input.rxt-name').fill('Whitening & care prescription');
+    const a4b = await slowSave(); // rev 5 lands late
+    await page.locator('[data-rxt="timpl"] button.rxt-retire').tap(); await sleep(60); await toasts(); // one more change before tapping Save again
+    await page.locator('#rxtSave').tap(); await sleep(300); const a5 = await toasts(), L3 = J('rxTypes');
+    check('F3 …changed again after the late write: Save builds on this phone\'s own write (rev 6: the rename kept, the retire added), "✅ Prescription types saved"',
+      a4b.some(t => /^No answer from the cloud yet/.test(t)) && a5.includes('✅ Prescription types saved') && !a5.some(t => /another device/.test(t)) && L3.rev === 6
+      && L3.types.find(t => t.id === 'twhite').name === 'Whitening & care prescription' && L3.types.find(t => t.id === 'timpl').active === false && !(await editorOpen()), { a4b, a5, L3 });
+    reseed(); await boot(G, 'supervisor'); await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('Kids care prescription'); await page.locator('#rxtAdd').tap(); await sleep(50);
+    const bb1 = await slowSave(); // landed (rev 4) — this phone's memory is still rev 3
+    await tapCancel(); await sleep(60); await ev(() => openRxTypes());
+    await page.locator('#rxtNewName').fill('Kids care prescription'); await page.locator('#rxtAdd').tap(); await sleep(50); await toasts();
+    await page.locator('#rxtSave').tap(); await sleep(300); const bb2 = await toasts();
+    const bb3 = await ev(() => [...document.querySelectorAll('#rxtList input.rxt-name')].map(i => i.value));
+    check('F3 …redone in a second editor opened before the late write landed: told the earlier save reached the cloud (never "another device"), reopened on it (the type once), nothing more written',
+      bb1.some(t => /^No answer/.test(t)) && bb2.some(t => /earlier save reached the cloud/.test(t)) && !bb2.some(t => /another device/.test(t)) && bb3.filter(n => n === 'Kids care prescription').length === 1
+      && J('rxTypes').rev === 4 && typeWrites.length === 1, { bb2, bb3, rev: J('rxTypes').rev, writes: typeWrites.length });
+    await ev(() => { _rxEd = null; closeModal(); });
+
+    // F5 — a types save that finishes after Cancel never closes or replaces the sheet now open
+    reseed(); await boot(G, 'supervisor'); await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('Kids care prescription'); await page.locator('#rxtAdd').tap(); await sleep(50);
+    mode.holdSet = /^rxTypes$/; await toasts();
+    await page.locator('#rxtSave').tap(); await sleep(150);
+    const fz = await ev(() => { const m = document.getElementById('modalInner'), isCancel = el => /^\s*Cancel\s*$/.test(el.textContent);
+      const cancel = [...m.querySelectorAll('button')].find(isCancel);
+      return { open: [...m.querySelectorAll('input, button')].filter(el => !isCancel(el) && !el.disabled).map(el => el.id || el.className), cancel: !!cancel && !cancel.disabled }; });
+    check('F5 while a types save is on its way the editor is locked (names, Retire, the new-type box, Add, Save) — a change made then cannot be closed away under "saved"; Cancel stays', !fz.open.length && fz.cancel, fz);
+    await tapCancel(); await sleep(80);
+    await ev(() => openEditVisit('vO1')); await page.locator('#evNotes').fill('typed while the list saved');
+    mode.holdSet = null; release(); await sleep(400);
+    const s5 = await ev(() => ({ shown: document.getElementById('modalBack').classList.contains('show'), notes: (document.getElementById('evNotes') || {}).value || null, types: !!document.getElementById('rxtSave'), mem: rxTypes().map(t => t.name) }));
+    const t5 = await toasts(), m5 = await mirrorRev();
+    check('F5 a types save that lands after Cancel: the visit sheet opened since stays open with what was typed; memory and the device copy follow; "✅ Prescription types saved"',
+      s5.shown && s5.notes === 'typed while the list saved' && !s5.types && s5.mem.includes('Kids care prescription') && m5 === 4 && t5.includes('✅ Prescription types saved'), { s5, t5, m5 });
+    await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('[data-rxt="twhite"] input.rxt-name').fill('Whitening plus');
+    { const d = J('rxTypes'); d.rev = 5; d.wid = 'w-other-phone'; d.at = '2026-10-13T09:58:00'; d.types.push({ id: 'tcloud', name: 'Cloud-added type', active: true }); cloud.rxTypes = JSON.stringify(d); } // his other phone saved meanwhile
+    mode.holdGet = /^rxTypes$/; await toasts();
+    await page.locator('#rxtSave').tap(); await sleep(150); await tapCancel(); await sleep(80);
+    await ev(() => openEditVisit('vO1')); await page.locator('#evNotes').fill('typed during the conflict');
+    mode.holdGet = null; release(); await sleep(400);
+    const c5 = await ev(() => ({ shown: document.getElementById('modalBack').classList.contains('show'), notes: (document.getElementById('evNotes') || {}).value || null, types: !!document.getElementById('rxtSave'), mem: rxTypesDoc && rxTypesDoc.rev }));
+    const ct5 = await toasts(), cm5 = await mirrorRev();
+    check('F5 …a conflict found after Cancel: a toast only (changed on another device, nothing saved) — the visit sheet is not replaced; memory and the device copy hold the cloud\'s list',
+      c5.shown && c5.notes === 'typed during the conflict' && !c5.types && c5.mem === 5 && cm5 === 5 && ct5.some(t => /^Changed on another device/.test(t)) && !ct5.some(t => /reopened/.test(t))
+      && J('rxTypes').rev === 5 && !JSON.stringify(J('rxTypes')).includes('Whitening plus'), { c5, ct5, cm5 });
+    await ev(() => closeModal());
+
+    // F6 — a refresh that read the list just before a save confirmed: memory AND the device copy keep the saved list
+    reseed(); await boot(G, 'supervisor');
+    mode.holdGetOnce = /^rxTypes$/; await ev(() => { window.__lp = loadAll(); }); await sleep(150); // the 20-second refresh: its read answered rev 3 and is still on its way
+    await ev(() => { closeModal(); openRxTypes(); });
+    await page.locator('#rxtNewName').fill('Kids care prescription'); await page.locator('#rxtAdd').tap(); await sleep(50); await toasts();
+    await page.locator('#rxtSave').tap(); await sleep(300); const s6 = await toasts();
+    release(); await ev(() => window.__lp); await sleep(100);
+    const m6 = { mem: await ev(() => rxTypesDoc && rxTypesDoc.rev), mirror: await mirrorRev() };
+    check('F6 a refresh skipped because the list was just saved leaves memory AND the device copy on the saved list (rev 4)', s6.includes('✅ Prescription types saved') && m6.mem === 4 && m6.mirror === 4, { s6, m6 });
+    const kid = (J('rxTypes').types.find(t => t.name === 'Kids care prescription') || {}).id;
+    mode.failGet = /^rxTypes$/; await reopen(G, 'supervisor'); await form('m1', ['m1-d1']); mode.failGet = null;
+    const o6 = await offered('m1-d1');
+    check('F6 …so the next start that cannot reach the cloud (the device copy) offers the saved list', !!kid && o6.includes(kid), { kid, o6 });
+  });
+
+  if(!ONLY.length || ONLY.includes('P0') || ONLY.includes('P7') || ONLY.includes('P11')) check('persist("rxTypes") was never called (the tripwire stayed silent)', guard.length === 0, guard.slice(0, 3));
   check('no native dialogs', dialogs.length === 0, dialogs);
   check('no page errors', errors.length === 0, errors.slice(0, 5));
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

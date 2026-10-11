@@ -971,13 +971,68 @@ function exportRxXlsx(){
 // offline. Ids are never reused or deleted (a type is retired), so every
 // visit keeps pointing at its form; unknown fields are kept (room for brands).
 const RX_TYPES_WRITE_MS = 12000;
-let _rxEd = null; // the editor while open: { rev shown, types (a working copy), newName }
+// The editor while open: { rev shown, types (a working copy), newName, wids:
+// the write ids of this editor's save attempts } — or { waiting, loading }
+// while the list itself has not loaded on this phone.
+let _rxEd = null;
+// Every types save this phone attempted (its write id travels in the saved
+// document as `wid`): a save that lands after the app stopped waiting for it
+// is recognised as this phone's own — never reported as "another device".
+const _rxMyWids = new Set();
+// The list did not come from the cloud on this phone (the read failed and
+// there is no device copy): the built-in forms in memory are not the team's
+// list, so the editor waits for the list instead of offering them for editing.
+function rxTypesUnread(){ return !!_loadFailed.rxTypes && !rxTypesDoc; }
+// Is this editor the sheet on screen? Cancel clears _rxEd; a tap outside the
+// sheet, or another sheet opened since, does not — so the screen is asked too.
+function rxEdOnScreen(ed){
+  const back = document.getElementById('modalBack');
+  return !!ed && _rxEd === ed && !!back && back.classList.contains('show') && !!document.getElementById(ed.waiting ? 'rxtLoadNote' : 'rxtList');
+}
 function openRxTypes(){
   if(!requireAdmin()) return;
   if(!rxReady()){ showToast(RX_STALE_MSG); return; }
-  _rxEd = { rev: rxTypesDoc && typeof rxTypesDoc.rev === 'number' ? rxTypesDoc.rev : 0, types: JSON.parse(JSON.stringify(rxTypes())), newName: '' };
+  if(rxTypesUnread()){ _rxEd = { waiting: true, loading: false }; rxTypesLoad(_rxEd); return; }
+  _rxEd = { rev: rxTypesDoc && typeof rxTypesDoc.rev === 'number' ? rxTypesDoc.rev : 0, types: JSON.parse(JSON.stringify(rxTypes())), newName: '', wids: [] };
   renderRxTypesEditor();
 }
+// The editor waiting for the list: says so plainly; Save is paused until the
+// list is in ("Try again", or the next background refresh).
+function renderRxTypesWaiting(ed){
+  if(!ed || _rxEd !== ed) return;
+  showModal(`
+    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
+    <div id="rxtLoadNote" class="card" style="padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.5; background:var(--amber-dim); color:var(--amber-ink); box-shadow:none;">${ed.loading
+      ? 'Loading the prescription types…'
+      : 'The prescription types could not be loaded — saving is paused until they load. Check the connection, then tap Try again.'}</div>
+    ${ed.loading ? '' : '<button type="button" class="btn secondary" id="rxtRetry" onclick="rxTypesRetry()">Try again</button>'}
+    <button class="btn" id="rxtSave" disabled>Save</button>
+    <button class="btn ghost" onclick="_rxEd = null; closeModal()">Cancel</button>
+  `);
+}
+// Read the list for a waiting editor; once it is in, the editor itself opens.
+async function rxTypesLoad(ed){
+  if(!ed || !ed.waiting || ed.loading) return;
+  ed.loading = true;
+  renderRxTypesWaiting(ed);
+  let r = null, ok = false;
+  try{ r = await withTimeout(window.storage.get('rxTypes', true), 8000); ok = true; }
+  catch(e){ console.warn('prescription types: read failed', e); }
+  ed.loading = false;
+  if(ok && rxTypesUnread()){ // (a background refresh may have brought it meanwhile)
+    const v = UMCore.safeParse(r && r.value, null);
+    rxTypesDoc = v && typeof v === 'object' && !Array.isArray(v) ? v : null; _rxTypesGen++;
+    if(r && r.value != null) mirrorSave('rxTypes', r.value);
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    rxTypesChanged();
+  }
+  if(!rxEdOnScreen(ed)) return; // closed meanwhile
+  if(!rxTypesUnread()) openRxTypes(); else renderRxTypesWaiting(ed);
+}
+function rxTypesRetry(){ if(_rxEd && _rxEd.waiting) rxTypesLoad(_rxEd); }
+// A background refresh (loadAll) brought the list while the editor waited for it.
+function rxTypesRefreshed(){ if(_rxEd && _rxEd.waiting && !_rxEd.loading && !rxTypesUnread() && rxEdOnScreen(_rxEd)) openRxTypes(); }
 // Pads already logged under each type (every visit on this device).
 function rxTypeCounts(){
   const n = {};
@@ -986,11 +1041,17 @@ function rxTypeCounts(){
 }
 function renderRxTypesEditor(){
   const ed = _rxEd;
-  if(!ed) return;
+  if(!ed || ed.waiting) return;
   const counts = rxTypeCounts();
   const active = ed.types.filter(t => t.active), retired = ed.types.filter(t => !t.active);
   const logged = id => `<span style="font-size:11px; color:var(--muted); white-space:nowrap;">${rxPadsText(counts[id] || 0)} logged</span>`;
   const when = rxTypesDoc && rxTypesDoc.at ? fmtDate(String(rxTypesDoc.at).slice(0, 10)) : '';
+  // Who changed the list last: the label is translated on its own; the name and
+  // the date each sit in their own direction-isolated span — in Arabic a Latin
+  // name would otherwise pull the day's digit away from its month.
+  const lastChanged = rxTypesDoc && rxTypesDoc.by
+    ? `<span>Last changed by</span> <span dir="auto">${esc(rxTypesDoc.by)}</span> · <span dir="auto">${esc(when || '—')}</span>`
+    : 'Not set up yet — reps see the two built-in forms.';
   showModal(`
     <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
@@ -1003,7 +1064,7 @@ function renderRxTypesEditor(){
         </div>
       </div>`).join('')}</div>
     <div style="margin:4px 0 12px;">
-      <input type="text" id="rxtNewName" dir="auto" maxlength="40" value="${esc(ed.newName || '')}" placeholder="e.g. Orthodontic prescription" aria-label="Type name" style="margin:0;">
+      <input type="text" id="rxtNewName" dir="auto" maxlength="40" value="${esc(ed.newName || '')}" placeholder="e.g. Orthodontic prescription" aria-label="Type name" style="margin:0;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addRxType();}">
       <div style="display:flex; justify-content:flex-end; margin-top:5px;"><button type="button" class="chip small" id="rxtAdd" onclick="addRxType()">+ Add a type</button></div>
     </div>
     ${retired.length ? `<div class="section-title" style="margin-top:6px;"><span>Retired types</span></div>
@@ -1015,7 +1076,7 @@ function renderRxTypesEditor(){
         <button type="button" class="chip small rxt-restore" onclick="restoreRxType(this.closest('[data-rxt]').dataset.rxt)">Restore</button>
       </div>`).join('')}</div>` : ''}
     <p style="color:var(--muted); font-size:12px; line-height:1.5;">Renaming changes the name on every visit already logged under this type — rename only to correct the name of the same printed form. A different form is a new type.</p>
-    <p style="color:var(--muted); font-size:12px;">${rxTypesDoc && rxTypesDoc.by ? esc(`Last changed by ${rxTypesDoc.by} · ${when || '—'}`) : 'Not set up yet — reps see the two built-in forms.'}</p>
+    <p style="color:var(--muted); font-size:12px;">${lastChanged}</p>
     <button class="btn" id="rxtSave" onclick="saveRxTypes()">Save</button>
     <button class="btn ghost" onclick="_rxEd = null; closeModal()">Cancel</button>
   `);
@@ -1023,7 +1084,7 @@ function renderRxTypesEditor(){
 // Typed names are copied into the working list before every action, so a
 // rename is never lost when the list is drawn again.
 function rxEdRead(){
-  if(!_rxEd) return;
+  if(!_rxEd || _rxEd.waiting) return;
   document.querySelectorAll('#rxtList [data-rxt]').forEach(row => {
     const t = _rxEd.types.find(x => x.id === row.dataset.rxt), inp = row.querySelector('input.rxt-name');
     if(t && inp) t.name = inp.value;
@@ -1032,21 +1093,26 @@ function rxEdRead(){
   if(nn) _rxEd.newName = nn.value;
 }
 const rxNameKey = s => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
-function addRxType(){
-  if(!_rxEd || !requireAdmin()) return;
-  rxEdRead();
-  const name = String(_rxEd.newName || '').trim();
-  if(!name){ showToast('Every type needs a name'); return; }
-  if(name.length > 40){ showToast('A name can be up to 40 characters'); return; }
-  if(_rxEd.types.some(t => rxNameKey(t.name) === rxNameKey(name))){ showToast('Two types have the same name'); return; }
+// The name in the new-type box joins the working list, with the checks of
+// "+ Add a type". false = refused (its toast is shown, nothing is added).
+function rxAddPending(ed){
+  const name = String(ed.newName || '').trim();
+  if(!name){ showToast('Every type needs a name'); return false; }
+  if(name.length > 40){ showToast('A name can be up to 40 characters'); return false; }
+  if(ed.types.some(t => rxNameKey(t.name) === rxNameKey(name))){ showToast('Two types have the same name'); return false; }
   let id = uid();
-  while(_rxEd.types.some(t => t.id === id)) id = uid(); // never an id already used
-  _rxEd.types.push({ id, name, active: true });
-  _rxEd.newName = '';
-  renderRxTypesEditor();
+  while(ed.types.some(t => t.id === id)) id = uid(); // never an id already used
+  ed.types.push({ id, name, active: true });
+  ed.newName = '';
+  return true;
+}
+function addRxType(){
+  if(!_rxEd || _rxEd.waiting || !requireAdmin()) return;
+  rxEdRead();
+  if(rxAddPending(_rxEd)) renderRxTypesEditor();
 }
 function retireRxType(id){
-  if(!_rxEd) return;
+  if(!_rxEd || _rxEd.waiting) return;
   rxEdRead();
   const t = _rxEd.types.find(x => x.id === id);
   if(!t || !t.active) return;
@@ -1055,7 +1121,7 @@ function retireRxType(id){
   renderRxTypesEditor();
 }
 function restoreRxType(id){
-  if(!_rxEd) return;
+  if(!_rxEd || _rxEd.waiting) return;
   rxEdRead();
   const t = _rxEd.types.find(x => x.id === id);
   if(!t) return;
@@ -1067,11 +1133,26 @@ function rxTypesChanged(){
   if(activeView === 'log') renderRxStep();
   if(activeView === 'doctors' && document.getElementById('ddBody')) renderDoctorsDb();
 }
+// While a save is on its way the list cannot change under it — a change made
+// meanwhile would be closed away under "saved". Cancel stays available.
+function rxEdFreeze(frozen){
+  document.querySelectorAll('#rxtList input, #rxtList button, #rxtRetired button, #rxtNewName, #rxtAdd').forEach(el => { el.disabled = !!frozen; });
+}
+// A list as compared for "the cloud already holds exactly this": ids, names, active, order.
+function rxTypesKey(list){ return JSON.stringify(UMCore.rxTypeList(Array.isArray(list) ? list : []).map(t => [t.id, t.name, t.active])); }
 async function saveRxTypes(){
-  if(!requireAdmin() || !_rxEd || _rxSaving) return;
+  if(!requireAdmin() || !_rxEd || _rxEd.waiting) return;
+  if(_rxSaving){ showToast('The previous save is still on its way — tap Save again in a moment.'); return; } // (another editor, opened after Cancel)
   if(!rxReady()){ showToast(RX_STALE_MSG); return; }
   rxEdRead();
   const ed = _rxEd;
+  // A name typed in the new-type box and not added yet is part of what is
+  // saved: added with the same checks as "+ Add a type" — or, refused, the
+  // save stops on that toast with nothing written. Never dropped under "saved".
+  if(String(ed.newName || '').trim()){
+    if(!rxAddPending(ed)) return;
+    renderRxTypesEditor(); // it shows in the list now
+  }
   const next = ed.types.map(t => Object.assign({}, t, { name: String(t.name == null ? '' : t.name).trim(), active: t.active !== false }));
   const problem = UMCore.rxTypesProblem(next);
   if(problem){
@@ -1080,17 +1161,27 @@ async function saveRxTypes(){
     return;
   }
   const shownRev = ed.rev;
-  let conflict = false, committed = null, seen = null;
+  // This attempt's write id. The only saves it may build on are this same
+  // editor's earlier attempts that landed after the app stopped waiting —
+  // never another device's list, and never a later attempt of its own.
+  const earlier = ed.wids.slice(), wid = uid();
+  ed.wids.push(wid); _rxMyWids.add(wid);
+  const nextKey = rxTypesKey(next);
+  let conflict = false, committed = null, seen = null, already = false;
   const fn = s => { // Firestore may run this more than once: every run starts clean
-    conflict = false; committed = null; seen = null;
+    conflict = false; committed = null; seen = null; already = false;
     const cur = s == null ? null : UMCore.safeParse(s, null);
     const curObj = cur && typeof cur === 'object' && !Array.isArray(cur) ? cur : null;
     const curRev = curObj && typeof curObj.rev === 'number' ? curObj.rev : 0;
-    if(curRev !== shownRev){ conflict = true; seen = cur; return null; }
+    if(curRev !== shownRev){
+      const own = !!curObj && typeof curObj.wid === 'string' && earlier.includes(curObj.wid);
+      if(!own){ conflict = true; seen = cur; return null; }
+      if(rxTypesKey(curObj.types) === nextKey){ already = true; seen = curObj; return null; } // the cloud holds exactly this list already
+    }
     const cloudById = {};
     (curObj && Array.isArray(curObj.types) ? curObj.types : []).forEach(t => { if(t && typeof t.id === 'string') cloudById[t.id] = t; });
     // fields a later version added to a type (brands …) are kept
-    const doc = Object.assign({}, curObj || {}, { v: 1, rev: curRev + 1, by: currentUser.name, at: localStamp(),
+    const doc = Object.assign({}, curObj || {}, { v: 1, rev: curRev + 1, by: currentUser.name, at: localStamp(), wid,
       types: next.map(t => Object.assign({}, cloudById[t.id] || {}, t)) });
     committed = doc;
     return JSON.stringify(doc);
@@ -1098,6 +1189,7 @@ async function saveRxTypes(){
   _rxSaving = true;
   const btn = document.getElementById('rxtSave');
   if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  rxEdFreeze(true);
   let written = null, timedOut = false;
   try{ written = await storageUpdate('rxTypes', fn, RX_TYPES_WRITE_MS); }
   catch(e){
@@ -1105,30 +1197,41 @@ async function saveRxTypes(){
     if(!timedOut) console.warn('prescription types not saved', e);
   }
   finally{ _rxSaving = false; }
-  if(written != null && committed){
-    rxTypesDoc = committed; _rxTypesGen++;
-    mirrorSave('rxTypes', written);
+  // Only the editor that saved, still the sheet on screen, is closed or
+  // reopened — a sheet opened after Cancel is never touched (a toast only).
+  const onScreen = rxEdOnScreen(ed);
+  if((written != null && committed) || already){
+    rxTypesDoc = already ? seen : committed; _rxTypesGen++;
+    mirrorSave('rxTypes', already ? JSON.stringify(seen) : written);
     delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
-    _rxEd = null;
-    closeModal();
+    if(_rxEd === ed) _rxEd = null;
+    if(onScreen) closeModal();
     showToast('✅ Prescription types saved');
     rxTypesChanged();
     return;
   }
   if(conflict){
-    // what the cloud holds now: shown, and the editor reopened on it
-    rxTypesDoc = seen && typeof seen === 'object' ? seen : null; _rxTypesGen++;
+    // what the cloud holds now: in memory and on the device; the editor, if still on screen, reopens on it
+    rxTypesDoc = seen && typeof seen === 'object' && !Array.isArray(seen) ? seen : null; _rxTypesGen++;
     if(seen != null) mirrorSave('rxTypes', JSON.stringify(seen));
     delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
-    openRxTypes();
-    showToast('Changed on another device — reopened with the latest list. Nothing was saved.');
+    // this phone's own earlier save (from an editor since closed) that landed late — never "another device"
+    const mine = !!(rxTypesDoc && typeof rxTypesDoc.wid === 'string' && _rxMyWids.has(rxTypesDoc.wid));
+    if(onScreen){
+      openRxTypes();
+      showToast(mine ? 'Your earlier save reached the cloud after all — reopened with the saved list. Nothing else was saved.'
+        : 'Changed on another device — reopened with the latest list. Nothing was saved.');
+    } else {
+      if(_rxEd === ed) _rxEd = null;
+      showToast(mine ? 'Your earlier save reached the cloud after all — nothing else was saved.' : 'Changed on another device — nothing was saved.');
+    }
     rxTypesChanged();
     return;
   }
-  // not saved (or no answer yet): memory untouched, the editor stays open with the edits
-  const b2 = document.getElementById('rxtSave');
-  if(b2){ b2.disabled = false; b2.textContent = 'Save'; }
-  showToast(timedOut ? 'No answer from the cloud yet — reopen the list in a minute to see whether it was saved.' : 'Not saved — check the connection and tap Save again.');
+  // not saved (or no answer yet): memory untouched; the editor, if still on screen, keeps the edits
+  if(onScreen){ rxEdFreeze(false); const b2 = document.getElementById('rxtSave'); if(b2){ b2.disabled = false; b2.textContent = 'Save'; } }
+  showToast(timedOut ? 'No answer from the cloud yet — reopen the list in a minute to see whether it was saved.'
+    : onScreen ? 'Not saved — check the connection and tap Save again.' : 'Prescription types not saved — check the connection and make the change again.');
 }
 // ---- CLINIC SALES ANALYSIS ----
 // One screen answering: which clinic carries how much of the monthly target,
