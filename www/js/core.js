@@ -1800,20 +1800,33 @@
   // automatic matching), addClinic: a clinic not saved yet (the new branch),
   // which joins the clinic list of the "after" state }. opts = { settings }
   // (the KPI settings: the discount limits). Pure.
+  //  months     this account's lines by month — only lines that count in a month
+  //             figure (erpLineInMonthFigure, the rule of the moves), so a month
+  //             row always agrees with the month figures
+  //  outside    this account's lines that count in no month's figure (a return
+  //             dated back to a month its own file does not cover)
   //  moves      every line whose person changes (this account and side effects),
   //             by month|from|to — only lines that count in a month figure, so
   //             for every month and person they equal the change in monthAchievement
   //  others     other accounts whose clinic changes (only a new branch can do that)
   //  limitFlips invoices whose discount check changes (within ↔ over, or in ↔ out)
-  //  firstInvoice  accounts / clinics whose first paid invoice date changes (new-account wins follow it)
-  // On an error only `before` is filled (not for NO_NAME); after and draft are null.
+  //  firstInvoice  names whose first paid invoice date changes (new-account wins follow it)
+  //  firstProduct  name + product pairs whose first paid date changes (first-time-product wins)
+  //             — both per NAME: an account and the branch named after it are one
+  //             name, so a key that changes while its date does not is no change
+  //  closedMonths  the closed months each kind of change reaches: { sales (moves),
+  //             discount (limitFlips), wins (firstInvoice / firstProduct dates) }
+  // Errors: NO_NAME, SAME, NO_CLINIC, NOT_A_CLINIC_ACCOUNT, CLOSED_CLINIC (a
+  // Closed clinic is never a new target). On an error only `before` is filled
+  // (not for NO_NAME); after and draft are null.
   function erpLinkPreview(data, change, opts){
     data = data || {}; change = change || {};
     var name = String(change.name == null ? '' : change.name).trim();
     var es = data.erpSales, clinics0 = data.clinics || [], map0 = data.erpMap || {};
     var month0 = String(data.today || '').slice(0, 7);
     var out = { error: null, name: name, before: null, after: null, draft: null, lines: 0, invoices: 0, net: 0, first: null, last: null,
-      months: [], people: [], moves: [], others: [], limitFlips: [], firstInvoice: [], ledger: { returns: 0, free: 0 } };
+      months: [], outside: { lines: 0, net: 0 }, people: [], moves: [], others: [], limitFlips: [], firstInvoice: [], firstProduct: [],
+      closedMonths: { sales: [], discount: [], wins: [] }, ledger: { returns: 0, free: 0 } };
     if(!name || name === ERP_NO_NAME){ out.error = 'NO_NAME'; return out; }
     var match0 = erpMatcher(clinics0, map0), from = erpOwn(map0, name) ? map0[name] : null;
     out.before = erpLinkSide(match0(name), clinics0, from);
@@ -1825,6 +1838,7 @@
     var special = to === '@channel' || to === '@ignore';
     if(to !== null && !special && (typeof to !== 'string' || !erpClinicById(clinics1, to))){ out.error = 'NO_CLINIC'; return out; }
     if(to !== null && !special && (isInternalAccount(name) || isErpChannel(name))){ out.error = 'NOT_A_CLINIC_ACCOUNT'; return out; }
+    if(to !== null && !special && erpClinicById(clinics1, to).cls === 'Closed'){ out.error = 'CLOSED_CLINIC'; return out; }
     var map1 = {}; Object.keys(map0).forEach(function(k){ map1[k] = map0[k]; });
     if(to === null) delete map1[name]; else map1[name] = to;
     var match1 = erpMatcher(clinics1, map1);
@@ -1842,10 +1856,10 @@
         out.lines++; acctNet += net;
         if(r.type !== 'return') acctInv[r.doc] = 1;
         if(r.date){ if(!out.first || r.date < out.first) out.first = r.date; if(!out.last || r.date > out.last) out.last = r.date; }
-        if(mo.length === 7){
+        if(erpLineInMonthFigure(r, p)){
           var M = months[mo] || (months[mo] = { inv: Object.create(null), net: 0 });
           M.net += net; if(r.type !== 'return') M.inv[r.doc] = 1;
-        }
+        } else { out.outside.lines++; out.outside.net += net; }
         people[rb || ''] = (people[rb || ''] || 0) + net;
         if(returnValue(r) > 0) out.ledger.returns++;
         if(isFocRow(r)) out.ledger.free++;
@@ -1868,7 +1882,7 @@
       if(!a.ignored) att0.push({ r: r, rep: ra, clinicId: a.clinicId || null, channel: !!a.channel });
       if(!b.ignored) att1.push({ r: r, rep: rb, clinicId: b.clinicId || null, channel: !!b.channel });
     });
-    out.invoices = Object.keys(acctInv).length; out.net = erpR3(acctNet);
+    out.invoices = Object.keys(acctInv).length; out.net = erpR3(acctNet); out.outside.net = erpR3(out.outside.net);
     out.months = Object.keys(months).sort().map(function(mo){ return { month: mo, invoices: Object.keys(months[mo].inv).length, net: erpR3(months[mo].net), closed: mo < month0 }; });
     out.people = erpPeopleList(people);
     out.moves = Object.keys(moves).map(function(k){ var v = moves[k];
@@ -1893,23 +1907,53 @@
     inv1.forEach(function(i){ seen[i.doc] = 1; var b = was[i.doc]; if(!b || b.within !== i.within) flips.push(flip(i, b, i)); });
     inv0.forEach(function(i){ if(!seen[i.doc]) flips.push(flip(i, i, null)); });
     out.limitFlips = flips.sort(function(x, y){ return erpCmp(x.date, y.date) || erpCmp(x.doc, y.doc); });
-    // first paid invoice per account key, with erpWinsInRange's key and filter
+    // first paid invoice per account key, and per account key + product, with
+    // erpWinsInRange's key and filter: new-account and first-time-product wins follow these dates
     var firstPaid = function(rows, ids){
-      var f = Object.create(null);
+      var acct = Object.create(null), prod = Object.create(null);
       rows.forEach(function(x){
         if(x.channel || !(x.r.net > 0) || x.r.type === 'return' || (!x.clinicId && isInternalAccount(x.r.customer))) return;
         var k = x.clinicId ? 'c:' + x.clinicId : 'n:' + (x.r.customer || '').trim().toLowerCase();
-        if(!f[k] || x.r.date < f[k].date) f[k] = { date: x.r.date, label: x.clinicId && ids[x.clinicId] ? ids[x.clinicId].name : (x.r.customer || '').trim() };
+        var label = x.clinicId && ids[x.clinicId] ? ids[x.clinicId].name : (x.r.customer || '').trim();
+        if(!acct[k] || x.r.date < acct[k].date) acct[k] = { key: k, date: x.r.date, label: label, product: null };
+        var pk = k + '\u0001' + String(x.r.product || '').toLowerCase();
+        if(!prod[pk] || x.r.date < prod[pk].date) prod[pk] = { key: k, date: x.r.date, label: label, product: String(x.r.product || '').trim() };
       });
-      return f;
+      return { acct: acct, prod: prod };
     };
-    var f0 = firstPaid(att0, byId0), f1 = firstPaid(att1, byId1), keys = Object.create(null), fi = [];
-    Object.keys(f0).concat(Object.keys(f1)).forEach(function(k){
-      if(keys[k]) return; keys[k] = 1;
-      var d0 = f0[k] ? f0[k].date : null, d1 = f1[k] ? f1[k].date : null;
-      if(d0 !== d1) fi.push({ key: k, label: (f1[k] || f0[k]).label, before: d0, after: d1 });
-    });
-    out.firstInvoice = fi.sort(function(x, y){ return erpCmp(x.after || x.before, y.after || y.before) || erpCmp(x.label, y.label); });
+    // The keys whose first date changes, told per NAME (and product): an account
+    // and the branch named after it are one name — when only the key changes and
+    // the earliest date of that name does not, no win moves and nothing is said.
+    var firstChanges = function(m0, m1, withProduct){
+      var seen = Object.create(null), groups = Object.create(null), order = [], res = [];
+      Object.keys(m0).concat(Object.keys(m1)).forEach(function(k){
+        if(seen[k]) return; seen[k] = 1;
+        var e = m1[k] || m0[k], d0 = m0[k] ? m0[k].date : null, d1 = m1[k] ? m1[k].date : null;
+        if(d0 === d1) return;
+        var g = e.label + '\u0001' + (withProduct ? String(e.product || '').toLowerCase() : '');
+        if(!groups[g]){ groups[g] = []; order.push(g); }
+        groups[g].push({ key: e.key, label: e.label, product: e.product, before: d0, after: d1 });
+      });
+      order.forEach(function(g){
+        var es = groups[g], b = null, a = null, ka = null;
+        es.forEach(function(x){ if(x.before && (!b || x.before < b)) b = x.before; if(x.after && (!a || x.after < a)){ a = x.after; ka = x.key; } });
+        if(b === a) return;
+        var o = { key: es.length === 1 ? es[0].key : (ka || es[0].key), label: es[0].label, before: b, after: a };
+        if(withProduct) o.product = es[0].product;
+        res.push(o);
+      });
+      return res.sort(function(x, y){ return erpCmp(x.after || x.before, y.after || y.before) || erpCmp(x.label, y.label) || erpCmp(x.product, y.product); });
+    };
+    var p0 = firstPaid(att0, byId0), p1 = firstPaid(att1, byId1);
+    out.firstInvoice = firstChanges(p0.acct, p1.acct, false);
+    out.firstProduct = firstChanges(p0.prod, p1.prod, true);
+    // the closed months each kind of change reaches (the screen asks before any of them changes)
+    var monthsOf = function(list){ var s = Object.create(null); list.forEach(function(m){ if(m && m < month0) s[m] = 1; }); return Object.keys(s).sort(); };
+    var dm = function(d){ return d ? String(d).slice(0, 7) : null; };
+    var winDates = [];
+    out.firstInvoice.concat(out.firstProduct).forEach(function(x){ winDates.push(dm(x.before), dm(x.after)); });
+    out.closedMonths = { sales: monthsOf(out.moves.map(function(m){ return m.month; })),
+      discount: monthsOf(out.limitFlips.map(function(x){ return dm(x.date); })), wins: monthsOf(winDates) };
     return out;
   }
   // The branches offered first when an account moves (clinic ids, at most 8):

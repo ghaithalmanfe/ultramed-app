@@ -655,7 +655,7 @@ async function deleteClinic(id){
   const vCount = visits.filter(v=>v.clinicId===id).length;
   // An ERP account linked here by hand would then count at no clinic (each
   // invoice for whoever issued it) — said before the delete, not after.
-  const nLinks = Object.keys(erpMap).filter(k => erpMap[k] === id).length;
+  const nLinks = erpHandLinksTo([id]).length;
   showModal(`
     <h3 style="margin-top:0;">Remove ${esc(c.name)}?</h3>
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
@@ -666,17 +666,35 @@ async function deleteClinic(id){
   `);
 }
 async function confirmDeleteClinic(id){
-  const c = clinics.find(x=>x.id===id);
-  if(!c) return;
-  if(!await moveToBin('clinics', c, c.name)) return; // no safety copy → no delete
-  await stampVisitClinicName(id, c.name);
-  tomb('clinics', id);
-  clinics = clinics.filter(x=>x.id!==id);
-  await persist('clinics');
+  const r = await removeClinicToBin(id);
+  if(r.missing || r.bin === false) return; // no safety copy → no delete
   closeModal();
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
   showToast('Moved to recycle bin');
+}
+// The one way a clinic leaves the list (the delete sheet, and Undo of an ERP
+// account move that made a branch): a safety copy in the recycle bin first —
+// none, no delete — its name stamped on its visits, the team's delete log,
+// then the merged save. Says what landed: { ok } | { queued } (on this device,
+// uploads by itself) | { bin: false } (nothing removed) | { missing }.
+async function removeClinicToBin(id){
+  const c = clinics.find(x=>x.id===id);
+  if(!c) return { ok: false, missing: true };
+  if(!await moveToBin('clinics', c, c.name)) return { ok: false, bin: false };
+  await stampVisitClinicName(id, c.name);
+  tomb('clinics', id);
+  if(typeof forgetKeptClinic === 'function') forgetKeptClinic(id);
+  clinics = clinics.filter(x=>x.id!==id);
+  delete _persistInfo.clinics;
+  const ok = await persist('clinics');
+  return { ok, queued: !ok && persistOutcome('clinics').queued };
+}
+// ERP accounts linked by hand to any of these clinics: once a clinic is gone
+// their invoices count for the salesman who issued them — said before a delete.
+function erpHandLinksTo(ids){
+  const set = ids instanceof Set ? ids : new Set(ids);
+  return Object.keys(erpMap || {}).filter(k => set.has(erpMap[k])).sort();
 }
 
 // ---- MISSING-CLINIC FINDER ----
@@ -846,7 +864,12 @@ function mgSelectVisible(on){ mgVisible().forEach(c=>{ if(on) _mgSelected.add(c.
 async function bulkDeleteClinics(){
   if(!requireAdmin()) return;
   if(!_mgSelected.size){ showToast('Nothing selected'); return; }
-  if(!confirm(`Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
+  // the same warning as the single delete: ERP accounts linked by hand to these
+  // clinics would then count for whoever issued each invoice — named first
+  const links = erpHandLinksTo(_mgSelected), t = s => trOf(s) || s;
+  const warn = links.length ? `⚠️ ${t('ERP accounts linked by hand to the selected clinics:')} ${links.length}\n` + links.slice(0, 8).map(n => '• ' + (n.trim() || '(no name)')).join('\n')
+    + (links.length > 8 ? `\n• … +${links.length - 8}` : '') + `\n${t('Once they are removed their invoices count for the salesman who issued them — move them first from the clinic card.')}\n\n` : '';
+  if(!confirm(warn + `Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
   const removed = new Set();
   for(const id of _mgSelected){
     const c = clinics.find(x=>x.id===id);

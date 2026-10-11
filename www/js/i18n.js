@@ -570,12 +570,10 @@
     'Handed over:': 'تسليم العيادة:',
     'lines dated before': 'السطور المؤرخة قبل',
     'count for': 'تُحسب لـ',
-    'This clinic has no rep on the team — its sales leave the team totals.': 'هذه العيادة بلا مندوبة من الفريق — مبيعاتها تخرج من مجموع الفريق.',
     'Visits already logged stay on the branch they were logged at.': 'الزيارات المسجلة تبقى على الفرع الذي سُجلت عليه.',
     'first invoice:': 'أول فاتورة:',
     'new-account wins follow this date.': 'إنجاز «حساب جديد» يتبع هذا التاريخ.',
     'The daily e-mail follows from its next run; decks and files already downloaded do not change.': 'البريد اليومي يتبع التغيير من إرساله القادم؛ العروض والملفات المحمّلة سابقاً لا تتغير.',
-    'These months are closed. Their sales, the month-by-month page, the KPI and the weekly deck history will change:': 'هذه أشهر مغلقة، وستتغير مبيعاتها وصفحة «شهر بشهر» والمؤشرات وتاريخ العرض الأسبوعي:',
     'I understand that closed months change.': 'أفهم أن أرقام الأشهر المغلقة ستتغير.',
     'Saving…': 'جارٍ الحفظ…',
     '‹ Pick another': '‹ اختر غيره',
@@ -583,15 +581,12 @@
     'Undone': 'تم التراجع',
     'now counts at': 'تُحسب الآن على',
     'counts again at': 'تُحسب مجدداً على',
-    'The new branch stays in the clinic list.': 'الفرع الجديد يبقى في قائمة العيادات.',
     'Not saved — nothing changed. Check the connection and tap Save again.': 'لم يُحفظ — لم يتغير شيء. تحقق من الاتصال واضغط «حفظ» مرة أخرى.',
     "This account's link was changed on another device — nothing was saved. Open it again to see where it counts now.": 'تغيّر ربط هذا الحساب من جهاز آخر — لم يُحفظ شيء. افتحه من جديد لترى أين يُحسب الآن.',
     'No confirmation from the cloud yet — the screen still shows the old link. If the save lands later, the figures update and a message appears.': 'لم يصل تأكيد الحفظ من السحابة بعد — الشاشة ما زالت على الربط السابق. إن وصل الحفظ متأخراً ستتحدث الأرقام وتظهر رسالة.',
-    'The new branch was added, but the link was not saved — the invoices still count at': 'أُضيف الفرع الجديد، لكن الربط لم يُحفظ — ما زالت الفواتير تُحسب على',
     'Tap Save to try again.': 'اضغط «حفظ» للمحاولة مرة أخرى.',
     'The new branch was added.': 'أُضيف الفرع الجديد.',
     "The new branch was added, but this account's link was changed on another device meanwhile — the link was not saved. Open it again to see where it counts now.": 'أُضيف الفرع الجديد، لكن ربط هذا الحساب تغيّر من جهاز آخر في الأثناء — لم يُحفظ الربط. افتحه من جديد لترى أين يُحسب الآن.',
-    'The new branch is saved on this device only and uploads when the connection is back. The account was not moved — it still counts at': 'الفرع الجديد محفوظ على هذا الجهاز فقط ويُرفع عند عودة الاتصال. لم يُنقل الحساب — ما زال يُحسب على',
     'Account links were not loaded from the cloud on this device — changes are paused. Reopen the app with a connection.': 'روابط الحسابات لم تُحمَّل من السحابة على هذا الجهاز — التعديل متوقف. أعد فتح التطبيق مع اتصال.',
     'Some sales files did not load on this device — the figures here would be short, so changes are paused.': 'بعض ملفات المبيعات لم تُحمَّل على هذا الجهاز — الأرقام هنا ستكون ناقصة، لذلك التعديل متوقف.',
     'A sales-file save is in progress or not confirmed yet — changes are paused. Tap the red bar first.': 'حفظ ملف مبيعات جارٍ أو لم يتأكد بعد — التعديل متوقف. اضغط الشريط الأحمر أولاً.',
@@ -609,6 +604,49 @@
     'Link…': 'ربط…',
     'ERP accounts linked to this clinic by hand:': 'حسابات فواتير مربوطة بهذه العيادة يدوياً:',
     'Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.': 'بعد حذفها تُحسب فواتيرها لمن أصدرها — انقلها أولاً من بطاقة العيادة.',
+    // the review's fixes (v113): every sentence says what is true at that moment
+    'Matches no clinic — it was invoiced by salesmen outside the team, so it counts for nobody on the team; it shows as "not linked".': 'لا يطابق أي عيادة — فواتيره صادرة من بائعين خارج الفريق، فلا تُحسب لأحد في الفريق، ويظهر «غير مربوط».',
+    'Where this account counts changed since this page opened — nothing was saved. Open it again to see where it counts now.': 'تغيّر مكان احتساب هذا الحساب منذ فتح هذه الصفحة — لم يُحفظ شيء. افتحه من جديد لترى أين يُحسب الآن.',
+    'That clinic is closed — choose an open branch.': 'هذه العيادة مغلقة — اختر فرعاً مفتوحاً.',
+    'This change can no longer be undone from here — open the account to change it again.': 'لم يعد التراجع عن هذا التغيير ممكناً من هنا — افتح الحساب لتغييره من جديد.',
+    'is now': 'أصبح',
+    'is back to': 'عاد إلى حالته السابقة:',
+    'Right now it counts at': 'الحساب يُحسب الآن على',
+    'Right now it is': 'حالة الحساب الآن:',
+    'Open it again': 'افتحه من جديد',
+    'Links with no invoice in the files loaded on this device': 'روابط بلا فواتير في الملفات المحمّلة على هذا الجهاز',
+    'no invoice in the files loaded on this device': 'لا فواتير في الملفات المحمّلة على هذا الجهاز',
+    'No invoice in the files loaded on this device.': 'لا فواتير في الملفات المحمّلة على هذا الجهاز.',
+    'Closed months change': 'تتغير أرقام أشهر مغلقة',
+    'Sales change in:': 'تتغير المبيعات في:',
+    'The month-by-month page, the KPI and the weekly deck history follow.': 'وتتبعها صفحة «شهر بشهر» والمؤشرات وتاريخ العرض الأسبوعي.',
+    'The discount check changes in:': 'يتغير فحص حد الخصم في:',
+    'New-account / first-time-product wins can change in:': 'قد تتغير الحسابات الجديدة والمنتجات التي تدخل العيادات لأول مرة في:',
+    "Lines that count in no month's figure (returns dated back to a month their own file does not cover):": 'سطور لا تُحسب في أرقام أي شهر (مرتجعات مؤرخة بشهر سابق لا يغطيه ملفها):',
+    'This clinic has no rep — its invoices count for the salesman who issued them.': 'هذه العيادة بلا مندوبة — تُحسب فواتيرها لمن أصدرها.',
+    'This clinic counts for': 'هذه العيادة تُحسب لـ',
+    '— not on the team, so those sales leave the team totals.': '— ليس ضمن الفريق، فتخرج هذه المبيعات من مجموع الفريق.',
+    'no paid invoice': 'لا فاتورة مدفوعة',
+    'The new branch is saved on this device only and uploads when the connection is back. The link was not saved.': 'الفرع الجديد محفوظ على هذا الجهاز فقط ويُرفع عند عودة الاتصال. لم يُحفظ الربط.',
+    'The new branch was added, but the link was not saved.': 'أُضيف الفرع الجديد، لكن الربط لم يُحفظ.',
+    'The new branch': 'الفرع الجديد',
+    'was removed on this device — the removal uploads when the connection is back.': 'حُذف على هذا الجهاز — يصل الحذف إلى السحابة عند عودة الاتصال.',
+    'was removed (it is in the recycle bin).': 'حُذف (موجود في سلة المحذوفات).',
+    'stays in the clinic list:': 'يبقى في قائمة العيادات:',
+    'it has a logged visit': 'عليه زيارة مسجلة',
+    'it has doctors': 'عليه أطباء',
+    'another ERP account is linked to it by hand:': 'حساب فواتير آخر مربوط به يدوياً:',
+    'another ERP account counts there:': 'حساب فواتير آخر يُحسب عليه:',
+    'the recycle bin could not be reached — try again with a connection': 'تعذّر الوصول إلى سلة المحذوفات — أعد المحاولة مع اتصال',
+    'the clinic list did not load from the cloud on this device': 'قائمة العيادات لم تُحمَّل من السحابة على هذا الجهاز',
+    'some sales files did not load on this device, so it could not be checked': 'بعض ملفات المبيعات لم تُحمَّل على هذا الجهاز، فتعذّر فحصه',
+    'it could not be checked': 'تعذّر فحصه',
+    "The branch matches this account's name, so it still takes it — remove the branch from its clinic card to go back.": 'اسم الفرع يطابق اسم هذا الحساب، فما زال يأخذه — للعودة كما كان احذف الفرع من بطاقة العيادة.',
+    'These accounts still count differently because of the branch:': 'حسابات ما زالت تُحسب بشكل مختلف بسبب الفرع:',
+    'An account link reached the cloud late — the figures are updated': 'وصل تغيير الربط إلى السحابة بعد تأخير — تم تحديث الأرقام',
+    'ERP accounts linked by hand to the selected clinics:': 'حسابات فواتير مربوطة يدوياً بالعيادات المختارة:',
+    'Once they are removed their invoices count for the salesman who issued them — move them first from the clinic card.': 'بعد حذفها تُحسب فواتيرها لمن أصدرها — انقلها أولاً من بطاقة العيادة.',
+    'Lines with no customer name cannot be linked — each counts for the salesman who issued it:': 'السطور التي بلا اسم عميل لا يمكن ربطها — تُحسب كل منها لمن أصدرها:',
     'Import tasks from an email': 'استيراد مهام من إيميل',
     'Find tasks': 'ابحث عن مهام',
     'No clear action items found. You can still add one manually below.': 'لم يتم العثور على مهام واضحة. يمكنك إضافة واحدة يدوياً بالأسفل.',
@@ -1698,13 +1736,27 @@
     [/^Reliable follow-through — (\d+) of (\d+) tasks completed \((\d+)%\)\.$/, function (m) { return 'متابعة موثوقة — ' + m[1] + ' من ' + m[2] + ' مهمة مكتملة (' + m[3] + '%).'; }],
     [/^Latest ERP data covers up to (.+?) \((\d+) days ago\)\. Import this week's file to keep coaching based on real invoices\. Tap to import →$/, function (m) { return 'آخر بيانات ERP تغطي حتى ' + m[1] + ' (قبل ' + m[2] + ' يوماً). استورد ملف هذا الأسبوع ليبقى التوجيه مبنياً على فواتير حقيقية. اضغط للاستيراد ←'; }],
     // a long list shows its first 40 (ERP account links, the clinic picker)
-    [/^Showing (\d+) of (\d+) — search to find the others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — ابحث لإيجاد البقية'; }]
+    [/^Showing (\d+) of (\d+) — search to find the others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — ابحث لإيجاد البقية'; }],
+    // ERP account links: a save or an Undo that finished while another sheet was open says so in a toast — "<account>: <clinic> (<status>)"
+    [/^✅ Saved — (.+?): (.+)\. Undo: ERP account links\.$/, function (m) { return '✅ تم الحفظ — ' + m[1] + ': ' + trWhere(m[2]) + '. للتراجع: «ربط حسابات الفواتير بالفروع».'; }],
+    [/^↩️ Undone — (.+?): (.+)\.$/, function (m) { return '↩️ تم التراجع — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }],
+    [/^⚠️ Not saved — (.+?): (.+)\.$/, function (m) { return '⚠️ لم يُحفظ — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }],
+    [/^⏳ No confirmation from the cloud yet — (.+?): (.+)\.$/, function (m) { return '⏳ لم يصل تأكيد الحفظ من السحابة بعد — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }],
+    [/^📴 The new branch uploads when the connection is back; the link was not saved — (.+?): (.+)\.$/, function (m) { return '📴 الفرع الجديد يُرفع عند عودة الاتصال، والربط لم يُحفظ — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }]
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
   // peel it, translate the words, and put it back. Arrows flip for RTL.
   var LEAD = /^((?:\p{Extended_Pictographic}|[\u2022\u2023\u25A0-\u25FF\u2190-\u21FF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF\u200D\uFE0F\u20E3])+)\s+([\s\S]+)$/u;
   var MIRROR = { '→': '←', '←': '→', '▶': '◀', '◀': '▶', '›': '‹', '‹': '›' };
+
+  // "Aline Dental Clinic - Jabriya (by hand)" or "not linked": the name stays, the status is translated
+  function trWhere(w) {
+    var mm = String(w).match(/^(.*) \(([^()]+)\)$/);
+    if (mm) { var t = lookup(mm[2]); return mm[1] + ' (' + (t != null ? t : mm[2]) + ')'; }
+    var t2 = lookup(w);
+    return t2 != null ? t2 : w;
+  }
 
   function lookup(t) {
     if (Object.prototype.hasOwnProperty.call(AR, t)) return AR[t];

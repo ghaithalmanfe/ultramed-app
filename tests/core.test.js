@@ -3179,6 +3179,9 @@ describe('ERP account links (v113)', () => {
     assert.deepEqual(pv.people, [{ rep: G, net: 155.5 }]);
     assert.deepEqual([pv.before.value, pv.before.status, pv.before.clinicId, pv.after.value, pv.after.status, pv.after.clinicId], ['al1', 'hand', 'al1', 'zz-new', 'hand', 'zz-new']);
     assert.deepEqual([pv.others, pv.limitFlips, pv.ledger], [[], [], { returns: 0, free: 0 }]); // class copied (A): 37.5% stays within 40%
+    assert.deepEqual(pv.outside, { lines: 0, net: 0 });
+    // nobody's sales and no discount check change — but the new branch's first invoice (21 Sep) is a new account in closed September
+    assert.deepEqual(pv.closedMonths, { sales: [], discount: [], wins: ['2026-09'] });
     // the draft is what the screen runs monthAchievement on; the input is untouched
     assert.deepEqual(pv.draft.erpMap, { [KH]: 'zz-new', 'Marketing Philips': '@ignore' });
     assert.deepEqual(pv.draft.clinics.map(c => c.id), ['al1', 'al2', 'al3', 'm1', 'zz-new']);
@@ -3213,9 +3216,16 @@ describe('ERP account links (v113)', () => {
       [Object.assign({}, rich, { clinics: handed }), { name: KH, to: 'm1' }], [Object.assign({}, rich, { clinics: shared }), { name: KH, to: 'm1' }]];
     cases.forEach(([d, change], i) => assertInvariant(d, core.erpLinkPreview(d, change), 'case ' + i + ' ' + JSON.stringify(change.to)));
     const rx = core.erpLinkPreview(rich, { name: KH, to: 'm1' });
-    assert.deepEqual(rx.months.map(m => [m.month, m.invoices, m.net]), [['2026-09', 1, 48], ['2026-10', 3, 105.5]]); // the return moves with the account
+    // the month rows follow the month figures' rule, like the moves: the return dated back to September from the
+    // October file counts in no month, so it is not in September's row — it is told apart, with its KD
+    assert.deepEqual(rx.months.map(m => [m.month, m.invoices, m.net]), [['2026-09', 1, 60], ['2026-10', 3, 105.5]]);
+    assert.deepEqual(rx.outside, { lines: 1, net: -12 });
+    assert.equal(rx.net, 153.5);                                                     // every line once: the months plus the line outside them
     assert.deepEqual(rx.moves.map(m => [m.month, m.from, m.to, m.net]), [['2026-09', G, M, 60], ['2026-10', G, M, 105.5]]);
     assert.deepEqual(rx.ledger, { returns: 1, free: 0 });
+    assert.deepEqual(pv.outside, { lines: 0, net: 0 });
+    // the closed months each kind of change reaches: September's sales, and the first invoice of Dental 8 (22 → 21 Sep)
+    assert.deepEqual(pv.closedMonths, { sales: ['2026-09'], discount: [], wins: ['2026-09'] });
   });
 
   test('automatic matching: with no branch the account counts for the salesman who issued each invoice; once the Khairan clinic exists it matches by name', () => {
@@ -3264,6 +3274,8 @@ describe('ERP account links (v113)', () => {
     const flip = { doc: 'SINV7002', date: '2026-09-21', pct: 37.5, net: 60, before: { limit: 40, within: true }, after: { limit: 35, within: false }, closed: true };
     assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'zz-new', addClinic: nb({ cls: 'B' }) }, { settings: {} }).limitFlips, [flip]);
     assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }).limitFlips, [flip]);                   // Hawally is class B
+    // same rep, so no sales move: the closed month changes only in its discount check (and Hawally's first invoice, 5 Oct → 21 Sep)
+    assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }).closedMonths, { sales: [], discount: ['2026-09'], wins: ['2026-09'] });
     // the supervisor's limits, read as weeklyReport reads them (an empty value keeps the default)
     assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }, { settings: { discountOther: 38 } }).limitFlips, []);
     assert.deepEqual(core.erpLinkPreview(fixture(), { name: KH, to: 'al2' }, { settings: { discountOther: '' } }).limitFlips, [flip]);
@@ -3281,6 +3293,39 @@ describe('ERP account links (v113)', () => {
     assert.deepEqual(core.erpLinkPreview(fixture(), { name: 'Aline Dental Clinic - Salmiya', to: 'al2' }).firstInvoice, [
       { key: 'c:al2', label: 'Aline Dental Clinic - Hawally', before: '2026-10-05', after: '2026-09-14' },
       { key: 'c:al1', label: 'Aline Dental Clinic - Salmiya', before: '2026-09-14', after: '2026-09-21' }]);
+    // an account nobody linked becomes a branch with its own name: its key changes (n: → c:), its first date does not —
+    // one name, one date, so nothing is reported and no closed month is touched
+    const free = fixture({ erpMap: { 'Marketing Philips': '@ignore' } });
+    const same = core.erpLinkPreview(free, { name: KH, to: 'zz-new', addClinic: nb({ cls: 'B' }) });   // class B: SINV7002 stays over 35%, as with no clinic
+    assert.deepEqual([same.firstInvoice, same.firstProduct, same.closedMonths], [[], [], { sales: [], discount: [], wins: [] }]);
+    // under another name the branch is another name: both are told
+    assert.deepEqual(core.erpLinkPreview(free, { name: KH, to: 'zz-new', addClinic: nb({ name: 'Aline Dental Clinic - Khairan Mall' }) }).firstInvoice, [
+      { key: 'n:aline dental clinic - khairan', label: KH, before: '2026-09-21', after: null },
+      { key: 'c:zz-new', label: 'Aline Dental Clinic - Khairan Mall', before: null, after: '2026-09-21' }]);
+  });
+
+  test('firstProduct: a first-time product moves between branches that both bought before — a closed month\'s wins change with no new account', () => {
+    // August: Salmiya and Hawally each bought a handpiece, so neither branch's first invoice moves when Khairan does
+    const rowP = (d, doc, cust, net, product) => [d, doc, 0, product, 1, net, net, 0, GS, 'Intensiv', cust, 'Clinics', 0, ''];
+    const aug = { id: 'aug', from: '2026-08-01', to: '2026-08-31', repMap, rows: [rowP('2026-08-10', 'SINV6001', 'Aline Dental Clinic - Salmiya', 20, 'Intensiv Handpiece'),
+      rowP('2026-08-11', 'SINV6002', 'Aline Dental Clinic - Hawally', 20, 'Intensiv Handpiece')] };
+    const pv = core.erpLinkPreview(fixture({ periods: [aug] }), { name: KH, to: 'al2' });
+    assert.deepEqual(pv.firstInvoice, []);
+    // Hawally's first Ortho-Strips: its own 5 Oct invoice before, Khairan's 21 Sep after (Salmiya keeps its own 14 Sep)
+    assert.deepEqual(pv.firstProduct, [{ key: 'c:al2', label: 'Aline Dental Clinic - Hawally', before: '2026-10-05', after: '2026-09-21', product: 'Intensiv Ortho-Strips' }]);
+    assert.deepEqual(pv.closedMonths.wins, ['2026-09']);
+  });
+
+  test('guards: a Closed clinic is never a new target (CLOSED_CLINIC); a link already on one can still move away', () => {
+    const closed = CLINICS.concat([{ id: 'al0', name: 'Aline Dental Clinic - Jahra', rep: G, cls: 'Closed' }]);
+    const d = fixture({ clinics: closed });
+    const pv = core.erpLinkPreview(d, { name: KH, to: 'al0' });
+    assert.deepEqual([pv.error, pv.before.clinicId, pv.after, pv.draft], ['CLOSED_CLINIC', 'al1', null, null]);
+    assert.equal(core.erpLinkPreview(d, { name: 'My Fatoorah', to: 'al0' }).error, 'NOT_A_CLINIC_ACCOUNT');   // not a clinic account first
+    const onClosed = fixture({ clinics: closed, erpMap: { [KH]: 'al0' } });
+    assert.equal(core.erpLinkPreview(onClosed, { name: KH, to: 'al0' }).error, 'SAME');
+    const away = core.erpLinkPreview(onClosed, { name: KH, to: 'al1' });
+    assert.deepEqual([away.error, away.before.closed, away.after.clinicId], [null, true, 'al1']);
   });
 
   test('guards: NO_NAME, SAME, NO_CLINIC, NOT_A_CLINIC_ACCOUNT', () => {
