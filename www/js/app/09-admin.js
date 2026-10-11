@@ -653,9 +653,13 @@ async function deleteClinic(id){
   const c = clinics.find(x=>x.id===id);
   if(!c) return;
   const vCount = visits.filter(v=>v.clinicId===id).length;
+  // An ERP account linked here by hand would then count at no clinic (each
+  // invoice for whoever issued it) — said before the delete, not after.
+  const nLinks = Object.keys(erpMap).filter(k => erpMap[k] === id).length;
   showModal(`
     <h3 style="margin-top:0;">Remove ${esc(c.name)}?</h3>
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
+    ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
     <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${id}')">Yes, remove</button>
     <button class="btn secondary" onclick="openClinicDetail('${id}')">Cancel</button>

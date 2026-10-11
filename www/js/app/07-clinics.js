@@ -473,6 +473,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Order history</div>
     ${renderClinicOrders(id)}
+    ${currentUser.role==='supervisor' ? clinicErpAccountsSection(c) : ''}
     ${clinicErpSection(id)}
 
     <div class="section-title" style="margin-top:20px;"><span>${I('chat')} No-sales reason</span></div>
@@ -575,6 +576,45 @@ async function saveNoSaleReason(clinicId, val){
   c.noSaleReason = (val||'').trim();
   await persist('clinics');
   showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
+}
+// The ERP accounts whose invoices count on this branch (supervisor): each can
+// be moved from here, and another account can be counted here — the editor
+// shows what moves before anything is saved (11-erp.js, ERP ACCOUNT LINKS).
+// Never takes the clinic card down with it: odd data shows no section.
+function clinicErpAccountsSection(c){
+  try{ return clinicErpAccountsHTML(c); }catch(e){ console.error('clinic ERP accounts', e); return ''; }
+}
+function clinicErpAccountsHTML(c){
+  if(!c || !currentUser || currentUser.role !== 'supervisor') return '';
+  const res = UMCore.erpAccounts(digestData());
+  const here = res.accounts.filter(a => a.clinicId === c.id);
+  const staleHere = (res.stale || []).filter(s => s.link === c.id);
+  const inv = here.reduce((s, a) => s + a.invoices, 0), net = here.reduce((s, a) => s + a.net, 0);
+  const row = (a, stale) => `<div class="row-between" style="gap:8px; padding:7px 0; border-bottom:1px solid var(--line); align-items:flex-start;">
+      <div style="flex:1; min-width:0;">
+        <div dir="auto" style="font-size:13px; font-weight:700; overflow-wrap:anywhere;">${esc(a.name)}</div>
+        <div class="clinic-sub" style="display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;">${erpLinkBadge(a)} ${stale ? '<span>no invoice in the saved files</span>' : `<span>${a.invoices} × · <span dir="ltr">${money(a.net)}</span>${a.last ? ` · <span>last invoice</span> ${fmtDate(a.last)}` : ''}</span>`}</div>
+      </div>
+      <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(a.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'clinic:${c.id}')">Move…</button>
+    </div>`;
+  // the group's own name (no branch word) counts once, on its first branch — say where, on the other branches
+  let famLine = '';
+  const fams = UMCore.clinicFamilies(clinics), key = fams.byClinic[c.id];
+  if(key){
+    const fam = fams.fams[key];
+    if(fam.ids[0] !== c.id && res.accounts.some(a => a.status === 'family' && fam.ids.includes(a.clinicId))){
+      const land = clinics.find(x => x.id === fam.ids[0]);
+      famLine = `<div class="clinic-sub" style="padding-top:6px; line-height:1.5;"><span>Accounts named after the whole group count once, on</span> <b dir="auto">${esc(land ? land.name : '')}</b></div>`;
+    }
+  }
+  return `<div class="section-title" style="margin-top:20px;"><span>ERP accounts counted here</span> <span class="link" onclick="openErpLinks({back:'clinic:${c.id}'})">All accounts</span></div>
+    <div class="card" id="clinicErpAccounts" style="padding:8px 12px 12px;">
+      ${here.map(a => row(a, false)).join('')}${staleHere.map(s => row({ name: s.name, status: s.status }, true)).join('')}
+      ${here.length || staleHere.length ? '' : `<div class="clinic-sub" style="padding:6px 0;">No ERP account counts here yet.</div>`}
+      ${here.length ? `<div class="clinic-sub" style="padding-top:8px;"><span>Total counted here</span> · ${inv} × · <span dir="ltr">${money(net)}</span> <span>(all saved files)</span></div>` : ''}
+      ${famLine}
+      <button class="chip small" style="margin-top:10px;" onclick="openErpLinks({pickFor:'${c.id}', back:'clinic:${c.id}'})">${I('plus')} <span>Count another ERP account here…</span></button>
+    </div>`;
 }
 function clinicErpLedger(clinicId){
   const ret = [], all = [];

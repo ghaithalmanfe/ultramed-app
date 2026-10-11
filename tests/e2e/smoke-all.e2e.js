@@ -147,6 +147,9 @@ const SEED = JSON.parse(fs.readFileSync(WWW + '/sales-seed-aug26.json', 'utf8'))
       await tryModal('openContactImport', `openContactImport()`);
       await tryModal('openErpImport', `openErpImport()`);
       await tryModal('openErpRecon', `openErpRecon('seed_sales3_aug26')`);
+      await tryModal('openErpLinks', `openErpLinks()`);
+      await tryModal('openErpLinkEdit', `openErpLinkEdit(UMCore.erpAccounts(digestData()).accounts[0].name, 'links')`);
+      await tryModal('openErpLinkPreview (ignore)', `(openErpLinkEdit(UMCore.erpAccounts(digestData()).accounts[0].name, 'links'), elChoose('@ignore'))`);
       await tryModal('openAddClinic', `openAddClinic()`);
       await tryModal('openEditClinic', `openEditClinic(${JSON.stringify(first.id)})`);
     }

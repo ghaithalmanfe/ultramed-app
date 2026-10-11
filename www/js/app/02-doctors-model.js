@@ -65,6 +65,10 @@ let targets = {}; // {repName: {revenue: KD, visits: N}} — monthly targets
 let categoryGuides = {}; // {catName: {sell, how, objections, links[]}} — selling guides
 let erpSales = {periods: []}; // imported ERP sales periods (supervisor)
 let erpMap = {}; // {erpCustomerName: clinicId | '@channel' | '@ignore'}
+// Links are saved one account at a time (saveErpLink, 11-erp.js): a counter of
+// confirmed link saves, so a refresh whose read started before a save never
+// brings the old link back, and a flag while a link save is in flight.
+let _erpMapGen = 0, _erpLinkSaving = false;
 // Justifications the team writes against ERP events, keyed by kind:
 //   'ret|<doc>|<product>' / 'foc|<doc>|<product>'  → {text, by, on}
 // Keys survive re-imports because doc numbers are stable in the ERP.

@@ -3330,4 +3330,14 @@ describe('ERP account links (v113)', () => {
     assert.deepEqual(core.erpBranchCandidates('SN Clinic 360', CLINICS.concat([{ id: 'sn1', name: 'SN Smile Center', rep: M }]), {}), []);
     assert.deepEqual(core.erpBranchCandidates('Noor Clinic 360', CLINICS.concat([{ id: 'nr1', name: 'Noor Smile Center', rep: M }]), {}), ['nr1']);
   });
+
+  test('i18n: the long-list line keeps its numbers in Arabic; the screens\' fixed words are in the dictionary', () => {
+    const i18n = require('../www/js/i18n.js');
+    assert.equal(i18n.tr('Showing 40 of 75 — search to find the others'), 'يظهر 40 من 75 — ابحث لإيجاد البقية');
+    assert.equal(i18n.tr('Showing 40 of 1203 — search to find the others'), 'يظهر 40 من 1203 — ابحث لإيجاد البقية');
+    assert.equal(i18n.tr("Where do this account's invoices count?"), 'على أي فرع تُحسب فواتير هذا الحساب؟');
+    assert.equal(i18n.tr('I understand that closed months change.'), 'أفهم أن أرقام الأشهر المغلقة ستتغير.');
+    assert.equal(i18n.tr('⚠️ Not saved — nothing changed. Check the connection and tap Save again.'), '⚠️ لم يُحفظ — لم يتغير شيء. تحقق من الاتصال واضغط «حفظ» مرة أخرى.');
+    assert.equal(i18n.tr(KH), null);                                                   // an account name is data
+  });
 });
