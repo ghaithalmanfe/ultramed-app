@@ -3995,6 +3995,19 @@ describe('Clinics card = the month figure (v115)', () => {
     assert.equal(none.month, '2026-11'); assert.equal(none.files, 0); assert.deepEqual(none.totals, { total: 0, clinics: 0, channels: 0, ignored: 0 });
   });
 
+  test('one person\'s card is dated as the Today card dates her figure, also from another rep\'s file', () => {
+    // per-rep files: Mariam's export ends 8 Oct; Renova's runs to 10 Oct and holds her 9 Oct invoice at Dental 8 (Mariam's clinic)
+    const d = data({ today: '2026-10-10', periods: [
+      { id: 'm', from: '2026-10-01', to: '2026-10-08', repMap: { [MS]: M }, rows: [row('2026-10-05', 'S1', 'Dental 8 Clinic', 25, MS)] },
+      { id: 'r', from: '2026-10-01', to: '2026-10-10', repMap: { [RS]: R }, rows: [row('2026-10-06', 'S2', 'Meena Dental', 30, RS), row('2026-10-09', 'S3', 'Dental 8 Clinic', 15, RS)] }] });
+    const ms = core.monthCustomerSales(d, { rep: M }), a = core.monthAchievement(M, d);
+    assert.equal(ms.totals.total, 40); assert.equal(a.amount, 40);
+    assert.equal(ms.last, '2026-10-09');
+    assert.equal(ms.covered, a.asOf); assert.equal(ms.covered, '2026-10-10');
+    assert.ok(ms.covered >= ms.last);
+    assert.deepEqual(ms.mtd, core.erpMtd(d));                          // the screen compares with this, once
+    assert.equal(core.monthCustomerSales(d, { rep: 'all' }).covered, '2026-10-10');
+  });
   test('an exchange is left out of the returned value, never out of the net', () => {
     const d = data({ periods: [{ id: 'o', from: '2026-10-01', to: '2026-10-08', repMap, rows: [
       row('2026-10-02', 'S1', 'Dental 8 Clinic', 50, MS), ret('2026-10-03', 'R1', 'Dental 8 Clinic', -10, MS, 'S1'), ret('2026-10-04', 'R2', 'Dental 8 Clinic', -4, MS, 'S1')] }] });
