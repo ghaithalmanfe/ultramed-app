@@ -75,37 +75,45 @@ function erpDashReconHTML(d){
   const one = d.rep !== 'all';
   const p0 = { rep: d.rep, total: 0, clinics: 0, channels: 0, ignored: 0 };
   const parts = one ? (ms.people[0] || p0) : ms.totals;
-  // the Today screen's own figure for a person — null when it shows none
-  const todayFig = r => (ms.current && hasTarget(r)) ? bestMonthRevenue(r).amount : null;
-  const off = [];   // a person whose figure here is not the Today screen's: said, never hidden
+  // The figure the person sees elsewhere — the Today screen's for the running
+  // month (only a person with a sales target has one there), the Months
+  // report's for an earlier month; null when there is none to compare with.
+  // One month-to-date pass serves every comparison (bestMonthRevenue is
+  // monthAchievement on digestData(); the Months report's figure for an
+  // earlier month is the same lines summed to its last day).
+  const data = digestData(), mtd = UMCore.erpMtd(ms.current ? data : Object.assign({}, data, { today: ms.to }));
+  const refFig = r => ms.current ? (hasTarget(r) ? UMCore.monthAchievement(r, data, mtd).amount : null) : (mtd[r] ? mtd[r].amount : 0);
+  const off = [];   // a person whose figure here is not that one: said, never hidden
+  const same = (r, v) => { const f = refFig(r); if(f != null && Math.round(f * 100) !== Math.round(v * 100)) off.push({ rep: r, ref: f }); return f != null && Math.round(f * 100) === Math.round(v * 100); };
   let totalLabel;
   if(one){
-    const tf = todayFig(d.rep);
-    if(tf != null && tf !== parts.total) off.push({ rep: d.rep, today: tf });
+    const ok = same(d.rep, parts.total);
     totalLabel = ms.current
-      ? `<span><b>${esc(d.rep)}</b> · <span>${tf != null && tf === parts.total ? "Month's sales — the Today screen figure" : "Month's sales"}</span></span>`
-      : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>sales as in the Months report</span></span>`;
+      ? `<span><b>${esc(d.rep)}</b> · <span>${ok ? "Month's sales — the Today screen figure" : "Month's sales"}</span></span>`
+      : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>${ok ? 'sales as in the Months report' : 'sales'}</span></span>`;
   } else {
-    totalLabel = ms.current ? `<span>Month's sales — everyone</span>` : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>everyone's sales as in the Months report</span></span>`;
+    totalLabel = ms.current ? `<span>Month's sales — everyone</span>` : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>everyone's sales</span></span>`;
   }
   let people = '';
   if(!one){
+    let allSame = true;
     people = ms.people.map(p => {
-      const tf = todayFig(p.rep);
-      if(tf != null && tf !== p.total) off.push({ rep: p.rep, today: tf });
+      if(!same(p.rep, p.total)) allSame = false;
       const note = ms.current && !hasTarget(p.rep) ? ` <span style="color:var(--muted); font-size:11px;">· <span>no sales target — not on the Today screen</span></span>` : '';
       return `<div class="row-between" data-person="${esc(p.rep)}" style="gap:10px; padding:1px 0;"><span><span>${esc(p.rep)}</span>${note}</span>${amt(p.total)}</div>`;
     }).join('');
-    if(people) people = `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${people}
-      <div style="color:var(--muted); font-size:11.5px; margin-top:2px;"><span>${ms.current ? "Each person's figure is the one on the Today screen." : "Each person's figure is the one in the Months report."}</span></div></div>`;
+    // "each as on the Today screen" only when every listed figure is checked against it
+    const each = allSame ? `<div style="color:var(--muted); font-size:11.5px; margin-top:2px;"><span>${ms.current ? "Each person's figure is the one on the Today screen." : "Each person's figure is the one in the Months report."}</span></div>` : '';
+    if(people) people = `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${people}${each}</div>`;
   }
   let team = '';
   if(!one && ms.current && sup){
-    const tt = teamTargetNow();
+    // teamTargetNow(), on the same pass
+    const tt = teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: UMCore.monthAchievement(r, data, mtd).amount } : null; }));
     if(tt.n >= 1 && tt.pct != null && Math.round(tt.ach * 100) !== Math.round(ms.totals.total * 100))
       team = `<div data-part="team" style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>The Team line on the Today screen counts only the people with a sales target:</span> ${amt(tt.ach)}</div>`;
   }
-  const offNote = off.map(x => `<div style="color:var(--coral-ink); font-size:11.5px; margin-top:4px;">⚠️ <b>${esc(x.rep)}</b> · <span>The Today screen shows</span> ${amt(x.today)} · <span>please report this difference.</span></div>`).join('');
+  const offNote = off.map(x => `<div style="color:var(--coral-ink); font-size:11.5px; margin-top:4px;">⚠️ <b>${esc(x.rep)}</b> · <span>${ms.current ? 'The Today screen shows' : 'The Months report shows'}</span> ${amt(x.ref)} · <span>please report this difference.</span></div>`).join('');
   const noFile = ms.fallback ? `<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;"><span>No sales file for this month yet: the Today screen shows 0 until one is uploaded.</span></div>` : '';
   const missing = ms.missing ? `<div id="erpDashMissing" style="color:var(--amber-ink); font-weight:600; font-size:11.5px; line-height:1.55; margin-top:4px;">⚠️ ${ms.missing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="retryErpRows().then(() => { if(activeView === 'clinics' && clinicMode === 'dash') renderClinicDash(); }).catch(e => console.warn('retry sales rows', e))">🔄 <span>Load them again</span></span></div>` : '';
   return `<div id="erpDashRecon" style="margin:10px 0 4px; padding:9px 11px; border-radius:10px; background:var(--paper); font-size:12.5px; line-height:1.5;">
