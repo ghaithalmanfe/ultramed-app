@@ -17,7 +17,14 @@
 // with a CR inside, an account named "__proto__", the change log's size, a
 // Closed clinic through saveErpLink itself, a long name with no space, a
 // clinic name with a quote and code in it as a photo caption, and customers
-// named like built-in object properties in the reconciliation.
+// named like built-in object properties in the reconciliation. Section 22: a
+// new-branch save whose link lands late (its redrawn page finishes), a retry
+// racing a late landing (never left on "Saving…", logged once), an Undo that
+// lands late (its branch still goes, and it is said), toasts that name the new
+// branch, the clinic card while a file is missing, and a Save that waited for
+// another save. Section 23: ERP product, salesman and brand names inside the
+// older inline handlers (returns / free-goods chips, salesmen card, brand
+// heading, selling guides) — an apostrophe never breaks a tap, code never runs.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -74,7 +81,7 @@ const OCT = [row('2026-10-04','SINV7101','Aline Dental Clinic - Salmiya',50,GS),
   row('2026-10-03','SINV7106',QUOTED,12,'Stranger'), row('2026-10-03','SINV7107',LONG,7,'Stranger')];
 const repMap = { [GS]: G, [MS]: M };
 const sum = rows => Math.round(rows.reduce((s, r) => s + r[6], 0) * 1000) / 1000;
-const makeSplit = (sep, oct) => core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: repMap,
+const makeSplit = (sep, oct, rmg) => core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: rmg || repMap,
   seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true }, // one-time boot repairs: already done
   periods: [
     { id: 'sep', from: '2026-09-01', to: '2026-09-30', net: sum(sep), rowCount: sep.length, importedAt: '2026-10-01T08:00:00.000Z', repMap, rev: 1, rows: sep },
@@ -96,6 +103,17 @@ const SPLIT_PN = makeSplit(SEP, OCT.concat(PROTO_NAMES.map((n, i) => row('2026-1
 const SPLIT_EVIL = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7171',EVIL,9,GS)]));
 const SPLIT_WORD = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7181',WORD,9,GS)]));
 const SPLIT_BIG = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7191',BIG,9,GS)]));
+// ---- names inside older inline handlers (section 23): a product, a salesman and a brand straight from the ERP file ----
+const APOS = "Kerr's OptiBond Universal";                    // an apostrophe in a product name
+const EVILP = "Bond');window.__xss=(window.__xss||0)+1;//";  // a quote and code in a product name
+const SM_APOS = "Dana O'Hara", SM_EVIL = "Rami');window.__xss=(window.__xss||0)+1;//";   // salesmen
+const BR_APOS = "Kerr's", BR_EVIL = "Kerr');window.__xss=(window.__xss||0)+1;//";          // brands (= categories of ERP-added products)
+const SPLIT_APOS = makeSplit(SEP, OCT.concat([
+  ['2026-10-06','SRET7201',1,APOS,-1,0,-8,8,GS,'Kerr','Aline Dental Clinic - Hawally','Clinics',0,'SINV7102'],   // a return of that product
+  ['2026-10-06','SINV7202',0,APOS,2,10,0,0,GS,'Kerr','Aline Dental Clinic - Hawally','Clinics',0,''],            // free goods (worth 10 KD), on an all-free invoice: "sample" by default
+  ['2026-10-06','SINV7203',0,EVILP,1,4,0,0,GS,'Kerr','Aline Dental Clinic - Hawally','Clinics',0,'']]));
+const SPLIT_SM = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7211','Dental 8 Clinic',5,SM_APOS), row('2026-10-07','SINV7212','Dental 8 Clinic',4,SM_EVIL)]),
+  Object.assign({}, repMap, { [SM_APOS]: 'Renova', [SM_EVIL]: 'Renova' }));
 const CLINICS = [
   {id:'al1', name:'Aline Dental Clinic - Salmiya', rep:G, cls:'A', doctors:[]},
   {id:'al2', name:'Aline Dental Clinic - Hawally', rep:G, cls:'B', doctors:[]},
@@ -229,6 +247,13 @@ reseed();
   }, {fn, arg});
   const sheetNow = () => page.evaluate(() => ({ h3: (document.querySelector('#modalInner h3') || {}).innerText || null, shown: document.getElementById('modalBack').classList.contains('show'),
     toast: document.getElementById('toast').textContent, el: typeof _el !== 'undefined' && _el ? _el.name : null }));
+  // the sheet on screen as the person sees it: its Save (and whether it reads "Saving…"), the error card, the pinned note
+  const pgState = () => page.evaluate(() => { const q = s => document.querySelector('#modalInner ' + s), t = el => el ? el.innerText.replace(/\s+/g, ' ').trim() : null;
+    const sv = q('#elSave'), bk = q('#elBack'), er = q('#elErr'), nt = document.getElementById('erpImportNote');
+    return { h3: t(q('h3')), save: sv ? { disabled: sv.disabled, text: t(sv) } : null, backDisabled: bk ? bk.disabled : null, err: er && er.offsetParent ? t(er) : null,
+      note: t(nt), undo: !!document.getElementById('elUndo'), toast: document.getElementById('toast').textContent, busy: !!(_elBusy || _erpLinkSaving), sheet: _elSheet,
+      shown: document.getElementById('modalBack').classList.contains('show'), typed: (document.getElementById('mClinicName') || {}).value || null }; });
+  const trAr = txt => page.evaluate(x => UMI18N.tr(x), txt);   // the Arabic the toast shows in an Arabic session (showToast → trOf)
 
   // =============== 0) seed and baseline ===============
   await boot();
@@ -771,6 +796,251 @@ reseed();
     return { err, h3: (document.querySelector('#modalInner h3') || {}).innerText || null, unr: names.filter(x => (_erpUnmatched || []).includes(x)), buttons: names.map(n), leaked: ['net', 'sret', 'docs'].filter(k => k in {}) }; }, PROTO_NAMES);
   check('[S7] customers named constructor, toString, __proto__, hasOwnProperty, valueOf: the reconciliation opens, each has its audit row and its Link… under "Unrecognized customer names", and nothing leaks into every object',
     !pn.err && /ERP reconciliation/.test(pn.h3 || '') && pn.unr.length === PROTO_NAMES.length && pn.buttons.every(x => x === 2) && !pn.leaked.length, pn);
+
+  // =============== 22) [V] a late or repeated save, Undo and toasts with a new branch; the card while a file is missing; a waiting Save ===============
+  // (1) a new branch whose link write times out and lands late while its check page is open: after the timeout the
+  //     page is redrawn (the branch as text) — the late landing must finish THAT page, not leave it showing the old link
+  for(const who of [KH, SMILE]){
+    const nm = who === KH ? 'Khairan (linked by hand to Salmiya)' : 'Smile Care Fintas (not linked)';
+    reseed(who === SMILE ? { split: SPLIT_SMILE } : {}); await boot();
+    await ui('edit', who); await ui('pick', '@new'); if(who === SMILE) await ui('newRep', G); await ui('tick');
+    await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
+    mode.delay = { re: /^erpMap$/, ms: 1500 };
+    await ui('save');
+    const v0 = await pgState();
+    await sleep(2000); mode.delay = null;
+    const v1 = await pgState(), brL = cloudClinics().find(c => c.name === who), accL = await acctNow(who);
+    check(`[V1] new branch for ${nm}: the link times out ("the new branch was added", no confirmation yet), then lands while its check page is open — that page finishes with "Saved", where it counts now (the branch, by hand) and Undo; no Save is left on a page showing the old link`,
+      /new branch was added/i.test(v0.err || '') && /No confirmation from the cloud yet/.test(v0.err || '') && !!brL && cloudMap()[who] === brL.id && !!accL && accL.clinicId === brL.id && accL.status === 'hand'
+      && !v1.save && /Saved/.test(v1.note || '') && /now counts at/.test(v1.note || '') && (v1.note || '').includes(who) && v1.undo, { v0, v1, accL, link: cloudMap()[who] });
+  }
+  // …the person taps Save again on that page (as it invites) while the first write is still on its way: the first
+  // lands, then the retry is confirmed — the page is finished once, never left on "Saving…", and the change is logged once
+  for(const who of [KH, SMILE]){
+    reseed(who === SMILE ? { split: SPLIT_SMILE } : {}); await boot();
+    await ui('edit', who); await ui('pick', '@new'); if(who === SMILE) await ui('newRep', G); await ui('tick');
+    await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
+    mode.delay = { re: /^erpMap$/, ms: 2000 };
+    await ui('save');
+    await page.evaluate(() => { ERP_LINK_WRITE_MS = 6000; });
+    const tap = await page.evaluate(() => { const b = document.querySelector('#modalInner #elSave'); if(!b || b.disabled) return 'Save not available'; b.click(); return 'retry tapped'; });
+    await sleep(4000); mode.delay = null; await sleep(300);
+    const v2 = await pgState(), lgR = JSON.parse(cloud.erpMapLog || '[]'), brR = cloudClinics().find(c => c.name === who);
+    check(`[V1] …${who === KH ? 'Khairan' : 'Smile Care Fintas'}: Save tapped again while the first write is on its way; the first lands, then the retry is confirmed — the page is finished with "Saved" (never stuck on "Saving…"), one branch, one log entry`,
+      tap === 'retry tapped' && !v2.busy && !v2.save && /Saved/.test(v2.note || '') && !!brR && cloudClinics().filter(c => c.name === who).length === 1 && cloudMap()[who] === brR.id && lgR.length === 1 && lgR[0].t === brR.id,
+      { tap, v2, log: lgR.map(e => [String(e.n).slice(0, 30), e.f, e.t]) });
+  }
+  // …the same race on a plain move (no branch): one change, one log entry
+  reseed(); await boot();
+  await ui('card', 'al1'); await ui('openFrom', KH); await ui('pick', 'al3'); await ui('tick');
+  await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
+  mode.delay = { re: /^erpMap$/, ms: 2000 };
+  await ui('save');
+  await page.evaluate(() => { ERP_LINK_WRITE_MS = 6000; });
+  let tapV = await page.evaluate(() => { const b = document.querySelector('#modalInner #elSave'); if(!b || b.disabled) return 'Save not available'; b.click(); return 'retry tapped'; });
+  await sleep(4000); mode.delay = null; await sleep(300);
+  let vS = await pgState(), lgV = JSON.parse(cloud.erpMapLog || '[]');
+  check('[V1] a plain move (Salmiya → Jabriya), the same race: "Saved" once, nothing left on "Saving…", and one log entry for the one change',
+    tapV === 'retry tapped' && !vS.busy && !vS.save && /Saved/.test(vS.note || '') && cloudMap()[KH] === 'al3' && lgV.length === 1 && lgV[0].f === 'al1' && lgV[0].t === 'al3', { tapV, vS, log: lgV.map(e => [e.n, e.f, e.t]) });
+  // …and after ‹ Pick another → the new branch again: this page's save is confirmed after the first write landed (told
+  //    by a toast, the person being on another page of the same edit) — this page finishes too, never stuck on "Saving…"
+  reseed(); await boot();
+  await ui('edit', KH); await ui('pick', '@new'); await ui('tick');
+  await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
+  mode.delay = { re: /^erpMap$/, ms: 3000 };
+  await ui('save');
+  await page.evaluate(() => { ERP_LINK_WRITE_MS = 8000; });
+  await ui('back'); await ui('pick', '@new'); await ui('tick');
+  tapV = await page.evaluate(() => { const b = document.querySelector('#modalInner #elSave'); if(!b || b.disabled) return 'Save not available'; b.click(); return 'retry tapped'; });
+  await sleep(6000); mode.delay = null; await sleep(300);
+  vS = await pgState(); lgV = JSON.parse(cloud.erpMapLog || '[]');
+  const brP = cloudClinics().filter(c => c.name === KH);
+  check('[V1] …‹ Pick another, the new branch again, Save while the first write is on its way: the first lands, then this page\'s save is confirmed — the page finishes with "Saved" and Undo (never stuck on "Saving…"), one branch, one log entry',
+    tapV === 'retry tapped' && !vS.busy && !vS.save && /Saved/.test(vS.note || '') && vS.undo && brP.length === 1 && cloudMap()[KH] === brP[0].id && lgV.length === 1, { tapV, vS, log: lgV.map(e => [e.n, e.f, e.t]) });
+
+  // (2) Undo of a "New branch" change whose link write lands late: when it lands, the Undo finishes as an in-time one —
+  //     the branch with nothing of its own goes (cloud, memory, recycle bin) and the account is back where it was; the
+  //     note says so if its sheet is still open, else a toast names the account, the branch and where it counts now
+  for(const leave of [false, true]){
+    reseed({ split: SPLIT_SMILE }); await boot();
+    await page.evaluate(() => openErpRecon('oct')); await ui('openFrom', SMILE);
+    await ui('pick', '@new'); await ui('newRep', G); await ui('tick'); await ui('save');
+    const brU = cloudClinics().find(c => c.name === SMILE);
+    await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
+    mode.delay = { re: /^erpMap$/, ms: 1500 };
+    a = await ui('undo');
+    const u0 = await pgState();
+    if(leave) await page.evaluate(() => { closeModal(); openAddClinic(); document.getElementById('mClinicName').value = 'Half typed clinic'; });
+    await sleep(2200); mode.delay = null;
+    const u1 = await pgState(); f = await figs();
+    const accU = await acctNow(SMILE);
+    const memU = await page.evaluate(id => ({ inMem: clinics.some(c => c.id === id), undo: !!_elUndo }), brU && brU.id);
+    const unrU = await page.evaluate(n => { openErpRecon('oct'); return _erpUnmatched.includes(n); }, SMILE);
+    check(`[V2] Undo of a new branch whose link write lands late${leave ? ' after the person left' : ''}: the branch goes (cloud, memory, recycle bin), the account is "not linked" again and back in Unrecognized, figures 175.50 / 110`,
+      !a.err && /No confirmation from the cloud yet/.test(u0.note || '') && !!brU && !(SMILE in cloudMap()) && !cloudClinics().some(c => c.id === brU.id) && cloudBin().some(c => c.id === brU.id) && !memU.inMem && !memU.undo
+      && !!accU && accU.status === 'none' && unrU && f.g === 175.5 && f.m === 110, { a, u0: u0.note, accU, memU, unrU, f, map: cloudMap() });
+    if(!leave) check('[V2] …its note, still on screen, says so: undone, the new branch was removed, the account is not linked', /Undone/.test(u1.note || '') && /was removed/.test(u1.note || '') && /not linked/.test(u1.note || '') && !/No confirmation/.test(u1.note || ''), u1);
+    else check('[V2] …the sheet the person opened is untouched, and a toast names the account, says the new branch was removed and where it counts now',
+      /Add clinic/.test(u1.h3 || '') && u1.typed === 'Half typed clinic' && /Undone/.test(u1.toast) && u1.toast.includes(SMILE) && /new branch/.test(u1.toast) && /was removed/.test(u1.toast) && /not linked/.test(u1.toast), u1);
+  }
+  // …and Undo tapped again (the note offers it again) while the first write is still on its way: the first lands, then
+  //    the second is confirmed — the branch goes once, one report on the note (no Undo left on "Saving…"), one log entry
+  reseed({ split: SPLIT_SMILE }); await boot();
+  await page.evaluate(() => openErpRecon('oct')); await ui('openFrom', SMILE);
+  await ui('pick', '@new'); await ui('newRep', G); await ui('tick'); await ui('save');
+  const brU2 = cloudClinics().find(c => c.name === SMILE);
+  await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
+  mode.delay = { re: /^erpMap$/, ms: 2000 };
+  a = await ui('undo');
+  await page.evaluate(() => { ERP_LINK_WRITE_MS = 6000; });
+  const tapU = await page.evaluate(() => { const b = document.getElementById('elUndo'); if(!b || b.disabled) return 'Undo not available'; b.click(); return 'Undo tapped again'; });
+  await sleep(4000); mode.delay = null; await sleep(400);
+  const u2 = await pgState(), lgU = JSON.parse(cloud.erpMapLog || '[]'); f = await figs();
+  check('[V2] …Undo tapped again while the first write is on its way: the first lands, then the second is confirmed — the branch goes once, the note says it once (nothing left on "Saving…"), figures 175.50 / 110, one log entry for the Undo',
+    !a.err && tapU === 'Undo tapped again' && !u2.busy && /Undone/.test(u2.note || '') && /was removed/.test(u2.note || '') && !/Saving/.test(u2.note || '') && !u2.undo && !!brU2 && !(SMILE in cloudMap())
+    && !cloudClinics().some(c => c.id === brU2.id) && cloudBin().filter(c => c.id === brU2.id).length === 1 && f.g === 175.5 && f.m === 110 && lgU.length === 2 && lgU[0].f === brU2.id && lgU[0].t === null && lgU[1].t === brU2.id,
+    { log: lgU.map(e => [e.n, e.f, e.t]), tapU, a, u2: { note: u2.note, busy: u2.busy, undo: u2.undo, toast: u2.toast }, f: { g: f.g, m: f.m } });
+
+  // (3) a toast said after the person left must mention the new branch
+  reseed({ split: SPLIT_SMILE }); await boot();
+  await page.evaluate(() => openErpRecon('oct')); await ui('openFrom', SMILE);
+  await ui('pick', '@new'); await ui('newRep', G); await ui('tick');
+  mode.delay = { re: /^clinics$/, ms: 900 };
+  await page.evaluate(() => { document.getElementById('elSave').click(); });
+  await sleep(150);
+  await page.evaluate(() => { closeModal(); openAddClinic(); document.getElementById('mClinicName').value = 'Half typed clinic'; });
+  mode.failSet = /^erpMap$/;
+  await sleep(2000); mode.failSet = null; mode.delay = null;
+  let v3 = await pgState(); f = await figs();
+  const br3 = cloudClinics().find(c => c.name === SMILE);
+  check('[V3] the person left while saving; the new branch landed, the link was refused: the toast says the new branch was added but the link was not saved, and where the account counts now (the branch takes it by name: 245.50 / 40)',
+    !!br3 && !(SMILE in cloudMap()) && v3.typed === 'Half typed clinic' && /new branch/i.test(v3.toast) && /was added/.test(v3.toast) && /link was not saved/.test(v3.toast) && v3.toast.includes(SMILE) && /by name/.test(v3.toast) && f.g === 245.5 && f.m === 40, { toast: v3.toast, f });
+  let ar3 = await trAr(v3.toast);
+  check('[V3] …in Arabic too: the whole toast is translated, the names kept', !!ar3 && /الفرع الجديد/.test(ar3) && ar3.includes(SMILE) && !/[A-Za-z]{3,}/.test(ar3.split(SMILE).join('')), ar3);
+  reseed({ split: SPLIT_SMILE }); await boot();
+  await page.evaluate(() => openErpRecon('oct')); await ui('openFrom', SMILE);
+  await ui('pick', '@new'); await ui('newRep', G); await ui('tick'); await ui('save');
+  const br3b = cloudClinics().find(c => c.name === SMILE);
+  await page.evaluate(async id => { visits.push({ id: 'vprobe3', clinicId: id, rep: 'Dr. Ghaith', date: todayStr(), ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: {}, orderTotal: 0, doctorIds: [], notes: 'first visit at the new branch' }); await persist('visits'); }, br3b && br3b.id);
+  mode.delay = { re: /^erpMap$/, ms: 700 };
+  await page.evaluate(() => { document.getElementById('elUndo').click(); });
+  await sleep(100);
+  await page.evaluate(() => { closeModal(); openAddClinic(); document.getElementById('mClinicName').value = 'Half typed clinic'; });
+  await sleep(1500); mode.delay = null;
+  v3 = await pgState(); f = await figs();
+  check('[V3] the person left during an Undo whose new branch stays (it has a visit): the toast says the branch stays and why, that it still takes the account, and that removing it from its clinic card is what takes it back',
+    !!br3b && cloudClinics().some(c => c.id === br3b.id) && !(SMILE in cloudMap()) && v3.typed === 'Half typed clinic' && /Undone/.test(v3.toast) && v3.toast.includes(SMILE)
+    && /stays in the clinic list/.test(v3.toast) && /logged visit/.test(v3.toast) && /still takes it/.test(v3.toast) && /remove the branch from its clinic card/.test(v3.toast) && f.g === 245.5 && f.m === 40, { toast: v3.toast, f });
+  ar3 = await trAr(v3.toast);
+  check('[V3] …in Arabic too', !!ar3 && /الفرع الجديد/.test(ar3) && /زيارة/.test(ar3) && ar3.includes(SMILE) && !/[A-Za-z]{3,}/.test(ar3.split(SMILE).join('')), ar3);
+
+  // (4) the clinic card while the file that holds its invoices did not load on this device
+  reseed(); await boot();
+  await page.evaluate(() => { erpPeriods().find(p => p.id === 'oct').rowsMissing = true; });
+  a = await ui('card', 'al2');
+  check('[V4] Hawally\'s only invoice is in the October file, which did not load here: its card never says "No ERP account counts here yet." — none in the files loaded on this device, with the retry',
+    a.text != null && !/No ERP account counts here yet/.test(a.text) && /No ERP account counts here in the files loaded on this device/.test(a.text) && /did not load on this device/.test(a.text) && /Load them again/.test(a.text), a.text);
+  await page.evaluate(() => { delete erpPeriods().find(p => p.id === 'oct').rowsMissing; });
+
+  // (5) an editor opened while another save runs: its Save waits, then comes back when that save ends — nothing redrawn
+  reseed(); await boot();
+  mode.delay = { re: /^erpMap$/, ms: 1200 };
+  await ui('edit', KH); await ui('pick', 'al3'); await ui('tick');
+  await page.evaluate(() => { document.getElementById('elSave').click(); });
+  await sleep(100);
+  await page.evaluate(() => { closeModal(); openErpLinkEdit('Aline Dental Clinic - Hawally', 'links'); });
+  await sleep(150);
+  await ui('pick', 'al3');
+  const d5 = await ui('preview'), k5 = await page.evaluate(() => _elSheet);
+  await page.evaluate(() => { const p = document.getElementById('elPreview'); if(p) p.dataset.mark = 'kept'; });
+  await sleep(1600); mode.delay = null;
+  const a5 = await ui('preview'), k5b = await page.evaluate(() => ({ sheet: _elSheet, mark: (document.getElementById('elPreview') || { dataset: {} }).dataset.mark || null }));
+  const t5 = (await sheetNow()).toast;
+  check('[V5] an editor opened while another account\'s save runs: its Save waits (disabled) and is enabled when that save ends — the page is not redrawn',
+    d5.saveDisabled === true && a5.saveDisabled === false && !a5.err && k5 === k5b.sheet && k5b.mark === 'kept' && cloudMap()[KH] === 'al3' && t5.includes(KH), { d5: d5.saveDisabled, a5: { saveDisabled: a5.saveDisabled, err: a5.err }, k5, k5b, t5 });
+  a = await ui('save');
+  check('[V5] …and that Save then saves', !a.err && cloudMap()['Aline Dental Clinic - Hawally'] === 'al3' && cloudMap()[KH] === 'al3', { a, map: cloudMap() });
+
+  // =============== 23) [Q] ERP names inside older inline handlers ===============
+  // A product, salesman or brand name from the ERP file reaches its handler only through a data-* attribute: an
+  // apostrophe never breaks a tap, and a quote with code in it never runs.
+  // (1) the returns and free-goods chips on the clinic card: a product named with an apostrophe
+  reseed({ split: SPLIT_APOS }); await boot();
+  const q1 = await page.evaluate(async ({ apos, evil }) => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    openClinicDetail('al2'); await wait(150);
+    const line = p => [...document.querySelectorAll('#modalInner .visit-hist')].find(x => x.textContent.includes(p));
+    const tap = async (p, re) => { const l = line(p); const c = l && [...l.querySelectorAll('.chip')].find(x => re.test(x.textContent)); if(!c) return 'no chip'; c.click(); await wait(400); return c.classList.contains('on') ? 'on' : 'off'; };
+    const why = async (p, txt) => { const l = line(p), i = l && l.querySelector('input[data-key]'); if(!i) return 'no input'; i.value = txt; i.dispatchEvent(new Event('change')); await wait(400); return 'typed'; };
+    const out = {};
+    out.ret = await tap(apos, /Exchange/);              // the return line comes first (returns section)
+    const foc = [...document.querySelectorAll('#modalInner .visit-hist')].filter(x => x.textContent.includes(apos))[1];
+    out.deal = foc ? (foc.querySelector('.chip') ? 'ok' : 'no chip') : 'no free line';
+    if(foc){ const c = [...foc.querySelectorAll('.chip')].find(x => /Deal bonus/.test(x.textContent)); if(c){ c.click(); await wait(400); out.deal = c.classList.contains('on') ? 'on' : 'off'; } }
+    out.evil = await tap(evil, /Deal bonus/);
+    // the reasons, typed after the kind: both are kept
+    const retIn = line(apos) && line(apos).querySelector('input[data-key]');
+    if(retIn){ retIn.value = 'Wrong shade'; retIn.dispatchEvent(new Event('change')); await wait(400); }
+    if(foc){ const i = foc.querySelector('input[data-key]'); if(i){ i.value = 'Bonus on the October order'; i.dispatchEvent(new Event('change')); await wait(400); } }
+    out.xss = window.__xss || 0;
+    return out;
+  }, { apos: APOS, evil: EVILP });
+  const notesQ = JSON.parse(cloud.erpNotes || '{}'), rkQ = `ret|SRET7201|${APOS}`, fkQ = `foc|SINV7202|${APOS}`, ekQ = `foc|SINV7203|${EVILP}`;
+  check('[Q1] a product named with an apostrophe (Kerr\'s …): "Exchange" on its return and "Deal bonus" on its free goods save their kind, and the reasons typed after are saved with it — in the cloud, under the exact line',
+    q1.ret === 'on' && q1.deal === 'on' && !!notesQ[rkQ] && notesQ[rkQ].kind === 'exchange' && notesQ[rkQ].text === 'Wrong shade' && !!notesQ[fkQ] && notesQ[fkQ].kind === 'deal' && notesQ[fkQ].text === 'Bonus on the October order',
+    { q1, ret: notesQ[rkQ] || null, foc: notesQ[fkQ] || null });
+  check('[Q1] …a product named with a quote and code: its chip saves the kind and runs nothing', q1.evil === 'on' && q1.xss === 0 && !!notesQ[ekQ] && notesQ[ekQ].kind === 'deal', { q1, evil: notesQ[ekQ] || null });
+  // (2) the salesman card on the import screen
+  reseed({ split: SPLIT_SM }); await boot();
+  const q2 = await page.evaluate(async ({ a, e }) => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    openErpImport(); await wait(150);
+    const card = n => [...document.querySelectorAll('#modalInner .card')].find(c => c.firstElementChild && c.firstElementChild.textContent.trim().indexOf(n) === 0);
+    const tap = async (n, label) => { const c = card(n); if(!c) return 'no card'; const ch = [...c.querySelectorAll('.chip')].find(x => x.textContent.trim() === label); if(!ch) return 'no chip'; ch.click(); await wait(500); return 'tapped'; };
+    const r1 = await tap(a, 'Mariam'), r2 = await tap(e, 'Mariam');
+    return { r1, r2, xss: window.__xss || 0, mem: [erpSales.repMapGlobal[a], erpSales.repMapGlobal[e]] };
+  }, { a: SM_APOS, e: SM_EVIL });
+  const rmQ = (JSON.parse(cloud.erpSales || '{}').repMapGlobal) || {};
+  check('[Q2] salesmen from the ERP file named with an apostrophe, or with a quote and code: tapping Mariam on their card saves that mapping for the exact name (cloud and memory), and runs nothing',
+    q2.r1 === 'tapped' && q2.r2 === 'tapped' && q2.xss === 0 && rmQ[SM_APOS] === M && rmQ[SM_EVIL] === M && q2.mem[0] === M && q2.mem[1] === M, { q2, cloud: [rmQ[SM_APOS], rmQ[SM_EVIL]] });
+  // (3) the brand heading (Products) and the selling-guide buttons: an ERP-added product's brand is its category too
+  reseed(); await boot();
+  const q3 = await page.evaluate(async ({ b, e }) => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const out = {};
+    products.push({ id: 'erp-kerr-s-optibond-universal', name: "Kerr's OptiBond Universal", brand: b, cat: b, price: 5, stock: true },
+      { id: 'erp-bond-evil', name: 'Evil Bond', brand: e, cat: e, price: 4, stock: true });
+    assignProductKeys(); await persist('products');
+    closeModal(); switchView('products'); await wait(120);
+    const head = n => [...document.querySelectorAll('#productListWrap .brand-head')].find(h => h.textContent.includes(n));
+    let h = head(b); if(h){ h.click(); await wait(80); }
+    out.open = openBrands.has(b) && !!document.querySelector('#productListWrap .brand-body.open') && [...document.querySelectorAll('#productListWrap .brand-body.open')].some(x => x.textContent.includes("Kerr's OptiBond Universal"));
+    h = head(e); if(h){ h.click(); await wait(80); }
+    out.openEvil = openBrands.has(e);
+    openCategoryGuides(); await wait(80);
+    const gcard = n => [...document.querySelectorAll('#modalInner .card')].find(c => c.textContent.includes(n));
+    let c = gcard(b); if(c){ c.click(); await wait(80); }
+    out.guide = (document.querySelector('#modalInner h3') || {}).textContent || null;
+    const edit = () => [...document.querySelectorAll('#modalInner button')].find(x => /Edit/.test(x.textContent));
+    let eb = edit(); if(eb){ eb.click(); await wait(80); }
+    out.editor = (document.querySelector('#modalInner h3') || {}).textContent || null;
+    const sell = document.getElementById('cgSell');
+    if(sell){ sell.value = 'Bonds to every surface'; const sv = [...document.querySelectorAll('#modalInner button')].find(x => /Save guide/.test(x.textContent)); if(sv){ sv.click(); await wait(400); } }
+    out.after = (document.querySelector('#modalInner h3') || {}).textContent || null;
+    openProductDetail('erp-kerr-s-optibond-universal'); await wait(80);
+    eb = [...document.querySelectorAll('#modalInner button')].find(x => /Edit this guide/.test(x.textContent)); if(eb){ eb.click(); await wait(80); }
+    out.fromProduct = (document.querySelector('#modalInner h3') || {}).textContent || null;
+    openCategoryGuides(); await wait(80);
+    c = gcard(e); if(c){ c.click(); await wait(80); }
+    out.guideEvil = (document.querySelector('#modalInner h3') || {}).textContent || null;
+    out.xss = window.__xss || 0;
+    closeModal(); switchView('today');
+    return out;
+  }, { b: BR_APOS, e: BR_EVIL });
+  const cgQ = JSON.parse(cloud.categoryGuides || '{}');
+  check('[Q3] a brand named with an apostrophe (Kerr\'s): its heading opens on Products; its selling guide opens from the list, is edited and saved under the exact name (cloud), and "Edit this guide" on the product opens it',
+    q3.open && /Kerr's/.test(q3.guide || '') && /Edit guide — Kerr's/.test(q3.editor || '') && /Kerr's/.test(q3.after || '') && !!cgQ[BR_APOS] && cgQ[BR_APOS].sell === 'Bonds to every surface' && /Edit guide — Kerr's/.test(q3.fromProduct || ''), { q3, saved: cgQ[BR_APOS] || null });
+  check('[Q3] …a brand with a quote and code: its heading and its guide open, and nothing runs', q3.openEvil && (q3.guideEvil || '').includes(BR_EVIL) && q3.xss === 0, q3);
 
   // =============== 11) a rep sees nothing of this ===============
   reseed(); await boot(M, 'rep');

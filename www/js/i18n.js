@@ -582,6 +582,9 @@
     'now counts at': 'تُحسب الآن على',
     'counts again at': 'تُحسب مجدداً على',
     'Not saved — nothing changed. Check the connection and tap Save again.': 'لم يُحفظ — لم يتغير شيء. تحقق من الاتصال واضغط «حفظ» مرة أخرى.',
+    "Your earlier change to this account reached the cloud meanwhile — nothing else was saved. Open it again to see where it counts now.": 'وصل تغييرك السابق لهذا الحساب إلى السحابة في هذه الأثناء — لم يُحفظ شيء آخر. افتحه من جديد لترى أين يُحسب الآن.',
+    "The new branch was added, and your earlier change to this account reached the cloud meanwhile — the link was not saved again. Open it again to see where it counts now.": 'أُضيف الفرع الجديد، ووصل تغييرك السابق لهذا الحساب إلى السحابة في هذه الأثناء — لم يُحفظ الربط مرة أخرى. افتحه من جديد لترى أين يُحسب الآن.',
+    'Reopen this page to see the updated figures.': 'أعد فتح هذه الصفحة لترى الأرقام المحدّثة.',
     "This account's link was changed on another device — nothing was saved. Open it again to see where it counts now.": 'تغيّر ربط هذا الحساب من جهاز آخر — لم يُحفظ شيء. افتحه من جديد لترى أين يُحسب الآن.',
     'No confirmation from the cloud yet — the screen still shows the old link. If the save lands later, the figures update and a message appears.': 'لم يصل تأكيد الحفظ من السحابة بعد — الشاشة ما زالت على الربط السابق. إن وصل الحفظ متأخراً ستتحدث الأرقام وتظهر رسالة.',
     'Tap Save to try again.': 'اضغط «حفظ» للمحاولة مرة أخرى.',
@@ -617,6 +620,7 @@
     'Links with no invoice in the files loaded on this device': 'روابط بلا فواتير في الملفات المحمّلة على هذا الجهاز',
     'no invoice in the files loaded on this device': 'لا فواتير في الملفات المحمّلة على هذا الجهاز',
     'No invoice in the files loaded on this device.': 'لا فواتير في الملفات المحمّلة على هذا الجهاز.',
+    'No ERP account counts here in the files loaded on this device.': 'لا يُحسب أي حساب فواتير على هذا الفرع في الملفات المحمّلة على هذا الجهاز.',
     'Closed months change': 'تتغير أرقام أشهر مغلقة',
     'Sales change in:': 'تتغير المبيعات في:',
     'The month-by-month page, the KPI and the weekly deck history follow.': 'وتتبعها صفحة «شهر بشهر» والمؤشرات وتاريخ العرض الأسبوعي.',
@@ -1740,7 +1744,16 @@
     [/^Showing (\d+) of (\d+) — search to find the others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — ابحث لإيجاد البقية'; }],
     // ERP account links: a save or an Undo that finished while another sheet was open says so in a toast — "<account>: <clinic> (<status>)"
     [/^✅ Saved — (.+?): (.+)\. Undo: ERP account links\.$/, function (m) { return '✅ تم الحفظ — ' + m[1] + ': ' + trWhere(m[2]) + '. للتراجع: «ربط حسابات الفواتير بالفروع».'; }],
+    // …and when a new branch was made in that change: what Undo did to it (before the plain Undone line)
+    [/^↩️ Undone — (.+?): (.+?)\. The new branch (.+) was removed \(it is in the recycle bin\)\.$/, function (m) { return '↩️ تم التراجع — ' + m[1] + ': ' + trWhere(m[2]) + '. الفرع الجديد ' + m[3] + ' حُذف (موجود في سلة المحذوفات).'; }],
+    [/^↩️ Undone — (.+?): (.+?)\. The new branch (.+) was removed on this device — the removal uploads when the connection is back\.$/, function (m) { return '↩️ تم التراجع — ' + m[1] + ': ' + trWhere(m[2]) + '. الفرع الجديد ' + m[3] + ' حُذف على هذا الجهاز — يصل الحذف إلى السحابة عند عودة الاتصال.'; }],
+    [/^↩️ Undone — (.+?): (.+?)\. The new branch (.+) stays in the clinic list: (.+?)\.( The branch matches this account's name, so it still takes it — remove the branch from its clinic card to go back\.)?(?: Other accounts that still count differently because of the branch: (\d+)\.)?$/, function (m) {
+      return '↩️ تم التراجع — ' + m[1] + ': ' + trWhere(m[2]) + '. الفرع الجديد ' + m[3] + ' يبقى في قائمة العيادات: ' + trKeep(m[4]) + '.'
+        + (m[5] ? ' ' + (lookup(m[5].trim()) || m[5].trim()) : '') + (m[6] ? ' حسابات أخرى ما زالت تُحسب بشكل مختلف بسبب الفرع: ' + m[6] + '.' : '');
+    }],
     [/^↩️ Undone — (.+?): (.+)\.$/, function (m) { return '↩️ تم التراجع — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }],
+    [/^⚠️ The new branch (.+) was added, but the link was not saved — (.+?): (.+)\.$/, function (m) { return '⚠️ أُضيف الفرع الجديد ' + m[1] + '، لكن الربط لم يُحفظ — ' + m[2] + ': ' + trWhere(m[3]) + '.'; }],
+    [/^⏳ The new branch (.+) was added; the link has no confirmation from the cloud yet — (.+?): (.+)\.$/, function (m) { return '⏳ أُضيف الفرع الجديد ' + m[1] + '، ولم يصل تأكيد حفظ الربط من السحابة بعد — ' + m[2] + ': ' + trWhere(m[3]) + '.'; }],
     [/^⚠️ Not saved — (.+?): (.+)\.$/, function (m) { return '⚠️ لم يُحفظ — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }],
     [/^⏳ No confirmation from the cloud yet — (.+?): (.+)\.$/, function (m) { return '⏳ لم يصل تأكيد الحفظ من السحابة بعد — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }],
     [/^📴 The new branch uploads when the connection is back; the link was not saved — (.+?): (.+)\.$/, function (m) { return '📴 الفرع الجديد يُرفع عند عودة الاتصال، والربط لم يُحفظ — ' + m[1] + ': ' + trWhere(m[2]) + '.'; }]
@@ -1757,6 +1770,14 @@
     if (mm) { var t = lookup(mm[2]); return mm[1] + ' (' + (t != null ? t : mm[2]) + ')'; }
     var t2 = lookup(w);
     return t2 != null ? t2 : w;
+  }
+
+  // why a new branch stays after an Undo — one of the reasons, with the other account's name after it when there is one
+  function trKeep(r) {
+    var mm = String(r).match(/^(another ERP account is linked to it by hand:|another ERP account counts there:) ([\s\S]+)$/);
+    if (mm) { var t = lookup(mm[1]); return (t != null ? t : mm[1]) + ' ' + mm[2]; }
+    var t2 = lookup(r);
+    return t2 != null ? t2 : r;
   }
 
   function lookup(t) {
