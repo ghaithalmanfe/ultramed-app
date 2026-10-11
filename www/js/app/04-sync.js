@@ -655,6 +655,45 @@ async function retryErpRows(opts){
   else if(!_erpBroken.length && before) showToast('✅ اكتملت بيانات المبيعات');
   return !_erpBroken.length;
 }
+// The same for an account link (saveErpLink, 11-erp.js): the screen kept the
+// old link when the cloud did not confirm in time, so when the save lands
+// after all, the cloud copy is read and every figure follows it. Then the
+// change finishes as an in-time one would (elAfterLateLanding): `info.s` is
+// the editor's save — its own page finishes it if still on screen, else a
+// toast names the account; `info.undo` is an Undo — its new branch goes (or
+// the report says why it stays), on its note or in a toast; `info.quiet`: a
+// retry of the same change was already confirmed and told — only the figures follow.
+async function erpMapReloadFromCloud(info){
+  try{
+    const r = await withTimeout(window.storage.get('erpMap', true), 8000);
+    const v = UMCore.safeParse(r && r.value, null);
+    if(!v || typeof v !== 'object' || Array.isArray(v)) return;
+    erpMap = v; _erpMapGen++;
+    mirrorSave('erpMap', r.value);
+    delete _loadFailed.erpMap; delete _mirrorUsed.erpMap; // the cloud copy is in hand
+    renderAll();
+    if(typeof elAfterLateLanding === 'function' && elAfterLateLanding(info)) return;
+    if(info && info.quiet) return;
+    showToast('☁️ An account link reached the cloud late — the figures are updated', 6000);
+  }catch(e){ console.warn('erpMap reload after a late-landing link save', e); }
+}
+// A clinic this device just added (a new branch made from the ERP account
+// editor) must survive a background refresh whose read of the clinic list
+// started before the save landed: loadAll puts it back until a refresh reads
+// it from the cloud (or it was deleted meanwhile — then it is let go).
+const _clinicsKeep = new Map(); // id → the clinic as saved
+function keepClinicOnRefresh(c){ if(c && c.id != null) _clinicsKeep.set(c.id, c); }
+function forgetKeptClinic(id){ _clinicsKeep.delete(id); }
+function reinsertKeptClinics(prev){
+  if(!_clinicsKeep.size) return;
+  const ts = tombSet('clinics');
+  _clinicsKeep.forEach((c, id) => {
+    if(ts.has(id) || clinics.some(x => x && x.id === id)){ _clinicsKeep.delete(id); return; } // removed since, or the cloud has it now
+    const mine = (prev || []).find(x => x && x.id === id) || c;                                  // the copy in memory, edits included
+    clinics.push(normalizeClinic(Object.assign({}, mine)));
+    console.warn('clinics: a refresh read the list before a just-saved clinic landed — kept', id);
+  });
+}
 // A save the app had given up on (timeout) can still land minutes later: the
 // screen was rolled back, so the moment it lands the cloud copy is re-read
 // and the screen follows it — no stale figures, no duplicate on re-upload
@@ -844,6 +883,8 @@ async function cloudGet(key){
 }
 async function loadAll(){
   try{
+    const mapGen0 = _erpMapGen; // a link saved while this read runs is newer than what it brings back
+    dropQueuedErpMap();        // before cloudGet: a queued key would make it serve this device's stale copy
     _loadFailed = {};
     _mirrorUsed = {};
     _seedClinics = false;
@@ -870,8 +911,10 @@ async function loadAll(){
     // of throwing and resetting every collection to seed data.
     const notDeleted = key => { const ts = tombSet(key); return x => !(x && ts.has(x.id)); };
     const clinicsDoc = UMCore.safeParse(c && c.value, null);
+    const clinicsBefore = clinics;
     clinics = normalizeClinics((clinicsDoc || CLINICS_SEED.map(x=>({...x}))).filter(notDeleted('clinics')).map(dropTombedDoctors));
     _seedClinics = !clinicsDoc; // factory list on screen — never allowed to overwrite live data
+    if(clinicsDoc) reinsertKeptClinics(clinicsBefore); // a branch saved while this read was on its way stays
     products = UMCore.safeParse(p && p.value, null) || PRODUCTS_SEED;
     assignProductKeys();
     if(!_visitsSaving) visits = (Array.isArray(v) ? v : []).filter(notDeleted('visits'));
@@ -886,7 +929,16 @@ async function loadAll(){
     categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), cgVal || {});
     if(_erpSaving || _erpDirty) console.warn('erpSales: refresh skipped — a save is in flight or unsaved edits exist');
     else erpSales = es; // already assembled: periods carry their rows
-    erpMap = UMCore.safeParse(em && em.value, {}) || {};
+    // An account link confirmed by the cloud while this read was on its way
+    // (or a link save still in flight) is newer than the copy read here: keep
+    // it, and keep the device copy on it, instead of showing the old link for
+    // a whole refresh cycle.
+    if(!_erpLinkSaving && mapGen0 === _erpMapGen) erpMap = UMCore.safeParse(em && em.value, {}) || {};
+    else {
+      console.warn('erpMap: refresh skipped — an account link was saved while it read');
+      mirrorSave('erpMap', JSON.stringify(erpMap));
+      delete _loadFailed.erpMap; delete _mirrorUsed.erpMap; // memory holds the copy the cloud confirmed
+    }
     erpNotes = UMCore.safeParse(en && en.value, {}) || {};
     const stVal = UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
@@ -974,6 +1026,17 @@ function outboxWrite(list){ try{ localStorage.setItem('um_outbox', JSON.stringif
 function outboxAdd(key){ const l = outboxList(); if(!l.includes(key)){ l.push(key); outboxWrite(l); } }
 function outboxRemove(key){ outboxWrite(outboxList().filter(k=>k!==key)); }
 function outboxHas(key){ return outboxList().includes(key); }
+// Account links are saved one account at a time with a compare-and-set
+// (saveErpLink, 11-erp.js), never as a whole map. A whole-map save waiting in
+// the outbox (no version queues one, but a device copy can hold anything) is
+// dropped, never replayed: replayed, it would be refused for ever — and while
+// it waited, cloudGet would keep serving this device's stale copy of the links.
+function dropQueuedErpMap(){
+  if(!outboxHas('erpMap')) return false;
+  outboxRemove('erpMap');
+  console.warn('outbox: a queued whole-map "erpMap" save was dropped — account links are saved per account (saveErpLink)');
+  return true;
+}
 // tombstones: {docKey: {id: deletedAtMs}} kept 7 days
 const _tombstones = (()=>{
   const out = { visits:new Set(), tasks:new Set(), clinics:new Set(), events:new Set(), dayPlans:new Set(), doctors:new Set() };
@@ -1121,6 +1184,7 @@ function offlineToast(msg){
 }
 async function flushOutbox(){
   if(_flushing || !navigator.onLine || !_bootLoaded || !currentUser) return;
+  dropQueuedErpMap(); // never replayed (see dropQueuedErpMap)
   const pending = outboxList();
   if(!pending.length) return;
   _flushing = true;
@@ -1192,6 +1256,11 @@ function mergeDayPlans(local, cloud){
 }
 async function persist(key, opts){
   opts = opts || {};
+  // Account links are saved one account at a time with a compare-and-set
+  // (saveErpLink, 11-erp.js). A whole-map write here would silently undo a
+  // link another device saved meanwhile — refused, and loudly, so a caller
+  // that tries it is caught by the harnesses' console checks.
+  if(key === 'erpMap'){ console.error("erpMap is saved per account by saveErpLink — persist('erpMap') refused"); return false; }
   // The factory clinic list must never be written over a live account. It can
   // be on screen only because a boot went wrong — saving from that state is
   // exactly how a whole team's list gets destroyed.

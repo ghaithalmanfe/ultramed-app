@@ -65,6 +65,10 @@ let targets = {}; // {repName: {revenue: KD, visits: N}} — monthly targets
 let categoryGuides = {}; // {catName: {sell, how, objections, links[]}} — selling guides
 let erpSales = {periods: []}; // imported ERP sales periods (supervisor)
 let erpMap = {}; // {erpCustomerName: clinicId | '@channel' | '@ignore'}
+// Links are saved one account at a time (saveErpLink, 11-erp.js): a counter of
+// confirmed link saves, so a refresh whose read started before a save never
+// brings the old link back, and a flag while a link save is in flight.
+let _erpMapGen = 0, _erpLinkSaving = false;
 // Justifications the team writes against ERP events, keyed by kind:
 //   'ret|<doc>|<product>' / 'foc|<doc>|<product>'  → {text, by, on}
 // Keys survive re-imports because doc numbers are stable in the ERP.
@@ -87,7 +91,11 @@ function fmtDate(d){
 function daysBetween(a,b){ return UMCore.daysBetween(a,b); }
 const SAVE_MSGS = ['\u2705 Visit logged \u2014 momentum','\u{1F4AA} Logged. Onto the next one','\u{1F525} Another one in the books','\u2728 Saved \u2014 consistency wins','\u{1F680} Logged. Keep rolling','\u{1F3AF} Visit captured \u2014 nice work'];
 function visitSavedMsg(){ return SAVE_MSGS[Math.floor(Math.random()*SAVE_MSGS.length)]; }
-function showToast(msg){ const t = document.getElementById('toast'); t.textContent = trOf(msg) || msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1800); }
+// A toast stays 1.8 s; a message the person must be able to read (a save that
+// finished after they moved on to another sheet) can ask for longer. Each toast
+// owns the timer, so an earlier, shorter one never cuts a later one short.
+let _toastTimer = null;
+function showToast(msg, ms){ const t = document.getElementById('toast'); t.textContent = trOf(msg) || msg; t.classList.add('show'); clearTimeout(_toastTimer); _toastTimer = setTimeout(()=>t.classList.remove('show'), ms || 1800); }
 function esc(s){ return UMCore.esc(s); }
 // Chrome icon helper — renders one symbol from the inline sprite at text size
 function I(name){ return `<svg class="svgi" aria-hidden="true"><use href="#i-${name}"/></svg>`; }

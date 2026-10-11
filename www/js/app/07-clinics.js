@@ -473,6 +473,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Order history</div>
     ${renderClinicOrders(id)}
+    ${currentUser.role==='supervisor' ? clinicErpAccountsSection(c) : ''}
     ${clinicErpSection(id)}
 
     <div class="section-title" style="margin-top:20px;"><span>${I('chat')} No-sales reason</span></div>
@@ -486,7 +487,7 @@ function openClinicDetail(id){
     <div class="section-title" style="margin-top:20px;">Visit history</div>
     ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
       cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.mood?' · '+({pleased:'😊',neutral:'😐',concerned:'😟'}[v.mood]||''):''}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber-ink); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${v.notes ? '<br>'+esc(v.notes) : ''}
-        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c.name)}')">`).join('')}</div>`:''}
+        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c.name)}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>`:''}
       </div>`).join('')}
   `);
 }
@@ -542,12 +543,15 @@ function isExchangeLine(r){
   const n = erpNotes[erpNoteKey('ret', r)];
   return !!(n && n.kind === 'exchange');
 }
+// The line's key holds the ERP product name: it reaches the handler through
+// data-key, never inside the onclick string (an apostrophe in a name would
+// break the tap, and a quote with code in it would run).
 function retKindChips(r){
   const key = erpNoteKey('ret', r);
   const k = (erpNotes[key] && erpNotes[key].kind) === 'exchange' ? 'exchange' : 'return';
   return `<div class="chip-row" style="margin-top:6px;" onclick="event.stopPropagation()">
-    <div class="chip small ${k==='return'?'on':''}" onclick="saveRetKind('${esc(key)}','return',this)">↩️ Return / مرتجع</div>
-    <div class="chip small ${k==='exchange'?'on':''}" onclick="saveRetKind('${esc(key)}','exchange',this)">🔁 Exchange / تبديل</div>
+    <div class="chip small ${k==='return'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'return',this)">↩️ Return / مرتجع</div>
+    <div class="chip small ${k==='exchange'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'exchange',this)">🔁 Exchange / تبديل</div>
   </div>`;
 }
 async function saveRetKind(key, kind, el){
@@ -564,8 +568,8 @@ async function saveRetKind(key, kind, el){
 function focKindChips(key, def){
   const k = focKindOf(key, def);
   return `<div class="chip-row" style="margin-top:6px;" onclick="event.stopPropagation()">
-    <div class="chip small ${k==='deal'?'on':''}" onclick="saveErpNoteKind('${esc(key)}','deal',this)">🤝 Deal bonus</div>
-    <div class="chip small ${k==='sample'?'on':''}" onclick="saveErpNoteKind('${esc(key)}','sample',this)">🎁 Sample / marketing</div>
+    <div class="chip small ${k==='deal'?'on':''}" data-key="${esc(key)}" onclick="saveErpNoteKind(this.dataset.key,'deal',this)">🤝 Deal bonus</div>
+    <div class="chip small ${k==='sample'?'on':''}" data-key="${esc(key)}" onclick="saveErpNoteKind(this.dataset.key,'sample',this)">🎁 Sample / marketing</div>
   </div>`;
 }
 async function saveNoSaleReason(clinicId, val){
@@ -575,6 +579,58 @@ async function saveNoSaleReason(clinicId, val){
   c.noSaleReason = (val||'').trim();
   await persist('clinics');
   showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
+}
+// The ERP accounts whose invoices count on this branch (supervisor): each can
+// be moved from here, and another account can be counted here — the editor
+// shows what moves before anything is saved (11-erp.js, ERP ACCOUNT LINKS).
+// Never takes the clinic card down with it: odd data shows no section.
+function clinicErpAccountsSection(c){
+  try{ return clinicErpAccountsHTML(c); }catch(e){ console.error('clinic ERP accounts', e); return ''; }
+}
+function clinicErpAccountsHTML(c){
+  if(!c || !currentUser || currentUser.role !== 'supervisor') return '';
+  const res = UMCore.erpAccounts(digestData());
+  const here = res.accounts.filter(a => a.clinicId === c.id);
+  const staleHere = (res.stale || []).filter(s => s.link === c.id);
+  const inv = here.reduce((s, a) => s + a.invoices, 0), net = here.reduce((s, a) => s + a.net, 0);
+  // a sales file whose rows did not load on this device: its invoices are not in these figures — said, with the retry
+  const missing = res.rowsMissing || 0;
+  const noInv = missing ? 'no invoice in the files loaded on this device' : 'no invoice in the saved files';
+  const row = (a, stale) => `<div class="row-between" style="gap:8px; padding:7px 0; border-bottom:1px solid var(--line); align-items:flex-start;">
+      <div style="flex:1; min-width:0;">
+        <div dir="auto" style="font-size:13px; font-weight:700; overflow-wrap:anywhere;">${esc(a.name)}</div>
+        <div class="clinic-sub" style="display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;">${erpLinkBadge(a)} ${stale ? `<span>${noInv}</span>` : `<span>${a.invoices} × · <span dir="ltr">${money(a.net)}</span>${a.last ? ` · <span>last invoice</span> ${fmtDate(a.last)}` : ''}</span>`}</div>
+      </div>
+      <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(a.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'clinic:${c.id}')">Move…</button>
+    </div>`;
+  // the group's own name (no branch word) counts once, on its first branch — say where, on the other branches
+  let famLine = '';
+  const fams = UMCore.clinicFamilies(clinics), key = fams.byClinic[c.id];
+  if(key){
+    const fam = fams.fams[key];
+    if(fam.ids[0] !== c.id && res.accounts.some(a => a.status === 'family' && fam.ids.includes(a.clinicId))){
+      const land = clinics.find(x => x.id === fam.ids[0]);
+      famLine = `<div class="clinic-sub" style="padding-top:6px; line-height:1.5;"><span>Accounts named after the whole group count once, on</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(land ? land.name : '')}</b></div>`;
+    }
+  }
+  return `<div class="section-title" style="margin-top:20px;"><span>ERP accounts counted here</span> <span class="link" onclick="openErpLinks({back:'clinic:${c.id}'})">All accounts</span></div>
+    <div class="card" id="clinicErpAccounts" data-clinic="${esc(c.id)}" style="padding:8px 12px 12px;">
+      ${here.map(a => row(a, false)).join('')}${staleHere.map(s => row({ name: s.name, status: s.status }, true)).join('')}
+      ${here.length || staleHere.length ? '' : `<div class="clinic-sub" style="padding:6px 0;">${missing ? 'No ERP account counts here in the files loaded on this device.' : 'No ERP account counts here yet.'}</div>`}
+      ${here.length ? `<div class="clinic-sub" style="padding-top:8px;"><span>Total counted here</span> · ${inv} × · <span dir="ltr">${money(net)}</span>${missing ? '' : ' <span>(all saved files)</span>'}</div>` : ''}
+      ${missing ? `<div id="clinicErpMissing" style="color:var(--amber-ink); font-weight:600; font-size:12px; line-height:1.55; padding-top:6px;">⚠️ ${missing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="clinicErpRetry(this.closest('#clinicErpAccounts').dataset.clinic)">🔄 <span>Load them again</span></span></div>` : ''}
+      ${famLine}
+      ${c.cls === 'Closed' ? '' /* a Closed clinic takes no new account: its own accounts can still be moved away */
+        : `<button class="chip small" style="margin-top:10px;" onclick="openErpLinks({pickFor:'${c.id}', back:'clinic:${c.id}'})">${I('plus')} <span>Count another ERP account here…</span></button>`}
+    </div>`;
+}
+// The card's retry: the rows load, and the card is redrawn only if it is
+// still the sheet on screen (the person may have moved on meanwhile).
+function clinicErpRetry(id){
+  retryErpRows().then(() => {
+    const back = document.getElementById('modalBack'), sec = document.querySelector('#modalInner #clinicErpAccounts');
+    if(back && back.classList.contains('show') && sec && sec.dataset.clinic === id) openClinicDetail(id);
+  }).catch(e => console.warn('retry sales rows', e));
 }
 function clinicErpLedger(clinicId){
   const ret = [], all = [];
