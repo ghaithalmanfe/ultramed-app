@@ -2068,9 +2068,15 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // handover buckets: qty-aware, week/month windows
     assert.equal(sara.handovers.prescription, 9);
     assert.equal(sara.handovers.rxWeek, 3);
-    assert.equal(sara.handovers.rxLastWeek, 2);
+    // Updated on purpose in v114 (same-days windows, house rule since v105):
+    // this week (Sun 30 Aug) is compared with the same days of last week —
+    // Sun 23 Aug only — so h2 on 25 Aug is outside it. It was rxLastWeek 2
+    // (the whole previous week).
+    assert.equal(sara.handovers.rxPrevWeek, 0);
     assert.equal(sara.handovers.rxMonth, 5);
-    assert.equal(sara.handovers.rxLastMonth, 4);
+    // Updated on purpose in v114: the same days of last month (1–30 Jul)
+    // instead of the whole of July — h3 on 20 Jul is inside both. It was rxLastMonth 4.
+    assert.equal(sara.handovers.rxPrevMonth, 4);
     assert.equal(sara.handovers.sample, 5);
     assert.equal(sara.handovers.gift, 1);
     // never-visited monthly doctor is due
@@ -2113,13 +2119,18 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     assert.equal(g.byDoctor.length, 2);
     assert.equal(g.byDoctor[0].name, 'Dr. Sara'); // sorted by month volume
     assert.equal(g.byDoctor[0].week, 6);
-    assert.equal(g.byDoctor[0].lastWeek, 3);
-    assert.equal(g.byDoctor[0].weekGrowth, 100); // 3 -> 6
+    // Updated on purpose in v114 (same-days windows): today is Sunday 30 Aug,
+    // so the comparison is Sunday 23 Aug only — the 25 Aug entry is outside it
+    // (it was lastWeek 3, the whole previous week), and growth from 0 is no
+    // percentage at all (it was 100: 3 → 6).
+    assert.equal(g.byDoctor[0].prevWeek, 0);
+    assert.equal(g.byDoctor[0].weekGrowth, null);
     assert.equal(g.byClinic.length, 1);
     assert.equal(g.byClinic[0].month, 11);
     assert.equal(g.byClinic[0].doctors, 2);
     assert.equal(g.totals.week, 8);
-    assert.equal(g.totals.lastWeek, 3);
+    // Updated on purpose in v114, same reason (it was totals.lastWeek 3).
+    assert.equal(g.totals.prevWeek, 0);
   });
   test('parseContactRows: Arabic/English headers, serial birthdays, specialty mapping', () => {
     const SP = ['General Dentist','Orthodontist','Periodontist','Pedodontist','Prosthodontist','Endodontist','Oral Surgeon','Hygienist','Clinic Manager'];
@@ -2272,6 +2283,419 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
   });
 });
 
+// ---------- prescriptions given on a visit, by type (v114) ----------
+describe('prescriptions given on a visit, by type (v114)', () => {
+  // The browser harness's seed (tests/e2e/visit-rx.e2e.js). Clock Tue 13 Oct
+  // 2026: this week = 11–13 Oct against the same days of last week (4–6 Oct);
+  // this month = 1–13 Oct against 1–13 Sep.
+  const TODAY = '2026-10-13';
+  const T = {
+    ortho: { id: 'tortho', name: 'Ortho care prescription', active: true },
+    white: { id: 'twhite', name: 'Whitening prescription', active: true },
+    impl: { id: 'timpl', name: 'وصفة العناية بالزراعة', active: true },
+    kids: { id: 'tkids', name: 'Kids prescription', active: false }, // retired
+  };
+  const TYPES = { v: 1, rev: 3, by: 'Dr. Ghaith', at: '2026-10-01T09:00:00', types: [T.ortho, T.white, T.impl, T.kids] };
+  const L = (t, qty, doctorId) => ({ type: t.id, name: t.name, qty, doctorId });
+  const clinicsSeed = () => [
+    { id: 'm1', name: 'Dental 8 Clinic', rep: 'Mariam', dealType: 'prescription', doctors: [
+      { id: 'm1-d1', name: 'Dr. Huda Ali', handovers: [{ id: 'h1', date: '2026-10-12', kind: 'prescription', what: 'Rx pads', qty: 2, by: 'Mariam' }] },
+      { id: 'm1-d2', name: 'Dr. Omar Saleh' }] },
+    { id: 'm2', name: 'Smile Care Clinic', rep: 'Mariam', doctors: [{ id: 'm2-d1', name: 'Dr. Sara Nasser' }] },
+    { id: 'r1', name: 'Crown Dental Center', rep: 'Renova', doctors: [{ id: 'r1-d1', name: 'Dr. Faisal Adel' }] },
+  ];
+  const V = (id, clinicId, rep, date, doctorIds, rx, extra) => Object.assign({ id, clinicId, rep, date, doctorIds,
+    doctorId: doctorIds[0] || null, notes: 'seed ' + id, orderTotal: 0, orders: [], rx }, extra || {});
+  const visitsSeed = () => [
+    V('vS1', 'm1', 'Mariam', '2026-09-20', ['m1-d1'], [L(T.ortho, 4, 'm1-d1')]),
+    V('vO1', 'm1', 'Mariam', '2026-10-05', ['m1-d1', 'm1-d2'], [L(T.ortho, 2, 'm1-d1'), L(T.white, 1, 'm1-d2')]),
+    V('vO2', 'r1', 'Renova', '2026-10-12', ['r1-d1'], [L(T.white, 3, 'r1-d1')]),
+    V('vC1', 'm1', 'Mariam', '2026-10-12', ['m1-d1'], [L(T.ortho, 9, 'm1-d1')], { callOnly: true, channel: 'call' }), // never counts
+  ];
+  const figs = o => ({ week: o.week, prevWeek: o.prevWeek, month: o.month, prevMonth: o.prevMonth, total: o.total });
+  const grow = (repFilter, extra) => core.rxGrowth(Object.assign({ clinics: clinicsSeed(), visits: visitsSeed(), today: TODAY, repFilter, types: TYPES }, extra || {}));
+  const sum = (list, f) => list.reduce((s, x) => s + f(x), 0);
+
+  test('the new helpers are exported', () => {
+    ['rxQty', 'rxTypeList', 'rxTypeName', 'rxTypesProblem', 'visitRxLines', 'cleanVisitRx', 'rxSig', 'rxText',
+      'remapVisitDoctors', 'rxWindows', 'rxLedger'].forEach(n => assert.equal(typeof core[n], 'function', n));
+    assert.equal(core.RX_MAX, 999);
+    // the owner's two printed forms (11 Oct 2026) are the list until the supervisor saves his own
+    assert.deepEqual(core.RX_DEFAULT_TYPES.map(t => ({ ...t })), [
+      { id: 'ultramed', name: 'Ultramed fast moving products', active: true },
+      { id: 'tepe', name: 'Tepe prescription', active: true }]);
+  });
+
+  test('rxQty: a whole number from 0 to 999, cleaned like an order quantity', () => {
+    assert.deepEqual(['-4', '2.9', '99999', 'abc', '', null, '12 pcs', 3].map(q => core.rxQty(q)), [0, 2, 999, 0, 0, 0, 12, 3]);
+    assert.equal(core.rxQty(undefined), 0);
+    assert.equal(core.rxQty(' 7 '), 7);
+    assert.equal(core.rxQty(999), 999);
+  });
+
+  test('rxTypeList: the owner\'s two forms when missing or damaged; order, first id, trimmed names, active by default, other fields kept', () => {
+    const general = [{ id: 'ultramed', name: 'Ultramed fast moving products', active: true }, { id: 'tepe', name: 'Tepe prescription', active: true }];
+    [null, undefined, 'junk', 42, {}, { types: 'x' }, { types: [] }, [], [null, 5, 'a', { name: 'no id' }, { id: '   ', name: 'blank id' }]]
+      .forEach(doc => assert.deepEqual(core.rxTypeList(doc), general, JSON.stringify(doc)));
+    // the default is a fresh copy each time — changing one never changes the next
+    const g1 = core.rxTypeList(null); g1[0].name = 'changed';
+    assert.equal(core.rxTypeList(null)[0].name, 'Ultramed fast moving products');
+    assert.equal(core.RX_DEFAULT_TYPES[0].name, 'Ultramed fast moving products');
+    const doc = { v: 1, rev: 2, types: [
+      { id: ' b ', name: '  Ortho care prescription ' },
+      { id: 'a', name: 'Kids prescription', active: false, brands: ['TEPE'] },
+      { id: 'b', name: 'a second "b" — the first one wins' },
+      { id: 'c', name: '   ' },
+    ] };
+    const list = core.rxTypeList(doc);
+    assert.deepEqual(list, [
+      { id: 'b', name: 'Ortho care prescription', active: true },
+      { id: 'a', name: 'Kids prescription', active: false, brands: ['TEPE'] },
+      { id: 'c', name: 'Prescription', active: true },
+    ]);
+    assert.equal(doc.types[0].id, ' b '); // the document itself is not touched
+    assert.deepEqual(core.rxTypeList(doc.types), list); // a bare list works the same
+    // every type retired: returned as it is — nothing is quietly switched back on
+    assert.deepEqual(core.rxTypeList([{ id: 'x', name: 'X', active: false }]), [{ id: 'x', name: 'X', active: false }]);
+  });
+
+  test('rxTypeName: the current name by id, else the name saved on the line, else "Prescription"', () => {
+    const list = [{ id: 'tortho', name: 'Ortho care prescription', active: true }];
+    assert.equal(core.rxTypeName('tortho', list, 'an older name'), 'Ortho care prescription');
+    assert.equal(core.rxTypeName('tortho', { types: list }, ''), 'Ortho care prescription');
+    assert.equal(core.rxTypeName('tgone', list, 'Kids prescription'), 'Kids prescription');
+    assert.equal(core.rxTypeName('tgone', list, '  '), 'Prescription');
+    assert.equal(core.rxTypeName('tepe', null, null), 'Tepe prescription'); // the built-in list
+  });
+
+  test('rxTypesProblem: empty, too long, the same name twice (case and spaces ignored), none active; a good list passes', () => {
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: 'Ortho' }, { id: 'b', name: '   ' }]), 'name-empty');
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: 'x'.repeat(41) }]), 'name-long');
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: ' ' + 'x'.repeat(40) + ' ' }]), null);
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: 'Whitening & care prescription' }, { id: 'b', name: '  whitening &   CARE prescription ' }]), 'name-duplicate');
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: 'Ortho' }, { id: 'b', name: 'ortho', active: false }]), 'name-duplicate'); // a retired name is still taken
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: 'Ortho', active: false }]), 'no-active');
+    assert.equal(core.rxTypesProblem([]), 'no-active');
+    assert.equal(core.rxTypesProblem([{ id: 'a', name: 'Ortho', active: false }, { id: 'b', name: 'Kids' }]), null);
+    assert.equal(core.rxTypesProblem({ types: [{ id: 'a', name: 'Ortho' }] }), null); // the document works too
+  });
+
+  test('cleanVisitRx: whole quantities, known types, only people met (or the clinic), one line each, in order, current names', () => {
+    const types = core.rxTypeList([T.ortho, T.white, T.kids]);
+    const out = core.cleanVisitRx([
+      { type: 'twhite', qty: '2.9', doctorId: 'd2' },                    // a decimal → 2
+      { type: 'tortho', qty: 3, doctorId: 'd1', name: 'an older name' },
+      { type: 'tortho', qty: '4', doctorId: 'd1' },                      // the same type and person → summed
+      { type: 'tkids', qty: 1, doctorId: 'd1' },                         // retired: still saved on this visit
+      { type: 'tzzz', qty: 1, doctorId: 'd1' },                          // a type nobody knows → dropped
+      { type: 'tortho', qty: 1, doctorId: 'dX' },                        // a person not met → dropped
+      { type: 'tortho', qty: -2, doctorId: 'd1' },                       // negative → nothing
+      { type: 'tortho', qty: 0, doctorId: 'd2' },                        // zero → nothing
+      { type: 'twhite', qty: 'abc', doctorId: 'd1' },                    // junk → nothing
+      { type: '', qty: 5, doctorId: 'd1' },                              // no type → nothing
+      null, 'junk',
+      { type: 'tortho', qty: 5, doctorId: null },                        // the clinic (no one person): always allowed
+      { type: 'twhite', qty: '99999', doctorId: '' },                    // '' is the clinic too; capped at 999
+    ], { types, doctorIds: ['d1', 'd2'] });
+    // people in the order met, the clinic last; types in the list's order
+    assert.deepEqual(out, [
+      { type: 'tortho', name: 'Ortho care prescription', qty: 7, doctorId: 'd1' },
+      { type: 'tkids', name: 'Kids prescription', qty: 1, doctorId: 'd1' },
+      { type: 'twhite', name: 'Whitening prescription', qty: 2, doctorId: 'd2' },
+      { type: 'tortho', name: 'Ortho care prescription', qty: 5, doctorId: null },
+      { type: 'twhite', name: 'Whitening prescription', qty: 999, doctorId: null },
+    ]);
+    // lines summed never pass 999
+    assert.deepEqual(core.cleanVisitRx([{ type: 'tortho', qty: 600, doctorId: 'd1' }, { type: 'tortho', qty: 600, doctorId: 'd1' }], { types, doctorIds: ['d1'] }),
+      [{ type: 'tortho', name: 'Ortho care prescription', qty: 999, doctorId: 'd1' }]);
+    // a new customer created in the form: nobody on file, the clinic block only
+    assert.deepEqual(core.cleanVisitRx([{ type: 'tortho', qty: 2, doctorId: null }, { type: 'tortho', qty: 2, doctorId: 'd1' }], { types, doctorIds: [] }),
+      [{ type: 'tortho', name: 'Ortho care prescription', qty: 2, doctorId: null }]);
+    // editing a visit whose type this phone does not know: kept, under the name it was saved with
+    const keep = [{ type: 'tother', name: 'Implant care prescription', qty: 2, doctorId: 'd1' }];
+    assert.deepEqual(core.cleanVisitRx([{ type: 'tother', qty: 3, doctorId: 'd1' }, { type: 'tortho', qty: 1, doctorId: 'd1' }], { types, doctorIds: ['d1'], keep }), [
+      { type: 'tortho', name: 'Ortho care prescription', qty: 1, doctorId: 'd1' },
+      { type: 'tother', name: 'Implant care prescription', qty: 3, doctorId: 'd1' },
+    ]);
+    assert.deepEqual(core.cleanVisitRx([{ type: 'tother', qty: 3, doctorId: 'd1' }], { types, doctorIds: ['d1'] }), []); // …but not without it
+    // no list on this phone: the built-in list (the owner's two forms) only
+    assert.deepEqual(core.cleanVisitRx([{ type: 'tepe', qty: 3, doctorId: 'd1' }, { type: 'tortho', qty: 1, doctorId: 'd1' }], { doctorIds: ['d1'] }),
+      [{ type: 'tepe', name: 'Tepe prescription', qty: 3, doctorId: 'd1' }]);
+    assert.deepEqual(core.cleanVisitRx(null, { types, doctorIds: ['d1'] }), []);
+  });
+
+  test('visitRxLines: field visits only; quantities as whole numbers; junk lines dropped', () => {
+    const rx = [{ type: 'tortho', name: 'Ortho care prescription', qty: '3', doctorId: 'd1' }, { type: 'twhite', name: 'Whitening prescription', qty: 1, doctorId: '' },
+      { type: 'tortho', name: 'x', qty: 0, doctorId: 'd1' }, { name: 'no type', qty: 2, doctorId: 'd1' }, null, 'junk'];
+    assert.deepEqual(core.visitRxLines({ id: 'v', date: TODAY, rx }), [
+      { type: 'tortho', name: 'Ortho care prescription', qty: 3, doctorId: 'd1' },
+      { type: 'twhite', name: 'Whitening prescription', qty: 1, doctorId: null },
+    ]);
+    assert.deepEqual(core.visitRxLines({ id: 'c', callOnly: true, rx }), []);   // a call
+    assert.deepEqual(core.visitRxLines({ id: 'o', orderOnly: true, rx }), []);  // a phone order
+    assert.deepEqual(core.visitRxLines({ id: 'n' }), []);
+    assert.deepEqual(core.visitRxLines({ id: 'bad', rx: 'x' }), []);
+    assert.deepEqual(core.visitRxLines(null), []);
+  });
+
+  test('dedupeVisits: different prescriptions = another visit; an exact copy is still one; visits without lines group exactly as before', () => {
+    const a = { id: 'v1', date: '2026-10-11', rep: 'Mariam', clinicId: 'c1', notes: '', orderTotal: 0, orders: [], doctorIds: ['d1'] };
+    const b = Object.assign({}, a, { id: 'v2', rx: [{ type: 't1', name: 'Ortho', qty: 20, doctorId: 'd1' }] });
+    assert.deepEqual(core.dedupeVisits([a, b]).unique.map(v => v.id), ['v1', 'v2']);
+    const c = Object.assign({}, b, { id: 'v3', rx: [{ type: 't1', name: 'Ortho', qty: 21, doctorId: 'd1' }] });
+    assert.equal(core.dedupeVisits([b, c]).unique.length, 2);
+    // a double-save: the same lines (a renamed type does not make it another visit)
+    const copy = Object.assign({}, b, { id: 'v2b', rx: b.rx.map(l => Object.assign({}, l, { name: 'renamed since' })) });
+    assert.deepEqual(core.dedupeVisits([b, copy]), { unique: [b], dupCount: 1 });
+    // the order of the lines does not matter
+    assert.equal(core.rxSig([{ type: 'b', qty: 2, doctorId: 'd' }, { type: 'a', qty: 1, doctorId: null }]), 'a::1,b:d:2');
+    assert.equal(core.rxSig([{ type: 'a', qty: 1, doctorId: null }, { type: 'b', qty: 2, doctorId: 'd' }]), 'a::1,b:d:2');
+    // calls never carry prescriptions: lines on a call do not split it
+    const call = { id: 'k1', date: '2026-10-11', rep: 'Mariam', clinicId: 'c1', callOnly: true, notes: '' };
+    assert.equal(core.dedupeVisits([call, Object.assign({}, call, { id: 'k2', rx: b.rx })]).unique.length, 1);
+    // without lines: exactly the key used before v114 (200 synthetic visits)
+    const oldDedupe = visits => { const seen = {}, unique = []; let dup = 0;
+      visits.forEach(v => { const key = [v.date, v.rep, v.clinicId, v.callOnly ? 1 : 0, v.orderTotal || 0, (v.notes || ''), (v.orders || []).length].join('|');
+        if(seen[key]){ dup++; return; } seen[key] = 1; unique.push(v); });
+      return { unique, dupCount: dup }; };
+    const vs = [];
+    for(let i = 0; i < 200; i++) vs.push({ id: 'v' + i, date: '2026-10-0' + (1 + i % 5), rep: i % 3 ? 'Mariam' : 'Renova', clinicId: 'c' + (i % 4),
+      callOnly: i % 7 === 0, orderTotal: (i % 6) * 10, notes: i % 9 ? '' : 'x', orders: i % 11 ? [] : [{ id: 'o' }] });
+    const now = core.dedupeVisits(vs), before = oldDedupe(vs);
+    assert.ok(before.dupCount > 0);
+    assert.deepEqual(now.unique.map(v => v.id), before.unique.map(v => v.id));
+    assert.equal(now.dupCount, before.dupCount);
+  });
+
+  test('rxLedger: one row per line from the visits plus the old profile entries — samples, gifts, calls and phone orders never', () => {
+    const clinics = clinicsSeed();
+    clinics[0].doctors[0].handovers.push(
+      { id: 'h2', date: '2026-10-10', kind: 'sample', what: 'tips', qty: 5, by: 'Mariam' },
+      { id: 'h3', date: '2026-10-10', kind: 'gift', what: 'mug', by: 'Mariam' },
+      { id: 'h4', date: '2026-10-09', kind: 'prescription', what: 'pads', qty: '3', by: 'Renova' },
+      { date: '2026-10-08', kind: 'prescription', what: 'pads', qty: 0 });
+    const visits = visitsSeed().concat([
+      V('vP1', 'm1', 'Mariam', '2026-10-12', ['m1-d1'], [L(T.ortho, 7, 'm1-d1')], { orderOnly: true }),   // a phone order: never
+      V('vJ1', 'm1', 'Mariam', '2026-10-13', ['m1-d1'], [L(T.white, 2, 'm1-d1')], { withRep: 'Renova' }), // joint: one record
+      V('vX1', 'zz', 'Mariam', '2026-10-13', ['zz-d1'], [L(T.ortho, 5, 'zz-d1')]),                         // a clinic not in the list
+    ]);
+    const all = core.rxLedger({ clinics, visits }, { repFilter: 'all' });
+    assert.deepEqual(all.map(r => r.id).sort(), ['h1', 'h4', 'm1|m1-d1|4', 'vJ1:0', 'vO1:0', 'vO1:1', 'vO2:0', 'vS1:0']);
+    const row = id => all.find(r => r.id === id);
+    assert.deepEqual(row('h1'), { source: 'profile', id: 'h1', visitId: null, date: '2026-10-12', clinicId: 'm1', doctorId: 'm1-d1', listed: true,
+      type: null, name: null, qty: 2, rep: 'Mariam', withRep: null });
+    assert.equal(row('h4').qty, 3);            // '3' counts as 3
+    assert.equal(row('h4').rep, 'Renova');     // whoever handed it over
+    assert.equal(row('m1|m1-d1|4').qty, 1);    // an old entry without a quantity counts as one, as before
+    assert.deepEqual(row('vO1:1'), { source: 'visit', id: 'vO1:1', visitId: 'vO1', date: '2026-10-05', clinicId: 'm1', doctorId: 'm1-d2', listed: true,
+      type: 'twhite', name: 'Whitening prescription', qty: 1, rep: 'Mariam', withRep: null });
+    // a joint visit: one row, credited to the person who logged it
+    assert.deepEqual([row('vJ1:0').rep, row('vJ1:0').withRep, all.filter(r => r.visitId === 'vJ1').length], ['Mariam', 'Renova', 1]);
+    // the owner filter: the clinic's current owner, whoever handed them over (as the Doctors page)
+    assert.deepEqual(core.rxLedger({ clinics, visits }, { repFilter: 'Renova' }).map(r => r.id), ['vO2:0']);
+    assert.deepEqual(core.rxLedger({ clinics, visits }, { repFilter: 'Mariam' }).map(r => r.id).sort(), ['h1', 'h4', 'm1|m1-d1|4', 'vJ1:0', 'vO1:0', 'vO1:1', 'vS1:0']);
+    assert.equal(core.rxLedger({ clinics, visits }).length, all.length); // no filter = everyone
+    // a line to the clinic, and one to a doctor no longer on file
+    const extra = core.rxLedger({ clinics, visits: [V('vU', 'm1', 'Mariam', TODAY, ['m1-gone'], [L(T.ortho, 2, null), L(T.white, 1, 'm1-gone')])] });
+    assert.deepEqual(extra.filter(r => r.source === 'visit').map(r => [r.doctorId, r.listed]), [[null, false], ['m1-gone', false]]);
+  });
+
+  test('rxWindows: this week from Sunday and this month from the 1st, each against the same days before', () => {
+    assert.deepEqual(core.rxWindows('2026-10-11'), { weekFrom: '2026-10-11', weekTo: '2026-10-11', prevWeekFrom: '2026-10-04', prevWeekTo: '2026-10-04',
+      monthFrom: '2026-10-01', monthTo: '2026-10-11', prevMonthFrom: '2026-09-01', prevMonthTo: '2026-09-11' });
+    assert.deepEqual(core.rxWindows('2026-10-12'), { weekFrom: '2026-10-11', weekTo: '2026-10-12', prevWeekFrom: '2026-10-04', prevWeekTo: '2026-10-05',
+      monthFrom: '2026-10-01', monthTo: '2026-10-12', prevMonthFrom: '2026-09-01', prevMonthTo: '2026-09-12' });
+    assert.deepEqual(core.rxWindows('2026-10-31'), { weekFrom: '2026-10-25', weekTo: '2026-10-31', prevWeekFrom: '2026-10-18', prevWeekTo: '2026-10-24',
+      monthFrom: '2026-10-01', monthTo: '2026-10-31', prevMonthFrom: '2026-09-01', prevMonthTo: '2026-09-30' });
+    assert.deepEqual(core.rxWindows('2026-03-30'), { weekFrom: '2026-03-29', weekTo: '2026-03-30', prevWeekFrom: '2026-03-22', prevWeekTo: '2026-03-23',
+      monthFrom: '2026-03-01', monthTo: '2026-03-30', prevMonthFrom: '2026-02-01', prevMonthTo: '2026-02-28' });
+    // rxGrowth on those windows: on Monday 12 Oct, Sun–Mon against Sun–Mon of last week — not 1 against
+    // the whole of last week (6), which used to show −83% when the same days were equal
+    const clinics = [{ id: 'c1', name: 'C1', rep: 'Mariam', doctors: [{ id: 'd1', name: 'Dr A', handovers: [
+      { date: '2026-10-11', kind: 'prescription', qty: 1 }, { date: '2026-10-04', kind: 'prescription', qty: 1 }, { date: '2026-10-06', kind: 'prescription', qty: 5 },
+      { date: '2026-09-30', kind: 'prescription', qty: 2 }, { date: '2026-02-28', kind: 'prescription', qty: 3 }, { date: '2026-03-01', kind: 'prescription', qty: 4 }] }] }];
+    const at = today => core.rxGrowth({ clinics, visits: [], today, repFilter: 'all' }).totals;
+    assert.deepEqual([at('2026-10-12').week, at('2026-10-12').prevWeek, at('2026-10-12').weekGrowth], [1, 1, 0]);
+    assert.deepEqual([at('2026-10-11').week, at('2026-10-11').prevWeek], [1, 1]);
+    assert.equal(at('2026-10-31').prevMonth, 2);   // 30 Sep is inside 1–30 Sep
+    assert.equal(at('2026-10-29').prevMonth, 0);   // …but not inside 1–29 Sep
+    assert.deepEqual([at('2026-03-30').month, at('2026-03-30').prevMonth], [4, 3]); // 1 Mar against 1–28 Feb
+  });
+
+  test('rxGrowth: the harness baseline — totals, by doctor, by center, by type; growth only against something', () => {
+    const team = grow('all');
+    assert.deepEqual(team.windows, core.rxWindows(TODAY));
+    assert.deepEqual(figs(team.totals), { week: 5, prevWeek: 3, month: 8, prevMonth: 0, total: 12 });
+    assert.equal(team.totals.weekGrowth, 67);     // 3 → 5
+    assert.equal(team.totals.monthGrowth, null);  // from 0: no percentage (it was 100)
+    assert.deepEqual(team.totals.incomplete, { week: false, prevWeek: false, month: false, prevMonth: false, total: false });
+    // by doctor: the doctors on file, by this month then all time
+    assert.deepEqual(team.byDoctor.map(d => d.doctorId), ['m1-d1', 'r1-d1', 'm1-d2']);
+    const doc = id => team.byDoctor.find(d => d.doctorId === id);
+    assert.deepEqual(figs(doc('m1-d1')), { week: 2, prevWeek: 2, month: 4, prevMonth: 0, total: 8 }); // the call's 9 never
+    assert.deepEqual(figs(doc('m1-d2')), { week: 0, prevWeek: 1, month: 1, prevMonth: 0, total: 1 });
+    assert.deepEqual(figs(doc('r1-d1')), { week: 3, prevWeek: 0, month: 3, prevMonth: 0, total: 3 });
+    assert.deepEqual([doc('m1-d1').weekGrowth, doc('m1-d2').weekGrowth, doc('r1-d1').weekGrowth], [0, -100, null]);
+    assert.deepEqual([doc('m1-d1').name, doc('m1-d1').clinicId, doc('m1-d1').clinicName, doc('m1-d1').rep], ['Dr. Huda Ali', 'm1', 'Dental 8 Clinic', 'Mariam']);
+    // by center
+    assert.deepEqual(team.byClinic.map(c => [c.clinicId, c.name, c.rep, c.doctors, c.unnamed, c.unlisted, c.week, c.prevWeek, c.weekGrowth, c.month, c.total]),
+      [['m1', 'Dental 8 Clinic', 'Mariam', 2, 0, 0, 2, 3, -33, 5, 9], ['r1', 'Crown Dental Center', 'Renova', 1, 0, 0, 3, 0, null, 3, 3]]);
+    // by type: every active type (at 0 too), a retired one only with lines, the profile entries apart
+    assert.deepEqual(team.byType.map(t => [t.type, t.name, t.active, t.week, t.month, t.total]), [
+      ['tortho', 'Ortho care prescription', true, 0, 2, 6],
+      ['twhite', 'Whitening prescription', true, 3, 4, 4],
+      ['timpl', 'وصفة العناية بالزراعة', true, 0, 0, 0],
+      [null, 'Type not recorded (doctor profile)', null, 2, 2, 2]]);
+    // the rows, newest first, for the export
+    assert.equal(team.rows.length, 5);
+    assert.deepEqual(team.rows.map(r => r.date), team.rows.map(r => r.date).sort().reverse());
+    // Mariam's own page: her clinics only (Faisal is Renova's)
+    const mar = grow('Mariam');
+    assert.deepEqual(figs(mar.totals), { week: 2, prevWeek: 3, month: 5, prevMonth: 0, total: 9 });
+    assert.deepEqual(mar.byDoctor.map(d => d.doctorId), ['m1-d1', 'm1-d2']);
+    // nothing in any window: no growth at all, never 0% or 100%
+    const later = grow('all', { today: '2026-12-15' });
+    assert.deepEqual([later.totals.week, later.totals.weekGrowth, later.totals.month, later.totals.monthGrowth, later.totals.total], [0, null, 0, null, 12]);
+  });
+
+  test('rxGrowth: a visit logged today counts once, for the doctor who received the forms', () => {
+    const visits = visitsSeed().concat([V('vN1', 'm1', 'Mariam', TODAY, ['m1-d1', 'm1-d2'], [L(T.ortho, 5, 'm1-d1'), L(T.white, 2, 'm1-d1')])]);
+    const mar = grow('Mariam', { visits });
+    const huda = mar.byDoctor.find(d => d.doctorId === 'm1-d1'), omar = mar.byDoctor.find(d => d.doctorId === 'm1-d2');
+    assert.deepEqual([huda.week, huda.month, huda.total, omar.total], [9, 11, 15, 1]); // Omar was met but given nothing
+    assert.deepEqual([mar.totals.week, mar.totals.month, mar.totals.total], [9, 12, 16]);
+    const team = grow('all', { visits });
+    assert.deepEqual([team.totals.week, team.totals.month, team.totals.total], [12, 15, 19]);
+  });
+
+  test('rxGrowth: every view adds up — doctors + left at the clinic + no longer listed = centers = types = total, in every window', () => {
+    const clinics = clinicsSeed();
+    const visits = visitsSeed().concat([
+      V('vU1', 'm1', 'Mariam', '2026-10-12', ['m1-d1', 'm1-gone'],
+        [L(T.ortho, 1, 'm1-d1'), L(T.white, 3, 'm1-gone'), L({ id: 'general', name: 'General prescription' }, 2, null)]),
+      V('vU2', 'r1', 'Renova', '2026-09-08', ['r1-d1'], [L(T.kids, 4, 'r1-d1'), L({ id: 'tlost', name: 'Lost type' }, 1, null)]),
+    ]);
+    ['all', 'Mariam', 'Renova'].forEach(repFilter => {
+      const g = core.rxGrowth({ clinics, visits, today: TODAY, repFilter, types: TYPES });
+      ['week', 'prevWeek', 'month', 'prevMonth', 'total'].forEach(w => {
+        const inW = r => w === 'total' || (r.date >= g.windows[w + 'From'] && r.date <= g.windows[w + 'To']);
+        const rest = sum(g.rows.filter(r => r.doctorId == null || !r.listed), r => inW(r) ? r.qty : 0);
+        const at = repFilter + ' ' + w;
+        assert.equal(sum(g.byClinic, c => c[w]), g.totals[w], at);
+        assert.equal(sum(g.byType, t => t[w]), g.totals[w], at);
+        assert.equal(sum(g.byDoctor, d => d[w]) + rest, g.totals[w], at);
+        assert.equal(sum(g.rows, r => inW(r) ? r.qty : 0), g.totals[w], at);
+      });
+      assert.equal(sum(g.byDoctor, d => d.total) + sum(g.byClinic, c => c.unnamed) + sum(g.byClinic, c => c.unlisted), g.totals.total, repFilter);
+    });
+    const g = core.rxGrowth({ clinics, visits, today: TODAY, repFilter: 'all', types: TYPES });
+    const m1 = g.byClinic.find(c => c.clinicId === 'm1'), r1 = g.byClinic.find(c => c.clinicId === 'r1');
+    assert.deepEqual([m1.doctors, m1.unnamed, m1.unlisted, m1.total], [2, 2, 3, 15]);
+    assert.deepEqual([r1.doctors, r1.unnamed, r1.unlisted, r1.total], [1, 1, 0, 8]);
+    assert.ok(!g.byDoctor.some(d => d.doctorId === 'm1-gone' || d.doctorId == null));
+    // by type: the retired Kids shows because it has lines; types this list does not know keep their saved names
+    assert.deepEqual(g.byType.map(t => [t.type, t.name, t.active, t.total]), [
+      ['tortho', 'Ortho care prescription', true, 7],
+      ['twhite', 'Whitening prescription', true, 7],
+      ['timpl', 'وصفة العناية بالزراعة', true, 0],
+      ['tkids', 'Kids prescription', false, 4],
+      ['general', 'General prescription', null, 2],
+      ['tlost', 'Lost type', null, 1],
+      [null, 'Type not recorded (doctor profile)', null, 2]]);
+    // a renamed type shows its current name; the lines keep the id
+    const renamed = { types: [T.ortho, Object.assign({}, T.white, { name: 'Whitening & care prescription' }), T.impl, T.kids] };
+    const g2 = core.rxGrowth({ clinics, visits, today: TODAY, repFilter: 'all', types: renamed });
+    assert.deepEqual(g2.byType.filter(t => t.type === 'twhite').map(t => [t.name, t.total]), [['Whitening & care prescription', 7]]);
+  });
+
+  test('rxGrowth: a month whose visits did not load makes every window touching it incomplete — no growth there', () => {
+    const visits = visitsSeed().concat([V('vS2', 'm1', 'Mariam', '2026-09-05', ['m1-d1'], [L(T.ortho, 2, 'm1-d1')])]);
+    const ok = grow('all', { visits });
+    assert.equal(ok.totals.monthGrowth, 300); // 2 → 8
+    const g = grow('all', { visits, brokenMonths: ['2026-09'] });
+    assert.deepEqual(g.totals.incomplete, { week: false, prevWeek: false, month: false, prevMonth: true, total: true });
+    assert.equal(g.totals.monthGrowth, null);
+    assert.equal(g.totals.weekGrowth, 67); // the week does not touch September
+    assert.ok(g.byDoctor.length && g.byDoctor.every(d => d.monthGrowth === null));
+    assert.ok(g.byClinic.every(c => c.monthGrowth === null));
+    assert.deepEqual(figs(g.totals), figs(ok.totals)); // the figures themselves are what loaded
+    // on Thu 1 Oct this week reaches back into September too
+    const early = grow('all', { visits, today: '2026-10-01', brokenMonths: ['2026-09'] });
+    assert.deepEqual(early.totals.incomplete, { week: true, prevWeek: true, month: false, prevMonth: true, total: true });
+    assert.equal(early.totals.weekGrowth, null);
+  });
+
+  test('a re-dated visit moves to its new window; the total stays', () => {
+    const visits = visitsSeed();
+    const before = grow('Mariam', { visits });
+    visits.find(v => v.id === 'vO1').date = '2026-09-30';
+    const after = grow('Mariam', { visits });
+    assert.deepEqual(figs(before.totals), { week: 2, prevWeek: 3, month: 5, prevMonth: 0, total: 9 });
+    assert.deepEqual(figs(after.totals), { week: 2, prevWeek: 0, month: 2, prevMonth: 0, total: 9 });
+  });
+
+  test('doctorAnalytics: a visit line counts for its own doctor only, an old profile entry once, "3" as 3', () => {
+    const clinics = [{ id: 'c1', name: 'C1', rep: 'Mariam', doctors: [
+      { id: 'd1', name: 'Dr A', handovers: [{ date: '2026-10-10', kind: 'prescription', qty: '3' }, { date: '2026-10-09', kind: 'prescription', qty: 2 },
+        { date: '2026-10-08', kind: 'sample', what: 'tips', qty: '4' }, { date: '2026-10-07', kind: 'gift', what: 'mug' }] },
+      { id: 'd2', name: 'Dr B' }] }];
+    const visits = [
+      { id: 'v1', clinicId: 'c1', rep: 'Mariam', date: '2026-10-11', doctorIds: ['d1', 'd2'], notes: '', rx: [{ type: 'general', name: 'General prescription', qty: 5, doctorId: 'd1' }] },
+      { id: 'v2', clinicId: 'c1', rep: 'Mariam', date: '2026-10-11', doctorIds: ['d1'], notes: '', callOnly: true, rx: [{ type: 'general', qty: 9, doctorId: 'd1' }] },
+    ];
+    const rows = core.doctorAnalytics({ clinics, visits, today: '2026-10-11' });
+    const a = rows.find(d => d.id === 'd1').handovers, b = rows.find(d => d.id === 'd2');
+    assert.deepEqual(a, { prescription: 10, rxWeek: 5, rxPrevWeek: 0, rxMonth: 10, rxPrevMonth: 0, sample: 4, gift: 1, other: 0, count: 5, last: '2026-10-11' });
+    assert.equal(b.handovers.prescription, 0); // met on the same visit, given nothing
+    assert.equal(b.fieldVisits, 1);           // …but the visit is still in his log
+  });
+
+  test('remapVisitDoctors: a merged duplicate doctor is re-pointed in who was met and in the prescription lines', () => {
+    const v = { id: 'v', doctorIds: ['dX', 'd2', 'd1'], doctorId: 'dX', rx: [
+      { type: 't1', name: 'T1', qty: 2, doctorId: 'd1' },
+      { type: 't1', name: 'T1', qty: 3, doctorId: 'dX' },
+      { type: 't2', name: 'T2', qty: 1, doctorId: 'dX' },
+      { type: 't1', name: 'T1', qty: 4, doctorId: 'd2' },
+      { type: 't1', name: 'T1', qty: 1, doctorId: null }] };
+    assert.equal(core.remapVisitDoctors(v, { dX: 'd1' }), true);
+    assert.deepEqual(v.doctorIds, ['d1', 'd2']);
+    assert.equal(v.doctorId, 'd1');
+    assert.deepEqual(v.rx, [
+      { type: 't1', name: 'T1', qty: 5, doctorId: 'd1' },  // the colliding lines are merged
+      { type: 't2', name: 'T2', qty: 1, doctorId: 'd1' },
+      { type: 't1', name: 'T1', qty: 4, doctorId: 'd2' },
+      { type: 't1', name: 'T1', qty: 1, doctorId: null }]);
+    assert.equal(core.remapVisitDoctors(v, { dX: 'd1' }), false); // nothing left to move
+    // only a line names the duplicate; the person's lines stay together, in the order met
+    const w = { id: 'w', doctorIds: ['d1', 'd2'], rx: [{ type: 't1', qty: 1, doctorId: 'd1' }, { type: 't1', qty: 1, doctorId: 'd2' }, { type: 't2', qty: 1, doctorId: 'dX' }] };
+    assert.equal(core.remapVisitDoctors(w, { dX: 'd1' }), true);
+    assert.deepEqual(w.rx.map(l => l.type + ':' + l.doctorId), ['t1:d1', 't2:d1', 't1:d2']);
+    // merged lines never pass 999
+    const big = { id: 'b', doctorIds: ['d1', 'dX'], rx: [{ type: 't1', qty: 600, doctorId: 'd1' }, { type: 't1', qty: 600, doctorId: 'dX' }] };
+    assert.equal(core.remapVisitDoctors(big, { dX: 'd1' }), true);
+    assert.deepEqual([big.doctorIds, big.rx], [['d1'], [{ type: 't1', qty: 999, doctorId: 'd1' }]]);
+    // a visit that names nobody in the map is untouched
+    const other = { id: 'o', doctorIds: ['d1'], doctorId: 'd1', rx: [{ type: 't1', qty: 1, doctorId: 'd1' }] };
+    const snap = JSON.stringify(other);
+    assert.equal(core.remapVisitDoctors(other, { dX: 'd1' }), false);
+    assert.equal(JSON.stringify(other), snap);
+  });
+
+  test('rxText: one line for the CSV, Excel and copy — the clinic and a doctor no longer listed named plainly', () => {
+    const list = [T.ortho, T.white, { id: 'general', name: 'General prescription', active: true }];
+    const names = { 'm1-d1': 'Dr. Huda Ali' };
+    const doctorName = id => names[id] || null;
+    assert.equal(core.rxText([
+      { type: 'tortho', name: 'an older name', qty: 5, doctorId: 'm1-d1' },
+      { type: 'twhite', name: 'Whitening prescription', qty: 2, doctorId: 'm1-d1' },
+      { type: 'general', name: 'General prescription', qty: 1, doctorId: null },
+    ], { list, doctorName }), 'Dr. Huda Ali: Ortho care prescription ×5, Whitening prescription ×2; the clinic (no one person): General prescription ×1');
+    assert.equal(core.rxText([{ type: 'tgone', name: 'Kids prescription', qty: 3, doctorId: 'm1-d9' }], { list, doctorName }), 'a doctor no longer listed: Kids prescription ×3');
+    assert.equal(core.rxText([], { list, doctorName }), '');
+    assert.equal(core.rxText(null), '');
+  });
+});
+
 // ---------- Arabic UI dictionary ----------
 describe('UMI18N dictionary', () => {
   const i18n = require('../www/js/i18n.js');
@@ -2326,6 +2750,27 @@ describe('UMI18N dictionary', () => {
     assert.equal(i18n.tr(''), null);
     assert.equal(i18n.tr(null), null);
     assert.equal(i18n.tr('Waterpik Cordless Plus'), null);
+  });
+  // v114: prescriptions given on a visit. The team's word for the printed
+  // forms is بريسكريبشن; the owner counts them in PADS (دفاتر), with Arabic
+  // number agreement (1 دفتر، 2 دفتران، 3–10 دفاتر، 11–99 دفتراً; beyond 99 by
+  // the last two digits). The forms' own names are data and never translated.
+  test('prescriptions given: the team\'s word, pads with number agreement, type names untouched', () => {
+    assert.match(i18n.tr('Prescriptions given?'), /بريسكريبشن/);
+    assert.equal(i18n.tr('Prescriptions given?'), 'سلّمت بريسكريبشن؟');
+    assert.match(i18n.tr('the pads you left today'), /الدفاتر/);
+    assert.deepEqual(['1 pad', '2 pads', '7 pads', '10 pads', '11 pads', '99 pads', '100 pads', '102 pads', '103 pads', '111 pads'].map(t => i18n.tr(t)),
+      ['1 دفتر', '2 دفتران', '7 دفاتر', '10 دفاتر', '11 دفتراً', '99 دفتراً', '100 دفتر', '102 دفتر', '103 دفاتر', '111 دفتراً']);
+    assert.equal(i18n.tr('Same days last week: 5'), 'نفس الأيام من الأسبوع الماضي: 5');
+    assert.equal(i18n.tr('Same days last month: —'), 'نفس الأيام من الشهر الماضي: —'); // a window whose visits did not all load
+    assert.equal(i18n.tr('💊 3 pads this month'), '💊 3 دفاتر هذا الشهر');
+    assert.equal(i18n.tr('incl. 2 pads left at the clinic'), 'منها 2 دفتران للعيادة (بدون شخص محدد)');
+    assert.equal(i18n.tr('incl. 1 pad to a doctor no longer listed'), 'منها 1 دفتر لطبيب لم يعد في القائمة');
+    assert.equal(i18n.tr('12 pads logged'), 'سُجّل 12 دفتراً');
+    assert.equal(i18n.tr('⚠️ Visits of 2026-09 did not load — figures that include them are incomplete.'), '⚠️ زيارات 2026-09 لم تُحمَّل — الأرقام اللي تشملها ناقصة.');
+    assert.equal(i18n.tr('📴 Changes kept on this device — they upload automatically when back online'), '📴 التعديلات محفوظة على هذا الجهاز — تُرفع تلقائياً عند عودة الاتصال');
+    // the printed forms' names (the two built-in ones included) are never dictionary words
+    core.RX_DEFAULT_TYPES.forEach(t => assert.equal(i18n.tr(t.name), null, t.name));
   });
 });
 

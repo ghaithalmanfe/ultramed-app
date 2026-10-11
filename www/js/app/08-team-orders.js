@@ -449,6 +449,8 @@ function openEditVisit(visitId){
     ${!v.orderOnly && !v.callOnly ? `
     <label>Who did you meet?</label>
     <div class="chip-row" id="editDocChips"></div>
+    <label>Prescriptions given</label>
+    <div id="evRx"></div>
     <label>Photos</label>
     <div class="photo-row" id="editPhotoRow"></div>` : ''}
     ${v.orderTaken?`
@@ -462,6 +464,7 @@ function openEditVisit(visitId){
   if(!v.orderOnly && !v.callOnly){
     window._editDocIds = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds.slice() : (v.doctorId ? [v.doctorId] : []);
     renderEditDocChips(visitId);
+    rxEditInit(v); // the pads given, per person met (06)
     renderEditPhotos(visitId);
   }
 }
@@ -476,9 +479,13 @@ function renderEditDocChips(visitId){
     : '<div style="color:var(--muted); font-size:12.5px;">No doctors on this clinic\'s profile yet — add them from the clinic page.</div>';
 }
 function toggleEditDoc(visitId, docId){
-  if(window._editDocIds.includes(docId)) window._editDocIds = window._editDocIds.filter(x=>x!==docId);
+  if(window._editDocIds.includes(docId)){
+    window._editDocIds = window._editDocIds.filter(x=>x!==docId);
+    rxDropPerson('edit', docId); // their pads go with them, and the sheet says so
+  }
   else window._editDocIds.push(docId);
   renderEditDocChips(visitId);
+  renderRxEdit();
 }
 function renderEditPhotos(visitId){
   const v = visits.find(x=>x.id===visitId);
@@ -528,13 +535,24 @@ async function saveEditVisit(visitId){
   const docsEl = document.getElementById('editDocChips');
   const prevDocIds = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
   const docsChanged = docsEl && JSON.stringify(window._editDocIds) !== JSON.stringify(prevDocIds);
-  const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || docsChanged || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
+  // Prescription pads given: what the sheet shows, through the one save path —
+  // only for people still marked as met; a type this phone does not know stays
+  // under the name it was saved with. An old cached core.js leaves them as they are.
+  const rxLive = !!(document.getElementById('evRx') && rxReady() && _rxEdit && _rxEdit.visitId === v.id);
+  const prevRx = rxLive ? UMCore.visitRxLines(v) : [];
+  const newRx = rxLive ? UMCore.cleanVisitRx(rxDraftLines('edit'), { types: rxTypes(), doctorIds: docsEl ? window._editDocIds : prevDocIds, keep: prevRx }) : prevRx;
+  const rxChanged = rxLive && UMCore.rxSig(newRx) !== UMCore.rxSig(prevRx);
+  const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || docsChanged || rxChanged || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
   if(changed){
     v.editHistory = v.editHistory || [];
-    v.editHistory.push({editedBy:currentUser.name, editedAt:Date.now(), prevDate:v.date, prevNotes:v.notes||'', prevFollowUp:v.nextFollowUp||null, prevTotal:v.orderTotal});
+    const was = {editedBy:currentUser.name, editedAt:Date.now(), prevDate:v.date, prevNotes:v.notes||'', prevFollowUp:v.nextFollowUp||null, prevTotal:v.orderTotal};
+    if(rxChanged) was.prevRx = prevRx;                   // what was given before (shown in the edit history)
+    if(docsChanged) was.prevDoctorIds = prevDocIds.slice(); // who was met before
+    v.editHistory.push(was);
   }
   if(jointEl) v.withRep = newJoint===v.rep ? null : newJoint;
   if(docsEl){ v.doctorIds = window._editDocIds.slice(); v.doctorId = v.doctorIds[0] || null; }
+  if(rxChanged){ if(newRx.length) v.rx = newRx; else delete v.rx; } // never an empty list (absent = none)
   v.date = newDate;
   v.nextFollowUp = newFollow;
   v.notes = newNotes;
@@ -564,17 +582,28 @@ async function saveEditVisit(visitId){
     if(v.nextFollowUp) clinic.nextFollowUp = v.nextFollowUp;
     else if(followChanged && (clinic.nextFollowUp||null) === (prevFollow||null)) clinic.nextFollowUp = null; // the follow-up this visit had set was cleared
   }
-  await Promise.all([persist('visits'), persist('clinics')]);
+  const [okVisits] = await Promise.all([persist('visits'), persist('clinics')]);
   // The auto-created follow-up task and day-plan entry follow the new date.
   if(clinic && followChanged) await scheduleFollowUp(clinic, v.nextFollowUp, v.rep);
   closeModal();
-  showToast('✅ Changes saved');
+  // What the save actually did — always our own message (the offline notice
+  // is shown at most once a minute, and "saved" must never cover a failure).
+  const outcome = persistOutcome('visits');
+  if(okVisits) showToast('✅ Changes saved');
+  else if(outcome.queued && outcome.mirrored) showToast('📴 Changes kept on this device — they upload automatically when back online');
+  else showToast('⚠️ Changes not saved on this device (storage full) — keep the app open until they upload');
   renderAll();
   if(document.getElementById('vlBody')) renderVisitLog();
 }
 function showEditHistory(visitId){
   const v = visits.find(x=>x.id===visitId);
   if(!v || !v.editHistory || !v.editHistory.length) return;
+  const c = clinics.find(x=>x.id===v.clinicId);
+  // Who was met before an edit: names from the clinic's list, never dropped silently.
+  const metWas = ids => (Array.isArray(ids) ? ids : []).map(id => {
+    const d = ((c && c.doctors) || []).find(x => x && x.id === id);
+    return d ? `<span dir="auto">${esc(d.name)}</span>` : '<span>A doctor no longer listed</span>';
+  }).join(', ') || '<span>None</span>';
   showModal(`
     <h3 style="margin-top:0;">Edit history</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">What this visit looked like before each edit.</p>
@@ -582,6 +611,8 @@ function showEditHistory(visitId){
       <div class="clinic-sub" style="margin-bottom:6px;">Edited by <strong>${esc(h.editedBy)}</strong> · ${fmtWhen(h.editedAt)}</div>
       <div style="font-size:13px;">Was: ${fmtDate(h.prevDate)}${h.prevTotal?' · '+money(h.prevTotal):''}${h.prevFollowUp?' · next follow-up '+fmtDate(h.prevFollowUp):''}</div>
       ${h.prevNotes?`<div style="font-size:12.5px; color:var(--muted); margin-top:4px;">"${esc(h.prevNotes)}"</div>`:''}
+      ${Array.isArray(h.prevDoctorIds)?`<div style="font-size:12.5px; margin-top:6px;"><span>Doctors met were:</span> ${metWas(h.prevDoctorIds)}</div>`:''}
+      ${Array.isArray(h.prevRx)?`<div style="font-size:12.5px; margin-top:6px;"><span>Prescriptions were:</span>${rxLinesHTML({ rx: h.prevRx }, c) || ' <span>None</span>'}</div>`:''}
     </div>`).join('')}
   `);
 }
@@ -594,6 +625,7 @@ function confirmDeleteVisit(visitId){
     <div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:14px;">
       <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}</div>
       <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}</div>
+      ${rxLinesHTML(v, c)}
       ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
     </div>
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>

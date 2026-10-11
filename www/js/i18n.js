@@ -1524,7 +1524,79 @@
     'Offer a small starting order with a restock check-in — removes the risk of the first yes.': 'اعرض طلبية بداية صغيرة مع متابعة لإعادة التخزين — يزيل مخاطرة أول «نعم».',
     'Bring a one-page price and margin sheet. They need something to show the owner.': 'أحضر ورقة أسعار وهوامش من صفحة واحدة. يحتاجون شيئاً يعرضونه على المالك.',
     '"We already have too much stock sitting."': '«لدينا أصلاً مخزون كثير راكد.»',
-    'Then let’s not add to it — start with only the two fastest-moving items and see how they turn in a month. If they don’t move, we stop there.': 'إذن لا نزيد عليه — ابدأ بأسرع منتجَين حركة فقط وانظر كيف يدوران خلال شهر. إن لم يتحركا، نتوقف هناك.'
+    'Then let’s not add to it — start with only the two fastest-moving items and see how they turn in a month. If they don’t move, we stop there.': 'إذن لا نزيد عليه — ابدأ بأسرع منتجَين حركة فقط وانظر كيف يدوران خلال شهر. إن لم يتحركا، نتوقف هناك.',
+
+    // ---- prescriptions given on a visit (v114) ----
+    // The team's word for the printed forms is بريسكريبشن; they are counted in
+    // PADS (دفاتر). Type names and people are data: never keys here, always
+    // rendered with dir="auto" (the two built-in forms included).
+    // visit form (step 4)
+    'Prescriptions given?': 'سلّمت بريسكريبشن؟',
+    'the pads you left today': 'الدفاتر اللي سلّمتها اليوم',
+    'Pick the clinic in step 1 first.': 'اختر العيادة في الخطوة 1 أولاً.',
+    'Tap who you met in step 2 first — each person gets their own count.': 'اضغط على من قابلته في الخطوة 2 أولاً — لكل شخص عدده.',
+    'Tap who you met above first — each person gets their own count.': 'اضغط على من قابلته في الأعلى أولاً — لكل شخص عدده.',
+    'The clinic (no one person)': 'العيادة (بدون شخص محدد)',
+    '+ Left at the clinic (no one person)': '+ تُرك في العيادة (بدون شخص محدد)',
+    'A doctor no longer listed': 'طبيب لم يعد في القائمة',
+    'a doctor no longer listed': 'طبيب لم يعد في القائمة',
+    '(retired)': '(موقوف)',
+    'pads': 'دفاتر',
+    'Edit types': 'تعديل الأنواع',
+    'Prescription types did not load — only the two built-in forms are shown. Reopen the app when you are online.': 'لم تُحمَّل أنواع البريسكريبشن — يظهر النموذجان الأساسيان فقط. أعد فتح التطبيق عند توفر الاتصال.',
+    'No prescription type is active — ask the supervisor to add one.': 'لا يوجد نوع بريسكريبشن فعّال — اطلب من المشرف إضافة نوع.',
+    'Reopen the app to finish updating — prescriptions can be logged after that.': 'أعد فتح التطبيق لإكمال التحديث — بعدها تقدر تسجّل البريسكريبشن.',
+    'Pads typed for that person were cleared': 'انمسحت الدفاتر اللي أدخلتها لهذا الشخص',
+    'Pads typed for the previous clinic were cleared': 'انمسحت الدفاتر اللي أدخلتها للعيادة السابقة',
+    // edit sheet, edit history, visit log
+    'Edit visit': 'تعديل الزيارة',
+    'Edit order': 'تعديل الطلبية',
+    'Prescriptions given': 'البريسكريبشن المسلَّم',
+    'Prescriptions were:': 'البريسكريبشن قبل التعديل:',
+    'Doctors met were:': 'من قابلتهم قبل التعديل:',
+    '📴 Changes kept on this device — they upload automatically when back online': '📴 التعديلات محفوظة على هذا الجهاز — تُرفع تلقائياً عند عودة الاتصال',
+    '⚠️ Changes not saved on this device (storage full) — keep the app open until they upload': '⚠️ لم تُحفظ التعديلات على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحاً حتى تُرفع',
+    'Prescription pads given': 'دفاتر البريسكريبشن المسلَّمة',
+    // Doctors page → Prescriptions
+    'Prescription types': 'أنواع البريسكريبشن',
+    'from zero': 'من الصفر',
+    'incomplete': 'ناقص',
+    'Week = Sunday to today, against the same days of last week. Month = day 1 to today, against the same days of last month.': 'الأسبوع = من الأحد إلى اليوم، مقابل نفس الأيام من الأسبوع الماضي. الشهر = من يوم 1 إلى اليوم، مقابل نفس الأيام من الشهر الماضي.',
+    'Counted in pads from the visits, plus older entries on doctor profiles — for the doctors of these clinics, whoever handed them over.': 'محسوب بالدفاتر من الزيارات مع الإدخالات القديمة في ملفات الأطباء — لأطباء هذه العيادات أياً كان من سلّمها.',
+    'By type': 'حسب النوع',
+    'By doctor': 'حسب الطبيب',
+    'By center': 'حسب العيادة',
+    'Type not recorded (doctor profile)': 'نوع غير مسجّل (من ملف الطبيب)',
+    'No prescription pads logged yet — they are logged with the visit.': 'لا توجد دفاتر بريسكريبشن مسجّلة بعد — تُسجَّل مع الزيارة.',
+    'No pads given to a named doctor yet.': 'لم تُسلَّم دفاتر لطبيب محدد بعد.',
+    'Export prescriptions (Excel)': 'تصدير البريسكريبشن (Excel)',
+    // doctor profile
+    'Prescription': 'بريسكريبشن',
+    'Sample': 'عينة',
+    'Gift': 'هدية',
+    'Prescriptions are logged with the visit.': 'البريسكريبشن يُسجَّل مع الزيارة.',
+    'from the visit — edit it there': 'من الزيارة — عدّله من هناك',
+    '📴 Handover kept on this device — it uploads automatically when back online': '📴 التسليم محفوظ على هذا الجهاز — يُرفع تلقائياً عند عودة الاتصال',
+    '⚠️ Handover not saved on this device (storage full) — keep the app open until it uploads': '⚠️ لم يُحفظ التسليم على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحاً حتى يُرفع',
+    '⚠️ Not saved — the handover was not added. Try again with a connection.': '⚠️ لم يُحفظ — لم يُضف التسليم. أعد المحاولة مع اتصال بالإنترنت.',
+    // the supervisor's types editor
+    'The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.': 'نماذج البريسكريبشن المطبوعة اللي نسلّمها للأطباء. المندوبة تختار النوع عند تسجيل الزيارة.',
+    'Type name': 'اسم النوع',
+    'e.g. Orthodontic prescription': 'مثال: بريسكريبشن التقويم',
+    '+ Add a type': '+ إضافة نوع',
+    'Retire': 'إيقاف',
+    'Retired types': 'الأنواع الموقوفة',
+    'Hidden from the visit form. Visits already logged keep it.': 'لا يظهر في نموذج الزيارة، والزيارات المسجّلة تحتفظ به.',
+    'Renaming changes the name on every visit already logged under this type — rename only to correct the name of the same printed form. A different form is a new type.': 'تغيير الاسم يغيّره في كل الزيارات المسجّلة بهذا النوع — غيّره فقط لتصحيح اسم النموذج نفسه. النموذج المختلف نوع جديد.',
+    'Not set up yet — reps see the two built-in forms.': 'لم تُحدَّد بعد — المندوبات يرين النموذجين الأساسيين.',
+    'Keep at least one active type': 'أبقِ نوعاً واحداً فعّالاً على الأقل',
+    'Every type needs a name': 'كل نوع يحتاج اسماً',
+    'Two types have the same name': 'يوجد نوعان بالاسم نفسه',
+    'A name can be up to 40 characters': 'الاسم 40 حرفاً كحد أقصى',
+    '✅ Prescription types saved': '✅ حُفظت أنواع البريسكريبشن',
+    'Not saved — check the connection and tap Save again.': 'لم يُحفظ — تحقّق من الاتصال واضغط «حفظ» مرة أخرى.',
+    'Changed on another device — reopened with the latest list. Nothing was saved.': 'تغيّرت القائمة من جهاز آخر — فُتحت بآخر نسخة، ولم يُحفظ شيء.',
+    'No answer from the cloud yet — reopen the list in a minute to see whether it was saved.': 'لا رد من السحابة بعد — افتح القائمة بعد دقيقة لتتأكد إن كانت حُفظت.'
   };
 
   // Clinic lists inside coach sentences: "Bayan Dental (never visited), Salam Clinic (12d) +3 more"
@@ -1538,6 +1610,17 @@
     ' (app-logged — upload a sales file for the official figure)': ' (مسجل في التطبيق — ارفع ملف مبيعات للرقم الرسمي)'
   };
   function srcAr(x) { return x ? (SRC[x] || x) : ''; }
+  // Prescription pads (دفاتر) with Arabic number agreement, as the owner
+  // asked: 1 دفتر، 2 دفتران، 3–10 دفاتر، 11–99 دفتراً — and beyond 99 by the
+  // last two digits, the usual rule for a counted noun (100 دفتر، 103 دفاتر،
+  // 111 دفتراً).
+  function padsAr(s) {
+    var n = parseInt(s, 10), r = n % 100;
+    if (n === 2) return '2 دفتران';
+    if (r >= 3 && r <= 10) return n + ' دفاتر';
+    if (r >= 11) return n + ' دفتراً';
+    return n + ' دفتر';
+  }
   var MONEY = '([\\d.,]+ KD)';
   var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure)\\))?';
 
@@ -1698,7 +1781,17 @@
     [/^Reliable follow-through — (\d+) of (\d+) tasks completed \((\d+)%\)\.$/, function (m) { return 'متابعة موثوقة — ' + m[1] + ' من ' + m[2] + ' مهمة مكتملة (' + m[3] + '%).'; }],
     [/^Latest ERP data covers up to (.+?) \((\d+) days ago\)\. Import this week's file to keep coaching based on real invoices\. Tap to import →$/, function (m) { return 'آخر بيانات ERP تغطي حتى ' + m[1] + ' (قبل ' + m[2] + ' يوماً). استورد ملف هذا الأسبوع ليبقى التوجيه مبنياً على فواتير حقيقية. اضغط للاستيراد ←'; }],
     // a long list shows its first 40 (ERP account links, the clinic picker)
-    [/^Showing (\d+) of (\d+) — search to find the others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — ابحث لإيجاد البقية'; }]
+    [/^Showing (\d+) of (\d+) — search to find the others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — ابحث لإيجاد البقية'; }],
+    // prescriptions given on a visit (v114): counted in pads
+    [/^(\d+) pads?$/, function (m) { return padsAr(m[1]); }],
+    [/^(\d+) pads? this month$/, function (m) { return padsAr(m[1]) + ' هذا الشهر'; }],
+    [/^(\d+) pads? logged$/, function (m) { return 'سُجّل ' + padsAr(m[1]); }],
+    [/^Same days last week: (\d+|—)$/, function (m) { return 'نفس الأيام من الأسبوع الماضي: ' + m[1]; }],
+    [/^Same days last month: (\d+|—)$/, function (m) { return 'نفس الأيام من الشهر الماضي: ' + m[1]; }],
+    [/^incl\. (\d+) pads? left at the clinic$/, function (m) { return 'منها ' + padsAr(m[1]) + ' للعيادة (بدون شخص محدد)'; }],
+    [/^incl\. (\d+) pads? to a doctor no longer listed$/, function (m) { return 'منها ' + padsAr(m[1]) + ' لطبيب لم يعد في القائمة'; }],
+    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }],
+    [/^Last changed by (.+) · (.+)$/, function (m) { return 'آخر تعديل: ' + m[1] + ' · ' + m[2]; }]
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
