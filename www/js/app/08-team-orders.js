@@ -536,11 +536,13 @@ async function saveEditVisit(visitId){
   const prevDocIds = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
   const docsChanged = docsEl && JSON.stringify(window._editDocIds) !== JSON.stringify(prevDocIds);
   // Prescription pads given: what the sheet shows, through the one save path —
-  // only for people still marked as met; a type this phone does not know stays
-  // under the name it was saved with. An old cached core.js leaves them as they are.
+  // for the people marked as met and for anyone who already had pads on the
+  // visit (the sheet shows them "not marked as met"; their pads leave only by
+  // the explicit drop or a count set to 0); a type this phone does not know
+  // stays under the name it was saved with. An old cached core.js leaves them as they are.
   const rxLive = !!(document.getElementById('evRx') && rxReady() && _rxEdit && _rxEdit.visitId === v.id);
   const prevRx = rxLive ? UMCore.visitRxLines(v) : [];
-  const newRx = rxLive ? UMCore.cleanVisitRx(rxDraftLines('edit'), { types: rxTypes(), doctorIds: docsEl ? window._editDocIds : prevDocIds, keep: prevRx }) : prevRx;
+  const newRx = rxLive ? UMCore.cleanVisitRx(rxDraftLines('edit'), { types: rxTypes(), doctorIds: rxEditPeople(), keep: prevRx }) : prevRx;
   const rxChanged = rxLive && UMCore.rxSig(newRx) !== UMCore.rxSig(prevRx);
   const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || docsChanged || rxChanged || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
   if(changed){
@@ -582,14 +584,18 @@ async function saveEditVisit(visitId){
     if(v.nextFollowUp) clinic.nextFollowUp = v.nextFollowUp;
     else if(followChanged && (clinic.nextFollowUp||null) === (prevFollow||null)) clinic.nextFollowUp = null; // the follow-up this visit had set was cleared
   }
-  const [okVisits] = await Promise.all([persist('visits'), persist('clinics')]);
+  // This save's own outcome, read the moment its visits write settles — the
+  // offline queue may send visits again while the follow-up step below runs,
+  // and that later save is not this one (persistFor / sentSince, 04).
+  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
   // The auto-created follow-up task and day-plan entry follow the new date.
   if(clinic && followChanged) await scheduleFollowUp(clinic, v.nextFollowUp, v.rep);
   closeModal();
   // What the save actually did — always our own message (the offline notice
   // is shown at most once a minute, and "saved" must never cover a failure).
-  const outcome = persistOutcome('visits');
-  if(okVisits) showToast('✅ Changes saved');
+  // Queued here and sent by the queue meanwhile = saved.
+  const outcome = vs.outcome;
+  if(vs.ok || sentSince('visits', vs)) showToast('✅ Changes saved');
   else if(outcome.queued && outcome.mirrored) showToast('📴 Changes kept on this device — they upload automatically when back online');
   else showToast('⚠️ Changes not saved on this device (storage full) — keep the app open until they upload');
   renderAll();

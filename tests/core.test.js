@@ -2772,6 +2772,23 @@ describe('UMI18N dictionary', () => {
     // the printed forms' names (the two built-in ones included) are never dictionary words
     core.RX_DEFAULT_TYPES.forEach(t => assert.equal(i18n.tr(t.name), null, t.name));
   });
+  // v114 review fixes: the types editor (an unread list, a late landing, a save
+  // finishing after Cancel) and the edit sheet's person not marked as met.
+  test('prescriptions given: the review fixes\' lines are in Arabic', () => {
+    // "Last changed by" is translated alone — the name and the date sit in their
+    // own isolated spans (one translated sentence split the date around a Latin name)
+    assert.equal(i18n.tr('Last changed by'), 'آخر تعديل:');
+    assert.equal(i18n.tr('Last changed by Dr. Ghaith · 1 أكتوبر'), null);
+    assert.equal(i18n.tr('(not marked as met)'), '(غير محدد ضمن من قابلتهم)');
+    assert.equal(i18n.tr('Try again'), 'إعادة المحاولة');
+    assert.match(i18n.tr('Loading the prescription types…'), /جارٍ تحميل أنواع البريسكريبشن/);
+    assert.match(i18n.tr('The prescription types could not be loaded — saving is paused until they load. Check the connection, then tap Try again.'), /^تعذّر تحميل أنواع البريسكريبشن — الحفظ متوقف/);
+    assert.match(i18n.tr('Your earlier save reached the cloud after all — reopened with the saved list. Nothing else was saved.'), /وصل حفظك السابق إلى السحابة/);
+    assert.match(i18n.tr('Your earlier save reached the cloud after all — nothing else was saved.'), /وصل حفظك السابق إلى السحابة/);
+    assert.equal(i18n.tr('Changed on another device — nothing was saved.'), 'تغيّرت القائمة من جهاز آخر — ولم يُحفظ شيء.');
+    assert.match(i18n.tr('Prescription types not saved — check the connection and make the change again.'), /لم تُحفظ أنواع البريسكريبشن/);
+    assert.match(i18n.tr('The previous save is still on its way — tap Save again in a moment.'), /الحفظ السابق ما زال جارياً/);
+  });
 });
 
 describe('contact workbook import', () => {

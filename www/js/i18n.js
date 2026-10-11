@@ -1596,7 +1596,19 @@
     '✅ Prescription types saved': '✅ حُفظت أنواع البريسكريبشن',
     'Not saved — check the connection and tap Save again.': 'لم يُحفظ — تحقّق من الاتصال واضغط «حفظ» مرة أخرى.',
     'Changed on another device — reopened with the latest list. Nothing was saved.': 'تغيّرت القائمة من جهاز آخر — فُتحت بآخر نسخة، ولم يُحفظ شيء.',
-    'No answer from the cloud yet — reopen the list in a minute to see whether it was saved.': 'لا رد من السحابة بعد — افتح القائمة بعد دقيقة لتتأكد إن كانت حُفظت.'
+    'No answer from the cloud yet — reopen the list in a minute to see whether it was saved.': 'لا رد من السحابة بعد — افتح القائمة بعد دقيقة لتتأكد إن كانت حُفظت.',
+    // the label alone: the name and the date beside it are data in their own isolated spans
+    'Last changed by': 'آخر تعديل:',
+    'Loading the prescription types…': 'جارٍ تحميل أنواع البريسكريبشن…',
+    'The prescription types could not be loaded — saving is paused until they load. Check the connection, then tap Try again.': 'تعذّر تحميل أنواع البريسكريبشن — الحفظ متوقف حتى تُحمَّل. تحقّق من الاتصال ثم اضغط «إعادة المحاولة».',
+    'Try again': 'إعادة المحاولة',
+    'Your earlier save reached the cloud after all — reopened with the saved list. Nothing else was saved.': 'وصل حفظك السابق إلى السحابة — فُتحت القائمة كما حُفظت، ولم يُحفظ شيء آخر.',
+    'Your earlier save reached the cloud after all — nothing else was saved.': 'وصل حفظك السابق إلى السحابة — ولم يُحفظ شيء آخر.',
+    'Changed on another device — nothing was saved.': 'تغيّرت القائمة من جهاز آخر — ولم يُحفظ شيء.',
+    'Prescription types not saved — check the connection and make the change again.': 'لم تُحفظ أنواع البريسكريبشن — تحقّق من الاتصال وأعد التعديل.',
+    'The previous save is still on its way — tap Save again in a moment.': 'الحفظ السابق ما زال جارياً — اضغط «حفظ» مرة أخرى بعد قليل.',
+    // the edit sheet: someone with pads on the visit who is not (or no longer) marked as met
+    '(not marked as met)': '(غير محدد ضمن من قابلتهم)'
   };
 
   // Clinic lists inside coach sentences: "Bayan Dental (never visited), Salam Clinic (12d) +3 more"
@@ -1790,8 +1802,7 @@
     [/^Same days last month: (\d+|—)$/, function (m) { return 'نفس الأيام من الشهر الماضي: ' + m[1]; }],
     [/^incl\. (\d+) pads? left at the clinic$/, function (m) { return 'منها ' + padsAr(m[1]) + ' للعيادة (بدون شخص محدد)'; }],
     [/^incl\. (\d+) pads? to a doctor no longer listed$/, function (m) { return 'منها ' + padsAr(m[1]) + ' لطبيب لم يعد في القائمة'; }],
-    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }],
-    [/^Last changed by (.+) · (.+)$/, function (m) { return 'آخر تعديل: ' + m[1] + ' · ' + m[2]; }]
+    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }]
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
