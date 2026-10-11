@@ -12,7 +12,7 @@ function renderLogHistory(){
       <div class="row-between">
         <div>
           <div class="clinic-name" style="font-size:13.5px;">${v.callOnly?(CHANNEL_LABELS[v.channel]||'📞')+' ':''}${v.orderOnly?'🛒 ':''}${esc(clinicNameOf(v.clinicId))}</div>
-          <div class="clinic-sub">${fmtDate(v.date)} · ${esc(v.rep)}${jointTag(v)}${v.orderTaken?' · '+money(v.orderTotal):''}</div>
+          <div class="clinic-sub">${fmtDate(v.date)} · ${esc(v.rep)}${jointTag(v)}${v.orderTaken?' · '+money(v.orderTotal):''}${rxShortHTML(v)}</div>
         </div>
         ${canEditVisit(v)?`<button class="chip small" onclick="openEditVisit('${v.id}')">${I('pencil')}</button>`:''}
       </div>
@@ -45,6 +45,7 @@ function prepLogView(qClinicId){
   renderJointChips();
   selectedClinicId = qClinicId || null;
   selectedDoctorIds = [];
+  rxOn = false; rxDrafts.log = {}; // a new form starts at "No", nothing typed (drawn by renderClinicSelect below)
   newClinicMode = false;
   document.getElementById('clinicSearchLog').value='';
   document.getElementById('newClinicFields').style.display='none';
@@ -126,6 +127,7 @@ function renderClinicSelect(qClinicId){
   document.getElementById('doctorPickChips').innerHTML =
     `<div style="color:rgba(255,255,255,.5); font-size:12.5px; padding:2px 0 4px;">Pick the clinic in step 1 first — its doctors will appear here to tap.</div>`;
   document.getElementById('docTipLink').innerHTML = '';
+  renderRxStep();
 
   const mine = clinics.filter(c=>c.rep===logAsRep && c.cls!=='Closed');
   const others = currentUser.role==='supervisor' ? clinics.filter(c=>c.rep!==logAsRep && c.cls!=='Closed') : [];
@@ -175,6 +177,7 @@ function sellHintLine(c){
 function clearClinicPick(){
   selectedClinicId = null;
   selectedDoctorIds = [];
+  rxClearDraft('log'); // the pads typed were for that clinic's people
   document.getElementById('clinicSearchLog').value='';
   renderClinicSelect();
 }
@@ -186,9 +189,11 @@ function startNewClinic(){
   document.getElementById('newClinicBtn').style.display='none';
   document.getElementById('newClinicClsChips').innerHTML = ['A','B','C','D','F'].map(c=>`<div class="chip small" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('');
   document.getElementById('newClinicAcctChips').innerHTML = ACCOUNT_TYPES.map(a=>`<div class="chip small" data-acct="${a}" onclick="pickModalCls(this)">${a}</div>`).join('');
+  renderRxStep(); // a new customer has no people on file yet: only "the clinic (no one person)"
 }
 function cancelNewClinic(){
   newClinicMode = false;
+  rxClearDraft('log');
   document.getElementById('newClinicFields').style.display='none';
   renderClinicSelect();
 }
@@ -211,9 +216,13 @@ function renderDoctorPick(c){
       <div style="font-size:12.5px; color:${pb.color}; font-weight:600; margin-top:6px;">Open full playbook ›</div>
     </div>`;
   } else { tip.innerHTML=''; }
+  renderRxStep(); // one block per person met
 }
 function pickDoctorSeen(id){
-  if(selectedDoctorIds.includes(id)) selectedDoctorIds = selectedDoctorIds.filter(x=>x!==id);
+  if(selectedDoctorIds.includes(id)){
+    selectedDoctorIds = selectedDoctorIds.filter(x=>x!==id);
+    rxDropPerson('log', id); // a person un-tapped takes the pads typed for them along (like a deselected product)
+  }
   else selectedDoctorIds.push(id);
   const c = clinics.find(x=>x.id===selectedClinicId);
   if(c) renderDoctorPick(c);
@@ -505,15 +514,26 @@ async function saveVisit(){
     for(const ph of visitPhotos){ if(await savePhotoBlob(ph.id, ph.full)) ids.push({id:ph.id, thumb:ph.thumb}); }
     visit.photos = ids;
   }
+  // Prescription pads given: only what was typed for the people met (or the
+  // clinic), whole pads, known types — cleaned by the one save path. "Yes"
+  // with every count at 0 stores nothing, like an order with no items. An
+  // old cached core.js (no helpers) saves the visit without them.
+  if(rxOn && rxReady()){
+    const rx = UMCore.cleanVisitRx(rxDraftLines('log'), { types: rxTypes(), doctorIds: visit.doctorIds });
+    if(rx.length) visit.rx = rx;
+  }
   const clinic = clinics.find(c=>c.id===clinicId);
   visits.push(visit);
   if(clinic){ clinic.lastVisit = todayStr(); clinic.nextFollowUp = followUp; }
 
-  const [okVisits] = await Promise.all([persist('visits'), persist('clinics')]);
+  // This save's own outcome, read the moment its visits write settles: the
+  // offline queue may send visits again while the follow-up step runs, and
+  // that later save is not this one (persistFor / sentSince, 04).
+  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
   if(navigator.vibrate) navigator.vibrate(12); // a small physical "saved" cue in the field
-  const outcome = persistOutcome('visits');
-  if(okVisits) showToast(visitSavedMsg());
+  const outcome = vs.outcome;
+  if(vs.ok || sentSince('visits', vs)) showToast(visitSavedMsg()); // queued here, sent by the queue meanwhile = saved
   else if(outcome.queued && outcome.mirrored) showToast('📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال');
   else showToast('⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال');
   renderAll();
@@ -603,3 +623,290 @@ function renderMoodChips(){
   el.innerHTML = VISIT_MOODS.map(([k, l]) => `<div class="chip small ${visitMood === k ? 'on' : ''}" onclick="pickMood('${k}')">${l}</div>`).join('');
 }
 function pickMood(k){ visitMood = visitMood === k ? null : k; renderMoodChips(); }
+
+// ---- PRESCRIPTIONS GIVEN (v114) ----
+// The printed prescription forms left on a field visit, counted in PADS — the
+// owner's unit (sheets per pad are not known, so nothing is ever converted).
+// Step 4 of the form, "Prescriptions given?": No by default; on Yes one block
+// per person met — or "the clinic (no one person)" for forms left at reception
+// and for a new customer — and one row per active type, each with a stepper.
+// Stored on the visit as v.rx = [{type, name, qty, doctorId|null}] by
+// UMCore.cleanVisitRx; every screen reads it back through UMCore.visitRxLines
+// and every figure is counted from UMCore.rxLedger: one path each, so the same
+// pads are never counted twice. Calls and phone orders have no such step.
+let rxOn = false;
+// What is typed, per scope ('log' = the visit form, 'edit' = the edit sheet):
+// { personKey: { typeId: pads } }. personKey '' = the clinic (no one person);
+// its presence means its block is shown. Edited in place, so the 20-second
+// refresh (which redraws only the history on this tab) never loses it.
+const rxDrafts = { log: {}, edit: {} };
+// the edit sheet: { visitId, clinicId, names: {typeId: the name saved on the visit},
+//   held: the people who already had pads on the visit when the sheet opened, in line order }
+let _rxEdit = null;
+const RX_STALE_MSG = 'Reopen the app to finish updating — prescriptions can be logged after that.';
+// An old cached core.js (the v102 lesson) has none of the helpers: the step
+// then says so and the visit still saves, without prescriptions.
+function rxReady(){
+  return typeof UMCore === 'object' && UMCore !== null &&
+    ['visitRxLines', 'cleanVisitRx', 'rxTypeList', 'rxLedger'].every(f => typeof UMCore[f] === 'function');
+}
+// The supervisor's types (the owner's two printed forms until he saves his own).
+function rxTypes(){ return rxReady() ? UMCore.rxTypeList(rxTypesDoc) : []; }
+function rxActiveTypes(){ return rxTypes().filter(t => t.active); }
+// A type's name on screen: its current name by id, else the name saved on the
+// line. Type names are the printed forms' own names — data, always shown in a
+// dir="auto" span so they are never translated (a type called "Other" must not
+// turn into أخرى), the two built-in forms included.
+function rxTypeNameOf(id, snapshot){
+  if(rxReady() && typeof UMCore.rxTypeName === 'function') return UMCore.rxTypeName(id, rxTypes(), snapshot);
+  return String(snapshot || 'Prescription');
+}
+function rxPadsText(n){ return n + (n === 1 ? ' pad' : ' pads'); }
+const _rxHas = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+// Who got the pads: a doctor (data), the clinic, or a doctor no longer on the
+// clinic's list — never dropped silently.
+function rxWhoHTML(key, clinic){
+  if(key === '' || key == null) return '<span>The clinic (no one person)</span>';
+  const d = ((clinic && clinic.doctors) || []).find(x => x && x.id === key);
+  return d ? `<span dir="auto">${esc(d.name)}</span>` : '<span>A doctor no longer listed</span>';
+}
+function rxClinic(scope){
+  const id = scope === 'edit' ? (_rxEdit && _rxEdit.clinicId) : selectedClinicId;
+  return id ? clinics.find(c => c.id === id) || null : null;
+}
+// The people who can be given pads in this scope, in the order met, then the
+// clinic when its block was added (or, for a new customer, only the clinic).
+// The edit sheet also keeps anyone who already had pads on the visit without
+// being marked as met (rxEditUnmet). null = no clinic picked yet.
+function rxRecipients(scope){
+  const draft = rxDrafts[scope] || {};
+  let keys;
+  if(scope === 'edit') keys = [...new Set((window._editDocIds || []).filter(id => id != null && id !== '').map(String))].concat(rxEditUnmet());
+  else if(newClinicMode) return [''];
+  else if(!selectedClinicId || !clinics.some(c => c.id === selectedClinicId)) return null;
+  else keys = [...new Set(selectedDoctorIds.map(String))];
+  if(_rxHas(draft, '')) keys.push('');
+  return keys;
+}
+function rxPrune(scope, recips){
+  const draft = rxDrafts[scope], keep = new Set(recips || []);
+  Object.keys(draft).forEach(k => { if(!keep.has(k)) delete draft[k]; });
+}
+function rxDraftTotal(scope, keys){
+  const draft = rxDrafts[scope] || {};
+  let n = 0;
+  (keys || Object.keys(draft)).forEach(k => { const b = draft[k]; if(b) Object.keys(b).forEach(t => { n += Number(b[t]) || 0; }); });
+  return n;
+}
+// The clinic changed (or the new-customer form was cancelled): the pads typed
+// were for the previous clinic's people — dropped, and said so.
+function rxClearDraft(scope){
+  const had = rxDraftTotal(scope) > 0;
+  rxDrafts[scope] = {};
+  if(had) showToast('Pads typed for the previous clinic were cleared');
+}
+// A person un-tapped takes the pads typed for them along, like a deselected
+// product leaves the order — and says so.
+function rxDropPerson(scope, id){
+  const draft = rxDrafts[scope];
+  if(!draft || !_rxHas(draft, id)) return;
+  const had = Object.keys(draft[id] || {}).some(t => (Number(draft[id][t]) || 0) > 0);
+  delete draft[id];
+  if(had) showToast('Pads typed for that person were cleared');
+}
+function setRx(on){ rxOn = !!on; renderRxStep(); }
+function rxNoteHTML(id, text, light){
+  return `<div id="${id}" class="card" style="padding:9px 12px; margin-bottom:8px; font-size:12.5px; line-height:1.45; background:var(--amber-dim); color:var(--amber-ink);${light ? '' : ' box-shadow:none;'}">${text}</div>`;
+}
+// The visit form's step: Yes/No, then the blocks (or what to do first).
+function renderRxStep(){
+  const box = document.getElementById('rxBlocks');
+  if(!box) return;
+  const yes = document.getElementById('rxYes'), no = document.getElementById('rxNo');
+  if(yes) yes.classList.toggle('on', rxOn);
+  if(no) no.classList.toggle('on', !rxOn);
+  const recips = rxRecipients('log');
+  rxPrune('log', recips);
+  box.style.display = rxOn ? 'block' : 'none';
+  if(!rxOn){ box.innerHTML = ''; return; }
+  const hint = t => `<div class="rx-hint" style="color:rgba(255,255,255,.6); font-size:12.5px; padding:2px 0 8px;">${t}</div>`;
+  if(!rxReady()){ box.innerHTML = rxNoteHTML('rxStaleNote', RX_STALE_MSG); return; }
+  if(recips === null){ box.innerHTML = hint('Pick the clinic in step 1 first.'); return; }
+  let html = '';
+  if(_loadFailed.rxTypes && !rxTypesDoc) html += rxNoteHTML('rxTypesNote', 'Prescription types did not load — only the two built-in forms are shown. Reopen the app when you are online.');
+  if(!rxActiveTypes().length) html += rxNoteHTML('rxNoActiveNote', 'No prescription type is active — ask the supervisor to add one.');
+  if(!recips.length) html += hint('Tap who you met in step 2 first — each person gets their own count.');
+  html += rxBlocksHTML('log', recips, rxClinic('log'));
+  const foot = [];
+  if(!newClinicMode && !recips.includes('')) foot.push(`<button type="button" class="chip small" id="rxAddClinic-log" onclick="rxAddClinic('log')">+ Left at the clinic (no one person)</button>`);
+  if(currentUser && currentUser.role === 'supervisor') foot.push(`<button type="button" class="chip small" id="rxEditTypes" onclick="openRxTypes()">${I('pencil')} Edit types</button>`);
+  if(foot.length) html += `<div class="chip-row" style="margin:2px 0 4px;">${foot.join('')}</div>`;
+  html += `<div id="rxTotal-log" style="color:#fff; font-size:13px; text-align:end; margin:4px 2px 2px;">${rxTotalHTML('log')}</div>`;
+  box.innerHTML = html;
+}
+// One block per recipient, shared by the form and the edit sheet: a row per
+// active type, plus any type this person already has pads of (a retired one
+// marked so, one this phone does not know under the name saved on the visit).
+function rxBlocksHTML(scope, recips, clinic){
+  const list = rxTypes(), byId = {};
+  list.forEach(t => { byId[t.id] = t; });
+  const active = list.filter(t => t.active).map(t => t.id);
+  const draft = rxDrafts[scope] || {};
+  // the edit sheet: a doctor on the clinic's list who has pads on the visit but
+  // is not marked as met says so ("A doctor no longer listed" says enough)
+  const listed = new Set(((clinic && clinic.doctors) || []).filter(d => d && d.id != null).map(d => String(d.id)));
+  const unmet = new Set(scope === 'edit' ? rxEditUnmet().filter(id => listed.has(id)) : []);
+  return (recips || []).map(key => {
+    const b = draft[key] || {};
+    const ids = active.slice();
+    Object.keys(b).forEach(id => { if(!ids.includes(id) && ((Number(b[id]) || 0) > 0 || !byId[id] || !byId[id].active)) ids.push(id); });
+    return `<div class="card rx-doc" data-rx-scope="${scope}" data-rx-doc="${esc(key)}" style="padding:6px 12px 4px; margin-bottom:8px;">
+      <div class="rx-who" style="font-weight:700; font-size:13.5px; padding:4px 0 2px; overflow-wrap:anywhere;">${rxWhoHTML(key, clinic)}${unmet.has(key) ? ' <span class="rx-unmet" style="color:var(--muted); font-weight:500; font-size:11.5px; white-space:nowrap;">(not marked as met)</span>' : ''}</div>
+      ${ids.map(id => rxRowHTML(scope, key, id, byId[id], Number(b[id]) || 0)).join('')}
+    </div>`;
+  }).join('');
+}
+function rxRowHTML(scope, key, id, t, q){
+  const name = t ? t.name : rxTypeNameOf(id, scope === 'edit' && _rxEdit ? _rxEdit.names[id] : '');
+  return `<div class="qty-row" data-rx-type="${esc(id)}">
+      <div class="pname" style="min-width:0; overflow-wrap:anywhere;"><span dir="auto">${esc(name)}</span>${t && !t.active ? ' <span style="color:var(--muted); font-size:11.5px; white-space:nowrap;">(retired)</span>' : ''}</div>
+      <div class="stepper" style="flex-shrink:0;">
+        <button type="button" class="rx-minus" onclick="rxBumpEl(this,-1)" ${q <= 0 ? 'disabled' : ''} aria-label="less">−</button>
+        <input class="val rx-qty" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="999" step="1" value="${q}" id="${esc('rxq-' + scope + '-' + (key || '_') + '-' + id)}" aria-label="pads"
+          onfocus="this.select()" oninput="rxSetLiveEl(this)" onchange="rxSettleEl(this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
+        <button type="button" class="rx-plus" onclick="rxBumpEl(this,1)" aria-label="more">+</button>
+      </div>
+    </div>`;
+}
+// The box, its minus button and the total are updated IN PLACE — rebuilding
+// the block here would swallow the tap that follows (the +, the next box).
+function rxCtx(el){
+  const row = el && el.closest ? el.closest('[data-rx-type]') : null, blk = row ? row.closest('[data-rx-doc]') : null;
+  return row && blk ? { scope: blk.dataset.rxScope, key: blk.dataset.rxDoc, type: row.dataset.rxType, row } : null;
+}
+function rxGet(scope, key, type){ const b = rxDrafts[scope] && rxDrafts[scope][key]; return b ? (Number(b[type]) || 0) : 0; }
+function rxPut(scope, key, type, q){
+  const draft = rxDrafts[scope]; if(!draft) return;
+  (draft[key] || (draft[key] = {}))[type] = q;
+}
+function rxRefresh(scope, row, q, rewrite){
+  const input = row && row.querySelector('input.rx-qty'), minus = row && row.querySelector('button.rx-minus');
+  if(rewrite && input && input.value !== String(q)) input.value = q;
+  if(minus) minus.disabled = q <= 0;
+  const tot = document.getElementById('rxTotal-' + scope);
+  if(tot) tot.innerHTML = rxTotalHTML(scope);
+}
+function rxBump(scope, key, type, d, row){
+  const q = UMCore.rxQty(rxGet(scope, key, type) + d);
+  rxPut(scope, key, type, q);
+  rxRefresh(scope, row, q, true);
+}
+function rxBumpEl(el, d){ const x = rxCtx(el); if(x) rxBump(x.scope, x.key, x.type, d, x.row); }
+// While typing: keep the box as typed (focus, caret), follow the total only.
+function rxSetLive(scope, key, type, val, row){
+  if(String(val).trim() === '') return; // cleared to retype — wait for the final value
+  const q = UMCore.rxQty(val);
+  rxPut(scope, key, type, q);
+  rxRefresh(scope, row, q, false);
+}
+function rxSetLiveEl(el){ const x = rxCtx(el); if(x) rxSetLive(x.scope, x.key, x.type, el.value, x.row); }
+// On leaving the box: whole pads, never negative, at most 999 — shown as kept.
+function rxSettle(scope, key, type, el, row){
+  const q = UMCore.rxQty(el.value);
+  rxPut(scope, key, type, q);
+  rxRefresh(scope, row, q, true);
+}
+function rxSettleEl(el){ const x = rxCtx(el); if(x) rxSettle(x.scope, x.key, x.type, el, x.row); }
+function rxTotalHTML(scope){
+  const n = rxDraftTotal(scope, rxRecipients(scope) || []);
+  return n > 0 ? `<span>Total</span> <b>${rxPadsText(n)}</b>` : '';
+}
+function rxAddClinic(scope){
+  if(!_rxHas(rxDrafts[scope], '')) rxDrafts[scope][''] = {};
+  if(scope === 'edit') renderRxEdit(); else renderRxStep();
+}
+// What was typed, as lines for UMCore.cleanVisitRx: current recipients only.
+function rxDraftLines(scope){
+  const draft = rxDrafts[scope] || {}, out = [];
+  (rxRecipients(scope) || []).forEach(k => {
+    const b = draft[k]; if(!b) return;
+    Object.keys(b).forEach(t => { const q = Number(b[t]) || 0; if(q > 0) out.push({ type: t, qty: q, doctorId: k || null }); });
+  });
+  return out;
+}
+// ---- the edit sheet (08: openEditVisit / toggleEditDoc / saveEditVisit) ----
+// Every person who has pads on the visit gets a block, also someone no longer
+// marked as met (a phone on an older version un-tapped them, or a doctor record
+// was merged or removed): shown "(not marked as met)" — or "A doctor no longer
+// listed" — and kept on save. Their pads go only through the explicit drop
+// (tap them as met, then un-tap: rxDropPerson, with its toast) or by setting
+// the counts to 0 — never silently because the sheet did not show them.
+function rxEditInit(v){
+  _rxEdit = { visitId: v.id, clinicId: v.clinicId, names: {}, held: [] };
+  rxDrafts.edit = {};
+  if(rxReady()) UMCore.visitRxLines(v).forEach(l => {
+    const k = l.doctorId == null ? '' : String(l.doctorId);
+    const b = rxDrafts.edit[k] || (rxDrafts.edit[k] = {});
+    b[l.type] = UMCore.rxQty((Number(b[l.type]) || 0) + l.qty);
+    if(!_rxEdit.names[l.type] && l.name) _rxEdit.names[l.type] = l.name;
+    if(k !== '' && !_rxEdit.held.includes(k)) _rxEdit.held.push(k);
+  });
+  renderRxEdit();
+}
+// People with pads on the visit who are not (or no longer) marked as met in
+// the sheet, and whose pads were not dropped: their blocks stay.
+function rxEditUnmet(){
+  const met = new Set((window._editDocIds || []).filter(id => id != null).map(String)), draft = rxDrafts.edit || {};
+  return ((_rxEdit && _rxEdit.held) || []).filter(id => !met.has(id) && _rxHas(draft, id));
+}
+// Whose lines an edit may keep (UMCore.cleanVisitRx doctorIds): the people met
+// and everyone who already had pads on the visit.
+function rxEditPeople(){
+  const out = [...new Set((window._editDocIds || []).filter(id => id != null && id !== '').map(String))];
+  ((_rxEdit && _rxEdit.held) || []).forEach(id => { if(!out.includes(id)) out.push(id); });
+  return out;
+}
+function renderRxEdit(){
+  const el = document.getElementById('evRx');
+  if(!el) return;
+  if(!rxReady()){ el.innerHTML = rxNoteHTML('rxStaleNote', RX_STALE_MSG, true); return; }
+  const recips = rxRecipients('edit'); // the people met + anyone who still has pads on the visit
+  rxPrune('edit', recips);
+  let html = '';
+  if(!rxActiveTypes().length) html += rxNoteHTML('rxNoActiveNote', 'No prescription type is active — ask the supervisor to add one.', true);
+  if(!recips.length) html += `<div style="color:var(--muted); font-size:12.5px; padding:2px 0 6px;">Tap who you met above first — each person gets their own count.</div>`;
+  html += rxBlocksHTML('edit', recips, rxClinic('edit'));
+  if(!recips.includes('')) html += `<button type="button" class="chip small" id="rxAddClinic-edit" onclick="rxAddClinic('edit')">+ Left at the clinic (no one person)</button>`;
+  html += `<div id="rxTotal-edit" style="font-size:13px; text-align:end; margin:4px 2px 2px;">${rxTotalHTML('edit')}</div>`;
+  el.innerHTML = html;
+}
+// ---- how a visit's pads are shown in history ----
+// Full lines, one per person: "💊 Dr. Huda Ali: Ortho care prescription ×5,
+// Whitening prescription ×2". opts.only = one person's lines (without the name).
+function rxLinesHTML(v, clinic, opts){
+  opts = opts || {};
+  if(!v || !rxReady()) return '';
+  const only = _rxHas(opts, 'only');
+  const lines = UMCore.visitRxLines(v).filter(l => !only || l.doctorId === opts.only);
+  if(!lines.length) return '';
+  const groups = [], at = {};
+  lines.forEach(l => {
+    const k = l.doctorId == null ? '' : '#' + l.doctorId;
+    if(!at[k]){ at[k] = { key: l.doctorId == null ? '' : l.doctorId, items: [] }; groups.push(at[k]); }
+    at[k].items.push(l);
+  });
+  return groups.map(g => `<div class="rx-hist" style="font-size:12.5px; color:var(--muted); margin-top:3px; overflow-wrap:anywhere;">${I('pill')} ${only ? '' : rxWhoHTML(g.key, clinic) + ': '}${g.items.map(l => `<span dir="auto">${esc(rxTypeNameOf(l.type, l.name))} ×${l.qty}</span>`).join(', ')}</div>`).join('');
+}
+// The pads of one visit in all (0 for calls, phone orders and visits without).
+function rxPadsOf(v){ return rxReady() ? UMCore.visitRxLines(v).reduce((s, l) => s + l.qty, 0) : 0; }
+// Short form for the one-line lists: '' or "N pads".
+function rxShortText(v){ const n = rxPadsOf(v); return n > 0 ? rxPadsText(n) : ''; }
+// The separator lives inside its own span, so the text before it ("No order")
+// stays a text node of its own and is still translated.
+function rxShortHTML(v){ const t = rxShortText(v); return t ? `<span class="rx-short"> · ${I('pill')}<span>${t}</span></span>` : ''; }
+// The lines as one plain sentence (search, copy as text, the CSV): names by id.
+function rxTextOf(v, clinic){
+  if(!rxReady() || typeof UMCore.rxText !== 'function') return '';
+  const c = clinic || clinics.find(x => x.id === v.clinicId);
+  return UMCore.rxText(UMCore.visitRxLines(v), { list: rxTypes(), doctorName: id => { const d = ((c && c.doctors) || []).find(x => x && x.id === id); return d ? d.name : null; } });
+}

@@ -69,6 +69,13 @@ let erpMap = {}; // {erpCustomerName: clinicId | '@channel' | '@ignore'}
 // confirmed link saves, so a refresh whose read started before a save never
 // brings the old link back, and a flag while a link save is in flight.
 let _erpMapGen = 0, _erpLinkSaving = false;
+// The supervisor's prescription types (state/rxTypes: {v, rev, by, at, types})
+// as last read or confirmed; null = none saved yet (the owner's two printed
+// forms are used — UMCore.rxTypeList). Saved only by saveRxTypes (10), a
+// compare-and-set; a counter of confirmed saves keeps a refresh that started
+// before a save from bringing the old list back.
+let rxTypesDoc = null;
+let _rxTypesGen = 0, _rxSaving = false;
 // Justifications the team writes against ERP events, keyed by kind:
 //   'ret|<doc>|<product>' / 'foc|<doc>|<product>'  → {text, by, on}
 // Keys survive re-imports because doc numbers are stable in the ERP.

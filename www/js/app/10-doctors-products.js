@@ -251,43 +251,98 @@ function renderDoctorsDb(){
         <div style="text-align:start; flex-shrink:0; display:flex; flex-direction:column; gap:3px; align-items:flex-end;">
           ${d.cadenceStatus==='due'?`<span class="badge overdue">${I('bell')} ${d.overdueDays}d late</span>`:d.cadence?`<span class="badge upcoming">✓ ${esc(d.cadence)}</span>`:''}
           ${d.birthdayIn!=null && d.birthdayIn<=14?`<span class="badge today">${I('cake')} ${d.birthdayIn===0?'TODAY':'in '+d.birthdayIn+'d'}</span>`:''}
-          ${d.handovers.rxMonth?`<span style="font-size:10.5px; color:var(--teal); font-weight:700;">💊 ${d.handovers.rxMonth} this month</span>`:''}
+          ${d.handovers.rxMonth?`<span style="font-size:10.5px; color:var(--teal); font-weight:700;">💊 ${rxPadsText(d.handovers.rxMonth)} this month</span>`:''}
         </div>
       </div>
     </div>`;
   }).join('') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
 }
-function renderRxStats(body, docs){
+// ---- PRESCRIPTIONS GIVEN: the Doctors page tab (v114) ----
+// Pads of printed prescription forms, counted from the one ledger
+// (UMCore.rxGrowth over rxLedger): the visits' lines plus the older entries
+// on doctor profiles, for the clinics in view (the current owner's), whoever
+// handed them over. This week and this month are each compared with the same
+// days before; a window whose visits did not all load shows "—".
+function rxGrowthNow(){
   const repFilter = currentUser.role==='supervisor' ? 'all' : currentUser.name;
-  const g = UMCore.rxGrowth({clinics: ddPool(), visits, today: todayStr(), repFilter});
-  const gTag = v => `<span style="font-weight:800; color:${v>0?'var(--sage-ink)':v<0?'var(--coral-ink)':'var(--muted)'};">${v>0?'▲':v<0?'▼':'•'} ${Math.abs(v)}%</span>`;
+  return UMCore.rxGrowth({ clinics: ddPool(), visits, today: todayStr(), repFilter, types: rxTypes(), brokenMonths: _visitsBroken });
+}
+// ▲/▼ x%; "from zero" when nothing was given the same days before and
+// something now; "—" when nothing either side or a window is incomplete.
+function rxGrowthTag(growth, cur, prev, incomplete){
+  const muted = t => `<span style="font-weight:700; color:var(--muted);">${t}</span>`;
+  if(incomplete) return muted('—');
+  if(growth == null) return prev === 0 && cur > 0 ? '<span style="font-weight:800; color:var(--sage-ink);">from zero</span>' : muted('—');
+  return `<span style="font-weight:800; color:${growth>0?'var(--sage-ink)':growth<0?'var(--coral-ink)':'var(--muted)'};">${growth>0?'▲':growth<0?'▼':'•'} ${Math.abs(growth)}%</span>`;
+}
+function renderRxStats(body){
+  if(!rxReady() || typeof UMCore.rxGrowth !== 'function'){ body.innerHTML = `<div class="empty">${RX_STALE_MSG}</div>`; return; }
+  const sup = currentUser.role === 'supervisor';
+  const g = rxGrowthNow(), T = g.totals, inc = T.incomplete || {};
+  const fig = (n, incomplete) => incomplete ? '—' : n;
+  const tile = (key, label, cur, curInc, prevLabel, prev, prevInc, growth) => `
+    <div class="rx-tile" style="background:var(--paper); border-radius:10px; padding:9px 5px; min-width:0;">
+      <div style="font-size:10.5px; color:var(--muted); font-weight:700;">${label}</div>
+      <div data-rx-total="${key}" style="font-size:20px; font-weight:800; line-height:1.3;">${fig(cur, curInc)}</div>
+      ${prevLabel ? `<div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${prevLabel}: ${fig(prev, prevInc)}</div>
+      <div style="font-size:12px; margin-top:2px;">${rxGrowthTag(growth, cur, prev, curInc || prevInc)}</div>`
+      : (inc.total ? '<div style="font-size:10.5px; color:var(--amber-ink); line-height:1.3;">incomplete</div>' : '')}
+    </div>`;
+  // the three figures of a doctor or a center, each label its own text (translated)
+  const figLine = x => `<div style="display:flex; flex-wrap:wrap; gap:2px 12px; font-size:12px; color:var(--muted); margin-top:3px;">
+      <span><span>This week</span> <b style="color:var(--ink);">${fig(x.week, inc.week)}</b> ${rxGrowthTag(x.weekGrowth, x.week, x.prevWeek, inc.week || inc.prevWeek)}</span>
+      <span><span>This month</span> <b style="color:var(--ink);">${fig(x.month, inc.month)}</b> ${rxGrowthTag(x.monthGrowth, x.month, x.prevMonth, inc.month || inc.prevMonth)}</span>
+      <span><span>All time</span> <b style="color:var(--ink);">${x.total}</b></span>
+    </div>`;
+  const rowStyle = 'padding:8px 0; border-bottom:1px solid var(--line);';
+  const typeGrid = 'display:grid; grid-template-columns:minmax(0,1fr) 54px 54px 54px; gap:4px; align-items:center;';
+  const typeRow = t => {
+    const key = t.type == null ? '_profile' : t.type;
+    const name = t.type == null ? '<span>Type not recorded (doctor profile)</span>' : `<span dir="auto">${esc(t.name)}</span>`;
+    return `<div class="rx-trow" data-rx-bytype="${esc(key)}" style="${typeGrid} ${rowStyle} font-size:13px;">
+      <div style="min-width:0; overflow-wrap:anywhere;">${name}${t.active === false ? ' <span style="color:var(--muted); font-size:11px;">(retired)</span>' : ''}</div>
+      <div style="text-align:center; font-weight:700;">${fig(t.week, inc.week)}</div>
+      <div style="text-align:center; font-weight:700;">${fig(t.month, inc.month)}</div>
+      <div style="text-align:center; font-weight:700;">${t.total}</div>
+    </div>`;
+  };
+  const sections = !T.total ? '<div class="empty">No prescription pads logged yet — they are logged with the visit.</div>' : `
+    <div class="section-title"><span>By type</span></div>
+    <div class="card" style="padding:6px 12px;">
+      <div style="${typeGrid} font-size:10.5px; color:var(--muted); font-weight:700; padding:4px 0 2px; text-align:center;"><div></div><div>This week</div><div>This month</div><div>All time</div></div>
+      ${g.byType.map(typeRow).join('')}
+    </div>
+    <div class="section-title"><span>${I('stethoscope')} <span>By doctor</span></span></div>
+    ${g.byDoctor.length ? `<div class="card" style="padding:4px 12px;">${g.byDoctor.map(d => `
+      <div class="rx-row" data-rx-doctor="${esc(d.clinicId + '|' + d.doctorId)}" style="${rowStyle}">
+        <div style="font-size:13.5px; font-weight:700; overflow-wrap:anywhere;"><span dir="auto">${esc(d.name)}</span> <span dir="auto" style="color:var(--muted); font-size:11px; font-weight:400;">${esc(d.clinicName)}</span></div>
+        ${figLine(d)}
+      </div>`).join('')}</div>` : '<div class="empty" style="padding:14px;">No pads given to a named doctor yet.</div>'}
+    <div class="section-title"><span>${I('building')} <span>By center</span></span></div>
+    <div class="card" style="padding:4px 12px;">${g.byClinic.map(c => `
+      <div class="rx-row" data-rx-center="${esc(c.clinicId)}" style="${rowStyle}">
+        <div style="font-size:13.5px; font-weight:700; overflow-wrap:anywhere;"><span dir="auto">${esc(c.name)}</span> <span style="color:var(--muted); font-size:11px; font-weight:400;">${c.doctors} doctor${c.doctors===1?'':'s'}</span>${sup && c.rep ? ` <span dir="auto" style="color:var(--muted); font-size:11px; font-weight:400;">· ${esc(c.rep)}</span>` : ''}</div>
+        ${figLine(c)}
+        ${c.unnamed ? `<div style="font-size:11.5px; color:var(--muted); margin-top:2px;">incl. ${rxPadsText(c.unnamed)} left at the clinic</div>` : ''}
+        ${c.unlisted ? `<div style="font-size:11.5px; color:var(--muted); margin-top:2px;">incl. ${rxPadsText(c.unlisted)} to a doctor no longer listed</div>` : ''}
+      </div>`).join('')}</div>
+    <button class="chip small" style="margin-top:10px;" onclick="exportRxXlsx()">${I('share')} Export prescriptions (Excel)</button>`;
   body.innerHTML = `
     <div class="card" style="margin-bottom:10px;">
-      <div style="font-weight:800; font-size:14px; margin-bottom:8px;">${I('pill')} Prescriptions distributed</div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; text-align:center;">
-        <div style="background:var(--paper); border-radius:10px; padding:10px;">
-          <div style="font-size:20px; font-weight:800;">${g.totals.week}</div>
-          <div style="font-size:10.5px; color:var(--muted);">THIS WEEK (last: ${g.totals.lastWeek})</div>
-          <div style="font-size:12px;">${gTag(g.totals.weekGrowth)}</div>
-        </div>
-        <div style="background:var(--paper); border-radius:10px; padding:10px;">
-          <div style="font-size:20px; font-weight:800;">${g.totals.month}</div>
-          <div style="font-size:10.5px; color:var(--muted);">THIS MONTH (last: ${g.totals.lastMonth})</div>
-          <div style="font-size:12px;">${gTag(g.totals.monthGrowth)}</div>
-        </div>
+      <div class="row-between" style="margin-bottom:8px; flex-wrap:wrap;">
+        <div style="font-weight:800; font-size:14px;">${I('pill')} <span>Prescription pads given</span></div>
+        ${sup ? `<button class="chip small" id="rxTypesBtn" onclick="openRxTypes()">Prescription types</button>` : ''}
       </div>
-      <div style="color:var(--muted); font-size:11px; margin-top:6px;">Growth = هذا الأسبوع/الشهر مقابل الذي قبله — سجّلي كل بريسكريبشن من ملف الطبيب ليُحسب هنا.</div>
+      <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px; text-align:center;">
+        ${tile('week', 'This week', T.week, inc.week, 'Same days last week', T.prevWeek, inc.prevWeek, T.weekGrowth)}
+        ${tile('month', 'This month', T.month, inc.month, 'Same days last month', T.prevMonth, inc.prevMonth, T.monthGrowth)}
+        ${tile('all', 'All time', T.total, false, null)}
+      </div>
+      <div style="color:var(--muted); font-size:11px; margin-top:8px; line-height:1.45;">Week = Sunday to today, against the same days of last week. Month = day 1 to today, against the same days of last month.</div>
+      <div style="color:var(--muted); font-size:11px; margin-top:4px; line-height:1.45;">Counted in pads from the visits, plus older entries on doctor profiles — for the doctors of these clinics, whoever handed them over.</div>
+      ${_visitsBroken.length ? `<div id="rxIncomplete" style="margin-top:8px; padding:8px 10px; border-radius:10px; background:var(--amber-dim); color:var(--amber-ink); font-size:12px; line-height:1.45;">⚠️ Visits of ${esc(_visitsBroken.join(', '))} did not load — figures that include them are incomplete.</div>` : ''}
     </div>
-    <div class="section-title"><span>${I('stethoscope')} By doctor</span></div>
-    ${g.byDoctor.length?`<div class="card" style="padding:10px 12px;">${g.byDoctor.map(d=>`
-      <div class="spec-row"><span class="k">${esc(d.name)} <span style="color:var(--muted); font-size:10.5px;">${esc(d.clinicName)}</span></span>
-      <span class="v">W:<b>${d.week}</b> ${gTag(d.weekGrowth)} · M:<b>${d.month}</b> ${gTag(d.monthGrowth)}</span></div>`).join('')}</div>`
-      :'<div class="empty">No prescriptions logged yet — open a doctor\'s profile and log the first one.</div>'}
-    <div class="section-title"><span>${I('building')} By center</span></div>
-    ${g.byClinic.length?`<div class="card" style="padding:10px 12px;">${g.byClinic.map(c=>`
-      <div class="spec-row"><span class="k">${esc(c.name)} <span style="color:var(--muted); font-size:10.5px;">${c.doctors} doctor${c.doctors===1?'':'s'}</span></span>
-      <span class="v">W:<b>${c.week}</b> ${gTag(c.weekGrowth)} · M:<b>${c.month}</b> ${gTag(c.monthGrowth)}</span></div>`).join('')}</div>`:''}
-    ${g.byDoctor.length?`<button class="chip small" style="margin-top:10px;" onclick="exportRxXlsx()">${I('share')} Export prescriptions (Excel)</button>`:''}`;
+    ${sections}`;
 }
 // ---- CONTACTS BULK IMPORT: one sheet in, everything filed automatically ----
 let _contactImport = null;
@@ -686,7 +741,23 @@ function openDoctorProfile(clinicId, docId){
   const led = clinicErpLedger(clinicId);
   const clinicMtd = (erpMtdMap && caMonthClinicSales) ? (caMonthClinicSales()[clinicId]||{net:0}) : {net:0};
   const acts = doctorNextActions(da, c);
+  // Labels of every kind ever logged here; NEW entries are samples, gifts and
+  // other items only — prescription pads are logged with the visit (v114), so
+  // the same pads can never be entered twice.
   const KINDS = {prescription:'💊 Prescription', sample:'🧪 Sample', gift:'🎁 Gift', other:'📦 Other'};
+  const NEW_KINDS = Object.entries(KINDS).filter(([k]) => k !== 'prescription');
+  // This doctor's pads from the visits (the one ledger), one entry per visit,
+  // listed read-only next to the profile entries: edited on the visit itself.
+  const rxVisitItems = [];
+  if(rxReady()){
+    const at = {};
+    UMCore.rxLedger({ clinics: [c], visits }).filter(r => r.source === 'visit' && r.listed && r.doctorId === docId).forEach(r => {
+      if(!at[r.visitId]){ at[r.visitId] = { date: r.date, visitId: r.visitId, rep: r.rep, withRep: r.withRep, items: [] }; rxVisitItems.push(at[r.visitId]); }
+      at[r.visitId].items.push(r);
+    });
+  }
+  const hoList = [...(d.handovers||[]).map(h => ({ date: String(h.date||''), h })), ...rxVisitItems.map(g => ({ date: g.date, g }))]
+    .sort((a,b) => b.date.localeCompare(a.date));
   const pb = SPECIALTY_PLAYBOOK[d.title];
   showModal(`
     <div class="row-between" style="align-items:flex-start;">
@@ -702,7 +773,7 @@ function openDoctorProfile(clinicId, docId){
     <div class="section-title">📊 الأرقام</div>
     <div class="card" style="padding:10px 12px;">
       <div class="spec-row"><span class="k">زيارات ميدانية / مكالمات</span><span class="v">${da.fieldVisits} / ${da.calls}${da.lastVisit?` · آخرها ${fmtDate(da.lastVisit)}`:''}</span></div>
-      <div class="spec-row"><span class="k">💊 بريسكريبشن (هذا الشهر / الإجمالي)</span><span class="v">${da.handovers.rxMonth} / ${da.handovers.prescription}</span></div>
+      <div class="spec-row"><span class="k">💊 دفاتر البريسكريبشن (هذا الشهر / الإجمالي)</span><span class="v">${da.handovers.rxMonth} / ${da.handovers.prescription}</span></div>
       <div class="spec-row"><span class="k">🧪 عينات · 🎁 هدايا</span><span class="v">${da.handovers.sample} · ${da.handovers.gift}</span></div>
       <div class="spec-row"><span class="k">🏥 مبيعات عيادته هذا الشهر (ERP)</span><span class="v">${money(clinicMtd.net||0)}</span></div>
       ${led.foc.length?`<div class="spec-row"><span class="k">مجاني/عينات لعيادته (من الفواتير)</span><span class="v">${led.foc.length} سطر</span></div>`:''}
@@ -725,9 +796,10 @@ function openDoctorProfile(clinicId, docId){
       <textarea style="min-height:60px;" onchange="saveDoctorField('${clinicId}','${docId}','notes',this.value)">${esc(d.notes||'')}</textarea>
     </div>`:''}
 
-    <div class="section-title">🎁 التسليمات (${(d.handovers||[]).length})</div>
+    <div class="section-title">🎁 التسليمات (${hoList.length})</div>
     ${canEdit?`<div class="card" style="padding:12px; margin-bottom:8px;">
-      <div class="chip-row" id="hoKind">${Object.entries(KINDS).map(([k,l],i)=>`<div class="chip small ${i===0?'on':''}" data-kind="${k}" onclick="pickModalCls(this)">${l}</div>`).join('')}</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">${I('pill')} <span>Prescriptions are logged with the visit.</span></div>
+      <div class="chip-row" id="hoKind">${NEW_KINDS.map(([k,l],i)=>`<div class="chip small ${i===0?'on':''}" data-kind="${k}" onclick="pickModalCls(this)">${l}</div>`).join('')}</div>
       <div style="display:flex; gap:6px; margin-top:8px;">
         <input type="text" id="hoWhat" placeholder="ماذا سُلِّم؟" style="flex:2;">
         <input type="number" id="hoQty" placeholder="عدد" min="1" value="1" style="flex:0.6;">
@@ -735,9 +807,15 @@ function openDoctorProfile(clinicId, docId){
       </div>
       <button class="btn small" style="margin-top:8px;" onclick="addHandover('${clinicId}','${docId}')">➕ سجّل التسليم</button>
     </div>`:''}
-    ${(d.handovers||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,15).map(h=>`
+    ${hoList.slice(0,15).map(({ h, g }) => g ? (() => {
+      const vv = visits.find(x => x.id === g.visitId);
+      return `<div class="visit-hist ho-visit" style="border-inline-start:3px solid var(--teal); padding-inline-start:10px;">
+        <strong>${fmtDate(g.date)}</strong> · ${I('pill')} ${g.items.map(r => `<span dir="auto">${esc(rxTypeNameOf(r.type, r.name))} ×${r.qty}</span>`).join(', ')}
+        <span style="color:var(--muted); font-size:11px;"> — <span dir="auto">${esc(g.rep)}${g.withRep ? ' 🤝 ' + esc(g.withRep) : ''}</span></span>
+        <div style="font-size:11px; color:var(--muted); margin-top:3px; display:flex; align-items:center; gap:8px;"><span>from the visit — edit it there</span>${vv && canEditVisit(vv) ? `<button class="chip small" aria-label="Edit visit" onclick="openEditVisit('${esc(g.visitId)}')">${I('pencil')}</button>` : ''}</div>
+      </div>`; })() : `
       <div class="visit-hist" style="border-inline-start:3px solid ${h.kind==='prescription'?'var(--teal)':h.kind==='gift'?'var(--gold)':'var(--sage)'}; padding-inline-start:10px;">
-        <strong>${fmtDate(h.date)}</strong> · ${KINDS[h.kind]||h.kind} · ${esc(h.what||'')}${h.qty>1?` ×${h.qty}`:''}
+        <strong>${fmtDate(h.date)}</strong> · <span>${KINDS[h.kind]||esc(h.kind)}</span> · <span dir="auto">${esc(h.what||'')}${h.qty>1?` ×${h.qty}`:''}</span>
         <span style="color:var(--muted); font-size:11px;"> — ${esc(h.by||'')}</span>
         ${canEdit?`<button class="del" style="float:left;" onclick="removeHandover('${clinicId}','${docId}','${h.id}')">&times;</button>`:''}
       </div>`).join('') || '<div style="color:var(--muted); font-size:12.5px;">لا تسليمات مسجلة بعد.</div>'}
@@ -745,6 +823,7 @@ function openDoctorProfile(clinicId, docId){
     <div class="section-title">🗓️ سجل الزيارات (${da.visitLog.length})</div>
     ${da.visitLog.slice(0,10).map(v=>`
       <div class="visit-hist"><strong>${fmtDate(v.date)}</strong> · ${esc(v.rep)}${v.callOnly?' · '+(CHANNEL_LABELS[v.channel]||'📞'):''}${v.orderTaken?' · 🛒 '+money(v.orderTotal):''}
+      ${rxLinesHTML(v, c, { only: docId })}
       ${v.notes?`<div style="color:var(--muted); font-size:12px;">${esc(v.notes.slice(0,120))}</div>`:''}
       ${v.noOrderReason?`<div style="color:var(--coral-ink); font-size:11.5px;">بلا طلب: ${esc(v.noOrderReason.slice(0,80))}</div>`:''}</div>`).join('')
       || '<div style="color:var(--muted); font-size:12.5px;">لم تُسجَّل زيارات له بعد — اختاريه عند تسجيل الزيارة القادمة.</div>'}
@@ -773,9 +852,22 @@ async function addHandover(clinicId, docId){
   const date = document.getElementById('hoDate').value || todayStr();
   if(!what){ showToast('اكتبي ماذا سُلِّم'); return; }
   d.handovers = d.handovers || [];
-  d.handovers.push({id:uid(), date, kind: kindEl?kindEl.dataset.kind:'other', what, qty, by: currentUser.name});
-  await persist('clinics');
-  showToast('🎁 سُجِّل التسليم');
+  const entry = {id:uid(), date, kind: kindEl?kindEl.dataset.kind:'other', what, qty, by: currentUser.name};
+  d.handovers.push(entry);
+  // The toast tells what the save did: in the cloud, kept on this phone (it
+  // uploads by itself), or nothing — then the entry is taken back off the
+  // screen, so nothing looks saved that is not.
+  if(await persist('clinics')) showToast('🎁 سُجِّل التسليم');
+  else {
+    const out = persistOutcome('clinics');
+    if(out.queued && out.mirrored) showToast('📴 Handover kept on this device — it uploads automatically when back online');
+    else if(out.queued) showToast('⚠️ Handover not saved on this device (storage full) — keep the app open until it uploads');
+    else {
+      const cc = clinics.find(x=>x.id===clinicId), dd = cc && (cc.doctors||[]).find(x=>x.id===docId);
+      if(dd && Array.isArray(dd.handovers)) dd.handovers = dd.handovers.filter(h => h.id !== entry.id);
+      showToast('⚠️ Not saved — the handover was not added. Try again with a connection.');
+    }
+  }
   openDoctorProfile(clinicId, docId);
 }
 async function removeHandover(clinicId, docId, hid){
@@ -793,12 +885,16 @@ function exportDoctorReportXlsx(clinicId, docId){
   const da = UMCore.doctorAnalytics({clinics:[c], visits, today: todayStr(), repFilter:'all'}).find(x=>x.id===docId);
   const led = clinicErpLedger(clinicId);
   const clinicMtd = caMonthClinicSales()[clinicId]||{net:0};
+  // Every pad this doctor got, from the one ledger (his visit lines and the
+  // older profile entries) — these rows add up to the total above.
+  const rxRows = rxReady() ? UMCore.rxLedger({ clinics: [c], visits }).filter(r => r.listed && r.doctorId === docId).sort((a,b) => b.date.localeCompare(a.date)) : [];
+  const hoById = {}; (d.handovers||[]).forEach(h => { if(h && h.id != null) hoById[h.id] = h; });
   const rows = [
     ['UltraMed — Doctor Report', d.name],
     ['Specialty', d.title||''], ['Clinic', c.name], ['Rep', c.rep||''],
     ['Phone', d.phone||''], ['Birthday', d.birthday||''], ['Follow-up rhythm', d.cadence||'—'],
     ['Field visits', da.fieldVisits], ['Calls', da.calls], ['Last visit', da.lastVisit||'—'],
-    ['Prescriptions (total)', da.handovers.prescription], ['Prescriptions (this month)', da.handovers.rxMonth],
+    ['Prescription pads (total)', da.handovers.prescription], ['Prescription pads (this month)', da.handovers.rxMonth],
     ['Samples', da.handovers.sample], ['Gifts', da.handovers.gift],
     ['Clinic ERP sales this month (KD)', Math.round((clinicMtd.net||0)*100)/100],
     ['Notes', d.notes||''],
@@ -807,9 +903,14 @@ function exportDoctorReportXlsx(clinicId, docId){
     ['Date','Rep','Type','Order (KD)','Notes','No-order reason'],
     ...da.visitLog.map(v=>[v.date, v.rep, v.callOnly?('Call: '+(v.channel||'')):'Field visit', v.orderTaken?(v.orderTotal||0):'', v.notes||'', v.noOrderReason||'']),
     [''],
-    ['— HANDOVERS (prescriptions / samples / gifts) —'],
+    ['— PRESCRIPTION PADS —'],
+    ['Date','Type','Pads','Logged by','Source','Note'],
+    ...rxRows.map(r => [r.date, r.source === 'visit' ? rxTypeNameOf(r.type, r.name) : 'Type not recorded (doctor profile)', r.qty,
+      r.rep + (r.withRep ? ' with ' + r.withRep : ''), r.source === 'visit' ? 'Visit' : 'Doctor profile', r.source === 'visit' ? '' : ((hoById[r.id] || {}).what || '')]),
+    [''],
+    ['— HANDOVERS (samples / gifts / other) —'],
     ['Date','Kind','What','Qty','By'],
-    ...(d.handovers||[]).slice().sort((a,b)=>b.date.localeCompare(a.date)).map(h=>[h.date, h.kind, h.what||'', h.qty||1, h.by||'']),
+    ...(d.handovers||[]).filter(h=>h && (h.kind!=='prescription' || !rxReady())).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))).map(h=>[h.date, h.kind, h.what||'', h.qty||1, h.by||'']), // (an old cached core.js: its prescription entries stay listed here)
     [''],
     ['— CLINIC INVOICE SYNC (returns & free goods for '+c.name+') —'],
     ['Date','Doc','Type','Product','Qty','Value (KD)'],
@@ -823,19 +924,314 @@ function exportDoctorsDbXlsx(){
   const repFilter = currentUser.role==='supervisor' ? 'all' : currentUser.name;
   const docs = UMCore.doctorAnalytics({clinics: ddPool(), visits, today: todayStr(), repFilter});
   const rawOf = d => ((clinics.find(c=>c.id===d.clinicId)||{}).doctors||[]).find(x=>x.id===d.id) || {};
-  const rows = [['Doctor','Specialty','Clinic','Rep','Role','Influence','Stage','Phone','WhatsApp','Email','Birthday','Best time','Interests','Competitor','Next step','Rhythm','Status','Field visits','Calls','Last visit','Rx month','Rx total','Samples','Gifts','Notes'],
+  const rows = [['Doctor','Specialty','Clinic','Rep','Role','Influence','Stage','Phone','WhatsApp','Email','Birthday','Best time','Interests','Competitor','Next step','Rhythm','Status','Field visits','Calls','Last visit','Prescription pads (month)','Prescription pads (total)','Samples','Gifts','Notes'],
     ...docs.map(d=>{ const r=rawOf(d); return [d.name, d.title, d.clinicName, d.rep, DOC_ROLE_LABEL[r.role]||'', DOC_INFLUENCE_LABEL[r.influence]||'', DOC_STAGE_LABEL[r.stage]||'', d.phone, r.whatsapp||'', r.email||'', d.birthday, r.bestTime||'', r.interests||'', r.competitor||'', r.nextStep||'', d.cadence||'', d.cadenceStatus==='due'?('OVERDUE '+d.overdueDays+'d'):d.cadenceStatus, d.fieldVisits, d.calls, d.lastVisit||'', d.handovers.rxMonth, d.handovers.prescription, d.handovers.sample, d.handovers.gift, d.notes]; })];
   downloadXlsx('ultramed-doctors-database.xlsx', rows, 'Doctors');
 }
+// The Prescriptions tab as a workbook: by doctor, by center, by type, then
+// every line it was counted from. A growth that cannot be computed is an
+// empty cell (nothing the same days before, or a window that did not load).
 function exportRxXlsx(){
-  const repFilter = currentUser.role==='supervisor' ? 'all' : currentUser.name;
-  const g = UMCore.rxGrowth({clinics: ddPool(), visits, today: todayStr(), repFilter});
-  const rows = [['Doctor','Clinic','Rep','This week','Last week','Week growth %','This month','Last month','Month growth %','Total'],
-    ...g.byDoctor.map(d=>[d.name, d.clinicName, d.rep, d.week, d.lastWeek, d.weekGrowth, d.month, d.lastMonth, d.monthGrowth, d.total]),
+  if(!rxReady() || typeof UMCore.rxGrowth !== 'function'){ showToast(RX_STALE_MSG); return; }
+  const g = rxGrowthNow(), T = g.totals;
+  const gr = x => x == null ? '' : x;
+  const byClinic = {}; clinics.forEach(c => { byClinic[c.id] = c; });
+  const who = r => {
+    if(r.doctorId == null) return 'The clinic (no one person)';
+    const d = ((byClinic[r.clinicId] || {}).doctors || []).find(x => x && x.id === r.doctorId);
+    return d ? d.name : 'A doctor no longer listed';
+  };
+  const rows = [
+    ['Doctor','Clinic','Rep','Pads this week','Same days last week','Week growth %','Pads this month','Same days last month','Month growth %','Pads all time'],
+    ...g.byDoctor.map(d => [d.name, d.clinicName, d.rep, d.week, d.prevWeek, gr(d.weekGrowth), d.month, d.prevMonth, gr(d.monthGrowth), d.total]),
     [''],
-    ['Center','','Doctors','This week','Last week','Week growth %','This month','Last month','Month growth %','Total'],
-    ...g.byClinic.map(c=>[c.name, '', c.doctors, c.week, c.lastWeek, c.weekGrowth, c.month, c.lastMonth, c.monthGrowth, c.total])];
+    ['Center','Rep','Doctors','Pads this week','Same days last week','Week growth %','Pads this month','Same days last month','Month growth %','Pads all time','Left at the clinic','Doctor no longer listed'],
+    ...g.byClinic.map(c => [c.name, c.rep, c.doctors, c.week, c.prevWeek, gr(c.weekGrowth), c.month, c.prevMonth, gr(c.monthGrowth), c.total, c.unnamed, c.unlisted]),
+    ['Total', '', '', T.week, T.prevWeek, gr(T.weekGrowth), T.month, T.prevMonth, gr(T.monthGrowth), T.total],
+    [''],
+    ['Type','Status','Pads this week','Same days last week','Pads this month','Same days last month','Pads all time'],
+    ...g.byType.map(t => [t.type == null ? 'Type not recorded (doctor profile)' : t.name, t.active === true ? 'Active' : t.active === false ? 'Retired' : '', t.week, t.prevWeek, t.month, t.prevMonth, t.total]),
+    [''],
+    ['Week = Sunday to today, against the same days of last week. Month = day 1 to today, against the same days of last month. Counted in pads.'],
+    ...(_visitsBroken.length ? [['Visits of ' + _visitsBroken.join(', ') + ' did not load — figures that include them are incomplete.']] : []),
+    [''],
+    ['— EVERY PRESCRIPTION —'],
+    ['Date','Clinic','Doctor','Type','Pads','Logged by','Source'],
+    ...g.rows.map(r => [r.date, (byClinic[r.clinicId] || {}).name || '', who(r), r.source === 'visit' ? rxTypeNameOf(r.type, r.name) : 'Type not recorded (doctor profile)', r.qty,
+      r.rep + (r.withRep ? ' with ' + r.withRep : ''), r.source === 'visit' ? 'Visit' : 'Doctor profile']),
+  ];
   downloadXlsx('ultramed-prescriptions-growth.xlsx', rows, 'Prescriptions');
+}
+// ---- PRESCRIPTION TYPES (supervisor) ----
+// The printed forms the reps pick on the visit form, in the order they see
+// them. One document, state/rxTypes = {v, rev, by, at, types:[{id, name,
+// active, …}]}, saved whole by saveRxTypes as a compare-and-set on `rev`: a
+// list changed on another device is never overwritten, memory and this
+// device's copy change only once the cloud confirmed, and nothing is queued
+// offline. Ids are never reused or deleted (a type is retired), so every
+// visit keeps pointing at its form; unknown fields are kept (room for brands).
+const RX_TYPES_WRITE_MS = 12000;
+// The editor while open: { rev shown, types (a working copy), newName, wids:
+// the write ids of this editor's save attempts } — or { waiting, loading }
+// while the list itself has not loaded on this phone.
+let _rxEd = null;
+// Every types save this phone attempted (its write id travels in the saved
+// document as `wid`): a save that lands after the app stopped waiting for it
+// is recognised as this phone's own — never reported as "another device".
+const _rxMyWids = new Set();
+// The list did not come from the cloud on this phone (the read failed and
+// there is no device copy): the built-in forms in memory are not the team's
+// list, so the editor waits for the list instead of offering them for editing.
+function rxTypesUnread(){ return !!_loadFailed.rxTypes && !rxTypesDoc; }
+// Is this editor the sheet on screen? Cancel clears _rxEd; a tap outside the
+// sheet, or another sheet opened since, does not — so the screen is asked too.
+function rxEdOnScreen(ed){
+  const back = document.getElementById('modalBack');
+  return !!ed && _rxEd === ed && !!back && back.classList.contains('show') && !!document.getElementById(ed.waiting ? 'rxtLoadNote' : 'rxtList');
+}
+function openRxTypes(){
+  if(!requireAdmin()) return;
+  if(!rxReady()){ showToast(RX_STALE_MSG); return; }
+  if(rxTypesUnread()){ _rxEd = { waiting: true, loading: false }; rxTypesLoad(_rxEd); return; }
+  _rxEd = { rev: rxTypesDoc && typeof rxTypesDoc.rev === 'number' ? rxTypesDoc.rev : 0, types: JSON.parse(JSON.stringify(rxTypes())), newName: '', wids: [] };
+  renderRxTypesEditor();
+}
+// The editor waiting for the list: says so plainly; Save is paused until the
+// list is in ("Try again", or the next background refresh).
+function renderRxTypesWaiting(ed){
+  if(!ed || _rxEd !== ed) return;
+  showModal(`
+    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
+    <div id="rxtLoadNote" class="card" style="padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.5; background:var(--amber-dim); color:var(--amber-ink); box-shadow:none;">${ed.loading
+      ? 'Loading the prescription types…'
+      : 'The prescription types could not be loaded — saving is paused until they load. Check the connection, then tap Try again.'}</div>
+    ${ed.loading ? '' : '<button type="button" class="btn secondary" id="rxtRetry" onclick="rxTypesRetry()">Try again</button>'}
+    <button class="btn" id="rxtSave" disabled>Save</button>
+    <button class="btn ghost" onclick="_rxEd = null; closeModal()">Cancel</button>
+  `);
+}
+// Read the list for a waiting editor; once it is in, the editor itself opens.
+async function rxTypesLoad(ed){
+  if(!ed || !ed.waiting || ed.loading) return;
+  ed.loading = true;
+  renderRxTypesWaiting(ed);
+  let r = null, ok = false;
+  try{ r = await withTimeout(window.storage.get('rxTypes', true), 8000); ok = true; }
+  catch(e){ console.warn('prescription types: read failed', e); }
+  ed.loading = false;
+  if(ok && rxTypesUnread()){ // (a background refresh may have brought it meanwhile)
+    const v = UMCore.safeParse(r && r.value, null);
+    rxTypesDoc = v && typeof v === 'object' && !Array.isArray(v) ? v : null; _rxTypesGen++;
+    if(r && r.value != null) mirrorSave('rxTypes', r.value);
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    rxTypesChanged();
+  }
+  if(!rxEdOnScreen(ed)) return; // closed meanwhile
+  if(!rxTypesUnread()) openRxTypes(); else renderRxTypesWaiting(ed);
+}
+function rxTypesRetry(){ if(_rxEd && _rxEd.waiting) rxTypesLoad(_rxEd); }
+// A background refresh (loadAll) brought the list while the editor waited for it.
+function rxTypesRefreshed(){ if(_rxEd && _rxEd.waiting && !_rxEd.loading && !rxTypesUnread() && rxEdOnScreen(_rxEd)) openRxTypes(); }
+// Pads already logged under each type (every visit on this device).
+function rxTypeCounts(){
+  const n = {};
+  UMCore.dedupeVisits(visits).unique.forEach(v => UMCore.visitRxLines(v).forEach(l => { n[l.type] = (n[l.type] || 0) + l.qty; }));
+  return n;
+}
+function renderRxTypesEditor(){
+  const ed = _rxEd;
+  if(!ed || ed.waiting) return;
+  const counts = rxTypeCounts();
+  const active = ed.types.filter(t => t.active), retired = ed.types.filter(t => !t.active);
+  const logged = id => `<span style="font-size:11px; color:var(--muted); white-space:nowrap;">${rxPadsText(counts[id] || 0)} logged</span>`;
+  const when = rxTypesDoc && rxTypesDoc.at ? fmtDate(String(rxTypesDoc.at).slice(0, 10)) : '';
+  // Who changed the list last: the label is translated on its own; the name and
+  // the date each sit in their own direction-isolated span — in Arabic a Latin
+  // name would otherwise pull the day's digit away from its month.
+  const lastChanged = rxTypesDoc && rxTypesDoc.by
+    ? `<span>Last changed by</span> <span dir="auto">${esc(rxTypesDoc.by)}</span> · <span dir="auto">${esc(when || '—')}</span>`
+    : 'Not set up yet — reps see the two built-in forms.';
+  showModal(`
+    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
+    <div id="rxtList">${active.map(t => `
+      <div class="rxt-row" data-rxt="${esc(t.id)}" style="margin-bottom:12px;">
+        <input type="text" class="rxt-name" dir="auto" maxlength="40" value="${esc(t.name)}" aria-label="Type name" style="margin:0;">
+        <div style="display:flex; gap:8px; align-items:center; justify-content:space-between; margin-top:5px;">
+          ${logged(t.id)}
+          <button type="button" class="chip small rxt-retire" onclick="retireRxType(this.closest('[data-rxt]').dataset.rxt)">Retire</button>
+        </div>
+      </div>`).join('')}</div>
+    <div style="margin:4px 0 12px;">
+      <input type="text" id="rxtNewName" dir="auto" maxlength="40" value="${esc(ed.newName || '')}" placeholder="e.g. Orthodontic prescription" aria-label="Type name" style="margin:0;" onkeydown="if(event.key==='Enter'){event.preventDefault(); addRxType();}">
+      <div style="display:flex; justify-content:flex-end; margin-top:5px;"><button type="button" class="chip small" id="rxtAdd" onclick="addRxType()">+ Add a type</button></div>
+    </div>
+    ${retired.length ? `<div class="section-title" style="margin-top:6px;"><span>Retired types</span></div>
+    <p style="color:var(--muted); font-size:12px; margin:-4px 0 8px;">Hidden from the visit form. Visits already logged keep it.</p>
+    <div id="rxtRetired">${retired.map(t => `
+      <div class="rxt-row" data-rxt="${esc(t.id)}" style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
+        <span dir="auto" style="flex:1; min-width:0; overflow-wrap:anywhere; color:var(--muted);">${esc(t.name)}</span>
+        ${logged(t.id)}
+        <button type="button" class="chip small rxt-restore" onclick="restoreRxType(this.closest('[data-rxt]').dataset.rxt)">Restore</button>
+      </div>`).join('')}</div>` : ''}
+    <p style="color:var(--muted); font-size:12px; line-height:1.5;">Renaming changes the name on every visit already logged under this type — rename only to correct the name of the same printed form. A different form is a new type.</p>
+    <p style="color:var(--muted); font-size:12px;">${lastChanged}</p>
+    <button class="btn" id="rxtSave" onclick="saveRxTypes()">Save</button>
+    <button class="btn ghost" onclick="_rxEd = null; closeModal()">Cancel</button>
+  `);
+}
+// Typed names are copied into the working list before every action, so a
+// rename is never lost when the list is drawn again.
+function rxEdRead(){
+  if(!_rxEd || _rxEd.waiting) return;
+  document.querySelectorAll('#rxtList [data-rxt]').forEach(row => {
+    const t = _rxEd.types.find(x => x.id === row.dataset.rxt), inp = row.querySelector('input.rxt-name');
+    if(t && inp) t.name = inp.value;
+  });
+  const nn = document.getElementById('rxtNewName');
+  if(nn) _rxEd.newName = nn.value;
+}
+const rxNameKey = s => String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
+// The name in the new-type box joins the working list, with the checks of
+// "+ Add a type". false = refused (its toast is shown, nothing is added).
+function rxAddPending(ed){
+  const name = String(ed.newName || '').trim();
+  if(!name){ showToast('Every type needs a name'); return false; }
+  if(name.length > 40){ showToast('A name can be up to 40 characters'); return false; }
+  if(ed.types.some(t => rxNameKey(t.name) === rxNameKey(name))){ showToast('Two types have the same name'); return false; }
+  let id = uid();
+  while(ed.types.some(t => t.id === id)) id = uid(); // never an id already used
+  ed.types.push({ id, name, active: true });
+  ed.newName = '';
+  return true;
+}
+function addRxType(){
+  if(!_rxEd || _rxEd.waiting || !requireAdmin()) return;
+  rxEdRead();
+  if(rxAddPending(_rxEd)) renderRxTypesEditor();
+}
+function retireRxType(id){
+  if(!_rxEd || _rxEd.waiting) return;
+  rxEdRead();
+  const t = _rxEd.types.find(x => x.id === id);
+  if(!t || !t.active) return;
+  if(_rxEd.types.filter(x => x.active).length <= 1){ showToast('Keep at least one active type'); return; }
+  t.active = false;
+  renderRxTypesEditor();
+}
+function restoreRxType(id){
+  if(!_rxEd || _rxEd.waiting) return;
+  rxEdRead();
+  const t = _rxEd.types.find(x => x.id === id);
+  if(!t) return;
+  t.active = true;
+  renderRxTypesEditor();
+}
+// Prescription types changed in memory: the screens that show them follow.
+function rxTypesChanged(){
+  if(activeView === 'log') renderRxStep();
+  if(activeView === 'doctors' && document.getElementById('ddBody')) renderDoctorsDb();
+}
+// While a save is on its way the list cannot change under it — a change made
+// meanwhile would be closed away under "saved". Cancel stays available.
+function rxEdFreeze(frozen){
+  document.querySelectorAll('#rxtList input, #rxtList button, #rxtRetired button, #rxtNewName, #rxtAdd').forEach(el => { el.disabled = !!frozen; });
+}
+// A list as compared for "the cloud already holds exactly this": ids, names, active, order.
+function rxTypesKey(list){ return JSON.stringify(UMCore.rxTypeList(Array.isArray(list) ? list : []).map(t => [t.id, t.name, t.active])); }
+async function saveRxTypes(){
+  if(!requireAdmin() || !_rxEd || _rxEd.waiting) return;
+  if(_rxSaving){ showToast('The previous save is still on its way — tap Save again in a moment.'); return; } // (another editor, opened after Cancel)
+  if(!rxReady()){ showToast(RX_STALE_MSG); return; }
+  rxEdRead();
+  const ed = _rxEd;
+  // A name typed in the new-type box and not added yet is part of what is
+  // saved: added with the same checks as "+ Add a type" — or, refused, the
+  // save stops on that toast with nothing written. Never dropped under "saved".
+  if(String(ed.newName || '').trim()){
+    if(!rxAddPending(ed)) return;
+    renderRxTypesEditor(); // it shows in the list now
+  }
+  const next = ed.types.map(t => Object.assign({}, t, { name: String(t.name == null ? '' : t.name).trim(), active: t.active !== false }));
+  const problem = UMCore.rxTypesProblem(next);
+  if(problem){
+    showToast({ 'name-empty': 'Every type needs a name', 'name-long': 'A name can be up to 40 characters',
+      'name-duplicate': 'Two types have the same name', 'no-active': 'Keep at least one active type' }[problem] || 'Not saved — check the connection and tap Save again.');
+    return;
+  }
+  const shownRev = ed.rev;
+  // This attempt's write id. The only saves it may build on are this same
+  // editor's earlier attempts that landed after the app stopped waiting —
+  // never another device's list, and never a later attempt of its own.
+  const earlier = ed.wids.slice(), wid = uid();
+  ed.wids.push(wid); _rxMyWids.add(wid);
+  const nextKey = rxTypesKey(next);
+  let conflict = false, committed = null, seen = null, already = false;
+  const fn = s => { // Firestore may run this more than once: every run starts clean
+    conflict = false; committed = null; seen = null; already = false;
+    const cur = s == null ? null : UMCore.safeParse(s, null);
+    const curObj = cur && typeof cur === 'object' && !Array.isArray(cur) ? cur : null;
+    const curRev = curObj && typeof curObj.rev === 'number' ? curObj.rev : 0;
+    if(curRev !== shownRev){
+      const own = !!curObj && typeof curObj.wid === 'string' && earlier.includes(curObj.wid);
+      if(!own){ conflict = true; seen = cur; return null; }
+      if(rxTypesKey(curObj.types) === nextKey){ already = true; seen = curObj; return null; } // the cloud holds exactly this list already
+    }
+    const cloudById = {};
+    (curObj && Array.isArray(curObj.types) ? curObj.types : []).forEach(t => { if(t && typeof t.id === 'string') cloudById[t.id] = t; });
+    // fields a later version added to a type (brands …) are kept
+    const doc = Object.assign({}, curObj || {}, { v: 1, rev: curRev + 1, by: currentUser.name, at: localStamp(), wid,
+      types: next.map(t => Object.assign({}, cloudById[t.id] || {}, t)) });
+    committed = doc;
+    return JSON.stringify(doc);
+  };
+  _rxSaving = true;
+  const btn = document.getElementById('rxtSave');
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  rxEdFreeze(true);
+  let written = null, timedOut = false;
+  try{ written = await storageUpdate('rxTypes', fn, RX_TYPES_WRITE_MS); }
+  catch(e){
+    timedOut = /timeout/.test(String(e && e.message));
+    if(!timedOut) console.warn('prescription types not saved', e);
+  }
+  finally{ _rxSaving = false; }
+  // Only the editor that saved, still the sheet on screen, is closed or
+  // reopened — a sheet opened after Cancel is never touched (a toast only).
+  const onScreen = rxEdOnScreen(ed);
+  if((written != null && committed) || already){
+    rxTypesDoc = already ? seen : committed; _rxTypesGen++;
+    mirrorSave('rxTypes', already ? JSON.stringify(seen) : written);
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    if(_rxEd === ed) _rxEd = null;
+    if(onScreen) closeModal();
+    showToast('✅ Prescription types saved');
+    rxTypesChanged();
+    return;
+  }
+  if(conflict){
+    // what the cloud holds now: in memory and on the device; the editor, if still on screen, reopens on it
+    rxTypesDoc = seen && typeof seen === 'object' && !Array.isArray(seen) ? seen : null; _rxTypesGen++;
+    if(seen != null) mirrorSave('rxTypes', JSON.stringify(seen));
+    delete _loadFailed.rxTypes; delete _mirrorUsed.rxTypes;
+    // this phone's own earlier save (from an editor since closed) that landed late — never "another device"
+    const mine = !!(rxTypesDoc && typeof rxTypesDoc.wid === 'string' && _rxMyWids.has(rxTypesDoc.wid));
+    if(onScreen){
+      openRxTypes();
+      showToast(mine ? 'Your earlier save reached the cloud after all — reopened with the saved list. Nothing else was saved.'
+        : 'Changed on another device — reopened with the latest list. Nothing was saved.');
+    } else {
+      if(_rxEd === ed) _rxEd = null;
+      showToast(mine ? 'Your earlier save reached the cloud after all — nothing else was saved.' : 'Changed on another device — nothing was saved.');
+    }
+    rxTypesChanged();
+    return;
+  }
+  // not saved (or no answer yet): memory untouched; the editor, if still on screen, keeps the edits
+  if(onScreen){ rxEdFreeze(false); const b2 = document.getElementById('rxtSave'); if(b2){ b2.disabled = false; b2.textContent = 'Save'; } }
+  showToast(timedOut ? 'No answer from the cloud yet — reopen the list in a minute to see whether it was saved.'
+    : onScreen ? 'Not saved — check the connection and tap Save again.' : 'Prescription types not saved — check the connection and make the change again.');
 }
 // ---- CLINIC SALES ANALYSIS ----
 // One screen answering: which clinic carries how much of the monthly target,
