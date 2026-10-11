@@ -733,7 +733,7 @@ function renderRxStep(){
   if(!rxReady()){ box.innerHTML = rxNoteHTML('rxStaleNote', RX_STALE_MSG); return; }
   if(recips === null){ box.innerHTML = hint('Pick the clinic in step 1 first.'); return; }
   let html = '';
-  if(_loadFailed.rxTypes && !rxTypesDoc) html += rxNoteHTML('rxTypesNote', 'Prescription types did not load — only the two built-in forms are shown. Reopen the app when you are online.');
+  if(_rxTypesRead === 'failed' && !rxTypesDoc) html += rxNoteHTML('rxTypesNote', 'Prescription types did not load — only the two built-in forms are shown. Reopen the app when you are online.');
   if(!rxActiveTypes().length) html += rxNoteHTML('rxNoActiveNote', 'No prescription type is active — ask the supervisor to add one.');
   if(!recips.length) html += hint('Tap who you met in step 2 first — each person gets their own count.');
   html += rxBlocksHTML('log', recips, rxClinic('log'));

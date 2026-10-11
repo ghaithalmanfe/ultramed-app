@@ -75,6 +75,12 @@ let _erpMapGen = 0, _erpLinkSaving = false;
 // compare-and-set; a counter of confirmed saves keeps a refresh that started
 // before a save from bringing the old list back.
 let rxTypesDoc = null;
+// Has this phone ever read the team's prescription-type list from the cloud
+// (or a device copy of it)? 'unknown' until the first read answers, 'failed'
+// while every read so far failed, 'read' once one answered. Unlike
+// _loadFailed (reset at the start of every refresh), it does not flip back
+// while a slow refresh is still reading.
+let _rxTypesRead = 'unknown';
 let _rxTypesGen = 0, _rxSaving = false;
 // Justifications the team writes against ERP events, keyed by kind:
 //   'ret|<doc>|<product>' / 'foc|<doc>|<product>'  → {text, by, on}
