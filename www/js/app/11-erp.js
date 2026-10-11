@@ -745,10 +745,11 @@ async function applyTargetsFile(tg){
     <h3 style="margin-top:0;">🎯 Targets entered automatically</h3>
     <div class="card" style="border-inline-start:4px solid var(--sage, #9ED0AF); margin:8px 0 10px; font-size:12.5px; line-height:1.6;">${note}</div>
     <div class="card">
-      ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.achieved?` · achieved ${money(m.achieved)}`:''}${m.visits?` · ${m.visits} visits`:''}${m.brandCount?` · ${m.brandCount} brand targets`:''}</span></div>`).join('')}
+      ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.visits?` · ${m.visits} visits`:''}${m.brandCount?` · ${m.brandCount} brand targets`:''}</span></div>`).join('')}
     </div>
     ${tg.unmatched.length?`<div class="nudge" style="margin-top:10px;">Skipped (not on your team): ${tg.unmatched.map(esc).join(', ')}</div>`:''}
     <div style="color:var(--muted); font-size:12.5px; margin-top:10px;">The sales coach and target bars now track these numbers automatically.</div>
+    <div style="color:var(--muted); font-size:12.5px; margin-top:4px;">From the DSR file: the targets and their split by brand only. Achieved always comes from the ERP sales files.</div>
     <button class="btn" style="margin-top:12px;" onclick="closeModal()">Done</button>
   `);
 }
