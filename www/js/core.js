@@ -1560,24 +1560,43 @@
   // nothing); `complete` = those files reach back to the start of the month
   // without a gap, so the ERP figure can stand on its own for the month.
   var ERP_GAP_DAYS = 3; // a weekend plus a holiday with no invoices is not a gap
-  function erpMtd(data){
-    var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales;
-    var sums = {}, asOf = {}, spans = {}, ctx = null;
-    erpPeriodsOf(es).filter(function(p){ return p.to >= mStart && p.from <= today; }).forEach(function(p){
+  // The lines a month figure is made of, each with the person it counts for:
+  // ONE pass, shared by erpMtd (the figure) and monthCustomerSales (the
+  // Clinics screen's breakdown of it), so the two can never drift apart. The
+  // saved files that overlap [from, to] and whose rows loaded, the returns
+  // policy applied, lines dated from..to, each credited by erpRowRep's rule.
+  // fn(r, p, who, m): who = null when the line counts for nobody in the team;
+  // m = the line's customer match (matchCustomer).
+  function erpMonthLines(data, from, to, fn){
+    var es = data.erpSales, clinics = data.clinics || [], ctx = null;
+    var match = erpMatcher(clinics, data.erpMap || {});
+    erpPeriodsOf(es).filter(function(p){ return p.to >= from && p.from <= to; }).forEach(function(p){
       ctx = ctx || erpCtxOf(es);
-      var seen = {};
       erpViewRowsOf(es, p, ctx).forEach(function(r){
-        if(r.date < mStart || r.date > today) return;
-        var rep = erpRowRep(r, data.clinics || [], data.erpMap || {}, p.repMap || {});
-        if(!rep) return;
-        sums[rep] = (sums[rep] || 0) + r.net;
-        if(!asOf[rep] || r.date > asOf[rep]) asOf[rep] = r.date;
-        seen[rep] = 1;
-      });
-      Object.keys(seen).forEach(function(rep){
-        (spans[rep] = spans[rep] || []).push({ from: p.from < mStart ? mStart : p.from, to: p.to > today ? today : p.to });
+        if(r.date < from || r.date > to) return;
+        var m = match((r.customer || '').trim());
+        fn(r, p, erpRepOfMatch(m, r, clinics, p.repMap || {}), m);
       });
     });
+  }
+  function erpMtd(data){
+    var today = data.today, mStart = today.slice(0, 7) + '-01';
+    var sums = {}, asOf = {}, spans = {}, curP = null, seen = {};
+    // the days each file covers count for the people it holds lines of
+    var flush = function(){
+      if(curP) Object.keys(seen).forEach(function(rep){
+        (spans[rep] = spans[rep] || []).push({ from: curP.from < mStart ? mStart : curP.from, to: curP.to > today ? today : curP.to });
+      });
+      seen = {};
+    };
+    erpMonthLines(data, mStart, today, function(r, p, rep){
+      if(p !== curP){ flush(); curP = p; }
+      if(!rep) return;
+      sums[rep] = (sums[rep] || 0) + r.net;
+      if(!asOf[rep] || r.date > asOf[rep]) asOf[rep] = r.date;
+      seen[rep] = 1;
+    });
+    flush();
     var map = {};
     Object.keys(sums).forEach(function(rep){
       var sp = (spans[rep] || []).sort(function(a, b){ return a.from < b.from ? -1 : a.from > b.from ? 1 : 0; });
@@ -1589,6 +1608,99 @@
       map[rep] = { amount: Math.round(sums[rep] * 100) / 100, asOf: asOf[rep], covered: end || asOf[rep], complete: complete };
     });
     return map;
+  }
+  // Parts of a total, in KD with 2 decimals, that add up to the total as
+  // shown: each part rounded to the fils, then to the cent, and the cents the
+  // rounding left over go to the parts with the largest remainder — so no part
+  // moves by more than one cent and a part of 0 stays 0.
+  function centsSplit(parts, total){
+    var fils = parts.map(function(x){ return Math.round((Number(x) || 0) * 1000); });
+    var cents = fils.map(function(f){ return Math.floor(f / 10); });
+    var rem = fils.map(function(f, i){ return f - cents[i] * 10; });
+    var left = Math.round((Number(total) || 0) * 100) - cents.reduce(function(s, c){ return s + c; }, 0);
+    var order = rem.map(function(x, i){ return i; }).sort(function(a, b){ return rem[b] - rem[a] || a - b; });
+    for(var k = 0; left > 0 && k < order.length; k++){ if(rem[order[k]] > 0){ cents[order[k]]++; left--; } }
+    if(left !== 0 && parts.length){ // only a total that is not these parts' own sum gets here: the largest part takes it
+      var big = 0; for(var j = 1; j < fils.length; j++) if(Math.abs(fils[j]) > Math.abs(fils[big])) big = j;
+      cents[big] += left;
+    }
+    return cents.map(function(c){ return c / 100; });
+  }
+  function erpMonthEnd(m){ var ds = getMonthDates(m + '-01'); return ds[ds.length - 1]; }
+  // ---- Who bought in a month, on the month figure's own lines (v115) ----
+  // The Clinics screen's ERP card lists the month's customers from the lines
+  // erpMtd reads (erpMonthLines), so the card adds up to the month figure:
+  // per person, clinics (linked to a clinic or not) + online / channels +
+  // ignored accounts = monthAchievement, to the cent. Ignored accounts stay
+  // out of the list (their invoices count in the month for the salesman who
+  // issued them); lines that count for nobody in the team are in neither.
+  // opts = { rep: a name | 'all' (default), month: 'YYYY-MM' (default: the
+  //   month of data.today, to today; another month runs to its last day),
+  //   fallback: true → when no saved file overlaps this month yet, the last
+  //   month that has one, isExchange(r): true for a return line marked as an
+  //   exchange (left out of the returned value) }.
+  // Returns { month, from, to, current, fallback, files, missing, covered,
+  //   last, accounts: [{ key, name, clinicId, channel, family, reps, net, ret,
+  //   invoices, last }] (largest first), people: [{ rep, total, clinics,
+  //   channels, ignored }] (largest first), totals: { total, clinics,
+  //   channels, ignored }, mtd: erpMtd as of `to` }. `files` = files read,
+  //   `missing` = files of the window whose rows did not load on this device
+  //   (in no figure); `covered` = one person's "ERP to" date as the Today card
+  //   gives it (monthAchievement), or the last day the files cover for 'all'.
+  function monthCustomerSales(data, opts){
+    data = data || {}; opts = opts || {};
+    var es = data.erpSales, clinics = data.clinics || [], today = String(data.today || '');
+    var cur = today.slice(0, 7), month = /^\d{4}-\d{2}$/.test(opts.month || '') ? opts.month : cur, fallback = false;
+    var all = (es && Array.isArray(es.periods) ? es.periods : []).filter(function(p){ return p && p.from && p.to; });
+    var over = function(p, a, b){ return p.to >= a && p.from <= b; };
+    if(opts.fallback && month === cur && !all.some(function(p){ return over(p, cur + '-01', today); })){
+      var latest = null;   // a file that did not load still says which month the files reach
+      all.forEach(function(p){ if(p.from > today) return; var t = p.to > today ? today : p.to; if(!latest || t > latest) latest = t; });
+      if(latest){ month = latest.slice(0, 7); fallback = true; }
+    }
+    var from = month + '-01', to = month === cur ? today : erpMonthEnd(month);
+    var rep = opts.rep && opts.rep !== 'all' ? opts.rep : null;
+    var isEx = typeof opts.isExchange === 'function' ? opts.isExchange : function(){ return false; };
+    var fams = clinicFamilies(clinics), acc = Object.create(null), keys = [], ppl = Object.create(null), names = [], last = null;
+    erpMonthLines(data, from, to, function(r, p, who, m){
+      if(!who || (rep && who !== rep)) return;
+      var kind = m.ignored ? 'ignored' : m.channel ? 'channels' : 'clinics';
+      var pp = ppl[who];
+      if(!pp){ pp = ppl[who] = { total: 0, clinics: 0, channels: 0, ignored: 0 }; names.push(who); }
+      pp.total += r.net; pp[kind] += r.net;          // the same lines, in the same order, as erpMtd's sum
+      if(m.ignored) return;
+      // branch deliveries of one clinic family are ONE line, counted once; a
+      // hand link (erpMap) stays its own line — the supervisor's un-merge tool
+      var name = (r.customer || '').trim(), key = name || ERP_NO_NAME, label = key;
+      var fam = (m.clinicId && m.method !== 'map') ? (m.family || fams.byClinic[m.clinicId]) : null;
+      if(fam && fams.fams[fam]){ key = '@fam:' + fam; label = fams.fams[fam].label + ' (' + fams.fams[fam].count + ')'; } else fam = null;
+      var a = acc[key];
+      if(!a){ a = acc[key] = { key: key, name: label, clinicId: m.clinicId || null, channel: !!m.channel, family: fam, net: 0, ret: 0, docs: Object.create(null), last: '', people: Object.create(null), order: [] }; keys.push(key); }
+      a.net += r.net; if(!isEx(r)) a.ret += returnValue(r); a.docs[r.doc] = 1;
+      if(!erpOwn(a.people, who)){ a.people[who] = 0; a.order.push(who); }
+      a.people[who] += r.net;
+      if(r.date > a.last) a.last = r.date;
+      if(!last || r.date > last) last = r.date;
+    });
+    var c2 = function(x){ return Math.round(x * 100) / 100; };
+    var accounts = keys.map(function(k){ var a = acc[k];
+      return { key: a.key, name: a.name, clinicId: a.clinicId, channel: a.channel, family: a.family,
+        reps: a.order.slice().sort(function(x, y){ return a.people[y] - a.people[x] || erpCmp(x, y); }),
+        net: c2(a.net), ret: c2(a.ret), invoices: Object.keys(a.docs).length, last: a.last }; })
+      .sort(function(x, y){ return y.net - x.net || erpCmp(x.name, y.name); });
+    var people = names.map(function(n){ var pp = ppl[n], total = c2(pp.total);   // erpMtd's own rounding
+      var sp = centsSplit([pp.clinics, pp.channels, pp.ignored], total);
+      return { rep: n, total: total, clinics: sp[0], channels: sp[1], ignored: sp[2] }; })
+      .sort(function(x, y){ return y.total - x.total || erpCmp(x.rep, y.rep); });
+    var cents = function(f){ return Math.round(people.reduce(function(s, x){ return s + Math.round(x[f] * 100); }, 0)) / 100; };
+    var files = 0, missing = 0;
+    all.forEach(function(p){ if(over(p, from, to)){ if(p.rowsMissing) missing++; else files++; } });
+    // the window's month figures, once: the screen compares with them, and one
+    // person's card is dated as the Today card dates her figure ("ERP to")
+    var dTo = Object.assign({}, data, { today: to }), mtd = erpMtd(dTo);
+    return { month: month, from: from, to: to, current: month === cur, fallback: fallback, files: files, missing: missing,
+      covered: rep ? monthAchievement(rep, dTo, mtd).asOf : erpMonthCovered(dTo), last: last, accounts: accounts, people: people,
+      totals: { total: cents('total'), clinics: cents('clinics'), channels: cents('channels'), ignored: cents('ignored') }, mtd: mtd };
   }
   // Invoices a team member issued at ANOTHER rep's clinic this month (shared
   // accounts excluded — those count for the issuer). They count for the
@@ -5451,7 +5563,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
