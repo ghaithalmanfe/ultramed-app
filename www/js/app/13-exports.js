@@ -244,6 +244,7 @@ en: {
   capNonBuyers:(w)=>`Active accounts with no invoice yet — ${w} — with the working model and the reason recorded per clinic.`,
   thisMonth:'this month', lastFileMonth:(m)=>`${m} (no sales file for this month yet)`,
   buyersRecon:(a,b,c,t)=>`Month's sales: clinics ${a} + online / channels ${b} + ignored accounts ${c} = ${t}. Online / channel and ignored accounts count for the salesman who issued them; they are not in the clinic lists.`,
+  buyersPeople:(list)=>`By person: ${list}.`, notInTargets:'not in the targets table',
   capRetDetail:(w)=>`Each returned item in the period ${w}: which clinic returned it, when, its value, and the recorded justification.`,
   capRetBrand:'Total returned value grouped by brand (top 5).',
   capRetCust:'Total returned value grouped by clinic (top 5).',
@@ -299,6 +300,7 @@ ar: {
   capNonBuyers:(w)=>`الحسابات النشطة بلا فواتير بعد — ${w} — مع طريقة التعامل والسبب المسجل لكل عيادة.`,
   thisMonth:'هذا الشهر', lastFileMonth:(m)=>`${m} (لا يوجد ملف مبيعات لهذا الشهر بعد)`,
   buyersRecon:(a,b,c,t)=>`مبيعات الشهر: العيادات ${a} + أونلاين / قنوات ${b} + حسابات متجاهَلة ${c} = ${t}. حسابات الأونلاين / القنوات والحسابات المتجاهَلة تُحسب لمن أصدر فاتورتها، ولا تظهر في قوائم العيادات.`,
+  buyersPeople:(list)=>`حسب الشخص: ${list}.`, notInTargets:'غير مدرج في جدول الأهداف',
   capRetDetail:(w)=>`كل صنف مرتجع في الفترة ${w}: العيادة التي أرجعته، التاريخ، القيمة، والمبرر المسجل.`,
   capRetBrand:'إجمالي قيمة المرتجعات حسب البراند (أعلى 5).',
   capRetCust:'إجمالي قيمة المرتجعات حسب العيادة (أعلى 5).',
@@ -669,6 +671,9 @@ function buildMasterReportBody(lang, format){
   const dashMonth = !dash.ms ? '' : dash.ms.current ? L.thisMonth
     : L.lastFileMonth(new Date(dash.ms.month + '-01T00:00:00').toLocaleDateString(rtl ? 'ar-KW-u-nu-latn' : 'en-US', {month:'long', year:'numeric'}));
   const dashParts = !dash.ms ? null : repFilter !== 'all' ? (dash.ms.people[0] || {clinics:0, channels:0, ignored:0, total:0}) : dash.ms.totals;
+  // everyone the files credit, so the buyers total can be read against the targets table above
+  const dashPeople = dash.ms && repFilter === 'all' && dash.ms.people.length > 1 ? ' ' + L.buyersPeople(dash.ms.people.map(p =>
+    `${esc(p.rep)} ${mrMoney(p.total, lang)}${tstats.some(x => x.rep === p.rep) ? '' : ' (' + L.notInTargets + ')'}`).join(' · ')) : '';
   const buySec = dash.hasData ? `<div class="mr-kpis">
       <div class="mr-kpi"><div class="n"><span class="num">${dashBuyers.length}</span></div><div class="l">${L.boughtLbl}</div></div>
       <div class="mr-kpi"><div class="n"><span class="num">${dash.nonBuyers.length}</span></div><div class="l">${L.notBoughtLbl}</div></div>
@@ -680,7 +685,7 @@ function buildMasterReportBody(lang, format){
     <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.colInv}</th><th>${L.colValue}</th></tr></thead><tbody>
     ${dashBuyers.slice(0,25).map(b=>`<tr><td>${esc(b.name)}</td><td>${esc(b.rep||'')}</td><td><span class="num">${b.invoices}</span></td><td>${mrMoney(b.net,lang)}</td></tr>`).join('')}
     ${dashBuyers.length>25?`<tr><td colspan="4"><span class="mr-note">+${dashBuyers.length-25}</span></td></tr>`:''}
-    </tbody></table>${dashParts ? `<div class="mr-note">${L.buyersRecon(mrMoney(dashParts.clinics,lang), mrMoney(dashParts.channels,lang), mrMoney(dashParts.ignored,lang), mrMoney(dashParts.total,lang))}</div>` : ''}
+    </tbody></table>${dashParts ? `<div class="mr-note">${L.buyersRecon(mrMoney(dashParts.clinics,lang), mrMoney(dashParts.channels,lang), mrMoney(dashParts.ignored,lang), mrMoney(dashParts.total,lang))}${dashPeople}</div>` : ''}
     <h3 class="mr-rep">${L.notBoughtLbl} (${dash.nonBuyers.length})</h3>
     ${cap(L.capNonBuyers(dashMonth))}
     <table class="mr-tbl"><thead><tr><th>${L.colClinic}</th><th>${L.rep}</th><th>${L.colModel}</th><th>${L.colReason}</th></tr></thead><tbody>

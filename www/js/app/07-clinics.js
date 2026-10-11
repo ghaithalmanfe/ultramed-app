@@ -63,34 +63,40 @@ function erpDashRecon(d){
 }
 // How the card adds up to the month's sales (v115): clinics (the Bought list,
 // linked to a clinic or not) + online / channels + ignored accounts = each
-// person's month. For the running month that is the Today screen's figure —
-// compared here, never assumed; for an earlier month, the Months report's.
+// person's month. For the running month that is the Today screen's figure,
+// for an earlier month the Months report's — compared here, never assumed,
+// and claimed only for the people that screen lists (the team for a
+// supervisor, herself for a rep): someone off the team list can still be
+// credited by the files (her clinics, her salesman) and is said to be.
 function erpDashReconHTML(d){
   const ms = d.ms;
   if(!ms) return '';
   const sup = currentUser.role === 'supervisor';
+  const listed = r => sup ? REPS.includes(r) : r === currentUser.name;
   const hasTarget = r => { const t = targets[r] || {}; return t.revenue > 0; };
   const amt = v => `<b dir="ltr" style="white-space:nowrap;">${money(v)}</b>`;
-  const line = (part, label, v, extra) => `<div class="row-between" data-part="${part}" style="gap:10px; padding:2px 0;${extra || ''}"><span>${label}</span>${amt(v)}</div>`;
+  const line = (part, label, v) => `<div class="row-between" data-part="${part}" style="gap:10px; padding:2px 0;"><span>${label}</span>${amt(v)}</div>`;
+  const muted = t => `<div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>${t}</span></div>`;
   const one = d.rep !== 'all';
   const p0 = { rep: d.rep, total: 0, clinics: 0, channels: 0, ignored: 0 };
   const parts = one ? (ms.people[0] || p0) : ms.totals;
-  // The figure the person sees elsewhere — the Today screen's for the running
-  // month (only a person with a sales target has one there), the Months
-  // report's for an earlier month; null when there is none to compare with.
-  // One month-to-date pass serves every comparison (bestMonthRevenue is
-  // monthAchievement on digestData(); the Months report's figure for an
-  // earlier month is the same lines summed to its last day).
-  const data = digestData(), mtd = UMCore.erpMtd(ms.current ? data : Object.assign({}, data, { today: ms.to }));
-  const refFig = r => ms.current ? (hasTarget(r) ? UMCore.monthAchievement(r, data, mtd).amount : null) : (mtd[r] ? mtd[r].amount : 0);
-  const off = [];   // a person whose figure here is not that one: said, never hidden
-  const same = (r, v) => { const f = refFig(r); if(f != null && Math.round(f * 100) !== Math.round(v * 100)) off.push({ rep: r, ref: f }); return f != null && Math.round(f * 100) === Math.round(v * 100); };
-  let totalLabel;
+  // the figure that screen shows for a person, from the same month pass; null when it shows none
+  const data = digestData(), mtd = ms.mtd || {};
+  const refFig = r => !listed(r) ? null
+    : ms.current ? (hasTarget(r) ? UMCore.monthAchievement(r, data, mtd).amount : null)
+    : (mtd[r] ? mtd[r].amount : 0);
+  const off = [];   // a person whose figure here is not that screen's: said, never hidden
+  const same = (r, v) => { const f = refFig(r); if(f == null) return false;
+    if(Math.round(f * 100) !== Math.round(v * 100)){ off.push({ rep: r, ref: f }); return false; } return true; };
+  const why = r => !listed(r) ? (ms.current ? 'not on the team list — not on the Today screen' : 'not on the team list — not in the Months report')
+    : (ms.current && !hasTarget(r)) ? 'no sales target — no sales figure on the Today screen' : '';
+  let totalLabel, oneNote = '';
   if(one){
     const ok = same(d.rep, parts.total);
     totalLabel = ms.current
       ? `<span><b>${esc(d.rep)}</b> · <span>${ok ? "Month's sales — the Today screen figure" : "Month's sales"}</span></span>`
       : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>${ok ? 'sales as in the Months report' : 'sales'}</span></span>`;
+    if(why(d.rep)) oneNote = muted(why(d.rep));
   } else {
     totalLabel = ms.current ? `<span>Month's sales — everyone</span>` : `<span><b>${esc(monthLabel(ms.month))}</b> · <span>everyone's sales</span></span>`;
   }
@@ -99,22 +105,25 @@ function erpDashReconHTML(d){
     let allSame = true;
     people = ms.people.map(p => {
       if(!same(p.rep, p.total)) allSame = false;
-      const note = ms.current && !hasTarget(p.rep) ? ` <span style="color:var(--muted); font-size:11px;">· <span>no sales target — not on the Today screen</span></span>` : '';
+      const w = why(p.rep);
+      const note = w ? ` <span style="color:var(--muted); font-size:11px;">· <span>${w}</span></span>` : '';
       return `<div class="row-between" data-person="${esc(p.rep)}" style="gap:10px; padding:1px 0;"><span><span>${esc(p.rep)}</span>${note}</span>${amt(p.total)}</div>`;
     }).join('');
-    // "each as on the Today screen" only when every listed figure is checked against it
-    const each = allSame ? `<div style="color:var(--muted); font-size:11.5px; margin-top:2px;"><span>${ms.current ? "Each person's figure is the one on the Today screen." : "Each person's figure is the one in the Months report."}</span></div>` : '';
+    // "each as on that screen" only when every listed figure was checked against it
+    const each = allSame ? muted(ms.current ? "Each person's figure is the one on the Today screen." : "Each person's figure is the one in the Months report.") : '';
     if(people) people = `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${people}${each}</div>`;
   }
   let team = '';
   if(!one && ms.current && sup){
-    // teamTargetNow(), on the same pass
-    const tt = teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: UMCore.monthAchievement(r, data, mtd).amount } : null; }));
+    // the Today card's Team line (teamTargetNow), on the same month pass
+    const tt = teamTargetTotal(REPS.map(r => hasTarget(r) ? { goal: targets[r].revenue, ach: UMCore.monthAchievement(r, data, mtd).amount } : null));
     if(tt.n >= 1 && tt.pct != null && Math.round(tt.ach * 100) !== Math.round(ms.totals.total * 100))
-      team = `<div data-part="team" style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>The Team line on the Today screen counts only the people with a sales target:</span> ${amt(tt.ach)}</div>`;
+      team = `<div data-part="team" style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>The Team line on the Today screen counts only team members with a sales target:</span> ${amt(tt.ach)}</div>`;
   }
   const offNote = off.map(x => `<div style="color:var(--coral-ink); font-size:11.5px; margin-top:4px;">⚠️ <b>${esc(x.rep)}</b> · <span>${ms.current ? 'The Today screen shows' : 'The Months report shows'}</span> ${amt(x.ref)} · <span>please report this difference.</span></div>`).join('');
-  const noFile = ms.fallback ? `<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;"><span>No sales file for this month yet: the Today screen shows 0 until one is uploaded.</span></div>` : '';
+  // "the Today screen shows 0" only when it shows a sales figure to be 0
+  const todayZero = one ? (listed(d.rep) && hasTarget(d.rep)) : REPS.some(hasTarget);
+  const noFile = ms.fallback ? `<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;"><span>${todayZero ? 'No sales file for this month yet: the Today screen shows 0 until one is uploaded.' : 'No sales file for this month yet.'}</span></div>` : '';
   const missing = ms.missing ? `<div id="erpDashMissing" style="color:var(--amber-ink); font-weight:600; font-size:11.5px; line-height:1.55; margin-top:4px;">⚠️ ${ms.missing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="retryErpRows().then(() => { if(activeView === 'clinics' && clinicMode === 'dash') renderClinicDash(); }).catch(e => console.warn('retry sales rows', e))">🔄 <span>Load them again</span></span></div>` : '';
   return `<div id="erpDashRecon" style="margin:10px 0 4px; padding:9px 11px; border-radius:10px; background:var(--paper); font-size:12.5px; line-height:1.5;">
     <div style="font-weight:700; margin-bottom:4px;">🧮 <span>How this card adds up to the month's sales</span></div>
@@ -122,8 +131,8 @@ function erpDashReconHTML(d){
     ${line('channels', 'Online / channels', parts.channels)}
     ${line('ignored', 'Ignored accounts', parts.ignored)}
     <div class="row-between" data-part="total" style="gap:10px; padding:4px 0 0; margin-top:3px; border-top:1px solid var(--line); font-weight:700;">${totalLabel}${amt(parts.total)}</div>
-    ${people}${team}${offNote}
-    <div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>Online / channel and ignored accounts count in the month for the salesman who issued them; they are not in the clinic lists.</span></div>
+    ${oneNote}${people}${team}${offNote}
+    ${muted('Online / channel and ignored accounts count in the month for the salesman who issued them; they are not in the clinic lists.')}
     ${noFile}${missing}
   </div>`;
 }

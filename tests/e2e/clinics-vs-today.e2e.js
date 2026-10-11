@@ -38,18 +38,18 @@ const split = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: re
   periods: [
     { id: 'sepoct', from: '2026-09-15', to: '2026-10-03', net: sum(SEPOCT), rowCount: SEPOCT.length, importedAt: '2026-10-04T08:00:00.000Z', repMap, rev: 1, rows: SEPOCT },
     { id: 'oct', from: '2026-10-04', to: '2026-10-08', net: sum(OCT), rowCount: OCT.length, importedAt: '2026-10-08T08:00:00.000Z', repMap, rev: 1, rows: OCT }] });
-function seed(){
+function seed(o = {}){
   Object.keys(cloud).forEach(k => { delete cloud[k]; });
   cloud.erpSales = JSON.stringify(split.index);
   Object.keys(split.docs).forEach(k => { cloud[k] = JSON.stringify(split.docs[k]); });
   cloud.erpMap = JSON.stringify({ 'Marketing Philips': '@ignore' });
-  cloud.staff = JSON.stringify([{name:M, role:'rep', email:'m@x.com'}, {name:R, role:'rep', email:'r@x.com'}, {name:G, role:'supervisor', email:'g@x.com'}]); // he sells (no target)
+  cloud.staff = JSON.stringify([{name:M, role:'rep', email:'m@x.com'}, {name:R, role:'rep', email:'r@x.com'}, Object.assign({name:G, role:'supervisor', email:'g@x.com'}, o.gSells === false ? { sells: false } : {})]); // he sells (no target)
   cloud.clinics = JSON.stringify([
     {id:'m1', name:'Dental 8 Clinic', rep:M, cls:'A', doctors:[]},
     {id:'m2', name:'Bright Smile Clinic', rep:M, cls:'B', doctors:[]},
     {id:'r1', name:'Meena Dental', rep:R, cls:'B', doctors:[]},
     {id:'g1', name:'Bayan Dental Center', rep:G, cls:'A', doctors:[]}]);
-  cloud.targets = JSON.stringify({ [M]: { revenue: 1000, month: '2026-10' }, [R]: { revenue: 1000, month: '2026-10' } });
+  cloud.targets = JSON.stringify(Object.assign({ [M]: { revenue: 1000, month: '2026-10' }, [R]: { revenue: 1000, month: '2026-10' } }, o.targets || {}));
   // an order typed in a visit: the "logged" figure must never read as invoiced sales
   cloud.visits = JSON.stringify([{ id: 'v1', clinicId: 'm1', rep: M, date: '2026-10-05', orderTaken: true, orderTotal: 500, orders: [{ total: 500, items: [] }] }]);
 }
@@ -133,7 +133,8 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   check('all: clinics 154 + online / channels 12 + ignored 5 = 171', kd(c.parts.clinics) === 154 && kd(c.parts.channels) === 12 && kd(c.parts.ignored) === 5 && kd(c.parts.total) === 171, c.parts);
   const pp = Object.fromEntries(c.people.map(x => [x.rep, kd(x.t)]));
   check('all: each person as on the Today screen — Mariam 91, Renova 30, Dr. Ghaith 50', pp[M] === 91 && pp[R] === 30 && pp[G] === 50, c.people);
-  check('all: says the Team line on the Today screen counts only people with a sales target (121.00 KD)', /121\.00 KD/.test(c.team || '') && /sales target/.test(c.team || ''), c.team);
+  check('all: says the Team line on the Today screen counts only team members with a sales target (121.00 KD)', /121\.00 KD/.test(c.team || '') && /team members with a sales target/.test(c.team || ''), c.team);
+  check('all: Dr. Ghaith (no sales target) — says only that the Today screen has no sales figure for him', /no sales target — no sales figure on the Today screen/.test((c.people.find(x => x.rep === G) || {}).t || ''), c.people);
   // a figure that would not match the Today screen is said, never claimed equal
   const offc = await page.evaluate(() => { const real = UMCore.monthAchievement; UMCore.monthAchievement = (...a) => { const b = real(...a); return Object.assign({}, b, { amount: b.amount + 1 }); };
     try{ setClinicRepFilter('Mariam'); renderClinicDash(); return bestMonthRevenue('Mariam').amount + ' | ' + document.getElementById('erpDashRecon').innerText.replace(/\s+/g, ' '); } finally { UMCore.monthAchievement = real; } });
@@ -167,6 +168,17 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   check('3 Nov, everyone: October per person, each checked against the Months report', kd(c.parts.total) === 171 && /Each person's figure is the one in the Months report/.test(c.rec) && !/Today screen/.test(c.parts.total || '') && !c.team, { total: c.parts.total, team: c.team, rec: c.rec.slice(0, 300) });
   const nov = await today();
   check('3 Nov: the Today card shows 0.00 KD for Mariam (no file for this month yet)', /Mariam \d+% 0\.00 KD of 1000\.00 KD/.test(nov), nov.slice(0, 300));
+  c = await clinicsCard(G);
+  check('3 Nov, Dr. Ghaith (no sales target): "no sales file yet", never "the Today screen shows 0"', /No sales file for this month yet\./.test(c.rec) && !/shows 0/.test(c.rec), c.rec.slice(-260));
+  // ---- someone the files still credit but who is off the team list (Also sells off, target kept) ----
+  seed({ gSells: false, targets: { [G]: { revenue: 500, month: '2026-10' } } });
+  await boot(G, 'supervisor');
+  c = await clinicsCard('all');
+  const gRow = (c.people.find(x => x.rep === G) || {}).t || '';
+  check('off the team list: his 50 KD is listed and said to be off the Today screen; no "each as on the Today screen"', kd(gRow) === 50 && /not on the team list — not on the Today screen/.test(gRow) && !/Each person's figure/.test(c.rec), { gRow, rec: c.rec.slice(0, 400) });
+  check('off the team list: the Team note names team members (121.00 KD), not a missing target', /team members with a sales target: 121\.00 KD/.test(c.team || ''), c.team);
+  const t2 = await today();
+  check('off the team list: the Today card does not list him', !/Dr\. Ghaith/.test(t2) && /121\.00 KD of 2000\.00 KD/.test(t2), t2.slice(0, 300));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

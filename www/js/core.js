@@ -1643,8 +1643,10 @@
   //   last, accounts: [{ key, name, clinicId, channel, family, reps, net, ret,
   //   invoices, last }] (largest first), people: [{ rep, total, clinics,
   //   channels, ignored }] (largest first), totals: { total, clinics,
-  //   channels, ignored } }. `files` = files read, `missing` = files of the
-  //   window whose rows did not load on this device (in no figure).
+  //   channels, ignored }, mtd: erpMtd as of `to` }. `files` = files read,
+  //   `missing` = files of the window whose rows did not load on this device
+  //   (in no figure); `covered` = one person's "ERP to" date as the Today card
+  //   gives it (monthAchievement), or the last day the files cover for 'all'.
   function monthCustomerSales(data, opts){
     data = data || {}; opts = opts || {};
     var es = data.erpSales, clinics = data.clinics || [], today = String(data.today || '');
@@ -1693,9 +1695,12 @@
     var cents = function(f){ return Math.round(people.reduce(function(s, x){ return s + Math.round(x[f] * 100); }, 0)) / 100; };
     var files = 0, missing = 0;
     all.forEach(function(p){ if(over(p, from, to)){ if(p.rowsMissing) missing++; else files++; } });
+    // the window's month figures, once: the screen compares with them, and one
+    // person's card is dated as the Today card dates her figure ("ERP to")
+    var dTo = Object.assign({}, data, { today: to }), mtd = erpMtd(dTo);
     return { month: month, from: from, to: to, current: month === cur, fallback: fallback, files: files, missing: missing,
-      covered: erpMonthCovered(Object.assign({}, data, { today: to }), rep), last: last, accounts: accounts, people: people,
-      totals: { total: cents('total'), clinics: cents('clinics'), channels: cents('channels'), ignored: cents('ignored') } };
+      covered: rep ? monthAchievement(rep, dTo, mtd).asOf : erpMonthCovered(dTo), last: last, accounts: accounts, people: people,
+      totals: { total: cents('total'), clinics: cents('clinics'), channels: cents('channels'), ignored: cents('ignored') }, mtd: mtd };
   }
   // Invoices a team member issued at ANOTHER rep's clinic this month (shared
   // accounts excluded — those count for the issuer). They count for the
