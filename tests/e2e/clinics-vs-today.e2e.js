@@ -134,6 +134,10 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   const pp = Object.fromEntries(c.people.map(x => [x.rep, kd(x.t)]));
   check('all: each person as on the Today screen — Mariam 91, Renova 30, Dr. Ghaith 50', pp[M] === 91 && pp[R] === 30 && pp[G] === 50, c.people);
   check('all: says the Team line on the Today screen counts only people with a sales target (121.00 KD)', /121\.00 KD/.test(c.team || '') && /sales target/.test(c.team || ''), c.team);
+  // a figure that would not match the Today screen is said, never claimed equal
+  const offc = await page.evaluate(() => { const real = UMCore.monthAchievement; UMCore.monthAchievement = (...a) => { const b = real(...a); return Object.assign({}, b, { amount: b.amount + 1 }); };
+    try{ setClinicRepFilter('Mariam'); renderClinicDash(); return bestMonthRevenue('Mariam').amount + ' | ' + document.getElementById('erpDashRecon').innerText.replace(/\s+/g, ' '); } finally { UMCore.monthAchievement = real; } });
+  check('a figure that differs from the Today screen is said, never claimed equal', /The Today screen shows 92\.00 KD/.test(offc) && /please report this difference/.test(offc) && !/the Today screen figure/.test(offc), offc);
   // ---- a rep sees her own ----
   await boot(M, 'rep');
   c = await clinicsCard();
@@ -152,6 +156,8 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   c = await clinicsCard(M);
   check('3 Nov, no November file: the card shows October and says why', /October 2026/.test(c.sub) && /the last month with a sales file/.test(c.sub) && /No sales file for this month yet: the Today screen shows 0/.test(c.rec), { sub: c.sub, rec: c.rec });
   check('3 Nov: the reconciliation is October\'s figure (91.00 KD), not the Today figure', kd(c.parts.total) === 91 && /October/.test(c.parts.total || '') && !/Today screen/.test(c.parts.total || ''), c.parts.total);
+  c = await clinicsCard('all');
+  check('3 Nov, everyone: October per person, each checked against the Months report', kd(c.parts.total) === 171 && /Each person's figure is the one in the Months report/.test(c.rec) && !/Today screen/.test(c.parts.total || '') && !c.team, { total: c.parts.total, team: c.team, rec: c.rec.slice(0, 300) });
   const nov = await today();
   check('3 Nov: the Today card shows 0.00 KD for Mariam (no file for this month yet)', /Mariam \d+% 0\.00 KD of 1000\.00 KD/.test(nov), nov.slice(0, 300));
   check('no page errors', errors.length === 0, errors);
