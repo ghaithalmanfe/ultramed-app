@@ -147,6 +147,13 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   await boot(G, 'supervisor');
   const mr = await page.evaluate(() => { reportRepFilter = 'Mariam'; const html = buildMasterReportBody('en', 'full'); const m = html.match(/<td>Dental 8 Clinic<\/td><td>Mariam<\/td><td><span class="num">(\d+)<\/span><\/td><td>([^<]+)</); return m ? { inv: +m[1], val: m[2] } : null; });
   check('management report: Dental 8 Clinic in "Accounts that bought" = 65.00 (October only)', !!mr && /65\.00/.test(mr.val), mr);
+  // ---- the DSR gives the targets and their brand split only (owner's rule): its achieved column is never shown ----
+  const dsr = await page.evaluate(async () => { const keep = JSON.stringify(targets); const realPersist = window.persist; window.persist = async () => true;
+    try{ await applyTargetsFile({ targets: { Renova: { revenue: 1000, achieved: 777.77, achievedAsOf: '2026-10-07', brands: { Intensiv: 600, Tepe: 400 } } },
+      matched: [{ rep: 'Renova', name: 'Ranova Ayman', revenue: 1000, achieved: 777.77, brandCount: 2 }], unmatched: [] });
+      return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); }
+    finally { window.persist = realPersist; targets = JSON.parse(keep); try{ closeModal(); }catch(e){} } });
+  check('DSR upload sheet: target and brand targets only — the DSR\'s own achieved (777.77) is not shown, and it says achieved comes from ERP', !/777\.77/.test(dsr) && /1000\.00 KD/.test(dsr) && /2 brand targets/.test(dsr) && /Achieved always comes from the ERP sales files/.test(dsr), dsr.slice(0, 600));
   // ---- Arabic ----
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   c = await clinicsCard(M);

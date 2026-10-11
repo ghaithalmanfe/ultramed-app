@@ -197,6 +197,7 @@
     // Clinics screen: the ERP card adds up to the month figure (v115)
     "Customer sales — who bought & who didn't": 'مبيعات العملاء — من اشترى ومن لم يشترِ',
     'Bought': 'اشترت',
+    'From the DSR file: the targets and their split by brand only. Achieved always comes from the ERP sales files.': 'من ملف DSR: التارغت وتوزيعه على البراندات فقط. المحقق يُحسب دائماً من ملفات مبيعات ERP.',
     'customers': 'عملاء',
     "Didn't buy yet": 'لم تشترِ بعد',
     "Didn't buy": 'لم تشترِ',
