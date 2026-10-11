@@ -66,16 +66,18 @@ async function setSalesmanMap(name, value){
   showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : value ? `${name} → ${value}` : `${name} ignored${removed ? ` — ${removed} stored lines removed` : ''}`);
   openErpImport();
 }
+// A salesman's name comes from the ERP file: it reaches setSalesmanMap through
+// data-salesman (and the rep through data-rep), never inside the onclick
+// string — an apostrophe would break the tap, a quote with code would run.
 function salesmenCard(){
   const map = (erpSales && erpSales.repMapGlobal) || {};
   const names = Object.keys(map).sort();
   if(!names.length) return '';
-  const q = n => esc(n).replace(/'/g, "\\'");
   return `<div class="section-title">Salesmen in your files</div>
     <p style="color:var(--muted); font-size:12px; margin:-2px 0 8px;">Ignored salesmen are not read at all: their lines are dropped on import and removed from stored files. To bring one back, include them and re-upload the file.</p>
     ${names.map(n => `<div class="card" style="padding:10px 12px; margin-bottom:6px;">
       <div style="font-weight:700; font-size:13px; ${map[n]===null?'color:var(--muted);':''}">${esc(n)}${map[n]===null?' <span style="font-weight:400; font-size:11.5px;">· ignored — not read</span>':''}</div>
-      <div class="chip-row" style="margin-top:6px;">${REPS.map(r => `<div class="chip small ${map[n]===r?'on':''}" onclick="setSalesmanMap('${q(n)}','${esc(r)}')">${esc(r)}</div>`).join('')}<div class="chip small ${map[n]===null?'on':''}" onclick="setSalesmanMap('${q(n)}', null)">Ignore</div></div>
+      <div class="chip-row" style="margin-top:6px;">${REPS.map(r => `<div class="chip small ${map[n]===r?'on':''}" data-salesman="${esc(n)}" data-rep="${esc(r)}" onclick="setSalesmanMap(this.dataset.salesman, this.dataset.rep)">${esc(r)}</div>`).join('')}<div class="chip small ${map[n]===null?'on':''}" data-salesman="${esc(n)}" onclick="setSalesmanMap(this.dataset.salesman, null)">Ignore</div></div>
     </div>`).join('')}`;
 }
 // Prior-invoice returns inside one uploaded period, for the reconciliation sheet.
@@ -486,6 +488,7 @@ function openErpImport(){
     <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows, PDF report text, or target lines like: Renova 12000"></textarea>
     <button class="btn secondary small" style="margin-top:8px;" onclick="erpAutoImport(document.getElementById('erpPaste').value)">Read pasted text</button>
     ${salesmenCard()}
+    ${erpLinksCard()}
     ${periods.length?`<div class="section-title">Saved sales periods</div>
       ${periods.map(p=>{
         const reps = [...new Set(Object.values(p.repMap||{}).filter(Boolean))];
@@ -832,17 +835,6 @@ async function deleteErpPeriod(id){
   showToast(ok ? 'Deleted' : '⚠️ الحذف لم يُحفظ بعد — اضغط شريط إعادة المحاولة');
   openErpImport();
 }
-async function saveErpCustMap(idx, value, periodId){
-  const cust = _erpUnmatched[idx];
-  if(!cust) return;
-  if(value) erpMap[cust] = value; else delete erpMap[cust];
-  await persist('erpMap');
-  openErpRecon(periodId);
-}
-function erpClinicOptions(){
-  return clinics.filter(c=>c.cls!=='Closed').slice().sort((a,b)=>a.name.localeCompare(b.name))
-    .map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
-}
 // A fast, precise "what did the app do with this file?" audit: every salesman
 // mapped to a rep, every customer classified (clinic / channel / ignored /
 // unmatched / ambiguous branches), with row counts and net — so the supervisor
@@ -851,15 +843,17 @@ function erpFileAudit(p){
   const rows = erpViewRows(p);
   const repMap = p.repMap || {};
   // 1) totals
-  const t = { rows: rows.length, net: 0, inv: {}, ret: {}, retVal: 0 };
+  // every map here is keyed by a name or number from the file: no prototype, so a customer
+  // or salesman named "constructor" or "__proto__" is a key like any other
+  const t = { rows: rows.length, net: 0, inv: Object.create(null), ret: Object.create(null), retVal: 0 };
   rows.forEach(r=>{ t.net += r.net; (r.type==='return'?t.ret:t.inv)[r.doc]=1; if(isExchangeLine(r)) t.exchVal=(t.exchVal||0)+UMCore.returnValue(r); else t.retVal += UMCore.returnValue(r); });
   t.net = Math.round(t.net*100)/100; t.retVal = Math.round(t.retVal*100)/100;
   // 2) salesman -> rep
-  const bySales = {};
+  const bySales = Object.create(null);
   rows.forEach(r=>{ const k=(r.salesman||'—').trim()||'—'; const a=bySales[k]||(bySales[k]={name:k, rep:repMap[k]||null, rows:0, net:0}); a.rows++; a.net+=r.net; });
   const salesmen = Object.values(bySales).map(a=>({...a, net:Math.round(a.net*100)/100})).sort((a,b)=>b.net-a.net);
   // 3) customer -> classification
-  const byCust = {};
+  const byCust = Object.create(null);
   rows.forEach(r=>{
     const k=(r.customer||'').trim()||'(no name)';
     const a=byCust[k]||(byCust[k]={name:k, rep:UMCore.erpRowRep(r, clinics, erpMap, repMap)||null, docs:new Set(), net:0});
@@ -868,11 +862,18 @@ function erpFileAudit(p){
   const customers = Object.values(byCust).map(a=>{
     const m = UMCore.matchCustomer(a.name, clinics, erpMap);
     let kind, label, clinicName='';
+    const closedTag = id => { const c = clinics.find(x=>x.id===id); return c && c.cls==='Closed' ? ' · مغلقة' : ''; };
     if(m.ignored){ kind='ignored'; label='⛔ متجاهَل'; }
     else if(m.channel){ kind='channel'; label='🌐 قناة / أونلاين'; }
     else if(m.ambiguous){ kind='ambiguous'; label='⚠️ ملتبس — عدة فروع'; }
-    else if(m.method==='family'){ kind='clinic'; clinicName=m.familyLabel||''; label='✅ '+esc(m.familyLabel||'')+' <span style="color:var(--muted); font-size:10.5px;">(موحّد — '+m.branches+' فروع)</span>'; }
-    else if(m.clinicId){ const c=clinics.find(x=>x.id===m.clinicId); clinicName=c?c.name:''; kind='clinic'; label='✅ '+esc(clinicName)+(m.method==='fuzzy'?' <span style="color:var(--muted);">(تقريبي)</span>':m.method==='map'?' <span style="color:var(--muted);">(يدوي)</span>':''); }
+    else if(m.method==='family'){ kind='clinic'; clinicName=m.familyLabel||''; label='✅ <span dir="auto">'+esc(m.familyLabel||'')+'</span> <span style="color:var(--muted); font-size:10.5px;">(موحّد — '+m.branches+' فروع)</span>'+closedTag(m.clinicId); }
+    else if(m.clinicId){
+      const c=clinics.find(x=>x.id===m.clinicId);
+      // a hand link to a clinic that was removed counts at no clinic: each
+      // invoice counts for the salesman who issued it (erpRowRep) — say so
+      if(!c){ kind='gone'; label='⛔ عيادة محذوفة (يدوي) — تُحسب لمن أصدر الفاتورة'; }
+      else { clinicName=c.name; kind='clinic'; label='✅ <span dir="auto">'+esc(clinicName)+'</span>'+(m.method==='fuzzy'?' <span style="color:var(--muted);">(تقريبي)</span>':m.method==='map'?' <span style="color:var(--muted);">(يدوي)</span>':'')+closedTag(c.id); }
+    }
     else { kind='none'; label='⚠️ غير مطابق'; }
     return {name:a.name, rep:a.rep, invoices:a.docs.size, net:Math.round(a.net*100)/100, kind, label, method:m.method};
   }).sort((a,b)=>b.net-a.net);
@@ -884,16 +885,19 @@ function erpAuditSection(p){
   const T = a.totals;
   const c = a.counts;
   const salesmanRows = a.salesmen.map(s=>`<tr style="border-top:1px solid var(--line);">
-    <td style="padding:5px 6px;">${esc(s.name)}</td>
+    <td style="padding:5px 6px; overflow-wrap:anywhere;">${esc(s.name)}</td>
     <td style="padding:5px 6px;">${s.rep?esc(s.rep):'<span style="color:var(--coral-ink);">— خارج الفريق —</span>'}</td>
     <td style="text-align:end; padding:5px 6px;">${s.rows}</td>
     <td style="text-align:end; padding:5px 6px; font-weight:700;">${money(s.net)}</td></tr>`).join('');
-  const needAttn = a.customers.filter(x=>x.kind==='none'||x.kind==='ambiguous');
+  const attn = x => x.kind==='none' || x.kind==='ambiguous' || x.kind==='gone';
+  const needAttn = a.customers.filter(attn);
   const custRows = a.customers.map(x=>{
-    const bg = (x.kind==='none'||x.kind==='ambiguous') ? 'background:var(--amber-dim);' : '';
+    const bg = attn(x) ? 'background:var(--amber-dim);' : '';
+    // every named account can be moved from here: the editor shows what moves before anything is saved
+    const change = x.name !== '(no name)' ? `<div><button class="chip small" style="padding:3px 8px; font-size:11px; margin-top:3px;" data-erp-link="${esc(x.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${esc(p.id)}')">${I('pencil')} تغيير</button></div>` : '';
     return `<tr style="border-top:1px solid var(--line); ${bg}">
-      <td style="padding:5px 6px;">${esc(x.name)}</td>
-      <td style="padding:5px 6px; font-size:11.5px;">${x.label}</td>
+      <td style="padding:5px 6px; overflow-wrap:anywhere;"><span dir="auto">${esc(x.name)}</span></td>
+      <td style="padding:5px 6px; font-size:11.5px;">${x.label}${change}</td>
       <td style="text-align:end; padding:5px 6px;">${x.invoices}</td>
       <td style="text-align:end; padding:5px 6px; font-weight:700; ${x.net<0?'color:var(--coral-ink);':''}">${money(x.net)}</td></tr>`;
   }).join('');
@@ -904,7 +908,7 @@ function erpAuditSection(p){
     <div class="report-line"><span>فواتير · مرتجعات</span><span class="v">${Object.keys(T.inv).length} · ${Object.keys(T.ret).length}</span></div>
     <div class="report-line"><span>صافي الملف الكامل</span><span class="v">${money(T.net)}</span></div>
     ${T.retVal>0.005?`<div class="report-line"><span>قيمة المرتجعات</span><span class="v" style="color:var(--coral-ink);">${money(T.retVal)}</span></div>`:''}
-    <div class="report-line"><span>تصنيف العملاء</span><span class="v" style="font-size:12px;">✅ ${c.clinic||0} · 🌐 ${c.channel||0} · ⛔ ${c.ignored||0} · ⚠️ ${(c.none||0)+(c.ambiguous||0)}</span></div>
+    <div class="report-line"><span>تصنيف العملاء</span><span class="v" style="font-size:12px;">✅ ${c.clinic||0} · 🌐 ${c.channel||0} · ⛔ ${c.ignored||0} · ⚠️ ${(c.none||0)+(c.ambiguous||0)+(c.gone||0)}</span></div>
   </div>
   ${needAttn.length?`<div class="nudge" style="margin-bottom:10px; border-color:#FF9500;">⚠️ ${needAttn.length} عميل يحتاج ربطاً يدوياً (بالأصفر أدناه) — لن تُحسب مبيعاتهم لأي عيادة حتى تربطهم.</div>`:'<div class="nudge" style="margin-bottom:10px;">✅ كل العملاء مصنّفون — لا شيء معلّق.</div>'}
   <div class="section-title">👥 ربط البائعين بالمندوبات</div>
@@ -913,7 +917,7 @@ function erpAuditSection(p){
     ${salesmanRows}
   </table></div>
   <div class="mr-note" style="color:var(--muted); font-size:11.5px; margin:6px 2px;">ملاحظة: مبيعات أي عيادة مطابَقة تُنسب لِـ<b>المندوبة المالكة للعيادة</b>، بغض النظر عن اسم البائع في الملف. الجدول أعلاه يبيّن ربط الأسماء كما في الملف فقط.</div>
-  <div class="section-title">🏥 تصنيف كل عميل (مصدر المطابقة)</div>
+  <div class="section-title"><span>🏥 تصنيف كل عميل (مصدر المطابقة)</span> <span class="link" onclick="openErpLinks({back:'recon:${esc(p.id)}'})">كل الحسابات</span></div>
   <div class="card" style="overflow-x:auto; max-height:340px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
     <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">العميل في الملف</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">صُنّف كـ</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">فواتير</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">صافي</th></tr>
     ${custRows}
@@ -958,7 +962,7 @@ function openErpRecon(id){
       ${targetBar}
     </div>
     ${(()=>{ // every account (clinic / customer) this rep sold to, from the uploaded file
-      const acc = {};
+      const acc = Object.create(null); // keyed by customer names: no prototype
       rows.forEach(rw => {
         if(!UMCore.inRange(rw.date, p.from, p.to)) return; // a prior-invoice return re-dated to its own month leaves this period's table
         if(UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) !== r.rep) return;
@@ -981,7 +985,7 @@ function openErpRecon(id){
             const tag = m.channel ? '<span style="color:var(--muted); font-size:11px;"> · 🌐 channel</span>'
               : clinic ? `<span style="color:var(--muted); font-size:11px;"> · ${esc(clinic.name)}</span>` : '';
             return `<tr style="border-top:1px solid var(--line);">
-              <td style="padding:5px 6px;">${esc(cust)}${tag}</td>
+              <td style="padding:5px 6px; overflow-wrap:anywhere;">${esc(cust)}${tag}</td>
               <td style="text-align:end; padding:5px 6px;">${a.docs.size}</td>
               <td style="text-align:end; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${a.net.toFixed(2)}</td>
             </tr>`;
@@ -997,7 +1001,7 @@ function openErpRecon(id){
     ${(()=>{ // brand targets vs ERP actuals for this rep (from the DSR file)
       const bt = targets[r.rep] && targets[r.rep].brands;
       if(!bt || !Object.keys(bt).length) return '';
-      const actual = {};
+      const actual = Object.create(null);
       rows.forEach(rw => {
         if(UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) !== r.rep) return;
         const b = UMCore.normBrand(rw.brand);
@@ -1034,16 +1038,16 @@ function openErpRecon(id){
     })()}
     ${r.matched.length?`<div class="card" style="border-inline-start:4px solid var(--sage);">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">✅ Visited AND invoiced</div>
-      ${r.matched.map(m=>`<div class="report-line"><span>${esc(m.clinicName)} <span style="color:var(--muted);">(${m.visits} visit${m.visits===1?'':'s'})</span></span><span class="v">${money(m.net)}</span></div>`).join('')}
+      ${r.matched.map(m=>`<div class="report-line"><span style="overflow-wrap:anywhere; min-width:0;">${esc(m.clinicName)} <span style="color:var(--muted);">(${m.visits} visit${m.visits===1?'':'s'})</span></span><span class="v">${money(m.net)}</span></div>`).join('')}
     </div>`:''}
     ${r.visitedNoInvoice.length?`<div class="card" style="border-inline-start:4px solid #FF9500;">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🕓 Visited, no invoice yet (pipeline)</div>
-      ${r.visitedNoInvoice.map(m=>`<div class="report-line"><span>${esc(m.clinicName)}</span><span class="v">${m.visits} visit${m.visits===1?'':'s'}</span></div>`).join('')}
+      ${r.visitedNoInvoice.map(m=>`<div class="report-line"><span style="overflow-wrap:anywhere; min-width:0;">${esc(m.clinicName)}</span><span class="v">${m.visits} visit${m.visits===1?'':'s'}</span></div>`).join('')}
     </div>`:''}
     ${r.invoicedNoVisit.length?`<div class="card" style="border-inline-start:4px solid var(--coral);">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">⚠️ Invoiced with NO logged visit</div>
       <div style="color:var(--muted); font-size:12px; margin-bottom:6px;">Phone sales, or visits that were never logged — worth asking about.</div>
-      ${r.invoicedNoVisit.map(m=>`<div class="report-line"><span>${esc(m.customer)}</span><span class="v">${money(m.net)}</span></div>`).join('')}
+      ${r.invoicedNoVisit.map(m=>`<div class="report-line"><span style="overflow-wrap:anywhere; min-width:0;">${esc(m.customer)}</span><span class="v">${money(m.net)}</span></div>`).join('')}
     </div>`:''}
     ${(r.app.unknownClinic||r.app.zeroOrders)?`<div class="card">
       <div style="font-weight:700; font-size:13px; margin-bottom:6px;">🧹 Logging quality</div>
@@ -1093,20 +1097,21 @@ function openErpRecon(id){
       </div>` : '';
     })()}
     ${rec.perRep.length?rec.perRep.map(repCard).join(''):'<div class="empty">No rows map to your team — check the salesman mapping when importing.</div>'}
-    ${_erpUnmatched.length?`<div class="section-title">🔗 Unrecognized customer names</div>
+    ${_erpUnmatched.length?(()=>{
+      // a line with no customer name is never an account: it cannot be linked, so it gets a line of explanation, never a button
+      const blank = c => { const t = String(c == null ? '' : c).trim(); return !t || t === '(no name)'; };
+      const named = _erpUnmatched.filter(c => !blank(c));
+      const nl = _erpUnmatched.some(blank) ? rows.filter(r => UMCore.inRange(r.date, p.from, p.to) && blank(r.customer)) : [];
+      return `<div class="section-title">🔗 Unrecognized customer names</div>
     <div class="card">
-      <div style="color:var(--muted); font-size:12.5px; margin-bottom:8px;">Tell me once who these ERP customers are — I'll remember forever.</div>
-      ${_erpUnmatched.map((cust,i)=>`
-        <div style="padding:6px 0; ${i?'border-top:1px solid var(--line);':''}">
-          <div style="font-size:13px; margin-bottom:4px;">${esc(cust)}</div>
-          <select onchange="saveErpCustMap(${i}, this.value, '${esc(p.id)}')" style="width:100%;">
-            <option value="">— match to… —</option>
-            <option value="@channel">🌐 Online / channel sale (not a clinic)</option>
-            <option value="@ignore">🚫 Ignore this customer</option>
-            ${erpClinicOptions()}
-          </select>
+      ${named.length ? `<div style="color:var(--muted); font-size:12.5px; margin-bottom:8px;">Tell me once who these ERP customers are — I'll remember forever.</div>` : ''}
+      ${named.map((cust,i)=>`
+        <div class="row-between" style="gap:8px; padding:6px 0; align-items:center; ${i?'border-top:1px solid var(--line);':''}">
+          <div dir="auto" style="flex:1; min-width:0; font-size:13px; overflow-wrap:anywhere;">${esc(cust)}</div>
+          <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(cust)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${esc(p.id)}')">Link…</button>
         </div>`).join('')}
-    </div>`:''}
+      ${nl.length ? `<div id="erpUnrNameless" style="color:var(--muted); font-size:12px; line-height:1.55; padding:6px 0 0; ${named.length?'border-top:1px solid var(--line);':''}"><span>Lines with no customer name cannot be linked — each counts for the salesman who issued it:</span> ${nl.length} · <span dir="ltr">${money(nl.reduce((t, r) => t + (Number(r.net) || 0), 0))}</span></div>` : ''}
+    </div>`; })():''}
     <button class="btn" style="margin-top:12px;" onclick="closeModal()">✅ Done</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="downloadErpReconFile('${esc(p.id)}')">⬇️ Save this report as a file</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${esc(p.id)}')">${I('share')} Share (WhatsApp / email)</button>
@@ -1114,3 +1119,1102 @@ function openErpRecon(id){
   `);
 }
 
+// ---- ERP ACCOUNT LINKS (v113): which branch an account's invoices count at ----
+// erpMap holds the links set by hand — { ERP customer name: clinicId |
+// '@channel' | '@ignore' } — and every other name is matched automatically
+// (UMCore.matchCustomer). A link chosen by mistake (the owner's case: a new
+// Aline branch that was not in the app yet, linked to another branch) is
+// changed here: the account list (openErpLinks), the editor (openErpLinkEdit)
+// and its check-before-saving page (openErpLinkPreview), reached from the
+// clinic card, the reconciliation audit, "Unrecognized customer names" and the
+// import screen (supervisor only). Every figure comes from UMCore.erpAccounts /
+// erpLinkPreview / monthAchievement — the code paths of every other screen. A
+// save changes ONE account with a compare-and-set in the cloud (saveErpLink),
+// never persist('erpMap'), which would overwrite the whole map; memory and the
+// device copy change only once the cloud has confirmed.
+// A save reads a snapshot of its page taken when Save was tapped, never _el:
+// the person may leave the page while the cloud answers. Every editor sheet is
+// stamped with its own number (elStamp); a save that finishes — in time or
+// late — redraws only its own page while that page is still on screen, and
+// otherwise just says what happened in a toast (the Undo waits in the list).
+let ERP_LINK_WRITE_MS = 12000;   // a let, so a harness can shorten it
+let _el = null;                  // the account being edited (see elInit)
+let _elPv = null;                // its check-before-saving figures, as last shown
+let _elUndo = null;              // the last confirmed change, for Undo
+let _elUndoSeq = 0;
+let _elBusy = false;             // a Save (new branch, then link) or an Undo is running
+// Links this device asked for whose write the app stopped waiting for (a
+// timeout): if the cloud later holds one of them, a refused save says "your
+// earlier change landed meanwhile", never "changed on another device".
+const _elOwnLate = Object.create(null);   // name → [values]
+function elOwnLateAdd(name, v){ const a = _elOwnLate[name] || (_elOwnLate[name] = []); if(a.indexOf(v) < 0) a.push(v); if(a.length > 6) a.shift(); }
+function elOwnLateHas(name, v){ return !!(_elOwnLate[name] && _elOwnLate[name].indexOf(v) >= 0); }
+let _elStep = null;              // 'list' | 'edit' | 'preview' — the editor sheet last drawn
+let _elSheet = 0;                // the stamp of that sheet (elOnScreen)
+let _elSheetSeq = 0;
+let _elListOpts = { filter: 'all', q: '' };
+let _elAll = null;               // UMCore.erpAccounts() behind the open list
+let _elDraftTimer = null;
+let _elLogChain = Promise.resolve();
+const EL_CLS = ['A', 'B', 'C', 'D', 'F'];
+// The sentences that say what a link does — exactly what the engine does today.
+const EL_TXT = {
+  none: 'Matches no clinic — each invoice counts for the salesman who issued it, and the account goes back to "Unrecognized customer names".',
+  noneOut: 'Matches no clinic — it was invoiced by salesmen outside the team, so it counts for nobody on the team; it shows as "not linked".',
+  noneNow: 'Matches no clinic — each invoice counts for the salesman who issued it.',
+  ambiguous: 'Several branches match — each invoice counts for the salesman who issued it until you choose one.',
+  gone: 'Linked to a clinic that was removed — each invoice counts for the salesman who issued it.',
+  ignore: "Ignored: it leaves the clinic lists, product movement and the weekly deck's week figures, but its invoices still count in the month's sales for the salesman who issued them.",
+  channel: 'Online / channel: each invoice counts for the salesman who issued it, and it leaves the clinic lists and the discount check.',
+  internal: 'A company-internal account (marketing / advertisement) is never counted on a clinic.',
+  channelName: 'An online / channel account is never counted on a clinic.',
+  handLine: 'A hand link shows as its own line in "Who bought", not inside the branch group.',
+  notSaved: 'Not saved — nothing changed. Check the connection and tap Save again.',
+  conflict: "This account's link was changed on another device — nothing was saved. Open it again to see where it counts now.",
+  conflictAfterBranch: "The new branch was added, but this account's link was changed on another device meanwhile — the link was not saved. Open it again to see where it counts now.",
+  conflictOwn: "Your earlier change to this account reached the cloud meanwhile — nothing else was saved. Open it again to see where it counts now.",
+  conflictOwnAfterBranch: "The new branch was added, and your earlier change to this account reached the cloud meanwhile — the link was not saved again. Open it again to see where it counts now.",
+  stale: 'Where this account counts changed since this page opened — nothing was saved. Open it again to see where it counts now.',
+  timeout: 'No confirmation from the cloud yet — the screen still shows the old link. If the save lands later, the figures update and a message appears.',
+  notLoaded: 'Account links were not loaded from the cloud on this device — changes are paused. Reopen the app with a connection.',
+  rows: 'Some sales files did not load on this device — the figures here would be short, so changes are paused.',
+  busy: 'A sales-file save is in progress or not confirmed yet — changes are paused. Tap the red bar first.',
+  noClinic: 'That clinic is not in the list any more.',
+  closedTarget: 'That clinic is closed — choose an open branch.',
+  clinicsPending: 'Clinic changes made on this device are still uploading — link to a clinic once they are in the cloud.',
+  same: 'This is already where it counts.',
+  changed: 'The figures changed since this page opened — check them and tap Save again.',
+  noCheck: 'The check could not be made — nothing can be saved from here.',
+  undoGone: 'This change can no longer be undone from here — open the account to change it again.',
+  saving: 'A save is still on its way — tap again in a moment.',
+  stillTakes: "The branch matches this account's name, so it still takes it — remove the branch from its clinic card to go back.",
+};
+// One status vocabulary for the list, the editor and the clinic card.
+const EL_STATUS = {
+  hand: ['by hand', 'var(--green-dim)', 'var(--green-dark)'],
+  gone: ['removed clinic', 'var(--coral-dim)', 'var(--coral-ink)'],
+  name: ['by name', 'var(--sage-dim)', 'var(--sage-ink)'],
+  family: ['branch group', 'var(--sage-dim)', 'var(--sage-ink)'],
+  channel: ['online / channel', '#EEEDE7', 'var(--muted)'],
+  ignored: ['ignored', '#EEEDE7', 'var(--muted)'],
+  ambiguous: ['several branches match', 'var(--amber-dim)', 'var(--amber-ink)'],
+  none: ['not linked', 'var(--amber-dim)', 'var(--amber-ink)'],
+};
+function erpLinkBadge(x){
+  const s = EL_STATUS[x && x.status] || EL_STATUS.none;
+  return `<span class="badge" style="background:${s[1]}; color:${s[2]};">${s[0]}</span>`
+    + (x && x.closed ? ` <span class="badge" style="background:#EEEDE7; color:var(--coral-ink);">closed clinic</span>` : '');
+}
+const elClosedBadge = () => `<span class="badge" style="background:var(--amber-dim); color:var(--amber-ink);">closed month</span>`;
+function erpLinkClinic(id){ return id ? clinics.find(c => c.id === id) || null : null; }
+// The clinic an account (or a before/after side of a change) counts at, '' when none.
+function erpLinkWhere(x, extra){
+  if(!x) return '';
+  if(x.status === 'gone'){ // the removed clinic's name while the recycle bin still has it; the badge says the rest
+    const id = x.link != null ? x.link : x.value, b = (((recycleBin || {}).clinics) || []).find(c => c && c.id === id);
+    return b ? b.name || '' : '';
+  }
+  const c = erpLinkClinic(x.clinicId) || (extra && x.clinicId && extra.id === x.clinicId ? extra : null);
+  return c ? c.name : '';
+}
+function elSideHtml(x, extra){
+  const where = erpLinkWhere(x, extra);
+  return `${where ? `<b dir="auto" style="overflow-wrap:anywhere;">${esc(where)}</b> ` : ''}${erpLinkBadge(x)}`;
+}
+// Where an account counts RIGHT NOW, from memory as it is — never from a page's
+// earlier figures: erpLinkPreview's "before" side (a SAME change reads no line).
+function erpLinkSideNow(name){
+  name = String(name == null ? '' : name).trim();
+  const v = Object.prototype.hasOwnProperty.call(erpMap, name) ? erpMap[name] : null;
+  try{ return UMCore.erpLinkPreview(digestData(), { name, to: v }).before; }catch(e){ console.warn('where an account counts', e); return null; }
+}
+// "Where it counts" as a phrase: at a clinic (its name and how), or the badge
+// and what having no clinic means. mode 'now' (after a change), 'again' (the
+// state it had before the change being undone), 'current' (said after a
+// failure: where it counts at this moment).
+const EL_WHERE = { now: ['now counts at', 'is now'], again: ['counts again at', 'is back to'], current: ['Right now it counts at', 'Right now it is'] };
+function elWhereHtml(side, mode){
+  if(!side) return '';
+  const w = EL_WHERE[mode] || EL_WHERE.now;
+  if(side.status !== 'gone' && erpLinkClinic(side.clinicId)) return `<span>${w[0]}</span> ${elSideHtml(side)}`;
+  const why = { none: EL_TXT.noneNow, ambiguous: EL_TXT.ambiguous, gone: EL_TXT.gone, channel: EL_TXT.channel, ignored: EL_TXT.ignore }[side.status] || '';
+  return `<span>${w[1]}</span> ${elSideHtml(side)}${why ? ` <span>${why}</span>` : ''}`;
+}
+// The same in plain text, for a toast: "Clinic (by hand)" or "not linked".
+function elWhereText(side){
+  const s = EL_STATUS[side && side.status] || EL_STATUS.none, where = erpLinkWhere(side);
+  return where ? `${where} (${s[0]})` : s[0];
+}
+// "Matches no clinic": the account goes back to "Unrecognized customer names"
+// only when some of its invoices count for a team member — that list shows
+// nothing else (UMCore.reconcileErp).
+function elNoneText(people){
+  const list = (people || []).filter(p => Math.abs(p.net) >= 0.0005);
+  if(!list.length) return EL_TXT.noneNow;
+  return list.some(p => p.rep) ? EL_TXT.none : EL_TXT.noneOut;
+}
+function elWho(rep){ return rep ? `<b dir="auto" style="overflow-wrap:anywhere;">${esc(rep)}</b>` : `<b><span>outside the team</span></b>`; }
+function erpLinkPeople(people){
+  const list = (people || []).filter(p => Math.abs(p.net) >= 0.0005);
+  return list.length ? list.map(p => `${elWho(p.rep)} <span dir="ltr" style="color:var(--muted);">${money(p.net)}</span>`).join(' · ') : '—';
+}
+function erpAccountsNow(){ return UMCore.erpAccounts(digestData()); }
+const elNeedsLink = a => a.status === 'gone' || a.status === 'ambiguous' || a.status === 'none';
+const elRowsMissing = () => erpPeriods().some(p => p && p.rowsMissing);
+// Every editor sheet carries data-el-sheet="<n>" on its title. Work that ends
+// later (a save, a late landing, a retry) redraws a sheet only while that very
+// sheet is still the one on screen — closed, or replaced by any other sheet,
+// it is left alone.
+function elStamp(step){ _elStep = step; return (_elSheet = ++_elSheetSeq); }
+function elOnScreen(tok){
+  const back = document.getElementById('modalBack');
+  return !!(tok && back && back.classList.contains('show') && document.querySelector('#modalInner [data-el-sheet="' + tok + '"]'));
+}
+// Changes wait while the figures behind them are not the team's real ones.
+function erpLinksPaused(){
+  if(_loadFailed.erpMap || _mirrorUsed.erpMap) return 'notLoaded';
+  if(elRowsMissing()) return 'rows';
+  if(_erpImporting || _erpSaving || _erpDirty) return 'busy';
+  return null;
+}
+function erpLinksPauseCard(){
+  const k = erpLinksPaused(); if(!k) return '';
+  return `<div class="card" id="elPaused" role="alert" style="border-inline-start:4px solid var(--coral); background:var(--coral-dim); color:var(--coral-ink); margin-bottom:10px; padding:10px 12px; font-size:12.5px; line-height:1.5; font-weight:600;">⚠️ <span>${EL_TXT[k]}</span>
+    ${k === 'rows' ? `<div class="chip-row" style="margin-top:8px;"><button class="chip small on" onclick="elRetryRows()">🔄 <span>Load them again</span></button></div>` : ''}</div>`;
+}
+function elRetryRows(){
+  const tok = _elSheet, step = _elStep, el = _el;
+  retryErpRows().then(() => {
+    if(!elOnScreen(tok)) return; // the person moved on: nothing is redrawn under them
+    if(step === 'preview' && el && el === _el) openErpLinkPreview();
+    else if(step === 'edit' && el && el === _el) openErpLinkEdit(el.name, el.back, el);
+    else if(step === 'list') openErpLinks(_elListOpts);
+  }).catch(e => console.warn('retry sales rows', e));
+}
+// The import screen's way in: how many accounts, how many need a link.
+function erpLinksCard(){
+  let res; try{ res = erpAccountsNow(); }catch(e){ console.error('ERP account links card', e); return ''; }
+  const hand = Object.keys(erpMap).filter(k => k.trim() && k.trim() !== '(no name)').length;
+  if(!res.accounts.length && !hand) return '';
+  const need = res.accounts.filter(elNeedsLink).length;
+  return `<div class="card clickable" id="erpLinksCard" onclick="openErpLinks({back:'import'})" style="padding:12px 14px; margin:14px 0 8px; ${need ? 'border-inline-start:4px solid var(--amber);' : ''}">
+    <div class="row-between" style="gap:8px;"><div style="flex:1; min-width:0;">
+      <div style="font-weight:700; font-size:13.5px;">${I('building')} <span>ERP account links</span></div>
+      <div class="clinic-sub">${res.accounts.length} <span>accounts in your files</span> · ${need} <span>need a link</span> · ${hand} <span>linked by hand</span></div>
+    </div><span style="color:var(--muted); flex-shrink:0;">›</span></div></div>`;
+}
+
+// ---- the account list ----
+// opts = { filter: 'all'|'need'|'hand'|'notclinic', q: the search, pickFor:
+// clinicId (count an account at that clinic), back: where "‹ Back" and a save
+// return to }. The search and the filter stay across ‹ Back, Save and
+// ‹ Pick another (they live in _elListOpts). `noteFollows`: a note with its
+// own Undo is pinned right after, so the "last change" card is not drawn.
+const EL_FILTERS = {
+  all: () => true,
+  need: elNeedsLink,
+  hand: a => a.byHand,
+  notclinic: a => a.status === 'channel' || a.status === 'ignored',
+};
+function openErpLinks(opts, noteFollows){
+  if(!requireAdmin()) return;
+  _elListOpts = Object.assign({ filter: 'all', q: '' }, opts || {});
+  _el = null;
+  try{ _elAll = erpAccountsNow(); }catch(e){ console.error('ERP account list', e); showToast('⚠️ ' + EL_TXT.noCheck); return; }
+  const tok = elStamp('list');
+  const pick = _elListOpts.pickFor ? erpLinkClinic(_elListOpts.pickFor) : null;
+  showModal(`
+    <h3 style="margin-top:0;" data-el-sheet="${tok}">${I('building')} <span>${pick ? 'Count another ERP account here…' : 'ERP account links'}</span></h3>
+    ${pick ? `<div style="margin:-6px 0 8px; font-size:13.5px;"><b dir="auto" style="overflow-wrap:anywhere;">${esc(pick.name)}</b></div>` : ''}
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-2px; line-height:1.5;">Every customer account in your sales files and the branch its invoices count at. Wrong branch? Tap it — you see what moves before anything is saved.</p>
+    ${erpLinksPauseCard()}
+    ${pick || noteFollows ? '' : elLastChangeCard()}
+    <input type="text" id="elSearch" dir="auto" placeholder="Search accounts or clinics…" value="${esc(_elListOpts.q || '')}" oninput="elSearchInput(this.value)" autocomplete="off">
+    <div class="chip-row" id="elFilters" style="margin:8px 0 10px;"></div>
+    <div id="elList"></div>
+    <div id="elFoot" style="color:var(--muted); font-size:11.5px; line-height:1.6; margin-top:6px;"></div>
+    <button class="btn secondary" onclick="elReturn()">‹ Back</button>`);
+  renderErpLinks();
+}
+// The last confirmed change, with its Undo, while the account still counts as
+// that change left it: a save that finished while another sheet was open is
+// undone from here (its toast says so).
+function elLastChangeCard(){
+  const u = _elUndo; if(!u) return '';
+  const cur = Object.prototype.hasOwnProperty.call(erpMap, u.name) ? erpMap[u.name] : null;
+  if(cur !== (u.now == null ? null : u.now)) return '';
+  return `<div class="card" id="elLastChange" style="border-inline-start:4px solid var(--sage, #9ED0AF); padding:10px 12px; margin-bottom:10px; font-size:12.5px; line-height:1.6;">
+    <span>Last change:</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(u.name)}</b> ${elWhereHtml(erpLinkSideNow(u.name), 'now')} ${elUndoBtn(u)}</div>`;
+}
+function elSearchInput(v){ _elListOpts.q = String(v == null ? '' : v); renderErpLinks(); }
+function elSetFilter(f){ _elListOpts.filter = EL_FILTERS[f] ? f : 'all'; renderErpLinks(); }
+function elListCard(a){
+  const pick = _elListOpts.pickFor;
+  const where = erpLinkWhere(a), ink = elNeedsLink(a) ? (a.status === 'gone' ? 'var(--coral)' : 'var(--amber)') : a.byHand ? 'var(--gold)' : 'var(--line)';
+  const noInv = _elAll && _elAll.rowsMissing ? 'no invoice in the files loaded on this device' : 'no invoice in the saved files';
+  return `<div class="card clickable" data-erp-link="${esc(a.name)}"${pick ? ` data-to="${esc(pick)}"` : ''}
+      onclick="${pick ? 'openErpLinkPreviewFor(this.dataset.erpLink, this.dataset.to)' : "openErpLinkEdit(this.dataset.erpLink, 'links')"}"
+      style="padding:10px 12px; margin-bottom:6px; border-inline-start:4px solid ${ink};">
+    <div dir="auto" style="font-weight:700; font-size:13px; overflow-wrap:anywhere;">${esc(a.name)}</div>
+    <div style="font-size:12px; margin-top:3px; display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;">${where ? `<b dir="auto" style="overflow-wrap:anywhere;">${esc(where)}</b>` : ''}${erpLinkBadge(a)}</div>
+    <div class="clinic-sub">${a.stale ? `<span>${noInv}</span>` : `${a.invoices} × · <span dir="ltr">${money(a.net)}</span>${a.last ? ` · <span>last invoice</span> ${fmtDate(a.last)}` : ''}`}</div>
+  </div>`;
+}
+function renderErpLinks(){
+  const el = document.getElementById('elList'); if(!el || !_elAll) return;
+  const q = String(_elListOpts.q || '').trim().toLowerCase();
+  const pickFor = _elListOpts.pickFor || null;
+  const accs = _elAll.accounts.filter(a => !(pickFor && a.clinicId === pickFor)); // "count another account here": not the ones already here
+  const f = EL_FILTERS[_elListOpts.filter] ? _elListOpts.filter : 'all';
+  const fil = document.getElementById('elFilters');
+  if(fil) fil.innerHTML = [['all', 'All'], ['need', 'Need a link'], ['hand', 'By hand'], ['notclinic', 'Not a clinic']].map(([k, label]) =>
+    `<div class="chip small ${f === k ? 'on' : ''}" onclick="elSetFilter('${k}')"><span>${label}</span> (${accs.filter(EL_FILTERS[k]).length})</div>`).join('');
+  const hit = a => !q || a.name.toLowerCase().includes(q) || erpLinkWhere(a).toLowerCase().includes(q);
+  let list = accs.filter(EL_FILTERS[f]).filter(hit), html = '';
+  if(pickFor && !q){
+    // the accounts that look like this clinic (same first distinctive name word) first
+    const c = erpLinkClinic(pickFor), word = c ? (UMCore.normClinicName(c.name).split(' ')[0] || '') : '';
+    const like = word.length >= 4 ? list.filter(a => !a.internal && !a.channelName && (UMCore.normClinicName(a.name).split(' ')[0] || '') === word).slice(0, 5) : [];
+    if(like.length){
+      html += `<div class="section-title" style="margin-top:4px;">Looks like this clinic</div>${like.map(elListCard).join('')}<div class="section-title">All accounts</div>`;
+      list = list.filter(a => !like.includes(a));
+    }
+  }
+  html += list.slice(0, 40).map(elListCard).join('') || `<div style="color:var(--muted); font-size:13px; text-align:center; padding:14px;">Nothing matches.</div>`;
+  if(list.length > 40) html += `<div style="color:var(--muted); font-size:12px; text-align:center; padding:6px;">Showing 40 of ${list.length} — search to find the others</div>`;
+  // links whose name no loaded file carries: they apply to future uploads — or, while a file is missing here, may be in it
+  const stale = pickFor ? [] : (_elAll.stale || []).filter(s => (f === 'all' || f === 'hand') && (!q || s.name.toLowerCase().includes(q)));
+  if(stale.length) html += `<details style="margin-top:10px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:700; padding:4px 2px;"><span>${_elAll.rowsMissing ? 'Links with no invoice in the files loaded on this device' : 'Links with no invoice in the saved files'}</span> (${stale.length})</summary>
+    ${stale.map(s => elListCard({ name: s.name, link: s.link, byHand: true, status: s.status, clinicId: s.status === 'hand' ? s.link : null, stale: true })).join('')}</details>`;
+  el.innerHTML = html;
+  const foot = document.getElementById('elFoot');
+  if(foot){
+    const all = _elAll.accounts, inv = all.reduce((s, a) => s + a.invoices, 0), kd = all.reduce((s, a) => s + a.net, 0);
+    foot.innerHTML = `<div><span>Accounts:</span> ${all.length} · <span>invoices:</span> ${inv} · <span dir="ltr">${money(kd)}</span> · <span>saved files:</span> ${_elAll.files}</div>`
+      + (_elAll.nameless.lines ? `<div>+ ${_elAll.nameless.lines} <span>lines with no customer name (not linkable)</span> · <span dir="ltr">${money(_elAll.nameless.net)}</span></div>` : '')
+      + (_elAll.rowsMissing ? `<div style="color:var(--amber-ink); font-weight:600;">⚠️ ${_elAll.rowsMissing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="elRetryRows()">🔄 <span>Load them again</span></span></div>` : '');
+  }
+}
+
+// ---- the editor, step 1: where should this account's invoices count? ----
+// The state of one edit. `shownOld` is the link the screen showed (null = no
+// link): the save is refused if the cloud holds anything else by then. `flow`
+// is shared by every attempt of this edit (a retry, ‹ Pick another): a change
+// confirmed once is told once, whichever attempt lands first.
+function elInit(name, back, keep){
+  name = String(name == null ? '' : name).trim();
+  if(!name || name === '(no name)') return false;   // a nameless line is never an account
+  const d = digestData();
+  const shownOld = Object.prototype.hasOwnProperty.call(erpMap, name) ? erpMap[name] : null;
+  let acc = UMCore.erpAccounts(d).accounts.find(a => a.name === name);
+  // Neither an account of the loaded files nor a stored link: not a name any
+  // screen drew, but one changed on its way here — nothing is opened, so
+  // nothing can be saved under a key that is not the account's.
+  if(!acc && shownOld === null) return false;
+  if(!acc){ // a link no saved file carries (it applies to future uploads): where it counts, no figures
+    const b = UMCore.erpLinkPreview(d, { name, to: shownOld }).before || { status: 'none', clinicId: null, closed: false };
+    acc = { name, link: shownOld, byHand: shownOld !== null, status: b.status, clinicId: b.clinicId, closed: b.closed, familyLabel: b.familyLabel, branches: b.branches, candidates: b.candidates,
+      lines: 0, invoices: 0, returns: 0, net: 0, first: null, last: null, monthNet: 0, people: [], internal: UMCore.isInternalAccount(name), channelName: UMCore.isErpChannel(name), variants: [] };
+  }
+  const k = keep && keep.name === name ? keep : null; // "‹ Pick another" keeps a new branch already made
+  _el = { name, back: back || 'links', shownOld, acc, to: undefined, addClinic: null, pickList: false,
+    newId: k ? k.newId : null, newDraft: k ? k.newDraft : null, clinicSaved: !!(k && k.clinicSaved), branch: k ? k.branch : null,
+    branchPv: k ? k.branchPv : null, flow: k && k.flow ? k.flow : {} };
+  return true;
+}
+function erpAccountLines(name){ // one row per document: what "Show the invoices" lists
+  const docs = {};
+  erpPeriods().forEach(p => { if(p && !p.rowsMissing) erpViewRows(p).forEach(r => {
+    if((r.customer || '').trim() !== name) return;
+    const k = r.doc + '|' + r.type;
+    const d = docs[k] || (docs[k] = { doc: r.doc, date: r.date, net: 0, salesman: r.salesman, type: r.type });
+    d.net += Number(r.net) || 0; if((r.date || '') > (d.date || '')) d.date = r.date;
+  }); });
+  return Object.values(docs).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || String(b.doc).localeCompare(String(a.doc)));
+}
+function elInvoicesBlock(name){
+  const docs = erpAccountLines(name);
+  if(!docs.length) return '';
+  return `<details style="margin:0 0 10px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:700; padding:4px 2px;"><span>Show the invoices</span> (${docs.length})</summary>
+    <div style="padding:2px 4px 4px;">${docs.slice(0, 60).map(d => `<div style="display:flex; flex-wrap:wrap; gap:2px 10px; padding:4px 0; border-top:1px dashed var(--line); font-size:12px;">
+      <b dir="auto" style="overflow-wrap:anywhere;">${esc(d.doc || '—')}</b><span>${fmtDate(d.date)}</span><span dir="ltr" style="font-weight:700; ${d.net < 0 ? 'color:var(--coral-ink);' : ''}">${d.type === 'return' ? '↩ ' : ''}${money(d.net)}</span><span dir="auto" style="color:var(--muted); overflow-wrap:anywhere;">${esc(d.salesman || '')}</span></div>`).join('')}
+    ${docs.length > 60 ? `<div style="color:var(--muted); font-size:11.5px; padding-top:4px;">The 60 newest are shown.</div>` : ''}</div></details>`;
+}
+// What an account with no line here says: no invoice in the saved files (the link applies to future uploads),
+// or — while a file did not load on this device — only that none is in the files loaded here.
+const elNoLinesText = () => elRowsMissing() ? 'No invoice in the files loaded on this device.' : 'No invoice in the saved files — the link applies to future uploads.';
+function elTargetCard(c, acc){
+  if(!c) return '';
+  const here = !!(acc && acc.clinicId === c.id && acc.status !== 'gone');
+  const rep = c.rep ? `<span dir="auto">${esc(c.rep)}</span>` : `<span style="color:var(--coral-ink); font-weight:700;">unassigned</span>`;
+  return `<div class="card${here ? '' : ' clickable'}" ${here ? `data-current="${esc(c.id)}"` : `data-target="${esc(c.id)}" onclick="elChoose(this.dataset.target)"`}
+      style="padding:10px 12px; margin-bottom:6px; ${here ? 'border-inline-start:4px solid var(--gold);' : ''}">
+    <div class="row-between" style="gap:8px; align-items:flex-start;"><div style="flex:1; min-width:0;">
+      <div dir="auto" style="font-weight:700; font-size:13.5px; overflow-wrap:anywhere;">${esc(c.name)}</div>
+      <div class="clinic-sub">${rep} · ${c.cls === 'Closed' ? '<span>closed clinic</span>' : `<span>Class</span> ${esc(c.cls || '—')}`}${c.shared ? ' · <span>shared account</span>' : ''}</div>
+    </div>${here ? `<span class="badge" style="background:var(--gold); color:#022917; flex-shrink:0;">counted here now</span>` : ''}</div></div>`;
+}
+function elChoiceCard(target, title, sub){
+  return `<div class="card clickable" data-target="${target}" onclick="elChoose(this.dataset.target)" style="padding:10px 12px; margin-bottom:6px;">
+    <div style="font-weight:700; font-size:13.5px;"><span>${title}</span></div>
+    <div class="clinic-sub" style="line-height:1.5; display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;">${sub}</div></div>`;
+}
+function openErpLinkEdit(name, back, keep){
+  if(!requireAdmin()) return;
+  let ok = false;
+  try{ ok = elInit(name, back, keep); }catch(e){ console.error('ERP account editor', e); }
+  if(!ok){ showToast('⚠️ ' + EL_TXT.noCheck); return; }
+  const tok = elStamp('edit');
+  const acc = _el.acc, notClinic = acc.internal || acc.channelName;
+  const where = erpLinkWhere(acc);
+  const now = acc.status === 'gone' ? EL_TXT.gone : acc.status === 'ambiguous' ? EL_TXT.ambiguous : acc.status === 'none' ? EL_TXT.noneNow : '';
+  let autoSub = '';
+  if(acc.byHand){ // what automatic matching would give, so removing a link is never a guess
+    const m = UMCore.matchCustomer(_el.name, clinics, {}), c = erpLinkClinic(m.clinicId);
+    let none = EL_TXT.noneNow;
+    if(!m.channel && !c && !m.ambiguous){ // with no clinic: back to "Unrecognized customer names" only if a team member issued its invoices
+      try{ const ap = UMCore.erpLinkPreview(digestData(), { name: _el.name, to: null }); if(!ap.error) none = elNoneText(ap.people); }catch(e){ console.warn('automatic match', e); }
+    }
+    autoSub = m.channel ? `<span>Would count at:</span> ${erpLinkBadge({ status: 'channel' })}`
+      : c ? `<span>Would count at:</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(c.name)}</b> ${erpLinkBadge({ status: m.method === 'family' ? 'family' : 'name', closed: c.cls === 'Closed' })}`
+      : `<span>${m.ambiguous ? EL_TXT.ambiguous : none}</span>`;
+  }
+  showModal(`
+    <h3 style="margin-top:0;" data-el-sheet="${tok}">${I('building')} <span>Where do this account's invoices count?</span></h3>
+    ${erpLinksPauseCard()}
+    <div class="card" style="padding:12px 14px;">
+      <div dir="auto" style="font-weight:800; font-size:15px; overflow-wrap:anywhere;">${esc(_el.name)}</div>
+      <div class="clinic-sub"><span>ERP account</span> · ${acc.invoices} × · <span dir="ltr">${money(acc.net)}</span>${acc.first ? ` · ${fmtDate(acc.first)} – ${fmtDate(acc.last)}` : ''}</div>
+      <div style="font-size:13px; margin-top:8px; display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;"><span>Counted now at</span> ${where ? `<b dir="auto" style="overflow-wrap:anywhere;">${esc(where)}</b>` : ''} ${erpLinkBadge(acc)}</div>
+      ${now ? `<div class="clinic-sub" style="line-height:1.5; margin-top:2px;"><span>${now}</span></div>` : ''}
+      ${acc.lines ? `<div style="font-size:12.5px; margin-top:4px; line-height:1.5;"><span>Counts for</span> ${erpLinkPeople(acc.people)}</div>`
+        : `<div class="clinic-sub" style="margin-top:4px;"><span>${elNoLinesText()}</span></div>`}
+      <div id="elLast" style="display:none; font-size:12px; color:var(--muted); margin-top:4px; line-height:1.5;"></div>
+      ${acc.variants.length ? `<div style="font-size:12px; margin-top:8px; line-height:1.9;"><span>Also in your files as:</span> ${acc.variants.map(v => `<button class="chip small" dir="auto" style="padding:3px 8px; font-size:11.5px; max-width:100%; overflow-wrap:anywhere;" data-erp-link="${esc(v)}" onclick="openErpLinkEdit(this.dataset.erpLink, _el ? _el.back : 'links')">${esc(v)}</button>`).join(' ')}</div>` : ''}
+    </div>
+    ${elInvoicesBlock(_el.name)}
+    <div style="color:var(--muted); font-size:12px; margin:2px 2px 0;">One link for every saved file and every future upload.</div>
+    ${notClinic ? `<div class="card" style="border-inline-start:4px solid var(--amber); background:var(--amber-dim); margin-top:12px; padding:10px 12px; font-size:12.5px; line-height:1.5;"><span>${acc.internal ? EL_TXT.internal : EL_TXT.channelName}</span></div>` : `
+    <div class="section-title">Branches of the same clinic</div>
+    ${UMCore.erpBranchCandidates(_el.name, clinics, erpMap).map(id => elTargetCard(erpLinkClinic(id), acc)).join('')}
+    <div class="card clickable" data-target="@new" onclick="elChoose(this.dataset.target)" style="padding:10px 12px; margin-bottom:6px; background:transparent; border:1.5px dashed var(--gold-ink);">
+      <div style="font-weight:700; font-size:13.5px;">${I('plus')} <span>New branch with this name</span></div>
+      <div class="clinic-sub" dir="auto" style="overflow-wrap:anywhere;">${esc(_el.name)}</div>
+    </div>
+    <div class="section-title">Another clinic</div>
+    <input type="text" id="elClinicSearch" dir="auto" placeholder="Search clinics…" oninput="renderElPick()" autocomplete="off">
+    <div id="elPick" style="max-height:260px; overflow-y:auto; margin-top:8px;"></div>`}
+    <div class="section-title">Not a clinic</div>
+    ${acc.byHand ? elChoiceCard('@auto', 'Match by name (automatic)', autoSub) : ''}
+    ${_el.shownOld !== '@channel' ? elChoiceCard('@channel', 'Online / channel sale', `<span>${EL_TXT.channel}</span>`) : ''}
+    ${_el.shownOld !== '@ignore' ? elChoiceCard('@ignore', 'Ignore this customer', `<span>${EL_TXT.ignore}</span>`) : ''}
+    <button class="btn secondary" onclick="elReturn()">‹ Back</button>`);
+  renderElPick();
+  erpLinkFillLast(_el.name);
+}
+function renderElPick(){
+  const el = document.getElementById('elPick'); if(!el || !_el) return;
+  const q = ((document.getElementById('elClinicSearch') || {}).value || '').trim().toLowerCase();
+  const list = clinics.filter(c => c.cls !== 'Closed' && (!q || String(c.name || '').toLowerCase().includes(q) || String(c.rep || '').toLowerCase().includes(q)))
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  el.innerHTML = list.slice(0, 40).map(c => elTargetCard(c, _el.acc)).join('')
+    + (list.length > 40 ? `<div style="color:var(--muted); font-size:12px; text-align:center; padding:6px;">Showing 40 of ${list.length} — search to find the others</div>` : '')
+    + (!list.length ? `<div style="color:var(--muted); font-size:13px; text-align:center; padding:12px;">Nothing matches.</div>` : '');
+}
+// The last change to this account, from the log (a convenience: nothing shows when it cannot be read).
+async function erpLinkFillLast(name){
+  try{
+    const r = await withTimeout(window.storage.get('erpMapLog', true), 5000);
+    const list = UMCore.safeParse(r && r.value, null);
+    const key = elLogName(name), e = Array.isArray(list) ? list.find(x => x && (x.n === key || x.n === name)) : null; // (an entry written before names were bounded holds the whole name)
+    const el = document.getElementById('elLast');
+    if(!e || !el || !_el || _el.name !== name) return;
+    const was = e.f == null ? '<span>Match by name (automatic)</span>' : e.f === '@channel' || e.f === '@ignore' ? erpLinkBadge({ status: e.f === '@channel' ? 'channel' : 'ignored' }) : `<b dir="auto" style="overflow-wrap:anywhere;">${esc(e.fc || e.f)}</b>`;
+    el.innerHTML = `<span>Last change:</span> ${fmtDate(UMCore.localDateStr(new Date(e.at)))} · <b dir="auto" style="overflow-wrap:anywhere;">${esc(e.by || '—')}</b> · <span>before:</span> ${was}`;
+    el.style.display = 'block';
+  }catch(err){ /* the log is a convenience: nothing is shown */ }
+}
+function elChoose(t){
+  if(!_el || !requireAdmin()) return;
+  if(t === '@new'){
+    if(_el.acc.internal || _el.acc.channelName) return;
+    _el.newId = _el.newId || uid();   // a retry (or "‹ Pick another") reuses the same branch id
+    _el.to = _el.newId; _el.addClinic = defaultBranch();
+  } else if(t === '@auto'){ _el.to = null; _el.addClinic = null; }
+  else { _el.to = t; _el.addClinic = null; }
+  openErpLinkPreview();
+}
+// From the list in "count another account here" mode: straight to the check.
+function openErpLinkPreviewFor(name, to, back){
+  if(!requireAdmin()) return;
+  let ok = false;
+  try{ ok = elInit(name, back || _elListOpts.back || 'links'); }catch(e){ console.error('ERP account editor', e); }
+  if(!ok){ showToast('⚠️ ' + EL_TXT.noCheck); return; }
+  _el.pickList = true;
+  elChoose(to);
+}
+// The new branch: named after the ERP account, owned like the branch it was
+// counted at — never a silent first rep: with no clear owner, Save waits for one.
+function defaultBranch(){
+  if(_el.branch) return Object.assign({}, _el.branch); // already made by an earlier tap
+  const acc = _el.acc;
+  const cur = erpLinkClinic(acc.clinicId) || (acc.status === 'gone' ? (((recycleBin || {}).clinics) || []).find(b => b && b.id === acc.link) || null : null);
+  let rep = cur && REPS.includes(cur.rep) ? cur.rep : null;
+  if(!rep){
+    const reps = [...new Set(UMCore.erpBranchCandidates(_el.name, clinics, erpMap).map(id => (erpLinkClinic(id) || {}).rep).filter(Boolean))];
+    if(reps.length === 1 && REPS.includes(reps[0])) rep = reps[0];
+  }
+  if(!rep){ const top = (acc.people || [])[0]; if(top && top.rep && REPS.includes(top.rep)) rep = top.rep; }
+  const nb = { id: _el.newId, name: _el.name, rep, cls: cur && EL_CLS.includes(cur.cls) ? cur.cls : 'B', account: cur ? cur.account || null : null, dealType: cur ? cur.dealType || null : null };
+  return Object.assign(nb, _el.newDraft || {}, { id: _el.newId });
+}
+
+// ---- step 2: check before saving ----
+// Once the branch is in the list (saved, or kept on this device until it
+// uploads) it is shown as text: nothing typed after that could reach it.
+function elNewBranchFields(nb){
+  if(clinics.some(c => c.id === nb.id)){
+    const c = erpLinkClinic(nb.id);
+    return `<div class="card" id="elNewSaved" style="padding:10px 12px;"><div style="font-size:13px; line-height:1.6;"><span>New branch</span>: <b dir="auto" style="overflow-wrap:anywhere;">${esc(c.name)}</b> · <span dir="auto">${esc(c.rep || '—')}</span> · <span>Class</span> ${esc(c.cls || '—')}</div>
+      <div class="clinic-sub"><span>${_el.clinicSaved ? 'The new branch is saved — now save the link.' : 'Saved on this device only — it uploads when the connection is back.'}</span></div></div>`;
+  }
+  return `<div class="card" id="elNewFields" style="padding:12px 14px;">
+    <label for="elNewName" style="margin-top:0;">Branch name</label>
+    <input type="text" id="elNewName" dir="auto" value="${esc(nb.name || '')}" oninput="elDraftChangedSoon()" autocomplete="off">
+    <div id="elNewNameErr" style="display:none; color:var(--coral-ink); font-size:12px; font-weight:600; margin-top:4px;"></div>
+    <div id="elNewHint" style="color:var(--muted); font-size:12px; margin-top:4px; line-height:1.5;"></div>
+    <label>Assigned rep</label>
+    <div class="chip-row" id="elNewRep">${REPS.map(r => `<div class="chip small ${nb.rep === r ? 'on' : ''}" data-rep="${esc(r)}" dir="auto" onclick="elPickNew(this)">${esc(r)}</div>`).join('')}</div>
+    <label>Class</label>
+    <div class="chip-row" id="elNewCls">${EL_CLS.map(c => `<div class="chip small ${nb.cls === c ? 'on' : ''}" data-cls="${c}" onclick="elPickNew(this)">${c}</div>`).join('')}</div>
+  </div>`;
+}
+function elPickNew(el){ if(_elBusy) return; pickModalRep(el); elDraftChanged(); }
+function elDraftChangedSoon(){ clearTimeout(_elDraftTimer); _elDraftTimer = setTimeout(elDraftChanged, 250); }
+function elDraftChanged(){
+  if(!_el || !_el.addClinic || _elBusy || clinics.some(c => c.id === _el.addClinic.id)) return;
+  const n = document.getElementById('elNewName'); if(!n) return;
+  const r = document.querySelector('#elNewRep .chip.on'), c = document.querySelector('#elNewCls .chip.on');
+  _el.newDraft = { name: n.value.trim(), rep: r ? r.dataset.rep : null, cls: c ? c.dataset.cls : 'B' };
+  _el.addClinic = Object.assign({}, _el.addClinic, _el.newDraft);
+  elRenderMoves(); // only the figures re-render: the name field keeps its focus
+}
+// Does the new branch join the others' branch group? (same first name word,
+// same rep, same type words — UMCore.clinicFamilies)
+function elFamilyHint(nb){
+  const nm = String(nb.name || '').trim(); if(!nm || !nb.rep) return '';
+  const others = clinics.filter(c => c.id !== nb.id);
+  const fams = UMCore.clinicFamilies(others.concat([Object.assign({}, nb, { name: nm })])), key = fams.byClinic[nb.id];
+  if(key) return `<span>Joins the branch group</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(fams.fams[key].label)}</b> · ${fams.fams[key].count} <span>branches</span>`;
+  const word = UMCore.normClinicName(nm).split(' ')[0] || '';
+  if(word.length < 4) return '';
+  const sib = others.filter(c => (UMCore.normClinicName(c.name).split(' ')[0] || '') === word);
+  if(!sib.length) return '';
+  const f0 = UMCore.clinicFamilies(others), k0 = sib.map(c => f0.byClinic[c.id]).find(Boolean);
+  const label = k0 ? f0.fams[k0].label : String(sib[0].name || '').trim().split(/\s+/)[0];
+  return `<span>Not grouped with the</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(label)}</b> <span>branches — the rep or the type words differ.</span>`;
+}
+function openErpLinkPreview(){
+  if(!_el || !requireAdmin()) return;
+  const tok = elStamp('preview'); _el.tok = tok;
+  const nb = _el.addClinic;
+  showModal(`
+    <h3 style="margin-top:0;" data-el-sheet="${tok}">${I('check')} <span>Check before saving</span></h3>
+    ${erpLinksPauseCard()}
+    <div class="card" style="padding:10px 12px; margin-bottom:8px;"><div class="clinic-sub" style="margin:0 0 2px;"><span>ERP account</span></div>
+      <div dir="auto" style="font-weight:800; font-size:14.5px; overflow-wrap:anywhere;">${esc(_el.name)}</div></div>
+    ${nb ? elNewBranchFields(nb) : ''}
+    <div id="elPreview"><div id="elMoves"></div></div>
+    <div id="elErr" role="alert" style="display:none; margin-top:12px; padding:10px 12px; border-radius:12px; border-inline-start:4px solid var(--coral); background:var(--coral-dim); color:var(--coral-ink); font-size:12.5px; line-height:1.55; font-weight:600;"></div>
+    <button class="btn" id="elSave" onclick="elSave()" disabled>Save</button>
+    <button class="btn secondary" id="elBack" onclick="elBackToPick()">‹ Pick another</button>`);
+  elRenderMoves();
+}
+// `reopen`: nothing can be saved from this page any more — offer the editor again, on fresh figures.
+function elShowErr(html, reopen){
+  const e = document.getElementById('elErr'); if(!e) return;
+  e.innerHTML = '⚠️ ' + html + (reopen ? `<div class="chip-row" style="margin-top:8px;"><button class="chip small on" id="elReopen" onclick="elReopen()">🔄 <span>Open it again</span></button></div>` : '');
+  e.style.display = 'block';
+}
+function elHideErr(){ const e = document.getElementById('elErr'); if(e){ e.style.display = 'none'; e.innerHTML = ''; } }
+function elReopen(){ if(_el && !_elBusy) openErpLinkEdit(_el.name, _el.back); }
+function elPvSig(pv){
+  return JSON.stringify(pv ? { e: pv.error, a: pv.after && [pv.after.status, pv.after.clinicId], m: pv.moves, f: pv.limitFlips.map(x => x.doc), o: pv.others.map(x => x.name), n: pv.lines, c: pv.closedMonths } : null);
+}
+// Where this account counts changed since the page opened (another device, a
+// refresh, a late landing): nothing can be saved from it.
+function elStale(){
+  if(!_el) return false;
+  const cur = Object.prototype.hasOwnProperty.call(erpMap, _el.name) ? erpMap[_el.name] : null;
+  return cur !== _el.shownOld;
+}
+function elCanSave(){
+  if(!_el || _elBusy || _erpLinkSaving || !_elPv || _elPv.error || erpLinksPaused()) return false;
+  if(_el.conflict || elStale()) return false;
+  if(_el.addClinic && !_el.clinicSaved && _el.fieldErr) return false;
+  const ck = document.getElementById('elClosedOk');
+  return !(ck && !ck.checked);
+}
+function elUpdateSave(){
+  const ck = document.getElementById('elClosedOk');
+  if(ck && _el){ _el.closedOk = ck.checked; _el.closedOkSig = ck.dataset.sig || ''; }
+  const s = document.getElementById('elSave'); if(s) s.disabled = !elCanSave();
+}
+// While a save runs nothing on its page can be changed or left from inside it:
+// Save reads "Saving…", ‹ Pick another and the new-branch fields are locked.
+function elSavingUi(on){
+  const s = document.getElementById('elSave'), b = document.getElementById('elBack'), f = document.getElementById('elNewFields'), n = document.getElementById('elNewName');
+  if(s){ s.disabled = true; s.textContent = on ? 'Saving…' : 'Save'; s.dataset.saving = on ? '1' : ''; }
+  if(b) b.disabled = !!on;
+  if(f){ f.style.pointerEvents = on ? 'none' : ''; f.style.opacity = on ? '.6' : ''; }
+  if(n) n.disabled = !!on;
+  if(!on) elUpdateSave();
+}
+// Everything the change does, worked out by UMCore.erpLinkPreview on the same
+// rows as the month figures; the percentages by UMCore.monthAchievement.
+function elRenderMoves(){
+  const box = document.getElementById('elMoves'); if(!box || !_el) return;
+  const nb = _el.addClinic;
+  _el.fieldErr = null;
+  if(nb && !clinics.some(c => c.id === nb.id)){
+    const nm = String(nb.name || '').trim();
+    const taken = nm && storedClinics().some(c => c.id !== nb.id && String(c.name || '').trim().toLowerCase() === nm.toLowerCase());
+    _el.fieldErr = !nm ? 'Enter a branch name' : taken ? 'A clinic with this name already exists — choose it from the branches (‹ Pick another).' : !nb.rep ? 'Pick the rep who owns the new branch.' : null;
+    const ne = document.getElementById('elNewNameErr');
+    if(ne){ ne.innerHTML = _el.fieldErr ? `<span>${_el.fieldErr}</span>` : ''; ne.style.display = _el.fieldErr ? 'block' : 'none'; }
+    const hint = document.getElementById('elNewHint');
+    if(hint) hint.innerHTML = _el.fieldErr ? '' : elFamilyHint(nb);
+  }
+  let pv = null;
+  try{ pv = UMCore.erpLinkPreview(digestData(), { name: _el.name, to: _el.to, addClinic: nb || null }, { settings: typeof kpiSettings === 'function' ? kpiSettings() : {} }); }
+  catch(e){ console.error('ERP link preview', e); }
+  _elPv = pv;
+  elHideErr();
+  if(!pv){ box.innerHTML = ''; elShowErr(`<span>${EL_TXT.noCheck}</span>`); elUpdateSave(); return; }
+  const parts = [elSidesHtml(pv)];
+  if(pv.error){
+    const msg = pv.error === 'SAME' ? EL_TXT.same : pv.error === 'NO_CLINIC' ? EL_TXT.noClinic : pv.error === 'CLOSED_CLINIC' ? EL_TXT.closedTarget
+      : pv.error === 'NOT_A_CLINIC_ACCOUNT' ? (UMCore.isInternalAccount(_el.name) ? EL_TXT.internal : EL_TXT.channelName) : EL_TXT.noCheck;
+    box.innerHTML = parts.join('');
+    elShowErr(`<span>${msg}</span>`); elUpdateSave(); return;
+  }
+  // what moves: this account, month by month (every saved file), as the month figures count it
+  parts.push(`<div class="section-title">What moves</div><div class="card" style="padding:10px 12px;">
+    <div style="font-size:13.5px; font-weight:800;">${pv.invoices} × · <span dir="ltr">${money(pv.net)}</span>${pv.first ? ` · ${fmtDate(pv.first)} – ${fmtDate(pv.last)}` : ''}</div>
+    ${pv.months.map(m => `<div class="el-month report-line" data-month="${m.month}" style="font-size:12.5px; padding:6px 0; gap:8px; flex-wrap:wrap;">
+      <span>${esc(monthLabel(m.month))}${m.closed ? ' ' + elClosedBadge() : ''}</span><span class="v">${m.invoices} × · <span dir="ltr">${money(m.net)}</span></span></div>`).join('')}
+    ${pv.outside && pv.outside.lines ? `<div class="el-outside clinic-sub" style="margin-top:4px; line-height:1.5;"><span>Lines that count in no month's figure (returns dated back to a month their own file does not cover):</span> ${pv.outside.lines} · <span dir="ltr">${money(pv.outside.net)}</span></div>` : ''}
+    ${!pv.lines ? `<div class="clinic-sub"><span>${elNoLinesText()}</span></div>` : ''}
+    ${(pv.ledger.returns || pv.ledger.free) ? `<div class="clinic-sub" style="margin-top:6px; line-height:1.5;"><span>Return lines</span> ${pv.ledger.returns} · <span>free-goods lines</span> ${pv.ledger.free} — <span>they move with the account, with their reasons.</span></div>` : ''}
+  </div>`);
+  // who it counts for: the person behind every line that changes hands
+  if(!pv.moves.length){
+    parts.push(`<div class="section-title">Who it counts for</div><div class="card" style="padding:10px 12px; font-size:13px; line-height:1.6;">${pv.lines ? `<span>Still counts for</span> ${erpLinkPeople(pv.people)} — ` : ''}<span>nobody's sales figures change.</span></div>`);
+  } else {
+    let today = '';
+    const cur = todayStr().slice(0, 7);
+    if(pv.moves.some(m => m.month === cur)){
+      // the Today card's own figures: now (bestMonthRevenue) and after saving (monthAchievement on the draft)
+      const d1 = Object.assign({}, digestData(), pv.draft), withGoal = REPS.filter(r => (targets[r] || {}).revenue > 0);
+      const nowKey = JSON.stringify([withGoal, erpReturnPolicy(), erpPeriods().map(p => p.id + ':' + (p.rev || '') + ':' + (p.rows || []).length), erpMap,
+        clinics.map(c => [c.id, c.rep, c.prevRep, c.repSince, !!c.shared, c.sharedSince])]);
+      if(!_el.nowAch || _el.nowAch.key !== nowKey){ const v = {}; withGoal.forEach(r => { v[r] = bestMonthRevenue(r).amount; }); _el.nowAch = { key: nowKey, v }; } // unchanged while the name is typed
+      const now = _el.nowAch.v, aft = {}; withGoal.forEach(r => { aft[r] = UMCore.monthAchievement(r, d1).amount; });
+      const pct = (a, g) => `<span dir="ltr">${Math.round(a / g * 100)}%</span>`;
+      const lines = withGoal.filter(r => Math.abs(now[r] - aft[r]) >= 0.005).map(r => `<div class="el-today" data-rep="${esc(r)}" style="font-size:12.5px; padding:2px 0;">${elWho(r)}: <span>now</span> ${pct(now[r], targets[r].revenue)} · <span>after saving</span> ${pct(aft[r], targets[r].revenue)}</div>`);
+      const t0 = teamTargetTotal(withGoal.map(r => ({ goal: targets[r].revenue, ach: now[r] }))), t1 = teamTargetTotal(withGoal.map(r => ({ goal: targets[r].revenue, ach: aft[r] })));
+      if(lines.length && t0.pct != null && t0.n > 1 && (t0.pct !== t1.pct || t0.ach !== t1.ach)) lines.push(`<div class="el-today" data-rep="@team" style="font-size:12.5px; padding:2px 0;"><b><span>Team</span></b>: <span>now</span> <span dir="ltr">${t0.pct}%</span> · <span>after saving</span> <span dir="ltr">${t1.pct}%</span></div>`);
+      if(lines.length) today = `<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--line);"><div style="font-size:11.5px; color:var(--muted); font-weight:700;"><span>This month on the Today card</span></div>${lines.join('')}</div>`;
+    }
+    parts.push(`<div class="section-title">Who it counts for</div><div class="card" style="padding:6px 12px 10px;">
+      ${pv.moves.map(m => `<div class="el-move" data-month="${m.month}" style="padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; line-height:1.55;">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;"><span><b>${esc(monthLabel(m.month))}</b>${m.closed ? ' ' + elClosedBadge() : ''}</span><span dir="ltr" style="font-weight:800;">${money(m.net)}</span></div>
+        <div><span>From</span> ${elWho(m.from)} · <span>To</span> ${elWho(m.to)} · ${m.invoices} ×</div></div>`).join('')}
+      ${today}</div>`);
+  }
+  if(pv.others.length) parts.push(`<div class="section-title">Other accounts that change</div><div class="card" style="padding:6px 12px;">${pv.others.map(o => `<div style="padding:6px 0; border-bottom:1px dashed var(--line); font-size:12.5px; line-height:1.55;">
+      <div style="display:flex; justify-content:space-between; gap:8px;"><b dir="auto" style="overflow-wrap:anywhere; min-width:0;">${esc(o.name)}</b><span dir="ltr" style="font-weight:700; flex-shrink:0;">${money(o.net)}</span></div>
+      <div style="display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;"><span>Now</span>: ${elSideHtml(o.before, nb)} · <span>After saving</span>: ${elSideHtml(o.after, nb)}</div></div>`).join('')}</div>`);
+  if(pv.limitFlips.length){
+    const st = x => !x ? '<span>not in the discount check</span>' : `<span>${x.within ? 'within the limit' : 'over the limit'}</span> <span dir="ltr">(${x.limit}%)</span>`;
+    parts.push(`<div class="section-title">Discount check</div><div class="card" style="padding:8px 12px;">
+      <div style="font-size:12.5px; font-weight:700;"><span>Invoices whose discount check changes:</span> ${pv.limitFlips.length} · <span dir="ltr">${money(pv.limitFlips.reduce((s, x) => s + x.net, 0))}</span></div>
+      ${pv.limitFlips.map(x => `<div style="padding:5px 0; border-top:1px dashed var(--line); font-size:12px; line-height:1.55;">
+        <div><b dir="auto" style="overflow-wrap:anywhere;">${esc(x.doc)}</b> · ${fmtDate(x.date)} · <span dir="ltr">${x.pct}%</span> · <span dir="ltr">${money(x.net)}</span>${x.closed ? ' ' + elClosedBadge() : ''}</div>
+        <div><span>Now</span>: ${st(x.before)} · <span>After saving</span>: ${st(x.after)}</div></div>`).join('')}</div>`);
+  }
+  parts.push(elNotesHtml(pv));
+  // a closed month changes: said by cause — its sales, its discount check, its
+  // new-account / first-time-product wins — and Save waits for an explicit tick
+  const cm = pv.closedMonths || { sales: [], discount: [], wins: [] };
+  if(cm.sales.length || cm.discount.length || cm.wins.length){
+    const sig = JSON.stringify(cm), months = ms => ms.map(m => `<b>${esc(monthLabel(m))}</b>`).join(' · ');
+    parts.push(`<div class="card" id="elClosedCard" style="border-inline-start:4px solid var(--amber); background:var(--amber-dim); margin-top:12px; padding:10px 12px; font-size:12.5px; line-height:1.55;">
+      <div style="font-weight:700;">⚠️ <span>Closed months change</span></div>
+      ${cm.sales.length ? `<div data-closed="sales" style="margin-top:4px;"><span>Sales change in:</span> ${months(cm.sales)}<div style="color:var(--ink-2); font-size:12px;"><span>The month-by-month page, the KPI and the weekly deck history follow.</span></div></div>` : ''}
+      ${cm.discount.length ? `<div data-closed="discount" style="margin-top:4px;"><span>The discount check changes in:</span> ${months(cm.discount)}</div>` : ''}
+      ${cm.wins.length ? `<div data-closed="wins" style="margin-top:4px;"><span>New-account / first-time-product wins can change in:</span> ${months(cm.wins)}</div>` : ''}
+      <label style="display:flex; gap:10px; align-items:center; margin:8px 0 0; font-size:13px; color:var(--ink); font-weight:700; cursor:pointer;"><input type="checkbox" id="elClosedOk" data-sig="${esc(sig)}" ${_el.closedOk && _el.closedOkSig === sig ? 'checked' : ''} onchange="elUpdateSave()" style="width:22px; height:22px; flex-shrink:0; margin:0;"> <span>I understand that closed months change.</span></label>
+    </div>`);
+  }
+  box.innerHTML = parts.join('');
+  // nothing can be saved from a page whose starting point is gone: it says why, and offers the editor again
+  if(_el.conflict) elShowErr(_el.conflict, true);
+  else if(elStale()) elShowErr(`<span>${EL_TXT.stale}</span>`, true);
+  elUpdateSave();
+}
+function elSidesHtml(pv){
+  const line = (label, side, extra) => `<div class="report-line" style="gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;"><span style="color:var(--muted); flex-shrink:0;"><span>${label}</span></span>
+    <span style="display:flex; flex-wrap:wrap; gap:4px 6px; justify-content:flex-end; align-items:center; min-width:0; flex:1 1 auto; text-align:end;">${elSideHtml(side, extra)}</span></div>`;
+  let h = `<div class="card" style="padding:2px 12px; margin-bottom:8px;">${pv.before ? line('Now', pv.before) : ''}${pv.after ? line('After saving', pv.after, _el.addClinic) : ''}</div>`;
+  const a = pv.after, why = !a ? '' : a.status === 'none' ? elNoneText(pv.people) : a.status === 'ambiguous' ? EL_TXT.ambiguous : a.status === 'ignored' ? EL_TXT.ignore : a.status === 'channel' ? EL_TXT.channel : '';
+  if(why) h += `<div class="clinic-sub" style="margin:-2px 2px 8px; line-height:1.5;"><span>${why}</span></div>`;
+  return h;
+}
+function elNotesHtml(pv){
+  const notes = [];
+  const to = _el.to, tgt = typeof to === 'string' && to.charAt(0) !== '@' ? (erpLinkClinic(to) || (_el.addClinic && _el.addClinic.id === to ? _el.addClinic : null)) : null;
+  if(tgt){
+    const unsaved = !!(_el.addClinic && _el.addClinic.id === tgt.id && !clinics.some(c => c.id === tgt.id));
+    if(tgt.shared) notes.push(`<span>Shared account:</span> <span>each invoice counts for the salesman who issued it from</span> ${tgt.sharedSince ? fmtDate(tgt.sharedSince) : '—'}.`);
+    if(tgt.prevRep && tgt.repSince) notes.push(`<span>Handed over:</span> <span>lines dated before</span> ${fmtDate(tgt.repSince)} <span>count for</span> ${elWho(tgt.prevRep)}.`);
+    // with no rep a line counts for the salesman who issued it (UMCore.erpRepOfMatch); only a rep
+    // outside the team takes the sales out of the team totals (a new branch's missing rep is asked for above)
+    if(!tgt.rep){ if(!unsaved) notes.push(`<span>This clinic has no rep — its invoices count for the salesman who issued them.</span>`); }
+    else if(!REPS.includes(tgt.rep)) notes.push(`<span>This clinic counts for</span> ${elWho(tgt.rep)} <span>— not on the team, so those sales leave the team totals.</span>`);
+    if(pv.before && pv.before.status === 'family') notes.push(`<span>${EL_TXT.handLine}</span>`);
+    if(pv.before && pv.before.clinicId && pv.before.clinicId !== tgt.id) notes.push(`<span>Visits already logged stay on the branch they were logged at.</span>`);
+  }
+  // one note per name whose first paid invoice moves (UMCore merges an account and the branch named after it)
+  const day = d => d ? fmtDate(d) : '<span>no paid invoice</span>';
+  pv.firstInvoice.forEach(fi => notes.push(`<b dir="auto" style="overflow-wrap:anywhere;">${esc(fi.label)}</b> — <span>first invoice:</span> <span>now</span> ${day(fi.before)} · <span>after saving</span> ${day(fi.after)} — <span>new-account wins follow this date.</span>`));
+  notes.push(`<span>The daily e-mail follows from its next run; decks and files already downloaded do not change.</span>`);
+  return `<div class="section-title">Good to know</div><div class="card" style="padding:6px 12px;">${notes.map(n => `<div class="el-note" style="padding:5px 0; font-size:12px; line-height:1.55; color:var(--ink-2);">• ${n}</div>`).join('')}</div>`;
+}
+function elBackToPick(){
+  if(!_el || _elBusy) return;
+  if(_el.pickList) openErpLinks(_elListOpts); else openErpLinkEdit(_el.name, _el.back, _el);
+}
+
+// ---- save: a new branch first (it must be in the cloud), then the link ----
+async function elSave(){
+  if(!requireAdmin() || !_el || _elBusy) return;
+  if(!elCanSave()){ elRenderMoves(); return; } // the figures say why nothing can be saved
+  // what the person saw; a refresh or another device may have changed the data behind it: check again first
+  const shown = elPvSig(_elPv);
+  if(_el.addClinic && !_el.clinicSaved && document.getElementById('elNewName')){ clearTimeout(_elDraftTimer); elDraftChanged(); } // a name typed a moment ago counts
+  else elRenderMoves();
+  if(elPvSig(_elPv) !== shown){ elShowErr(`<span>${EL_TXT.changed}</span>`); return; }
+  if(!elCanSave()){ elUpdateSave(); return; }
+  // Everything below reads this snapshot, never _el / _elPv: the person may
+  // leave this page while the cloud answers, and open anything else (its page:
+  // elPageOf). `flow` is shared by every attempt of this edit (a retry, ‹ Pick
+  // another): a change is told once and logged once, whichever attempt lands first.
+  const s = { el: _el, flow: _el.flow, name: _el.name, to: _el.to, shownOld: _el.shownOld, back: _el.back,
+    nb: _el.addClinic && !_el.clinicSaved ? Object.assign({}, _el.addClinic) : null, pv: _elPv };
+  _elBusy = true;
+  elSavingUi(true);
+  elHideErr();
+  let r;
+  try{
+    r = s.nb ? await elSaveBranch(s) : { ok: true };
+    if(r.ok) r = await saveErpLink(s.name, s.to, s.shownOld, s);
+  }catch(e){ console.error('ERP link save', e); r = { failed: true }; }
+  _elBusy = false;
+  try{ if(r.ok) elConfirmed(s); else elAfterFail(s, r); }
+  catch(e){ console.error('ERP link save: the result', e); if(elPageOf(s)) elSavingUi(false); }
+  elRefreshSaveState(); // an editor opened meanwhile (another account) gets its Save back
+}
+// The new branch: it must land in the cloud before any link points at it.
+async function elSaveBranch(s){
+  const nb = s.nb, nm = String(nb.name || '').trim();
+  if(storedClinics().some(c => c.id !== nb.id && String(c.name || '').trim().toLowerCase() === nm.toLowerCase())) return { dup: true };
+  let c = clinics.find(x => x.id === nb.id);
+  if(!c){ c = normalizeClinic({ id: nb.id, name: nm, rep: nb.rep, cls: nb.cls, account: nb.account || null, dealType: nb.dealType || null,
+    isNew: false, addedOn: todayStr(), market: null, notes: 'فرع جديد — أُنشئ من حساب الفواتير: ' + s.name, contact: '', phone: '' }); clinics.push(c); }
+  keepClinicOnRefresh(c);             // a refresh that read the list before this save lands must not drop it (loadAll)
+  delete _persistInfo.clinics;        // persist's early refusals (the factory-list guard) leave it untouched: never read an older save's outcome
+  const ok = await persist('clinics');
+  const mine = () => clinics.find(x => x.id === nb.id) || c;
+  if(ok){
+    if(!clinics.some(x => x.id === nb.id)) clinics.push(c); // a refresh replaced the list while the save was on its way
+    s.el.clinicSaved = true; s.el.branch = Object.assign({}, mine()); s.el.addClinic = Object.assign({}, s.el.branch);
+    s.el.branchPv = s.pv;             // the figures from before the branch existed: what Undo puts back
+    renderAll();
+    return { ok: true };
+  }
+  if(persistOutcome('clinics').queued){
+    // kept: the outbox uploads it by itself, so taking it out of memory would not stop it
+    s.el.addClinic = Object.assign({}, mine()); s.el.branch = Object.assign({}, s.el.addClinic); s.el.branchPv = s.pv;
+    renderAll();
+    return { queued: true };
+  }
+  clinics = clinics.filter(x => x.id !== nb.id);   // refused outright: nothing changed anywhere
+  forgetKeptClinic(nb.id);
+  return { failed: true };
+}
+// This edit's check page, if it is still the sheet on screen. The page may have
+// been redrawn since Save was tapped (a failed attempt redraws it with the new
+// branch as text; the rows' retry redraws it): every redraw of the same edit
+// stamps _el.tok, so a save that ends — in time or late — finds its page.
+function elPageOf(s){ return !!(s && s.el && _el === s.el && elOnScreen(s.el.tok)); }
+// A save that did not (fully) land. Its page — if it is still the one on
+// screen — says what happened and where the account counts NOW (computed,
+// never assumed); a branch that exists by now is redrawn as text, so the next
+// Save retries the link only. A page the person left is not redrawn: a toast,
+// which names the new branch when one was added.
+function elAfterFail(s, r){
+  if(elToldAlready(s)){ elFinishPage(s); return; }  // an earlier attempt of this very change landed and was told: its page says "Saved" too
+  const now = erpLinkSideNow(s.name);
+  const msg = elFailMsg(s, r, now);
+  if(r.conflict) s.el.conflict = msg;               // nothing can be saved from that page any more
+  if(elPageOf(s)){
+    if(r.dup){ elSavingUi(false); elRenderMoves(); return; }   // the name was taken meanwhile: said under the field
+    if(s.el.clinicSaved || r.queued) openErpLinkPreview();      // the branch exists now: fresh figures, fields as text (still this edit's page: a late landing finishes it)
+    else elSavingUi(false);
+    elShowErr(msg, !!r.conflict);
+    elUpdateSave();
+    return;
+  }
+  const where = `${s.name}: ${elWhereText(now)}.`, bn = s.el.branch && s.el.branch.name ? s.el.branch.name : s.name;
+  showToast(r.queued ? `📴 The new branch uploads when the connection is back; the link was not saved — ${where}`
+    : s.el.clinicSaved && r.timeout ? `⏳ The new branch ${bn} was added; the link has no confirmation from the cloud yet — ${where}`
+    : s.el.clinicSaved ? `⚠️ The new branch ${bn} was added, but the link was not saved — ${where}`
+    : r.timeout ? `⏳ No confirmation from the cloud yet — ${where}`
+    : `⚠️ Not saved — ${where}`, 6000);
+}
+function elFailMsg(s, r, now){
+  const where = `<div style="margin-top:4px;">${elWhereHtml(now, 'current')}</div>`; // where it counts at this moment, on its own line
+  if(r.queued) return `<span>The new branch is saved on this device only and uploads when the connection is back. The link was not saved.</span>${where}`;
+  if(r.dup) return `<span>A clinic with this name already exists — choose it from the branches (‹ Pick another).</span>`;
+  if(!s.el.clinicSaved) return elSaveErrMsg(r);
+  if(r.timeout) return `<span>The new branch was added.</span> ${elSaveErrMsg(r)}${where}`;
+  if(r.conflict) return `<span>${r.own ? EL_TXT.conflictOwnAfterBranch : EL_TXT.conflictAfterBranch}</span>${where}`;
+  return `<span>The new branch was added, but the link was not saved.</span> <span>Tap Save to try again.</span>` + (r.failed ? '' : ' ' + elSaveErrMsg(r)) + where;
+}
+function elSaveErrMsg(r){
+  return `<span>${r.conflict ? (r.own ? EL_TXT.conflictOwn : EL_TXT.conflict) : r.timeout ? EL_TXT.timeout : r.notLoaded ? EL_TXT.notLoaded : r.noClinic ? EL_TXT.noClinic : r.closedTarget ? EL_TXT.closedTarget : r.clinicsPending ? EL_TXT.clinicsPending : EL_TXT.notSaved}</span>`;
+}
+// The same change (same account, from the same link to the same target) was
+// already confirmed and told by another attempt of this edit.
+function elToldAlready(s){ const c = s && s.flow && s.flow.confirmed; return !!(c && c.next === s.to && c.shownOld === s.shownOld); }
+function elUndoBtn(u){ return `<button class="chip small" id="elUndo" data-undo="${u.id}" style="margin-inline-start:4px;" onclick="undoErpLink(this)">Undo</button>`; }
+// The cloud confirmed (in time, or late): back where the edit started, with
+// what changed and an Undo — if this change's page is still the one on
+// screen. Otherwise nothing is redrawn and _el is not touched: a toast names
+// the account and where it counts now, and the Undo waits in the account list.
+function elConfirmed(s){
+  if(elToldAlready(s)){ elFinishPage(s); return; }  // a retry and a late landing of one change: told once — and no page of it is left on "Saving…"
+  s.flow.confirmed = { next: s.to, shownOld: s.shownOld };
+  const made = s.el.clinicSaved && s.el.branch && s.to === s.el.branch.id ? s.el.branch : null;
+  const pv0 = made && s.el.branchPv ? s.el.branchPv : s.pv; // the account as it was before this change (and its branch)
+  _elUndo = { id: String(++_elUndoSeq), name: s.name, prev: s.shownOld, now: s.to, back: s.back,
+    branch: made ? made.id : null, branchName: made ? made.name : null,
+    before: pv0 && pv0.before ? { status: pv0.before.status, clinicId: pv0.before.clinicId || null } : null,
+    others: made && pv0 ? (pv0.others || []).map(o => ({ name: o.name, before: o.before })) : [] };
+  renderAll();
+  if(!elFinishPage(s)) showToast(`✅ Saved — ${s.name}: ${elWhereText(erpLinkSideNow(s.name))}. Undo: ERP account links.`, 6000);
+}
+// A confirmed change's page, if it is still on screen (whichever attempt of the
+// edit drew it last — or a later page of the same edit, after ‹ Pick another,
+// showing this very change): back where the edit started, with "Saved", where
+// the account counts now and — while it is still the last change — its Undo.
+// false: the page is gone (closed, or another sheet opened), nothing redrawn.
+function elFinishPage(s){
+  const same = !!(_el && s && (_el === s.el || (_el.flow === s.flow && _el.to === s.to && _el.shownOld === s.shownOld)));
+  if(!same || !elOnScreen(_el.tok)) return false;
+  const u = _elUndo && _elUndo.name === s.name && _elUndo.prev === s.shownOld && _elUndo.now === s.to ? _elUndo : null;
+  _el = null; _elPv = null;
+  elReturnTo(s.back, `✅ <span>Saved</span> — <b dir="auto" style="overflow-wrap:anywhere;">${esc(s.name)}</b> ${elWhereHtml(erpLinkSideNow(s.name), 'now')}${u ? ' ' + elUndoBtn(u) : ''}`);
+  return true;
+}
+// A save or an Undo ended (in time or late, or another attempt told it): the
+// editor page on screen, if any — another account's, opened meanwhile — gets
+// its Save back as elCanSave says, without being redrawn. A page left reading
+// "Saving…" while nothing runs is released; one whose account changed
+// meanwhile says so (nothing can be saved from it).
+function elRefreshSaveState(){
+  if(!_el || !elOnScreen(_el.tok)) return;
+  const idle = !_elBusy && !_erpLinkSaving, sv = document.getElementById('elSave');
+  if(idle && sv && sv.dataset.saving === '1') elSavingUi(false);
+  if(idle && !_el.conflict && elStale() && !document.querySelector('#modalInner #elReopen')) elShowErr(`<span>${EL_TXT.stale}</span>`, true);
+  elUpdateSave();
+}
+// A save or an Undo the app stopped waiting for landed after all
+// (erpMapReloadFromCloud has read the cloud copy into memory): it finishes as
+// an in-time one would. true: said here (no generic toast).
+function elAfterLateLanding(info){
+  if(!info) return false;
+  if(info.quiet){ elRefreshSaveState(); return true; }   // the same change was already confirmed and told: only the figures follow
+  if(info.undo){ elUndoFinish(info.undo, info.btn, true).catch(e => console.error('undo: a late landing', e)); return true; }
+  if(info.s){ elConfirmed(info.s); elRefreshSaveState(); return true; }
+  return false;
+}
+// One account, compare-and-set in the cloud. next / shownOld: clinicId |
+// '@channel' | '@ignore' | null (no link). The cloud must still hold what the
+// screen showed (or already what we write); every other account is written
+// back exactly as the cloud has it. Memory and the device copy follow only a
+// confirmed write. `s`: the editor's save snapshot (none for an Undo).
+// `opts.undo`: an Undo putting back the link it had (its record, from
+// undoErpLink) — the one way a link may point at a Closed clinic again; no
+// change ever makes one a new target. `opts.btn`: the Undo button tapped, so a
+// write that lands late still reports on its note while that is on screen.
+async function saveErpLink(name, next, shownOld, s, opts){
+  name = String(name == null ? '' : name).trim();
+  if(!requireAdmin()) return { failed: true };
+  if(!name || name === '(no name)' || _erpLinkSaving) return { failed: true };
+  if(_loadFailed.erpMap || _mirrorUsed.erpMap) return { notLoaded: true };
+  next = next == null ? null : next; shownOld = shownOld == null ? null : shownOld;
+  const isClinic = v => typeof v === 'string' && v.charAt(0) !== '@';
+  if(next !== null && !isClinic(next) && next !== '@channel' && next !== '@ignore') return { failed: true }; // nothing else is ever stored
+  const target = isClinic(next) ? clinics.find(c => c.id === next) : null;
+  if(isClinic(next) && !target) return { noClinic: true };
+  if(target && target.cls === 'Closed' && next !== shownOld && !(opts && opts.undo)) return { closedTarget: true };
+  if(isClinic(next) && outboxHas('clinics')) return { clinicsPending: true }; // never a link to a clinic the cloud may not have
+  const undo = opts && opts.undo && typeof opts.undo === 'object' ? opts.undo : null; // an Undo's record (undoErpLink)
+  const once = s ? s.flow : undo;     // shared by every attempt of one change: it is logged once
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  let conflict = false, committed = null, seen = null;
+  const fn = cloudStr => { // Firestore may run this more than once: every run starts clean
+    conflict = false; committed = null; seen = null;
+    // JSON.parse keeps every key as an own property, "__proto__" included; a
+    // copy through JSON does too, and the one key changed is defined, never
+    // assigned — Object.assign and `out[name] = …` drop or ignore "__proto__"
+    const v = cloudStr == null ? null : UMCore.safeParse(cloudStr, null);
+    const cloud = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    seen = cloud;
+    const cur = has(cloud, name) ? cloud[name] : null;
+    if(cur !== shownOld && cur !== next){ conflict = true; return null; }
+    const out = JSON.parse(JSON.stringify(cloud));
+    if(next === null) delete out[name];
+    else Object.defineProperty(out, name, { value: next, enumerable: true, writable: true, configurable: true });
+    committed = out; return JSON.stringify(out);
+  };
+  _erpLinkSaving = true;
+  let op;
+  try{ op = typeof window.storage.update === 'function' ? window.storage.update('erpMap', fn) : storageUpdate('erpMap', fn, ERP_LINK_WRITE_MS); }
+  catch(e){ op = Promise.reject(e); }
+  let written = null, timedOut = false;
+  try{ written = await withTimeout(op, ERP_LINK_WRITE_MS); }
+  catch(e){
+    timedOut = /timeout/.test(String(e && e.message));
+    if(!timedOut) console.warn('account link not saved', e);
+    // the write the app stopped waiting for can still land: when it does, the screen follows the cloud,
+    // and the change finishes as an in-time one would — its page, or an Undo's branch and its report
+    else op.then(v => {
+      if(v == null) return;
+      const told = s ? elToldAlready(s) : !!(undo && undo.done); // a retry of the same change was confirmed and told first
+      elLogOnce(once, name, shownOld, next);
+      erpMapReloadFromCloud(told ? { quiet: true } : { name, next, shownOld, s: s || null, undo, btn: (opts && opts.btn) || null });
+    }).catch(() => {});
+  }
+  finally{ _erpLinkSaving = false; }
+  if(written == null){
+    if(conflict && seen){ erpMap = seen; _erpMapGen++; mirrorSave('erpMap', JSON.stringify(seen)); renderAll(); } // what the cloud holds now: reopened, the editor shows it
+    if(timedOut) elOwnLateAdd(name, next);
+    const own = conflict && seen && elOwnLateHas(name, has(seen, name) ? seen[name] : null); // the cloud holds this device's own earlier change
+    return conflict ? (own ? { conflict: true, own: true } : { conflict: true }) : timedOut ? { timeout: true } : { failed: true };
+  }
+  erpMap = committed; _erpMapGen++;
+  mirrorSave('erpMap', written); _persistInfo.erpMap = { ok: true };
+  elLogOnce(once, name, shownOld, next); // best effort: a failed log write never fails or undoes the link
+  return { ok: true };
+}
+// One change, one log entry — whichever of its attempts (a retry, a write that
+// landed late) is confirmed first. `once`: the edit's flow, or an Undo's record.
+function elLogOnce(once, name, from, to){
+  if(once){
+    const k = JSON.stringify([from == null ? null : from, to == null ? null : to]);
+    once.logged = once.logged || {};
+    if(once.logged[k]) return;
+    once.logged[k] = 1;
+  }
+  erpLinkLog(name, from, to);
+}
+
+// ---- Undo ----
+// Puts the link back as it was. A branch made in that same change goes too
+// while nothing of its own hangs on it yet (no visit, no doctor, no other ERP
+// account counted there, no other hand link): removed the way any clinic is
+// (recycle bin, the team's delete log). Otherwise it stays — then the note
+// says why, and where the account counts now (a branch named after the
+// account still takes it by name). Every word of the note is worked out after
+// the undo, from memory as it is. An Undo whose write the app stopped waiting
+// for finishes the same way when the write lands (elUndoFinish, late).
+async function undoErpLink(btn){
+  if(!requireAdmin()) return;
+  const u = _elUndo, id = btn && btn.dataset ? btn.dataset.undo : null;
+  if(!u || (id && u.id !== id)){ showToast('⚠️ ' + EL_TXT.undoGone); return; }
+  if(_elBusy || _erpLinkSaving){ showToast('⏳ ' + EL_TXT.saving); return; }
+  _elBusy = true;
+  if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; u.btn = btn; } // the latest tap's note is where a late landing reports
+  let r = null;
+  try{ r = await saveErpLink(u.name, u.prev, u.now, null, { undo: u, btn }); }catch(e){ console.error('undo account link', e); r = { failed: true }; }
+  try{
+    // confirmed — or an earlier tap's write landed meanwhile and finishes it: told once
+    if(r.ok || u.done){ await elUndoFinish(u, btn, false); return; }
+    renderAll();
+    const now = erpLinkSideNow(u.name);
+    if(elNoteOn(btn)){
+      const old = btn.parentElement && btn.parentElement.querySelector('.el-undo-err'); if(old) old.remove(); // a second failed tap: one message
+      const d = document.createElement('div'); d.className = 'el-undo-err'; d.style.cssText = 'color:var(--coral-ink); font-weight:600; margin-top:6px;';
+      d.innerHTML = '⚠️ ' + elSaveErrMsg(r) + `<div style="margin-top:2px;">${elWhereHtml(now, 'current')}</div>`;
+      (btn.parentElement || btn).appendChild(d);
+      btn.disabled = false; btn.textContent = 'Undo';
+    } else showToast(r.timeout ? `⏳ No confirmation from the cloud yet — ${u.name}: ${elWhereText(now)}.` : `⚠️ Not saved — ${u.name}: ${elWhereText(now)}.`, 6000);
+  }finally{
+    _elBusy = false;
+    elRefreshSaveState(); // an editor opened meanwhile gets its Save back
+  }
+}
+// The Undo button's note is still on screen (its sheet was not closed or replaced).
+function elNoteOn(btn){ const back = document.getElementById('modalBack'); return !!(btn && btn.isConnected && back && back.classList.contains('show')); }
+// An Undo the cloud confirmed — in time (undoErpLink), or late: its write
+// landed after the app stopped waiting (elAfterLateLanding). Finished once,
+// whichever comes first: the branch made in the undone change goes while
+// nothing of its own hangs on it, and the result is said — on the note while
+// its sheet is open, else in a toast naming the account, what happened to the
+// branch and where the account counts now. A late one never runs alongside
+// another save or Undo (one could be linking an account to that branch): it
+// waits for it, and if it cannot, the branch stays and the report says so.
+async function elUndoFinish(u, btn, late){
+  if(u.done) return;
+  u.done = true;
+  if(_elUndo === u) _elUndo = null;
+  const tapped = () => [u.btn, btn].find(elNoteOn) || null; // the note of the latest tap (or of the one that landed), if still on screen
+  if(late && tapped()) tapped().disabled = true;            // landed: that Undo has nothing left to do (the note is redrawn below)
+  let br = null;
+  if(u.branch){
+    let mine = false;
+    try{
+      if(late){
+        for(let i = 0; i < 300 && (_elBusy || _erpLinkSaving); i++) await new Promise(r => setTimeout(r, 100));
+        if(_elBusy || _erpLinkSaving){ console.warn('undo: another save is still running — the new branch stays'); br = { kept: { why: 'check' } }; }
+        else _elBusy = mine = true;
+      }
+      if(!br) br = await elUndoBranch(u);
+    }catch(e){ console.error('undo: the new branch', e); br = { kept: { why: 'check' } }; }
+    finally{ if(mine) _elBusy = false; }
+  }
+  renderAll();
+  const now = erpLinkSideNow(u.name), t = tapped(), inNote = t && t.closest ? t.closest('#erpImportNote') : null;
+  const toast = () => showToast(elUndoToast(u, br, now), br && (br.removed || br.kept) ? 9000 : 6000);
+  if(t && late){        // landed late: the person kept working on this sheet — change only the note, never rebuild it
+    if(inNote) inNote.innerHTML = elUndoNote(u, br, now) + ' <span style="color:var(--muted);">Reopen this page to see the updated figures.</span>';
+    else toast();
+  }
+  else if(t && !inNote && document.getElementById('elList')) elReturnTo('links', elUndoNote(u, br, now)); // tapped on the list's "Last change" card: stay on the list
+  else if(t) elReturnTo(u.back, elUndoNote(u, br, now));
+  else toast();
+  if(late) elRefreshSaveState();
+}
+// Can the branch made in the undone change go? null = yes; else why it stays.
+function elBranchKeeps(c, name){
+  if(_seedClinics) return { why: 'cloud' };
+  if(elRowsMissing()) return { why: 'rows' };      // an account in a file not loaded here could count there
+  if(visits.some(v => v && v.clinicId === c.id)) return { why: 'visits' };
+  if((c.doctors || []).length) return { why: 'doctors' };
+  const link = Object.keys(erpMap).find(k => k !== name && erpMap[k] === c.id);
+  if(link != null) return { why: 'link', account: link };
+  let acc = null;
+  try{ acc = UMCore.erpAccounts(digestData()).accounts.find(a => a.name !== name && a.clinicId === c.id) || null; }
+  catch(e){ console.warn('branch check', e); return { why: 'check' }; }
+  return acc ? { why: 'account', account: acc.name } : null;
+}
+async function elUndoBranch(u){
+  const c = clinics.find(x => x.id === u.branch);
+  if(!c) return { gone: true };                     // removed already: nothing to do
+  const keep = elBranchKeeps(c, u.name);
+  if(keep) return { kept: keep };
+  const r = await removeClinicToBin(c.id);
+  if(r.bin === false) return { kept: { why: 'bin' } };
+  return { removed: true, queued: !r.ok };
+}
+const EL_KEEP = {
+  visits: 'it has a logged visit',
+  doctors: 'it has doctors',
+  link: 'another ERP account is linked to it by hand:',
+  account: 'another ERP account counts there:',
+  bin: 'the recycle bin could not be reached — remove it from its clinic card once the connection is back',
+  cloud: 'the clinic list did not load from the cloud on this device',
+  rows: 'some sales files did not load on this device, so it could not be checked',
+  check: 'it could not be checked',
+};
+function elUndoNote(u, br, now){
+  const again = !!(u.before && now && now.status === u.before.status && (now.clinicId || null) === (u.before.clinicId || null));
+  const acct = `<b dir="auto" style="overflow-wrap:anywhere;">${esc(u.name)}</b> ${elWhereHtml(now, again ? 'again' : 'now')}`;
+  const bn = `<b dir="auto" style="overflow-wrap:anywhere;">${esc(u.branchName || '')}</b>`;
+  let h = `↩️ <span>Undone</span> — `;
+  if(br && br.removed){
+    h += `<span>The new branch</span> ${bn} <span>${br.queued ? 'was removed on this device — the removal uploads when the connection is back.' : 'was removed (it is in the recycle bin).'}</span> ${acct}`;
+  } else if(br && br.kept){
+    const k = br.kept;
+    h += `<span>The new branch</span> ${bn} <span>stays in the clinic list:</span> <span>${EL_KEEP[k.why] || EL_KEEP.check}</span>${k.account != null ? ` <b dir="auto" style="overflow-wrap:anywhere;">${esc(k.account)}</b>` : ''}. ${acct}`;
+    if(elBranchStillTakes(u, now)) h += ` <span>${EL_TXT.stillTakes}</span>`;
+    const still = elStillOthers(u);
+    if(still.length) h += ` <span>These accounts still count differently because of the branch:</span> ${still.map(n => `<b dir="auto" style="overflow-wrap:anywhere;">${esc(n)}</b>`).join(', ')}.`;
+  } else h += acct;
+  return h;
+}
+// The branch the undone change made still takes the account (by its name, or as its group's landing branch).
+function elBranchStillTakes(u, now){ return !!(u.branch && now && now.clinicId === u.branch && now.status !== 'hand' && now.status !== 'gone'); }
+// Other accounts that the kept branch still makes count differently.
+function elStillOthers(u){
+  return (u.others || []).filter(o => { const x = erpLinkSideNow(o.name); return x && o.before && (x.status !== o.before.status || (x.clinicId || null) !== (o.before.clinicId || null)); }).map(o => o.name);
+}
+// The same as a toast, for a person who left the note's sheet: plain text (the
+// Arabic patterns are in i18n.js), naming what Undo did to the new branch.
+function elUndoToast(u, br, now){
+  let t = `↩️ Undone — ${u.name}: ${elWhereText(now)}.`;
+  const bn = u.branchName || u.name;
+  if(br && br.removed) t += br.queued ? ` The new branch ${bn} was removed on this device — the removal uploads when the connection is back.` : ` The new branch ${bn} was removed (it is in the recycle bin).`;
+  else if(br && br.kept){
+    const k = br.kept;
+    t += ` The new branch ${bn} stays in the clinic list: ${EL_KEEP[k.why] || EL_KEEP.check}${k.account != null ? ' ' + k.account : ''}.`;
+    if(elBranchStillTakes(u, now)) t += ' ' + EL_TXT.stillTakes;
+    const n = elStillOthers(u).length;
+    if(n) t += ` Other accounts that still count differently because of the branch: ${n}.`;
+  }
+  return t;
+}
+function elReturn(note){ return elReturnTo(_el ? _el.back : _elListOpts.back, note); }
+function elReturnTo(back, note){
+  back = String(back || '');
+  const list = () => openErpLinks(Object.assign({}, _elListOpts, { pickFor: null }), !!note); // the plain list, its search kept
+  if(back.indexOf('recon:') === 0) openErpRecon(back.slice(6));
+  else if(back.indexOf('clinic:') === 0){ const id = back.slice(7); if(clinics.some(c => c.id === id)) openClinicDetail(id); else list(); }
+  else if(back === 'import') openErpImport();
+  else if(back === 'links') list();
+  else { closeModal(); return; }
+  if(note) erpShowImportNote(note);
+}
+// Who changed which link, when, from what — the only trace that explains a
+// figure that moved (erpMap has no backup). Appended after the link landed,
+// in its own transaction; a failure is logged, never shown as a failed save.
+// The log is one cloud document (at most 1 MiB) and an ERP cell can hold
+// 32,767 characters: every text in an entry is bounded, and the newest
+// entries are kept while the whole stays under EL_LOG_MAX characters — one
+// long name can never stop the log from recording.
+function erpLinkLog(name, from, to){
+  const label = v => { if(v == null || String(v).charAt(0) === '@') return null; const c = erpLinkClinic(v); return c ? c.name : clinicNameOf(v); };
+  const entry = { n: elLogName(name), f: elLogText(from), t: elLogText(to), fc: elLogText(label(from)), tc: elLogText(label(to)), by: elLogText(currentUser ? currentUser.name : null), at: Date.now() };
+  const run = () => storageUpdate('erpMapLog', s => {
+    const cur = UMCore.safeParse(s, null), list = [entry].concat(Array.isArray(cur) ? cur : []).slice(0, 300);
+    let size = 2, keep = 0;
+    for(const e of list){ const n = JSON.stringify(e).length + 1; if(keep && size + n > EL_LOG_MAX) break; size += n; keep++; }
+    return JSON.stringify(list.slice(0, keep));
+  }, 8000).then(v => { if(v == null) throw new Error('not written'); }).catch(e => console.warn('erpMapLog: the link is saved, the log entry is not', e));
+  _elLogChain = _elLogChain.then(run, run);
+  return _elLogChain;
+}
+const EL_LOG_TEXT = 300, EL_LOG_MAX = 200000;
+function elLogText(v){ if(v == null) return null; v = String(v); return v.length > EL_LOG_TEXT ? v.slice(0, EL_LOG_TEXT - 1) + '…' : v; }
+// An account's key in the log: its name, or past EL_LOG_TEXT its start and a
+// hash of the whole name (FNV-1a), so two long names never share an entry.
+function elLogName(name){
+  name = String(name == null ? '' : name);
+  if(name.length <= EL_LOG_TEXT) return name;
+  let h = 0x811c9dc5;
+  for(let i = 0; i < name.length; i++){ h ^= name.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return name.slice(0, EL_LOG_TEXT - 12) + '… #' + h.toString(16).padStart(8, '0');
+}

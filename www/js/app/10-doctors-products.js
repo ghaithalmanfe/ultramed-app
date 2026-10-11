@@ -40,7 +40,7 @@ function renderProducts(){
   wrap.innerHTML = gapNote + brands.map(b=>{
     const open = openBrands.has(b);
     return `<div class="brand-group card" style="padding:6px 12px;">
-      <div class="brand-head" onclick="toggleBrand('${esc(b).replace(/'/g,"\\'")}')">
+      <div class="brand-head" data-brand="${esc(b)}" onclick="toggleBrand(this.dataset.brand)">
         <span style="display:flex; align-items:center; gap:9px;"><span class="swatch" style="width:12px;height:12px;border-radius:4px;background:${brandColor(b)}"></span>${esc(b)} <span class="count">(${byBrand[b].length})</span></span>
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
@@ -1302,6 +1302,11 @@ async function removeProductMaterial(pid, idx){
 }
 
 // ---- CATEGORY SELLING GUIDES ----
+// A category (and a brand) can come straight from the ERP file: a product added
+// from "missing from the catalog" takes its ERP brand as its category. The
+// buttons carry it in data-cat (the brand heading in data-brand) and the
+// handler reads it from there — never inside the onclick string, where an
+// apostrophe breaks the tap and a quote with code in it would run.
 function guideLinks(g){
   return (g && Array.isArray(g.links) ? g.links : []).filter(l=>l && safeUrl(l.url));
 }
@@ -1322,7 +1327,7 @@ function categoryGuideCardHTML(cat){
       ${guideBlock('Objections & answers', I('shield'), g.objections)}
       ${guideLinks(g).length?`<div style="margin-top:10px;">${guideLinks(g).map(l=>`
         <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:6px;">🔗 ${esc(l.title||'Link')}</a>`).join('')}</div>`:''}
-      ${currentUser.role==='supervisor'?`<button class="chip small" style="margin-top:10px;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">✏️ Edit this guide</button>`:''}
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="margin-top:10px;" data-cat="${esc(cat)}" onclick="openEditCategoryGuide(this.dataset.cat)">✏️ Edit this guide</button>`:''}
     </div>`;
 }
 function openCategoryGuides(){
@@ -1335,7 +1340,7 @@ function openCategoryGuides(){
     <div style="color:var(--muted); font-size:13px; margin-bottom:12px;">How to sell every category: key claims, pitch steps, objection answers and official materials. Also shown inside each product's page.</div>
     ${names.map(c=>{
       const g = categoryGuides[c];
-      return `<div class="card" style="cursor:pointer; padding:12px 14px; margin-bottom:8px;" onclick="openCategoryGuide('${esc(c).replace(/'/g,"\\'")}')">
+      return `<div class="card" style="cursor:pointer; padding:12px 14px; margin-bottom:8px;" data-cat="${esc(c)}" onclick="openCategoryGuide(this.dataset.cat)">
         <div class="row-between">
           <div style="font-weight:700; font-size:14px;">${esc(c)}</div>
           <div style="color:var(--muted); font-size:12px; flex-shrink:0;">${cats[c]} product${cats[c]===1?'':'s'} ›</div>
@@ -1351,7 +1356,7 @@ function openCategoryGuide(cat){
   showModal(`
     <div class="row-between" style="margin:0 0 4px;">
       <h3 style="margin:0;">${I('book')} ${esc(cat)}</h3>
-      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">${I('pencil')} Edit</button>`:''}
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" data-cat="${esc(cat)}" onclick="openEditCategoryGuide(this.dataset.cat)">${I('pencil')} Edit</button>`:''}
     </div>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">${catProds.length} product${catProds.length===1?'':'s'} in this category</div>
     ${g?`<div class="card">
@@ -1385,7 +1390,7 @@ function openEditCategoryGuide(cat){
     <input type="text" id="cgLinkTitle" placeholder="Link name (e.g. Clinical studies)" style="margin-top:8px;">
     <input type="text" id="cgLinkUrl" placeholder="https://..." style="margin-top:8px;">
     <button class="btn secondary small" style="margin-top:8px;" onclick="addGuideLink()">+ Add link</button>
-    <button class="btn" style="margin-top:14px;" onclick="saveCategoryGuide('${esc(cat).replace(/'/g,"\\'")}')">Save guide</button>
+    <button class="btn" style="margin-top:14px;" data-cat="${esc(cat)}" onclick="saveCategoryGuide(this.dataset.cat)">Save guide</button>
   `);
   renderGuideLinks();
 }

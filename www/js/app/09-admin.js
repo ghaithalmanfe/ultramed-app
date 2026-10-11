@@ -519,7 +519,7 @@ function renderVisitLog(){
           ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
-          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" onclick="event.stopPropagation(); showLightbox('${ph.id}','${esc(c?c.name:'Visit photo')}')">`).join('')}</div>`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>`:''}
         </div>
         ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
       </div>
@@ -539,7 +539,7 @@ function openPhotoGallery(){
         <div style="margin-bottom:14px;">
           <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;">${fmtDate(v.date)} · ${esc(cname(v.clinicId))}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
-            ${v.photos.map(ph=>`<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" onclick="showLightbox('${ph.id}','${esc(cname(v.clinicId))} · ${fmtDate(v.date)}')">`).join('')}
+            ${v.photos.map(ph=>`<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${ph.id}', this.dataset.cap)">`).join('')}
           </div>
         </div>`).join('')}
     <button class="btn" onclick="closeModal()">Done</button>
@@ -653,26 +653,48 @@ async function deleteClinic(id){
   const c = clinics.find(x=>x.id===id);
   if(!c) return;
   const vCount = visits.filter(v=>v.clinicId===id).length;
+  // An ERP account linked here by hand would then count at no clinic (each
+  // invoice for whoever issued it) — said before the delete, not after.
+  const nLinks = erpHandLinksTo([id]).length;
   showModal(`
     <h3 style="margin-top:0;">Remove ${esc(c.name)}?</h3>
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
+    ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
     <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${id}')">Yes, remove</button>
     <button class="btn secondary" onclick="openClinicDetail('${id}')">Cancel</button>
   `);
 }
 async function confirmDeleteClinic(id){
-  const c = clinics.find(x=>x.id===id);
-  if(!c) return;
-  if(!await moveToBin('clinics', c, c.name)) return; // no safety copy → no delete
-  await stampVisitClinicName(id, c.name);
-  tomb('clinics', id);
-  clinics = clinics.filter(x=>x.id!==id);
-  await persist('clinics');
+  const r = await removeClinicToBin(id);
+  if(r.missing || r.bin === false) return; // no safety copy → no delete
   closeModal();
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
   showToast('Moved to recycle bin');
+}
+// The one way a clinic leaves the list (the delete sheet, and Undo of an ERP
+// account move that made a branch): a safety copy in the recycle bin first —
+// none, no delete — its name stamped on its visits, the team's delete log,
+// then the merged save. Says what landed: { ok } | { queued } (on this device,
+// uploads by itself) | { bin: false } (nothing removed) | { missing }.
+async function removeClinicToBin(id){
+  const c = clinics.find(x=>x.id===id);
+  if(!c) return { ok: false, missing: true };
+  if(!await moveToBin('clinics', c, c.name)) return { ok: false, bin: false };
+  await stampVisitClinicName(id, c.name);
+  tomb('clinics', id);
+  if(typeof forgetKeptClinic === 'function') forgetKeptClinic(id);
+  clinics = clinics.filter(x=>x.id!==id);
+  delete _persistInfo.clinics;
+  const ok = await persist('clinics');
+  return { ok, queued: !ok && persistOutcome('clinics').queued };
+}
+// ERP accounts linked by hand to any of these clinics: once a clinic is gone
+// their invoices count for the salesman who issued them — said before a delete.
+function erpHandLinksTo(ids){
+  const set = ids instanceof Set ? ids : new Set(ids);
+  return Object.keys(erpMap || {}).filter(k => set.has(erpMap[k])).sort();
 }
 
 // ---- MISSING-CLINIC FINDER ----
@@ -842,7 +864,12 @@ function mgSelectVisible(on){ mgVisible().forEach(c=>{ if(on) _mgSelected.add(c.
 async function bulkDeleteClinics(){
   if(!requireAdmin()) return;
   if(!_mgSelected.size){ showToast('Nothing selected'); return; }
-  if(!confirm(`Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
+  // the same warning as the single delete: ERP accounts linked by hand to these
+  // clinics would then count for whoever issued each invoice — named first
+  const links = erpHandLinksTo(_mgSelected), t = s => trOf(s) || s;
+  const warn = links.length ? `⚠️ ${t('ERP accounts linked by hand to the selected clinics:')} ${links.length}\n` + links.slice(0, 8).map(n => '• ' + (n.trim() || '(no name)')).join('\n')
+    + (links.length > 8 ? `\n• … +${links.length - 8}` : '') + `\n${t('Once they are removed their invoices count for the salesman who issued them — move them first from the clinic card.')}\n\n` : '';
+  if(!confirm(warn + `Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
   const removed = new Set();
   for(const id of _mgSelected){
     const c = clinics.find(x=>x.id===id);
