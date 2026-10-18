@@ -1,0 +1,2608 @@
+{
+ "brands": [
+  {
+   "brand": "The Breath Co.",
+   "skus": [
+    {
+     "product": "TheBreath Sparkle Mint Healthy Smile Mouthwash IME",
+     "family": "TheBreath Sparkle Mint Healthy Smile Mouthwash",
+     "variant": "Single bottle",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "غسول فم استهلاكي بسعر جمهور معلن 7.27 د.ك، يشتريه زبون عادي من رف الصيدلية مباشرة."
+    },
+    {
+     "product": "TheBreath Icy Mint Fresh Breath Mouthwash",
+     "family": "TheBreath Icy Mint Fresh Breath Mouthwash",
+     "variant": "Single bottle",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نكهة مستقلة من غسول الفم الاستهلاكي، سريعة الحركة لدى 28 عميلاً وتُعرض على الرف بسعر جمهور."
+    },
+    {
+     "product": "TheBreath Mild Mint Fresh Breath Mouthwash",
+     "family": "TheBreath Mild Mint Fresh Breath Mouthwash",
+     "variant": "Single bottle",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نكهة خفيفة مستقلة تُعرض بجانب باقي النكهات على رف الصيدلية ويشتريها المستهلك مباشرة."
+    },
+    {
+     "product": "TheBreath Clean Mint Healthy Gums Mouthwash IME",
+     "family": "TheBreath Clean Mint Healthy Gums Mouthwash",
+     "variant": "Single bottle",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "غسول عناية باللثة للاستهلاك المنزلي بسعر جمهور، صنف رف صيدلية بامتياز لا منتج عيادة."
+    },
+    {
+     "product": "TheBreath Mild Mint Fresh Breath Mouthwash 500ML Promo Pack - 2pcs",
+     "family": "TheBreath Mild Mint Fresh Breath Mouthwash",
+     "variant": "Promo pack 2 x 500ML",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "بوكس ترويجي قطعتين من نفس الغسول الموجود أصلاً، فهو عرض على صنف قائم لا صنف جديد في القائمة الافتتاحية."
+    },
+    {
+     "product": "TheBreath Sparkle Mint Healthy Smile Mouthwash IME 500ML Promo Pack - 2pcs",
+     "family": "TheBreath Sparkle Mint Healthy Smile Mouthwash",
+     "variant": "Promo pack 2 x 500ML",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "عبوة ترويجية 2 قطعة بلا سعر جمهور ولعميلين فقط؛ تُدار كعرض على الصنف الأصلي لا كسطر مستقل."
+    },
+    {
+     "product": "TheBreath Clean Mint Healthy Gums Mouthwash 500ML Promo Pack - 2pcs",
+     "family": "TheBreath Clean Mint Healthy Gums Mouthwash",
+     "variant": "Promo pack 2 x 500ML",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "بوكس ترويجي من صنف قائم، ومبيعاته متراجعة لآخر 3 أشهر، فلا مكان له في العرض الافتتاحي."
+    },
+    {
+     "product": "TheBreath Icy Mint Fresh Breath Mouthwash 500ML Promo Pack - 2pcs",
+     "family": "TheBreath Icy Mint Fresh Breath Mouthwash",
+     "variant": "Promo pack 2 x 500ML",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "تكرار ظاهري للغسول نفسه في عبوة ترويجية قطعتين، يُعرض لاحقاً كبروموشن لا كصنف منفصل."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "TheBreath Sparkle Mint Healthy Smile Mouthwash IME",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "غسول فم استهلاكي بسعر جمهور معلن 7.27 د.ك وحركة سريعة لدى 30 عميلاً، صنف رف صيدلية أصيل."
+    },
+    {
+     "product": "TheBreath Icy Mint Fresh Breath Mouthwash",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نكهة مستقلة من غسول استهلاكي بسعر جمهور وحركة سريعة لدى 28 عميلاً، يشتريها الزبون من الرف مباشرة."
+    },
+    {
+     "product": "TheBreath Mild Mint Fresh Breath Mouthwash",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نكهة مستقلة بعبوة استهلاكية وسعر جمهور، لا علاقة لها باستعمال مهني في العيادة."
+    },
+    {
+     "product": "TheBreath Clean Mint Healthy Gums Mouthwash IME",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "غسول عناية باللثة للاستعمال المنزلي بسعر جمهور وحركة سريعة لدى 30 عميلاً، صنف رف صيدلية لا منتج عيادة."
+    }
+   ]
+  },
+  {
+   "brand": "FLASH",
+   "skus": [
+    {
+     "product": "Flash Tongue Scraper Pink",
+     "family": "Flash Tongue Scraper",
+     "variant": "Pink",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "كاشط لسان استهلاكي بسعر رف منخفض، واللون مجرد variant ضمن عائلة واحدة.",
+     "short_summary": "",
+     "verdict": "CONFIRMED"
+    },
+    {
+     "product": "Flash Tongue Scraper Dark Blue",
+     "family": "Flash Tongue Scraper",
+     "variant": "Dark Blue",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس كاشط اللسان بلون مختلف، فيُدمج في عائلة واحدة ويُعرض بسطر واحد للصيدلية.",
+     "short_summary": "",
+     "verdict": "CONFIRMED"
+    },
+    {
+     "product": "Flash Teeth Whitening Strips (RESIDUE-FREE DRY STRIPS 6% HP)",
+     "family": "Flash Teeth Whitening Strips",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "شرائح تبييض بتركيز 6% مسموح للاستعمال المنزلي، يشتريها الزبون مباشرة من رف الصيدلية.",
+     "short_summary": "",
+     "verdict": "CONFIRMED"
+    },
+    {
+     "product": "Flash Aligner Cleaner and Whitening Foam",
+     "family": "Flash Aligner Cleaner and Whitening Foam",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "رغوة تنظيف تقويم شفاف يستعملها المريض بنفسه يومياً: تُباع بالصيدلية ويعيد بيعها طبيب التقويم لمرضاه.",
+     "short_summary": "",
+     "verdict": "CONFIRMED"
+    },
+    {
+     "product": "Flash Kids Flosser",
+     "family": "Flash Kids Flosser",
+     "variant": "Classic",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "خيط أسنان أطفال بسعر 1.9 د.ك، صنف رف صيدلية نموذجي تشتريه الأم مباشرة.",
+     "short_summary": "",
+     "verdict": "CONFIRMED"
+    },
+    {
+     "product": "Flash Kids Flosser Sea Animal",
+     "family": "Flash Kids Flosser",
+     "variant": "Sea Animal",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس خيط الأطفال بشكل/تصميم مختلف وبنفس سعر الجمهور، فهو variant لا صنف مستقل.",
+     "short_summary": "",
+     "verdict": "CONFIRMED"
+    }
+   ],
+   "rulings": [
+    {
+     "product": "Flash Tongue Scraper Pink",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "كاشط لسان استهلاكي بسعر رف 4.5 د.ك يشتريه الزبون مباشرة، واللون variant داخل عائلة واحدة لا صنف مستقل."
+    },
+    {
+     "product": "Flash Tongue Scraper Dark Blue",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نفس كاشط اللسان بلون آخر، يبقى في عرض الصيدلية لكن ضمن نفس عائلة الوردي بسطر واحد."
+    },
+    {
+     "product": "Flash Teeth Whitening Strips (RESIDUE-FREE DRY STRIPS 6% HP)",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "شرائح تبييض بتركيز 6% مخصصة للاستعمال المنزلي ولا تحتاج طبيباً، فهي صنف رف صيدلية نموذجي."
+    },
+    {
+     "product": "Flash Aligner Cleaner and Whitening Foam",
+     "stays": true,
+     "move_to": "both",
+     "why": "رغوة ينظف بها المريض تقويمه الشفاف بنفسه يومياً، فتُباع على الرف ويعيد طبيب التقويم بيعها لمرضاه."
+    },
+    {
+     "product": "Flash Kids Flosser",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "خيط أسنان أطفال بسعر 1.9 د.ك تشتريه الأم مباشرة من الصيدلية."
+    },
+    {
+     "product": "Flash Kids Flosser Sea Animal",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نفس خيط الأطفال بتصميم مختلف وبنفس سعر الجمهور، فيُدمج كـvariant في عائلة Kids Flosser لا كصنف جديد."
+    }
+   ]
+  },
+  {
+   "brand": "Philips Export BV",
+   "skus": [
+    {
+     "product": "PhilipsOne Battery Toothbrush BY Sonicare, Midnight Blue",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Midnight Blue",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة استهلاكية بسعر 7.7 د.ك وحركة سريعة؛ مجرد لون من أربعة ألوان لنفس الفرشاة."
+    },
+    {
+     "product": "Protective Clean 4300 BLACK",
+     "family": "Philips Sonicare ProtectiveClean 4300",
+     "variant": "Black",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "فرشاة كهربائية متوسطة الفئة يشتريها الزبون من الرف وتعيد العيادة بيعها لمرضاها."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush By Sonicare, Mint Blue",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Mint Blue",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة PhilipsOne بلون مختلف؛ صنف رف صيدلية سريع الحركة."
+    },
+    {
+     "product": "Protective Clean 4300 LIGHT BLUE",
+     "family": "Philips Sonicare ProtectiveClean 4300",
+     "variant": "Light Blue",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "لون ثانٍ لنفس موديل 4300، وليس صنفاً مستقلاً."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush by Sonicare, Miami Coral",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Miami Coral",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "لون من عائلة PhilipsOne نفسها، منتج استهلاكي مباشر للصيدلية."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush by Sonicare, Mango Yellow",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Mango Yellow",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "لون رابع لنفس الفرشاة؛ يُعرض كخيار لون لا كسطر منفصل."
+    },
+    {
+     "product": "Rechargeable Sonic Toothbrush 1100 Series WHITE",
+     "family": "Philips Sonicare 1100 Series Rechargeable Toothbrush",
+     "variant": "White (HX3641/01)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة شحن اقتصادية بحدود 10 د.ك، فئة دخول نموذجية لرف الصيدلية."
+    },
+    {
+     "product": "PhilipsOne brush head Midnight Blue",
+     "family": "PhilipsOne Brush Head",
+     "variant": "Midnight Blue",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس فرشاة بديل يتبع جهاز PhilipsOne؛ يُذكر مع الفرشاة لا كصنف مستقل في العرض الافتتاحي."
+    },
+    {
+     "product": "PhilipsOne brush head Mint Blue",
+     "family": "PhilipsOne Brush Head",
+     "variant": "Mint Blue",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "لون آخر من نفس الرأس البديل؛ قطعة تابعة للجهاز."
+    },
+    {
+     "product": "Rechargeable Sonic Toothbrush 2100 Series LIGHT BLUE",
+     "family": "Philips Sonicare 2100 Series Rechargeable Toothbrush",
+     "variant": "Light Blue (HX3651/12)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "موديل 2100 الاقتصادي بسعر 13 د.ك؛ صنف رف للمستهلك العادي."
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 5300  Series White",
+     "family": "Philips Sonicare 5300 Series Rechargeable Toothbrush",
+     "variant": "White",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "فرشاة متقدمة بسعر جمهور 36.9 د.ك؛ تُباع بالصيدلية وتعيد العيادة بيعها للمرضى."
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 5300  Series Black",
+     "family": "Philips Sonicare 5300 Series Rechargeable Toothbrush",
+     "variant": "Black",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "اللون الأسود من نفس موديل 5300، عائلة واحدة مع النسخة البيضاء."
+    },
+    {
+     "product": "PhilipsOne brush head Miami Coral",
+     "family": "PhilipsOne Brush Head",
+     "variant": "Miami Coral",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل ملوّن تابع لفرشاة PhilipsOne، ليس سطراً مستقلاً."
+    },
+    {
+     "product": "S2 Brushhead Sensitive Blis",
+     "family": "Philips Sonicare Sensitive Brush Head",
+     "variant": "S2 blister (HX6052/93)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس فرشاة حساس بديل لأجهزة Sonicare؛ مكانه مع الجهاز لا في قائمة الافتتاح."
+    },
+    {
+     "product": "PhilipsOne brush head Mango Yellow",
+     "family": "PhilipsOne Brush Head",
+     "variant": "Mango Yellow",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "اللون الرابع من رؤوس PhilipsOne البديلة؛ قطعة غيار ضمن عائلة واحدة."
+    },
+    {
+     "product": "Diamond Clean 9000 Series Special Edition Blue",
+     "family": "Philips Sonicare DiamondClean 9000 Series",
+     "variant": "Special Edition Blue",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "فرشاة بريميوم استهلاكية تُعرض في رف الصيدلية الفاخر وتبيعها العيادة لمرضاها."
+    },
+    {
+     "product": "C3 Premium Plaque Defense BLACK [RFID] Std TBH",
+     "family": "Philips Sonicare C3 Premium Plaque Defence Brush Head",
+     "variant": "Black, trade pack [RFID] Std TBH",
+     "item_type": "trade_bulk_pack",
+     "channel": "clinic",
+     "reason": "عبوة تجارية بوسم [RFID] Std TBH تُورَّد للعيادات والجملة، وليست عبوة رف."
+    },
+    {
+     "product": "Philips Sonicare Cordless Power Flosser 3000 Oral Irrigator High End, Black",
+     "family": "Philips Sonicare Cordless Power Flosser 3000",
+     "variant": "Black",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "جهاز ضخ مائي استهلاكي يشتريه الزبون من الصيدلية وتوصي به العيادة وتبيعه."
+    },
+    {
+     "product": "Diamond Clean 9000 Series Black with app",
+     "family": "Philips Sonicare DiamondClean 9000 Series",
+     "variant": "Black with app",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "إصدار لوني/تطبيقي من نفس عائلة DiamondClean 9000، لا صنف جديد."
+    },
+    {
+     "product": "Compact Flosser 1000 PURPLE",
+     "family": "Philips Sonicare Compact Power Flosser 1000",
+     "variant": "Purple",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "ضخّ مائي مدمج بسعر جمهور 34.9 د.ك، منتج استهلاكي للرف وللعيادة معاً."
+    },
+    {
+     "product": "W DiamondClean [RFID] TBH- Opt White White",
+     "family": "Philips Sonicare W2 Optimal White Brush Head",
+     "variant": "White, trade pack [RFID] TBH",
+     "item_type": "trade_bulk_pack",
+     "channel": "clinic",
+     "reason": "عبوة [RFID] TBH تجارية من رأس W2، توريد للعيادات لا للرف، وحركتها متراجعة."
+    },
+    {
+     "product": "Compact Flosser 1000 BLUE",
+     "family": "Philips Sonicare Compact Power Flosser 1000",
+     "variant": "Blue",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "لون ثانٍ لنفس جهاز Compact Flosser 1000؛ عائلة واحدة."
+    },
+    {
+     "product": "W DiamondClean [RFID] TBH-Opt White Black",
+     "family": "Philips Sonicare W2 Optimal White Brush Head",
+     "variant": "Black, trade pack [RFID] TBH",
+     "item_type": "trade_bulk_pack",
+     "channel": "clinic",
+     "reason": "نفس الرأس بعبوة تجارية [RFID] بلون أسود؛ قناة توريد مهنية لا رف صيدلية."
+    },
+    {
+     "product": "Diamond Clean 9000 Series Special Edition Purple",
+     "family": "Philips Sonicare DiamondClean 9000 Series",
+     "variant": "Special Edition Purple",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "لون إصدار خاص ضمن عائلة DiamondClean 9000 نفسها."
+    },
+    {
+     "product": "Diamond Clean 9000 Series White with app",
+     "family": "Philips Sonicare DiamondClean 9000 Series",
+     "variant": "White with app",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "نسخة بيضاء من نفس العائلة؛ تُدرج كخيار لون رغم تراجع حركتها."
+    },
+    {
+     "product": "Sonicare Prestige, SenseIQ Premium CHAMPAGNE",
+     "family": "Philips Sonicare Prestige 9900 SenseIQ",
+     "variant": "Champagne",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "قمّة الفئة الاستهلاكية بسعر 129 د.ك؛ رف بريميوم في الصيدلية وبيع عبر العيادة."
+    },
+    {
+     "product": "Sonicare Prestige, SenseIQ Premium MIDNIGHT BLUE",
+     "family": "Philips Sonicare Prestige 9900 SenseIQ",
+     "variant": "Midnight Blue",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "لون ثانٍ لنفس موديل Prestige، عائلة واحدة مع الشامبين."
+    },
+    {
+     "product": "C1 ProResults Brush Heads",
+     "family": "Philips Sonicare C1 ProResults Brush Head",
+     "variant": "Pack (HX6012/07)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس فرشاة بديل بعميل واحد وحركة متراجعة؛ قطعة تابعة للجهاز لا سطر مستقل."
+    },
+    {
+     "product": "Philips Sonicare Cordless Power Flosser 3000 Oral Irrigator High End, White",
+     "family": "Philips Sonicare Cordless Power Flosser 3000",
+     "variant": "White",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "اللون الأبيض من نفس جهاز Power Flosser 3000؛ المرتجعات تصفية رفوف لا رفض عميل."
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 2100 Series Black",
+     "family": "Philips Sonicare 2100 Series Rechargeable Toothbrush",
+     "variant": "Black (HX4021/02)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة شحن اقتصادية بـ11 د.ك؛ فئة دخول يشتريها زبون الصيدلية مباشرة."
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 1100 Series White",
+     "family": "Philips Sonicare 1100 Series Rechargeable Toothbrush",
+     "variant": "White (HX3901/01)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "كود ثانٍ لنفس موديل 1100 الأبيض؛ يُدمج في عائلة 1100 بدل تكراره."
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush  2100 Series White",
+     "family": "Philips Sonicare 2100 Series Rechargeable Toothbrush",
+     "variant": "White (HX4021/01)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "اللون الأبيض من موديل 2100؛ صنف رف استهلاكي ضمن عائلة واحدة."
+    },
+    {
+     "product": "W3 Premium White WHITE [RFID] Std TBH",
+     "family": "Philips Sonicare W3 Premium White Brush Head",
+     "variant": "White, trade pack [RFID] Std TBH",
+     "item_type": "trade_bulk_pack",
+     "channel": "clinic",
+     "reason": "عبوة [RFID] Std TBH مهنية من رأس W3، قناتها العيادات والجملة لا الصيدلية."
+    },
+    {
+     "product": "W2 Optimal White Brush Head",
+     "family": "Philips Sonicare W2 Optimal White Brush Head",
+     "variant": "White (HX6062/14)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس فرشاة بديل بعبوة تجزئة؛ مكانه ملحقاً للجهاز لا سطراً في عرض الافتتاح."
+    },
+    {
+     "product": "A3 All-in-One Brush Head Black",
+     "family": "Philips Sonicare A3 Premium All-in-One Brush Head",
+     "variant": "Black (HX9092/91)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل أسود من عائلة A3؛ قطعة تابعة للفرشاة."
+    },
+    {
+     "product": "C1 ProResults Brush Head White",
+     "family": "Philips Sonicare C1 ProResults Brush Head",
+     "variant": "White (HX6014/14)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "كود آخر لنفس رأس C1 البديل؛ يُجمع في عائلة واحدة ولا يُدرج منفرداً."
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 1100 Series Marine Blue",
+     "family": "Philips Sonicare 1100 Series Rechargeable Toothbrush",
+     "variant": "Marine Blue (HX3901/03)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "لون بحري من موديل 1100 نفسه؛ خيار لون داخل العائلة."
+    },
+    {
+     "product": "W3 Premium White BLACK [RFID] Std TBH",
+     "family": "Philips Sonicare W3 Premium White Brush Head",
+     "variant": "Black, trade pack [RFID] Std TBH",
+     "item_type": "trade_bulk_pack",
+     "channel": "clinic",
+     "reason": "نفس عبوة W3 التجارية بلون أسود؛ توريد مهني مع مرتجعات مخزون مرتفعة."
+    },
+    {
+     "product": "Philips Sonicare Cordless Power Flosser 2000 Oral Irrigator, Mid range",
+     "family": "Philips Sonicare Cordless Power Flosser 2000",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "موديل وسط مستقل عن 3000 بسعر 37.9 د.ك؛ جهاز استهلاكي للصيدلية والعيادة."
+    },
+    {
+     "product": "A3 All-in-One Brush Head White",
+     "family": "Philips Sonicare A3 Premium All-in-One Brush Head",
+     "variant": "White (HX9092/14)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل أبيض من عائلة A3؛ ملحق للجهاز لا صنف قائم بذاته."
+    },
+    {
+     "product": "W2 Optimal White Brush Head Black",
+     "family": "Philips Sonicare W2 Optimal White Brush Head",
+     "variant": "Black (HX6062/91)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "اللون الأسود من رأس W2 التجزئة؛ يُجمع مع بقية أكواد HX6062 في عائلة واحدة."
+    },
+    {
+     "product": "S Brushhead Sensitive Blis",
+     "family": "Philips Sonicare Sensitive Brush Head",
+     "variant": "S blister (HX6052/07)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس حساس بديل راكد (81 يوماً بلا بيع) وعميل واحد؛ خارج العرض الافتتاحي."
+    },
+    {
+     "product": "C3 Plaque Defense Brush Head White",
+     "family": "Philips Sonicare C3 Premium Plaque Defence Brush Head",
+     "variant": "White (HX9042/14)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "عبوة تجزئة من رأس C3 بقطعتين مبيعتين؛ ملحق تابع للجهاز."
+    },
+    {
+     "product": "A3 Premium All-In-One Brush Head WHITE (Plaque Removal,Whitening,Gum Health)",
+     "family": "Philips Sonicare A3 Premium All-in-One Brush Head",
+     "variant": "White premium (HX9092/67)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل راكد 194 يوماً بلا بيع؛ يُسحب من القائمة لا يُعرض."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush by Sonicare, Miami Coral+2 free Brush Head",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Miami Coral + 2 free brush heads (combo box)",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "بوكس ترويجي لفرشاة قائمة أصلاً؛ عرض على صنف موجود لا صنف جديد، وصافي حركته صفر."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush By Sonicare, Mint Blue + 2 free Brush Head",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Mint Blue + 2 free brush heads (combo box)",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "نفس فرشاة Mint Blue داخل بوكس ترويجي؛ يُدار كعرض لا كسطر في القائمة."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush BY Sonicare, Midnight Blue + 2 free Brush Heads",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Midnight Blue + 2 free brush heads (combo box)",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "بوكس ترويجي بقطعة واحدة مبيعة ومرتجعات تساوي المبيع؛ ليس صنفاً مستقلاً."
+    },
+    {
+     "product": "S2 Sensitive Brush Head White",
+     "family": "Philips Sonicare Sensitive Brush Head",
+     "variant": "S2 White (HX6052/14)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس حساس بديل راكد 145 يوماً؛ قطعة غيار مرشحة للتصفية."
+    },
+    {
+     "product": "A3 Premium All-In-One Brush Head BLACK (Plaque Removal,Whitening,Gum Health)",
+     "family": "Philips Sonicare A3 Premium All-in-One Brush Head",
+     "variant": "Black premium (HX9092/96)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل راكد 166 يوماً وصافي مبيعات سالب؛ خارج أي عرض سعر."
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush by Sonicare, Mango Yellow + 2 free Brush Head",
+     "family": "PhilipsOne Battery Toothbrush",
+     "variant": "Mango Yellow + 2 free brush heads (combo box)",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "بوكس ترويجي بصافي مبيعات سالب؛ عرض على فرشاة قائمة لا صنف منفصل."
+    },
+    {
+     "product": "Sonicare For Kids",
+     "family": "Philips Sonicare For Kids Toothbrush",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "بلا أي بيع مدفوع في 2026 ومرتجعات فقط؛ صنف راكد لا يدخل القائمة الافتتاحية."
+    },
+    {
+     "product": "AirFloss Pro - Interdental Nozzles",
+     "family": "Philips Sonicare AirFloss Nozzles",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "فوهات بديلة لجهاز AirFloss وبصافي حركة سالب؛ ملحق لا يُدرج منفرداً."
+    },
+    {
+     "product": "Kids Standard Sonic Toothbrush Heads",
+     "family": "Philips Sonicare For Kids Brush Head",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رؤوس بديلة لفرشاة الأطفال بمرتجعات 67% وبلا بيع منذ 61 يوماً."
+    },
+    {
+     "product": "Airfloss Ultra White",
+     "family": "Philips Sonicare AirFloss Ultra",
+     "variant": "White (device)",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "بلا بيع مدفوع في 2026 ومرتجعات فقط؛ صنف منتهٍ يُسحب من العرض."
+    },
+    {
+     "product": "AirFloss + ToothBrush 3 Series",
+     "family": "Philips Sonicare AirFloss Ultra",
+     "variant": "Bundle with 3 Series toothbrush",
+     "item_type": "promo_pack",
+     "channel": "do_not_list",
+     "reason": "بوكس يجمع جهازين قائمين وبلا بيع في 2026؛ عرض مجمّع راكد لا صنف جديد."
+    },
+    {
+     "product": "Diamond Clean Handle Rose Gold",
+     "family": "Philips Sonicare DiamondClean Handle",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "جيل قديم بلا بيع في 2026 ومرتجعات 12 قطعة؛ راكد يُصفّى لا يُعرض."
+    },
+    {
+     "product": "Protective Clean 5100 UV BH Sanitizer",
+     "family": "Philips Sonicare ProtectiveClean 5100 with UV Sanitizer",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "قطعة واحدة مبيعة وصافي سالب 677 د.ك؛ لا يصلح سطراً في قائمة افتتاحية."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "PhilipsOne Battery Toothbrush BY Sonicare, Midnight Blue",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة استهلاكية بـ9.9 د.ك و15 عميلاً وحركة سريعة؛ صنف رف صيدلية حقيقي، ويُعرض كلون داخل عائلة PhilipsOne الواحدة.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Protective Clean 4300 BLACK",
+     "stays": true,
+     "move_to": "both",
+     "why": "فرشاة كهربائية متوسطة الفئة بـ34.9 د.ك و18 عميلاً، وقناتها الفعلية في الـERP صيدليات وعيادات معاً.",
+     "verdict_note": ""
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush By Sonicare, Mint Blue",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نفس فرشاة PhilipsOne بلون آخر؛ سريعة الحركة لدى 15 عميلاً، تبقى كخيار لون لا كسطر مستقل.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Protective Clean 4300 LIGHT BLUE",
+     "stays": true,
+     "move_to": "both",
+     "why": "لون ثانٍ لموديل 4300 نفسه؛ يبقى في العرض ضمن عائلة واحدة لا كصنف منفصل.",
+     "verdict_note": ""
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush by Sonicare, Miami Coral",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "لون ثالث من عائلة PhilipsOne، منتج استهلاكي مباشر يشتريه زبون الصيدلية.",
+     "verdict_note": ""
+    },
+    {
+     "product": "PhilipsOne Battery Toothbrush by Sonicare, Mango Yellow",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "لون رابع لنفس الفرشاة بحركة سريعة؛ خيار لون داخل العائلة لا بند إضافي.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Rechargeable Sonic Toothbrush 1100 Series WHITE",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فئة دخول بـ10 د.ك و16 عميلاً؛ أنسب صنف رف للمستهلك العادي.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Rechargeable Sonic Toothbrush 2100 Series LIGHT BLUE",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "موديل اقتصادي بـ13 د.ك يُباع بالصيدليات فعلياً حسب قناته الحالية.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 5300  Series White",
+     "stays": true,
+     "move_to": "both",
+     "why": "فرشاة بسعر جمهور 36.9 د.ك ضمن فئة 4300 السعرية نفسها، فئة استهلاكية تصلح للرف وللعيادة.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 5300  Series Black",
+     "stays": true,
+     "move_to": "both",
+     "why": "اللون الأسود من موديل 5300 نفسه؛ عائلة واحدة مع الأبيض وليس صنفاً ثانياً.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Diamond Clean 9000 Series Special Edition Blue",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "سعر 47 د.ك للقطعة وقناته الفعلية عيادات بـ5 عملاء فقط؛ بريميوم يُباع عبر العيادة لا من رف الصيدلية.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Cordless Power Flosser 3000 Oral Irrigator High End, Black",
+     "stays": true,
+     "move_to": "both",
+     "why": "جهاز ضخ مائي استهلاكي قناته الحالية صيدليات وعيادات، ويشتريه الزبون مباشرة.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Diamond Clean 9000 Series Black with app",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "56.5 د.ك للقطعة ومبيعه كله عبر العيادات بـ6 عملاء؛ لا يستحق سطراً في عرض الصيدليات الافتتاحي.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Compact Flosser 1000 PURPLE",
+     "stays": true,
+     "move_to": "both",
+     "why": "ضخّ مائي مدمج بـ34.9 د.ك و10 عملاء، اتساع قاعدة العملاء يبرّر وجوده على الرف وفي العيادة.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Compact Flosser 1000 BLUE",
+     "stays": true,
+     "move_to": "both",
+     "why": "لون ثانٍ لنفس جهاز Compact Flosser 1000؛ يُدمج في العائلة ولا يُعرض كصنف مستقل.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Diamond Clean 9000 Series Special Edition Purple",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "49 د.ك للقطعة و17 وحدة لدى 5 عملاء عيادات؛ بريميوم بطيء لا مكان له في عرض صيدليات افتتاحي.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Diamond Clean 9000 Series White with app",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "متراجع حتى الصفر في آخر 3 أشهر وسعره 58 د.ك عبر العيادات فقط؛ لا يدخل عرض الصيدليات.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Sonicare Prestige, SenseIQ Premium CHAMPAGNE",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "88.5 د.ك للقطعة و7 وحدات لدى عميلين عيادات؛ بيع علاقات لا بيع رف.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Sonicare Prestige, SenseIQ Premium MIDNIGHT BLUE",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "بطيء الحركة بـ6 وحدات وعميلين، وهو لون ثانٍ لنفس Prestige؛ يُطرح للعيادات فقط.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Cordless Power Flosser 3000 Oral Irrigator High End, White",
+     "stays": true,
+     "move_to": "both",
+     "why": "اللون الأبيض من نفس جهاز Power Flosser 3000، والمرتجعات تصفية رفوف لا رفض عميل.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 2100 Series Black",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فئة دخول بـ11 د.ك لدى 9 عملاء وقناتها صيدليات وعيادات؛ صنف رف واضح.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 1100 Series White",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "كود ثانٍ لنفس موديل 1100 الأبيض؛ يُدمج في عائلة 1100 بدل تكراره كسطر جديد.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush  2100 Series White",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "اللون الأبيض من موديل 2100 الاقتصادي؛ خيار لون داخل عائلة واحدة مع الأسود.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Rechargeable Toothbrush 1100 Series Marine Blue",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "لون بحري من موديل 1100 نفسه بسعر دخول 8.7 د.ك؛ variant داخل العائلة.",
+     "verdict_note": ""
+    },
+    {
+     "product": "Philips Sonicare Cordless Power Flosser 2000 Oral Irrigator, Mid range",
+     "stays": true,
+     "move_to": "both",
+     "why": "موديل وسط مستقل بسعر 37.9 د.ك، والمرتجعات العالية تصفية مخزون سنوات سابقة لا رفض زبون.",
+     "verdict_note": ""
+    }
+   ]
+  },
+  {
+   "brand": "TEPE",
+   "skus": [
+    {
+     "product": "Mini Flosser INT",
+     "family": "TePe Mini Flosser",
+     "variant": "INT standard pack",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فلوسر جاهز للاستعمال يشتريه الزبون من الرف مباشرة، وهو أعلى أصناف البراند مبيعاً."
+    },
+    {
+     "product": "Supreme Soft 3-pack Blister INT",
+     "family": "TePe Supreme Toothbrush",
+     "variant": "Soft, 3-pack blister",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة أسنان استهلاكية بعبوة ثلاثية، سلعة رف صيدلية نموذجية."
+    },
+    {
+     "product": "Dental Floss 40m Waxed Mint",
+     "family": "TePe Dental Floss 40m Waxed Mint",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "خيط أسنان استهلاكي بسعر جمهور واضح و12 عميلاً، سلعة رف أساسية."
+    },
+    {
+     "product": "Nova X-Soft Blister 3-pack Blister INT",
+     "family": "TePe Nova Toothbrush",
+     "variant": "X-Soft, 3-pack blister",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة Nova بدرجة شعيرات X-Soft وعبوة ثلاثية، variant لا صنف مستقل."
+    },
+    {
+     "product": "Nova Soft Blister 3-pack Blister INT",
+     "family": "TePe Nova Toothbrush",
+     "variant": "Soft, 3-pack blister",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة Nova بدرجة Soft وعبوة ثلاثية، تُجمع مع باقي أفراد عائلة Nova."
+    },
+    {
+     "product": "Idb Pink Blister 0.4 Mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Pink 0.4 mm",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "مقاس ضمن سلّم ألوان IDB نفسه، والزبون يشتريه من الصيدلية حسب اتساع ما بين أسنانه."
+    },
+    {
+     "product": "Idb Blue Blister 0.6 Mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Blue 0.6 mm",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "مقاس آخر من نفس فرشاة IDB، سلعة رف صيدلية بـ13 عميلاً."
+    },
+    {
+     "product": "Tongue Cleaner Blister INT",
+     "family": "TePe Tongue Cleaner",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "منظّف لسان استهلاكي بسعر جمهور، يشتريه أي زبون يدخل الصيدلية."
+    },
+    {
+     "product": "Idb Mixed Pack Blister Int.",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Mixed sizes pack",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "عبوة مقاسات مشكّلة من نفس فرشاة IDB، وهي أنسب خيار لزبون لا يعرف مقاسه."
+    },
+    {
+     "product": "Idb Red Blister 0.5 Mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Red 0.5 mm",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "مقاس من سلّم IDB نفسه بأوسع انتشار (14 عميلاً)، سلعة رف."
+    },
+    {
+     "product": "EasyFit S/M INT",
+     "family": "TePe EasyFit",
+     "variant": "S/M",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "منتج تنظيف بيني استهلاكي، والفرق عن الصنف الآخر مجرد مقاس."
+    },
+    {
+     "product": "EasyPick XS/S Blister",
+     "family": "TePe EasyPick",
+     "variant": "XS/S blister",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "عود تنظيف بيني استهلاكي بسعر جمهور 2.2، سلعة رف صيدلية."
+    },
+    {
+     "product": "Kids X-Soft Blister (3+) SRP",
+     "family": "TePe Kids Toothbrush (3+)",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة أطفال من عمر 3 سنوات، موديل مستقل عن فرشاة Mini وتُباع على الرف."
+    },
+    {
+     "product": "Colour Soft 3-pack Blister INT",
+     "family": "TePe Colour Toothbrush",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "موديل فرشاة مستقل عن Nova وSupreme، منتج استهلاكي للرف."
+    },
+    {
+     "product": "Choice Regular Soft INT SRP",
+     "family": "TePe Choice Toothbrush",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "موديل فرشاة استهلاكي مستقل، رغم أن معظم بيعه كان تعبئة أولية في شهر واحد."
+    },
+    {
+     "product": "EasyFit M/L INT",
+     "family": "TePe EasyFit",
+     "variant": "M/L",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس منتج EasyFit بمقاس أكبر، variant داخل العائلة لا صنف جديد."
+    },
+    {
+     "product": "Mini X-Soft Blister (0-6) SRP",
+     "family": "TePe Mini Kids Toothbrush (0-6)",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة الأعمار الصغيرة، موديل مستقل عن Kids وتُعرض بجانبها على الرف."
+    },
+    {
+     "product": "Idb Yellow Blister 0.7 Mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Yellow 0.7 mm",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "مقاس من نفس عائلة IDB؛ بيعه لعيادات لا يمنع أنه سلعة رف صيدلية."
+    },
+    {
+     "product": "Idb Orange Blister 0.45 Mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Orange 0.45 mm",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "مقاس من سلّم IDB نفسه بـ12 عميلاً، يكمل تشكيلة الرف."
+    },
+    {
+     "product": "Nova Soft Blister INT SRP",
+     "family": "TePe Nova Toothbrush",
+     "variant": "Soft, single blister (SRP display)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة Nova Soft لكن قطعة مفردة في بوكس عرض، فرق عبوة فقط."
+    },
+    {
+     "product": "Nova X-Soft Blister INT SRP",
+     "family": "TePe Nova Toothbrush",
+     "variant": "X-Soft, single blister (SRP display)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة Nova X-Soft بقطعة مفردة، تُدمج في عائلة Nova."
+    },
+    {
+     "product": "Supreme Soft Blister INT SRP",
+     "family": "TePe Supreme Toothbrush",
+     "variant": "Soft, single blister (SRP display)",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة Supreme Soft بقطعة مفردة بدل عبوة الثلاثة، فرق عدد عبوة."
+    },
+    {
+     "product": "IDB Angle Blister Mixed pack all sizes",
+     "family": "TePe Interdental Brush Angle",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "موديل Angle بمقبض طويل مائل، تصميم مختلف عن IDB العادية فيستحق عائلة مستقلة."
+    },
+    {
+     "product": "Extra Soft Interdental Brush Mixed Pack",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Extra Soft, mixed sizes pack",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نفس فرشاة IDB بشعيرات أنعم وعبوة مقاسات مشكّلة، variant داخل العائلة."
+    },
+    {
+     "product": "Implant Care Kit",
+     "family": "TePe Implant Care Kit",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "clinic",
+     "reason": "طقم عناية بعد زراعة الأسنان تصرفه العيادة لمريضها، ولا يدخل زبون صيدلية ليطلبه."
+    },
+    {
+     "product": "Special Care Ultra Soft Speciality Toothbrush",
+     "family": "TePe Special Care Ultra Soft Toothbrush",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة فائقة النعومة يشتريها الزبون مباشرة، لكن حركتها متراجعة فتُدرج بحذر."
+    },
+    {
+     "product": "Compact Tuft Speciality Toothbrush",
+     "family": "TePe Compact Tuft Toothbrush",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "فرشاة ذات خصلة واحدة لمستخدمي التقويم والزرعات، سلعة رف استهلاكية بسعر جمهور."
+    },
+    {
+     "product": "Mini Flosser GOOD 36pcs",
+     "family": "TePe Mini Flosser",
+     "variant": "GOOD 36 pcs",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "تكرار لنفس الفلوسر بلا سعر جمهور، وراكد 108 يوم فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "GOOD Regular Soft SRP INT",
+     "family": "TePe GOOD Regular Toothbrush",
+     "variant": "Soft, single SRP",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "صنف شبه ميت (82 قطعة و79% مرتجعات مخزون)، يُصفّى بدل إدراجه."
+    },
+    {
+     "product": "Idb Grey Blister 1.3mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Grey 1.3 mm",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "مقاس كبير يكمل سلّم IDB ويشتريه زبون ذو فراغات واسعة، وإن كانت حركته بطيئة."
+    },
+    {
+     "product": "Idb Black Blister 1.5mm",
+     "family": "TePe Interdental Brush (IDB)",
+     "variant": "Black 1.5 mm",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "أكبر مقاس في السلّم وراكد 187 يوم، يُسحب من القائمة الافتتاحية."
+    },
+    {
+     "product": "GOOD Regular 3pcs Soft SRP",
+     "family": "TePe GOOD Regular Toothbrush",
+     "variant": "Soft, 3 pcs SRP",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "نفس فرشاة GOOD بعبوة ثلاثية، وراكدة 130 يوم بـ6 قطع فقط."
+    },
+    {
+     "product": "EasyPick XS/S Pocket Pack Blister",
+     "family": "TePe EasyPick",
+     "variant": "XS/S pocket pack",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "عبوة جيب من نفس EasyPick، مرتجعاتها تفوق مبيعاتها وصافيها سالب."
+    },
+    {
+     "product": "Dental Tape 40m, Blister",
+     "family": "TePe Dental Tape 40m",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "بلا أي بيع مدفوع في 2026 ومرتجعات فقط، صنف راكد يُسحب."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "Mini Flosser INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فلوسر استهلاكي جاهز بسعر جمهور 2.4 و9 عملاء وأعلى مبيعات البراند — سلعة رف صيدلية بامتياز."
+    },
+    {
+     "product": "Supreme Soft 3-pack Blister INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة أسنان استهلاكية بعبوة ثلاثية وسعر جمهور 3.96، لا علاقة لها بالاستعمال المهني."
+    },
+    {
+     "product": "Dental Floss 40m Waxed Mint",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "خيط أسنان استهلاكي سريع الحركة بـ12 عميلاً وسعر جمهور واضح."
+    },
+    {
+     "product": "Nova X-Soft Blister 3-pack Blister INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة استهلاكية تبقى على الرف، لكنها variant داخل عائلة Nova وتُعرض كسطر واحد مع أخواتها."
+    },
+    {
+     "product": "Nova Soft Blister 3-pack Blister INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نفس فرشاة Nova بدرجة Soft — سلعة رف صيدلية تُجمَّع في عائلة Nova لا كصنف مستقل."
+    },
+    {
+     "product": "Idb Pink Blister 0.4 Mm",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "مقاس ضمن سلّم IDB الاستهلاكي بـ12 عميلاً، يشتريه الزبون مباشرة من الرف."
+    },
+    {
+     "product": "Idb Blue Blister 0.6 Mm",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "مقاس آخر من فرشاة IDB بـ13 عميلاً وحركة سريعة، سلعة رف داخل عائلة IDB."
+    },
+    {
+     "product": "Tongue Cleaner Blister INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "منظّف لسان استهلاكي بسعر جمهور 2.48 يشتريه أي زبون يدخل الصيدلية."
+    },
+    {
+     "product": "Idb Mixed Pack Blister Int.",
+     "stays": true,
+     "move_to": "both",
+     "why": "عبوة مقاسات مشكّلة استهلاكية، وERP يُظهر بيعاً حقيقياً للصيدليات والعيادات معاً لا احتياطاً."
+    },
+    {
+     "product": "Idb Red Blister 0.5 Mm",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "أوسع مقاسات IDB انتشاراً (14 عميلاً) وسلعة رف أساسية ضمن العائلة."
+    },
+    {
+     "product": "EasyFit S/M INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "منتج تنظيف بيني استهلاكي بسعر جمهور 2.75، والفرق عن الآخر مجرد مقاس داخل العائلة."
+    },
+    {
+     "product": "EasyPick XS/S Blister",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "عود تنظيف بيني استهلاكي سريع الحركة بـ7 عملاء وسعر جمهور 2.2."
+    },
+    {
+     "product": "Kids X-Soft Blister (3+) SRP",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة أطفال بسعر جمهور 1.43 و7 عملاء، وعبوة SRP هنا بوكس عرض للرف لا عبوة تجارية."
+    },
+    {
+     "product": "Colour Soft 3-pack Blister INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "موديل فرشاة استهلاكي مستقل عن Nova وSupreme، يُعرض على رف الصيدلية."
+    },
+    {
+     "product": "Choice Regular Soft INT SRP",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة استهلاكية للرف، لكن بيعها كان تعبئة أولية في شهر واحد بـ3 عملاء فتُدرج بسعر مراجَع (سعر البيع 2.45 أعلى من RRP 1.95)."
+    },
+    {
+     "product": "EasyFit M/L INT",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نفس منتج EasyFit بمقاس أكبر — يبقى على الرف لكن ضمن عائلة EasyFit لا كصنف جديد."
+    },
+    {
+     "product": "Mini X-Soft Blister (0-6) SRP",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة أعمار 0-6 بسعر جمهور 1.43، سلعة رف تُعرض بجانب فرشاة Kids."
+    },
+    {
+     "product": "Idb Yellow Blister 0.7 Mm",
+     "stays": true,
+     "move_to": "both",
+     "why": "مقاس استهلاكي من عائلة IDB بـ11 عميلاً، وERP يسجّل بيعاً فعلياً للصيدليات والعيادات."
+    },
+    {
+     "product": "Idb Orange Blister 0.45 Mm",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "مقاس من سلّم IDB بـ12 عميلاً يكمل تشكيلة الرف ضمن العائلة نفسها."
+    },
+    {
+     "product": "Nova Soft Blister INT SRP",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "قطعة مفردة من Nova Soft في بوكس عرض للرف — سعر دخول استهلاكي، وليست عبوة ترويجية ولا تجارية."
+    },
+    {
+     "product": "Nova X-Soft Blister INT SRP",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "قطعة مفردة من Nova X-Soft للرف بسعر جمهور 1.76، تُدمج في عائلة Nova كفرق عبوة."
+    },
+    {
+     "product": "Supreme Soft Blister INT SRP",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "قطعة مفردة من Supreme Soft بدل عبوة الثلاثة — فرق عدد عبوة داخل العائلة، وتبقى سلعة رف."
+    },
+    {
+     "product": "IDB Angle Blister Mixed pack all sizes",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "موديل Angle بمقبض مائل وتصميم مختلف عن IDB العادية، منتج استهلاكي بعائلة مستقلة."
+    },
+    {
+     "product": "Extra Soft Interdental Brush Mixed Pack",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "عبوة مقاسات مشكّلة بشعيرات أنعم — سلعة رف لكنها variant داخل عائلة IDB لا صنف مستقل."
+    },
+    {
+     "product": "Special Care Ultra Soft Speciality Toothbrush",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة فائقة النعومة استهلاكية بسعر جمهور، لكن بعميلين فقط وتراجع إلى 2 قطعة/شهر مقابل 22 فتُدرج بحذر وبكمية صغيرة."
+    },
+    {
+     "product": "Compact Tuft Speciality Toothbrush",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "فرشاة خصلة واحدة لمستخدمي التقويم والزرعات بسعر جمهور 1.98، يشتريها الزبون من الرف رغم اقتصارها على عميل واحد."
+    },
+    {
+     "product": "Idb Grey Blister 1.3mm",
+     "stays": false,
+     "move_to": "clinic",
+     "why": "ERP يصنّفه عيادات وبطيء الحركة بـ16 قطعة و32 د.ك فقط، والمقاس الواسع يغطيه Mixed Pack على الرف — لا يستحق سطراً في عرض الصيدليات."
+    }
+   ]
+  },
+  {
+   "brand": "UNDO",
+   "skus": [
+    {
+     "product": "Undo Nose Patches",
+     "family": "Undo Nose Patches",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "لصقات أنف للمستهلك بسعر جمهور 7.9 د.ك، زبون عادي يشتريها من رف الصيدلية مباشرة."
+    },
+    {
+     "product": "Undo Pimple Patches",
+     "family": "Undo Pimple Patches",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "لصقات حبوب استهلاكية سريعة الحركة (2697 قطعة، 11 عميلاً) ومنتج رف صيدلية نموذجي."
+    },
+    {
+     "product": "Undo Microneedle Patches",
+     "family": "Undo Microneedle Patches",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "لصقات مايكرونيدل للعناية الذاتية تُباع للمستهلك، ليست مستهلكاً مهنياً ولا تحتاج تدخل عيادة."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "Undo Nose Patches",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "لصقات أنف استهلاكية بسعر جمهور 7.9 د.ك يشتريها الزبون مباشرة من رف الصيدلية دون أي تدخل مهني."
+    },
+    {
+     "product": "Undo Pimple Patches",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "منتج رف صيدلية نموذجي سريع الحركة (2697 قطعة لدى 11 عميلاً) بسعر جمهور 3.9 د.ك."
+    },
+    {
+     "product": "Undo Microneedle Patches",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "لصقات مايكرونيدل للعناية الذاتية بسعر جمهور 7.5 د.ك، ليست مستهلكاً مهنياً ولا تحتاج عيادة."
+    }
+   ]
+  },
+  {
+   "brand": "WATERPIK",
+   "skus": [
+    {
+     "product": "Waterpik Cordless Plus BLACK",
+     "family": "Waterpik Cordless Plus",
+     "variant": "BLACK",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "جهاز ري فموي استهلاكي يشتريه زبون عادي من الصيدلية، والعيادات تعيد بيعه لمرضاها فعلياً (34 عميلاً و1095 قطعة)."
+    },
+    {
+     "product": "Waterpik Cordless Plus WHITE",
+     "family": "Waterpik Cordless Plus",
+     "variant": "WHITE",
+     "item_type": "standalone_product",
+     "channel": "both",
+     "reason": "نفس جهاز Cordless Plus بلون أبيض فقط، فهو variant لون لا صنف مستقل، والمرتجعات تصفية رفوف لا رفض عميل."
+    },
+    {
+     "product": "Waterpik Cordless Freedom BLACK",
+     "family": "Waterpik Cordless Freedom",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "جهاز لاسلكي ببطاريات موجّه للمستهلك، فمكانه رف الصيدلية لا تصنيف «عيادات» الحالي."
+    },
+    {
+     "product": "Waterpik Cordless Express",
+     "family": "Waterpik Cordless Express",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "الموديل الاقتصادي للمستهلك بسعر جمهور 24.9، صنف رف صيدلية نموذجي."
+    },
+    {
+     "product": "Waterpik Cordless Select WHITE",
+     "family": "Waterpik Cordless Select",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "جهاز استهلاكي رغم سعره الأعلى؛ ارتفاع السعر وحده لا يجعله صنف عيادة."
+    },
+    {
+     "product": "Replacement Tip-Tongue Cleaner",
+     "family": "Waterpik Replacement Tip - Tongue Cleaner",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل لجهاز الواترابيك، يُعرض مع جهازه لا كسطر مستقل في العرض الافتتاحي."
+    },
+    {
+     "product": "Replacement Tips-High Pressure Jet Tip",
+     "family": "Waterpik Replacement Tip - Jet Tip",
+     "variant": "High Pressure (أجهزة 450 اللاسلكية)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "نفس عائلة الرأس الكلاسيكي باختلاف ملاءمة الموديل فقط، وهو قطعة غيار لا تُدرج منفردة."
+    },
+    {
+     "product": "Replacement Tip-Pick Pocket For WP-100 & WP-360",
+     "family": "Waterpik Replacement Tip - Pik Pocket",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "طرف بديل لجهاز قائم، مكانه ملحقات الجهاز لا قائمة الأصناف الافتتاحية."
+    },
+    {
+     "product": "Plaque Seeker Tips",
+     "family": "Waterpik Replacement Tip - Plaque Seeker",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل متخصص للجهاز، يُباع كملحق مع الجهاز لا كصنف مستقل."
+    },
+    {
+     "product": "Replacement Tip-Ortho Tip",
+     "family": "Waterpik Replacement Tip - Orthodontic",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "طرف تقويم بديل للجهاز؛ ملحق وليس منتجاً قائماً بذاته في العرض الأول."
+    },
+    {
+     "product": "Replacement Tip-Jet Tip",
+     "family": "Waterpik Replacement Tip - Jet Tip",
+     "variant": "Standard (أجهزة WP-100 المكتبية)",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "نفس الرأس الكلاسيكي بمقاس ملاءمة آخر، فيُدمج في عائلة واحدة ويبقى قطعة غيار."
+    },
+    {
+     "product": "Waterpik- WP-660ME Ultra Professional",
+     "family": "Waterpik Ultra Professional Countertop",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "جهاز مكتبي للمستهلك رغم اسم «Professional»، لكن حركته ضعيفة جداً (3 قطع/عميل واحد) فيُعرض بحذر."
+    },
+    {
+     "product": "Toothbrush For WP-100, WP-450 & WP-360",
+     "family": "Waterpik Replacement Tip - Toothbrush",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس فرشاة ملحق بالجهاز وراكد منذ 144 يوماً، فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "Waterpik Cordless Advanced Black",
+     "family": "Waterpik Cordless Advanced",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "صنف راكد: قطعة واحدة ومرتجعات تعادل المبيعات ولم يُبع منذ 118 يوماً، فيُستبعد من العرض."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "Waterpik Cordless Plus BLACK",
+     "stays": true,
+     "move_to": "both",
+     "why": "جهاز ري فموي استهلاكي قائم بذاته بحركة قوية (34 عميلاً و1095 قطعة) تشتريه الصيدلية لزبون الباب وتعيد العيادة بيعه لمرضاها فعلاً."
+    },
+    {
+     "product": "Waterpik Cordless Plus WHITE",
+     "stays": true,
+     "move_to": "both",
+     "why": "نفس جهاز Cordless Plus بلون أبيض — variant لون يُدمج في عائلة واحدة مع الأسود لا يُحذف، والمرتجعات تصفية رفوف لا رفض عميل."
+    },
+    {
+     "product": "Waterpik Cordless Freedom BLACK",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "جهاز لاسلكي ببطاريات موجّه للمستهلك بسعر جمهور 32.9، مكانه رف الصيدلية لا تصنيف «عيادات» الحالي."
+    },
+    {
+     "product": "Waterpik Cordless Express",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "الموديل الاقتصادي للمستهلك بسعر جمهور 24.9، صنف رف صيدلية نموذجي سريع الحركة."
+    },
+    {
+     "product": "Waterpik Cordless Select WHITE",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "جهاز استهلاكي قائم بذاته؛ ارتفاع السعر وحده لا يجعله صنف عيادة ولا يخرجه من الرف."
+    },
+    {
+     "product": "Waterpik- WP-660ME Ultra Professional",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "جهاز مكتبي للمستهلك رغم اسم «Professional» وليس معدة عيادة، لكن حركته ضعيفة جداً (3 قطع/عميل واحد) فيُعرض بكمية محدودة."
+    }
+   ]
+  },
+  {
+   "brand": "Intensiv",
+   "skus": [
+    {
+     "product": "OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION",
+     "family": "Intensiv Ortho-Strips Reduction",
+     "variant": "0.08mm coarse, double-sided, pack of 3",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "شريحة تقويم للبرد بين الأسنان (IPR) يستعملها طبيب التقويم على الكرسي، ولا يدخل زبون صيدلية ليشتريها."
+    },
+    {
+     "product": "Intensiv Ortho Strips System Set02 (6pcs of double sided strips) with Tray",
+     "family": "Intensiv Ortho-Strips System Set",
+     "variant": "Set02 — 6 double-sided strips with tray",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "طقم تقويم كامل بصينية للعيادة، منتج جديد بعميل واحد فقط، ويُعرض كطقم مستقل للعيادات لا للرف."
+    },
+    {
+     "product": "OS40M Intensiv Ortho-Strips Coarse, Double-Sided CONTOURING",
+     "family": "Intensiv Ortho-Strips Contouring",
+     "variant": "0.04mm (OS40M), double-sided, pack of 3",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "شريحة تشكيل مهنية ضمن عائلة Contouring، استعمالها داخل العيادة فقط."
+    },
+    {
+     "product": "WG-69 A, Intensiv Swingle, W&H Synea, without light",
+     "family": "Intensiv Swingle Handpiece (W&H Synea)",
+     "variant": "WG-69 A, without light",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "هاندبيس تقويم يُركَّب على يونت الأسنان، معدة عيادة وليس صنف رف صيدلية."
+    },
+    {
+     "product": "OS15POL Intensiv Ortho-Strips Coarse, Double-Sided POLISHING",
+     "family": "Intensiv Ortho-Strips Polishing",
+     "variant": "0.015mm (OS15POL), double-sided, packs of 1 and 3",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "شريحة تلميع مهنية بعبوتَي قطعة وثلاث قطع، كلاهما نفس العائلة ومكانها العيادة."
+    },
+    {
+     "product": "WG-69 A Ortho PROF, Intensiv Swingle Professional Kit, W&H Synea",
+     "family": "Intensiv Swingle Handpiece (W&H Synea)",
+     "variant": "WG-69 A Ortho PROF kit, without light",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "نفس هاندبيس Swingle بصيغة الطقم المهني، فهو variant للجهاز نفسه لا صنف جديد."
+    },
+    {
+     "product": "OS25/3 Intensiv Ortho-Strips FINISHING",
+     "family": "Intensiv Ortho-Strips Finishing",
+     "variant": "0.025mm (OS25F), double-sided, pack of 3",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "شريحة إنهاء مهنية بوظيفة مستقلة عن باقي الشرائح، تُباع للعيادات فقط."
+    },
+    {
+     "product": "OS60/3 Intensiv OrthoStrips CONTOURING",
+     "family": "Intensiv Ortho-Strips Contouring",
+     "variant": "0.06mm (OS60C), double-sided, pack of 3",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "نفس شريحة التشكيل بسماكة أكبر، أي variant مقاس داخل عائلة Contouring وليس صنفاً منفصلاً."
+    },
+    {
+     "product": "Intensiv IPR-Distancecontrol",
+     "family": "Intensiv IPR-Distancecontrol",
+     "variant": "",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "أداة قياس مسافة البرد في إجراء IPR، استعمال تشخيصي داخل العيادة ولا معنى لها لزبون صيدلية."
+    },
+    {
+     "product": "OS08OP Intensiv Ortho-Strips Opener, Double Sided OPENING",
+     "family": "Intensiv Ortho-Strips Opener",
+     "variant": "0.08mm opener, double-sided, pack of 3",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "شريحة فتح التماس المهنية، والمرتجعات المسجّلة تصفية مخزون لا رفض عميل فتبقى في عرض العيادات."
+    },
+    {
+     "product": "Intensiv Ejector",
+     "family": "Intensiv Ejector",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "قطعة ملحقة بنظام Swingle/الشرائح وراكدة منذ 110 يوم، مكانها مع جهازها لا كسطر مستقل."
+    },
+    {
+     "product": "Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION",
+     "family": "Intensiv Ortho-Strips Reduction",
+     "variant": "0.08mm coarse, double-sided, single strip (1 AS)",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "نفس شريحة REDUCTION بعبوة القطعة الواحدة، فهي variant عبوة داخل العائلة لا صنف ثانٍ."
+    },
+    {
+     "product": "Intensiv Ortho-Strips Coarse, Double-Sided CONTOURING",
+     "family": "Intensiv Ortho-Strips Contouring",
+     "variant": "0.04mm, double-sided, single strip (1 AS)",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "عبوة قطعة واحدة من شريحة Contouring وراكدة 151 يوم، تُسحب من العرض الافتتاحي وتبقى عبوة الثلاث."
+    },
+    {
+     "product": "Intensiv Ortho-Strips Opener, Double Sided OPENING",
+     "family": "Intensiv Ortho-Strips Opener",
+     "variant": "0.08mm opener, double-sided, single strip (1 AS)",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "عبوة قطعة واحدة راكدة منذ 210 يوم، مكرّرة مع عبوة الثلاث من نفس الشريحة."
+    },
+    {
+     "product": "Intensiv Ortho-Strips Coarse, ONE Sided CONTOURING",
+     "family": "Intensiv Ortho-Strips Contouring",
+     "variant": "0.04mm, one-sided L/R, pack of 3",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "نسخة الوجه الواحد من شريحة Contouring وصافي حركتها سالب مع توقف 62 يوم، فلا تدخل العرض الافتتاحي."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "UNIVET",
+   "skus": [
+    {
+     "product": "Lynx Pro Headlight",
+     "family": "UNIVET Lynx Headlight",
+     "variant": "Pro",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "كشاف رأس لطبيب الأسنان يُركَّب على اللوب ويُباع بموعد وتجربة، لا من رف صيدلية."
+    },
+    {
+     "product": "Lynx Headlight",
+     "family": "UNIVET Lynx Headlight",
+     "variant": "الإصدار القياسي",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس كشاف Lynx بإصدار أقل مواصفة؛ خيار داخل نفس العائلة يُباع مباشرة مع اللوب."
+    },
+    {
+     "product": "ERGO ADVANCED BINOCULARS LOUPES TTL 4.5X 500 ITA 56-16 / Black Edition",
+     "family": "UNIVET Ergo Advanced TTL Prismatic Loupes",
+     "variant": "4.5X / 500mm / إطار ITA 56-16 Black Edition",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لوب تكبير مفصّل على مقاس الطبيب (TTL)، يحتاج قياس وتركيب فلا يُعرض في صيدلية."
+    },
+    {
+     "product": "ERGO ADVANCED BINOCULARS LOUPES TTL 4.5X500 ONE ERGO Advanced 55-14 /  Limited Edition",
+     "family": "UNIVET Ergo Advanced TTL Prismatic Loupes",
+     "variant": "4.5X / 500mm / إطار ONE 55-14 Limited Edition",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس عائلة Ergo Advanced بإطار ومقاس مختلف، تكوين يُطلب بالقياس لا صنف رف."
+    },
+    {
+     "product": "ERGO ADVANCED BINOCULARS LOUPES TTL 4.5X 600 ITA BLACK EDITION FRAME",
+     "family": "UNIVET Ergo Advanced TTL Prismatic Loupes",
+     "variant": "4.5X / 600mm / إطار ITA Black Edition",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "بلا بيع مدفوع في 2026 ومرتجع بالكامل، فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "PRISMATIC BINOCULARS LOUPES  TTL 5.0X450  XS ULTRA HD ASH 55-17 / Purple - Grey",
+     "family": "UNIVET Prismatic XS Ultra HD TTL Loupes",
+     "variant": "5.0X / 450mm / إطار ASH 55-17 Purple-Grey",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لوب بريزماتيك مفصّل للطبيب؛ لون وإطار داخل عائلة واحدة ويُباع بموعد مباشر."
+    },
+    {
+     "product": "PRISMATIC BINOCULARS LOUPES TTL 5.0X450  XS ULTRA HD ITA 56-16 / Brown Endura",
+     "family": "UNIVET Prismatic XS Ultra HD TTL Loupes",
+     "variant": "5.0X / 450mm / إطار ITA 56-16 Brown Endura",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس اللوب بإطار ولون مختلف، تكوين من نفس العائلة يُباع مباشرة بالقياس."
+    },
+    {
+     "product": "PRISMATIC BINOCULARS LOUPES TTL 5.0X400  XS ULTRA HD ITA 56-16 / Midnight Blue",
+     "family": "UNIVET Prismatic XS Ultra HD TTL Loupes",
+     "variant": "5.0X / 400mm / إطار ITA 56-16 Midnight Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "اختلاف مسافة العمل واللون فقط داخل نفس عائلة اللوب المفصّل."
+    },
+    {
+     "product": "PRISMATIC BINOCULARS LOUPES TTL 3.5X450  XS ULTRA HD ITA 56-16 / Brown Endura",
+     "family": "UNIVET Prismatic XS Ultra HD TTL Loupes",
+     "variant": "3.5X / 450mm / إطار ITA 56-16 Brown Endura",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكبير مختلف من نفس عائلة اللوب، يُطلب بالمقاس لا من رف صيدلية."
+    },
+    {
+     "product": "PRISMATIC BINOCULARS LOUPES TTL 3.5X400 XS ULTRA HD Techne White/Pink",
+     "family": "UNIVET Prismatic XS Ultra HD TTL Loupes",
+     "variant": "3.5X / 400mm / إطار Techne White-Pink",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لون وإطار Techne داخل نفس العائلة؛ بيع مباشر بموعد تركيب."
+    },
+    {
+     "product": "PRISMATIC BINOCULARS LOUPES   TTL 5.0X400 XS ULTRA HD ITA BLACK EDITION",
+     "family": "UNIVET Prismatic XS Ultra HD TTL Loupes",
+     "variant": "5.0X / 400mm / إطار ITA Black Edition",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "إصدار لون أسود من نفس اللوب، ليس صنفاً مستقلاً بل تكوين يُباع مباشرة."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES TTL 3.5X400  PRO HD ITA 56-16 / Midnight Blue",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.5X / 400mm / PRO HD / إطار ITA 56-16 Midnight Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لوب جاليلي مفصّل على عين الطبيب، يُباع بموعد قياس لا عبر الصيدلية."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES TTL 3.5x450 PRO HD and PRO HD^2 ASH 55-17 / Black - Red",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.5X / 450mm / PRO HD و PRO HD^2 / إطار ASH 55-17 Black-Red",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكوين إطار ومسافة عمل داخل نفس عائلة الجاليلي، لا صنف منفصل."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES TTL 3.5X450 PRO HD^2 ITA 56-16 / Midnight Blue Regular Fit",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.5X / 450mm / PRO HD^2 / إطار ITA 56-16 Midnight Blue Regular Fit",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "درجة بصريات ولون مختلف من نفس العائلة، بيع مباشر بالتركيب."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES   TTL 3.5X400 PRO HD ASH 55-17 / Black - Red",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.5X / 400mm / PRO HD / إطار ASH 55-17 Black-Red",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس اللوب بإطار ASH ولون مختلف؛ يُطلب حسب قياس الطبيب."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES  TTL 3.0X450 PRO HD TECHNE - Regular Fit - Midnight Blue",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.0X / 450mm / PRO HD / إطار TECHNE Regular Fit Midnight Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكبير وإطار مختلفان داخل نفس عائلة الجاليلي المفصّل."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES   TTL 3.5X400 PRO HD^2 TECHNE - Regular Fit - Black/Green",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.5X / 400mm / PRO HD^2 / إطار TECHNE Regular Fit Black-Green",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لون وبصريات من نفس العائلة؛ جهاز مهني يُباع بموعد لا من رف."
+    },
+    {
+     "product": "GALILEAN BINOCULARS LOUPES TTL 3.0X400 PRO HD ITA 56-16 / Midnight Blue Regular Fit",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "3.0X / 400mm / PRO HD / إطار ITA 56-16 Midnight Blue Regular Fit",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكوين تكبير/إطار داخل نفس العائلة، بيع مباشر للطبيب."
+    },
+    {
+     "product": "TL GAL. TECHNE 2.5X400 PRO STANDARD MEDIUM BLACK/GREEN",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "2.5X / 400mm / PRO Standard / إطار TECHNE Medium Black-Green",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "بلا بيع مدفوع في 2026 (قطعة مجانية فقط)، فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "TTL GAL. TECHNE 2,5X350 PRO STANDARD TECHNE White/Red Med",
+     "family": "UNIVET Galilean Pro HD TTL Loupes",
+     "variant": "2.5X / 350mm / PRO Standard / إطار TECHNE White-Red Medium",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "صنف راكد بلا أي بيع مدفوع في 2026، يُسحب من القائمة."
+    },
+    {
+     "product": "My Ergo REFR. BINOCULARS LOUPES   TTL 5.0X450 Model 2 / Round 52-19 Rose Gold",
+     "family": "UNIVET My Ergo Prismatic TTL Loupes",
+     "variant": "5.0X / 450mm / Model 2 Round 52-19 Rose Gold",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لوب My Ergo بريزماتيك مفصّل؛ الموديل واللون variant لا صنف مستقل."
+    },
+    {
+     "product": "My Ergo TTL REFR. BINOCULARS LOUPES   TTL 5.0X500 Model 2 / Round 52-19 Grey",
+     "family": "UNIVET My Ergo Prismatic TTL Loupes",
+     "variant": "5.0X / 500mm / Model 2 Round 52-19 Grey",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس اللوب بلون رمادي ومسافة عمل مختلفة، يُباع مباشرة بالقياس."
+    },
+    {
+     "product": "My Ergo TTL REFR. BINOCULARS LOUPES   TTL 6.2X500 Model 3 / Square 55-17 Blue",
+     "family": "UNIVET My Ergo Prismatic TTL Loupes",
+     "variant": "6.2X / 500mm / Model 3 Square 55-17 Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكبير عالٍ للطبيب فقط؛ تكوين داخل نفس عائلة My Ergo."
+    },
+    {
+     "product": "My Ergo TTL REFR. BINOCULARS LOUPES   TTL 3.5X550 Model 3 / Square 55-17 Black",
+     "family": "UNIVET My Ergo Prismatic TTL Loupes",
+     "variant": "3.5X / 550mm / Model 3 Square 55-17 Black",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لون وموديل إطار مختلف من نفس العائلة، بيع مباشر بموعد تركيب."
+    },
+    {
+     "product": "REFR. BINOCULARS LOUPES TTL 3.5X450 Model 3 / Square 55-17 Blue",
+     "family": "UNIVET My Ergo Prismatic TTL Loupes",
+     "variant": "3.5X / 450mm / Model 3 Square 55-17 Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس إطار My Ergo Model 3 رغم اختلاف صياغة الاسم في الـERP."
+    },
+    {
+     "product": "My Ergo REFR. BINOCULARS LOUPES TTL 3.5X500 Model 3 / Square 55-17 Black",
+     "family": "UNIVET My Ergo Prismatic TTL Loupes",
+     "variant": "3.5X / 500mm / Model 3 Square 55-17 Black",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكوين مسافة عمل ولون داخل نفس العائلة، لا يُعرض في صيدلية."
+    },
+    {
+     "product": "My Ergo TTL GALILEAN 3.0X400  Model 3 / Square 55-17 Black",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "3.0X / 400mm / Model 3 Square 55-17 Black",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لوب جاليلي My Ergo مفصّل للطبيب؛ اللون والموديل variant لا صنف جديد."
+    },
+    {
+     "product": "MyErgo TTL Galilean 3.0X450 Model 3 / Square 55-17 Blue",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "3.0X / 450mm / Model 3 Square 55-17 Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس اللوب بلون أزرق ومسافة عمل مختلفة، بيع مباشر بالقياس."
+    },
+    {
+     "product": "MyErgo TTL Galilean 3.0X400 Model 2 / Round 52-19 Grey",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "3.0X / 400mm / Model 2 Round 52-19 Grey",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "إطار Model 2 بلون رمادي من نفس العائلة، لا صنف مستقل."
+    },
+    {
+     "product": "MYERGO TTL GALILEAN Model 3 / Square 55-17 Black",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "Model 3 Square 55-17 Black (كود بلا مواصفة تكبير)",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "كود مكرر بلا مواصفة تكبير وراكد، يُدمج مع نفس الإطار ولا يُدرج سطراً."
+    },
+    {
+     "product": "My Ergo TTL GALILEAN 3.0X450 Model 2 / Round 52-19 Grey",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "3.0X / 450mm / Model 2 Round 52-19 Grey",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "مسافة عمل مختلفة على نفس الإطار واللون، تكوين من نفس العائلة."
+    },
+    {
+     "product": "MyErgo TTL Galilean 3.0X400  Model 2 / Round 52-19 Rose Gold",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "3.0X / 400mm / Model 2 Round 52-19 Rose Gold",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لون Rose Gold من نفس عائلة My Ergo الجاليلي، يُباع مباشرة للطبيب."
+    },
+    {
+     "product": "My Ergo TTL GALILEAN BINOCULARS LOUPES TTL 3.0X400 Model 3 / Square 55-17 Blue",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "3.0X / 400mm / Model 3 Square 55-17 Blue",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نفس المنتج باسم ERP أطول؛ لون وإطار داخل العائلة ذاتها."
+    },
+    {
+     "product": "My Ergo TTL GALILEAN 2.5X450 Model 3 / Square 55-17 Black",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "2.5X / 450mm / Model 3 Square 55-17 Black",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "تكبير 2.5X من نفس العائلة، جهاز مهني يُباع بموعد لا من رف صيدلية."
+    },
+    {
+     "product": "My Ergo TTL GALILEAN 2.5X500  Model 3 / Square 55-17 Black",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "2.5X / 500mm / Model 3 Square 55-17 Black",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "اختلاف مسافة العمل فقط داخل نفس العائلة، بيع مباشر بالقياس."
+    },
+    {
+     "product": "My Ergo TTL GALILEAN 2.5X400  Model 2 / Round 52-19 Violet",
+     "family": "UNIVET My Ergo Galilean TTL Loupes",
+     "variant": "2.5X / 400mm / Model 2 Round 52-19 Violet",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "لون بنفسجي من نفس عائلة My Ergo الجاليلي، تكوين لا صنف جديد."
+    },
+    {
+     "product": "AIR-X PRISMATIC LOUPES FLIP-UP 4.5X450 ULTRA HD AIR-X Frame",
+     "family": "UNIVET Air-X Prismatic Flip-Up Loupes",
+     "variant": "4.5X / 450mm / إطار AIR-X flip-up",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "خط flip-up مستقل بلا أي بيع مدفوع في 2026، يُؤجَّل عن العرض الافتتاحي."
+    },
+    {
+     "product": "EOS WIRELESS ADVANCED LEDLIGHT ILLUMINATION SYSTEMS New Gen.",
+     "family": "UNIVET EOS LED Illumination System",
+     "variant": "Wireless Advanced New Gen.",
+     "item_type": "equipment",
+     "channel": "direct_online",
+     "reason": "نظام إضاءة يُركَّب على اللوب ويُباع مع الجهاز مباشرة، لا في صيدلية."
+    },
+    {
+     "product": "EOS NEXT LEDLIGHT ILLUMINATION SYSTEMS",
+     "family": "UNIVET EOS LED Illumination System",
+     "variant": "Next",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "إصدار من نفس عائلة EOS بلا بيع مدفوع في 2026 (مجاني فقط)، يُستبعد."
+    },
+    {
+     "product": "EOS LED II Illumination System",
+     "family": "UNIVET EOS LED Illumination System",
+     "variant": "LED II",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "جيل قديم من إضاءة EOS بلا بيع مدفوع، لا يدخل القائمة الافتتاحية."
+    },
+    {
+     "product": "EOS WIRELESS LEDLIGHT ILLUMINATION SYSTEMS",
+     "family": "UNIVET EOS LED Illumination System",
+     "variant": "Wireless (الجيل السابق)",
+     "item_type": "equipment",
+     "channel": "do_not_list",
+     "reason": "إصدار سابق من نفس العائلة صُرف مجاناً فقط في 2026، يُستبعد."
+    },
+    {
+     "product": "Magnetic adapter for Model 2 and Model 3 - MyErgo",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "إطارات MyErgo Model 2 و Model 3",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "قطعة تثبيت للكشاف على الإطار، مكانها مع الجهاز لا كسطر مستقل."
+    },
+    {
+     "product": "Magnetic adapter for ONE (new 2022 version); LOOK; COOL",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "إطارات ONE 2022 / LOOK / COOL",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "نفس عائلة محوّل الكشاف باختلاف الإطار المتوافق، ملحق لا يُدرج منفرداً."
+    },
+    {
+     "product": "Universal clip/on - HEADLIGHT MAGNETIC ADAPTERS",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "Universal clip-on",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "محوّل تثبيت عام للكشاف، ملحق جهاز يُعرض ضمن اللوب لا كصنف."
+    },
+    {
+     "product": "Magnetic adapter for ITA",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "إطار ITA",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "قطعة غيار صُرفت مجاناً فقط في 2026، لا تدخل أي عرض سعر."
+    },
+    {
+     "product": "EOS/LITE LED Magnetic Attachment Spare Parts For ASH S/L",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "إطار ASH S/L لإضاءة EOS/LITE",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "قطعة غيار تثبيت للإضاءة، مكانها مع الجهاز وبلا بيع مدفوع."
+    },
+    {
+     "product": "Magnetic adapter for Iris ; Techne ; Techne RX",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "إطارات Iris / Techne / Techne RX",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "محوّل توافق إطار، ملحق لا يُباع كسطر مستقل في العرض الافتتاحي."
+    },
+    {
+     "product": "Headlight Adapter forTECHNE 2025",
+     "family": "UNIVET Headlight Magnetic Adapter",
+     "variant": "إطار TECHNE 2025",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "ملحق تثبيت كشاف لإطار محدد، بلا بيع مدفوع ولا يُدرج منفرداً."
+    },
+    {
+     "product": "SPARE PARTS EOS 2.0 - ORANGE FILTER",
+     "family": "UNIVET EOS Orange Filter",
+     "variant": "EOS 2.0",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "فلتر برتقالي قطعة غيار لإضاءة EOS، يُعرض مع الجهاز لا كصنف."
+    },
+    {
+     "product": "Multi-Use Kit red nose pad for TECHNE/TECHNE RX",
+     "family": "UNIVET Loupes Nose Pad Kit",
+     "variant": "TECHNE / TECHNE RX أحمر",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "وسادة أنف بديلة لإطار اللوب، قطعة غيار تتبع الجهاز."
+    },
+    {
+     "product": "Loupes Len Cleaner",
+     "family": "UNIVET Loupes Lens Cleaner",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "منظّف عدسات لوب مهني يُعطى مع الجهاز، لا صنف رف صيدلية."
+    },
+    {
+     "product": "Anti fog cleaner cloth",
+     "family": "UNIVET Anti-Fog Cleaning Cloth",
+     "variant": "",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "قطعة تنظيف ملحقة باللوب بقيمة ضئيلة، مكانها مع الجهاز."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "B&L Biotech",
+   "skus": [
+    {
+     "product": "Super Endo Alpha II Starter Kit (Black No Coating)",
+     "family": "Super Endo Alpha II Starter Kit",
+     "variant": "",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "جهاز كيّ وحشو عصب احترافي بسعر 308 د.ك — لا يدخل رف صيدلية، بيعه لطبيب الأسنان فقط."
+    },
+    {
+     "product": "Super Endo Beta Needle Set  21mm Needle, 23Gauge",
+     "family": "Super Endo Beta Needle Set",
+     "variant": "21mm / 23G",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "إبرة حقن جوتابيركا تُستعمل داخل العيادة أثناء علاج العصب، ولا يشتريها زبون عادي."
+    },
+    {
+     "product": "Super Endo Alpha II 60/12 Taper Plugger",
+     "family": "Super Endo Alpha II Taper Plugger",
+     "variant": "60/12",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بلاغر بديل لجهاز Alpha II، مكانه مع الجهاز لا كسطر مستقل، وهو راكد 201 يوم."
+    },
+    {
+     "product": "Super Endo Alpha II 55/10 Taper Plugger",
+     "family": "Super Endo Alpha II Taper Plugger",
+     "variant": "55/10",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "مقاس آخر من رؤوس البلاغر البديلة لنفس الجهاز — يُعرض ضمن الجهاز لا كصنف منفصل."
+    },
+    {
+     "product": "Super Endo Alpha II 55/06 taper plugger",
+     "family": "Super Endo Alpha II Taper Plugger",
+     "variant": "55/06",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل لجهاز Alpha II، مجرد مقاس داخل نفس العائلة وليس منتجاً جديداً."
+    },
+    {
+     "product": "Super Endo Alpha II 55/08 taper plugger",
+     "family": "Super Endo Alpha II Taper Plugger",
+     "variant": "55/08",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "رأس بديل لجهاز Alpha II ومبيعه متراجع — يُدرج مع الجهاز لا في قائمة مستقلة."
+    },
+    {
+     "product": "Beta Mini Starter Kit - Black",
+     "family": "Super Endo Beta Mini Starter Kit",
+     "variant": "",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "مسدس حشو عصب احترافي للعيادة؛ سعره 338 د.ك ومرتجعاته عالية فيحتاج بيعاً فنياً لا رفّ صيدلية."
+    },
+    {
+     "product": "22mm Needle, 25Gauge",
+     "family": "Super Endo Beta Needle Set",
+     "variant": "22mm / 25G",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "مقاس إبرة من نفس عائلة إبر Beta، وراكد 132 يوم فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "Taper Plugger 40/04",
+     "family": "Super Endo Alpha II Taper Plugger",
+     "variant": "40/04",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "نفس عائلة رؤوس البلاغر البديلة بمقاس مختلف — ملحق جهاز لا صنف قائم بذاته."
+    },
+    {
+     "product": "Taper Plugger 50/04",
+     "family": "Super Endo Alpha II Taper Plugger",
+     "variant": "50/04",
+     "item_type": "accessory_or_spare",
+     "channel": "do_not_list",
+     "reason": "ملحق بديل لجهاز Alpha II وراكد 215 يوم — يُسحب من القائمة."
+    },
+    {
+     "product": "Super Endo Beta Needle Set 24mm Needle, 23Gauge",
+     "family": "Super Endo Beta Needle Set",
+     "variant": "24mm / 23G",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "مقاس داخل عائلة إبر Beta، وراكد 132 يوم فلا يُفرد له سطر في العرض."
+    },
+    {
+     "product": "BL-B Kondenser Set (35/70, 40/80, 50/100, 60/120)",
+     "family": "BL-B Kondenser Set",
+     "variant": "",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "طقم أدوات كبس يدوية لطبيب الأسنان، وراكد 229 يوم فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "GP Pellet (Regular Type)",
+     "family": "GP Pellet",
+     "variant": "",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "مادة جوتابيركا تُعبّأ في جهاز الحشو داخل العيادة، وراكدة 166 يوم."
+    },
+    {
+     "product": "22mm Needle, 20Gauge",
+     "family": "Super Endo Beta Needle Set",
+     "variant": "22mm / 20G",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "مقاس آخر من إبر Beta وراكد 178 يوم — يُراجع لا يُعرض."
+    },
+    {
+     "product": "Super Endo Beta 20Gauge 24mm Needle, 25Gauge",
+     "family": "Super Endo Beta Needle Set",
+     "variant": "24mm / 25G",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "مقاس إبرة ضمن عائلة إبر Beta يُطلب من العيادة مع الجهاز، لا من الصيدلية."
+    },
+    {
+     "product": "Super Endo Beta Needle Set 26mm Needle, 25 Gauge",
+     "family": "Super Endo Beta Needle Set",
+     "variant": "26mm / 25G",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "أطول مقاس في عائلة إبر Beta وجديد نسبياً — مستهلك عيادة بحت."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "Beverly Hills Formula",
+   "skus": [
+    {
+     "product": "Perfect White Extreme White Toothpaste 100 ML",
+     "family": "Beverly Hills Formula Perfect White Extreme White Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "معجون أسنان تبييض استهلاكي يشتريه الزبون من رف الصيدلية مباشرة، وهو تركيبة مستقلة لا متغيّر لون أو حجم."
+    },
+    {
+     "product": "Perfect White Sensitive Toothpaste 100ML",
+     "family": "Beverly Hills Formula Perfect White Sensitive Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "معجون للأسنان الحساسة بتركيبة مختلفة عن باقي الخط، فهو عائلة مستقلة تُعرض على رف الصيدلية."
+    },
+    {
+     "product": "Perfect White Gold Toothpaste 100ML",
+     "family": "Beverly Hills Formula Perfect White Gold Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "تركيبة Gold منتج قائم بذاته لا نسخة لونية من Extreme White، ويباع للمستهلك في الصيدلية."
+    },
+    {
+     "product": "Perfect White Black Toothpaste 100ML",
+     "family": "Beverly Hills Formula Perfect White Black Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "معجون الفحم الأسود صنف مستقل بتركيبة وسعر جمهور مختلفين، ومكانه رف الصيدلية لا العيادة."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "Perfect White Extreme White Toothpaste 100 ML",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "معجون تبييض استهلاكي سريع الحركة (1845 وحدة / 10 زبائن) يشتريه زبون الصيدلية من الرف مباشرة، وليس قطعة غيار ولا بوكس ترويجي ولا مستهلك عيادة."
+    },
+    {
+     "product": "Perfect White Sensitive Toothpaste 100ML",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "تركيبة للأسنان الحساسة موجهة للمستهلك وبحركة مبيعات قوية (1495 وحدة / 11 زبوناً)، فهي صنف رف صيدلية قائم بذاته لا متغيّر لون أو حجم."
+    },
+    {
+     "product": "Perfect White Gold Toothpaste 100ML",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "تركيبة Gold منتج مستقل بسعر جمهور معلن 2.4 د.ك يُباع للمستهلك، ولا يوجد فيه أي طابع مهني أو عبوة تجارية."
+    },
+    {
+     "product": "Perfect White Black Toothpaste 100ML",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "معجون الفحم الأسود عائلة مستقلة بتركيبة وسعر مختلفين (RRP 2.7)، وبيعه طبيعي على رف الصيدلية للمستهلك."
+    }
+   ]
+  },
+  {
+   "brand": "Hismile",
+   "skus": [
+    {
+     "product": "Red Velvet Toothpaste",
+     "family": "Red Velvet Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "معجون أسنان بنكهة مستقلة يشتريه المستهلك من الرف مباشرة."
+    },
+    {
+     "product": "Coconut Whip Toothpaste",
+     "family": "Coconut Whip Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نكهة مستقلة تُعرض على رف الصيدلية بجانب باقي النكهات."
+    },
+    {
+     "product": "Mango Sorbet Toothpaste",
+     "family": "Mango Sorbet Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نكهة مستقلة للمستهلك، مع تراجع أخير يستحق متابعة الكمية لا تغيير القناة."
+    },
+    {
+     "product": "Peach Iced Tea Toothpaste",
+     "family": "Peach Iced Tea Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نكهة مستقلة تُباع للمستهلك في الصيدلية رغم تراجع آخر ثلاثة أشهر."
+    },
+    {
+     "product": "Pap+ Toothpaste",
+     "family": "PAP+ Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "معجون تبييض PAP+ منتج استهلاكي بسعر جمهور واضح، عائلة مستقلة عن النكهات."
+    },
+    {
+     "product": "Watermelon Toothpaste",
+     "family": "Watermelon Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "نكهة جديدة مستقلة تُعرض على الرف للمستهلك."
+    },
+    {
+     "product": "V34 Foam",
+     "family": "V34 Colour Corrector Foam",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "رغوة تصحيح لون منزلية يشتريها الزبون بنفسه، وتختلف شكلاً عن سيروم V34."
+    },
+    {
+     "product": "V34 Serum",
+     "family": "V34 Colour Corrector Serum",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "سيروم استهلاكي للاستعمال المنزلي، منتج مستقل عن الرغوة لا لون منها."
+    },
+    {
+     "product": "Smooth Mint Toothpaste",
+     "family": "Smooth Mint Toothpaste",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "بلا أي بيع مدفوع في 2026 ومرتجعات فقط، فلا يدخل العرض الافتتاحي."
+    },
+    {
+     "product": "Pap+ Whitening Pen",
+     "family": "PAP+ Whitening Pen",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "بلا سعر جمهور ومرتجعاته تفوق مبيعاته، فلا يصلح سطراً في عرض سعر افتتاحي."
+    },
+    {
+     "product": "Pap+ Whitening Powder",
+     "family": "PAP+ Whitening Powder",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "بودرة تبييض منزلية بحجم بيع معتبر، مكانها رف الصيدلية مع مراجعة المرتجعات."
+    },
+    {
+     "product": "PAP+ Whitening Strips",
+     "family": "PAP+ Whitening Strips",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "do_not_list",
+     "reason": "راكد منذ 139 يوماً بصافي سالب، يُسحب من القائمة حتى تصفيته."
+    },
+    {
+     "product": "Tooth Gloss - Glostik",
+     "family": "Tooth Gloss Glostik",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "pharmacy",
+     "reason": "ملمّع أسنان استهلاكي يُباع للزبون مباشرة، لكن نسبة مرتجعات العملاء تستوجب كمية محافظة."
+    }
+   ],
+   "rulings": [
+    {
+     "product": "Red Velvet Toothpaste",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "معجون أسنان استهلاكي بسعر جمهور واضح يشتريه الزبون من الرف مباشرة."
+    },
+    {
+     "product": "Coconut Whip Toothpaste",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نكهة معجون مستقلة للمستهلك، صنف رف صيدلية نموذجي لا علاقة له بالعيادة."
+    },
+    {
+     "product": "Mango Sorbet Toothpaste",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "معجون استهلاكي يبقى في الصيدلية، والتراجع الأخير مسألة كمية لا قناة."
+    },
+    {
+     "product": "Peach Iced Tea Toothpaste",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نكهة مستقلة تُباع للمستهلك، والتراجع يُعالج بتقليل الكمية لا بالإخراج."
+    },
+    {
+     "product": "Pap+ Toothpaste",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "معجون تبييض PAP+ منتج استهلاكي بسعر جمهور، والمرتجعات تصفية رفوف لا رفض عميل."
+    },
+    {
+     "product": "Watermelon Toothpaste",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "نكهة جديدة استهلاكية تُعرض على الرف، تبدأ بكمية محافظة لقصر قاعدة البيانات."
+    },
+    {
+     "product": "V34 Foam",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "رغوة تصحيح لون للاستعمال المنزلي يشتريها الزبون بنفسه، لكن 94% مرتجعات وتراجع حاد يفرض كمية رمزية."
+    },
+    {
+     "product": "V34 Serum",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "سيروم تبييض منزلي استهلاكي، صافي حركته صفر فيُدرج بكمية اختبار فقط."
+    },
+    {
+     "product": "Pap+ Whitening Powder",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "بودرة تبييض منزلية بحجم بيع معتبر، مكانها الرف مع مراجعة سبب المرتجعات."
+    },
+    {
+     "product": "Tooth Gloss - Glostik",
+     "stays": true,
+     "move_to": "pharmacy",
+     "why": "ملمّع أسنان استهلاكي يُباع مباشرة للزبون، و22% مرتجعات عملاء تستوجب كمية محافظة."
+    }
+   ]
+  },
+  {
+   "brand": "Combo/Bundle/Kit",
+   "skus": [
+    {
+     "product": "Orthokit-PREMIUM INVISALIGN w/ Chews",
+     "family": "OrthoKit for Invisalign Aligner Patients",
+     "variant": "Premium tier, with chewies",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "طقم تقويم شفاف تشتريه العيادة لمرضى الإنفزلاين، لا يدخل زبون صيدلية ليشتريه."
+    },
+    {
+     "product": "Orthokit-PREMIUM INVISALIGN V2",
+     "family": "OrthoKit for Invisalign Aligner Patients",
+     "variant": "Premium tier, version 2",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "نفس عائلة طقم الإنفزلاين وراكد 161 يوماً، فلا يدخل أي عرض افتتاحي."
+    },
+    {
+     "product": "Orthokit-Customized INVISALIGN SN",
+     "family": "OrthoKit for Invisalign Aligner Patients",
+     "variant": "Customized for SN clinic",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "نسخة مخصصة لعيادة واحدة وراكدة 157 يوماً، لا تُعرض كصنف قائمة."
+    },
+    {
+     "product": "OrthoKit Standard for Invisalign",
+     "family": "OrthoKit for Invisalign Aligner Patients",
+     "variant": "Standard tier",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "الدرجة القياسية من نفس الطقم وراكدة 217 يوماً — الأطول ركوداً في البراند."
+    },
+    {
+     "product": "Orthokit-STANDARD INVISALIGN ALINE DENTAL",
+     "family": "OrthoKit for Invisalign Aligner Patients",
+     "variant": "Standard tier, customized for Aline Dental",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "طقم قياسي مطبوع باسم عيادة بعينها، بيعه مهني بحت وليس رفّ صيدلية."
+    },
+    {
+     "product": "OrthoKit for Braces V2",
+     "family": "OrthoKit for Fixed Braces Patients",
+     "variant": "Version 2",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "طقم عناية لمرضى التقويم الثابت تصرفه العيادة، ولا سعر جمهور له."
+    },
+    {
+     "product": "OrthoKit for Metal Brackets STANDARD",
+     "family": "OrthoKit for Fixed Braces Patients",
+     "variant": "Standard tier, metal brackets",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "نفس طقم التقويم الثابت بدرجة قياسية، يُورَّد للعيادات لا للصيدليات."
+    },
+    {
+     "product": "Debonding Gift Box",
+     "family": "Debonding Gift Box",
+     "variant": "With foam insert",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "بوكس يُسلَّم للمريض عند فكّ التقويم في العيادة، وهو راكد 161 يوماً."
+    },
+    {
+     "product": "Debonding Gift Box w/o Foam",
+     "family": "Debonding Gift Box",
+     "variant": "Without foam insert",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "نفس البوكس بتعبئة بلا فوم، مناسبته موعد فكّ التقويم في العيادة فقط."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "SCHEU",
+   "skus": [
+    {
+     "product": "Imprelon S+ pd 1.0x125mm round",
+     "family": "Imprelon S+ Thermoforming Foil",
+     "variant": "1.0 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "صفيحة ترموفورم للمختبر وعيادة التقويم، لا يشتريها زبون صيدلية."
+    },
+    {
+     "product": "Durasoft Pd 1.2x125mm Rd",
+     "family": "Durasoft Thermoforming Foil",
+     "variant": "1.2 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "صفيحة Durasoft بسماكة 1.2 مم، مستهلك مهني يُصنَع به الجبائر داخل العيادة."
+    },
+    {
+     "product": "Durasoft Pd 2.5X125mm Rd",
+     "family": "Durasoft Thermoforming Foil",
+     "variant": "2.5 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "نفس عائلة Durasoft بسماكة مختلفة فقط، لا صنف جديد، وبيعه للعيادات حصراً."
+    },
+    {
+     "product": "Imprelon S Pd 1,0x125mm Rd",
+     "family": "Imprelon S Thermoforming Foil",
+     "variant": "1.0 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "راكد منذ 161 يوماً ومكرر مع كود آخر لنفس المقاس، يُسحب من القائمة الافتتاحية."
+    },
+    {
+     "product": "Isofolan Foil 0.10x125mm Rd",
+     "family": "Isofolan Thermoforming Foil",
+     "variant": "0.10 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "رقاقة عازلة تُستعمل في تصنيع الجهاز داخل المختبر، منتج مهني بحت."
+    },
+    {
+     "product": "Imprelon S 1.0X125mm Rd",
+     "family": "Imprelon S Thermoforming Foil",
+     "variant": "1.0 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "clinic",
+     "reason": "صفيحة Imprelon S المهنية، وهي النسخة الفعّالة من المقاس المكرر بكودين."
+    },
+    {
+     "product": "Duran 3.0x125mm Rd",
+     "family": "Duran Thermoforming Foil",
+     "variant": "3.0 x 125mm round",
+     "item_type": "professional_consumable",
+     "channel": "do_not_list",
+     "reason": "راكد منذ 160 يوماً بقطعة واحدة مباعة، لا يدخل عرض السعر الافتتاحي."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "EverBrands",
+   "skus": [
+    {
+     "product": "OrthoChews w/ Aligner Removal Tool",
+     "family": "OrthoChews Aligner Chewies",
+     "variant": "",
+     "item_type": "standalone_product",
+     "channel": "clinic",
+     "reason": "منتج نهائي يستعمله مريض التقويم الشفاف نفسه، لكن لا يطلبه زبون عادي من الصيدلية — العيادة تشتريه وتبيعه لمرضى الـ aligners."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "Silonn",
+   "skus": [
+    {
+     "product": "Mini Fridge 4L SLRE01B Black",
+     "family": "Silonn Mini Fridge 4L",
+     "variant": "Black",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "ثلاجة صغيرة أي جهاز وليست صنف رف صيدلية، والعيادة تشتريها لحفظ موادها."
+    },
+    {
+     "product": "Mini Fridge 4L SLRE01P Pink",
+     "family": "Silonn Mini Fridge 4L",
+     "variant": "Pink",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "نفس الجهاز بلون وردي، جهاز لا منتج استهلاكي، فمكانه العيادة لا رف الصيدلية."
+    },
+    {
+     "product": "Mini Fridge 4L SLRE01B1 White",
+     "family": "Silonn Mini Fridge 4L",
+     "variant": "White",
+     "item_type": "equipment",
+     "channel": "clinic",
+     "reason": "نفس الجهاز بلون أبيض، ويندرج تحت المعدات لا أصناف الصيدلية."
+    }
+   ],
+   "rulings": []
+  },
+  {
+   "brand": "Shenzhen",
+   "skus": [
+    {
+     "product": "Aligner & Retainer Case - Black outside 1109  & Light Blue inside 26",
+     "family": "Aligner & Retainer Case",
+     "variant": "Black outside / Light Blue inside",
+     "item_type": "standalone_product",
+     "channel": "clinic",
+     "reason": "علبة حفظ تقويم شفاف/ريتينر تُسلَّم للمريض مع علاجه التقويمي في العيادة، لا سلعة رف صيدلية.",
+     "_comment": ""
+    },
+    {
+     "product": "Aligner & Retainer Case - Pink outside 6278  & Purple inside 28",
+     "family": "Aligner & Retainer Case",
+     "variant": "Pink outside / Purple inside",
+     "item_type": "standalone_product",
+     "channel": "clinic",
+     "reason": "نفس علبة الريتينر بلون مختلف — لون ضمن العائلة ذاتها وقناته العيادة لا الصيدلية."
+    }
+   ],
+   "rulings": []
+  }
+ ]
+}
