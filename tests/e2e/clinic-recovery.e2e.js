@@ -1,4 +1,4 @@
-// Missing clinics, from the daily backups (v116). Renova's clinics were gone
+// Missing clinics, from the daily backups (v116, v117: brought back on their own). Renova's clinics were gone
 // from the list. Export → Automatic backups → "Find missing clinics" lists
 // every clinic a daily backup holds and the list does not, with its owner and
 // the last day a backup had it, and brings back only the ticked ones — the
@@ -11,8 +11,9 @@ const core = require(path.resolve(WWW, 'js/core.js'));
 const PORT = 8217;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const cloud = {};
+const mode = { failGet: null };
 const api = {
-  get: async k => k in cloud ? cloud[k] : null,
+  get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
   set: async (k, v) => { cloud[k] = v; return true; },
   del: async k => { delete cloud[k]; return true; },
   list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
@@ -53,7 +54,7 @@ function seed(){
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', m => { if(m.type()==='error' && !/gstatic|firebase|net::ERR|Failed to load resource/i.test(m.text())) errors.push('console: '+m.text()); });
+  page.on('console', m => { if(m.type()==='error' && !/gstatic|firebase|net::ERR|Failed to load resource|boom-get/i.test(m.text())) errors.push('console: '+m.text()); });
   page.on('dialog', d => d.accept());
   await page.exposeFunction('__cGet', api.get); await page.exposeFunction('__cSet', api.set);
   await page.exposeFunction('__cDel', api.del); await page.exposeFunction('__cList', api.list);
@@ -87,35 +88,47 @@ function seed(){
       rows: [...body.querySelectorAll('input[data-recov]')].map(i => ({ id: i.dataset.recov, on: i.checked, t: txt(i.closest('label')) })) };
   });
 
+  // ---- nobody taps anything: the first device that opens the app brings them back (v117) ----
   seed();
   const visitsBefore = cloud.visits;
+  await boot(R, 'rep');
+  await page.waitForTimeout(400);
+  let cl = JSON.parse(cloud.clinics), byId = Object.fromEntries(cl.map(c => [c.id, c]));
+  check('auto: on Renova\'s own phone, her two clinics are back in the cloud, as the newest backup holds them; Apex (deleted in the app) stays deleted',
+    cl.length === 4 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.map(c => c.id + ':' + c.name));
+  check('auto: visits, tasks and sales files untouched', cloud.visits === visitsBefore, cloud.visits.slice(0, 120));
+  const toast = await page.evaluate(() => document.getElementById('toast').textContent);
+  check('auto: the phone says so', /2 clinics brought back from the daily backups/.test(toast), toast);
+  const log = JSON.parse(cloud.repairLog || '[]');
+  check('auto: what came back is written to the repair log (who, when, which, last seen)', log.length === 1 && log[0].by === R && log[0].saved === true && log[0].clinics.map(x => x.id + '@' + x.lastSeen).join(',') === 'r1@2026-10-18,r2@2026-10-15', log);
+  const mine = await page.evaluate(() => { switchView('clinics'); setClinicMode('list'); return [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()); });
+  check('auto: Renova sees her clinics again', mine.length === 2 && mine.some(n => /Crown Dental Center/.test(n)) && mine.some(n => /Jibla/.test(n)), mine);
+  // the next device finds nothing to do
   await boot(G, 'supervisor');
+  check('auto: the next device writes nothing more', JSON.parse(cloud.clinics).length === 4 && JSON.parse(cloud.repairLog || '[]').length === 1, { n: JSON.parse(cloud.clinics).length, log: JSON.parse(cloud.repairLog || '[]').length });
+  // ---- the supervisor's sheet: what is left is the clinic deleted in the app, not ticked; he can still bring it back ----
   let s = await sheet();
   const rv = (s.people || []).find(p => p.rep === R);
-  check('per person: Renova now 0, three in the backup of Oct 15', !!rv && /now 0 · most in a backup 3 \(Oct 15\)/.test(rv.t), s.people);
+  check('sheet: Renova now 2, three in the backup of Oct 15', !!rv && /now 2 · most in a backup 3 \(Oct 15\)/.test(rv.t), s.people);
   const row = id => (s.rows || []).find(x => x.id === id) || {};
-  check('missing: Crown Dental Center (newest backup copy, last Oct 18) and Jibla (Oct 15) ticked', row('r1').on === true && /Crown Dental Center/.test(row('r1').t) && /Oct 18/.test(row('r1').t) && row('r2').on === true && /Oct 15/.test(row('r2').t), s.rows);
-  check('Apex, deleted in the app (recycle bin): listed, not ticked', row('r3').on === false && /deleted in the app \(recycle bin\)/.test(row('r3').t), row('r3'));
-  check('nothing is written before the tap', JSON.parse(cloud.clinics).length === 2, JSON.parse(cloud.clinics).map(c => c.id));
-  const done = await page.evaluate(async () => { await restoreMissingClinics(); await new Promise(r => setTimeout(r, 300));
+  check('sheet: only Apex is listed — deleted in the app (recycle bin), not ticked', (s.rows || []).length === 1 && row('r3').on === false && /deleted in the app \(recycle bin\)/.test(row('r3').t), s.rows);
+  const done = await page.evaluate(async () => { recovToggle('r3', true); await restoreMissingClinics(); await new Promise(r => setTimeout(r, 300));
     const body = document.getElementById('recovBody'); return { note: (document.getElementById('recovNote') || {}).innerText || '', text: body ? body.innerText.replace(/\s+/g, ' ') : '' }; });
-  const cl = JSON.parse(cloud.clinics), byId = Object.fromEntries(cl.map(c => [c.id, c]));
-  check('saved: Renova\'s two clinics are back in the cloud, as the newest backup holds them; Apex stays deleted', cl.length === 4 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.map(c => c.id + ':' + c.name));
-  check('the note says what landed: 2 clinics back and saved', /2 clinics are back in the list and saved/.test(done.note), done.note);
-  check('visits untouched (the whole-day Restore would have replaced them)', cloud.visits === visitsBefore, cloud.visits.slice(0, 120));
-  const tail = done.text.toLowerCase().split('in a backup, not in the list now')[1] || '';
-  check('the sheet now lists only Apex', /^ \(1\)/.test(tail) && /apex dental center/.test(tail) && !/jibla|crown/.test(tail), done.text.slice(0, 400));
-  const list = await page.evaluate(() => { closeModal(); switchView('clinics'); setClinicRepFilter('Renova'); setClinicMode('list'); return [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()); });
-  check('the clinic list shows Renova\'s clinics again', list.length === 2 && list.some(n => /Crown Dental Center/.test(n)) && list.some(n => /Jibla/.test(n)), list);
-  // a fresh open of the app keeps them (the delete log no longer removes them)
-  await boot(G, 'supervisor');
-  const after = await page.evaluate(() => clinics.filter(c => c.rep === 'Renova').map(c => c.id).sort());
-  check('after reopening the app they are still there', JSON.stringify(after) === '["r1","r2"]', after);
-  // Arabic
+  cl = JSON.parse(cloud.clinics);
+  check('sheet: ticked by hand, Apex comes back and leaves the recycle bin', cl.some(c => c.id === 'r3') && !JSON.parse(cloud.recycleBin).clinics.some(c => c.id === 'r3'), cl.map(c => c.id));
+  check('sheet: the note says what landed', /1 clinics are back in the list and saved/.test(done.note), done.note);
+  check('sheet: nothing is missing now', /no clinic is missing/i.test(done.text), done.text.slice(0, 300));
+  check('visits still untouched', cloud.visits === visitsBefore);
+  // ---- a phone that could not read the recycle bin brings nothing back (it cannot tell a deliberate delete) ----
   seed();
+  mode.failGet = /^recycleBin$/;
+  await boot(G, 'supervisor');
+  mode.failGet = null;
+  check('no clean read of the recycle bin: nothing is brought back', JSON.parse(cloud.clinics).length === 2 && !cloud.repairLog, JSON.parse(cloud.clinics).map(c => c.id));
+  // Arabic: the sheet speaks Arabic
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   s = await sheet();
-  check('Arabic: the sheet speaks Arabic', /موجودة في نسخة احتياطية وليست في القائمة الآن/.test(s.text) && /آخر ظهور في نسخة احتياطية/.test(s.text), (s.text || '').slice(0, 300));
+  check('Arabic: the sheet speaks Arabic', /موجودة في نسخة احتياطية وليست في القائمة الآن/.test(s.text) && /آخر ظهور في نسخة احتياطية|لا توجد عيادة ناقصة/.test(s.text), (s.text || '').slice(0, 300));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

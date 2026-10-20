@@ -1771,6 +1771,8 @@
     [/^Didn't buy \((\d+)\)$/, function (m) { return 'لم تشترِ (' + m[1] + ')'; }],
     [/^Bought \((\d+)\)$/, function (m) { return 'اشترت (' + m[1] + ')'; }],
     [/^✅ (\d+) clinics brought back$/, function (m) { return '✅ رجعت ' + m[1] + ' عيادة'; }],
+    [/^♻️ (\d+) clinics brought back from the daily backups$/, function (m) { return '♻️ رجعت ' + m[1] + ' عيادة من النسخ الاحتياطية اليومية'; }],
+    [/^⚠️ (\d+) clinics brought back on this device — not saved to the cloud yet$/, function (m) { return '⚠️ رجعت ' + m[1] + ' عيادة على هذا الجهاز — لم تُحفظ في السحابة بعد'; }],
     [/^(-?[\d.,]+ KD) ordered$/, function (m) { return 'طلبيات بقيمة ' + m[1]; }],
     [/^([\d,]+) returned$/, function (m) { return m[1] + ' مرتجع'; }],
     [/^([\d,]+) free$/, function (m) { return m[1] + ' مجاني'; }],
