@@ -1372,6 +1372,7 @@ function openExport(){
 
     ${currentUser.role==='supervisor'?`<div class="section-title" style="margin-top:4px;">Automatic backups</div>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">A snapshot of everything is saved automatically once a day. If data ever looks wrong, you can restore an earlier day here.</p>
+    <button class="btn" style="margin:6px 0 10px;" onclick="openClinicRecovery()">🔎 <span>Find missing clinics — brings back clinics only</span></button>
     <div id="backupList"><div style="color:var(--muted); font-size:13px;">Loading backups...</div></div>`:''}
   `);
   if(currentUser.role==='supervisor') renderBackupsList();
@@ -1419,6 +1420,84 @@ async function renderBackupsList(){
   }catch(e){
     el.innerHTML = `<div style="color:var(--muted); font-size:13px;">Couldn't load backups right now.</div>`;
   }
+}
+// ---- Missing clinics, from the daily backups (v116) ----
+// A clinic a backup holds and the live list does not: listed with its owner
+// and the last day a backup had it, and brought back on its own — the visits,
+// tasks and sales files stay exactly as they are (the whole-day Restore below
+// replaces this month's visits and the tasks too). Deleted in the app (recycle
+// bin / delete log) = not ticked; nothing is written before the tap.
+let _recov = null;
+async function openClinicRecovery(){
+  if(!requireAdmin()) return;
+  if(_loadFailed.clinics || _mirrorUsed.clinics){ showToast('⚠️ The clinic list did not load from the cloud — check the connection and open this again'); return; }
+  showModal(`<h3 style="margin-top:0;">🔎 <span>Missing clinics</span></h3><div id="recovBody" style="color:var(--muted); font-size:13px;"><span>Reading the daily backups…</span></div>`);
+  const snaps = [];
+  try{
+    const list = await window.storage.list('snap_', true);
+    for(const k of (list && list.keys || [])){
+      const res = await window.storage.get(k, true).catch(() => null);
+      const snap = res ? UMCore.safeParse(res.value, null) : null;
+      if(snap && Array.isArray(snap.clinics)) snaps.push({ date: k.replace('snap_', ''), clinics: snap.clinics });
+    }
+  }catch(e){ console.error('recovery: backups', e); }
+  const body = document.getElementById('recovBody');
+  if(!body) return;   // the sheet was closed meanwhile
+  if(!snaps.length){ body.innerHTML = '<span>No backup could be read right now — check the connection and try again.</span>'; return; }
+  const res = UMCore.clinicsMissingFromBackups(storedClinics(), snaps, {
+    binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id), tombIds: [...tombSet('clinics')], staff: staff.map(s => s.name) });
+  _recov = { res, picked: new Set(res.missing.filter(m => !m.deleted).map(m => m.id)) };
+  renderClinicRecovery();
+}
+function renderClinicRecovery(){
+  const body = document.getElementById('recovBody');
+  if(!body || !_recov) return;
+  const r = _recov.res, drops = r.people.filter(p => p.most > p.now);
+  const people = r.people.map(p => `<div class="row-between" data-person="${esc(p.rep)}" style="padding:4px 0; border-bottom:1px solid var(--line); ${p.most > p.now ? 'color:var(--coral-ink); font-weight:700;' : ''}">
+      <span>${esc(p.rep)}</span><span><span>now</span> ${p.now} · <span>most in a backup</span> ${p.most}${p.mostDate ? ' (' + fmtDate(p.mostDate) + ')' : ''}</span></div>`).join('');
+  const off = r.offTeam.map(n => `<div style="color:var(--amber-ink); font-size:12.5px; margin-top:4px;">⚠️ <b>${esc(n)}</b> · <span>not on the team list: clinics recorded under this name have no owner on the team until the name is added again exactly (Admin → Team).</span></div>`).join('');
+  const why = m => m.deleted === 'bin' ? ' · <span>deleted in the app (recycle bin)</span>' : m.deleted === 'log' ? ' · <span>deleted in the app</span>' : '';
+  const rows = r.missing.map(m => `<label style="display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px;">
+      <input type="checkbox" data-recov="${esc(m.id)}" ${_recov.picked.has(m.id) ? 'checked' : ''} onchange="recovToggle(this.dataset.recov, this.checked)">
+      <span><b dir="auto">${esc(m.clinic.name || m.id)}</b><br><span style="color:var(--muted); font-size:12px;">${esc(m.clinic.rep || '—')} · <span>last in a backup</span> ${fmtDate(m.lastSeen)}${why(m)}</span></span></label>`).join('');
+  body.style.color = '';
+  body.innerHTML = `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:6px;"><span>Open clinics per person: now, and the most any daily backup had.</span></div>
+    ${people}${off}
+    <div class="section-title" style="margin-top:14px;"><span>In a backup, not in the list now</span> (${r.missing.length})</div>
+    ${rows || `<div class="empty"><span>${drops.length ? 'No clinic is missing — the counts above changed because clinics moved to another owner or were closed.' : 'No clinic is missing.'}</span></div>`}
+    ${r.missing.length ? `<div style="color:var(--muted); font-size:12px; margin:8px 0;"><span>Only the ticked clinics come back, as the backup holds them. Visits, tasks and sales files are not touched.</span></div>
+    <button class="btn" id="recovGo" onclick="restoreMissingClinics()">♻️ <span>Bring back the ticked clinics</span> (<span id="recovN">${_recov.picked.size}</span>)</button>` : ''}
+    <div id="recovNote" style="font-size:12.5px; margin-top:8px;"></div>`;
+}
+function recovToggle(id, on){
+  if(!_recov) return;
+  if(on) _recov.picked.add(id); else _recov.picked.delete(id);
+  const n = document.getElementById('recovN'); if(n) n.textContent = _recov.picked.size;
+}
+async function restoreMissingClinics(){
+  if(!requireAdmin() || !_recov) return;
+  const pick = _recov.res.missing.filter(m => _recov.picked.has(m.id));
+  if(!pick.length){ showToast('Nothing ticked'); return; }
+  const btn = document.getElementById('recovGo'); if(btn) btn.disabled = true;
+  const live = new Set(storedClinics().map(c => c && c.id));
+  const back = pick.filter(m => !live.has(m.id)).map(m => normalizeClinic(JSON.parse(JSON.stringify(m.clinic))));
+  const ids = back.map(c => c.id);
+  // the delete log first — otherwise the next merge would remove them again
+  await untombMany({ clinics: ids });
+  clinics = clinics.concat(back); hidePlaceholderClinics();
+  const idSet = new Set(ids), before = ((recycleBin && recycleBin.clinics) || []).length;
+  if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(x => !(x && idSet.has(x.id)));
+  const r = await persistFor('clinics');
+  if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+  renderAll();
+  const note = document.getElementById('recovNote');
+  const ok = r.ok || sentSince('clinics', r);
+  const msg = ok ? `✅ ${ids.length} <span>clinics are back in the list and saved.</span>` : `⚠️ ${ids.length} <span>clinics are back on this device; the save has not reached the cloud yet — it uploads when the connection is back.</span>`;
+  showToast(ok ? `✅ ${ids.length} clinics brought back` : '⚠️ Brought back on this device — not saved to the cloud yet', 4000);
+  // the sheet as it is now: what is still missing, if anything
+  await openClinicRecovery();
+  const n2 = document.getElementById('recovNote'); if(n2) n2.innerHTML = msg; else if(note) note.innerHTML = msg;
 }
 async function restoreSnapshot(dateStr){
   if(!requireAdmin()) return; // a restore replaces the whole team's data
