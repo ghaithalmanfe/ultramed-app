@@ -11,9 +11,9 @@ const core = require(path.resolve(WWW, 'js/core.js'));
 const PORT = 8217;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const cloud = {};
-const mode = { failGet: null };
+const mode = { failGet: null, snapReads: [] };
 const api = {
-  get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
+  get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); if(/^snap_/.test(k)) mode.snapReads.push(k); return k in cloud ? cloud[k] : null; },
   set: async (k, v) => { cloud[k] = v; return true; },
   del: async k => { delete cloud[k]; return true; },
   list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
@@ -25,19 +25,21 @@ const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova';
 const C = (id, name, rep, cls) => ({ id, name, rep, cls: cls || 'B', doctors: [] });
 const M1 = C('m1', 'Dental 8 Clinic', M, 'A'), G1 = C('g1', 'Bayan Dental Center', G, 'A');
 const R1 = C('r1', 'Crown Dental', R, 'A'), R1b = C('r1', 'Crown Dental Center', R, 'A'), R2 = C('r2', 'Jibla Dental Center', R), R3 = C('r3', 'Apex Dental Center', R);
+// a team-sized list (15+ clinics), so the wipe banner stays quiet and reads no backup of its own
+const FILL = Array.from({ length: 14 }, (_, i) => C('f' + (i + 1), 'Filler Clinic ' + (i + 1), M));
 const VISITS = [{ id: 'v1', clinicId: 'r1', rep: R, date: '2026-10-16' }, { id: 'v2', clinicId: 'm1', rep: M, date: '2026-10-19' }];
 function seed(){
   Object.keys(cloud).forEach(k => { delete cloud[k]; });
   cloud.staff = JSON.stringify([{name:M, role:'rep', email:'m@x.com'}, {name:R, role:'rep', email:'r@x.com'}, {name:G, role:'supervisor', email:'g@x.com'}]);
-  cloud.clinics = JSON.stringify([M1, G1]);                     // Renova's three are gone
+  cloud.clinics = JSON.stringify([M1, G1].concat(FILL));                     // Renova's three are gone
   // the one-time repair sweeps of earlier releases have run, as on the team's phones
   const sp = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: {}, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true }, periods: [] });
   cloud.erpSales = JSON.stringify(sp.index); Object.keys(sp.docs).forEach(k => { cloud[k] = JSON.stringify(sp.docs[k]); });
   cloud.visits = JSON.stringify(VISITS);
   cloud.recycleBin = JSON.stringify({ clinics: [Object.assign({ _deletedAt: Date.UTC(2026, 9, 16), _label: R3.name }, R3)], products: [], visits: [] }); // Apex was deleted on purpose
-  cloud['snap_2026-10-15'] = JSON.stringify({ clinics: [M1, G1, R1, R2, R3], products: [], visits: [], tasks: [] });
-  cloud['snap_2026-10-18'] = JSON.stringify({ clinics: [M1, G1, R1b], products: [], visits: [], tasks: [] });
-  cloud['snap_2026-10-20'] = JSON.stringify({ clinics: [M1, G1], products: [], visits: VISITS, tasks: [] });
+  cloud['snap_2026-10-15'] = JSON.stringify({ clinics: [M1, G1, R1, R2, R3].concat(FILL), products: [], visits: [], tasks: [] });
+  cloud['snap_2026-10-18'] = JSON.stringify({ clinics: [M1, G1, R1b].concat(FILL), products: [], visits: [], tasks: [] });
+  cloud['snap_2026-10-20'] = JSON.stringify({ clinics: [M1, G1].concat(FILL), products: [], visits: VISITS, tasks: [] });
 }
 
 (async()=>{
@@ -95,7 +97,7 @@ function seed(){
   await page.waitForTimeout(400);
   let cl = JSON.parse(cloud.clinics), byId = Object.fromEntries(cl.map(c => [c.id, c]));
   check('auto: on Renova\'s own phone, her two clinics are back in the cloud, as the newest backup holds them; Apex (deleted in the app) stays deleted',
-    cl.length === 4 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.map(c => c.id + ':' + c.name));
+    cl.length === 18 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.filter(c => !/^f/.test(c.id)).map(c => c.id + ':' + c.name));
   check('auto: visits, tasks and sales files untouched', cloud.visits === visitsBefore, cloud.visits.slice(0, 120));
   const toast = await page.evaluate(() => document.getElementById('toast').textContent);
   check('auto: the phone says so', /2 clinics brought back from the daily backups/.test(toast), toast);
@@ -104,8 +106,16 @@ function seed(){
   const mine = await page.evaluate(() => { switchView('clinics'); setClinicMode('list'); return [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()); });
   check('auto: Renova sees her clinics again', mine.length === 2 && mine.some(n => /Crown Dental Center/.test(n)) && mine.some(n => /Jibla/.test(n)), mine);
   // the next device finds nothing to do
+  mode.snapReads = [];
   await boot(G, 'supervisor');
-  check('auto: the next device writes nothing more', JSON.parse(cloud.clinics).length === 4 && JSON.parse(cloud.repairLog || '[]').length === 1, { n: JSON.parse(cloud.clinics).length, log: JSON.parse(cloud.repairLog || '[]').length });
+  check('auto: the next device writes nothing more', JSON.parse(cloud.clinics).length === 18 && JSON.parse(cloud.repairLog || '[]').length === 1, { n: JSON.parse(cloud.clinics).length, log: JSON.parse(cloud.repairLog || '[]').length });
+  // the same phone, opened again the same day, does not download the backups again
+  // (the start just above was this phone's first of the day: it read the backups)
+  check('auto: the first start of the day reads the backups', mode.snapReads.length >= 3, mode.snapReads.length);
+  mode.snapReads = [];
+  await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
+  await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(400);
+  check('auto: once per device per day — a second start the same day reads no backup (only the daily-backup check of today\'s own)', mode.snapReads.every(k => k === 'snap_2026-10-20') && mode.snapReads.length <= 1, mode.snapReads);
   // ---- the supervisor's sheet: what is left is the clinic deleted in the app, not ticked; he can still bring it back ----
   let s = await sheet();
   const rv = (s.people || []).find(p => p.rep === R);
@@ -124,7 +134,7 @@ function seed(){
   mode.failGet = /^recycleBin$/;
   await boot(G, 'supervisor');
   mode.failGet = null;
-  check('no clean read of the recycle bin: nothing is brought back', JSON.parse(cloud.clinics).length === 2 && !cloud.repairLog, JSON.parse(cloud.clinics).map(c => c.id));
+  check('no clean read of the recycle bin: nothing is brought back', JSON.parse(cloud.clinics).length === 16 && !cloud.repairLog, JSON.parse(cloud.clinics).length);
   // Arabic: the sheet speaks Arabic
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   s = await sheet();
