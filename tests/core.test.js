@@ -4092,3 +4092,20 @@ describe('Clinics card = the month figure (v115)', () => {
     }
   });
 });
+
+describe('missing clinics, from the daily backups (v116)', () => {
+  test('lists what a backup holds and the list does not, newest copy, deleted-in-app flagged, per person, off the team', () => {
+    const cur = [{ id: 'm1', name: 'Dental 8', rep: 'Mariam' }, { id: 'g1', name: 'Bayan', rep: 'Dr. Ghaith' }, { id: 'x', name: 'Old', rep: 'Mariam', cls: 'Closed' }];
+    const snaps = [
+      { date: '2026-10-18', clinics: cur.concat([{ id: 'r1', name: 'Crown Dental Center', rep: 'Renova' }]) },
+      { date: '2026-10-15', clinics: cur.concat([{ id: 'r1', name: 'Crown', rep: 'Renova' }, { id: 'r2', name: 'Jibla', rep: 'Renova' }, { id: 'r3', name: 'Apex', rep: 'Renova' }]) },
+      { date: 'bad', clinics: [{ id: 'zz', name: 'never', rep: 'X' }] }, { date: '2026-10-19' }];
+    const r = core.clinicsMissingFromBackups(cur, snaps, { binIds: ['r3'], tombIds: ['r2'], staff: ['Mariam', 'Dr. Ghaith'] });
+    assert.deepEqual(r.missing.map(m => [m.id, m.clinic.name, m.lastSeen, m.deleted]),
+      [['r3', 'Apex', '2026-10-15', 'bin'], ['r1', 'Crown Dental Center', '2026-10-18', null], ['r2', 'Jibla', '2026-10-15', 'log']]);
+    assert.deepEqual(r.people[0], { rep: 'Renova', now: 0, most: 3, mostDate: '2026-10-15' });
+    assert.deepEqual(r.people.find(p => p.rep === 'Mariam'), { rep: 'Mariam', now: 1, most: 1, mostDate: '2026-10-18' }); // a Closed clinic is not counted
+    assert.deepEqual(r.offTeam, ['Renova']);
+    assert.deepEqual(core.clinicsMissingFromBackups(cur, [], {}), { missing: [], people: [{ rep: 'Dr. Ghaith', now: 1, most: 0, mostDate: null }, { rep: 'Mariam', now: 1, most: 0, mostDate: null }], offTeam: [] });
+  });
+});

@@ -1702,6 +1702,48 @@
       covered: rep ? monthAchievement(rep, dTo, mtd).asOf : erpMonthCovered(dTo), last: last, accounts: accounts, people: people,
       totals: { total: cents('total'), clinics: cents('clinics'), channels: cents('channels'), ignored: cents('ignored') }, mtd: mtd };
   }
+  // ---- Clinics a daily backup holds and the live list does not (v116) ----
+  // current: the live clinic list as stored (placeholders included); snaps:
+  // [{ date: 'YYYY-MM-DD', clinics: [...] }] in any order; opts = { binIds,
+  // tombIds (deleted in the app: recycle bin / delete log), staff (names) }.
+  // Returns { missing: [{ id, clinic (the newest backup copy), lastSeen,
+  // deleted: 'bin' | 'log' | null }] (owner, then name), people: [{ rep, now,
+  // most, mostDate }] (open clinics per owner now, and the most any backup had),
+  // offTeam: owners of live or missing clinics who are not on the team list }.
+  function clinicsMissingFromBackups(current, snaps, opts){
+    opts = opts || {};
+    var live = Object.create(null), bin = Object.create(null), log = Object.create(null), team = Object.create(null);
+    (current || []).forEach(function(c){ if(c && c.id != null) live[c.id] = c; });
+    (opts.binIds || []).forEach(function(id){ bin[id] = 1; });
+    (opts.tombIds || []).forEach(function(id){ log[id] = 1; });
+    (opts.staff || []).forEach(function(n){ if(n) team[n] = 1; });
+    var open = function(c){ return c && c.cls !== 'Closed'; };
+    var list = (snaps || []).filter(function(s){ return s && /^\d{4}-\d{2}-\d{2}$/.test(s.date || '') && Array.isArray(s.clinics); })
+      .slice().sort(function(a, b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+    var best = Object.create(null), seen = Object.create(null), most = Object.create(null);
+    list.forEach(function(s){
+      var n = Object.create(null);
+      s.clinics.forEach(function(c){
+        if(!c || c.id == null) return;
+        best[c.id] = c; seen[c.id] = s.date;               // oldest → newest: the newest copy wins
+        if(open(c) && c.rep) n[c.rep] = (n[c.rep] || 0) + 1;
+      });
+      Object.keys(n).forEach(function(r){ if(!most[r] || n[r] >= most[r].n) most[r] = { n: n[r], date: s.date }; });
+    });
+    var missing = Object.keys(best).filter(function(id){ return !live[id]; }).map(function(id){
+      return { id: id, clinic: best[id], lastSeen: seen[id], deleted: bin[id] ? 'bin' : log[id] ? 'log' : null };
+    }).sort(function(a, b){ return erpCmp(a.clinic.rep, b.clinic.rep) || erpCmp(String(a.clinic.name || '').toLowerCase(), String(b.clinic.name || '').toLowerCase()); });
+    var now = Object.create(null);
+    (current || []).forEach(function(c){ if(open(c) && c.rep) now[c.rep] = (now[c.rep] || 0) + 1; });
+    var reps = Object.keys(now).concat(Object.keys(most).filter(function(r){ return !(r in now); }));
+    var people = reps.map(function(r){ return { rep: r, now: now[r] || 0, most: most[r] ? most[r].n : 0, mostDate: most[r] ? most[r].date : null }; })
+      .sort(function(a, b){ return (b.most - b.now) - (a.most - a.now) || erpCmp(a.rep, b.rep); });
+    var owners = Object.create(null);
+    (current || []).forEach(function(c){ if(c && c.rep) owners[c.rep] = 1; });
+    missing.forEach(function(m){ if(m.clinic.rep) owners[m.clinic.rep] = 1; });
+    var offTeam = opts.staff ? Object.keys(owners).filter(function(r){ return !team[r]; }).sort() : [];
+    return { missing: missing, people: people, offTeam: offTeam };
+  }
   // Invoices a team member issued at ANOTHER rep's clinic this month (shared
   // accounts excluded — those count for the issuer). They count for the
   // clinic's owner; this list is what the app shows so nobody is surprised.
@@ -5563,7 +5605,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
