@@ -207,10 +207,12 @@ async function autoRestoreWipe(){
 // only: visits, tasks and sales files are not touched. Idempotent — the next
 // device finds nothing missing. Every bring-back is written to repairLog.
 let _missingSweepDone = false;   // once per app start: a background refresh never re-reads the backups
+const MISSING_SWEEP_DAY = 'um_missingSweepDay';   // and once per device per day: the backups are large to download
 async function restoreMissingClinicsSweep(){
   try{
     if(_missingSweepDone || !currentUser || _bootCrashed || ['clinics','recycleBin'].some(k => _loadFailed[k] || _mirrorUsed[k])) return;
     _missingSweepDone = true;
+    try{ if(localStorage.getItem(MISSING_SWEEP_DAY) === todayStr()) return; }catch(e){}
     const list = await withTimeout(window.storage.list('snap_', true), 8000).catch(() => null);
     const keys = (list && list.keys) || [];
     if(!keys.length) return;
@@ -220,9 +222,10 @@ async function restoreMissingClinicsSweep(){
       const snap = res ? UMCore.safeParse(res.value, null) : null;
       if(snap && Array.isArray(snap.clinics)) snaps.push({ date: k.replace('snap_', ''), clinics: snap.clinics });
     }
-    if(snaps.length !== keys.length) return;   // a backup this device could not read: no verdict here
+    if(snaps.length !== keys.length) return;   // a backup this device could not read: no verdict here (tried again next start)
     const r = UMCore.clinicsMissingFromBackups(storedClinics(), snaps, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id) });
     const pick = r.missing.filter(m => m.deleted !== 'bin');
+    try{ localStorage.setItem(MISSING_SWEEP_DAY, todayStr()); }catch(e){}   // a complete check: this device is done for today
     if(!pick.length) return;
     const back = pick.map(m => normalizeClinic(JSON.parse(JSON.stringify(m.clinic))));
     await untombMany({ clinics: back.map(c => c.id) });   // the delete log first, or the next merge removes them again
