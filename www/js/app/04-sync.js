@@ -198,6 +198,47 @@ async function autoRestoreWipe(){
     `);
   }catch(e){ console.error('auto-restore failed, will retry next open', e); }
 }
+// v117: Renova's clinics vanished from the list (reported 20 Oct). The first
+// device that opens the app with a clean cloud read of the clinics and the
+// recycle bin brings back every clinic a daily backup holds that the live
+// list lacks and the team did not delete — a deliberate delete always leaves
+// a recycle-bin copy (kept 30 days; the backups go back 12), so a clinic that
+// is only in the delete log is brought back too and cleared from it. Clinics
+// only: visits, tasks and sales files are not touched. Idempotent — the next
+// device finds nothing missing. Every bring-back is written to repairLog.
+let _missingSweepDone = false;   // once per app start: a background refresh never re-reads the backups
+async function restoreMissingClinicsSweep(){
+  try{
+    if(_missingSweepDone || !currentUser || _bootCrashed || ['clinics','recycleBin'].some(k => _loadFailed[k] || _mirrorUsed[k])) return;
+    _missingSweepDone = true;
+    const list = await withTimeout(window.storage.list('snap_', true), 8000).catch(() => null);
+    const keys = (list && list.keys) || [];
+    if(!keys.length) return;
+    const snaps = [];
+    for(const k of keys){
+      const res = await withTimeout(window.storage.get(k, true), 8000).catch(() => null);
+      const snap = res ? UMCore.safeParse(res.value, null) : null;
+      if(snap && Array.isArray(snap.clinics)) snaps.push({ date: k.replace('snap_', ''), clinics: snap.clinics });
+    }
+    if(snaps.length !== keys.length) return;   // a backup this device could not read: no verdict here
+    const r = UMCore.clinicsMissingFromBackups(storedClinics(), snaps, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id) });
+    const pick = r.missing.filter(m => m.deleted !== 'bin');
+    if(!pick.length) return;
+    const back = pick.map(m => normalizeClinic(JSON.parse(JSON.stringify(m.clinic))));
+    await untombMany({ clinics: back.map(c => c.id) });   // the delete log first, or the next merge removes them again
+    clinics = clinics.concat(back); hidePlaceholderClinics();
+    const saved = await persistFor('clinics');
+    const ok = saved.ok || sentSince('clinics', saved);
+    console.warn(`missing clinics: ${back.length} brought back from the daily backups (${ok ? 'saved' : 'not saved yet'})`);
+    try{
+      const entry = { at: new Date().toISOString(), by: currentUser.name, kind: 'clinics-from-backups', saved: ok,
+        clinics: pick.map(m => ({ id: m.id, name: m.clinic.name || '', rep: m.clinic.rep || '', lastSeen: m.lastSeen, log: m.deleted === 'log' })) };
+      await storageUpdate('repairLog', cur => { const arr = UMCore.safeParse(cur, []); return JSON.stringify((Array.isArray(arr) ? arr : []).concat([entry]).slice(-50)); });
+    }catch(e){ console.warn('repairLog', e); }
+    renderAll();
+    showToast(ok ? `♻️ ${back.length} clinics brought back from the daily backups` : `⚠️ ${back.length} clinics brought back on this device — not saved to the cloud yet`, 6000);
+  }catch(e){ console.error('missing-clinics sweep', e); }
+}
 // Second recovery pass after the Aug-30 wipe: the single-day restore brought
 // most things back, but records missing from that one day and clinics revived
 // as "⚠️ Restored clinic — rename me" placeholders remained. This sweep unions
@@ -986,6 +1027,7 @@ async function loadAll(){
     // snapshots but no clinic doc is damaged, not new — restore, don't seed.
     await autoRestoreWipe();
     await deepRestoreSweep();
+    await restoreMissingClinicsSweep();
     archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
     if(_seedClinics && !c && readOk('clinics')){ await persist('clinics', {allowSeed:true}); _seedClinics = false; } // genuinely fresh account
     if(!p && readOk('products')) await persist('products');
