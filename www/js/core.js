@@ -1710,105 +1710,6 @@
   // deleted: 'bin' | 'log' | null }] (owner, then name), people: [{ rep, now,
   // most, mostDate }] (open clinics per owner now, and the most any backup had),
   // offTeam: owners of live or missing clinics who are not on the team list }.
-  // The name the app itself wrote down for a clinic: the follow-up task a visit
-  // sets reads "Follow up: <the clinic's name>" and carries the clinic's id
-  // (06-log-visit.js). For clinics that lost their name (the August restore's
-  // "⚠️ Restored clinic — rename me"), the newest such task gives it back: the
-  // id links them, nothing is matched by spelling. → { clinicId: name }
-  var FOLLOW_UP_TASK = 'Follow up: ';
-  function clinicNamesFromTasks(tasks, ids){
-    var want = Object.create(null), best = Object.create(null), out = Object.create(null);
-    (ids || []).forEach(function(id){ if(id != null) want[id] = 1; });
-    (Array.isArray(tasks) ? tasks : []).forEach(function(t){
-      if(!t || t.kind !== 'followup' || t.clinicId == null || !want[t.clinicId] || typeof t.text !== 'string') return;
-      if(t.text.indexOf(FOLLOW_UP_TASK) !== 0) return;
-      var name = t.text.slice(FOLLOW_UP_TASK.length).trim(), at = String(t.created || '');
-      if(!name || /rename me/i.test(name)) return;
-      if(!best[t.clinicId] || at > best[t.clinicId].at) best[t.clinicId] = { at: at, name: name };
-    });
-    Object.keys(best).forEach(function(id){ out[id] = best[id].name; });
-    return out;
-  }
-  // What giving clinics back would change in the sales figures: every ERP line
-  // that would count for ANOTHER person once `add` joins the list (a name
-  // starting to match an account; the rule of every figure, erpRowRep). A line
-  // that only changes clinic for the same person is not a move.
-  function erpAddClinicMoves(data, add, cache){
-    data = data || {};
-    var out = [];
-    if(!(add || []).length) return out;
-    var c0 = data.clinics || [], c1 = c0.concat(add), map = data.erpMap || {};
-    // `cache` (an empty object the caller keeps): the lines grouped by account
-    // and the matches before, read once for several checks on the SAME list
-    var k = cache || {};
-    var famKey = function(c){
-      var tok = normClinicName(c && c.name).split(' ')[0] || '';
-      return c && c.rep && tok.length >= 4 ? tok + '|' + c.rep + '|' + familyTypeSig(c.name) : null;
-    };
-    var normOf = function(s){ var t = normClinicName(s); return { toks: t ? t.split(' ') : [], flat: t.replace(/ /g, '') }; };
-    if(!k.byName){
-      k.byName = Object.create(null); k.names = []; k.norm = Object.create(null); k.fams = Object.create(null);
-      erpEachLine(data.erpSales, function(r, p, n){ (k.byName[n] || (k.names.push(n), k.norm[n] = normOf(n), k.byName[n] = [])).push([r, p.repMap || {}]); });
-      c0.forEach(function(c){ var f = famKey(c); if(f) k.fams[f] = 1; });
-      k.m0 = erpMatcher(c0, map);
-    }
-    // matchCustomer can only answer differently for a name an added clinic
-    // could take part in: a shared word (the token pass), one name inside the
-    // other (the spelling pass) — unless the clinic joins a branch family, which
-    // can change other names' answers: then every name is checked
-    var X = add.map(function(c){ return normOf(c && c.name); });
-    var all = add.some(function(c){ var f = famKey(c); return !!f && !!k.fams[f]; });
-    var touches = function(nn){
-      return X.some(function(x){
-        if(nn.toks.some(function(t){ return x.toks.indexOf(t) >= 0; })) return true;
-        return nn.flat.length >= 4 && x.flat.length >= 4 && (x.flat.indexOf(nn.flat) >= 0 || nn.flat.indexOf(x.flat) >= 0);
-      });
-    };
-    var m1 = erpMatcher(c1, map);
-    k.names.forEach(function(n){
-      if(!all && !touches(k.norm[n])) return;
-      var a = k.m0(n), b = m1(n);
-      if((a && a.clinicId) === (b && b.clinicId) && (a && a.method) === (b && b.method)) return;
-      k.byName[n].forEach(function(x){
-        var r = x[0], ra = erpRepOfMatch(a, r, c0, x[1]), rb = erpRepOfMatch(b, r, c1, x[1]);
-        if(ra !== rb) out.push({ customer: n, date: r.date || null, from: ra, to: rb, net: Number(r.net) || 0 });
-      });
-    });
-    return out;
-  }
-  // People a clinic's visits met whose record is gone from its doctor list
-  // (most lost in August–September, before visits kept the names of the people
-  // met): one entry per doctor id, with the visits that name it, newest first.
-  // A doctor deleted in the app (delete log key "clinicId|doctorId") is not
-  // lost. One pass over the visits. → { clinicId: [{ id, name, visits }] }
-  function lostDoctors(clinics, visits, deleted){
-    var byId = Object.create(null), have = Object.create(null), found = Object.create(null), out = Object.create(null);
-    (clinics || []).forEach(function(c){
-      if(!c || c.id == null) return;
-      byId[c.id] = c; have[c.id] = Object.create(null);
-      (Array.isArray(c.doctors) ? c.doctors : []).forEach(function(d){ if(d && d.id != null) have[c.id][d.id] = 1; });
-    });
-    var gone = function(k){ return !!deleted && (typeof deleted.has === 'function' ? deleted.has(k) : !!deleted[k]); };
-    (visits || []).forEach(function(v){
-      if(!v || v.clinicId == null || !byId[v.clinicId]) return;
-      var cid = v.clinicId, ids = (Array.isArray(v.doctorIds) ? v.doctorIds : []).concat(v.doctorId ? [v.doctorId] : []), seen = Object.create(null);
-      ids.forEach(function(id){
-        if(id == null || id === '' || seen[id] || have[cid][id] || gone(cid + '|' + id)) return;
-        seen[id] = 1;
-        var F = found[cid] || (found[cid] = Object.create(null));
-        var e = F[id] || (F[id] = { id: id, name: '', visits: [] });
-        e.visits.push({ id: v.id, date: v.date || '', rep: v.rep || '', notes: String(v.notes || '').trim() });
-        if(!e.name && v.doctorNames && v.doctorNames[id]) e.name = String(v.doctorNames[id]);
-      });
-    });
-    var desc = function(a, b){ return a < b ? 1 : a > b ? -1 : 0; };
-    Object.keys(found).forEach(function(cid){
-      out[cid] = Object.keys(found[cid]).map(function(id){
-        var e = found[cid][id]; e.visits.sort(function(a, b){ return desc(a.date, b.date); }); return e;
-      }).sort(function(a, b){ return desc(a.visits[0].date, b.visits[0].date); });
-    });
-    return out;
-  }
   function clinicsMissingFromBackups(current, snaps, opts){
     opts = opts || {};
     var live = Object.create(null), bin = Object.create(null), log = Object.create(null), team = Object.create(null);
@@ -5704,7 +5605,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
