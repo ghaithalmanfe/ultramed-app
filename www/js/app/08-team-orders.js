@@ -35,6 +35,7 @@ async function saveStaff(idx){
   if(!email || !email.includes('@')){ showToast('Enter a valid email'); return; }
   const clash = staff.find((s,i)=>i!==idx && (s.name.toLowerCase()===name.toLowerCase() || s.email===email));
   if(clash){ showToast('That name or email is already used'); return; }
+  const was = idx>=0 ? auditStaffFields(staff[idx]) : null; // for the change log
   if(idx>=0){
     const prevName = staff[idx].name;
     staff[idx] = {...staff[idx], name, email, role, sells};
@@ -70,9 +71,13 @@ async function saveStaff(idx){
     staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
   }
   refreshStaff();
-  await persist('staff');
+  const r = await persistTold('staff');
+  const now = auditStaffFields(idx>=0 ? staff[idx] : staff[staff.length-1]);
+  // a new role, or "Also sells" switched: a permission change
+  auditRecord({ action: !was ? 'staff.add' : (was.role !== now.role || was.sells !== now.sells) ? 'staff.role' : 'staff.edit',
+    key: 'staff', id: now.name, label: now.name, before: was, after: now, result: r });
   closeModal();
-  showToast('✅ Team updated');
+  saveToast(r, 'staff', '✅ Team updated');
   renderGate();
   renderAll();
   openAdminPanel(); setAdminTab('staff');
@@ -89,6 +94,8 @@ async function removeStaff(idx){
     <h3 style="margin-top:0;">Remove ${esc(s.name)}?</h3>
     ${cCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;"><strong>${cCount}</strong> clinic${cCount===1?'':'s'} assigned to ${esc(s.name)} will become unassigned. Reassign them from the Territory tab afterwards.</div>`:''}
     <p style="color:var(--muted); font-size:13px;">Their past visits stay in the records. Their login must be removed separately in Firebase.</p>
+    <label>Reason (optional)</label>
+    <input type="text" id="rsReason" dir="auto" placeholder="Why? (kept in the change log)">
     <button class="btn" style="background:var(--coral);" onclick="confirmRemoveStaff(${idx})">Yes, remove</button>
     <button class="btn secondary" onclick="openStaffForm(${idx})">Cancel</button>
   `);
@@ -97,11 +104,13 @@ async function confirmRemoveStaff(idx){
   if(!requireAdmin()) return;
   const s = staff[idx];
   if(!s) return;
+  const reason = auditReasonFrom('rsReason');
   staff.splice(idx,1);
   refreshStaff();
-  await persist('staff');
+  const r = await persistTold('staff');
+  auditRecord({ action: 'staff.remove', key: 'staff', id: s.name, label: s.name, before: auditStaffFields(s), reason, result: r });
   closeModal();
-  showToast(`${s.name} removed`);
+  saveToast(r, 'staff', `${s.name} removed`);
   renderGate();
   renderAll();
   openAdminPanel(); setAdminTab('staff');

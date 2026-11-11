@@ -5593,6 +5593,293 @@
     return out;
   }
 
+  // ---- Change log (audit trail, "سجل التغييرات") ----
+  // One entry per change a person made in the app: who (name, role), when (ISO
+  // time), the action, which record (key, id, a readable label), the fields
+  // that changed (before → after: small diffs, never whole documents), the
+  // reason given, and what the save did (ok, res). Entries live in one cloud
+  // document per month, `auditLog:YYYY-MM` = { v, month, entries, dropped,
+  // trimmed }, and reach it only through auditAppend (the app runs it as one
+  // atomic read-merge-write). Pure: the app adds the person and the outcome.
+  var AUDIT_PREFIX = 'auditLog:';
+  // str / items / keys / depth: how much of a value is kept; label / reason:
+  // text bounds; entry: one entry, serialized; monthEntries / monthChars: one
+  // month document (the cloud caps a document at 1 MiB, and Arabic text takes
+  // two bytes a character).
+  var AUDIT_LIMITS = { str: 120, items: 8, keys: 14, depth: 3, label: 120, reason: 300, entry: 2400, monthEntries: 4000, monthChars: 450000 };
+  // Never recorded, whatever record they sit in: passwords, PINs, tokens, keys, sessions.
+  var AUDIT_SECRET = /pass(word|wd|code)?$|^pwd$|^pin$|secret|token|api.?key|credential|^auth|session|cookie|private/i;
+  var AUDIT_RES = { saved: 1, queued: 1, failed: 1, refused: 1, timeout: 1, conflict: 1 };
+  // English labels (Arabic in i18n.js): what each action is called on screen.
+  var AUDIT_ACTIONS = {
+    'visit.add': 'Visit logged', 'visit.edit': 'Visit edited', 'visit.delete': 'Visit deleted', 'call.add': 'Call logged',
+    'order.add': 'Order added', 'order.edit': 'Order edited', 'order.delete': 'Order deleted',
+    'clinic.add': 'Clinic added', 'clinic.edit': 'Clinic edited', 'clinic.close': 'Clinic closed', 'clinic.reopen': 'Clinic reopened',
+    'clinic.delete': 'Clinic deleted', 'clinic.handover': 'Clinic handed over', 'clinic.shared': 'Shared account changed',
+    'clinic.gov': 'Government account changed', 'clinic.import': 'Clinics imported', 'clinic.distribution': 'Clinic distribution uploaded',
+    'doctor.add': 'Doctor added', 'doctor.edit': 'Doctor edited', 'doctor.delete': 'Doctor removed', 'doctor.import': 'Doctors imported',
+    'staff.add': 'Team member added', 'staff.edit': 'Team member edited', 'staff.role': 'Role or permission changed',
+    'staff.remove': 'Team member removed', 'staff.password': 'Password changed',
+    'target.set': 'Monthly targets set', 'target.upload': 'Targets uploaded (DSR)', 'target.archive': 'Month targets archived',
+    'target.settings': 'Evaluation targets changed',
+    'erpLink.change': 'ERP account link changed', 'sales.import': 'Sales file imported', 'sales.delete': 'Sales file deleted',
+    'sales.salesman': 'ERP salesman mapping changed', 'sales.returns': 'Returns rule changed',
+    'product.add': 'Product added', 'product.edit': 'Product edited', 'product.price': 'Price changed', 'product.delete': 'Product deleted',
+    'restore.bin': 'Restored from the recycle bin', 'restore.backup': 'Backup day restored', 'restore.clinics': 'Missing clinics brought back',
+    'restore.device': 'Clinics restored from this device', 'restore.nameless': 'Clinic without a name named',
+    'restore.recreate': 'Deleted clinic re-created', 'restore.doctors': 'Lost doctors brought back',
+    'bin.purge': 'Deleted for good from the recycle bin', 'sync.upload': 'Offline changes uploaded'
+  };
+  var AUDIT_GROUPS = { visit: 'visits', call: 'visits', order: 'visits', clinic: 'clinics', doctor: 'doctors', staff: 'team',
+    target: 'targets', erpLink: 'sales', sales: 'sales', product: 'products', restore: 'restore', bin: 'restore', sync: 'sync' };
+  var AUDIT_GROUP_LABELS = { visits: 'Visits & orders', clinics: 'Clinics', doctors: 'Doctors', team: 'Team & permissions', targets: 'Targets',
+    sales: 'Sales & ERP links', products: 'Products', restore: 'Restores & recycle bin', sync: 'Uploads', other: 'Other changes' };
+  var AUDIT_RESULTS = { saved: 'Saved', queued: 'Kept on this device — uploads automatically', failed: 'Not saved',
+    refused: 'Not saved — refused', timeout: 'No confirmation from the cloud', conflict: 'Not saved — changed on another device first' };
+  var AUDIT_FIELDS = {
+    date: 'Date', rep: 'Owner', withRep: 'Joint visit with', met: 'Who was met', orderTotal: 'Order total', items: 'Order lines',
+    discountPct: 'Discount %', channel: 'Channel', rx: 'Prescriptions given', nextFollowUp: 'Next follow-up', notes: 'Notes',
+    noOrderReason: 'No order because', photos: 'Photos', clinic: 'Clinic', contactName: 'Contact person',
+    name: 'Name', cls: 'Class', account: 'Account type', dealType: 'Works with us by', contact: 'Contact person', phone: 'Phone',
+    shared: 'Shared account', sharedSince: 'Shared since', gov: 'Government account', prevRep: 'Previous owner', repSince: 'Owner since',
+    title: 'Specialty', role: 'Role', influence: 'Decision influence', stage: 'Relationship stage', whatsapp: 'WhatsApp', email: 'Email',
+    birthday: 'Birthday', cadence: 'Visit rhythm', bestTime: 'Best time to visit', interests: 'Interests', competitor: 'Competitor products used',
+    nextStep: 'Next step', handover: 'Handover', handovers: 'Handovers', sells: 'Also sells',
+    revenue: 'Sales target (KD)', visits: 'Visits', brands: 'Brand targets', month: 'Month', link: 'Counted at',
+    brand: 'Brand', code: 'Product code', price: 'Price (KD)', desc: 'Description', specialties: 'Recommended for', salesNotes: 'Sales notes',
+    clinics: 'Clinics', doctors: 'Doctors', products: 'Products', tasks: 'Tasks', count: 'How many', changes: 'Changes', added: 'Added',
+    updated: 'Updated', skipped: 'Skipped', file: 'File', from: 'From', to: 'To', net: 'Net sales', lines: 'Invoice lines',
+    salesman: 'Salesman', policy: 'Returns count in', movedTo: 'Visits moved to', place: 'Where', kind: 'Kind',
+    coverage: 'Coverage target %', priority: 'Priority target %', conversion: 'Conversion target %', taskRate: 'Task completion target %',
+    kpi: 'KPI settings', uploads: 'Uploaded', '…': 'More fields'
+  };
+  function auditStr(v, n){
+    if(v === undefined || v === null) return null;
+    v = String(v);
+    return v.length > n ? v.slice(0, n - 1) + '…' : v;
+  }
+  function auditKeyOk(k){ return typeof k === 'string' && k !== '__proto__' && k.charAt(0) !== '_' && !AUDIT_SECRET.test(k); }
+  // "mariam@ultramed-kw.com" → "m•••@ultramed-kw.com": enough to see that it changed
+  function auditMaskEmail(s){
+    var at = s.indexOf('@');
+    return at > 0 ? s.charAt(0) + '•••' + s.slice(at) : s;
+  }
+  // A link keeps its address; a query that carries a key, token or signature does not.
+  function auditCleanUrl(s){
+    var q = s.indexOf('?');
+    return q >= 0 && /(token|sig|signature|key|auth|code|secret|pass)=/i.test(s.slice(q)) ? s.slice(0, q) + '?…' : s;
+  }
+  // A value made small and safe to keep: long text cut, long lists cut with
+  // "… +N", deep objects as "…", files never kept, secret fields dropped.
+  function auditSummarize(v, lim, depth, key){
+    lim = lim || AUDIT_LIMITS; depth = depth || 0;
+    if(v === undefined || v === null) return null;
+    if(typeof v === 'boolean') return v;
+    if(typeof v === 'number') return isFinite(v) ? Math.round(v * 1000) / 1000 : null;
+    if(typeof v === 'string'){
+      if(/^data:/i.test(v)) return '[file]';
+      var s = v;
+      if(key && /e-?mail/i.test(key) && s.indexOf('@') > 0) s = auditMaskEmail(s);
+      if(/^https?:\/\//i.test(s)) s = auditCleanUrl(s);
+      return auditStr(s, lim.str);
+    }
+    if(typeof v !== 'object') return null;
+    if(depth >= lim.depth) return '…';
+    if(Array.isArray(v)){
+      var arr = v.slice(0, lim.items).map(function(x){ return auditSummarize(x, lim, depth + 1, key); });
+      if(v.length > lim.items) arr.push('… +' + (v.length - lim.items));
+      return arr;
+    }
+    var keys = Object.keys(v).filter(auditKeyOk), o = {};
+    keys.slice(0, lim.keys).forEach(function(k){ o[k] = auditSummarize(v[k], lim, depth + 1, k); });
+    if(keys.length > lim.keys) o['…'] = '+' + (keys.length - lim.keys);
+    return o;
+  }
+  function auditEmpty(v){
+    return v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length) ||
+      (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length);
+  }
+  function auditStable(v){
+    if(v === undefined || v === null) return 'null';
+    if(typeof v !== 'object') return JSON.stringify(v);
+    if(Array.isArray(v)) return '[' + v.map(auditStable).join(',') + ']';
+    return '{' + Object.keys(v).sort().filter(function(k){ return v[k] !== undefined; })
+      .map(function(k){ return JSON.stringify(k) + ':' + auditStable(v[k]); }).join(',') + '}';
+  }
+  function auditSame(a, b){ return (auditEmpty(a) && auditEmpty(b)) || auditStable(a) === auditStable(b); }
+  // The fields that differ between two versions of one record: { before,
+  // after, n }. A record created (before null) or removed (after null) gives
+  // its non-empty fields. opts.fields: only these; opts.ignore: never these.
+  // Values stay as they are — auditEntry makes them small.
+  function auditDiff(before, after, opts){
+    opts = opts || {};
+    var b = before && typeof before === 'object' && !Array.isArray(before) ? before : null;
+    var a = after && typeof after === 'object' && !Array.isArray(after) ? after : null;
+    var skip = Object.create(null); (opts.ignore || []).forEach(function(k){ skip[k] = 1; });
+    var keys = [];
+    (opts.fields || Object.keys(b || {}).concat(Object.keys(a || {}))).forEach(function(k){
+      if(auditKeyOk(k) && !skip[k] && keys.indexOf(k) < 0) keys.push(k);
+    });
+    var ob = b ? {} : null, oa = a ? {} : null, n = 0;
+    keys.forEach(function(k){
+      var x = b ? b[k] : undefined, y = a ? a[k] : undefined;
+      if(b && a){ if(auditSame(x, y)) return; }
+      else if(auditEmpty(b ? x : y)) return;
+      if(ob) ob[k] = x === undefined ? null : x;
+      if(oa) oa[k] = y === undefined ? null : y;
+      n++;
+    });
+    return { before: ob, after: oa, n: n };
+  }
+  // One bounded entry. o = { action, key, id, label, before, after, reason,
+  // ok | res, eid?, at? }; ctx = { by, role, now? }. ok is true only for a
+  // save that landed (res 'saved'); queued, failed, refused, timeout and
+  // conflict are not ok.
+  function auditEntry(o, ctx){
+    o = o || {}; ctx = ctx || {};
+    var L = AUDIT_LIMITS;
+    var res = AUDIT_RES[o.res] ? o.res : (o.ok === true ? 'saved' : 'failed');
+    var e = {
+      eid: auditStr(o.eid || ctx.eid || ('a' + uid()), 40),
+      at: typeof o.at === 'string' && o.at ? auditStr(o.at, 40) : new Date(ctx.now != null ? ctx.now : Date.now()).toISOString(),
+      by: auditStr(ctx.by !== undefined ? ctx.by : o.by, 60),
+      role: auditStr(ctx.role !== undefined ? ctx.role : o.role, 20),
+      action: auditStr(o.action, 40) || 'change',
+      key: auditStr(o.key, 40),
+      id: auditStr(o.id, 120),
+      label: auditStr(o.label, L.label),
+      before: o.before == null ? null : auditSummarize(o.before),
+      after: o.after == null ? null : auditSummarize(o.after),
+      reason: o.reason && String(o.reason).trim() ? auditStr(String(o.reason).trim(), L.reason) : null,
+      ok: res === 'saved',
+      res: res
+    };
+    if(JSON.stringify(e).length > L.entry){
+      var tight = { str: 40, items: 3, keys: 6, depth: 2 };
+      e.before = o.before == null ? null : auditSummarize(o.before, tight);
+      e.after = o.after == null ? null : auditSummarize(o.after, tight);
+      if(JSON.stringify(e).length > L.entry){ e.before = e.before == null ? null : '…'; e.after = e.after == null ? null : '…'; }
+    }
+    return e;
+  }
+  // A month document as stored → { v, month, entries, dropped, trimmed,
+  // broken }. broken: the document holds something that is not a change log
+  // (it is never written over).
+  function auditDocOf(raw, month){
+    var v = typeof raw === 'string' ? safeParse(raw, undefined) : raw;
+    var doc = { v: 1, month: month || null, entries: [], dropped: 0, trimmed: 0, broken: false };
+    if(raw == null) return doc;
+    if(Array.isArray(v)) doc.entries = v;
+    else if(v && typeof v === 'object'){
+      if(Array.isArray(v.entries)) doc.entries = v.entries; else doc.broken = true;
+      doc.dropped = +v.dropped > 0 ? Math.floor(+v.dropped) : 0;
+      doc.trimmed = +v.trimmed > 0 ? Math.floor(+v.trimmed) : 0;
+      if(!doc.month && typeof v.month === 'string') doc.month = v.month;
+    } else doc.broken = true;
+    doc.entries = doc.entries.filter(function(e){ return e && typeof e === 'object' && !Array.isArray(e); });
+    return doc;
+  }
+  // The append the app runs as one read-merge-write on `auditLog:<month>`:
+  // entries already there (same eid — a retry, a write that landed late) are
+  // not added again; existing entries are never edited, except that a month
+  // past its size keeps the oldest entries' who / what / when / result and
+  // drops their before → after (counted in `trimmed`), and only then drops
+  // the oldest whole (counted in `dropped`) — said on screen, never silent.
+  // Returns { value: the document to write, or null (nothing new, or broken),
+  // added, broken }.
+  function auditAppend(cur, add, opts){
+    opts = opts || {};
+    var L = AUDIT_LIMITS, maxN = opts.maxEntries || L.monthEntries, maxC = opts.maxChars || L.monthChars;
+    var doc = auditDocOf(cur, opts.month);
+    if(doc.broken) return { value: null, added: 0, broken: true };
+    var have = Object.create(null);
+    doc.entries.forEach(function(e){ if(e.eid) have[e.eid] = 1; });
+    var fresh = [];
+    (Array.isArray(add) ? add : [add]).forEach(function(e){
+      if(!e || typeof e !== 'object' || !e.eid || have[e.eid]) return;
+      have[e.eid] = 1; fresh.push(e);
+    });
+    if(!fresh.length) return { value: null, added: 0, broken: false };
+    var all = doc.entries.concat(fresh).map(function(e, i){ return [e, i]; }).sort(function(x, y){
+      var a = String(x[0].at || ''), b = String(y[0].at || '');
+      return a < b ? -1 : a > b ? 1 : x[1] - y[1];
+    }).map(function(p){ return p[0]; });
+    var dropped = 0, trimmed = 0;
+    while(all.length > maxN){ all.shift(); dropped++; }
+    var len = function(e){ return JSON.stringify(e).length + 1; };
+    var size = JSON.stringify(all).length;
+    for(var i = 0; size > maxC && i < all.length; i++){
+      var e = all[i];
+      if(e.trimmed || (e.before == null && e.after == null)) continue;
+      var t = {}; Object.keys(e).forEach(function(k){ t[k] = e[k]; });
+      t.before = null; t.after = null; t.trimmed = true;
+      size -= len(e) - len(t); all[i] = t; trimmed++;
+    }
+    while(size > maxC && all.length > 1){ size -= len(all.shift()); dropped++; }
+    return { value: JSON.stringify({ v: 1, month: doc.month || opts.month || null, entries: all, dropped: doc.dropped + dropped, trimmed: doc.trimmed + trimmed }),
+      added: fresh.length, broken: false };
+  }
+  function auditGroupOf(action){ var p = String(action || '').split('.')[0]; return Object.prototype.hasOwnProperty.call(AUDIT_GROUPS, p) ? AUDIT_GROUPS[p] : 'other'; }
+  // What one person may see, filtered and newest first. A rep sees her own
+  // entries only, whatever filter is asked for; a supervisor sees everyone's
+  // and may narrow by person (opts.by). opts.group: an AUDIT_GROUPS value;
+  // opts.failed: only what did not land. The same eid twice (a phone's queued
+  // copy and the cloud's) shows once — the first given wins.
+  function auditView(entries, opts){
+    opts = opts || {};
+    var viewer = opts.viewer || {}, sup = viewer.role === 'supervisor';
+    var seen = Object.create(null);
+    var list = (Array.isArray(entries) ? entries : []).filter(function(e){
+      if(!e || typeof e !== 'object') return false;
+      if(e.eid){ if(seen[e.eid]) return false; seen[e.eid] = 1; }
+      if(!sup) return !!viewer.name && e.by === viewer.name;
+      return !opts.by || opts.by === 'all' || e.by === opts.by;
+    });
+    if(opts.group && opts.group !== 'all') list = list.filter(function(e){ return auditGroupOf(e.action) === opts.group; });
+    if(opts.failed) list = list.filter(function(e){ return e.ok !== true; });
+    return list.map(function(e, i){ return [e, i]; }).sort(function(x, y){
+      var a = String(x[0].at || ''), b = String(y[0].at || '');
+      return a < b ? 1 : a > b ? -1 : y[1] - x[1];
+    }).map(function(p){ return p[0]; });
+  }
+  // Each changed field of an entry, in the order written: [{ field, from, to }]
+  // (from: the value before — undefined for a record created; to: after —
+  // undefined for a record removed).
+  function auditChanges(e){
+    var obj = function(x){ return x && typeof x === 'object' && !Array.isArray(x) ? x : null; };
+    var b = obj(e && e.before), a = obj(e && e.after), keys = [];
+    [a, b].forEach(function(o){ if(o) Object.keys(o).forEach(function(k){ if(keys.indexOf(k) < 0) keys.push(k); }); });
+    return keys.map(function(k){
+      return { field: k, from: b && Object.prototype.hasOwnProperty.call(b, k) ? b[k] : undefined, to: a && Object.prototype.hasOwnProperty.call(a, k) ? a[k] : undefined };
+    });
+  }
+  // A kept value in plain words (data stays as typed; Yes / No are translated by the app).
+  function auditText(v){
+    if(v === undefined || v === null || v === '') return '—';
+    if(v === true) return 'Yes';
+    if(v === false) return 'No';
+    if(typeof v === 'number') return String(v);
+    if(Array.isArray(v)) return v.length ? v.map(auditText).join(', ') : '—';
+    if(typeof v === 'object'){ var ks = Object.keys(v); return ks.length ? ks.map(function(k){ return k + ': ' + auditText(v[k]); }).join('; ') : '—'; }
+    return String(v);
+  }
+  // The ERP account-link log (erpMapLog, newest first: { n, f, t, fc, tc, by,
+  // at (ms) }) read as change-log entries of one local month — bridged, so a
+  // link change is written once, in its own log, and shown in both places.
+  function auditFromErpMapLog(list, month){
+    var side = function(v, c){ return v == null ? null : (v === '@channel' || v === '@ignore') ? v : String(c || v); };
+    var out = [];
+    (Array.isArray(list) ? list : []).forEach(function(x){
+      if(!x || typeof x !== 'object' || !isFinite(+x.at) || +x.at <= 0) return;
+      var d = new Date(+x.at);
+      if(month && localDateStr(d).slice(0, 7) !== month) return;
+      out.push({ eid: 'erpMapLog:' + (+x.at) + ':' + String(x.n == null ? '' : x.n).slice(0, 40), at: d.toISOString(), by: x.by == null ? null : String(x.by),
+        role: 'supervisor', action: 'erpLink.change', key: 'erpMap', id: x.n == null ? null : String(x.n), label: x.n == null ? null : String(x.n),
+        before: { link: side(x.f, x.fc) }, after: { link: side(x.t, x.tc) }, reason: null, ok: true, res: 'saved', src: 'erpMapLog' });
+    });
+    return out;
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
@@ -5613,6 +5900,8 @@
     daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
-    productMovement, pmNormName
+    productMovement, pmNormName,
+    AUDIT_PREFIX, AUDIT_LIMITS, AUDIT_ACTIONS, AUDIT_GROUP_LABELS, AUDIT_RESULTS, AUDIT_FIELDS,
+    auditSummarize, auditDiff, auditEntry, auditDocOf, auditAppend, auditGroupOf, auditView, auditChanges, auditText, auditFromErpMapLog
   };
 });

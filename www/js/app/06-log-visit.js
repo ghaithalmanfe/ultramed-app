@@ -471,6 +471,7 @@ async function saveVisit(){
   const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
   const joint = jointRep;
   if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ window._lastVisitSaveAt = 0; showToast('Choose which rep you are logging for'); return; }
+  let newClinic = null; // a customer added from this form (the change log records it)
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
     if(!name){ window._lastVisitSaveAt = 0; showToast('Enter a clinic name'); return; }
@@ -479,11 +480,12 @@ async function saveVisit(){
     const clsEl = document.querySelector('#newClinicClsChips .chip.on');
     const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
     clinicId = uid();
-    clinics.push(normalizeClinic({id:clinicId, name, rep,
+    newClinic = normalizeClinic({id:clinicId, name, rep,
       cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'',
       account: acctEl?acctEl.dataset.acct:null, isNew:true, addedOn:todayStr(),
       contact: document.getElementById('newClinicContact').value.trim(),
-      phone: document.getElementById('newClinicPhone').value.trim()}));
+      phone: document.getElementById('newClinicPhone').value.trim()});
+    clinics.push(newClinic);
   }
   if(!clinicId){ window._lastVisitSaveAt = 0; showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be
@@ -537,7 +539,10 @@ async function saveVisit(){
   // This save's own outcome, read the moment its visits write settles: the
   // offline queue may send visits again while the follow-up step runs, and
   // that later save is not this one (persistFor / sentSince, 04).
-  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), persistTold('clinics')]);
+  // the change log: this save's own outcome, recorded now, never waited for
+  auditRecord({ action: auditVisitAction(visit, 'add'), key: 'visits', id: visit.id, label: auditVisitLabel(visit), after: auditVisitFields(visit), result: vs });
+  if(newClinic) auditRecord({ action: 'clinic.add', key: 'clinics', id: newClinic.id, label: newClinic.name, after: auditClinicFields(newClinic), result: cs });
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
   if(navigator.vibrate) navigator.vibrate(12); // a small physical "saved" cue in the field
   const outcome = vs.outcome;
