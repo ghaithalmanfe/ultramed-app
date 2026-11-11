@@ -1091,7 +1091,29 @@ function withTimeout(pr, ms){
 function mirrorSave(key, str){ try{ localStorage.setItem('um_mirror:'+key, str); return true; }catch(e){ return false; } }
 function mirrorGet(key){ try{ return localStorage.getItem('um_mirror:'+key); }catch(e){ return null; } }
 function outboxList(){ try{ return JSON.parse(localStorage.getItem('um_outbox')||'[]'); }catch(e){ return []; } }
-function outboxWrite(list){ try{ localStorage.setItem('um_outbox', JSON.stringify(list)); }catch(e){} updateSyncBadge(); }
+// When each queued key was first queued (v121: the alerts center says how long
+// changes have waited): a key keeps its time until it leaves the outbox.
+const OUTBOX_SINCE = 'um_outboxSince';
+function outboxSinceMap(){ try{ const m = JSON.parse(localStorage.getItem(OUTBOX_SINCE)||'{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }catch(e){ return {}; } }
+function outboxWrite(list){
+  try{
+    localStorage.setItem('um_outbox', JSON.stringify(list));
+    const since = outboxSinceMap(), next = {}, now = Date.now();
+    list.forEach(k => { next[k] = since[k] > 0 ? since[k] : now; });
+    localStorage.setItem(OUTBOX_SINCE, JSON.stringify(next));
+  }catch(e){}
+  updateSyncBadge();
+}
+// [{key, since}] — a key queued before v121 has no time yet: it is stamped the
+// first time it is read here ("waiting since at least then").
+function outboxWaiting(){
+  const list = outboxList(), since = outboxSinceMap(), now = Date.now();
+  if(!Array.isArray(list)) return [];
+  let stamped = false;
+  const out = list.filter(k => typeof k === 'string' && k).map(k => { if(!(since[k] > 0)){ since[k] = now; stamped = true; } return { key: k, since: since[k] }; });
+  if(stamped){ try{ localStorage.setItem(OUTBOX_SINCE, JSON.stringify(since)); }catch(e){} }
+  return out;
+}
 function outboxAdd(key){ const l = outboxList(); if(!l.includes(key)){ l.push(key); outboxWrite(l); } }
 function outboxRemove(key){ outboxWrite(outboxList().filter(k=>k!==key)); }
 function outboxHas(key){ return outboxList().includes(key); }
