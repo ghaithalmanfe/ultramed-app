@@ -1370,8 +1370,11 @@ function openExport(){
       <textarea class="export-textarea" id="tasksExportText" readonly></textarea>
     </div>
 
-    ${currentUser.role==='supervisor'?`<div class="section-title" style="margin-top:4px;">Automatic backups</div>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">A snapshot of everything is saved automatically once a day. If data ever looks wrong, you can restore an earlier day here.</p>
+    ${currentUser.role==='supervisor'?`<div class="section-title" style="margin-top:4px;">Full backup to this device</div>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">The daily backups below stay inside the same database as the data and keep only part of it. This takes everything — clinics, doctors, visits, sales files, targets, team, settings — in one file you keep outside the app.</p>
+    <button class="btn" style="margin:6px 0 14px;" onclick="openFullBackup()">💾 <span>Full backup — count and download everything</span></button>
+    <div class="section-title" style="margin-top:4px;">Automatic backups</div>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">Once a day a snapshot of the clinics, products, tasks and this month's visits is saved automatically, inside the same database. If those ever look wrong, you can restore an earlier day here.</p>
     <button class="btn" style="margin:6px 0 10px;" onclick="openClinicRecovery()">🔎 <span>Find missing clinics — brings back clinics only</span></button>
     <div id="backupList"><div style="color:var(--muted); font-size:13px;">Loading backups...</div></div>`:''}
   `);
@@ -1420,6 +1423,110 @@ async function renderBackupsList(){
   }catch(e){
     el.innerHTML = `<div style="color:var(--muted); font-size:13px;">Couldn't load backups right now.</div>`;
   }
+}
+// ---- Full backup to this device (v119, supervisor) ----
+// The daily backups (snap_*) sit in the same database as the data and keep
+// only part of it (clinics, products, tasks, this month's visits, the list of
+// sales files): they do not survive the loss of the project itself, and the
+// team list, targets, account links, sales lines, older months' visits… are
+// not in them at all. This reads EVERY cloud document except those copies,
+// straight from the server and writing nothing anywhere, shows per data set
+// what the cloud holds (UMCore.cloudInventory) and hands over one file
+// (UMCore.fullBackupFile) to keep outside the app. A read that fails offers
+// no file: an incomplete read is never handed over as a backup.
+let _fullBackup = null, _fullBackupRun = 0;
+const BK_UNIT_AR = { visits: 'زيارة', clinics: 'عيادة', doctors: 'طبيب', tasks: 'مهمة', entries: 'سجل', plans: 'خطة', files: 'ملف',
+  accounts: 'حساب', people: 'شخص', products: 'منتج', types: 'نوع', guides: 'دليل', notes: 'ملاحظة', items: 'عنصر',
+  deletes: 'عملية حذف', photos: 'صورة', messages: 'رسالة', memories: 'ذكرى' };
+const BK_DAILY = { yes: 'In the daily backup', month: 'Daily backup: this month only', list: 'Daily backup: the list of files only, not their lines', no: 'Not in the daily backup' };
+function bkUnit(u){ return uiLang === 'ar' ? (BK_UNIT_AR[u] || u) : u; }
+function bkSize(b){ return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+function bkNum(n){ return Number(n).toLocaleString('en-US'); }
+// {docs: {key: {value, updated}}, failed: [keys not read]} — every cloud
+// document except the daily backups. The cloud adapter reads them in one go
+// (storage.dump); any other store is listed, then read key by key.
+async function readCloudForBackup(){
+  const st = window.storage;
+  if(typeof st.dump === 'function') return await withTimeout(st.dump({ skipPrefix: 'snap_' }), 180000);
+  const list = await withTimeout(st.list('', true), 60000);
+  const keys = ((list && list.keys) || []).filter(k => !k.startsWith('snap_'));
+  const docs = Object.create(null), failed = [];
+  for(const k of keys){
+    try{
+      const r = await withTimeout(st.get(k, true, { server: true }), 30000);
+      if(r && r.value != null) docs[k] = { value: r.value, updated: null };
+      else failed.push(k); // listed a moment ago, not readable now: not a complete picture
+    }catch(e){ failed.push(k); }
+  }
+  return { docs, failed };
+}
+function fullBackupLineHTML(s){
+  const other = s.id === 'other', x = s.extra || {};
+  const count = s.records == null ? '' : `<b>${bkNum(s.records)}</b>${s.unit ? ` <span data-notr>${esc(bkUnit(s.unit))}</span>` : ''}`;
+  const facts = [];
+  if(s.inside) facts.push('<span>Kept inside the clinics document</span>');
+  else facts.push(`<span>Documents:</span> ${bkNum(s.docs)}`, `<span>Size:</span> <span data-notr>${bkSize(s.bytes)}</span>`);
+  if(s.id === 'visits' && x.archivedMonths) facts.push(`<span>Past months:</span> ${bkNum(x.archivedMonths)}`);
+  if(s.id === 'targets' && x.pastMonths) facts.push(`<span>Past months kept:</span> ${bkNum(x.pastMonths)}`);
+  if(s.id === 'erpSales' && x.lines != null) facts.push(`<span>Invoice lines:</span> ${bkNum(x.lines)}`);
+  if(s.id === 'erpSales' && x.staleChunks) facts.push(`<span>Earlier versions kept for a week:</span> ${bkNum(x.staleChunks)}`);
+  if(s.updated) facts.push(`<span>Last change:</span> ${localDateStr(new Date(s.updated))}`);
+  const warn = [];
+  if(x.missingChunks) warn.push(`⚠️ <span>Parts of a sales file are missing from the cloud:</span> ${bkNum(x.missingChunks)}`);
+  if(s.unreadable && s.unreadable.length) warn.push(`⚠️ <span>Could not be read as data — kept in the file exactly as stored:</span> <span data-notr dir="auto">${s.unreadable.map(esc).join(', ')}</span>`);
+  return `<div class="card" data-set="${esc(other ? 'other:' + s.key : s.id)}" style="padding:9px 12px; margin-bottom:6px;">
+    <div class="row-between" style="gap:8px;">${other
+      ? `<span style="font-weight:700;"><span data-notr dir="auto">${esc(s.key)}</span> <span style="font-weight:400; color:var(--muted); font-size:11.5px;">(<span>other document</span>)</span></span>`
+      : `<span style="font-weight:700;">${esc(s.label)}</span>`}<span data-count style="white-space:nowrap;">${count}</span></div>
+    <div style="color:var(--muted); font-size:11.5px; margin-top:2px;">${facts.join(' · ')}</div>
+    <div style="font-size:11.5px; margin-top:2px;"><span>${BK_DAILY[s.daily] || BK_DAILY.no}</span></div>
+    ${warn.map(w => `<div style="color:#B3261E; font-size:11.5px; margin-top:2px;">${w}</div>`).join('')}
+  </div>`;
+}
+async function openFullBackup(){
+  if(!currentUser || currentUser.role !== 'supervisor') return;
+  const run = ++_fullBackupRun;
+  _fullBackup = null;
+  showModal(`<h3 style="margin-top:0;">💾 <span>Full backup</span></h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;"><span>This screen only reads — nothing in the cloud changes.</span></p>
+    <div id="fullBackupBody" style="font-size:13px;"><span>Reading every record in the cloud…</span></div>`);
+  let res = null, err = null;
+  try{ res = await readCloudForBackup(); }catch(e){ err = e; console.error('full backup: read', e); }
+  const body = document.getElementById('fullBackupBody');
+  if(run !== _fullBackupRun || !body) return; // opened again, or another sheet took its place
+  const docs = (res && res.docs) || {};
+  const failed = (res && res.failed) || [];
+  const n = Object.keys(docs).length;
+  if(err || failed.length || !n){
+    body.innerHTML = `<div class="card" data-backup-failed style="margin-bottom:10px;">
+      <div style="font-weight:700;">⚠️ <span>No backup file: the cloud could not be read completely.</span></div>
+      ${failed.length ? `<div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Documents not read:</span> ${bkNum(failed.length)}</div>` : ''}
+      ${!err && !failed.length ? '<div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>The cloud returned no documents.</span></div>' : ''}
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Check the connection and try again. Nothing was changed.</span></div>
+    </div>
+    <button class="btn" onclick="openFullBackup()"><span>Try again</span></button>`;
+    return;
+  }
+  const inv = UMCore.cloudInventory(docs);
+  const file = UMCore.fullBackupFile(docs, { app: APP_REV, project: FIREBASE_ENABLED ? FIREBASE_CONFIG.projectId : 'this device only',
+    takenAt: new Date().toISOString(), takenBy: currentUser.name });
+  const text = JSON.stringify(file);
+  _fullBackup = { name: 'ultramed-full-backup-' + todayStr() + '.json', text };
+  body.innerHTML = `
+    <div class="card" data-backup-summary style="margin-bottom:10px;">
+      <div><span>Documents read:</span> <b>${bkNum(inv.docs)}</b> · <span>File size:</span> <b data-notr>${bkSize(new Blob([text]).size)}</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Not in the file: the daily backups — copies of the same data that stay in the cloud (listed under Automatic backups).</span></div>
+    </div>
+    <button class="btn" data-backup-download onclick="downloadFullBackup()">⬇️ <span>Download the backup file</span></button>
+    <p style="color:var(--muted); font-size:12px; margin:4px 0 12px;"><span>Keep the file outside the app — Google Drive, e-mail or a computer. It holds customer, sales and team data: do not share it.</span></p>
+    <div class="section-title" style="margin-top:4px;"><span>What the cloud holds</span></div>
+    ${inv.sets.map(fullBackupLineHTML).join('')}`;
+}
+function downloadFullBackup(){
+  const b = _fullBackup;
+  if(!b){ showToast('Read the cloud again before downloading'); return; }
+  const ok = tryDownload(b.name, b.text, 'application/json');
+  showToast(ok ? 'Download started — keep the file outside the app' : 'The file could not be prepared on this device — try again');
 }
 // ---- Missing clinics, from the daily backups (v116) ----
 // A clinic a backup holds and the live list does not: listed with its owner

@@ -24,8 +24,12 @@ phones, connect it to a free Firebase project:
    Choose a region close to Kuwait (e.g. `europe-west3` or `me-central1` if offered),
    and start in **production mode**.
 4. In the left sidebar, click **Build → Authentication → Get started**, then enable
-   the **Anonymous** sign-in provider (under "Sign-in method"). This lets the app
-   identify devices without you having to build a login/password system.
+   the **Email/Password** sign-in provider (under "Sign-in method") — that is how the
+   team signs in. Keep **Anonymous** off. Add each person's login under
+   **Authentication → Users → Add user** (the app never creates logins itself), then
+   close self sign-up: **Authentication → Settings → User actions → untick "Enable
+   create (sign-up)"**. Without that, anyone who reads the app's public config could
+   create a login and, with the rules below, read and change all the data.
 5. Go to **Project settings** (gear icon) → scroll to **Your apps** → click the
    **</>** (web) icon → register an app (nickname anything, e.g. "field ops web").
    Firebase will show you a config object like:
@@ -52,9 +56,15 @@ phones, connect it to a free Firebase project:
      }
    }
    ```
-   This lets any signed-in (anonymous) app user read/write the shared data, and
-   blocks everyone else. It's not bank-grade security, but it's reasonable for a
-   small internal team tool with no payment or highly sensitive data in it.
+   This lets any signed-in user read/write the shared data and blocks everyone else —
+   so it is only as safe as step 4: Anonymous off and self sign-up closed, so the
+   only logins are the ones you added. The data includes customers, sales and the
+   team's details; treat it as confidential. Stronger: also require a verified
+   company address —
+   `allow read, write: if request.auth != null && request.auth.token.email_verified == true && request.auth.token.email.matches('.*@ultramed-kw[.]com$');`
+   Logins added in the console start unverified, so switch this on only after every
+   login (the daily e-mail one included) has verified its address — otherwise the
+   whole team is locked out.
 8. Publish the rules, save `index.html`, and reload the app. Console should log
    "UltraMed Field Ops: syncing via Firebase Firestore" instead of the local-only
    message.
@@ -64,19 +74,11 @@ that opens that URL — and the Android app, once rebuilt — shares the same da
 
 ## 2. Host it online (so it's reachable "from anywhere")
 
-Easiest free option, since you already have a Firebase project: **Firebase Hosting**.
-Once Node.js is set up (already installed on this machine):
-
-```bash
-npm install -g firebase-tools
-firebase login
-firebase init hosting   # choose the existing project, public dir = www, single-page app = No
-firebase deploy
-```
-
-This gives you a URL like `https://ultramed-field-ops.web.app` that works from any
-phone or laptop, with a free SSL certificate (required for install prompts / service
-workers to work — they don't work over plain `http://` or `file://`).
+The app is published by **GitHub Pages**: every push to `main` runs the tests and
+`.github/workflows/pages.yml` publishes the built site (`scripts/build.js`, www → dist)
+to https://ghaithalmanfe.github.io/ultramed-app/ — https, so install prompts and the
+service worker work. Firebase Hosting is not used. The site is public: never put
+sales files or other real data in `www/` (the build refuses spreadsheets and ERP lines).
 
 ## 3. Installable app (PWA) — works today, no store needed
 
@@ -145,7 +147,7 @@ A run that fails is marked red on GitHub, which e-mails the repository owner.
 
 | Secret | Value |
 |---|---|
-| `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD` | an app login that may read the data (the supervisor's, or a dedicated read-only user created in Firebase Authentication) |
+| `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD` | an app login that may read the data (the supervisor's, or a dedicated one added in Firebase Authentication → Users; the run also writes its own `mailLog`) |
 | `RESEND_API_KEY` | API key from [resend.com](https://resend.com) (free tier: 3,000 e-mails/month) |
 | `MAIL_FROM` | e.g. `UltraMed Field Ops <reports@ultramed-kw.com>` — the domain must be verified in Resend (add the SPF/DKIM DNS records Resend shows) |
 | `MAIL_ALL_DAYS` (a *variable*, not a secret) | optional `1` to also send on Fridays/Saturdays |
