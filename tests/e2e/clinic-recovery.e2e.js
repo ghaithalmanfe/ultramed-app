@@ -176,6 +176,71 @@ function seed(){
     w2.clinicId === 'rs' && !live3.some(c => c.id === 'p2'), { w2: w2.clinicId, p2: live3.some(c => c.id === 'p2') });
   const after3 = await page.evaluate(() => { closeModal(); renderClinics(); return { card: (document.getElementById('namelessCard') || {}).innerText || '', list: [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()) }; });
   check('nameless: nothing left without a name; Renova\'s list shows Smile Point and Hadi', !after3.card && after3.list.some(n => /Smile Point Clinic/.test(n)) && after3.list.some(n => /Hadi Clinic/.test(n)), after3);
+  // ---- names the app recorded (v120): a follow-up task names a nameless clinic; doctors without a name ----
+  const MS = 'Mariam Zohair', RS = 'Renova Ayman', RMAP = { [MS]: M, [RS]: R };
+  const erow = (d, doc, cust, net, sm) => [d, doc, 0, 'Intensiv Ortho-Strips', 1, net, net, 0, sm, 'Intensiv', cust, 'Clinics', 0, ''];
+  const EROWS = [erow('2026-09-14', 'SINV1', 'Office', 60, MS), erow('2026-10-02', 'SINV2', 'Cedar Hospital', 80, RS)];
+  const seedV120 = () => {
+    seed();
+    const sp2 = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: RMAP, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true },
+      periods: [{ id: 'so', from: '2026-09-01', to: '2026-10-15', net: 140, rowCount: EROWS.length, importedAt: '2026-10-16T08:00:00.000Z', repMap: RMAP, rev: 1, rows: EROWS }] });
+    Object.keys(cloud).filter(k => /^erp/.test(k)).forEach(k => { delete cloud[k]; });
+    cloud.erpSales = JSON.stringify(sp2.index); Object.keys(sp2.docs).forEach(k => { cloud[k] = JSON.stringify(sp2.docs[k]); });
+    cloud.clinics = JSON.stringify([M1, G1, Object.assign(C('rs', 'Al Seef Hospital', R, 'A'), { doctors: [D('dK', 'Dr. Khaled')] }), C('r32', '32 Dental', R), PH('q1'), PH('q2'), PH('q3'), PH('q4')].concat(FILL));
+    cloud.visits = JSON.stringify([
+      { id: 'x1', clinicId: 'q1', rep: R, date: '2026-08-17' }, { id: 'x2', clinicId: 'q2', rep: R, date: '2026-08-09' },
+      { id: 'x3', clinicId: 'q3', rep: R, date: '2026-08-12' }, { id: 'x4', clinicId: 'q4', rep: R, date: '2026-08-23', notes: 'Finalize orders' },
+      { id: 'x5', clinicId: 'rs', rep: R, date: '2026-08-20', doctorIds: ['dL1'], doctorId: 'dL1', notes: 'Asked for samples' },
+      { id: 'x6', clinicId: 'rs', rep: R, date: '2026-09-03', doctorIds: ['dL2'], doctorId: 'dL2' }]);
+    const FU = (id, cid, name, created) => ({ id, text: 'Follow up: ' + name, done: false, created, rep: R, dueDate: '2026-09-01', clinicId: cid, kind: 'followup' });
+    cloud.tasks = JSON.stringify([FU('t1', 'q1', 'Cedar Hospital', '2026-08-17'), FU('t2', 'q2', '32 Dental', '2026-08-09'), FU('t3', 'q3', 'Office', '2026-08-12')]);
+    cloud.dayPlans = JSON.stringify({ '2026-09-08': { [R]: [{ id: 'q2', note: '📅 Follow-up due' }] } });
+  };
+  seedV120();
+  await boot(R, 'rep');
+  await page.waitForTimeout(800);
+  const L4 = JSON.parse(cloud.clinics), q4 = id => L4.find(c => c.id === id) || null;
+  check('recorded names: Cedar Hospital is back under its own id (its invoice is Renova\'s own — no sale moves)', !!q4('q1') && q4('q1').name === 'Cedar Hospital' && q4('q1').rep === R, q4('q1'));
+  // August and September visits sit in their month's archive document once saved
+  const allV = () => Object.keys(cloud).filter(k => k === 'visits' || /^visitsArch:/.test(k)).reduce((a, k) => { const v = JSON.parse(cloud[k]); return a.concat(Array.isArray(v) ? v : ((v && v.visits) || [])); }, []);
+  const V4 = allV(), T4 = JSON.parse(cloud.tasks), DP4 = JSON.parse(cloud.dayPlans || '{}');
+  check('recorded names: "32 Dental" is already Renova\'s — its visit, task and plan entry join it, the empty record goes',
+    !q4('q2') && (V4.find(v => v.id === 'x2') || {}).clinicId === 'r32' && T4.find(t => t.id === 't2').clinicId === 'r32' && ((DP4['2026-09-08'] || {})[R] || [{}])[0].id === 'r32',
+    { q2: !!q4('q2'), x2: (V4.find(v => v.id === 'x2') || {}).clinicId, t2: T4.find(t => t.id === 't2').clinicId, plan: DP4['2026-09-08'] });
+  check('recorded names: "Office" stays without a name — Mariam\'s September invoice would then count for Renova', !!q4('q3') && /rename me/.test(q4('q3').name), q4('q3'));
+  const rl4 = JSON.parse(cloud.repairLog || '[]').find(e => e.kind === 'from-follow-up-tasks') || {};
+  check('recorded names: written to the repair log, with what waits and why', (rl4.clinics || []).map(x => x.clinicId).join() === 'q1'
+    && (rl4.merged || []).map(x => x.clinicId + '>' + x.into).join() === 'q2>r32' && (rl4.held || []).map(x => x.clinicId + ':' + x.why).join() === 'q3:sales', rl4);
+  const t4 = await page.evaluate(() => document.getElementById('toast').textContent);
+  check('recorded names: the phone says so', /2 clinics brought back/.test(t4), t4);
+  const sh4 = await page.evaluate(async () => { switchView('clinics'); setClinicMode('list'); openNamelessClinics(); await new Promise(r => setTimeout(r, 50)); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
+  check('card: "Office" offered with what it would move; the clinic with no task asks for a name', /The app recorded its name: Office/.test(sh4) && /1 sales lines would then count for another person: Mariam → Renova 1/.test(sh4)
+    && /Use this name/.test(sh4) && /Finalize orders/.test(sh4), sh4.slice(0, 500));
+  const det4 = await page.evaluate(async () => { closeModal(); openClinicDetail('rs'); await new Promise(r => setTimeout(r, 50)); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
+  check('lost doctors: Al Seef says two doctors from earlier visits have no name', /2 doctors from earlier visits have no name/.test(det4), det4.slice(0, 300));
+  const card4 = await page.evaluate(() => { closeModal(); renderClinics(); return ((document.getElementById('namelessCard') || {}).innerText || '').replace(/\s+/g, ' '); });
+  check('lost doctors: the clinic list says so too', /2 doctors from earlier visits have no name · 1 clinics/.test(card4), card4);
+  const sh5 = await page.evaluate(async () => { openLostDoctors('rs'); await new Promise(r => setTimeout(r, 50)); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
+  check('lost doctors: the sheet shows what each one\'s visits say', /Doctors without a name/.test(sh5) && /Asked for samples/.test(sh5), sh5.slice(0, 300));
+  await page.evaluate(async () => { await nameLostDoctor('rs', 'dL1', 'Dr. Lina', 'rs'); await new Promise(r => setTimeout(r, 250)); await nameLostDoctor('rs', 'dL2', 'dr khaled', 'rs'); await new Promise(r => setTimeout(r, 300)); });
+  const seef = JSON.parse(cloud.clinics).find(c => c.id === 'rs') || {}, x6 = allV().find(v => v.id === 'x6') || {};
+  check('lost doctors: a name brings the doctor back with the same id', (seef.doctors || []).some(d => d.id === 'dL1' && d.name === 'Dr. Lina'), seef.doctors);
+  check('lost doctors: the name of a doctor already listed moves the visit to that record — no second Dr. Khaled',
+    (x6.doctorIds || []).join() === 'dK' && x6.doctorId === 'dK' && (seef.doctors || []).length === 2, { x6, docs: (seef.doctors || []).map(d => d.id) });
+  const left4 = await page.evaluate(() => document.getElementById('modalInner').innerText.replace(/\s+/g, ' '));
+  check('lost doctors: nothing left to name at Al Seef', /Nothing left to name/.test(left4), left4.slice(0, 200));
+  // Arabic
+  seedV120();
+  await boot(R, 'rep', { ultramed_lang: 'ar' });
+  await page.waitForTimeout(800);
+  const ar4 = await page.evaluate(async () => {
+    switchView('clinics'); setClinicMode('list'); await new Promise(r => setTimeout(r, 80)); const card = ((document.getElementById('namelessCard') || {}).innerText || '');
+    openNamelessClinics(); await new Promise(r => setTimeout(r, 80)); const nl = document.getElementById('modalInner').innerText;
+    closeModal(); openLostDoctors('rs'); await new Promise(r => setTimeout(r, 80)); const ld = document.getElementById('modalInner').innerText;
+    return (card + ' | ' + nl + ' | ' + ld).replace(/\s+/g, ' ');
+  });
+  check('Arabic: the cards and sheets speak Arabic', /طبيب من زيارات سابقة بدون اسم/.test(ar4) && /الاسم الذي سجّله التطبيق لها/.test(ar4) && /استخدم هذا الاسم/.test(ar4)
+    && /سطر مبيعات سيُحسب عندها لشخص آخر/.test(ar4) && /أطباء بدون اسم/.test(ar4), ar4.slice(0, 600));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
