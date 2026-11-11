@@ -227,6 +227,13 @@ function pickDoctorSeen(id){
   const c = clinics.find(x=>x.id===selectedClinicId);
   if(c) renderDoctorPick(c);
 }
+// Who was met, by name as well as by record id (v119): a doctor record that
+// is later lost can be put back from the visits that met them.
+function visitDoctorNames(clinicId, ids){
+  const c = clinics.find(x => x && x.id === clinicId), out = {};
+  (ids || []).forEach(id => { const d = c && (c.doctors || []).find(x => x && x.id === id); if(d && d.name) out[id] = d.name; });
+  return Object.keys(out).length ? out : null;
+}
 function openQuickAddDoctor(clinicId){
   showModal(`
     <h3 style="margin-top:0;">Add doctor</h3>
@@ -508,6 +515,7 @@ async function saveVisit(){
   const allItems = savedOrders.flatMap(o=>o.items);
   const visit = {id:uid(), clinicId, rep, withRep: (joint && joint!==rep) ? joint : null, date:todayStr(), ts:Date.now(), products: selectedProducts.slice(), orderTaken: savedOrders.length>0, orders: savedOrders, orderItems: allItems, orderGross: Math.round(grossTotal*100)/100, orderDiscount: Math.round(discountTotal*100)/100, orderTotal: Math.round(orderTotal*100)/100, doctorId: selectedDoctorIds[0]||null, doctorIds: selectedDoctorIds.slice(), nextFollowUp: followUp, notes: document.getElementById('visitNotes').value.trim(),
     noOrderReason: (savedOrders.length===0) ? (noOrderReason || document.getElementById('noOrderOther').value.trim() || null) : null};
+  const metNames = visitDoctorNames(clinicId, visit.doctorIds); if(metNames) visit.doctorNames = metNames; // v119: a lost doctor record can come back from its visits
   if(visitMood) visit.mood = visitMood;                // the doctor's satisfaction, as the rep read it (optional)
   if(visitPhotos.length){
     const ids=[];

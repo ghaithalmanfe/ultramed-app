@@ -553,7 +553,8 @@ async function saveEditVisit(visitId){
     v.editHistory.push(was);
   }
   if(jointEl) v.withRep = newJoint===v.rep ? null : newJoint;
-  if(docsEl){ v.doctorIds = window._editDocIds.slice(); v.doctorId = v.doctorIds[0] || null; }
+  if(docsEl){ v.doctorIds = window._editDocIds.slice(); v.doctorId = v.doctorIds[0] || null;
+    const metNames = visitDoctorNames(v.clinicId, v.doctorIds); if(metNames) v.doctorNames = Object.assign({}, v.doctorNames || {}, metNames); }
   if(rxChanged){ if(newRx.length) v.rx = newRx; else delete v.rx; } // never an empty list (absent = none)
   v.date = newDate;
   v.nextFollowUp = newFollow;
