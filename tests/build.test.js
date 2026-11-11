@@ -24,3 +24,32 @@ test('the published build is one self-contained index.html holding every app fil
   assert.match(sw, new RegExp("const CACHE = 'ultramed-field-ops-" + rev + "'"));
   fs.rmSync(out, { recursive: true, force: true });
 });
+
+// v119: the site is public, so real sales data must never ship with it. Until
+// v118 the August ERP export (customers, invoices, amounts) sat in www/ and was
+// downloadable from the published site. A spreadsheet, or a JSON file holding
+// ERP lines, anywhere in the published folder now stops the build.
+test('the published folder carries no sales data', () => {
+  const { salesDataFiles } = require('../scripts/build.js');
+  assert.deepEqual(salesDataFiles(path.join(ROOT, 'www')), [], 'sales data in www/ would be published to everyone');
+});
+test('the build refuses a sales file put in the published folder', () => {
+  const { salesDataFiles } = require('../scripts/build.js');
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), 'um-src-'));
+  fs.cpSync(path.join(ROOT, 'www'), src, { recursive: true });
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'um-out-'));
+  // the app's packed ERP line: [date, invoice, type, product, qty, gross, net, return, salesman, brand, customer, class, disc]
+  const line = ['2026-08-01', 'SINV001', 0, 'Brush', 1, 2, 2, 0, 'A Salesman', 'Brand', 'Some Customer', 'Clinics', 0];
+  fs.writeFileSync(path.join(src, 'seed.json'), JSON.stringify({ month: '2026-08', rows: [line] }));
+  fs.mkdirSync(path.join(src, 'data'));
+  fs.writeFileSync(path.join(src, 'data', 'lines.json'), JSON.stringify([{ date: '2026-08-01', customer: 'Some Customer', net: 2 }]));
+  fs.writeFileSync(path.join(src, 'data', 'Ultramed_Sales3.xlsx'), 'x');
+  fs.writeFileSync(path.join(src, 'data', 'export.csv'), 'a,b\n1,2\n');
+  assert.deepEqual(salesDataFiles(src).sort(), ['data/Ultramed_Sales3.xlsx', 'data/export.csv', 'data/lines.json', 'seed.json']);
+  let msg = '';
+  try{ execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'build.js'), src, out], { stdio: 'pipe' }); }
+  catch(e){ msg = String(e.stderr || ''); }
+  assert.match(msg, /build failed: sales data must not be published: .*seed\.json/);
+  assert.equal(fs.existsSync(path.join(out, 'index.html')), false, 'nothing is built');
+  fs.rmSync(src, { recursive: true, force: true }); fs.rmSync(out, { recursive: true, force: true });
+});

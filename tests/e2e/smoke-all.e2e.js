@@ -19,7 +19,7 @@ const api = {
 };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info).slice(0,500):'')); if(!ok) failed++; }
-const SEED = JSON.parse(fs.readFileSync(WWW + '/sales-seed-aug26.json', 'utf8'));
+const SEED = require('./fixtures/august-seed.js'); // synthetic, same shape as the August seed — nothing real (v119)
 
 (async()=>{
   await new Promise(r=>server.listen(PORT,r));
