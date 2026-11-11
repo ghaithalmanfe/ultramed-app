@@ -442,19 +442,111 @@ function renderNamelessCard(){
   const el = document.getElementById('namelessCard');
   if(!el) return;
   const n = namelessMine().length;
-  el.innerHTML = n ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openNamelessClinics()">
+  const lost = UMCore.lostDoctors(clinics.filter(canNameForClinic), visits, tombSet('doctors'));
+  const nd = Object.keys(lost).reduce((s, k) => s + lost[k].length, 0), nc = Object.keys(lost).length;
+  el.innerHTML = (n ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openNamelessClinics()">
       <div style="font-weight:700; font-size:13.5px;">⚠️ ${n} <span>clinics from August have no name</span></div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Their visits are kept. Tap to name them — they show again in the list.</span></div>
+    </div>` : '') + (nd ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openLostDoctors('')">
+      <div style="font-weight:700; font-size:13.5px;">⚠️ ${nd} <span>doctors from earlier visits have no name</span> · ${nc} <span>clinics</span></div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Their visits are kept. Tap to name them.</span></div>
+    </div>` : '');
+}
+// Doctors the visits met and the clinic no longer lists (UMCore.lostDoctors):
+// most were lost in August–September, before visits kept the names of the
+// people met, and no backup or copy holds the names — the owner (or the
+// supervisor) writes the name once and the doctor is back with the same id, so
+// every visit, order and prescription of theirs joins them again.
+function canNameForClinic(c){ return !!c && !!currentUser && (currentUser.role === 'supervisor' || c.rep === currentUser.name); }
+function lostDoctorsOf(c){ return (c && UMCore.lostDoctors([c], visits, tombSet('doctors'))[c.id]) || []; }
+function lostDoctorsLine(c){
+  const n = canNameForClinic(c) ? lostDoctorsOf(c).length : 0;
+  return n ? `<div class="card clickable" style="padding:8px 12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" data-id="${esc(c.id)}" onclick="openLostDoctors(this.dataset.id)">
+      <div style="font-weight:700; font-size:13px;">⚠️ ${n} <span>doctors from earlier visits have no name</span></div>
+      <div style="font-size:12px; color:var(--muted);"><span>Their visits are kept. Tap to name them.</span></div>
     </div>` : '';
+}
+function openLostDoctors(scope){
+  const list = clinics.filter(c => canNameForClinic(c) && (!scope || c.id === scope));
+  const lost = UMCore.lostDoctors(list, visits, tombSet('doctors'));
+  const body = list.filter(c => lost[c.id]).map(c => (scope ? '' : `<div class="section-title" dir="auto" style="margin-top:14px;">${esc(c.name)}</div>`) + lost[c.id].map(e => {
+    const dates = e.visits.map(v => fmtDate(v.date)).filter((d, i, a) => a.indexOf(d) === i);
+    const notes = e.visits.map(v => v.notes).filter(Boolean).slice(0, 2);
+    return `<div class="card" style="padding:10px 12px;" data-lostdoc="${esc(e.id)}">
+      <div style="font-size:12.5px; color:var(--muted);">${e.visits.length} <span>visits</span> · ${dates.slice(0, 4).join(', ')}${dates.length > 4 ? ' …' : ''}</div>
+      ${notes.map(t => `<div dir="auto" style="font-size:12.5px; margin-top:3px;">“${esc(t.slice(0, 120))}”</div>`).join('')}
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input type="text" dir="auto" placeholder="Doctor name" style="flex:1; margin:0;">
+        <button class="chip small" data-c="${esc(c.id)}" data-d="${esc(e.id)}" data-scope="${esc(scope || '')}" onclick="nameLostDoctor(this.dataset.c, this.dataset.d, this.parentElement.querySelector('input').value, this.dataset.scope)">💾 Save</button>
+      </div>
+    </div>`;
+  }).join('')).join('');
+  showModal(`<h3 style="margin-top:0;">⚠️ <span>Doctors without a name</span></h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Your visits met them, but their names were lost (most in August–September) and no backup holds them. Write the name you remember: their visits, orders and prescriptions join it. Leave empty anyone who left or was removed on purpose.</span></p>
+    ${body || '<div class="empty"><span>Nothing left to name.</span></div>'}
+    <button class="btn secondary" style="margin-top:8px;" data-scope="${esc(scope || '')}" onclick="closeModal(); if(this.dataset.scope) openClinicDetail(this.dataset.scope); else renderClinics();">Done</button>`);
+}
+async function nameLostDoctor(clinicId, docId, raw, scope){
+  const name = String(raw || '').trim();
+  if(!name){ showToast('Enter the doctor name'); return; }
+  const c = clinics.find(x => x && x.id === clinicId);
+  if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
+  const key = UMCore.normDoctorName(name);
+  const same = key ? (c.doctors || []).find(d => d && UMCore.normDoctorName(d.name) === key) : null;
+  if(same){
+    // the same person was added again since: the visits join that record
+    const remap = Object.create(null); remap[docId] = same.id;
+    let n = 0;
+    visits.forEach(v => { if(v && v.clinicId === clinicId && UMCore.remapVisitDoctors(v, remap)) n++; });
+    const r = await persistFor('visits');
+    showToast((r.ok || sentSince('visits', r)) ? `✅ ${n} visits joined ${same.name}` : '⚠️ Saved on this device — not in the cloud yet', 4000);
+  } else {
+    c.doctors = (c.doctors || []).concat([{ id: docId, name, title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }]);
+    const r = await persistFor('clinics');
+    showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back on the clinic's list` : '⚠️ Saved on this device — not in the cloud yet', 4000);
+  }
+  renderAll();
+  openLostDoctors(scope);
+}
+// One spelling key for clinic names (case and spaces), as the nameless sheet's
+// "already in the list" check always compared them.
+function clinicNameKey(s){ return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+// A nameless record that turned out to be a clinic already listed: its visits,
+// tasks and plan entries move there and the empty record goes (the delete log
+// keeps a stale copy elsewhere from bringing it back). Memory only — the caller
+// saves. → the number of visits moved
+function repointClinic(fromId, toId){
+  let n = 0;
+  visits.forEach(v => { if(v && v.clinicId === fromId){ v.clinicId = toId; n++; } });
+  tasks.forEach(t => { if(t && t.clinicId === fromId) t.clinicId = toId; });
+  Object.keys(dayPlans || {}).forEach(d => Object.keys(dayPlans[d] || {}).forEach(r => {
+    if(!Array.isArray(dayPlans[d][r])) return;
+    dayPlans[d][r] = dayPlans[d][r].map(e => (typeof e === 'string' ? e : e && e.id) === fromId ? (typeof e === 'string' ? toId : Object.assign({}, e, { id: toId })) : e); }));
+  tomb('clinics', fromId);
+  hiddenPlaceholderClinics = hiddenPlaceholderClinics.filter(c => c && c.id !== fromId);
+  return n;
 }
 function openNamelessClinics(){
   const list = namelessMine();
+  // the name the app's own follow-up task recorded with this clinic's id; the
+  // start-up repair gives it back on its own unless a sale would then count for
+  // another person (said here) or another owner lists that name
+  const rec = UMCore.clinicNamesFromTasks(tasks, list.map(c => c.id)), erpCache = {};
   const rows = list.map(c => {
     const vs = visits.filter(v => v && v.clinicId === c.id).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const notes = vs.map(v => (v.notes || '').trim()).filter(Boolean).slice(0, 2);
+    const sug = rec[c.id], same = sug ? clinics.find(x => x && clinicNameKey(x.name) === clinicNameKey(sug)) : null;
+    const moves = sug && !same ? UMCore.erpAddClinicMoves({ erpSales, clinics, erpMap }, [Object.assign({}, c, { name: sug })], erpCache) : [];
+    const pairs = {}; moves.forEach(m => { const k = (m.from || '—') + '|' + (m.to || '—'); pairs[k] = (pairs[k] || 0) + 1; });
+    const sugHTML = sug ? `<div style="font-size:12.5px; margin-top:6px;"><span>The app recorded its name:</span> <b dir="auto">${esc(sug)}</b>
+        ${same ? `<div style="color:var(--muted); margin-top:2px;"><span>Already in the list — its visits move there</span> (<span>${esc(same.rep || '—')}</span>)</div>` : ''}
+        ${moves.length ? `<div style="color:var(--amber); margin-top:2px;">⚠️ ${moves.length} <span>sales lines would then count for another person</span>: ${Object.keys(pairs).map(k => `<span>${esc(k.split('|')[0])}</span> → <span>${esc(k.split('|')[1])}</span> ${pairs[k]}`).join(' · ')}</div>` : ''}
+        <div><button class="chip small" style="margin-top:4px;" data-id="${esc(c.id)}" data-name="${esc(sug)}" onclick="nameNamelessClinic(this.dataset.id, this.dataset.name)">✅ <span>Use this name</span></button></div>
+      </div>` : '';
     return `<div class="card" style="padding:10px 12px;" data-nameless="${esc(c.id)}">
       <div style="font-size:12.5px; color:var(--muted);">${esc(c.rep || '—')} · ${vs.length} <span>visits</span>${vs.length ? ' · ' + vs.map(v => fmtDate(v.date)).filter((d, i, a) => a.indexOf(d) === i).join(', ') : ''}</div>
       ${notes.map(t => `<div dir="auto" style="font-size:12.5px; margin-top:3px;">“${esc(t.slice(0, 120))}”</div>`).join('')}
+      ${sugHTML}
       <div style="display:flex; gap:6px; margin-top:8px;">
         <input type="text" dir="auto" placeholder="Clinic name" style="flex:1; margin:0;">
         <button class="chip small" data-id="${esc(c.id)}" onclick="nameNamelessClinic(this.dataset.id, this.parentElement.querySelector('input').value)">💾 Save</button>
@@ -471,17 +563,13 @@ async function nameNamelessClinic(id, raw){
   if(!name || isPlaceholderClinic({ name })){ showToast('Enter the clinic name'); return; }
   const h = (hiddenPlaceholderClinics || []).find(c => c && c.id === id);
   if(!h || !(currentUser.role === 'supervisor' || h.rep === currentUser.name)) return;
-  const same = clinics.find(c => c && (c.name || '').trim().toLowerCase() === name.toLowerCase());
+  const same = clinics.find(c => c && clinicNameKey(c.name) === clinicNameKey(name));
   if(same){
     // the clinic was added again since: its August visits join it, the empty record goes
     if(!await moveToBin('clinics', h, h.name)) return;
-    visits.forEach(v => { if(v && v.clinicId === id) v.clinicId = same.id; });
-    Object.keys(dayPlans || {}).forEach(d => Object.keys(dayPlans[d] || {}).forEach(r => {
-      dayPlans[d][r] = (dayPlans[d][r] || []).map(e => (typeof e === 'string' ? e : e && e.id) === id ? (typeof e === 'string' ? same.id : Object.assign({}, e, { id: same.id })) : e); }));
-    tomb('clinics', id);
-    hiddenPlaceholderClinics = hiddenPlaceholderClinics.filter(c => c && c.id !== id);
-    const r1 = await persistFor('visits'), r2 = await persistFor('clinics'); await persist('dayPlans');
-    const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2));
+    repointClinic(id, same.id);
+    const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'); await persist('dayPlans');
+    const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2)) && (r3.ok || sentSince('tasks', r3));
     showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
   } else {
     h.name = name;
@@ -589,6 +677,7 @@ function openClinicDetail(id){
     <button class="btn secondary small" onclick="saveProfileNotes('${c.id}')">Save notes</button>
 
     <div class="section-title" style="margin-top:20px;">Doctors</div>
+    ${lostDoctorsLine(c)}
     <div id="docListInModal">${renderDoctorRows(c)}</div>
     <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
     <div class="chip-row" id="newDocTitleChips" style="margin-top:8px;">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
