@@ -5593,6 +5593,200 @@
     return out;
   }
 
+  // ---- Full backup (v119): what the cloud holds, per data set ----
+  // The daily backups (snap_*) sit in the same database as the data and keep
+  // only part of it, so the supervisor can also take everything off the cloud
+  // in one file (Export → "Full backup", 13-exports.js). These two helpers are
+  // the whole logic of that screen.
+  //
+  // docs: {key: {value: <the stored string>, updated: ms|null}} — the cloud
+  // documents the backup read. cloudInventory gives one line per data set, in
+  // a fixed order: the records a person would count (null when nothing
+  // countable is stored — settings — or the document does not parse: never a
+  // guess), the documents and the size behind it, when it last changed, and
+  // what the daily backup keeps of it ('yes', 'month' = this month's visits
+  // only, 'list' = the list of sales files without their lines, 'no').
+  // Documents no set claims are listed one by one under 'other'.
+  function utf8Len(s){
+    s = String(s == null ? '' : s);
+    var n = 0;
+    for(var i = 0; i < s.length; i++){
+      var c = s.charCodeAt(i);
+      if(c < 0x80) n += 1;
+      else if(c < 0x800) n += 2;
+      else if(c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length){ n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+  var _isArr = Array.isArray;
+  var _isObj = function(v){ return !!v && typeof v === 'object' && !_isArr(v); };
+  var _ownKeys = function(o){ return _isObj(o) ? Object.keys(o) : []; };
+  var _arrLen = function(v){ return _isArr(v) ? v.length : null; };
+  var _keyCount = function(v){ return _isObj(v) ? Object.keys(v).length : null; };
+  var BACKUP_SETS = [
+    { id: 'visits', label: 'Visits', unit: 'visits', daily: 'month',
+      has: function(k){ return k === 'visits' || k === 'visitsIndex' || k.indexOf(VISITS_ARCH_PREFIX) === 0; },
+      count: function(get){
+        // live month + every archived month, a visit counted once even while it
+        // sits in two documents for a moment (its date was just edited)
+        var live = get('visits'), seen = Object.create(null), n = 0, ok = true, months = 0;
+        var add = function(list){ list.forEach(function(v){ if(!v) return; if(v.id == null){ n++; return; } var id = String(v.id); if(!(id in seen)){ seen[id] = 1; n++; } }); };
+        if(live !== undefined){ if(_isArr(live)) add(live); else ok = false; }
+        get.keys.filter(function(k){ return k.indexOf(VISITS_ARCH_PREFIX) === 0; }).forEach(function(k){
+          var a = get(k); if(_isArr(a)){ add(a); months++; } else ok = false;
+        });
+        return ok ? { records: n, extra: { archivedMonths: months } } : { records: null };
+      } },
+    { id: 'clinics', label: 'Clinics and branches', unit: 'clinics', daily: 'yes',
+      has: function(k){ return k === 'clinics'; }, count: function(get){ return { records: _arrLen(get('clinics')) }; } },
+    { id: 'doctors', label: 'Doctors (kept inside the clinics)', unit: 'doctors', daily: 'yes', inside: 'clinics',
+      has: function(){ return false; },
+      count: function(get){
+        var c = get('clinics');
+        if(!_isArr(c)) return { records: null };
+        return { records: c.reduce(function(s, x){ return s + (x && _isArr(x.doctors) ? x.doctors.length : 0); }, 0) };
+      } },
+    { id: 'tasks', label: 'Tasks', unit: 'tasks', daily: 'yes',
+      has: function(k){ return k === 'tasks'; }, count: function(get){ return { records: _arrLen(get('tasks')) }; } },
+    { id: 'events', label: 'Requests, escalations & stands', unit: 'entries', daily: 'no',
+      has: function(k){ return k === 'events'; }, count: function(get){ return { records: _arrLen(get('events')) }; } },
+    { id: 'dayPlans', label: 'Day plans', unit: 'plans', daily: 'no',
+      has: function(k){ return k === 'dayPlans'; },
+      count: function(get){
+        // {date: {person: plan}} — one plan per person per day
+        var d = get('dayPlans'); if(!_isObj(d)) return { records: null };
+        return { records: Object.keys(d).reduce(function(s, day){ return s + _ownKeys(d[day]).length; }, 0) };
+      } },
+    { id: 'erpSales', label: 'Sales files (ERP)', unit: 'files', daily: 'list',
+      has: function(k){ return k === 'erpSales' || k.indexOf('erpRows:') === 0; },
+      count: function(get){
+        // the index lists the files; their lines live in chunk documents. The
+        // lines counted are the ones actually present in the chunks the index
+        // points to — a chunk it points to that is not there is reported, and
+        // chunks of replaced files (kept a week) are counted apart.
+        var idx = get('erpSales'); if(!_isObj(idx)) return { records: null };
+        var periods = (_isArr(idx.periods) ? idx.periods : []).filter(Boolean);
+        var wanted = Object.create(null), lines = 0, missing = 0, ok = true;
+        erpChunkKeys(idx).forEach(function(k){ wanted[k] = 1; });
+        periods.forEach(function(p){ if(_isArr(p.rows) && !p.rowsMissing) lines += p.rows.length; }); // legacy inline rows
+        Object.keys(wanted).forEach(function(k){
+          if(get.keys.indexOf(k) === -1){ missing++; return; }
+          var rows = get(k); if(_isArr(rows)) lines += rows.length; else ok = false;
+        });
+        var stale = get.keys.filter(function(k){ return k.indexOf('erpRows:') === 0 && !wanted[k]; }).length;
+        return { records: periods.length, extra: { lines: ok ? lines : null, missingChunks: missing, staleChunks: stale } };
+      } },
+    { id: 'erpMap', label: 'ERP account links', unit: 'accounts', daily: 'no',
+      has: function(k){ return k === 'erpMap'; }, count: function(get){ return { records: _keyCount(get('erpMap')) }; } },
+    { id: 'targets', label: 'Targets (DSR)', unit: 'people', daily: 'no',
+      has: function(k){ return k === 'targets'; },
+      count: function(get){
+        var t = get('targets'); if(!_isObj(t)) return { records: null };
+        return { records: Object.keys(t).filter(function(k){ return k.charAt(0) !== '_'; }).length,
+          extra: { pastMonths: _ownKeys(t._history).length } };
+      } },
+    { id: 'staff', label: 'Team list', unit: 'people', daily: 'no',
+      has: function(k){ return k === 'staff'; }, count: function(get){ return { records: _arrLen(get('staff')) }; } },
+    { id: 'products', label: 'Product catalog', unit: 'products', daily: 'yes',
+      has: function(k){ return k === 'products'; }, count: function(get){ return { records: _arrLen(get('products')) }; } },
+    { id: 'rxTypes', label: 'Prescription types', unit: 'types', daily: 'no',
+      has: function(k){ return k === 'rxTypes'; },
+      count: function(get){ var r = get('rxTypes'); return { records: _isObj(r) && _isArr(r.types) ? r.types.length : null }; } },
+    { id: 'categoryGuides', label: 'Selling guides', unit: 'guides', daily: 'no',
+      has: function(k){ return k === 'categoryGuides'; }, count: function(get){ return { records: _keyCount(get('categoryGuides')) }; } },
+    { id: 'erpNotes', label: 'Sales notes', unit: 'notes', daily: 'no',
+      has: function(k){ return k === 'erpNotes'; }, count: function(get){ return { records: _keyCount(get('erpNotes')) }; } },
+    { id: 'benchmarks', label: 'Discount limits and KPI settings', unit: null, daily: 'no',
+      has: function(k){ return k === 'benchmarks'; }, count: function(){ return { records: null }; } },
+    { id: 'recycleBin', label: 'Recycle bin (kept 30 days)', unit: 'items', daily: 'no',
+      has: function(k){ return k === 'recycleBin'; },
+      count: function(get){
+        var b = get('recycleBin'); if(!_isObj(b)) return { records: null };
+        return { records: Object.keys(b).reduce(function(s, k){ return s + (_isArr(b[k]) ? b[k].length : 0); }, 0) };
+      } },
+    { id: 'tombs', label: 'Delete log', unit: 'deletes', daily: 'no',
+      has: function(k){ return k === 'tombs'; },
+      count: function(get){
+        var t = get('tombs'); if(!_isObj(t)) return { records: null };
+        return { records: Object.keys(t).reduce(function(s, k){ return s + _ownKeys(t[k]).length; }, 0) };
+      } },
+    { id: 'photos', label: 'Photos', unit: 'photos', daily: 'no', raw: true,
+      has: function(k){ return k.indexOf('photo:') === 0; },
+      count: function(get){ return { records: get.keys.filter(function(k){ return k.indexOf('photo:') === 0; }).length }; } },
+    { id: 'chat', label: 'Team chat', unit: 'messages', daily: 'no',
+      has: function(k){ return k === 'chat'; }, count: function(get){ return { records: _arrLen(get('chat')) }; } },
+    { id: 'memories', label: 'Memories', unit: 'memories', daily: 'no',
+      has: function(k){ return k === 'memories'; }, count: function(get){ return { records: _arrLen(get('memories')) }; } },
+    { id: 'logs', label: 'Logs (repairs, e-mails, account links)', unit: 'entries', daily: 'no',
+      has: function(k){ return k === 'repairLog' || k === 'mailLog' || k === 'erpMapLog'; },
+      count: function(get){
+        var n = 0, ok = true;
+        ['repairLog', 'erpMapLog'].forEach(function(k){ var v = get(k); if(v === undefined) return; if(_isArr(v)) n += v.length; else ok = false; });
+        var m = get('mailLog'); if(m !== undefined){ if(_isObj(m) && _isArr(m.history)) n += m.history.length; else ok = false; }
+        return { records: ok ? n : null };
+      } },
+  ];
+  function cloudInventory(docs){
+    var all = Object.keys(docs || {}).filter(function(k){ return k.indexOf('snap_') !== 0; }).sort();
+    var parsed = Object.create(null), bad = Object.create(null);
+    var entry = function(k){ var d = docs[k]; return d && typeof d === 'object' ? d : { value: d, updated: null }; };
+    var claimed = Object.create(null);
+    var sets = BACKUP_SETS.map(function(def){
+      var keys = all.filter(function(k){ return def.has(k); });
+      keys.forEach(function(k){ claimed[k] = 1; });
+      var get = function(k){
+        if(keys.indexOf(k) === -1 && def.inside !== k) return undefined;
+        if(def.inside === k && all.indexOf(k) === -1) return undefined;
+        if(!(k in parsed)){
+          var v = entry(k).value;
+          if(def.raw){ parsed[k] = v; }
+          else { var p = safeParse(v, undefined); if(p === undefined){ bad[k] = 1; parsed[k] = undefined; } else parsed[k] = p; }
+        }
+        return parsed[k];
+      };
+      get.keys = keys;
+      var src = def.inside ? [def.inside].filter(function(k){ return all.indexOf(k) !== -1; }) : keys;
+      if(!src.length) return null;                                    // nothing of this set in the cloud
+      var res = def.count(get) || { records: null };
+      var unreadable = src.filter(function(k){ get(k); return !!bad[k]; });
+      var updated = null;
+      src.forEach(function(k){ var u = entry(k).updated; if(typeof u === 'number' && (updated == null || u > updated)) updated = u; });
+      return { id: def.id, label: def.label, unit: def.unit, daily: def.daily,
+        records: unreadable.length ? null : (res.records == null ? null : res.records), extra: res.extra || {},
+        docs: def.inside ? 0 : keys.length, inside: def.inside || null,
+        bytes: def.inside ? 0 : keys.reduce(function(s, k){ return s + utf8Len(entry(k).value); }, 0),
+        updated: updated, unreadable: unreadable };
+    }).filter(Boolean);
+    all.filter(function(k){ return !claimed[k]; }).forEach(function(k){
+      var e = entry(k);
+      sets.push({ id: 'other', key: k, label: k, unit: null, daily: 'no', records: null, extra: {}, docs: 1, inside: null,
+        bytes: utf8Len(e.value), updated: typeof e.updated === 'number' ? e.updated : null, unreadable: [] });
+    });
+    return { sets: sets, docs: all.length, bytes: all.reduce(function(s, k){ return s + utf8Len(entry(k).value); }, 0) };
+  }
+  // The file a full backup hands over: every document except the daily
+  // backups, each value exactly as stored (a restore writes them back as they
+  // are), with what was counted and who took it when.
+  function fullBackupFile(docs, meta){
+    meta = meta || {};
+    var keys = Object.keys(docs || {}).filter(function(k){ return k.indexOf('snap_') !== 0; }).sort();
+    var data = Object.create(null);
+    keys.forEach(function(k){
+      var d = docs[k], o = d && typeof d === 'object' ? d : { value: d, updated: null };
+      data[k] = { value: o.value, updated: typeof o.updated === 'number' ? o.updated : null };
+    });
+    var inv = cloudInventory(docs);
+    return {
+      kind: 'ultramed-full-backup', format: 1,
+      app: meta.app || null, project: meta.project || null, takenAt: meta.takenAt || null, takenBy: meta.takenBy || null,
+      note: 'Every document of the cloud collection "state" except the daily backups (snap_*), each value exactly as stored.',
+      documents: keys.length,
+      inventory: inv.sets.map(function(s){ return { set: s.id === 'other' ? 'other:' + s.key : s.id, documents: s.docs, records: s.records, unit: s.unit, lines: s.extra && s.extra.lines != null ? s.extra.lines : undefined }; }),
+      data: data
+    };
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
@@ -5613,6 +5807,7 @@
     daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
-    productMovement, pmNormName
+    productMovement, pmNormName,
+    cloudInventory, fullBackupFile, BACKUP_SETS
   };
 });
