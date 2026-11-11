@@ -1,0 +1,15 @@
+{
+  "name": "ultramed-firestore-rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Proves ../../firestore.rules on the local Firestore emulator (port 8295, demo project). Never contacts the real Firebase project.",
+  "license": "ISC",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-ultramed-rules --config firebase.json \"node --test --test-reporter=spec rules.test.js\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.34.1"
+  }
+}
