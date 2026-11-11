@@ -1,5 +1,5 @@
 // Minimal .xlsx writer (inline strings) + synthetic "Ultramed_Sales3_28" file:
-// August rows straight from the app's seed, September 1–21 rows synthesized.
+// September 1–21 rows, synthesized (no real sales data — v119).
 const fs = require('fs'), zlib = require('zlib');
 function crc32(buf){ let c, crc = 0xFFFFFFFF; for(let n=0;n<buf.length;n++){ c=(crc^buf[n])&0xFF; for(let k=0;k<8;k++) c=c&1?(c>>>1)^0xEDB88320:c>>>1; crc=(crc>>>8)^c; } return (crc^0xFFFFFFFF)>>>0; }
 function zip(entries){
@@ -44,7 +44,6 @@ function makeSalesFixture(outPath){
 }
 module.exports = { xlsx, makeSalesFixture };
 function buildAndWrite(out){
-  const seed=require(require('path').join(process.env.WWW || require('path').join(__dirname, '..', '..', '..', 'www'), 'sales-seed-aug26.json'));
   const HDR=['Date','Invoice #','Type','Product','Qty','Gross','Net Sales','Sales Return','Name','Brand','Customer','Class','Discount. Sales Ret'];
   const rows=[HDR];
   const dmy=iso=>iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4);
