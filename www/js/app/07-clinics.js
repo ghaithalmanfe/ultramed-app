@@ -469,39 +469,70 @@ function lostDoctorsLine(c){
 function openLostDoctors(scope){
   const list = clinics.filter(c => canNameForClinic(c) && (!scope || c.id === scope));
   const lost = UMCore.lostDoctors(list, visits, tombSet('doctors'));
+  const kept = phoneCopyDoctors();   // what this phone still holds: offered, never applied on its own
   const body = list.filter(c => lost[c.id]).map(c => (scope ? '' : `<div class="section-title" dir="auto" style="margin-top:14px;">${esc(c.name)}</div>`) + lost[c.id].map(e => {
     const dates = e.visits.map(v => fmtDate(v.date)).filter((d, i, a) => a.indexOf(d) === i);
     const notes = e.visits.map(v => v.notes).filter(Boolean).slice(0, 2);
-    return `<div class="card" style="padding:10px 12px;" data-lostdoc="${esc(e.id)}">
+    const sugs = [], k = kept.get(c.id + '|' + e.id);
+    if(k && k.name) sugs.push({ kind: 'copy', name: String(k.name), label: 'This phone kept this doctor:' });
+    if(e.name && !sugs.some(x => UMCore.normDoctorName(x.name) === UMCore.normDoctorName(e.name))) sugs.push({ kind: 'visit', name: String(e.name), label: 'A visit recorded this name:' });
+    const sugHTML = sugs.map(x => `<div style="font-size:12.5px; margin-top:6px;"><span>${x.label}</span> <b dir="auto">${esc(x.name)}</b>
+        <div><button class="chip small" style="margin-top:4px;" data-c="${esc(c.id)}" data-d="${esc(e.id)}" data-name="${esc(x.name)}" data-kind="${x.kind}" data-scope="${esc(scope || '')}" onclick="nameLostDoctor(this.dataset.c, this.dataset.d, this.dataset.name, this.dataset.scope, this.dataset.kind)">✅ <span>Use this name</span></button></div>
+      </div>`).join('');
+    return `<div class="card" style="padding:10px 12px;" data-lostdoc="${esc(c.id + '|' + e.id)}">
       <div style="font-size:12.5px; color:var(--muted);">${e.visits.length} <span>visits</span> · ${dates.slice(0, 4).join(', ')}${dates.length > 4 ? ' …' : ''}</div>
       ${notes.map(t => `<div dir="auto" style="font-size:12.5px; margin-top:3px;">“${esc(t.slice(0, 120))}”</div>`).join('')}
+      ${sugHTML}
       <div style="display:flex; gap:6px; margin-top:8px;">
         <input type="text" dir="auto" placeholder="Doctor name" style="flex:1; margin:0;">
-        <button class="chip small" data-c="${esc(c.id)}" data-d="${esc(e.id)}" data-scope="${esc(scope || '')}" onclick="nameLostDoctor(this.dataset.c, this.dataset.d, this.parentElement.querySelector('input').value, this.dataset.scope)">💾 Save</button>
+        <button class="chip small" data-c="${esc(c.id)}" data-d="${esc(e.id)}" data-scope="${esc(scope || '')}" onclick="nameLostDoctor(this.dataset.c, this.dataset.d, this.parentElement.querySelector('input').value, this.dataset.scope, 'typed')">💾 Save</button>
       </div>
     </div>`;
   }).join('')).join('');
   showModal(`<h3 style="margin-top:0;">⚠️ <span>Doctors without a name</span></h3>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Your visits met them, but their names were lost (most in August–September) and no backup holds them. Write the name you remember: their visits, orders and prescriptions join it. Leave empty anyone who left or was removed on purpose.</span></p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Your visits met them, but their names were lost (most in August–September) and no backup holds them. Use a name this phone kept or a visit recorded, or write the name you remember: their visits, orders and prescriptions join it. Nothing changes until you tap. Leave empty anyone who left or was removed on purpose.</span></p>
     ${body || '<div class="empty"><span>Nothing left to name.</span></div>'}
     <button class="btn secondary" style="margin-top:8px;" data-scope="${esc(scope || '')}" onclick="closeModal(); if(this.dataset.scope) openClinicDetail(this.dataset.scope); else renderClinics();">Done</button>`);
 }
-async function nameLostDoctor(clinicId, docId, raw, scope){
+// The visits of a clinic that name one doctor id
+function visitsNaming(clinicId, docId){
+  return visits.filter(v => v && v.clinicId === clinicId && ((Array.isArray(v.doctorIds) && v.doctorIds.includes(docId)) || v.doctorId === docId));
+}
+// A question asked inside the card it is about (the app's own confirm step:
+// nothing changes until the second tap).
+function askInCard(selector, html){
+  const card = [...document.querySelectorAll('#modalInner [data-lostdoc], #modalInner [data-nameless]')].find(el => (el.dataset.lostdoc || el.dataset.nameless) === selector);
+  if(card) card.innerHTML = html;
+  return !!card;
+}
+async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
   const name = String(raw || '').trim();
   if(!name){ showToast('Enter the doctor name'); return; }
   const c = clinics.find(x => x && x.id === clinicId);
   if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
   const key = UMCore.normDoctorName(name);
   const same = key ? (c.doctors || []).find(d => d && UMCore.normDoctorName(d.name) === key) : null;
+  if(same && !confirmed){
+    // the same person was added again since: moving the visits to that record is a merge, so it is asked first
+    const n = visitsNaming(clinicId, docId).length;
+    askInCard(clinicId + '|' + docId, `<div style="font-size:13px; line-height:1.6;"><b dir="auto">${esc(same.name)}</b> <span>is already on this clinic's list.</span> <span>Move these visits to this doctor?</span> (${n} <span>visits</span>)</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-c="${esc(clinicId)}" data-d="${esc(docId)}" data-name="${esc(name)}" data-kind="${esc(kind || '')}" data-scope="${esc(scope || '')}" onclick="nameLostDoctor(this.dataset.c, this.dataset.d, this.dataset.name, this.dataset.scope, this.dataset.kind, true)">✅ <span>Move the visits</span></button>
+        <button class="chip small" data-scope="${esc(scope || '')}" onclick="openLostDoctors(this.dataset.scope)"><span>Cancel</span></button>
+      </div>`);
+    return;
+  }
   if(same){
-    // the same person was added again since: the visits join that record
     const remap = Object.create(null); remap[docId] = same.id;
     let n = 0;
     visits.forEach(v => { if(v && v.clinicId === clinicId && UMCore.remapVisitDoctors(v, remap)) n++; });
     const r = await persistFor('visits');
     showToast((r.ok || sentSince('visits', r)) ? `✅ ${n} visits joined ${same.name}` : '⚠️ Saved on this device — not in the cloud yet', 4000);
   } else {
-    c.doctors = (c.doctors || []).concat([{ id: docId, name, title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }]);
+    // the record this phone kept (title, phone, notes…) when its name is the one used, else the name alone; same id either way
+    const k = kind === 'copy' ? phoneCopyDoctors().get(clinicId + '|' + docId) : null;
+    const base = k && UMCore.normDoctorName(k.name) === key ? JSON.parse(JSON.stringify(k)) : {};
+    c.doctors = (c.doctors || []).concat([Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, base, { id: docId, name })]);
     const r = await persistFor('clinics');
     showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back on the clinic's list` : '⚠️ Saved on this device — not in the cloud yet', 4000);
   }
@@ -528,42 +559,66 @@ function repointClinic(fromId, toId){
 }
 function openNamelessClinics(){
   const list = namelessMine();
-  // the name the app's own follow-up task recorded with this clinic's id; the
-  // start-up repair gives it back on its own unless a sale would then count for
-  // another person (said here) or another owner lists that name
-  const rec = UMCore.clinicNamesFromTasks(tasks, list.map(c => c.id)), erpCache = {};
+  // Suggestions only (v121): the record this phone kept under the same id, and
+  // the name the app's own follow-up task recorded with it. A tap uses one; a
+  // name another clinic already has, or one that would make sales lines count
+  // for another person, is asked about first (nameNamelessClinic).
+  const rec = UMCore.clinicNamesFromTasks(tasks, list.map(c => c.id)), kept = phoneCopyClinics();
   const rows = list.map(c => {
     const vs = visits.filter(v => v && v.clinicId === c.id).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
     const notes = vs.map(v => (v.notes || '').trim()).filter(Boolean).slice(0, 2);
-    const sug = rec[c.id], same = sug ? clinics.find(x => x && clinicNameKey(x.name) === clinicNameKey(sug)) : null;
-    const moves = sug && !same ? UMCore.erpAddClinicMoves({ erpSales, clinics, erpMap }, [Object.assign({}, c, { name: sug })], erpCache) : [];
-    const pairs = {}; moves.forEach(m => { const k = (m.from || '—') + '|' + (m.to || '—'); pairs[k] = (pairs[k] || 0) + 1; });
-    const sugHTML = sug ? `<div style="font-size:12.5px; margin-top:6px;"><span>The app recorded its name:</span> <b dir="auto">${esc(sug)}</b>
-        ${same ? `<div style="color:var(--muted); margin-top:2px;"><span>Already in the list — its visits move there</span> (<span>${esc(same.rep || '—')}</span>)</div>` : ''}
-        ${moves.length ? `<div style="color:var(--amber); margin-top:2px;">⚠️ ${moves.length} <span>sales lines would then count for another person</span>: ${Object.keys(pairs).map(k => `<span>${esc(k.split('|')[0])}</span> → <span>${esc(k.split('|')[1])}</span> ${pairs[k]}`).join(' · ')}</div>` : ''}
-        <div><button class="chip small" style="margin-top:4px;" data-id="${esc(c.id)}" data-name="${esc(sug)}" onclick="nameNamelessClinic(this.dataset.id, this.dataset.name)">✅ <span>Use this name</span></button></div>
-      </div>` : '';
+    const sugs = [], k = kept.get(c.id);
+    if(k) sugs.push({ kind: 'copy', name: String(k.name), label: 'This phone kept its record:' });
+    if(rec[c.id] && !sugs.some(x => clinicNameKey(x.name) === clinicNameKey(rec[c.id]))) sugs.push({ kind: 'task', name: rec[c.id], label: 'The app recorded its name:' });
+    const sugHTML = sugs.map(x => `<div style="font-size:12.5px; margin-top:6px;"><span>${x.label}</span> <b dir="auto">${esc(x.name)}</b>
+        <div><button class="chip small" style="margin-top:4px;" data-id="${esc(c.id)}" data-name="${esc(x.name)}" data-kind="${x.kind}" onclick="nameNamelessClinic(this.dataset.id, this.dataset.name, this.dataset.kind)">✅ <span>Use this name</span></button></div>
+      </div>`).join('');
     return `<div class="card" style="padding:10px 12px;" data-nameless="${esc(c.id)}">
       <div style="font-size:12.5px; color:var(--muted);">${esc(c.rep || '—')} · ${vs.length} <span>visits</span>${vs.length ? ' · ' + vs.map(v => fmtDate(v.date)).filter((d, i, a) => a.indexOf(d) === i).join(', ') : ''}</div>
       ${notes.map(t => `<div dir="auto" style="font-size:12.5px; margin-top:3px;">“${esc(t.slice(0, 120))}”</div>`).join('')}
       ${sugHTML}
       <div style="display:flex; gap:6px; margin-top:8px;">
         <input type="text" dir="auto" placeholder="Clinic name" style="flex:1; margin:0;">
-        <button class="chip small" data-id="${esc(c.id)}" onclick="nameNamelessClinic(this.dataset.id, this.parentElement.querySelector('input').value)">💾 Save</button>
+        <button class="chip small" data-id="${esc(c.id)}" onclick="nameNamelessClinic(this.dataset.id, this.parentElement.querySelector('input').value, 'typed')">💾 Save</button>
       </div>
     </div>`;
   }).join('');
   showModal(`<h3 style="margin-top:0;">⚠️ <span>Clinics without a name</span></h3>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Lost in August and brought back without their name. Write the name: if the clinic is already in the list under that name, its visits move there.</span></p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Lost in August and brought back without their name. Use a name the app or this phone kept, or write it. Nothing changes until you tap; if another clinic already has the name, or sales would count for another person, you are asked first.</span></p>
     ${rows || '<div class="empty"><span>Nothing left to name.</span></div>'}
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); renderClinics();">Done</button>`);
 }
-async function nameNamelessClinic(id, raw){
+// The record a phone kept, back under the placeholder's id: its name, details
+// and doctors, with the placeholder's owner/class/dates where the copy has none.
+function restoredFromCopy(h, kept){
+  const c = Object.assign({}, JSON.parse(JSON.stringify(kept)), { id: h.id });
+  ['rep', 'cls', 'lastVisit', 'nextFollowUp'].forEach(f => { if(h[f] != null && h[f] !== '' && (c[f] == null || c[f] === '')) c[f] = h[f]; });
+  c.doctors = UMCore.mergeDoctorLists(Array.isArray(c.doctors) ? c.doctors : [], Array.isArray(h.doctors) ? h.doctors : []).doctors;
+  return c;
+}
+async function nameNamelessClinic(id, raw, kind, confirmed){
   const name = String(raw || '').trim();
   if(!name || isPlaceholderClinic({ name })){ showToast('Enter the clinic name'); return; }
   const h = (hiddenPlaceholderClinics || []).find(c => c && c.id === id);
   if(!h || !(currentUser.role === 'supervisor' || h.rep === currentUser.name)) return;
   const same = clinics.find(c => c && clinicNameKey(c.name) === clinicNameKey(name));
+  const k = !same && kind === 'copy' ? phoneCopyClinics().get(id) : null;
+  const next = same ? null : normalizeClinic(k && clinicNameKey(k.name) === clinicNameKey(name) ? restoredFromCopy(h, k) : Object.assign({}, h, { name }));
+  // a name that starts matching an ERP account moves those lines to the clinic's owner: shown before it happens
+  const moves = next ? UMCore.erpAddClinicMoves({ erpSales, clinics, erpMap }, [next]) : [];
+  if(!confirmed && (same || moves.length)){
+    const pairs = {}; moves.forEach(m => { const key = (m.from || '—') + '|' + (m.to || '—'); pairs[key] = (pairs[key] || 0) + 1; });
+    const n = visits.filter(v => v && v.clinicId === id).length;
+    const q = same
+      ? `<div style="font-size:13px; line-height:1.6;"><b dir="auto">${esc(same.name)}</b> <span>is already in the list</span> (<span>${esc(same.rep || '—')}</span>). <span>Move this clinic's visits, tasks and plan entries there? The empty record goes to the recycle bin.</span> (${n} <span>visits</span>)</div>`
+      : `<div style="font-size:13px; line-height:1.6;"><b dir="auto">${esc(name)}</b>: ⚠️ ${moves.length} <span>sales lines would then count for another person</span>: ${Object.keys(pairs).map(x => `<span>${esc(x.split('|')[0])}</span> → <span>${esc(x.split('|')[1])}</span> ${pairs[x]}`).join(' · ')}</div>`;
+    askInCard(id, `${q}
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-id="${esc(id)}" data-name="${esc(name)}" data-kind="${esc(kind || '')}" onclick="nameNamelessClinic(this.dataset.id, this.dataset.name, this.dataset.kind, true)">✅ <span>${same ? 'Move the visits' : 'Use the name anyway'}</span></button>
+        <button class="chip small" onclick="openNamelessClinics()"><span>Cancel</span></button>
+      </div>`);
+    return;
+  }
   if(same){
     // the clinic was added again since: its August visits join it, the empty record goes
     if(!await moveToBin('clinics', h, h.name)) return;
@@ -572,10 +627,9 @@ async function nameNamelessClinic(id, raw){
     const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2)) && (r3.ok || sentSince('tasks', r3));
     showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
   } else {
-    h.name = name;
-    clinics.push(normalizeClinic(h)); hidePlaceholderClinics();
+    clinics.push(next); hidePlaceholderClinics();
     const r = await persistFor('clinics');
-    showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
+    showToast((r.ok || sentSince('clinics', r)) ? `✅ ${next.name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
   }
   renderAll();
   openNamelessClinics();
