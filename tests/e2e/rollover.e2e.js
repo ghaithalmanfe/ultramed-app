@@ -9,7 +9,7 @@ const cloud = {};
 const api = { get: async k => k in cloud ? cloud[k] : null, set: async (k, v) => { cloud[k] = v; return true; }, setMany: async e => { e.forEach(([k, v]) => { cloud[k] = v; }); return true; }, del: async k => { delete cloud[k]; return true; }, list: async p => Object.keys(cloud).filter(k => k.startsWith(p)) };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info).slice(0,500):'')); if(!ok) failed++; }
-const SEED = JSON.parse(fs.readFileSync(WWW + '/sales-seed-aug26.json', 'utf8'));
+const SEED = require('./fixtures/august-seed.js'); // synthetic, same shape as the August seed — nothing real (v119)
 const SALES_B64 = fs.readFileSync(salesFixture()).toString('base64');
 const REAL_TODAY = new Date(); // container clock (any day); the first context is pinned to 2026-09-21
 const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - REAL_TODAY.getTime();
