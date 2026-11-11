@@ -198,132 +198,38 @@ async function autoRestoreWipe(){
     `);
   }catch(e){ console.error('auto-restore failed, will retry next open', e); }
 }
-// v119: clinics without a name and doctors met on a visit whose record is
-// gone from the clinic. Doctors: 55 of
-// them lost in the August–September incidents, one in a save that never
-// landed (reported 11 Nov). They come back from what this phone still holds:
-// the copy it kept before the big August change (um_mirror_prev:clinics), the
-// last copy it saw (um_mirror:clinics), and — for visits saved from v119 on —
-// the names the visit records. Only a doctor a visit names, in a clinic still
-// in the list, never one the team deleted (doctor delete log), never one
-// whose name the clinic already lists (the same person added again since).
-// Local data only, nothing downloaded; once per device per day; never blocks
-// the start; each bring-back goes to repairLog and is toasted.
-let _lostDocsDone = false;
-const LOST_DOCS_DAY = 'um_repairDay';   // v120: a new key, so every phone runs the pass (with the follow-up names) on its first start
-async function restoreLostDoctors(){
-  if(_lostDocsDone || !currentUser || _bootCrashed || ['clinics','visits'].some(k => _loadFailed[k] || _mirrorUsed[k])) return;
-  _lostDocsDone = true;
-  try{ if(localStorage.getItem(LOST_DOCS_DAY) === todayStr()) return; }catch(e){}
-  const byId = new Map(clinics.map(c => [c && c.id, c]));
-  const copy = new Map();  // clinicId|doctorId → the record a copy on this phone holds
-  ['um_mirror:clinics', 'um_mirror_prev:clinics'].forEach(k => {
-    let arr = null; try{ arr = UMCore.safeParse(localStorage.getItem(k), null); }catch(e){}
-    (Array.isArray(arr) ? arr : []).forEach(c => (c && Array.isArray(c.doctors) ? c.doctors : []).forEach(d => {
-      if(d && d.id != null && d.name && !copy.has(c.id + '|' + d.id)) copy.set(c.id + '|' + d.id, d);
-    }));
-  });
-  // Clinics the August restore could only bring back without a name ("⚠️
-  // Restored clinic — rename me", hidden from every list): the real record
-  // this phone kept from before the wipe, same id, puts the name, owner,
-  // details and doctors back, and the clinic shows again with its visits.
-  const named = [], realCopy = new Map();
+// Clinics without a name and doctors met on a visit whose record is gone
+// from the clinic (most lost in the August–September incidents). v121 (the
+// owner's rules of 12 Nov: zero data loss, no automatic merges, no change to
+// the shared data without someone's tap): nothing is written at start. What
+// this phone still holds is offered as a SUGGESTION on the "Clinics without
+// a name" and "Doctors without a name" sheets (07-clinics.js), and the owner
+// or the supervisor taps to use it: the copy kept before the big August
+// change (um_mirror_prev:clinics) and the last copy seen (um_mirror:clinics).
+// Local data only, nothing downloaded.
+function phoneCopyLists(){
+  const out = [];
   ['um_mirror_prev:clinics', 'um_mirror:clinics'].forEach(k => {
     let arr = null; try{ arr = UMCore.safeParse(localStorage.getItem(k), null); }catch(e){}
-    (Array.isArray(arr) ? arr : []).forEach(c => { if(c && c.id != null && c.name && !isPlaceholderClinic(c) && !realCopy.has(c.id)) realCopy.set(c.id, c); });
+    if(Array.isArray(arr)) out.push(arr);
   });
-  hiddenPlaceholderClinics.slice().forEach(h => {
-    const src = realCopy.get(h.id);
-    if(!src || tombSet('clinics').has(h.id)) return;
-    const c = Object.assign({}, JSON.parse(JSON.stringify(src)), { id: h.id });
-    ['rep', 'cls', 'lastVisit', 'nextFollowUp'].forEach(f => { if(h[f] != null && h[f] !== '' && (c[f] == null || c[f] === '')) c[f] = h[f]; });
-    c.doctors = UMCore.mergeDoctorLists(Array.isArray(c.doctors) ? c.doctors : [], Array.isArray(h.doctors) ? h.doctors : []).doctors;
-    clinics.push(normalizeClinic(c));
-    named.push({ clinicId: h.id, clinic: c.name, rep: c.rep || '' });
-  });
-  if(named.length){ hidePlaceholderClinics(); byId.clear(); clinics.forEach(c => byId.set(c && c.id, c)); }
-  // No copy on this phone: the app's own follow-up tasks recorded the clinic's
-  // name with its id ("Follow up: <name>", UMCore.clinicNamesFromTasks). The
-  // same owner already lists a clinic of that name → its visits, plan entries
-  // and tasks join it and the empty record goes; otherwise the clinic gets the
-  // name back, only when no sales line would then count for another person
-  // (every sales file's rows on this phone, UMCore.erpAddClinicMoves). One that
-  // would waits on the "Clinics without a name" card, the name offered there.
-  const fromTasks = [], merged = [], held = [];
-  if(!_loadFailed.tasks && !_mirrorUsed.tasks && hiddenPlaceholderClinics.length){
-    const rec = UMCore.clinicNamesFromTasks(tasks, hiddenPlaceholderClinics.map(h => h && h.id));
-    const salesOk = !_loadFailed.erpSales && !((erpSales && erpSales.periods) || []).some(p => p && p.rowsMissing);
-    const base = clinics.slice(), erpCache = {}, accepted = [];   // each one checked against the list as it stands
-    for(const h of hiddenPlaceholderClinics.slice()){
-      const nm = h && rec[h.id];
-      // the owner's phone and the supervisor's do it (the clinics they see on the card)
-      if(!nm || tombSet('clinics').has(h.id) || !(currentUser.role === 'supervisor' || h.rep === currentUser.name)) continue;
-      const same = clinics.filter(c => c && !isPlaceholderClinic(c) && clinicNameKey(c.name) === clinicNameKey(nm));
-      const hold = why => held.push({ clinicId: h.id, clinic: nm, rep: h.rep || '', why });
-      if(same.length){
-        if(same.length > 1 || same[0].rep !== h.rep){ hold('name in use'); continue; }
-        if(!await moveToBin('clinics', h, h.name)){ hold('bin'); continue; }
-        const n = repointClinic(h.id, same[0].id);
-        merged.push({ clinicId: h.id, into: same[0].id, clinic: same[0].name, rep: same[0].rep || '', visits: n });
-        continue;
-      }
-      if(!salesOk){ hold('sales files'); continue; }
-      const c = normalizeClinic(Object.assign(JSON.parse(JSON.stringify(h)), { name: nm }));
-      if(UMCore.erpAddClinicMoves({ erpSales, clinics: base, erpMap }, [c], erpCache).length){ hold('sales'); continue; }
-      accepted.push(c);
-    }
-    // and together: two returning clinics could split one account between them
-    if(accepted.length > 1 && UMCore.erpAddClinicMoves({ erpSales, clinics: base, erpMap }, accepted, erpCache).length)
-      accepted.splice(0).forEach(c => held.push({ clinicId: c.id, clinic: c.name, rep: c.rep || '', why: 'sales' }));
-    accepted.forEach(c => { clinics.push(c); fromTasks.push({ clinicId: c.id, clinic: c.name, rep: c.rep || '' }); });
-    if(fromTasks.length) hidePlaceholderClinics();
-    byId.clear(); clinics.forEach(c => byId.set(c && c.id, c));
-  }
-  const met = new Map();   // clinicId → Map(doctorId → name a visit recorded, or '')
-  visits.forEach(v => {
-    if(!v || !v.clinicId || !byId.has(v.clinicId)) return;
-    const ids = (Array.isArray(v.doctorIds) ? v.doctorIds : []).concat(v.doctorId ? [v.doctorId] : []);
-    ids.forEach(id => {
-      if(id == null || id === '') return;
-      const m = met.get(v.clinicId) || met.set(v.clinicId, new Map()).get(v.clinicId);
-      const nm = v.doctorNames && v.doctorNames[id] ? String(v.doctorNames[id]) : '';
-      if(!m.has(id) || (nm && !m.get(id))) m.set(id, nm);
-    });
-  });
-  const deleted = tombSet('doctors'), back = [];
-  met.forEach((docs, cid) => {
-    const c = byId.get(cid), have = new Set((c.doctors || []).map(d => d && d.id));
-    docs.forEach((name, did) => {
-      if(have.has(did) || deleted.has(cid + '|' + did)) return;
-      const rec = copy.get(cid + '|' + did) || (name ? { id: did, name } : null);
-      if(!rec) return;
-      const key = UMCore.normDoctorName(rec.name);   // the same person added again since: already listed, nothing to bring back
-      if(key && (c.doctors || []).some(d => d && UMCore.normDoctorName(d.name) === key)) return;
-      c.doctors = (c.doctors || []).concat([Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, JSON.parse(JSON.stringify(rec)))]);
-      have.add(did);
-      back.push({ clinicId: cid, clinic: c.name || '', rep: c.rep || '', id: did, name: rec.name, from: copy.has(cid + '|' + did) ? 'phone copy' : 'visit' });
-    });
-  });
-  try{ localStorage.setItem(LOST_DOCS_DAY, todayStr()); }catch(e){}
-  const nClin = named.length + fromTasks.length + merged.length;
-  if(!back.length && !nClin) return;
-  let ok = true;
-  if(merged.length){
-    const rv = await persistFor('visits'), rt = await persistFor('tasks'); await persist('dayPlans');
-    ok = (rv.ok || sentSince('visits', rv)) && (rt.ok || sentSince('tasks', rt));
-  }
-  const saved = await persistFor('clinics');
-  ok = ok && (saved.ok || sentSince('clinics', saved));
-  console.warn(`repair: ${named.length} nameless clinics named from a phone copy, ${fromTasks.length} from their follow-up tasks, ${merged.length} joined their clinic (${held.length} wait on the card), ${back.length} doctors brought back (${ok ? 'saved' : 'not saved yet'})`);
-  const entries = [];
-  if(named.length || back.length) entries.push({ at: new Date().toISOString(), by: currentUser.name, kind: 'from-phone-copy', saved: ok, clinics: named, doctors: back });
-  if(fromTasks.length || merged.length) entries.push({ at: new Date().toISOString(), by: currentUser.name, kind: 'from-follow-up-tasks', saved: ok, clinics: fromTasks, merged, held });
-  try{
-    await storageUpdate('repairLog', cur => { const arr = UMCore.safeParse(cur, []); return JSON.stringify((Array.isArray(arr) ? arr : []).concat(entries).slice(-50)); });
-  }catch(e){ console.warn('repairLog', e); }
-  renderAll();
-  const what = [nClin ? `${nClin} clinics` : '', back.length ? `${back.length} doctors` : ''].filter(Boolean).join(' and ');
-  showToast(ok ? `♻️ ${what} brought back` : `⚠️ ${what} brought back on this device — not saved to the cloud yet`, 6000);
+  return out;
+}
+// id → the real (named) record of a clinic this phone kept, older copy first
+function phoneCopyClinics(){
+  const real = new Map();
+  phoneCopyLists().forEach(arr => arr.forEach(c => {
+    if(c && c.id != null && c.name && !isPlaceholderClinic(c) && !real.has(c.id)) real.set(c.id, c);
+  }));
+  return real;
+}
+// "clinicId|doctorId" → a doctor record with a name this phone kept
+function phoneCopyDoctors(){
+  const docs = new Map();
+  phoneCopyLists().forEach(arr => arr.forEach(c => (c && Array.isArray(c.doctors) ? c.doctors : []).forEach(d => {
+    if(d && d.id != null && d.name && !docs.has(c.id + '|' + d.id)) docs.set(c.id + '|' + d.id, d);
+  })));
+  return docs;
 }
 // Second recovery pass after the Aug-30 wipe: the single-day restore brought
 // most things back, but records missing from that one day and clinics revived
@@ -1099,7 +1005,6 @@ async function loadAll(){
     if(!categoryGuides) categoryGuides = JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED));
   }
   hidePlaceholderClinics();
-  if(!_bootCrashed && !_seedClinics) restoreLostDoctors().catch(e => console.warn('phone copies', e)); // local copies only, never blocks the start
   // Rep filters default once per sign-in; the background refresh keeps
   // whatever the supervisor has selected (a rep is always pinned to herself).
   if(_filtersFor !== currentUser.name || currentUser.role === 'rep'){
