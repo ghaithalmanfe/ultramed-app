@@ -356,6 +356,7 @@ function clinicNextAction(c, stats){
   return {icon:I('plus'), cls:'none', text:`Last visit ${stats.daysSince}d ago — no follow-up set, schedule one`, reschedule:false};
 }
 function renderClinics(){
+  renderNamelessCard();
   const q = (document.getElementById('clinicSearch').value||'').toLowerCase();
   const list = document.getElementById('clinicList');
   let filtered = clinics.filter(c=>c.name.toLowerCase().includes(q));
@@ -426,6 +427,71 @@ function renderClinics(){
   }).join('');
 }
 
+// ---- Clinics without a name (v119) ----
+// The August restore could bring some clinics back only without a name
+// ("⚠️ Restored clinic — rename me"); every list hid them, with their visits.
+// Their owner (and the supervisor) sees them here, with what the visits say,
+// and names them: a new name shows the clinic again; the name of a clinic
+// already in the list moves the visits there and drops the empty record.
+function namelessMine(){
+  if(!currentUser) return [];
+  const sup = currentUser.role === 'supervisor';
+  return (hiddenPlaceholderClinics || []).filter(c => c && (sup || c.rep === currentUser.name));
+}
+function renderNamelessCard(){
+  const el = document.getElementById('namelessCard');
+  if(!el) return;
+  const n = namelessMine().length;
+  el.innerHTML = n ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openNamelessClinics()">
+      <div style="font-weight:700; font-size:13.5px;">⚠️ ${n} <span>clinics from August have no name</span></div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Their visits are kept. Tap to name them — they show again in the list.</span></div>
+    </div>` : '';
+}
+function openNamelessClinics(){
+  const list = namelessMine();
+  const rows = list.map(c => {
+    const vs = visits.filter(v => v && v.clinicId === c.id).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    const notes = vs.map(v => (v.notes || '').trim()).filter(Boolean).slice(0, 2);
+    return `<div class="card" style="padding:10px 12px;" data-nameless="${esc(c.id)}">
+      <div style="font-size:12.5px; color:var(--muted);">${esc(c.rep || '—')} · ${vs.length} <span>visits</span>${vs.length ? ' · ' + vs.map(v => fmtDate(v.date)).filter((d, i, a) => a.indexOf(d) === i).join(', ') : ''}</div>
+      ${notes.map(t => `<div dir="auto" style="font-size:12.5px; margin-top:3px;">“${esc(t.slice(0, 120))}”</div>`).join('')}
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input type="text" dir="auto" placeholder="Clinic name" style="flex:1; margin:0;">
+        <button class="chip small" data-id="${esc(c.id)}" onclick="nameNamelessClinic(this.dataset.id, this.parentElement.querySelector('input').value)">💾 Save</button>
+      </div>
+    </div>`;
+  }).join('');
+  showModal(`<h3 style="margin-top:0;">⚠️ <span>Clinics without a name</span></h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Lost in August and brought back without their name. Write the name: if the clinic is already in the list under that name, its visits move there.</span></p>
+    ${rows || '<div class="empty"><span>Nothing left to name.</span></div>'}
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); renderClinics();">Done</button>`);
+}
+async function nameNamelessClinic(id, raw){
+  const name = String(raw || '').trim();
+  if(!name || isPlaceholderClinic({ name })){ showToast('Enter the clinic name'); return; }
+  const h = (hiddenPlaceholderClinics || []).find(c => c && c.id === id);
+  if(!h || !(currentUser.role === 'supervisor' || h.rep === currentUser.name)) return;
+  const same = clinics.find(c => c && (c.name || '').trim().toLowerCase() === name.toLowerCase());
+  if(same){
+    // the clinic was added again since: its August visits join it, the empty record goes
+    if(!await moveToBin('clinics', h, h.name)) return;
+    visits.forEach(v => { if(v && v.clinicId === id) v.clinicId = same.id; });
+    Object.keys(dayPlans || {}).forEach(d => Object.keys(dayPlans[d] || {}).forEach(r => {
+      dayPlans[d][r] = (dayPlans[d][r] || []).map(e => (typeof e === 'string' ? e : e && e.id) === id ? (typeof e === 'string' ? same.id : Object.assign({}, e, { id: same.id })) : e); }));
+    tomb('clinics', id);
+    hiddenPlaceholderClinics = hiddenPlaceholderClinics.filter(c => c && c.id !== id);
+    const r1 = await persistFor('visits'), r2 = await persistFor('clinics'); await persist('dayPlans');
+    const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2));
+    showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
+  } else {
+    h.name = name;
+    clinics.push(normalizeClinic(h)); hidePlaceholderClinics();
+    const r = await persistFor('clinics');
+    showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
+  }
+  renderAll();
+  openNamelessClinics();
+}
 function openAddClinic(){
   showModal(`
     <h3 style="margin-top:0;">Add clinic</h3>
