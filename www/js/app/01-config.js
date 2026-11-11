@@ -87,6 +87,26 @@ if(!window.storage){
         const keys = [];
         snap.forEach(d => { if(d.id.startsWith(prefix)) keys.push(d.id); });
         return { keys };
+      },
+      // Every document at once, straight from the server — the supervisor's
+      // full backup (Export → Full backup, 13-exports.js). opts.skipPrefix
+      // leaves an id range out without downloading it (the daily backups:
+      // large copies of the same data). Reads only, writes nothing.
+      async dump(opts){
+        await authReady;
+        const col = db.collection('state');
+        const idPath = firebase.firestore.FieldPath.documentId();
+        const skip = opts && opts.skipPrefix;
+        const queries = skip ? [col.where(idPath, '<', skip), col.where(idPath, '>=', skip + '')] : [col];
+        const docs = Object.create(null);
+        for(const q of queries){
+          const snap = await q.get({ source: 'server' });
+          snap.forEach(d => {
+            const x = d.data() || {};
+            docs[d.id] = { value: x.value, updated: typeof x.updated === 'number' ? x.updated : null };
+          });
+        }
+        return { docs, failed: [] };
       }
     };
     console.log('UltraMed Field Ops: syncing via Firebase Firestore');
