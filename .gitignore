@@ -10,3 +10,10 @@ android/.idea/
 
 # built site (scripts/build.js) — GitHub Pages publishes it
 dist/
+
+# database backups (scripts/backup, docs/backup.md): never commit one, even
+# encrypted (the repository is public). verify.js refuses to write a
+# decrypted bundle inside this folder.
+/backups/
+*.umbackup
+*.umbackup.partial

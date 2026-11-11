@@ -1,0 +1,99 @@
+name: Database backup
+
+# An independent, encrypted copy of the whole database (every document of the
+# Firestore collection `state`), kept OUTSIDE Firebase as an artifact of this
+# workflow run. scripts/backup/run.js makes it; only the ENCRYPTED file is
+# uploaded (the plaintext never touches the disk). See docs/backup.md.
+#
+# Cron times are UTC. Kuwait is UTC+3 all year (no daylight saving):
+#   daily    '15 23 * * *'  23:15 UTC every day    = 02:15 Kuwait (the next day)  kept 14 days
+#   weekly   '45 23 * * 4'  23:45 UTC Thursday     = 02:45 Kuwait Friday          kept 60 days
+#   monthly  '15 0 1 * *'   00:15 UTC on the 1st   = 03:15 Kuwait on the 1st      kept 90 days (the artifact maximum)
+# Each is its own fresh backup. GitHub may start a scheduled run late.
+# Not configured (no BACKUP_PASSPHRASE or no login secret): the run says so,
+# uploads nothing and stays green. A backup that fails turns the run red.
+on:
+  schedule:
+    - cron: '15 23 * * *'
+    - cron: '45 23 * * 4'
+    - cron: '15 0 1 * *'
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Which kind of backup (decides how long it is kept: daily 14 days, weekly 60, monthly 90)'
+        type: choice
+        options: [daily, weekly, monthly]
+        default: daily
+
+concurrency:
+  group: database-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Which backup is this
+        id: tier
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          CHOSEN: ${{ inputs.tier }}
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            case "$SCHEDULE" in
+              '45 23 * * 4') tier=weekly ;;
+              '15 0 1 * *')  tier=monthly ;;
+              *)             tier=daily ;;
+            esac
+          else
+            tier="${CHOSEN:-daily}"
+          fi
+          case "$tier" in
+            daily)   days=14 ;;
+            weekly)  days=60 ;;
+            monthly) days=90 ;;
+            *) echo "::error::Unknown backup kind"; exit 1 ;;
+          esac
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          echo "A $tier backup, kept $days days."
+
+      # Node built-ins only: no npm install, nothing downloaded at run time.
+      # The encrypted file goes to the runner's temp folder, outside the checkout.
+      - name: Back up the database (encrypted)
+        id: backup
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          BACKUP_LOGIN_EMAIL: ${{ secrets.BACKUP_LOGIN_EMAIL }}
+          BACKUP_LOGIN_PASSWORD: ${{ secrets.BACKUP_LOGIN_PASSWORD }}
+          REPORT_LOGIN_EMAIL: ${{ secrets.REPORT_LOGIN_EMAIL }}
+          REPORT_LOGIN_PASSWORD: ${{ secrets.REPORT_LOGIN_PASSWORD }}
+          BACKUP_TIER: ${{ steps.tier.outputs.tier }}
+          BACKUP_OUT_DIR: ${{ runner.temp }}/ultramed-backup
+        run: node scripts/backup/run.js
+
+      # Only the one encrypted file, by its exact path. Already compressed and
+      # encrypted, so the zip does not compress it again.
+      - name: Keep the encrypted file as an artifact
+        if: steps.backup.outputs.file != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ultramed-backup-${{ steps.tier.outputs.tier }}-${{ steps.backup.outputs.stamp }}
+          path: ${{ steps.backup.outputs.file }}
+          retention-days: ${{ steps.tier.outputs.days }}
+          if-no-files-found: error
+          compression-level: 0
