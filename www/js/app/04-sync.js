@@ -198,49 +198,87 @@ async function autoRestoreWipe(){
     `);
   }catch(e){ console.error('auto-restore failed, will retry next open', e); }
 }
-// v117: Renova's clinics vanished from the list (reported 20 Oct). The first
-// device that opens the app with a clean cloud read of the clinics and the
-// recycle bin brings back every clinic a daily backup holds that the live
-// list lacks and the team did not delete — a deliberate delete always leaves
-// a recycle-bin copy (kept 30 days; the backups go back 12), so a clinic that
-// is only in the delete log is brought back too and cleared from it. Clinics
-// only: visits, tasks and sales files are not touched. Idempotent — the next
-// device finds nothing missing. Every bring-back is written to repairLog.
-let _missingSweepDone = false;   // once per app start: a background refresh never re-reads the backups
-const MISSING_SWEEP_DAY = 'um_missingSweepDay';   // and once per device per day: the backups are large to download
-async function restoreMissingClinicsSweep(){
+// v119: clinics without a name and doctors met on a visit whose record is
+// gone from the clinic. Doctors: 55 of
+// them lost in the August–September incidents, one in a save that never
+// landed (reported 11 Nov). They come back from what this phone still holds:
+// the copy it kept before the big August change (um_mirror_prev:clinics), the
+// last copy it saw (um_mirror:clinics), and — for visits saved from v119 on —
+// the names the visit records. Only a doctor a visit names, in a clinic still
+// in the list, never one the team deleted (doctor delete log), never one
+// whose name the clinic already lists (the same person added again since).
+// Local data only, nothing downloaded; once per device per day; never blocks
+// the start; each bring-back goes to repairLog and is toasted.
+let _lostDocsDone = false;
+const LOST_DOCS_DAY = 'um_lostDocsDay';
+async function restoreLostDoctors(){
+  if(_lostDocsDone || !currentUser || _bootCrashed || ['clinics','visits'].some(k => _loadFailed[k] || _mirrorUsed[k])) return;
+  _lostDocsDone = true;
+  try{ if(localStorage.getItem(LOST_DOCS_DAY) === todayStr()) return; }catch(e){}
+  const byId = new Map(clinics.map(c => [c && c.id, c]));
+  const met = new Map();   // clinicId → Map(doctorId → name a visit recorded, or '')
+  visits.forEach(v => {
+    if(!v || !v.clinicId || !byId.has(v.clinicId)) return;
+    const ids = (Array.isArray(v.doctorIds) ? v.doctorIds : []).concat(v.doctorId ? [v.doctorId] : []);
+    ids.forEach(id => {
+      if(id == null || id === '') return;
+      const m = met.get(v.clinicId) || met.set(v.clinicId, new Map()).get(v.clinicId);
+      const nm = v.doctorNames && v.doctorNames[id] ? String(v.doctorNames[id]) : '';
+      if(!m.has(id) || (nm && !m.get(id))) m.set(id, nm);
+    });
+  });
+  const copy = new Map();  // clinicId|doctorId → the record a copy on this phone holds
+  ['um_mirror:clinics', 'um_mirror_prev:clinics'].forEach(k => {
+    let arr = null; try{ arr = UMCore.safeParse(localStorage.getItem(k), null); }catch(e){}
+    (Array.isArray(arr) ? arr : []).forEach(c => (c && Array.isArray(c.doctors) ? c.doctors : []).forEach(d => {
+      if(d && d.id != null && d.name && !copy.has(c.id + '|' + d.id)) copy.set(c.id + '|' + d.id, d);
+    }));
+  });
+  // Clinics the August restore could only bring back without a name ("⚠️
+  // Restored clinic — rename me", hidden from every list): the real record
+  // this phone kept from before the wipe, same id, puts the name, owner,
+  // details and doctors back, and the clinic shows again with its visits.
+  const named = [], realCopy = new Map();
+  ['um_mirror_prev:clinics', 'um_mirror:clinics'].forEach(k => {
+    let arr = null; try{ arr = UMCore.safeParse(localStorage.getItem(k), null); }catch(e){}
+    (Array.isArray(arr) ? arr : []).forEach(c => { if(c && c.id != null && c.name && !isPlaceholderClinic(c) && !realCopy.has(c.id)) realCopy.set(c.id, c); });
+  });
+  hiddenPlaceholderClinics.slice().forEach(h => {
+    const src = realCopy.get(h.id);
+    if(!src || tombSet('clinics').has(h.id)) return;
+    const c = Object.assign({}, JSON.parse(JSON.stringify(src)), { id: h.id });
+    ['rep', 'cls', 'lastVisit', 'nextFollowUp'].forEach(f => { if(h[f] != null && h[f] !== '' && (c[f] == null || c[f] === '')) c[f] = h[f]; });
+    c.doctors = UMCore.mergeDoctorLists(Array.isArray(c.doctors) ? c.doctors : [], Array.isArray(h.doctors) ? h.doctors : []).doctors;
+    clinics.push(normalizeClinic(c));
+    named.push({ clinicId: h.id, clinic: c.name, rep: c.rep || '' });
+  });
+  if(named.length){ hidePlaceholderClinics(); byId.clear(); clinics.forEach(c => byId.set(c && c.id, c)); }
+  const deleted = tombSet('doctors'), back = [];
+  met.forEach((docs, cid) => {
+    const c = byId.get(cid), have = new Set((c.doctors || []).map(d => d && d.id));
+    docs.forEach((name, did) => {
+      if(have.has(did) || deleted.has(cid + '|' + did)) return;
+      const rec = copy.get(cid + '|' + did) || (name ? { id: did, name } : null);
+      if(!rec) return;
+      const key = UMCore.normDoctorName(rec.name);   // the same person added again since: already listed, nothing to bring back
+      if(key && (c.doctors || []).some(d => d && UMCore.normDoctorName(d.name) === key)) return;
+      c.doctors = (c.doctors || []).concat([Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, JSON.parse(JSON.stringify(rec)))]);
+      have.add(did);
+      back.push({ clinicId: cid, clinic: c.name || '', rep: c.rep || '', id: did, name: rec.name, from: copy.has(cid + '|' + did) ? 'phone copy' : 'visit' });
+    });
+  });
+  try{ localStorage.setItem(LOST_DOCS_DAY, todayStr()); }catch(e){}
+  if(!back.length && !named.length) return;
+  const saved = await persistFor('clinics');
+  const ok = saved.ok || sentSince('clinics', saved);
+  console.warn(`phone copies: ${named.length} nameless clinics named, ${back.length} doctors brought back (${ok ? 'saved' : 'not saved yet'})`);
   try{
-    if(_missingSweepDone || !currentUser || _bootCrashed || ['clinics','recycleBin'].some(k => _loadFailed[k] || _mirrorUsed[k])) return;
-    _missingSweepDone = true;
-    try{ if(localStorage.getItem(MISSING_SWEEP_DAY) === todayStr()) return; }catch(e){}
-    const list = await withTimeout(window.storage.list('snap_', true), 8000).catch(() => null);
-    const keys = (list && list.keys) || [];
-    if(!keys.length) return;
-    const snaps = [];
-    for(const k of keys){
-      const res = await withTimeout(window.storage.get(k, true), 8000).catch(() => null);
-      const snap = res ? UMCore.safeParse(res.value, null) : null;
-      if(snap && Array.isArray(snap.clinics)) snaps.push({ date: k.replace('snap_', ''), clinics: snap.clinics });
-    }
-    if(snaps.length !== keys.length) return;   // a backup this device could not read: no verdict here (tried again next start)
-    const r = UMCore.clinicsMissingFromBackups(storedClinics(), snaps, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id) });
-    const pick = r.missing.filter(m => m.deleted !== 'bin');
-    try{ localStorage.setItem(MISSING_SWEEP_DAY, todayStr()); }catch(e){}   // a complete check: this device is done for today
-    if(!pick.length) return;
-    const back = pick.map(m => normalizeClinic(JSON.parse(JSON.stringify(m.clinic))));
-    await untombMany({ clinics: back.map(c => c.id) });   // the delete log first, or the next merge removes them again
-    clinics = clinics.concat(back); hidePlaceholderClinics();
-    const saved = await persistFor('clinics');
-    const ok = saved.ok || sentSince('clinics', saved);
-    console.warn(`missing clinics: ${back.length} brought back from the daily backups (${ok ? 'saved' : 'not saved yet'})`);
-    try{
-      const entry = { at: new Date().toISOString(), by: currentUser.name, kind: 'clinics-from-backups', saved: ok,
-        clinics: pick.map(m => ({ id: m.id, name: m.clinic.name || '', rep: m.clinic.rep || '', lastSeen: m.lastSeen, log: m.deleted === 'log' })) };
-      await storageUpdate('repairLog', cur => { const arr = UMCore.safeParse(cur, []); return JSON.stringify((Array.isArray(arr) ? arr : []).concat([entry]).slice(-50)); });
-    }catch(e){ console.warn('repairLog', e); }
-    renderAll();
-    showToast(ok ? `♻️ ${back.length} clinics brought back from the daily backups` : `⚠️ ${back.length} clinics brought back on this device — not saved to the cloud yet`, 6000);
-  }catch(e){ console.error('missing-clinics sweep', e); }
+    const entry = { at: new Date().toISOString(), by: currentUser.name, kind: 'from-phone-copy', saved: ok, clinics: named, doctors: back };
+    await storageUpdate('repairLog', cur => { const arr = UMCore.safeParse(cur, []); return JSON.stringify((Array.isArray(arr) ? arr : []).concat([entry]).slice(-50)); });
+  }catch(e){ console.warn('repairLog', e); }
+  renderAll();
+  const what = [named.length ? `${named.length} clinics` : '', back.length ? `${back.length} doctors` : ''].filter(Boolean).join(' and ');
+  showToast(ok ? `♻️ ${what} brought back` : `⚠️ ${what} brought back on this device — not saved to the cloud yet`, 6000);
 }
 // Second recovery pass after the Aug-30 wipe: the single-day restore brought
 // most things back, but records missing from that one day and clinics revived
@@ -659,8 +697,14 @@ async function loadErpSales(){
   const keys = UMCore.erpChunkKeys(index);
   _erpStored = new Set(keys);
   _erpBroken = [];
+  // A file's rows never change under their key (a new upload is a new key):
+  // the files this phone already holds exactly are not downloaded again —
+  // erpFillFromMirror below puts them in from the phone's copy (v119).
+  const held = {};
+  ((prevMirror && prevMirror.periods) || []).forEach(p => { if(p && Array.isArray(p.rows) && p.rows.length) held[UMCore.erpRowsKey(p)] = p.rows.length; });
+  const fetchKeys = UMCore.erpChunkKeys({ periods: index.periods.filter(h => !(h && h.rowsRef && held[h.rowsRef.key] != null && (h.rowsRef.count == null || held[h.rowsRef.key] === h.rowsRef.count))) });
   let docs = {};
-  if(keys.length && !_mirrorUsed.erpSales && !_loadFailed.erpSales) docs = await erpFetchChunks(keys);
+  if(fetchKeys.length && !_mirrorUsed.erpSales && !_loadFailed.erpSales) docs = await erpFetchChunks(fetchKeys);
   const out = UMCore.erpAssemble(index, docs);
   if(out.missing.length) out.missing = erpFillFromMirror(out.sales, prevMirror);
   // What is on screen never double-counts a day, whatever the cloud holds
@@ -1030,7 +1074,6 @@ async function loadAll(){
     // snapshots but no clinic doc is damaged, not new — restore, don't seed.
     await autoRestoreWipe();
     await deepRestoreSweep();
-    await restoreMissingClinicsSweep();
     archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
     if(_seedClinics && !c && readOk('clinics')){ await persist('clinics', {allowSeed:true}); _seedClinics = false; } // genuinely fresh account
     if(!p && readOk('products')) await persist('products');
@@ -1055,6 +1098,7 @@ async function loadAll(){
     if(!categoryGuides) categoryGuides = JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED));
   }
   hidePlaceholderClinics();
+  if(!_bootCrashed && !_seedClinics) restoreLostDoctors().catch(e => console.warn('phone copies', e)); // local copies only, never blocks the start
   // Rep filters default once per sign-in; the background refresh keeps
   // whatever the supervisor has selected (a rep is always pinned to herself).
   if(_filtersFor !== currentUser.name || currentUser.role === 'rep'){
@@ -1503,11 +1547,13 @@ async function storageUpdate(key, fn, ms){
   if(!ok) throw new Error('set failed');
   return next;
 }
+const SNAP_DAY = 'um_snapDay'; // this phone already found or wrote today's backup (v119: no download of it on every start)
 async function maybeSnapshot(){
   try{
-    const key = 'snap_'+todayStr();
+    const day = todayStr(), key = 'snap_' + day;
+    try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
     const existing = await window.storage.get(key, true).catch(()=>null);
-    if(existing) return; // already snapshotted today
+    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} return; } // already snapshotted today
     // The sales index is tiny and its chunks stay in the cloud for a week
     // after being replaced, so the daily backup can restore the sales files too.
     const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
@@ -1516,11 +1562,12 @@ async function maybeSnapshot(){
     const vp = UMCore.visitsPartition(visits, todayStr());
     const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
     await window.storage.set(key, JSON.stringify({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}), true);
-    const list = await window.storage.list('snap_', true).catch(()=>null);
-    if(list && list.keys && list.keys.length > 12){
-      const sorted = list.keys.slice().sort();
-      const toDelete = sorted.slice(0, sorted.length - 12);
-      for(const k of toDelete){ await window.storage.delete(k, true).catch(()=>null); }
+    try{ localStorage.setItem(SNAP_DAY, day); }catch(e){}
+    // Keep 12 days: the backups that aged out are deleted by name — listing
+    // them would download every backup in full (the cloud has no light listing).
+    for(let i = 13; i <= 19; i++){
+      const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() - i);
+      await window.storage.delete('snap_' + UMCore.localDateStr(d), true).catch(()=>null);
     }
   }catch(e){ console.error('snapshot error', e); }
 }

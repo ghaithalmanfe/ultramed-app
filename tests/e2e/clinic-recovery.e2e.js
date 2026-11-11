@@ -1,9 +1,12 @@
-// Missing clinics, from the daily backups (v116, v117: brought back on their own). Renova's clinics were gone
-// from the list. Export → Automatic backups → "Find missing clinics" lists
-// every clinic a daily backup holds and the list does not, with its owner and
-// the last day a backup had it, and brings back only the ticked ones — the
-// visits, tasks and sales files stay exactly as they are. A clinic deleted in
-// the app (recycle bin) is listed but not ticked. Port 8217.
+// Missing clinics, from the daily backups (v116), and lost doctors (v119).
+// Export → Automatic backups → "Find missing clinics" lists every clinic a
+// daily backup holds and the list does not, with its owner and the last day a
+// backup had it, and brings back only the ticked ones — the visits, tasks and
+// sales files stay exactly as they are; a clinic deleted in the app (recycle
+// bin) is listed but not ticked. v119: opening the app downloads no backup
+// (v117 downloaded all of them every day on every phone), and a doctor a visit
+// met whose record is gone comes back from the phone's own copy or from the
+// name the visit records — never one the team deleted. Port 8217.
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { chromium } = require('playwright');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -90,55 +93,89 @@ function seed(){
       rows: [...body.querySelectorAll('input[data-recov]')].map(i => ({ id: i.dataset.recov, on: i.checked, t: txt(i.closest('label')) })) };
   });
 
-  // ---- nobody taps anything: the first device that opens the app brings them back (v117) ----
+  // ---- opening the app downloads no backup; nothing is brought back on its own ----
   seed();
   const visitsBefore = cloud.visits;
+  mode.snapReads = [];
   await boot(R, 'rep');
   await page.waitForTimeout(400);
-  let cl = JSON.parse(cloud.clinics), byId = Object.fromEntries(cl.map(c => [c.id, c]));
-  check('auto: on Renova\'s own phone, her two clinics are back in the cloud, as the newest backup holds them; Apex (deleted in the app) stays deleted',
-    cl.length === 18 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.filter(c => !/^f/.test(c.id)).map(c => c.id + ':' + c.name));
-  check('auto: visits, tasks and sales files untouched', cloud.visits === visitsBefore, cloud.visits.slice(0, 120));
-  const toast = await page.evaluate(() => document.getElementById('toast').textContent);
-  check('auto: the phone says so', /2 clinics brought back from the daily backups/.test(toast), toast);
-  const log = JSON.parse(cloud.repairLog || '[]');
-  check('auto: what came back is written to the repair log (who, when, which, last seen)', log.length === 1 && log[0].by === R && log[0].saved === true && log[0].clinics.map(x => x.id + '@' + x.lastSeen).join(',') === 'r1@2026-10-18,r2@2026-10-15', log);
-  const mine = await page.evaluate(() => { switchView('clinics'); setClinicMode('list'); return [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()); });
-  check('auto: Renova sees her clinics again', mine.length === 2 && mine.some(n => /Crown Dental Center/.test(n)) && mine.some(n => /Jibla/.test(n)), mine);
-  // the next device finds nothing to do
-  mode.snapReads = [];
-  await boot(G, 'supervisor');
-  check('auto: the next device writes nothing more', JSON.parse(cloud.clinics).length === 18 && JSON.parse(cloud.repairLog || '[]').length === 1, { n: JSON.parse(cloud.clinics).length, log: JSON.parse(cloud.repairLog || '[]').length });
-  // the same phone, opened again the same day, does not download the backups again
-  // (the start just above was this phone's first of the day: it read the backups)
-  check('auto: the first start of the day reads the backups', mode.snapReads.length >= 3, mode.snapReads.length);
+  check('start: no clinic brought back on its own (only the sheet does that)', JSON.parse(cloud.clinics).length === 16 && !cloud.repairLog, JSON.parse(cloud.clinics).length);
+  check('start: no backup downloaded except the one check of today\'s own', mode.snapReads.every(k => k === 'snap_2026-10-20') && mode.snapReads.length <= 1, mode.snapReads);
   mode.snapReads = [];
   await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
-  await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(400);
-  check('auto: once per device per day — a second start the same day reads no backup (only the daily-backup check of today\'s own)', mode.snapReads.every(k => k === 'snap_2026-10-20') && mode.snapReads.length <= 1, mode.snapReads);
-  // ---- the supervisor's sheet: what is left is the clinic deleted in the app, not ticked; he can still bring it back ----
+  await page.evaluate(async () => { await selectUser('Renova', 'rep'); }); await page.waitForTimeout(400);
+  check('start: a second start the same day downloads no backup at all', mode.snapReads.length === 0, mode.snapReads);
+  // ---- the supervisor's sheet ----
+  await boot(G, 'supervisor');
   let s = await sheet();
   const rv = (s.people || []).find(p => p.rep === R);
-  check('sheet: Renova now 2, three in the backup of Oct 15', !!rv && /now 2 · most in a backup 3 \(Oct 15\)/.test(rv.t), s.people);
+  check('sheet: Renova now 0, three in the backup of Oct 15', !!rv && /now 0 · most in a backup 3 \(Oct 15\)/.test(rv.t), s.people);
   const row = id => (s.rows || []).find(x => x.id === id) || {};
-  check('sheet: only Apex is listed — deleted in the app (recycle bin), not ticked', (s.rows || []).length === 1 && row('r3').on === false && /deleted in the app \(recycle bin\)/.test(row('r3').t), s.rows);
-  const done = await page.evaluate(async () => { recovToggle('r3', true); await restoreMissingClinics(); await new Promise(r => setTimeout(r, 300));
-    const body = document.getElementById('recovBody'); return { note: (document.getElementById('recovNote') || {}).innerText || '', text: body ? body.innerText.replace(/\s+/g, ' ') : '' }; });
-  cl = JSON.parse(cloud.clinics);
-  check('sheet: ticked by hand, Apex comes back and leaves the recycle bin', cl.some(c => c.id === 'r3') && !JSON.parse(cloud.recycleBin).clinics.some(c => c.id === 'r3'), cl.map(c => c.id));
-  check('sheet: the note says what landed', /1 clinics are back in the list and saved/.test(done.note), done.note);
-  check('sheet: nothing is missing now', /no clinic is missing/i.test(done.text), done.text.slice(0, 300));
-  check('visits still untouched', cloud.visits === visitsBefore);
-  // ---- a phone that could not read the recycle bin brings nothing back (it cannot tell a deliberate delete) ----
-  seed();
-  mode.failGet = /^recycleBin$/;
-  await boot(G, 'supervisor');
-  mode.failGet = null;
-  check('no clean read of the recycle bin: nothing is brought back', JSON.parse(cloud.clinics).length === 16 && !cloud.repairLog, JSON.parse(cloud.clinics).length);
+  check('sheet: Crown Dental Center (newest backup copy, last Oct 18) and Jibla (Oct 15) ticked; Apex (deleted in the app) not ticked',
+    row('r1').on === true && /Crown Dental Center/.test(row('r1').t) && /Oct 18/.test(row('r1').t) && row('r2').on === true && row('r3').on === false && /deleted in the app \(recycle bin\)/.test(row('r3').t), s.rows);
+  const done = await page.evaluate(async () => { await restoreMissingClinics(); await new Promise(r => setTimeout(r, 300));
+    return { note: (document.getElementById('recovNote') || {}).innerText || '' }; });
+  const cl = JSON.parse(cloud.clinics), byId = Object.fromEntries(cl.map(c => [c.id, c]));
+  check('sheet: Renova\'s two clinics are back in the cloud, as the newest backup holds them; Apex stays deleted',
+    cl.length === 18 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.filter(c => !/^f/.test(c.id)).map(c => c.id + ':' + c.name));
+  check('sheet: the note says what landed', /2 clinics are back in the list and saved/.test(done.note), done.note);
+  check('visits untouched', cloud.visits === visitsBefore);
   // Arabic: the sheet speaks Arabic
+  seed();
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   s = await sheet();
-  check('Arabic: the sheet speaks Arabic', /موجودة في نسخة احتياطية وليست في القائمة الآن/.test(s.text) && /آخر ظهور في نسخة احتياطية|لا توجد عيادة ناقصة/.test(s.text), (s.text || '').slice(0, 300));
+  check('Arabic: the sheet speaks Arabic', /موجودة في نسخة احتياطية وليست في القائمة الآن/.test(s.text) && /آخر ظهور في نسخة احتياطية/.test(s.text), (s.text || '').slice(0, 300));
+  // ---- lost doctors (v119) ----
+  const D = (id, name, x) => Object.assign({ id, name, title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, x || {});
+  const live = Object.assign({}, M1, { doctors: [D('dA', 'Dr. Amal')] });
+  const vMet = (id, docs, names) => Object.assign({ id, clinicId: 'm1', rep: M, date: '2026-10-1' + id.slice(-1), doctorIds: docs, doctorId: docs[0] }, names ? { doctorNames: names } : {});
+  seed();
+  cloud.clinics = JSON.stringify([live, G1].concat(FILL));
+  cloud.visits = JSON.stringify([vMet('vb2', ['dB']), vMet('vc3', ['dC']), vMet('vd4', ['dD'], { dD: 'Dr. Dana' }), vMet('ve5', ['dE']), vMet('vf6', ['dF'])]);
+  cloud.tombs = JSON.stringify({ visits: {}, tasks: {}, clinics: {}, events: {}, dayPlans: {}, doctors: { 'm1|dC': Date.now() } });   // Dr. Carla was deleted on purpose
+  const phoneCopy = JSON.stringify([Object.assign({}, M1, { doctors: [D('dA', 'Dr. Amal'), D('dB', 'Dr. Basma', { title: 'Orthodontist', phone: '5555' }), D('dC', 'Dr. Carla'), D('dE', 'dr amal')] })]);
+  await boot(M, 'rep', { 'um_mirror_prev:clinics': phoneCopy });
+  await page.waitForTimeout(600);
+  const m1 = JSON.parse(cloud.clinics).find(c => c.id === 'm1'), names = (m1.doctors || []).map(d => d.id + ':' + d.name);
+  const basma = (m1.doctors || []).find(d => d.id === 'dB') || {};
+  check('lost doctors: Dr. Basma comes back from the phone\'s copy with her details; Dr. Dana from the name her visit recorded',
+    basma.name === 'Dr. Basma' && basma.title === 'Orthodontist' && basma.phone === '5555' && names.includes('dD:Dr. Dana'), names);
+  check('lost doctors: not Dr. Carla (deleted on purpose), not a second Dr. Amal, nothing for a doctor no copy and no visit names',
+    !names.some(n => /^dC:|^dE:|^dF:/.test(n)) && names.length === 3, names);
+  const rlog = JSON.parse(cloud.repairLog || '[]');
+  check('lost doctors: written to the repair log and said', rlog.length === 1 && rlog[0].kind === 'from-phone-copy' && rlog[0].doctors.map(x => x.id + '<' + x.from).join(',') === 'dB<phone copy,dD<visit',
+    rlog.map(e => e.doctors));
+  const t1 = await page.evaluate(() => document.getElementById('toast').textContent);
+  check('lost doctors: the phone says so', /2 doctors brought back/.test(t1), t1);
+  await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
+  await page.evaluate(async () => { await selectUser('Mariam', 'rep'); }); await page.waitForTimeout(500);
+  check('lost doctors: the next start brings nothing more', JSON.parse(cloud.repairLog || '[]').length === 1, JSON.parse(cloud.repairLog || '[]').length);
+  const vn = await page.evaluate(() => visitDoctorNames('m1', ['dA', 'dB', 'nobody']));
+  check('a visit records the names of the people met', JSON.stringify(vn) === JSON.stringify({ dA: 'Dr. Amal', dB: 'Dr. Basma' }), vn);
+  // ---- clinics the August restore left without a name (v119) ----
+  const PH = id => ({ id, name: '⚠️ Restored clinic — rename me', rep: R, cls: 'B', doctors: [] });
+  seed();
+  cloud.clinics = JSON.stringify([M1, G1, C('rs', 'Al Seef Hospital', R, 'A'), PH('p1'), PH('p2'), PH('p3')].concat(FILL));
+  cloud.visits = JSON.stringify([{ id: 'w1', clinicId: 'p1', rep: R, date: '2026-10-05', notes: 'Dr is asking about light prices' },
+    { id: 'w2', clinicId: 'p2', rep: R, date: '2026-10-06', notes: 'Dental department meeting' }, { id: 'w3', clinicId: 'p3', rep: R, date: '2026-10-07' }]);
+  const copy3 = JSON.stringify([{ id: 'p3', name: 'Hadi Clinic, Jabriya', rep: R, cls: 'C', phone: '2222', doctors: [{ id: 'dh', name: 'Dr. Hadi' }] }]);
+  await boot(R, 'rep', { 'um_mirror_prev:clinics': copy3 });
+  await page.waitForTimeout(600);
+  let live3 = JSON.parse(cloud.clinics), p3 = live3.find(c => c.id === 'p3') || {};
+  check('nameless: the phone\'s copy gives one its real name, details and doctor back, and it shows in the list',
+    p3.name === 'Hadi Clinic, Jabriya' && p3.phone === '2222' && (p3.doctors || []).some(d => d.name === 'Dr. Hadi'), p3);
+  const card = await page.evaluate(() => { switchView('clinics'); setClinicMode('list'); return (document.getElementById('namelessCard') || {}).innerText || ''; });
+  check('nameless: Renova sees a card for the two still without a name', /2 clinics from August have no name/.test(card), card);
+  const sheetTxt = await page.evaluate(async () => { openNamelessClinics(); await new Promise(r => setTimeout(r, 50)); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
+  check('nameless: the sheet shows what each one\'s visits say', /Dr is asking about light prices/.test(sheetTxt) && /Dental department meeting/.test(sheetTxt), sheetTxt.slice(0, 300));
+  await page.evaluate(async () => { await nameNamelessClinic('p1', 'Smile Point Clinic'); await new Promise(r => setTimeout(r, 200)); await nameNamelessClinic('p2', 'al seef hospital'); await new Promise(r => setTimeout(r, 300)); });
+  live3 = JSON.parse(cloud.clinics);
+  const p1 = live3.find(c => c.id === 'p1') || {}, w2 = JSON.parse(cloud.visits).find(v => v.id === 'w2') || {};
+  check('nameless: a new name shows the clinic again with its visit', p1.name === 'Smile Point Clinic' && p1.rep === R, p1);
+  check('nameless: the name of a clinic already in the list moves the visit there and drops the empty record',
+    w2.clinicId === 'rs' && !live3.some(c => c.id === 'p2'), { w2: w2.clinicId, p2: live3.some(c => c.id === 'p2') });
+  const after3 = await page.evaluate(() => { closeModal(); renderClinics(); return { card: (document.getElementById('namelessCard') || {}).innerText || '', list: [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()) }; });
+  check('nameless: nothing left without a name; Renova\'s list shows Smile Point and Hadi', !after3.card && after3.list.some(n => /Smile Point Clinic/.test(n)) && after3.list.some(n => /Hadi Clinic/.test(n)), after3);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

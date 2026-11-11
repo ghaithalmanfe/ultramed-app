@@ -12,8 +12,9 @@ const core = require(path.resolve(WWW, 'js/core.js'));
 const PORT = 8214;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const cloud = {};
+const reads = [];
 const api = {
-  get: async k => k in cloud ? cloud[k] : null,
+  get: async k => { reads.push(k); return k in cloud ? cloud[k] : null; },
   set: async (k, v) => { cloud[k] = v; return true; },
   del: async k => { delete cloud[k]; return true; },
   list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
@@ -117,6 +118,13 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   const tdy = await today();
   check('Today card: Mariam 91.00 KD of 1000.00 KD, Renova 30.00 KD, Team 121.00 KD (only people with a target)', /Mariam \d+% 91\.00 KD of 1000\.00 KD/.test(tdy) && /Renova \d+% 30\.00 KD of 1000\.00 KD/.test(tdy) && /121\.00 KD of 2000\.00 KD/.test(tdy), tdy.slice(0, 400));
 
+  // ---- v119: a phone that already holds the sales files does not download them again ----
+  check('first start: the sales files are downloaded', reads.some(k => /^erpRows:/.test(k)), reads.filter(k => /^erpRows:/.test(k)));
+  reads.length = 0;
+  await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
+  await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(300);
+  const again = await ach();
+  check('second start: no sales file downloaded again, the figures unchanged', !reads.some(k => /^erpRows:/.test(k)) && again.m === 91 && again.r === 30 && again.g === 50, { erpReads: reads.filter(k => /^erpRows:/.test(k)), again });
   // ---- one rep: the card adds up to her Today figure ----
   let c = await clinicsCard(M);
   const bought = tileKD(c, /^Bought/), chan = tileKD(c, /Online \/ channels/), ign = kd(c.parts.ignored) || 0;
