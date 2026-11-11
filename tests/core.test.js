@@ -4109,3 +4109,50 @@ describe('missing clinics, from the daily backups (v116)', () => {
     assert.deepEqual(core.clinicsMissingFromBackups(cur, [], {}), { missing: [], people: [{ rep: 'Dr. Ghaith', now: 1, most: 0, mostDate: null }, { rep: 'Mariam', now: 1, most: 0, mostDate: null }], offTeam: [] });
   });
 });
+
+describe('names the app recorded, and what a returning clinic moves (v120)', () => {
+  test('clinicNamesFromTasks: the newest follow-up task of each clinic id; typed tasks and placeholder names are not names', () => {
+    const tasks = [
+      { id: 't1', kind: 'followup', clinicId: 'p1', text: 'Follow up: Cedar Hosp', created: '2026-08-10' },
+      { id: 't2', kind: 'followup', clinicId: 'p1', text: 'Follow up: Cedar Hospital', created: '2026-08-17' },
+      { id: 't3', clinicId: 'p2', text: 'Follow up: Dr. Ahmad about the order', created: '2026-08-12' },          // typed by hand, no kind
+      { id: 't4', kind: 'followup', clinicId: 'p3', text: 'Follow up: ⚠️ Restored clinic — rename me', created: '2026-09-01' },
+      { id: 't5', kind: 'followup', clinicId: 'zz', text: 'Follow up: Other', created: '2026-08-12' }, null, { kind: 'followup' }];
+    const r = core.clinicNamesFromTasks(tasks, ['p1', 'p2', 'p3']);
+    assert.deepEqual(Object.assign({}, r), { p1: 'Cedar Hospital' });
+    assert.deepEqual(Object.assign({}, core.clinicNamesFromTasks(null, ['p1'])), {});
+  });
+  test('erpAddClinicMoves: a returning clinic that takes an account from its issuer is a move; the same person is not', () => {
+    const row = (d, doc, cust, net, rep) => [d, doc, 0, 'Strip', 1, net, net, 0, rep, 'Intensiv', cust, 'Clinics', 0, ''];
+    const clinics = [{ id: 'm1', name: 'Lamar Dental Salmiya', rep: 'Mariam', doctors: [] }];
+    const data = { clinics, erpMap: {}, erpSales: { periods: [{ id: 'p', from: '2026-09-01', to: '2026-10-31', repMap: { 'Mariam Zohair': 'Mariam', 'Renova Ayman': 'Renova' }, rows: [
+      row('2026-09-14', 'S1', 'Cedar Hospital', 120, 'Mariam Zohair'), row('2026-10-02', 'S2', 'Cedar Hospital', 80, 'Renova Ayman'),
+      row('2026-10-05', 'S3', 'Lamar Dental Salmiya', 50, 'Mariam Zohair')] }] } };
+    const cedar = { id: 'p1', name: 'Cedar Hospital', rep: 'Renova', doctors: [] };
+    const mv = core.erpAddClinicMoves(data, [cedar]);
+    assert.deepEqual(mv.map(m => [m.date, m.from, m.to]), [['2026-09-14', 'Mariam', 'Renova']]);   // Renova's own invoice stays hers: no move
+    assert.deepEqual(core.erpAddClinicMoves(data, [{ id: 'p2', name: 'Vargainia', rep: 'Mariam', doctors: [] }]), []);
+    assert.deepEqual(core.erpAddClinicMoves(data, []), []);
+    // one read of the lines for several checks; a name matched only by spelling ("Alnoor" ~ "Al-Noor Clinic") is not skipped
+    data.erpSales.periods[0].rows.push(row('2026-10-06', 'S4', 'Alnoor', 30, 'Mariam Zohair'));
+    const cache = {};
+    assert.deepEqual(core.erpAddClinicMoves(data, [{ id: 'p3', name: 'Al-Noor Clinic', rep: 'Renova', doctors: [] }], cache).map(m => [m.customer, m.from, m.to]), [['Alnoor', 'Mariam', 'Renova']]);
+    assert.deepEqual(core.erpAddClinicMoves(data, [cedar], cache).map(m => m.date), ['2026-09-14']);
+    assert.equal(core.erpAddClinicMoves(data, [cedar, { id: 'p3', name: 'Al-Noor Clinic', rep: 'Renova', doctors: [] }], cache).length, 2);
+  });
+  test('lostDoctors: who the visits met and the clinic no longer lists, deleted ones left out, newest first', () => {
+    const clinics = [{ id: 'c1', name: 'Basma', doctors: [{ id: 'dA', name: 'Dr. Amal' }] }, { id: 'c2', name: 'Blue', doctors: [] }];
+    const visits = [
+      { id: 'v1', clinicId: 'c1', date: '2026-08-10', rep: 'Renova', doctorId: 'dB', doctorIds: ['dB'], notes: ' liked it ' },
+      { id: 'v2', clinicId: 'c1', date: '2026-09-02', rep: 'Renova', doctorIds: ['dA', 'dB', 'dC'] },
+      { id: 'v3', clinicId: 'c1', date: '2026-08-20', doctorIds: ['dD'] },                    // dD was deleted in the app
+      { id: 'v4', clinicId: 'gone', date: '2026-08-20', doctorIds: ['dZ'] },                  // not a listed clinic
+      { id: 'v5', clinicId: 'c2', date: '2026-07-01', doctorIds: ['dE'], doctorNames: { dE: 'Dr. Eman' } }, null];
+    const r = core.lostDoctors(clinics, visits, new Set(['c1|dD']));
+    assert.deepEqual(Object.keys(r).sort(), ['c1', 'c2']);
+    assert.deepEqual(r.c1.map(e => [e.id, e.visits.map(v => v.id).join(',')]), [['dB', 'v2,v1'], ['dC', 'v2']]);
+    assert.equal(r.c1[0].visits[1].notes, 'liked it');
+    assert.equal(r.c2[0].name, 'Dr. Eman');
+    assert.deepEqual(Object.keys(core.lostDoctors(clinics, visits, { 'c1|dD': 1, 'c1|dB': 1, 'c1|dC': 1, 'c2|dE': 1 })), []);
+  });
+});
