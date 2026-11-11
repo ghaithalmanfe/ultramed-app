@@ -21,7 +21,34 @@ function copyDir(from, to, skip){
     if(e.isDirectory()) copyDir(a, b, skip); else fs.copyFileSync(a, b);
   }
 }
+// Real sales data never ships: the published site is public (v119 — until v118
+// the August ERP export sat in www/ and anyone could download it). A
+// spreadsheet or CSV, or a JSON file holding ERP lines (the app's packed
+// [date, invoice, …] arrays, or objects naming a customer), stops the build.
+const SHEET = /\.(xlsx|xlsm|xls|csv)$/i;
+function holdsSalesLines(v){
+  const lines = Array.isArray(v) ? v : (v && typeof v === 'object' && Array.isArray(v.rows) ? v.rows : null);
+  return !!lines && lines.some(r => Array.isArray(r)
+    ? r.length >= 11 && typeof r[0] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r[0])
+    : !!r && typeof r === 'object' && Object.prototype.hasOwnProperty.call(r, 'customer'));
+}
+function salesDataFiles(dir, base){
+  base = base || dir;
+  const found = [];
+  for(const e of fs.readdirSync(dir, { withFileTypes: true })){
+    const p = path.join(dir, e.name);
+    if(e.isDirectory()){ if(e.name !== 'node_modules') found.push(...salesDataFiles(p, base)); continue; }
+    const rel = path.relative(base, p).split(path.sep).join('/');
+    if(SHEET.test(e.name)){ found.push(rel); continue; }
+    if(!/\.json$/i.test(e.name)) continue;
+    let v; try{ v = JSON.parse(fs.readFileSync(p, 'utf8')); }catch(err){ continue; }
+    if(holdsSalesLines(v)) found.push(rel);
+  }
+  return found;
+}
 function build(){
+  const leaked = salesDataFiles(SRC);
+  if(leaked.length) fail('sales data must not be published: ' + leaked.join(', ') + ' (the site is public — keep sales files out of www/)');
   const appDir = path.join(SRC, 'js', 'app');
   const lines = fs.readFileSync(path.join(SRC, 'index.html'), 'utf8').split('\n');
   const at = lines.map((l, i) => TAG.test(l) ? i : -1).filter(i => i >= 0);
@@ -50,4 +77,4 @@ function build(){
   return { files: listed.length, bytes: html.length };
 }
 if(require.main === module){ const r = build(); console.log(`built ${path.relative(ROOT, OUT) || OUT}: ${r.files} app files inlined, index.html ${Math.round(r.bytes / 1024)} KB`); }
-module.exports = { build };
+module.exports = { build, salesDataFiles };

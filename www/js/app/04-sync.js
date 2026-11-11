@@ -337,49 +337,6 @@ async function applyDsrSeed(){
   await persist('targets');
   showToast('📊 DSR 23.08 figures applied — Mariam 5,298.36 · Renova 7,501.41');
 }
-// One-time import of the supervisor's Ultramed_Sales3 export (Aug 2026),
-// shipped alongside the app at their request so the sales data applies without
-// re-uploading the file. Fetched on demand (never precached — it is a one-time
-// supervisor payload), guarded by a persisted flag, absorbed through the same
-// overlap logic as a manual upload, and inert after August 2026.
-async function applySalesSeed(){
-  if(currentUser.role !== 'supervisor') return;
-  if(_loadFailed.erpSales || _mirrorUsed.erpSales) return; // a failed/offline read is NOT an empty account
-  if(todayStr().slice(0,7) !== '2026-08') return;
-  if((erpSales.seeds || {}).sales3_aug26) return;
-  let seed;
-  try{
-    const resp = await fetch('sales-seed-aug26.json', {cache:'no-cache'});
-    if(!resp.ok) return; // offline or missing — retry silently next open
-    seed = await resp.json();
-  }catch(e){ return; }
-  if(!seed || !Array.isArray(seed.rows) || !seed.rows.length) return;
-  // Freshness guard: if the supervisor already uploaded these salesmen's data
-  // reaching AT LEAST the seed's end date, the account is newer than the seed
-  // — record the flag and never roll it back to older rows.
-  const seedNames = new Set(Object.keys(seed.repMap || {}));
-  const fresher = erpPeriods().some(pp => (pp.to || '') >= seed.to &&
-    unpackErpRows(pp.rows).some(r => seedNames.has(r.salesman)));
-  if(fresher){
-    erpSales.seeds = Object.assign({}, erpSales.seeds, { sales3_aug26: true });
-    await persist('erpSales');
-    return;
-  }
-  const t = { from: seed.from, to: seed.to };
-  const replaced = erpAbsorbOverlaps(t, Object.keys(seed.repMap || {}));
-  const seedMap = Object.assign({}, seed.repMap || {}, erpSales.repMapGlobal || {});
-  const seedRows = (seed.rows || []).filter(a => !(Object.prototype.hasOwnProperty.call(seedMap, a[8]) && seedMap[a[8]] === null));
-  erpSales.periods.push({ id: 'seed_sales3_aug26', from: seed.from, to: seed.to,
-    net: Math.round(seedRows.reduce((s2, a) => s2 + (a[6] || 0), 0) * 1000) / 1000, rowCount: seedRows.length, importedAt: new Date().toISOString(),
-    repMap: seed.repMap || {}, rev: Date.now(), rows: seedRows });
-  // The seed only FILLS IN who-is-who — a mapping the supervisor already
-  // stored for any of these names always wins over the seed's.
-  erpSales.repMapGlobal = Object.assign({}, seed.repMap || {}, erpSales.repMapGlobal);
-  erpSales.seeds = Object.assign({}, erpSales.seeds, { sales3_aug26: true });
-  await persist('erpSales');
-  renderErpNudge();
-  showToast(`📥 ملف المبيعات (1–26 أغسطس) طُبِّق تلقائيًا — صافي ${money(seed.net)}${replaced?` (حلّ محل ${replaced} فترة قديمة)`:''}`);
-}
 let _loadFailed = {}; // docs whose LAST read rejected — a failed read is not an empty account
 let _mirrorUsed = {}; // docs served from the local mirror (offline) — never authoritative
 // ---- ERP sales: split storage (index document + row-chunk documents) ----
@@ -1038,7 +995,6 @@ async function loadAll(){
     if(!bm && readOk('benchmarks')) await persist('benchmarks');
     if(!cg && readOk('categoryGuides')) await persist('categoryGuides');
     await applyDsrSeed();
-    await applySalesSeed();
     if(currentUser && currentUser.role === 'supervisor' && !_loadFailed.erpSales && !_mirrorUsed.erpSales) await purgeIgnoredSalesmen();
     await applyProductImgSeed();
     await restoreOrphanClinics();

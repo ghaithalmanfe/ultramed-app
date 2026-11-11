@@ -9,7 +9,7 @@ const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const SALES_B64 = fs.readFileSync(salesFixture()).toString('base64');
-const SEED = JSON.parse(fs.readFileSync(WWW + '/sales-seed-aug26.json', 'utf8'));
+const SEED = require('./fixtures/august-seed.js'); // synthetic, same shape as the August seed — nothing real (v119)
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const server = http.createServer((req,res)=>{
   const f = path.join(WWW, req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0]);
