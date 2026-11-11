@@ -94,11 +94,18 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   console.log('DBG', JSON.stringify(s).slice(0,1500)); const sepId1 = s.periods[1].id;
 
   // ---------- 2) RELOAD: boot from index + chunks ----------
+  // a phone that does not hold the rows yet (v119: one that does reads no chunk — checked below)
+  await page.evaluate(() => { try{ localStorage.removeItem('um_mirror:erpSales'); }catch(e){} });
   mode.gets = [];
   await boot();
   s = await state();
   check('after reload both periods come back with all rows', s.periods.length===2 && s.periods[0].rows===312 && s.periods[1].rows===146 && !s.loadFailed && !s.mirrorUsed, s.periods);
   check('boot read the index and 2 chunks in parallel', mode.gets.filter(k=>k.startsWith('erpRows:')).length===2, mode.gets.filter(k=>/erp/.test(k)));
+  mode.gets = [];
+  await boot();
+  s = await state();
+  check('v119: the same phone again reads no chunk — the rows it holds under the same key come from its copy', mode.gets.filter(k=>k.startsWith('erpRows:')).length===0 && s.periods.length===2 && s.periods[0].rows===312 && s.periods[1].rows===146 && !s.loadFailed && !s.mirrorUsed,
+    { gets: mode.gets.filter(k=>/erp/.test(k)), periods: s.periods.map(p => p.rows) });
   check('MTD identical after reload', JSON.stringify(s.mtd)===JSON.stringify(mtd1), s.mtd);
 
   // ---------- 3) RE-UPLOAD the same cumulative file: replaces, never piles up ----------
