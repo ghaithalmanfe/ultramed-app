@@ -276,6 +276,7 @@ async function restoreLostDoctors(){
     const entry = { at: new Date().toISOString(), by: currentUser.name, kind: 'from-phone-copy', saved: ok, clinics: named, doctors: back };
     await storageUpdate('repairLog', cur => { const arr = UMCore.safeParse(cur, []); return JSON.stringify((Array.isArray(arr) ? arr : []).concat([entry]).slice(-50)); });
   }catch(e){ console.warn('repairLog', e); }
+  auditRecord({ action: 'restore.doctors', key: 'clinics', after: { clinics: named.map(x => x.clinic), doctors: back.map(x => x.name + ' · ' + x.clinic) }, result: saved });
   renderAll();
   const what = [named.length ? `${named.length} clinics` : '', back.length ? `${back.length} doctors` : ''].filter(Boolean).join(' and ');
   showToast(ok ? `♻️ ${what} brought back` : `⚠️ ${what} brought back on this device — not saved to the cloud yet`, 6000);
@@ -1068,6 +1069,7 @@ async function loadAll(){
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: compares against automatic backups
   flushOutbox(); // anything saved offline goes up now, merged with the cloud
+  if(typeof auditFlush === 'function') auditFlush(); // change-log entries this phone still holds (never waited for)
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for
 // ---- SMART MERGE-ON-SAVE ----
@@ -1264,6 +1266,8 @@ async function flushOutbox(){
       const ok = key==='tombs' ? await persistTombs()
         : (key==='chat'||key==='memories') ? await persistTeam(key) : await persist(key);
       if(!ok) allOk = false;
+      // the visit and clinic changes the change log recorded as "kept on this device" have now landed
+      else if((key === 'visits' || key === 'clinics') && typeof auditRecord === 'function') auditRecord({ action: 'sync.upload', key, label: key, result: true });
     }
   }finally{ _flushing = false; }
   updateSyncBadge();
@@ -1283,7 +1287,7 @@ function updateSyncBadge(){
   el.style.display = 'block';
   el.textContent = !navigator.onLine ? '📴 Offline — saving locally' : `⏳ Uploading offline changes (${n})…`;
 }
-window.addEventListener('online', ()=>{ updateSyncBadge(); flushOutbox(); });
+window.addEventListener('online', ()=>{ updateSyncBadge(); flushOutbox(); if(typeof auditFlush === 'function') auditFlush(); });
 window.addEventListener('offline', updateSyncBadge);
 function tombSet(key){ return _tombstones[key] || new Set(); }
 function mergeById(key, local, cloud){
@@ -1334,6 +1338,9 @@ async function persist(key, opts){
   // (10-doctors-products.js) as a compare-and-set — never a blind write, never
   // queued offline, never from a rep's phone.
   if(key === 'rxTypes'){ console.error("rxTypes is saved by saveRxTypes — persist('rxTypes') refused"); return false; }
+  // The change log is only ever appended to, one entry at a time (auditFlush,
+  // 17-audit-log.js) — never written whole from here.
+  if(String(key).indexOf('auditLog:') === 0){ console.error("the change log is appended by auditRecord — persist('" + key + "') refused"); return false; }
   // The factory clinic list must never be written over a live account. It can
   // be on screen only because a boot went wrong — saving from that state is
   // exactly how a whole team's list gets destroyed.
@@ -1492,6 +1499,29 @@ function persistFor(key, opts){
 // it (a later save of the same list carries it, since the list in memory
 // holds it): it is saved.
 function sentSince(key, r){ return !!r && !r.ok && !!(r.outcome && r.outcome.queued) && !outboxHas(key) && persistOutcome(key).ok === true; }
+// persist(key) with what THIS call did and nothing else: { ok, outcome }.
+// Unlike persistFor it never falls back on an earlier save's outcome — a
+// save refused before it tried (the factory-list guard, a document this phone
+// could not read) reads as not saved, never as "kept on this device". What
+// the change log records (17-audit-log.js) and the toast the person sees.
+function persistTold(key, opts){
+  let info = null;
+  const told = ok => ({ ok: ok === true, outcome: info || { ok: ok === true, queued: false, mirrored: false } });
+  return persist(key, Object.assign({}, opts || {}, { told: x => { info = x; } }))
+    .then(told, e => { console.warn('save of ' + key + ' failed', e); return told(false); });
+}
+// The toast for one save, from what that save did (persistTold / persistFor):
+// okMsg only when it landed; else kept on this phone (it uploads by itself),
+// or not saved — "saved" never covers a failure. Returns whether it landed.
+function saveToast(r, key, okMsg, ms){
+  const landed = !!r && (r.ok === true || (!!key && sentSince(key, r)));
+  const o = (r && r.outcome) || {};
+  if(landed) showToast(okMsg, ms);
+  else if(o.queued && o.mirrored) showToast('📴 Saved on this device — it uploads automatically when back online', 4000);
+  else if(o.queued) showToast('⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000);
+  else showToast('⚠️ Not saved — check the connection and try again', 4000);
+  return landed;
+}
 // Atomic read-merge-write where the storage supports it; a plain (non-atomic)
 // read → fn → write otherwise, with the same contract.
 async function storageUpdate(key, fn, ms){
