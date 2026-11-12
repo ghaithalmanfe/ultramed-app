@@ -4253,6 +4253,7 @@ describe('alerts center (v121)', () => {
     assert.equal(f.action, 'retryErp');
     assert.equal(f.sev, 'high');
     assert.ok(!run(M).some(x => x.type === 'sync'), 'nothing waiting, nothing failed');
+    assert.ok(!run(M, { device: { erpDirty: true } }).some(x => x.type === 'sync'), 'the sales files are the supervisor\'s: a trim on a rep\'s phone is not her save');
   });
   test('a failed import and today\'s backup: the supervisor\'s only, as this phone found them', () => {
     const now = at(13, 30), fail = { at: at(10, 42), ok: false, msg: '❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry', who: G };

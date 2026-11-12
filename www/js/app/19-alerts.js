@@ -210,7 +210,7 @@ function alertsOpenItem(el){
 async function alertsUploadNow(btn){
   if(btn) btn.disabled = true;
   if(navigator.onLine === false){ showToast('📴 This phone is offline — the changes upload when the connection is back'); if(btn) btn.disabled = false; return; }
-  if(_flushing){ showToast('⏳ Uploading…'); return; }
+  if(_flushing){ showToast('⏳ Uploading…'); if(btn) btn.disabled = false; return; }
   await flushOutbox();
   if(outboxList().length) showToast('⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.');
   refreshAlerts(true);
