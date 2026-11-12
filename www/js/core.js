@@ -5779,17 +5779,18 @@
         spans[rep] = { cut: cut, pTo: pTo, ok: !!cut && erpSpanCovered(c.data, pStart, pTo, rep || null) }; }
       return spans[rep];
     };
+    // one pass over both months (the month figure's own lines): last month's
+    // to its same-days end, this month's to the owner's cut-off
     var cur = Object.create(null), prev = Object.create(null);
-    var add = function(store, last){ return function(r, p, person, mm){
+    erpMonthLines(c.data, pStart, c.today, function(r, p, person, mm){
       var cl = mm && mm.clinicId && !mm.channel && !mm.ignored ? c.byId[mm.clinicId] : null;
       if(!cl || cl.cls === 'Closed' || isInternalAccount(r.customer)) return;
       if(!c.sup && cl.rep !== c.user.name) return;
-      var P = span(cl.rep || '');
+      var P = span(cl.rep || ''), last = r.date <= pEnd;
       if(!P.ok || r.date > (last ? P.pTo : P.cut)) return;
+      var store = last ? prev : cur;
       store[cl.id] = (store[cl.id] || 0) + r.net;
-    }; };
-    erpMonthLines(c.data, mStart, c.today, add(cur, false));
-    erpMonthLines(c.data, pStart, pEnd, add(prev, true));
+    });
     var groups = Object.create(null), order = [], r2 = function(x){ return Math.round(x * 100) / 100; };
     Object.keys(prev).forEach(function(id){
       var was = r2(prev[id]), now = r2(cur[id] || 0);
@@ -5886,12 +5887,34 @@
       events: Array.isArray(data.events) ? data.events : [], targets: data.targets || {},
       data: { today: today, clinics: clinics, visits: visits, targets: data.targets || {}, erpSales: data.erpSales || { periods: [] }, erpMap: data.erpMap || {} },
       S: S, device: input.device || {}, fd: typeof input.fmtDate === 'function' ? input.fmtDate : fmtDate };
+    // input.cache (an object the caller keeps): the two rules that read the
+    // sales lines run again only when what they read changed
+    var cache = input.cache && typeof input.cache === 'object' ? input.cache : null, erpKey = null;
     var out = [], seen = Object.create(null);
     ALERT_TYPES.forEach(function(t){
       if(!S.types[t] || (ALERT_SUP_ONLY[t] && !c.sup)) return;
-      ALERT_RULES[t](c).forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; out.push(a); } });
+      var list;
+      if(cache && ALERT_ERP_RULES[t]){
+        erpKey = erpKey || alertErpKey(c);
+        var slot = cache[t];
+        if(slot && slot.key === erpKey) list = slot.list;
+        else { list = ALERT_RULES[t](c); cache[t] = { key: erpKey, list: list }; }
+      } else list = ALERT_RULES[t](c);
+      list.forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; out.push(a); } });
     });
     return out.sort(function(a, b){ return ALERT_SEV[a.sev] - ALERT_SEV[b.sev] || ALERT_TYPES.indexOf(a.type) - ALERT_TYPES.indexOf(b.type) || erpCmp(a.rep, b.rep); });
+  }
+  var ALERT_ERP_RULES = { target: true, drop: true };
+  // Everything the target and customer rules read: the day, whose view, the
+  // limits, the sales files (a file's rows never change under the same id and
+  // revision), the account links, the clinics' names / owners / handovers /
+  // shared flags / class, the targets, the team and the screen's date format.
+  function alertErpKey(c){
+    var es = c.data.erpSales || {}, ps = Array.isArray(es.periods) ? es.periods : [];
+    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), c.S.targetPacePct, c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD, es.returnPolicy || '',
+      ps.map(function(p){ return p ? [p.id, p.rev || 0, p.from, p.to, p.rowsMissing ? 1 : 0, Array.isArray(p.rows) ? p.rows.length : -1, p.repMap || null] : null; }),
+      c.data.erpMap, c.targets,
+      c.clinics.map(function(x){ return x ? [x.id, x.name, x.rep || '', x.cls || '', x.prevRep || '', x.repSince || '', x.shared ? 1 : 0, x.sharedSince || ''] : null; })]);
   }
   // Each user's dismiss (for the rest of the day) and snooze (until a time),
   // kept on the device: { dismissed: { id: 'YYYY-MM-DD' }, snoozed: { id: ms } }.
