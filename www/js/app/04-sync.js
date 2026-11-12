@@ -1291,7 +1291,9 @@ function mergeById(key, local, cloud, base){
     if(!bx || !cloudById[x.id] || typeof UMCore.merge3Record !== 'function') return x; // (an old cached core.js: as before)
     const r = UMCore.merge3Record(x, cloudById[x.id], bx, fieldMerge);
     if(r.fromCloud) recovered++;
-    return r.value;
+    // a doctor the team removed never comes back from the cloud's side of the
+    // three-way merge (a stale copy, or a phone still on an older version)
+    return key === 'clinics' ? dropTombedDoctors(r.value) : r.value;
   });
   cloud.forEach(x => {
     if(x && x.id != null && !have.has(x.id) && !ts.has(x.id)){ merged.push(x); recovered++; }
