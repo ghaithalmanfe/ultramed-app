@@ -282,16 +282,20 @@ async function saveStandaloneOrder(){
   const clinic = clinics.find(c=>c.id===soClinicId);
   const rep = currentUser.role==='supervisor' ? (clinic?clinic.rep:currentUser.name) : currentUser.name;
   const order = {id:uid(), items, discountPct:soDiscount, gross:t.gross, discountAmount:t.disc, total:t.net, notes};
-  visits.push({
+  const ov = {
     id:uid(), clinicId:soClinicId, rep, date, orderOnly:true,
     products:items.map(i=>i.productId), orderTaken:true, orders:[order], orderItems:items,
     orderGross:t.gross, orderDiscount:t.disc, orderTotal:t.net,
     nextFollowUp:null, notes
-  });
-  await Promise.all([persist('visits'), soNewCreated ? persist('clinics') : Promise.resolve()]);
+  };
+  visits.push(ov);
+  const [vs, cs] = await Promise.all([persistFor('visits'), soNewCreated ? persistTold('clinics') : Promise.resolve(null)]);
+  auditRecord({ action: 'order.add', key: 'visits', id: ov.id, label: auditVisitLabel(ov), after: auditVisitFields(ov), result: vs });
+  if(soNewCreated && clinic) auditRecord({ action: 'clinic.add', key: 'clinics', id: clinic.id, label: clinic.name, after: auditClinicFields(clinic), result: cs });
   soNewClinicMode = false;
   closeModal();
-  showToast(soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
+  // what the save did — "saved" only when it landed
+  saveToast(vs, 'visits', soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
   renderAll();
 }
 
@@ -422,15 +426,18 @@ async function saveCallLog(){
   const contactName = document.getElementById('clContactName').value.trim();
   const contactRole = document.getElementById('clContactRole').value.trim();
   const contactPhone = document.getElementById('clContactPhone').value.trim();
-  visits.push({id:uid(), clinicId:clClinicId, rep, date:todayStr(), ts:Date.now(), callOnly:true, channel, doctorId:clDoctorId||null,
+  const cv = {id:uid(), clinicId:clClinicId, rep, date:todayStr(), ts:Date.now(), callOnly:true, channel, doctorId:clDoctorId||null,
     contactName: contactName||null, contactRole: contactRole||null, contactPhone: contactPhone||null,
-    notes, nextFollowUp:followUp});
+    notes, nextFollowUp:followUp};
+  visits.push(cv);
   if(clinic && followUp) clinic.nextFollowUp = followUp;
-  await Promise.all([persist('visits'), (clinic || newClinicCreated) ? persist('clinics') : Promise.resolve()]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), (clinic || newClinicCreated) ? persistTold('clinics') : Promise.resolve(null)]);
+  auditRecord({ action: 'call.add', key: 'visits', id: cv.id, label: auditVisitLabel(cv), after: auditVisitFields(cv), result: vs });
+  if(newClinicCreated && clinic) auditRecord({ action: 'clinic.add', key: 'clinics', id: clinic.id, label: clinic.name, after: auditClinicFields(clinic), result: cs });
   if(clinic && followUp) await scheduleFollowUp(clinic, followUp, rep);
   clNewClinicMode = false;
   closeModal();
-  showToast(newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
+  saveToast(vs, 'visits', newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
   renderAll();
 }
 
@@ -467,6 +474,8 @@ function openEditVisit(visitId){
       <input type="number" step="0.01" min="0" id="evTotal" value="${v.orderTotal||0}">
       <p style="color:var(--muted); font-size:12px; margin-top:6px;">Adjusts the recorded value. To change line items, delete and re-enter the order.</p>
     `:''}
+    <label>Reason for the change (optional)</label>
+    <input type="text" id="evReason" dir="auto" placeholder="e.g. wrong date — kept in the change log">
     <button class="btn" onclick="saveEditVisit('${v.id}')">Save changes</button>
     ${(currentUser.role==='supervisor' || v.rep===currentUser.name) ? `<button class="btn ghost" onclick="confirmDeleteVisit('${v.id}')">Delete this ${v.orderOnly?'order':'visit'}</button>` : `<div style="color:var(--muted); font-size:12px; text-align:center; margin-top:6px;">Only ${esc(v.rep)} or the supervisor can delete this visit.</div>`}
   `);
@@ -513,19 +522,23 @@ function addEditPhoto(visitId){
     const id = uid();
     if(await savePhotoBlob(id, full)){
       v.photos = v.photos || [];
+      const had = v.photos.length;
       v.photos.push({id, thumb});
-      await persist('visits');
+      const r = await persistFor('visits');
+      auditRecord({ action: auditVisitAction(v, 'edit'), key: 'visits', id: v.id, label: auditVisitLabel(v), before: { photos: had }, after: { photos: v.photos.length }, result: r });
       renderEditPhotos(visitId);
-      showToast('\u{1F4F8} Photo added');
+      saveToast(r, 'visits', '\u{1F4F8} Photo added');
     }
   }, true);
 }
 async function removeEditPhoto(visitId, photoId){
   const v = visits.find(x=>x.id===visitId);
   if(!v || !canEditVisit(v)) return;
+  const had = (v.photos||[]).length;
   v.photos = (v.photos||[]).filter(p=>p.id!==photoId);
   try{ await window.storage.delete('photo:'+photoId, true); }catch(e){}
-  await persist('visits');
+  const r = await persistFor('visits');
+  auditRecord({ action: auditVisitAction(v, 'edit'), key: 'visits', id: v.id, label: auditVisitLabel(v), before: { photos: had }, after: { photos: v.photos.length }, result: r });
   renderEditPhotos(visitId);
 }
 async function saveEditVisit(visitId){
@@ -554,11 +567,13 @@ async function saveEditVisit(visitId){
   const newRx = rxLive ? UMCore.cleanVisitRx(rxDraftLines('edit'), { types: rxTypes(), doctorIds: rxEditPeople(), keep: prevRx }) : prevRx;
   const rxChanged = rxLive && UMCore.rxSig(newRx) !== UMCore.rxSig(prevRx);
   const changed = newDate!==v.date || newNotes!==(v.notes||'') || newFollow!==(v.nextFollowUp||null) || newJoint!==(v.withRep||null) || docsChanged || rxChanged || (totalEl && !isNaN(newTotal) && newTotal>=0 && Math.round(newTotal*100)/100!==v.orderTotal);
+  const auditWas = auditVisitFields(v), reason = auditReasonFrom('evReason'); // the change log: before, and why
   if(changed){
     v.editHistory = v.editHistory || [];
     const was = {editedBy:currentUser.name, editedAt:Date.now(), prevDate:v.date, prevNotes:v.notes||'', prevFollowUp:v.nextFollowUp||null, prevTotal:v.orderTotal};
     if(rxChanged) was.prevRx = prevRx;                   // what was given before (shown in the edit history)
     if(docsChanged) was.prevDoctorIds = prevDocIds.slice(); // who was met before
+    if(reason) was.reason = reason;
     v.editHistory.push(was);
   }
   if(jointEl) v.withRep = newJoint===v.rep ? null : newJoint;
@@ -598,6 +613,7 @@ async function saveEditVisit(visitId){
   // offline queue may send visits again while the follow-up step below runs,
   // and that later save is not this one (persistFor / sentSince, 04).
   const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
+  auditRecord({ action: auditVisitAction(v, 'edit'), key: 'visits', id: v.id, label: auditVisitLabel(v), before: auditWas, after: auditVisitFields(v), reason, result: vs });
   // The auto-created follow-up task and day-plan entry follow the new date.
   if(clinic && followChanged) await scheduleFollowUp(clinic, v.nextFollowUp, v.rep);
   closeModal();
@@ -627,6 +643,7 @@ function showEditHistory(visitId){
       <div class="clinic-sub" style="margin-bottom:6px;">Edited by <strong>${esc(h.editedBy)}</strong> · ${fmtWhen(h.editedAt)}</div>
       <div style="font-size:13px;">Was: ${fmtDate(h.prevDate)}${h.prevTotal?' · '+money(h.prevTotal):''}${h.prevFollowUp?' · next follow-up '+fmtDate(h.prevFollowUp):''}</div>
       ${h.prevNotes?`<div style="font-size:12.5px; color:var(--muted); margin-top:4px;">"${esc(h.prevNotes)}"</div>`:''}
+      ${h.reason?`<div style="font-size:12.5px; margin-top:4px;"><span>Reason</span>: <bdi dir="auto">${esc(h.reason)}</bdi></div>`:''}
       ${Array.isArray(h.prevDoctorIds)?`<div style="font-size:12.5px; margin-top:6px;"><span>Doctors met were:</span> ${metWas(h.prevDoctorIds)}</div>`:''}
       ${Array.isArray(h.prevRx)?`<div style="font-size:12.5px; margin-top:6px;"><span>Prescriptions were:</span>${rxLinesHTML({ rx: h.prevRx }, c) || ' <span>None</span>'}</div>`:''}
     </div>`).join('')}
@@ -645,6 +662,8 @@ function confirmDeleteVisit(visitId){
       ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
     </div>
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
+    <label>Reason (optional)</label>
+    <input type="text" id="dvReason" dir="auto" placeholder="Why? (kept in the change log)">
     <button class="btn" style="background:var(--coral);" onclick="deleteVisit('${v.id}')">Yes, delete it</button>
     <button class="btn secondary" onclick="openEditVisit('${v.id}')">Cancel</button>
   `);
@@ -655,7 +674,9 @@ async function deleteVisit(visitId){
   if(currentUser.role!=='supervisor' && v.rep!==currentUser.name){ showToast('Not allowed'); return; }
   const clinicId = v.clinicId;
   const c = clinics.find(x=>x.id===clinicId);
-  if(!await moveToBin('visits', v, `${c?c.name:'Visit'} — ${fmtDate(v.date)}`)) return;
+  // the change log: what goes, and why (the sheet's reason box, when it is open)
+  const reason = auditReasonFrom('dvReason'), log = { action: auditVisitAction(v, 'delete'), key: 'visits', id: visitId, label: auditVisitLabel(v), before: auditVisitFields(v), reason };
+  if(!await moveToBin('visits', v, `${c?c.name:'Visit'} — ${fmtDate(v.date)}`)){ auditRecord(Object.assign(log, { result: false })); return; } // no safety copy, nothing deleted
   tomb('visits', visitId);
   visits = visits.filter(x=>x.id!==visitId);
   const clinic = clinics.find(x=>x.id===clinicId);
@@ -663,9 +684,10 @@ async function deleteVisit(visitId){
     const cv = visits.filter(x=>x.clinicId===clinicId && isFieldVisit(x));
     clinic.lastVisit = cv.length ? cv.map(x=>x.date).sort().slice(-1)[0] : null;
   }
-  await Promise.all([persist('visits'), persist('clinics')]);
+  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
+  auditRecord(Object.assign(log, { result: vs }));
   closeModal();
-  showToast('Moved to recycle bin');
+  saveToast(vs, 'visits', 'Moved to recycle bin');
   renderAll();
 }
 
