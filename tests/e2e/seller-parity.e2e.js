@@ -64,11 +64,11 @@ const G = 'Dr. Ghaith', M = 'Mariam';
     {name:G, role:'supervisor', email:'g@x.com'}]);
   const docs = id => [{id:id+'-d1', name:'Dr. '+id+' One', title:'Orthodontist'}];
   cloud.clinics = JSON.stringify([
-    {id:'m1', name:'Dental 8 Clinic', rep:M, cls:'A', doctors:docs('m1'), nextFollowUp:'2026-09-20', lastVisit:'2026-09-10'},
+    {id:'m1', name:'Dental 5 Clinic', rep:M, cls:'A', doctors:docs('m1'), nextFollowUp:'2026-09-20', lastVisit:'2026-09-10'},
     {id:'m2', name:'Smile Care Clinic', rep:M, cls:'B', doctors:docs('m2')},
-    {id:'g1', name:'Crown Dental Center', rep:G, cls:'A', doctors:docs('g1'), nextFollowUp:'2026-09-20', lastVisit:'2026-09-10'},
+    {id:'g1', name:'Summit Dental Center', rep:G, cls:'A', doctors:docs('g1'), nextFollowUp:'2026-09-20', lastVisit:'2026-09-10'},
     {id:'g2', name:'Bright Dental Center', rep:G, cls:'B', doctors:docs('g2')},
-    {id:'r1', name:'Al Salam Hospital', rep:'Renova', cls:'B', doctors:docs('r1')}]);
+    {id:'r1', name:'Sample Hospital', rep:'Renova', cls:'B', doctors:docs('r1')}]);
   const vis = []; let n = 0;
   [[M,'m1','m2'],[G,'g1','g2']].forEach(([rep,a,b]) => {
     ['2026-09-03','2026-09-10','2026-09-17','2026-09-24'].forEach((d,i) => {
@@ -101,7 +101,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
 
   // ---- 3) what to sell: per-clinic brand targets ----
   const ca = await page.evaluate(({G,M}) => { const out = {}; [G,M].forEach(r => { caRep = r; switchView('clanalysis'); renderClinicAnalysis(); out[r] = document.getElementById('caBody').innerText; }); out.chips = document.getElementById('caRepChips').innerText; return out; }, {G,M});
-  check('Clinic analysis ("what to sell"): his clinics get their brand targets, as hers do', /Crown Dental Center/.test(ca[G]) && /Dental 8 Clinic/.test(ca[M]) && /Philips|Waterpik/.test(ca[G]) && ca.chips.includes(G), { g: ca[G].split('\n').slice(0,4), m: ca[M].split('\n').slice(0,4) });
+  check('Clinic analysis ("what to sell"): his clinics get their brand targets, as hers do', /Summit Dental Center/.test(ca[G]) && /Dental 5 Clinic/.test(ca[M]) && /Philips|Waterpik/.test(ca[G]) && ca.chips.includes(G), { g: ca[G].split('\n').slice(0,4), m: ca[M].split('\n').slice(0,4) });
   const alloc = await page.evaluate(({G,M}) => { const f = r => { const a = UMCore.allocateClinicTargets({ rep: r, clinics, erpRows: erpPeriods().flatMap(p => p.rows||[]), erpMap: erpSales.erpMap || {}, brandTargets: targets[r].brands }); return Object.values(a.byClinic).reduce((s,c) => s + c.total, 0); }; return { g: f(G), m: f(M) }; }, {G,M});
   check('the per-clinic split adds up to the brand targets for him and for her', Math.abs(alloc.g - 3800) < 0.5 && Math.abs(alloc.m - 3800) < 0.5, alloc);
   const pm = await page.evaluate(({G,M}) => { const out = {}; [G,M].forEach(r => { _pmRep = r; openProductMovement(); out[r] = (window._pm || {}).products || 0; closeModal(); }); return out; }, {G,M});
@@ -109,11 +109,11 @@ const G = 'Dr. Ghaith', M = 'Mariam';
 
   // ---- 4) coverage, clinics, planning ----
   const cov = await page.evaluate(({G}) => { openCoverageBoard(); setCovRep(G); const t = document.getElementById('modalInner').innerText; closeModal(); return t; }, {G});
-  check('Coverage board filtered on him lists his clinics', /Crown Dental Center/.test(cov) && !/Dental 8 Clinic/.test(cov), cov.split('\n').slice(0,5));
+  check('Coverage board filtered on him lists his clinics', /Summit Dental Center/.test(cov) && !/Dental 5 Clinic/.test(cov), cov.split('\n').slice(0,5));
   const cl = await page.evaluate(({G}) => { switchView('clinics'); clinicRepFilter = G; renderClinics(); return document.getElementById('view-clinics') ? document.getElementById('view-clinics').innerText : document.body.innerText; }, {G});
-  check('Clinics filtered on him show his clinics', /Crown Dental Center/.test(cl) && /Bright Dental Center/.test(cl), cl.split('\n').slice(0,6));
+  check('Clinics filtered on him show his clinics', /Summit Dental Center/.test(cl) && /Bright Dental Center/.test(cl), cl.split('\n').slice(0,6));
   const plan = await page.evaluate(({G}) => { openDatePlanner('2026-09-29', G); const t = document.getElementById('modalInner').innerText; closeModal(); return t; }, {G});
-  check('Day planner plans for him with his clinics', plan.includes(G) && /Crown Dental Center/.test(plan), plan.split('\n').slice(0,4));
+  check('Day planner plans for him with his clinics', plan.includes(G) && /Summit Dental Center/.test(plan), plan.split('\n').slice(0,4));
 
   // ---- 5) visits: logs under his name; a rep can log a joint visit with him ----
   const lv = await page.evaluate(async () => {
@@ -131,11 +131,11 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   // ---- 7) the DSR upload finds his block ----
   const dsr = await page.evaluate(() => {
     const rows = [['Salesman ','Brand','Target','MTD Sales 26','Achieved vs. Target'],
-      ['Ghaith Al Manfe','Philips Sonicare',2080,null,0],[null,'Waterpik',1612,null,0],['Ghaith Al Manfe Total',null,3692,0,0],
-      ['Mariam Zohair','Philips Sonicare',600,null,0],[null,'Waterpik',465,null,0],['Mariam Zohair Total',null,1065,0,0]];
+      ['Ghaith Al Sample','Philips Sonicare',2080,null,0],[null,'Waterpik',1612,null,0],['Ghaith Al Sample Total',null,3692,0,0],
+      ['Mariam Sample','Philips Sonicare',600,null,0],[null,'Waterpik',465,null,0],['Mariam Sample Total',null,1065,0,0]];
     const r = UMCore.parseDsrTargets([{ name:'Sheet2', rows }], REPS); return { matched: r.matched.map(m => m.rep + ':' + m.revenue), err: r.error };
   });
-  check('DSR targets file: his block ("Ghaith Al Manfe") is read for him, like hers', !dsr.err && dsr.matched.includes(G + ':3692') && dsr.matched.includes(M + ':1065'), dsr);
+  check('DSR targets file: his block ("Ghaith Al Sample") is read for him, like hers', !dsr.err && dsr.matched.includes(G + ':3692') && dsr.matched.includes(M + ':1065'), dsr);
 
   // ---- 8) as Mariam: the same features exist for her (the control) ----
   await boot(M, 'rep');

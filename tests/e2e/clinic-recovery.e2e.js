@@ -26,8 +26,8 @@ const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info):'')); if(!ok) failed++; }
 const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova';
 const C = (id, name, rep, cls) => ({ id, name, rep, cls: cls || 'B', doctors: [] });
-const M1 = C('m1', 'Dental 8 Clinic', M, 'A'), G1 = C('g1', 'Bayan Dental Center', G, 'A');
-const R1 = C('r1', 'Crown Dental', R, 'A'), R1b = C('r1', 'Crown Dental Center', R, 'A'), R2 = C('r2', 'Jibla Dental Center', R), R3 = C('r3', 'Apex Dental Center', R);
+const M1 = C('m1', 'Dental 5 Clinic', M, 'A'), G1 = C('g1', 'Hilal Dental Center', G, 'A');
+const R1 = C('r1', 'Summit Dental', R, 'A'), R1b = C('r1', 'Summit Dental Center', R, 'A'), R2 = C('r2', 'Juniper Dental Center', R), R3 = C('r3', 'Zenith Dental Center', R);
 // a team-sized list (15+ clinics), so the wipe banner stays quiet and reads no backup of its own
 const FILL = Array.from({ length: 14 }, (_, i) => C('f' + (i + 1), 'Filler Clinic ' + (i + 1), M));
 const VISITS = [{ id: 'v1', clinicId: 'r1', rep: R, date: '2026-10-16' }, { id: 'v2', clinicId: 'm1', rep: M, date: '2026-10-19' }];
@@ -111,13 +111,13 @@ function seed(){
   const rv = (s.people || []).find(p => p.rep === R);
   check('sheet: Renova now 0, three in the backup of Oct 15', !!rv && /now 0 · most in a backup 3 \(Oct 15\)/.test(rv.t), s.people);
   const row = id => (s.rows || []).find(x => x.id === id) || {};
-  check('sheet: Crown Dental Center (newest backup copy, last Oct 18) and Jibla (Oct 15) ticked; Apex (deleted in the app) not ticked',
-    row('r1').on === true && /Crown Dental Center/.test(row('r1').t) && /Oct 18/.test(row('r1').t) && row('r2').on === true && row('r3').on === false && /deleted in the app \(recycle bin\)/.test(row('r3').t), s.rows);
+  check('sheet: Summit Dental Center (newest backup copy, last Oct 18) and Juniper (Oct 15) ticked; Apex (deleted in the app) not ticked',
+    row('r1').on === true && /Summit Dental Center/.test(row('r1').t) && /Oct 18/.test(row('r1').t) && row('r2').on === true && row('r3').on === false && /deleted in the app \(recycle bin\)/.test(row('r3').t), s.rows);
   const done = await page.evaluate(async () => { await restoreMissingClinics(); await new Promise(r => setTimeout(r, 300));
     return { note: (document.getElementById('recovNote') || {}).innerText || '' }; });
   const cl = JSON.parse(cloud.clinics), byId = Object.fromEntries(cl.map(c => [c.id, c]));
   check('sheet: Renova\'s two clinics are back in the cloud, as the newest backup holds them; Apex stays deleted',
-    cl.length === 18 && byId.r1 && byId.r1.name === 'Crown Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.filter(c => !/^f/.test(c.id)).map(c => c.id + ':' + c.name));
+    cl.length === 18 && byId.r1 && byId.r1.name === 'Summit Dental Center' && byId.r1.rep === R && byId.r2 && !byId.r3, cl.filter(c => !/^f/.test(c.id)).map(c => c.id + ':' + c.name));
   check('sheet: the note says what landed', /2 clinics are back in the list and saved/.test(done.note), done.note);
   check('visits untouched', cloud.visits === visitsBefore);
   // Arabic: the sheet speaks Arabic
@@ -155,27 +155,27 @@ function seed(){
   // ---- clinics the August restore left without a name (v119) ----
   const PH = id => ({ id, name: '⚠️ Restored clinic — rename me', rep: R, cls: 'B', doctors: [] });
   seed();
-  cloud.clinics = JSON.stringify([M1, G1, C('rs', 'Al Seef Hospital', R, 'A'), PH('p1'), PH('p2'), PH('p3')].concat(FILL));
+  cloud.clinics = JSON.stringify([M1, G1, C('rs', 'Sample Seaside Hospital', R, 'A'), PH('p1'), PH('p2'), PH('p3')].concat(FILL));
   cloud.visits = JSON.stringify([{ id: 'w1', clinicId: 'p1', rep: R, date: '2026-10-05', notes: 'Dr is asking about light prices' },
     { id: 'w2', clinicId: 'p2', rep: R, date: '2026-10-06', notes: 'Dental department meeting' }, { id: 'w3', clinicId: 'p3', rep: R, date: '2026-10-07' }]);
-  const copy3 = JSON.stringify([{ id: 'p3', name: 'Hadi Clinic, Jabriya', rep: R, cls: 'C', phone: '2222', doctors: [{ id: 'dh', name: 'Dr. Hadi' }] }]);
+  const copy3 = JSON.stringify([{ id: 'p3', name: 'Rami Clinic, Jabriya', rep: R, cls: 'C', phone: '2222', doctors: [{ id: 'dh', name: 'Dr. Hadi' }] }]);
   await boot(R, 'rep', { 'um_mirror_prev:clinics': copy3 });
   await page.waitForTimeout(600);
   let live3 = JSON.parse(cloud.clinics), p3 = live3.find(c => c.id === 'p3') || {};
   check('nameless: the phone\'s copy gives one its real name, details and doctor back, and it shows in the list',
-    p3.name === 'Hadi Clinic, Jabriya' && p3.phone === '2222' && (p3.doctors || []).some(d => d.name === 'Dr. Hadi'), p3);
+    p3.name === 'Rami Clinic, Jabriya' && p3.phone === '2222' && (p3.doctors || []).some(d => d.name === 'Dr. Hadi'), p3);
   const card = await page.evaluate(() => { switchView('clinics'); setClinicMode('list'); return (document.getElementById('namelessCard') || {}).innerText || ''; });
   check('nameless: Renova sees a card for the two still without a name', /2 clinics from August have no name/.test(card), card);
   const sheetTxt = await page.evaluate(async () => { openNamelessClinics(); await new Promise(r => setTimeout(r, 50)); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
   check('nameless: the sheet shows what each one\'s visits say', /Dr is asking about light prices/.test(sheetTxt) && /Dental department meeting/.test(sheetTxt), sheetTxt.slice(0, 300));
-  await page.evaluate(async () => { await nameNamelessClinic('p1', 'Smile Point Clinic'); await new Promise(r => setTimeout(r, 200)); await nameNamelessClinic('p2', 'al seef hospital'); await new Promise(r => setTimeout(r, 300)); });
+  await page.evaluate(async () => { await nameNamelessClinic('p1', 'Smile Point Clinic'); await new Promise(r => setTimeout(r, 200)); await nameNamelessClinic('p2', 'sample seaside hospital'); await new Promise(r => setTimeout(r, 300)); });
   live3 = JSON.parse(cloud.clinics);
   const p1 = live3.find(c => c.id === 'p1') || {}, w2 = JSON.parse(cloud.visits).find(v => v.id === 'w2') || {};
   check('nameless: a new name shows the clinic again with its visit', p1.name === 'Smile Point Clinic' && p1.rep === R, p1);
   check('nameless: the name of a clinic already in the list moves the visit there and drops the empty record',
     w2.clinicId === 'rs' && !live3.some(c => c.id === 'p2'), { w2: w2.clinicId, p2: live3.some(c => c.id === 'p2') });
   const after3 = await page.evaluate(() => { closeModal(); renderClinics(); return { card: (document.getElementById('namelessCard') || {}).innerText || '', list: [...document.querySelectorAll('#clinicList .clinic-name')].map(e => e.innerText.trim()) }; });
-  check('nameless: nothing left without a name; Renova\'s list shows Smile Point and Hadi', !after3.card && after3.list.some(n => /Smile Point Clinic/.test(n)) && after3.list.some(n => /Hadi Clinic/.test(n)), after3);
+  check('nameless: nothing left without a name; Renova\'s list shows Smile Point and Hadi', !after3.card && after3.list.some(n => /Smile Point Clinic/.test(n)) && after3.list.some(n => /Rami Clinic/.test(n)), after3);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

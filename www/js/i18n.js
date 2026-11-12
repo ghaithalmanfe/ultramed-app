@@ -1722,7 +1722,7 @@
     '(not marked as met)': '(غير محدد ضمن من قابلتهم)'
   };
 
-  // Clinic lists inside coach sentences: "Bayan Dental (never visited), Salam Clinic (12d) +3 more"
+  // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
   function namesAr(list) {
     return list.replace(/ \(never visited\)/g, ' (لم تُزر أبداً)').replace(/ \((\d+)d\)/g, ' (قبل $1 يوم)').replace(/ \+(\d+) more$/, ' +$1 أخرى');
   }
@@ -1946,7 +1946,7 @@
   var LEAD = /^((?:\p{Extended_Pictographic}|[\u2022\u2023\u25A0-\u25FF\u2190-\u21FF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF\u200D\uFE0F\u20E3])+)\s+([\s\S]+)$/u;
   var MIRROR = { '→': '←', '←': '→', '▶': '◀', '◀': '▶', '›': '‹', '‹': '›' };
 
-  // "Aline Dental Clinic - Jabriya (by hand)" or "not linked": the name stays, the status is translated
+  // "Orion Dental Clinic - Jabriya (by hand)" or "not linked": the name stays, the status is translated
   function trWhere(w) {
     var mm = String(w).match(/^(.*) \(([^()]+)\)$/);
     if (mm) { var t = lookup(mm[2]); return mm[1] + ' (' + (t != null ? t : mm[2]) + ')'; }

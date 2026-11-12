@@ -53,11 +53,11 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   const H = ',Date,Type,,Invoice#,Date of Stock Issue,Stock Issue #,Code,Account,Customer Class,Code,AltCode,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name,Remarks,';
   const L = (d, inv, acct, qty, gross, product, brand, sm) => `,${d},SalesInvoice,Credit,${inv},${d},MIV${inv},001,${acct},Clinics,X1,01/1,"${product}",${qty},${gross},0,${gross},0,0,${gross},${brand},${sm},,`;
   const csv = [H,
-    L('01/10/2026','SINV1','Alpha Dental Center',2,70,'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION','Intensiv','Mariam Zohair'),
-    L('02/10/2026','SINV2','Alpha Dental Center',1,380,'WG-69 A, Intensiv Swingle, W&H Synea, without light','Intensiv','Mariam Zohair'),
-    L('03/10/2026','SINV3','Alpha Dental Center',3,27,'Bio Gel A','B&L Biotech','Mariam Zohair'),
-    L('04/10/2026','SINV4','Alpha Dental Center',1,48,'Inspection Fee for Intensiv Handpiece','Maintenance','Mariam Zohair'),
-    L('05/10/2026','SINV5','Alpha Dental Center',1,49,'Sonicare 4100 White','Philips Export BV','Mariam Zohair')].join('\n');
+    L('01/10/2026','SINV1','Alpha Dental Center',2,70,'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION','Intensiv','Mariam Sample'),
+    L('02/10/2026','SINV2','Alpha Dental Center',1,380,'WG-69 A, Intensiv Swingle, W&H Synea, without light','Intensiv','Mariam Sample'),
+    L('03/10/2026','SINV3','Alpha Dental Center',3,27,'Bio Gel A','B&L Biotech','Mariam Sample'),
+    L('04/10/2026','SINV4','Alpha Dental Center',1,48,'Inspection Fee for Intensiv Handpiece','Maintenance','Mariam Sample'),
+    L('05/10/2026','SINV5','Alpha Dental Center',1,49,'Sonicare 4100 White','Philips Export BV','Mariam Sample')].join('\n');
   await page.goto('http://localhost:8203/index.html'); await page.waitForTimeout(300);
   await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(250);
   await page.evaluate(async (csv) => { window.confirm = () => true; openErpImport(); await erpAutoImport(csv); await new Promise(r => setTimeout(r, 300));
