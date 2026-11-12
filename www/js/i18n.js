@@ -1844,6 +1844,8 @@
     'Recommended for': 'يُنصح به لـ',
     'Sales notes': 'ملاحظات البيع',
     'Sales materials': 'مواد البيع',
+    'Before': 'قبل',
+    'After': 'بعد',
     'Link': 'الرابط',
     'How many': 'العدد',
     'Changes': 'التغييرات',
