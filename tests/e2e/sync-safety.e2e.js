@@ -12,7 +12,7 @@ const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.s
 
 // ---- fake cloud (in Node: shared by every phone, survives reloads) ----
 const cloud = {};
-const mode = { failGet: null, failSet: null, offline: new Set(), slow: {}, reads: [], writes: [] };
+const mode = { failGet: null, failSet: null, offline: new Set(), slow: {}, slowSet: {}, reads: [], writes: [] };
 let held = false; const waiters = [];   // one transaction at a time, first come first served
 const acquire = async () => { if(!held){ held = true; return true; } await new Promise(r => waiters.push(r)); return true; };
 const release = async () => { const next = waiters.shift(); if(next) next(); else held = false; return true; };
@@ -21,7 +21,8 @@ const api = {
   // mode.slow[k] = ms: the next read of k answers with the value as it is when the read ARRIVES, delivered ms later
   get: async (who, k) => { off(who); mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); const v = k in cloud ? cloud[k] : null;
     if(mode.slow[k]){ const ms = mode.slow[k]; delete mode.slow[k]; await new Promise(r => setTimeout(r, ms)); } return v; },
-  set: async (who, k, v) => { off(who); if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set'); mode.writes.push(k); cloud[k] = v; return true; },
+  set: async (who, k, v) => { off(who); if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set');
+    if(mode.slowSet[k]){ const ms = mode.slowSet[k]; delete mode.slowSet[k]; await new Promise(r => setTimeout(r, ms)); } mode.writes.push(k); cloud[k] = v; return true; }, // mode.slowSet[k] = ms: the next write of k lands ms later
   setMany: async (who, e) => { off(who); if(mode.failSet && e.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); e.forEach(([k, v]) => { mode.writes.push(k); cloud[k] = v; }); return true; },
   del: async (who, k) => { off(who); delete cloud[k]; return true; },
   list: async (who, p) => { off(who); return Object.keys(cloud).filter(k => k.startsWith(p)); },
@@ -86,7 +87,7 @@ function seedCloud(){
       await page.waitForTimeout(300);
       await page.evaluate(() => { window.__toasts = []; const real = showToast; window.showToast = (m, ms) => { window.__toasts.push(String(m)); return real(m, ms); }; });
     };
-    const tick = () => page.evaluate(async () => { await window.__bgTick(); });
+    const tick = async () => { await page.waitForFunction(() => !_flushing); await page.evaluate(async () => { await window.__bgTick(); }); }; // as 20 s later: a queue flush still running is done by then
     return { page, boot, tick, label, ctx };
   };
   const visit = (id, clinicId, rep, extra) => Object.assign({ id, clinicId, rep, date: '2026-09-21', ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: [], orderTotal: 0, doctorIds: [], notes: '' }, extra || {});
@@ -223,6 +224,87 @@ function seedCloud(){
   const r3d = await P.page.evaluate(() => ({ screen: (clinics.find(c => c.id === 'c2') || {}).cls, phone: ((JSON.parse(localStorage.getItem('um_mirror:clinics') || '[]')).find(c => c.id === 'c2') || {}).cls }));
   check('3d. a read of the list that arrives after the save: the screen and the phone\'s own copy (what an offline start shows) keep the saved edit', r3d.screen === 'C' && r3d.phone === 'C' && cl('c2').cls === 'C', r3d);
   await P.ctx.close();
+
+  // =====================================================================
+  // 4) A visit saved with no connection on a phone whose storage is full:
+  //    neither the queue entry nor the phone's copy could be written. The
+  //    save said "kept in memory" — but nothing retried it, and the next
+  //    refresh put the phone's older copy over it: the visit vanished.
+  // =====================================================================
+  seedCloud();
+  const F = await mkPhone('F-Mariam'); await F.boot('Mariam', 'rep');
+  const full = () => F.page.evaluate(() => { const real = window.__realSet = window.__realSet || Storage.prototype.setItem;
+    Storage.prototype.setItem = function(k, v){ if(/^um_outbox$|^um_mirror:/.test(k)) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return real.call(this, k, v); }; });
+  const roomy = () => F.page.evaluate(() => { if(window.__realSet) Storage.prototype.setItem = window.__realSet; });
+  await full(); mode.offline.add('F-Mariam');
+  const f0 = await F.page.evaluate(async (v) => { visits.push(v); const r = await persistFor('visits'); return { ok: r.ok, toasts: window.__toasts.slice() }; }, visit('vF1', 'c1', 'Mariam'));
+  await F.tick();
+  const f1 = await F.page.evaluate(() => ({ has: visits.some(v => v.id === 'vF1'), outbox: outboxList() }));
+  await F.page.evaluate(() => loadAll()); // a refresh that reads anyway (after the queue's retries ran out)
+  const f2 = await F.page.evaluate(() => ({ has: visits.some(v => v.id === 'vF1'), bar: (document.getElementById('memOnlyBar') || {}).textContent || '', toasts: window.__toasts.slice() }));
+  check('4a. storage full, no connection: the visit is still there after a refresh tick and after a full refresh — the queue is kept in memory, the older phone copy is never served', f1.has && f1.outbox.includes('visits') && f2.has, { f1, has2: f2.has });
+  check('4b. …and a red bar says the truth until it uploads — nothing claims "Saved"', /storage is full — this visit is only in the app's memory/.test(f2.bar) && !f2.toasts.some(t => /Saved|محفوظة|حُفظ/.test(t)), { bar: f2.bar, toasts: f2.toasts });
+  mode.offline.delete('F-Mariam');
+  await F.tick();
+  const f3 = await F.page.evaluate(() => ({ outbox: outboxList(), bar: !!document.getElementById('memOnlyBar'), toasts: window.__toasts.slice(-3) }));
+  check('4c. back online: the next refresh uploads it, the red bar goes, and only then it says Saved', (parse(cloud.visits) || []).some(v => v.id === 'vF1') && f3.outbox.length === 0 && !f3.bar && f3.toasts.some(t => /Saved/.test(t)), f3);
+  await roomy();
+  await F.page.evaluate(() => loadAll()); await F.page.waitForFunction(() => !_flushing); // room again: the next refresh downloads the sales rows the phone dropped
+  // nearly full, with a copy the cloud can send again (the sales rows): the app makes room first
+  mode.offline.add('F-Mariam');
+  const f4 = await F.page.evaluate(async (v) => {
+    const real = window.__realSet || Storage.prototype.setItem;
+    const used = () => { let n = 0; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); n += k.length + (localStorage.getItem(k) || '').length; } return n; };
+    const quota = used() + 60;
+    Storage.prototype.setItem = function(k, val){ const old = localStorage.getItem(k); if(used() - (old != null ? k.length + old.length : 0) + k.length + String(val).length > quota) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return real.call(this, k, val); };
+    const rowsBefore = ((JSON.parse(localStorage.getItem('um_mirror:erpSales') || '{}').periods) || []).reduce((n, p) => n + ((p && p.rows) || []).length, 0);
+    visits.push(v); const r = await persistFor('visits');
+    Storage.prototype.setItem = real;
+    const es = JSON.parse(localStorage.getItem('um_mirror:erpSales') || 'null');
+    return { outcome: r.outcome, onPhone: JSON.parse(localStorage.getItem('um_mirror:visits') || '[]').some(x => x.id === v.id), outbox: JSON.parse(localStorage.getItem('um_outbox') || '[]'),
+      rowsBefore, rowsAfter: ((es && es.periods) || []).reduce((n, p) => n + ((p && p.rows) || []).length, 0), heads: ((es && es.periods) || []).length, bar: !!document.getElementById('memOnlyBar'), screen: erpPeriods().reduce((n, p) => n + (p.rows || []).length, 0) };
+  }, visit('vF2', 'c1', 'Mariam'));
+  check('4d. nearly full: the phone first drops its copy of the sales rows (the cloud sends them again), then keeps the visit and the queue entry — no red bar; the figures on screen are untouched', f4.onPhone && f4.outbox.includes('visits') && f4.rowsBefore > 0 && f4.rowsAfter === 0 && f4.heads === 2 && !f4.bar && f4.screen === 7 && f4.outcome.mirrored, f4);
+  mode.offline.delete('F-Mariam');
+  await F.tick();
+  check('4e. …and it uploads on the next refresh', (parse(cloud.visits) || []).some(v => v.id === 'vF2'));
+  await F.ctx.close();
+
+  // =====================================================================
+  // 5) Two phones write the shared delete log (or the team chat) at the
+  //    same time: each read the log, added its own delete and wrote the
+  //    whole log back — the later write dropped the other phone's delete
+  //    (and that phone then forgot it too), so a stale phone could bring
+  //    the record back. The same for two chat messages.
+  // =====================================================================
+  seedCloud();
+  const X = await mkPhone('X-Mariam'), Y = await mkPhone('Y-Renova');
+  await X.boot('Mariam', 'rep'); await Y.boot('Renova', 'rep');
+  const tombsIn = k => Object.keys(((parse(cloud.tombs) || {})[k]) || {});
+  const settle = async (test) => { for(let i = 0; i < 60 && !test(); i++) await new Promise(r => setTimeout(r, 100)); };
+  mode.slow.tombs = 1200; // Mariam's read of the log is slow: Renova writes in between
+  await X.page.evaluate(() => { tomb('tasks', 'tX'); });
+  await new Promise(r => setTimeout(r, 300));
+  await Y.page.evaluate(() => { tomb('tasks', 'tY'); });
+  await settle(() => tombsIn('tasks').includes('tX'));
+  await new Promise(r => setTimeout(r, 300));
+  check('5a. two phones deleting at the same moment: the shared delete log keeps both deletes', tombsIn('tasks').includes('tX') && tombsIn('tasks').includes('tY'), tombsIn('tasks'));
+  mode.slowSet.tombs = 1200; // a second delete on the same phone while its first write is on its way (after the log was put together)
+  await X.page.evaluate(() => { tomb('tasks', 'tX2'); });
+  await new Promise(r => setTimeout(r, 300));
+  await X.page.evaluate(() => { tomb('tasks', 'tX3'); });
+  await settle(() => tombsIn('tasks').includes('tX3'));
+  const x3 = await X.page.evaluate(() => ({ local: tombSet('tasks').has('tX3'), unpublished: !!(_tombsUnpublished.tasks && _tombsUnpublished.tasks.has('tX3')) }));
+  check('5c. a delete made while this phone\'s previous write of the log is on its way reaches the log too (and is not forgotten here)', tombsIn('tasks').includes('tX2') && tombsIn('tasks').includes('tX3') && x3.local && !x3.unpublished, { cloud: tombsIn('tasks'), x3 });
+  mode.slow.chat = 1200;
+  const msg = (id, from) => ({ id, from, text: 'hello from ' + from, ts: Date.now() });
+  const pX = X.page.evaluate(async (m) => { chatMsgs.push(m); return persistTeam('chat'); }, msg('mX', 'Mariam'));
+  await new Promise(r => setTimeout(r, 300));
+  await Y.page.evaluate(async (m) => { chatMsgs.push(m); return persistTeam('chat'); }, msg('mY', 'Renova'));
+  await pX;
+  const chat = (parse(cloud.chat) || []).map(m => m.id);
+  check('5b. two chat messages sent at the same moment: both stay in the team chat', chat.includes('mX') && chat.includes('mY'), chat);
+  await X.ctx.close(); await Y.ctx.close();
 
   check('no page errors on any phone', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
