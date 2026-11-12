@@ -518,6 +518,11 @@ async function bigRun(heapMB, scale){
   const repB = await pageB.evaluate(async () => { closeModal(); document.getElementById('modalInner').innerHTML = ''; try{ await openFullBackup(); }catch(e){} let read = null; try{ read = await readCloudForBackup(() => {}); }catch(e){ read = 'refused'; } return { sheet: !!document.getElementById('fullBackupBody'), read: read === 'refused' ? read : !!read }; });
   check('Firestore: a rep can neither open nor run the full read', !repB.sheet && repB.read === 'refused' && !stats.queries.some(q => q.l != null && q.l <= 25 && !(q.f || []).length), { repB, q: stats.queries.length });
 
+  // The phones of the earlier parts stop before the large account fills the same cloud: left open, their
+  // 20-second refresh read it too, and on a slower machine a sales-rows read ran past its limit (a page
+  // error from phone B on GitHub's runner). Page A is opened again by bootA below.
+  await ctxB.close();
+  await page.goto('about:blank');
   // ===== 7) a large account inside a phone's budget: a capped JS heap and a 4× slower CPU =====
   const HEAP_MB = +(process.env.BK_HEAP_MB || 128), SCALE = +(process.env.BK_SCALE || 3);   // a ~47 MB account (120 photos) in a 128 MB JS heap: the app open with it holds ~24 MB
   const big = await bigRun(HEAP_MB, SCALE);
