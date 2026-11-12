@@ -532,7 +532,7 @@ const latinLeft = page => page.evaluate(() => {
   // ===== 10) the restore is never reachable from the app =====
   const inApp = await page.evaluate(() => ({ fn: typeof restoreBackup !== 'undefined' || typeof restoreFullBackup !== 'undefined', btn: /restore the full|استرجاع النسخة الكاملة/i.test(document.getElementById('modalInner').innerText) }));
   const srcHits = [];
-  const walk = d => fs.readdirSync(d, { withFileTypes: true }).forEach(e => { const p = path.join(d, e.name); if(e.isDirectory()) walk(p); else if(/\.(js|html|json)$/.test(e.name) && /restoreBackup|scripts\/backup|test-cloud/.test(fs.readFileSync(p, 'utf8'))) srcHits.push(path.relative(ROOT, p)); });
+  const walk = d => fs.readdirSync(d, { withFileTypes: true }).forEach(e => { const p = path.join(d, e.name); if(e.isDirectory()) walk(p); else if(/\.(js|html|json)$/.test(e.name) && /\b(restoreBackup|restoreFullBackup|fileTestCloud|memoryTestCloud)\b|require\([^)]*scripts\/backup|ultramed-test-cloud/.test(fs.readFileSync(p, 'utf8'))) srcHits.push(path.relative(ROOT, p)); });
   walk(WWW);
   check('the restore is not in the app: no function, no button, no reference in the published folder', !inApp.fn && !inApp.btn && !srcHits.length, { inApp, srcHits });
 
