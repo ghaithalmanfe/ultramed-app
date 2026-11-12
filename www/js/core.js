@@ -5604,9 +5604,10 @@
   var AUDIT_PREFIX = 'auditLog:';
   // str / items / keys / depth: how much of a value is kept; label / reason:
   // text bounds; entry: one entry, serialized; monthEntries / monthChars: one
-  // month document (the cloud caps a document at 1 MiB, and Arabic text takes
-  // two bytes a character).
-  var AUDIT_LIMITS = { str: 120, items: 8, keys: 14, depth: 3, label: 120, reason: 300, entry: 2400, monthEntries: 4000, monthChars: 450000 };
+  // month document (the cloud caps a document at 1 MiB, Arabic text takes two
+  // bytes a character, and every change reads and writes the month's document
+  // whole — a smaller month costs the phones less).
+  var AUDIT_LIMITS = { str: 120, items: 8, keys: 14, depth: 3, label: 120, reason: 300, entry: 2400, monthEntries: 4000, monthChars: 400000 };
   // Never recorded, whatever record they sit in: passwords, PINs, tokens, keys, sessions.
   var AUDIT_SECRET = /pass(word|wd|code)?$|^pwd$|^pin$|secret|token|api.?key|credential|^auth|session|cookie|private/i;
   var AUDIT_RES = { saved: 1, queued: 1, failed: 1, refused: 1, timeout: 1, conflict: 1 };
