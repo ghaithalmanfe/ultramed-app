@@ -960,7 +960,10 @@ let _bootCrashed = false; // loadAll hit an error — state may be partial, neve
 // One read rule everywhere: cloud first (with a timeout); a key with queued
 // offline edits prefers the LOCAL mirror (it is newer than the cloud until the
 // outbox flushes); an unreachable cloud falls back to the mirror.
-async function cloudGet(key){
+// `src` (optional, v122): src.cloud is set true only when the cloud answered
+// THIS call. _mirrorUsed / _loadFailed are session-wide — another read of the
+// same key can set or clear them while this one is on its way (loadTeam).
+async function cloudGet(key, src){
   if(outboxHas(key)){
     if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ _mirrorUsed[key] = true; return { value: mem }; } } // its device copy is older than memory (a full phone)
     const mm = mirrorGet(key);
@@ -974,6 +977,7 @@ async function cloudGet(key){
     // still carries ~250 KB inline — give that one read more room, so the
     // migration can happen from a slow phone too.
     const r = await withTimeout(window.storage.get(key, true), key === 'erpSales' ? 20000 : 8000);
+    if(src) src.cloud = true;
     if(r && r.value != null && key === 'erpSales') return r; // loadErpSales mirrors the ASSEMBLED copy, never the bare index
     if(r && r.value != null){
       // If the cloud copy of a core list arrives FAR smaller than what this
@@ -990,6 +994,7 @@ async function cloudGet(key){
     }
     return r;
   }catch(e){
+    if(src) src.cloud = false;
     if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ _mirrorUsed[key] = true; return { value: mem }; } } // the device copy is older than memory (a full phone)
     const m = mirrorGet(key);
     if(m != null){ _mirrorUsed[key] = true; return { value: m }; }
