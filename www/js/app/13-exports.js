@@ -1521,6 +1521,7 @@ async function restoreSnapshot(dateStr){
       const str = JSON.stringify(val);
       await window.storage.set(k, str, true);
       mirrorSave(k, str);
+      setMergeBase(k, str); // the cloud now holds exactly this (the next merge's base)
     }
     await persistVisits({ authoritative: true });
     if(snap.erpIndex && Array.isArray(snap.erpIndex.periods)){

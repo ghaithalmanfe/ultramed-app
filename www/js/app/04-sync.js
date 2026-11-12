@@ -181,7 +181,7 @@ async function autoRestoreWipe(){
       restoredMsg.push(`${visits.length} زيارة`);
     }
     await untombMany(sets); // clear the delete log FIRST or the restore un-does itself
-    { const str = JSON.stringify(clinics); await window.storage.set('clinics', str, true); mirrorSave('clinics', str); }
+    { const str = JSON.stringify(clinics); await window.storage.set('clinics', str, true); mirrorSave('clinics', str); setMergeBase('clinics', str); }
     if(sets.visits) await persistVisits({ authoritative: true });
     // Today's automatic snapshot may have caught the wiped state — replace it
     // with the recovered one so no bad copy sits in the backup window.
@@ -991,6 +991,13 @@ async function loadAll(){
     dayPlans = UMCore.safeParse(dp && dp.value, {});
     if(!_loadFailed.dayPlans && !_mirrorUsed.dayPlans && !outboxHas('dayPlans')) _dpBase = JSON.stringify(dayPlans); // what the cloud held when we loaded — the base of the next three-way merge
     events = UMCore.safeParse(ev && ev.value, []).filter(notDeleted('events'));
+    // The base of the next three-way merge: a real read is exactly what the
+    // screen now shows; a key waiting in the queue keeps what the cloud last
+    // confirmed (kept on the phone when it was queued — a reopened phone).
+    [['clinics', c], ['tasks', t], ['events', ev]].forEach(([k, r]) => {
+      if(!_loadFailed[k] && !_mirrorUsed[k]){ setMergeBase(k, r && r.value != null ? r.value : null); if(!outboxHas(k)) dropMergeBaseOnPhone(k); }
+      else if(outboxHas(k)) mergeBaseFromPhone(k);
+    });
     targets = UMCore.safeParse(tg && tg.value, {});
     // Merge so newly seeded categories appear even for users with a saved copy,
     // while supervisor edits to existing categories win over the seed.
@@ -1304,18 +1311,31 @@ function updateSyncBadge(){
 window.addEventListener('online', ()=>{ updateSyncBadge(); flushOutbox(); });
 window.addEventListener('offline', updateSyncBadge);
 function tombSet(key){ return _tombstones[key] || new Set(); }
-function mergeById(key, local, cloud){
+// `base` (optional, v121): Map id → the record as the cloud last confirmed it
+// to this phone (mergeBaseFor). With it, a record present on both sides is
+// merged field by field (UMCore.merge3Record): what this phone did not change
+// takes the cloud's value, so an offline phone's upload no longer undoes what
+// another phone changed meanwhile. Without it: this phone's copy wins, as before.
+function mergeById(key, local, cloud, base){
   if(!Array.isArray(cloud)) return { merged: local, recovered: 0 };
   const ts = _tombstones[key] || new Set();
+  if(base && key === 'clinics') cloud = normalizeClinics(cloud); // compared with the base, which is normalized the same way
   // Deleted ids are dropped from BOTH sides: our own deletes never come back
   // from the cloud, and a stale local copy never resurrects them either.
   const localKept = (local || []).filter(x => !(x && ts.has(x.id)));
   const have = new Set(localKept.map(x => x && x.id));
-  const merged = localKept.slice();
   let recovered = 0;
   const cloudById = {};
+  cloud.forEach(x => { if(x && x.id != null) cloudById[x.id] = x; });
+  const fieldMerge = key === 'clinics' ? { doctors: (L, C, B) => { const m = UMCore.mergeDoctorLists3(L, C, B); Object.assign(_docRemap, m.remap); return m.doctors; } } : null;
+  const merged = localKept.map(x => {
+    const bx = base && x && x.id != null ? base.get(x.id) : null;
+    if(!bx || !cloudById[x.id] || typeof UMCore.merge3Record !== 'function') return x; // (an old cached core.js: as before)
+    const r = UMCore.merge3Record(x, cloudById[x.id], bx, fieldMerge);
+    if(r.fromCloud) recovered++;
+    return r.value;
+  });
   cloud.forEach(x => {
-    if(x && x.id != null) cloudById[x.id] = x;
     if(x && x.id != null && !have.has(x.id) && !ts.has(x.id)){ merged.push(x); recovered++; }
   });
   // A clinic's doctors are a shared list: a doctor added on another device
@@ -1332,6 +1352,31 @@ function mergeById(key, local, cloud){
     if(x.doctors.length !== before) recovered++;
   });
   return { merged, recovered };
+}
+// ---- The base of the three-way merge (v121): clinics, tasks, events ----
+// The list as the cloud last confirmed it to this phone — a real read, or
+// the copy this phone wrote — parsed apart from the screen's objects, so an
+// edit on screen can never reach it. While the key waits in the offline
+// queue it is also kept on the phone (um_base:<key>): a phone reopened before
+// the connection came back still merges against what it last saw. No base →
+// every record is this phone's copy, exactly as before.
+const BASE_KEYS = { clinics: 1, tasks: 1, events: 1 };
+const _mergeBase = {}, _mergeBaseStr = {};
+function setMergeBase(key, str){
+  if(!BASE_KEYS[key]) return;
+  const arr = typeof str === 'string' ? UMCore.safeParse(str, null) : null;
+  if(!Array.isArray(arr)){ delete _mergeBase[key]; delete _mergeBaseStr[key]; return; }
+  const list = key === 'clinics' ? normalizeClinics(arr) : arr;
+  _mergeBase[key] = new Map(list.filter(x => x && x.id != null).map(x => [x.id, x]));
+  _mergeBaseStr[key] = str;
+}
+function mergeBaseFor(key){ return (BASE_KEYS[key] && _mergeBase[key]) || null; }
+function keepMergeBaseOnPhone(key){ if(BASE_KEYS[key] && _mergeBaseStr[key] != null){ try{ localStorage.setItem('um_base:' + key, _mergeBaseStr[key]); }catch(e){} } }
+function dropMergeBaseOnPhone(key){ if(BASE_KEYS[key]){ try{ localStorage.removeItem('um_base:' + key); }catch(e){} } }
+function mergeBaseFromPhone(key){
+  if(!BASE_KEYS[key] || _mergeBase[key]) return;
+  let s = null; try{ s = localStorage.getItem('um_base:' + key); }catch(e){}
+  if(s != null) setMergeBase(key, s);
 }
 // Day plans merge three ways: the lists this device changed since it last
 // loaded/saved (_dpBase) win, every other date|rep list takes the cloud's —
@@ -1390,7 +1435,7 @@ async function persist(key, opts){
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
         let v = local;
         if(cloud){
-          const r = key === 'dayPlans' ? mergeDayPlans(local, cloud) : mergeById(key, local, cloud);
+          const r = key === 'dayPlans' ? mergeDayPlans(local, cloud) : mergeById(key, local, cloud, mergeBaseFor(key));
           v = r.merged;
           // Wipe guard: a merged clinic list SHRINKING far below the cloud copy
           // means something is deleting en masse (poisoned delete log, corrupt
@@ -1424,6 +1469,7 @@ async function persist(key, opts){
         console.log(`merge-on-save: kept ${applied.recovered} ${key} entr${applied.recovered===1?'y':'ies'} saved by another device`);
       }
       if(key === 'dayPlans') _dpBase = written; // the cloud now holds exactly this
+      setMergeBase(key, written); dropMergeBaseOnPhone(key); // likewise for clinics, tasks, events
       mirrorSave(key, written);
       if(outboxHas(key)) outboxRemove(key);
       tell({ ok: true });
@@ -1479,6 +1525,7 @@ async function persist(key, opts){
       // Queued even when the device store is full: the copy in memory still
       // uploads the moment the cloud is back — as long as the app stays open.
       outboxAdd(key);
+      keepMergeBaseOnPhone(key); // what the cloud last confirmed: the upload merges against it, even after a reopen
       updateSyncBadge();
       offlineToast(mOk ? '📴 Saved on this device — uploads automatically when back online'
                        : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');

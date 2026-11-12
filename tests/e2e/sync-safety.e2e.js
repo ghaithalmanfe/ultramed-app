@@ -12,16 +12,17 @@ const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.s
 
 // ---- fake cloud (in Node: shared by every phone, survives reloads) ----
 const cloud = {};
-const mode = { failGet: null, failSet: null, reads: [], writes: [] };
+const mode = { failGet: null, failSet: null, offline: new Set(), reads: [], writes: [] };
 let held = false; const waiters = [];   // one transaction at a time, first come first served
 const acquire = async () => { if(!held){ held = true; return true; } await new Promise(r => waiters.push(r)); return true; };
 const release = async () => { const next = waiters.shift(); if(next) next(); else held = false; return true; };
+const off = who => { if(mode.offline.has(who)) throw new Error('boom-offline'); };   // that phone has no connection
 const api = {
-  get: async k => { mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
-  set: async (k, v) => { if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set'); mode.writes.push(k); cloud[k] = v; return true; },
-  setMany: async e => { if(mode.failSet && e.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); e.forEach(([k, v]) => { mode.writes.push(k); cloud[k] = v; }); return true; },
-  del: async k => { delete cloud[k]; return true; },
-  list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
+  get: async (who, k) => { off(who); mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
+  set: async (who, k, v) => { off(who); if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set'); mode.writes.push(k); cloud[k] = v; return true; },
+  setMany: async (who, e) => { off(who); if(mode.failSet && e.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); e.forEach(([k, v]) => { mode.writes.push(k); cloud[k] = v; }); return true; },
+  del: async (who, k) => { off(who); delete cloud[k]; return true; },
+  list: async (who, p) => { off(who); return Object.keys(cloud).filter(k => k.startsWith(p)); },
 };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info).slice(0,600):'')); if(!ok) failed++; }
@@ -62,8 +63,8 @@ function seedCloud(){
     page.on('pageerror', e => errors[label].push('pageerror: ' + e.message));
     page.on('console', m => { if(m.type()==='error' && !/gstatic|firebase|net::ERR|Failed to load resource|boom-|save failed|update failed|rows unreadable/i.test(m.text())) errors[label].push('console: '+m.text().slice(0,200)); });
     page.on('dialog', d => d.accept());
-    await page.exposeFunction('__cGet', api.get); await page.exposeFunction('__cSet', api.set); await page.exposeFunction('__cDel', api.del);
-    await page.exposeFunction('__cList', api.list); await page.exposeFunction('__cSetMany', api.setMany);
+    await page.exposeFunction('__cGet', k => api.get(label, k)); await page.exposeFunction('__cSet', (k, v) => api.set(label, k, v)); await page.exposeFunction('__cDel', k => api.del(label, k));
+    await page.exposeFunction('__cList', p => api.list(label, p)); await page.exposeFunction('__cSetMany', e => api.setMany(label, e));
     await page.exposeFunction('__cAcquire', acquire); await page.exposeFunction('__cRelease', release);
     await page.addInitScript((clock) => {
       window.storage = {
@@ -140,6 +141,47 @@ function seedCloud(){
   idx2.periods.forEach(p => { for(let i = 0; i < ((p.rowsRef || {}).chunks || 0); i++) refs.push(p.rowsRef.key + ':' + i); });
   check('1h. on the supervisor\'s phone the same put-back is offered as a save (the red bar) — and the save puts the rows back in the cloud', s2.rows === 5 && /غير محفوظة/.test(s2.pill) && refs.every(k => k in cloud) && !(await S.page.evaluate(() => !!document.getElementById('erpDirtyPill'))), { s2, missing: refs.filter(k => !(k in cloud)) });
   await A.ctx.close(); await B.ctx.close(); await S.ctx.close();
+
+  // =====================================================================
+  // 2) A phone that was offline uploads its clinic / task lists: its copy of
+  //    EVERY record used to win over the cloud's (only doctors were joined),
+  //    so edits other phones made meanwhile — even to records this phone
+  //    never touched — were silently undone.
+  // =====================================================================
+  seedCloud();
+  cloud.tasks = JSON.stringify([{ id: 't1', text: 'Call Dr. Sara', done: false, created: '2026-09-20', rep: 'Renova', clinicId: 'c2' }]);
+  const A2 = await mkPhone('A2-Mariam'), S2 = await mkPhone('S2-supervisor');
+  await A2.boot('Mariam', 'rep'); await S2.boot('Dr. Ghaith', 'supervisor');
+  const cl = id => (parse(cloud.clinics) || []).find(c => c.id === id) || {};
+  const tk = id => (parse(cloud.tasks) || []).find(t => t.id === id) || {};
+  // Mariam is in the field with no connection: she logs a visit at c1 (its last visit / follow-up) and adds a task
+  mode.offline.add('A2-Mariam');
+  const qa = await A2.page.evaluate(async () => { const c = clinics.find(x => x.id === 'c1'); c.lastVisit = '2026-09-21'; c.nextFollowUp = '2026-09-28'; const ok1 = await persist('clinics');
+    tasks.push({ id: 'tA', text: 'Follow up: Dental 8 Clinic', done: false, created: '2026-09-21', rep: 'Mariam', clinicId: 'c1', dueDate: '2026-09-28', kind: 'followup' }); const ok2 = await persist('tasks');
+    return { ok1, ok2, outbox: outboxList() }; });
+  // meanwhile the supervisor hands c3 to Renova, notes c1, records Dr. Ahmed's phone, and closes Renova's task
+  const sv = await S2.page.evaluate(async () => { const c3 = clinics.find(x => x.id === 'c3'); c3.rep = 'Renova'; c3.phone = '+965 1111';
+    const c1 = clinics.find(x => x.id === 'c1'); c1.notes = 'supervisor note'; c1.doctors.find(d => d.id === 'd1').phone = '+965 2222';
+    const ok1 = await persist('clinics'); tasks.find(t => t.id === 't1').done = true; const ok2 = await persist('tasks'); return { ok1, ok2 }; });
+  mode.offline.delete('A2-Mariam');
+  await A2.tick(); // back online: the queue uploads
+  const r2 = { c3: { rep: cl('c3').rep, phone: cl('c3').phone }, c1: { lastVisit: cl('c1').lastVisit, notes: cl('c1').notes, d1: ((cl('c1').doctors || []).find(d => d.id === 'd1') || {}).phone }, t1: tk('t1').done, tA: !!tk('tA').id, outbox: await A2.page.evaluate(() => outboxList()) };
+  check('2a. the offline queue uploads without undoing the supervisor: c3 stays handed to Renova with its new phone', !qa.ok1 && qa.outbox.includes('clinics') && sv.ok1 && r2.c3.rep === 'Renova' && r2.c3.phone === '+965 1111' && r2.outbox.length === 0, r2);
+  check('2b. …on the clinic both changed, each keeps its own fields: Mariam\'s visit date, the supervisor\'s note and Dr. Ahmed\'s phone', r2.c1.lastVisit === '2026-09-21' && r2.c1.notes === 'supervisor note' && r2.c1.d1 === '+965 2222', r2.c1);
+  check('2c. …and a task closed on another phone stays closed when the offline phone uploads its new task', r2.t1 === true && r2.tA, { t1: r2.t1, tA: r2.tA });
+  const m2 = await A2.page.evaluate(() => ({ c3: (clinics.find(c => c.id === 'c3') || {}).rep, t1: (tasks.find(t => t.id === 't1') || {}).done }));
+  check('2d. …and Mariam\'s screen shows the merged truth (c3 is Renova\'s, the task is closed)', m2.c3 === 'Renova' && m2.t1 === true, m2);
+  // the same with the app closed and reopened before the connection came back (a phone kills the app in the field)
+  mode.offline.add('A2-Mariam');
+  await A2.page.evaluate(async () => { const c = clinics.find(x => x.id === 'c1'); c.nextFollowUp = '2026-10-05'; await persist('clinics'); });
+  await S2.page.evaluate(async () => { const c2 = clinics.find(x => x.id === 'c2'); c2.cls = 'B'; c2.doctors.find(d => d.id === 'd2').title = 'Orthodontist'; return persist('clinics'); });
+  await A2.boot('Mariam', 'rep'); // reopened, still no connection: the screen comes from the phone's copy
+  const offBoot = await A2.page.evaluate(() => ({ c1: (clinics.find(c => c.id === 'c1') || {}).nextFollowUp, outbox: outboxList() }));
+  mode.offline.delete('A2-Mariam');
+  await A2.tick();
+  const r3 = { c2: { cls: cl('c2').cls, d2: ((cl('c2').doctors || []).find(d => d.id === 'd2') || {}).title }, c1: cl('c1').nextFollowUp, c3: cl('c3').rep };
+  check('2e. reopened offline, then online: the queue still keeps every edit the other phone made meanwhile', offBoot.c1 === '2026-10-05' && offBoot.outbox.includes('clinics') && r3.c1 === '2026-10-05' && r3.c2.cls === 'B' && r3.c2.d2 === 'Orthodontist' && r3.c3 === 'Renova', { offBoot, r3 });
+  await A2.ctx.close(); await S2.ctx.close();
 
   check('no page errors on any phone', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
