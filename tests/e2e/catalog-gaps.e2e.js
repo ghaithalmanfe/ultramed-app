@@ -3,6 +3,8 @@
 // supervisor on the Products screen and added only on tap — a failed save adds
 // nothing; services (inspection fees) never appear; reps never see the note.
 // Prices come from the invoices in the sales files (the code ships none, v121).
+// Duplicate SKUs / barcodes (v121): products sharing an item code or a barcode
+// are listed for the supervisor to review — never merged, never deleted.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -81,10 +83,35 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   check('prices come from the sales files (2 strips for 70 → 35.00); one the files never sold has none', os80 && os80.price === 35 && ej && ej.price == null, { os80: os80 && os80.price, ejector: ej && ej.price });
   txt = await page.evaluate(() => document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '));
   check('the list now shows Intensiv; the note shows only what is left (1)', /Intensiv \(16\)|Intensiv \(15\)/.test(txt) && /1 product missing from the catalog/.test(txt) && /OS80XC Intensiv Ortho-Strips/.test(txt), txt.slice(0, 300));
-  // a rep never sees the note
+  // ---- Duplicate SKUs / barcodes (owner's request, v121): a review list — never merged, never deleted ----
+  const DUPS = [{ id: 'TB-100E', name: 'Sample Flosser Tip A', brand: 'Waterpik', barcode: '073950111218', price: 3 },
+    { id: 'tb-100e ', name: 'Sample Flosser Tip B', brand: 'Waterpik', barcode: '0739501112190', price: 3.5 },   // the same code, other case
+    { id: 'X-1', name: 'Sample Flosser Tip C', brand: 'Waterpik', barcode: '73950111218' }];                    // Tip A's barcode without its leading zero
+  const nBefore = await page.evaluate(() => products.length);
+  check('no duplicates, no card', !/Duplicate SKUs/.test(txt), txt.slice(0, 120));
+  await page.evaluate((d) => { d.forEach(p => products.push(p)); assignProductKeys(); renderProducts(); }, DUPS);
+  txt = await page.evaluate(() => document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '));
+  check('the supervisor sees "Duplicate SKUs / barcodes": 3 products share an item code or a barcode', /Duplicate SKUs \/ barcodes 3 products share an item code or a barcode — tap to review/.test(txt), txt.slice(0, 300));
+  const rv = await page.evaluate(() => { openProductDups(); const m = document.getElementById('modalBack');
+    return { txt: m.innerText.replace(/\s+/g, ' '), acts: [...m.querySelectorAll('button, [onclick]')].map(b => (b.getAttribute('onclick') || '') + ' ' + b.textContent).join(' | ') }; });
+  check('the review lists the same item code and the same barcode (read as a GTIN), with no merge or delete action', /Same item code \(SKU\) \(1\)/i.test(rv.txt) && /TB-100E ×2/.test(rv.txt) && /Same barcode \(1\)/i.test(rv.txt) && /73950111218 ×2/.test(rv.txt)
+    && /Sample Flosser Tip A/.test(rv.txt) && /Sample Flosser Tip B/.test(rv.txt) && /Sample Flosser Tip C/.test(rv.txt) && /nothing is merged or deleted here/.test(rv.txt) && !/merge|delete|remove|persist/i.test(rv.acts), rv);
+  const report = await page.evaluate(() => { copyProductDupReport(); return document.getElementById('dupReportText').value; });
+  check('the report: a header and one tab-separated line per product in a group', report.split('\n').length === 5 && report.split('\n').every(l => l.split('\t').length === 7) && /^Item code\tTB-100E\tSample Flosser Tip A/.test(report.split('\n')[1]), report);
+  const opened = await page.evaluate(() => { const row = [...document.querySelectorAll('#modalBack [data-key]')].find(r => /Tip C/.test(r.innerText)); row.click(); return document.getElementById('modalBack').innerText; });
+  check('a line opens that product\'s own page (where it is corrected by hand)', /Sample Flosser Tip C/.test(opened) && /Item code/.test(opened) && /X-1/.test(opened), opened.slice(0, 200));
+  await page.evaluate(() => closeModal());
+  check('nothing changed: the same products in memory, nothing written to the cloud', await page.evaluate(n => products.length === n + 3, nBefore) && JSON.parse(cloud.products).length === 16);
+  // a rep never sees either note
   await page.evaluate(async () => { await selectUser('Mariam', 'rep'); }); await page.waitForTimeout(250);
-  txt = await page.evaluate(() => { switchView('products'); return document.getElementById('productListWrap').innerText; });
-  check('a rep sees the Intensiv products but not the supervisor note', /Intensiv/.test(txt) && !/missing from the catalog/.test(txt));
+  txt = await page.evaluate((d) => { d.forEach(p => products.push(p)); assignProductKeys(); switchView('products'); return document.getElementById('productListWrap').innerText; }, DUPS);
+  check('a rep sees the Intensiv products but not the supervisor notes', /Intensiv/.test(txt) && !/missing from the catalog/.test(txt) && !/Duplicate SKUs/.test(txt));
+  // Arabic, last (going back to English reloads the page)
+  await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(250);
+  const ar = await page.evaluate(async (d) => { d.forEach(p => products.push(p)); assignProductKeys(); setUiLang('ar'); switchView('products'); await new Promise(r => setTimeout(r, 120));
+    const t = document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '); openProductDups(); await new Promise(r => setTimeout(r, 120));
+    const m = document.getElementById('modalBack').innerText.replace(/\s+/g, ' '); closeModal(); return { t, m }; }, DUPS);
+  check('Arabic: the card and the review in Arabic, the product names kept', /أكواد أصناف وباركودات مكررة/.test(ar.t) && /عدد المنتجات المشتركة في كود صنف أو باركود: 3/.test(ar.t) && /كود الصنف نفسه/.test(ar.m) && /الباركود نفسه/.test(ar.m) && /لا يُدمج ولا يُحذف شيء هنا/.test(ar.m) && /Sample Flosser Tip A/.test(ar.m), ar);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

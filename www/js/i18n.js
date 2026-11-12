@@ -1030,6 +1030,15 @@
     'Missing from the catalog': 'غير موجود في الكتالوج',
     'Add selected': 'أضف المحدد',
     'Nothing missing from the catalog': 'لا يوجد منتج ناقص في الكتالوج',
+    // duplicate SKUs / barcodes — review only (v121)
+    'Duplicate SKUs / barcodes': 'أكواد أصناف وباركودات مكررة',
+    'Products that share an item code or a barcode. Check each one and correct it on its own page (Edit) — nothing is merged or deleted here.': 'منتجات تشترك في كود الصنف أو الباركود. راجِع كل منتج وصحّحه من صفحته (تعديل) — لا يُدمج ولا يُحذف شيء هنا.',
+    'No two products share an item code or a barcode.': 'لا يوجد منتجان يشتركان في كود الصنف أو الباركود.',
+    'Same item code (SKU)': 'كود الصنف نفسه (SKU)',
+    'Same barcode': 'الباركود نفسه',
+    'Copy the report': 'انسخ التقرير',
+    'Report copied — paste it into a sheet': 'نُسخ التقرير — الصقه في جدول',
+    'Select the report above and copy it': 'حدّد التقرير أعلاه وانسخه',
     'Tick at least one product': 'حدد منتجاً واحداً على الأقل',
     '⚠️ Not saved — nothing was added. Try again with a connection.': '⚠️ لم يُحفظ — لم يُضف أي منتج. أعد المحاولة مع اتصال بالإنترنت.',
     'Intensiv list': 'قائمة Intensiv',
@@ -1749,6 +1758,8 @@
 
   // Strings that carry a number or a name are matched by shape, not by text.
   var PATTERNS = [
+    // duplicate SKUs / barcodes card (v121)
+    [/^(\d+) products share an item code or a barcode — tap to review$/, function (m) { return 'عدد المنتجات المشتركة في كود صنف أو باركود: ' + m[1] + ' — اضغط للمراجعة'; }],
     // sales coach titles
     [/^(\d+) overdue follow-ups?$/, function (m) { return m[1] + ' متابعة متأخرة'; }],
     [/^(\d+) planned visits? never happened$/, function (m) { return m[1] + ' زيارة مخططة لم تحدث'; }],
