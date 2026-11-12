@@ -11,6 +11,10 @@
 //          list, so a reopen still uploads the earlier saves
 //  N2      a full phone: a refresh without a connection never serves a device
 //          copy older than what the screen holds
+//  T1      chat on a full phone without connection: queued, said honestly, kept
+//  R1      an edit kept on the phone by a refresh that raced its save rides along
+//          with the next upload after a reopen without connection
+//  D1      two overlapping day-plan saves keep the plan another phone changed
 // Port 8251. ONLY=S1,N2 runs a subset.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
@@ -71,7 +75,7 @@ const tk = id => (parse(cloud.tasks) || []).find(t => t.id === id) || {};
       window.storage = {
         get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; },
         set: async (k, v) => window.__cSet(k, v), setMany: async e => window.__cSetMany(e), delete: async k => window.__cDel(k), list: async p => ({ keys: await window.__cList(p) }),
-        update: async (k, fn) => { await window.__cAcquire(); try{ const cur = await window.__cGet(k); const next = fn(cur == null ? null : cur); if(next == null) return null; await window.__cSet(k, next); return next; } finally { await window.__cRelease(); } },
+        update: async (k, fn) => { if(window.__hang && new RegExp(window.__hang).test(k)) return new Promise(() => {}); await window.__cAcquire(); try{ const cur = await window.__cGet(k); const next = fn(cur == null ? null : cur); if(next == null) return null; await window.__cSet(k, next); return next; } finally { await window.__cRelease(); } },
       };
       const off = clock - Date.now();
       const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
@@ -299,6 +303,45 @@ const tk = id => (parse(cloud.tasks) || []).find(t => t.id === id) || {};
     check('T1. a chat message on a full phone without connection: queued, said honestly, kept by the refresh, uploaded when back',
       t1.ok === false && t1.mem.includes('chat') && t1.kept && /storage is full/.test(t1.bar) && !t1.toasts.some(m => /Saved on this device/.test(m)) && up, { t1, up });
     await A.ctx.close();
+  }
+  // R1 (fix #1 x the raced branch): a save still on its way when a refresh ends raced; the raced branch puts
+  // memory (with that unconfirmed edit) into the phone's copy; the app dies before the save lands; reopened
+  // offline, that copy becomes the merge base, so the next upload treats the edit as "not mine".
+  if(!ONLY || ONLY.has('R1')){
+    seedCloud();
+    const A = await mkPhone('R1-A'); await A.boot('Mariam', 'rep');
+    mode.slow.erpSales = 1500; await A.page.evaluate(() => { window.__la = loadAll(); }); await A.page.waitForTimeout(250);
+    await A.page.evaluate(() => { window.__hang = '^clinics$'; clinics.find(x => x.id === 'c1').notes = 'E'; window.__p = persist('clinics'); });
+    await A.page.evaluate(async () => { await window.__la; });
+    const m = await A.page.evaluate(() => ({ phoneCopy: (JSON.parse(localStorage.getItem('um_mirror:clinics') || '[]').find(c => c.id === 'c1') || {}).notes, outbox: outboxList() }));
+    mode.offline.add('R1-A'); await A.boot('Mariam', 'rep');      // the app was closed before that save landed; reopened with no connection
+    const r = await A.page.evaluate(async () => { const shown = (clinics.find(x => x.id === 'c1') || {}).notes; const base = !!mergeBaseFor('clinics');
+      clinics.find(x => x.id === 'c2').cls = 'C'; await persist('clinics'); return { shown, base, outbox: outboxList() }; });
+    mode.offline.delete('R1-A'); await A.tick();
+    check('R1. an edit the reopened phone shows (kept by the raced refresh) rides along with its next upload', cl('c1').notes === 'E' && cl('c2').cls === 'C', { m, r, cloudNotes: cl('c1').notes, c2: cl('c2').cls });
+    await A.ctx.close();
+  }
+  // D1: the same overlap as #3, for day plans (mergeDayPlans reads _dpBase at merge time)
+  if(!ONLY || ONLY.has('D1')){
+    seedCloud(); cloud.dayPlans = JSON.stringify({ '2026-09-22': { Renova: ['c2'] } });
+    const A = await mkPhone('D1-A'), S = await mkPhone('D1-S');
+    await A.boot('Mariam', 'rep'); await S.boot('Dr. Ghaith', 'supervisor');
+    await S.page.evaluate(async () => { dayPlans['2026-09-22'].Renova = ['c2', 'c3']; return persist('dayPlans'); });
+    const a = await A.page.evaluate(async () => {
+      dayPlans['2026-09-23'] = { Mariam: ['c1'] }; const p1 = persist('dayPlans');
+      dayPlans['2026-09-24'] = { Mariam: ['c3'] }; const p2 = persist('dayPlans');
+      return Promise.all([p1, p2]);
+    });
+    const dp = parse(cloud.dayPlans) || {};
+    check('D1. two overlapping day-plan saves keep the plan another phone changed', JSON.stringify((dp['2026-09-22'] || {}).Renova) === JSON.stringify(['c2', 'c3']) && dp['2026-09-24'], { a, dp });
+    // control: one save
+    seedCloud(); cloud.dayPlans = JSON.stringify({ '2026-09-22': { Renova: ['c2'] } });
+    await A.boot('Mariam', 'rep'); await S.boot('Dr. Ghaith', 'supervisor');
+    await S.page.evaluate(async () => { dayPlans['2026-09-22'].Renova = ['c2', 'c3']; return persist('dayPlans'); });
+    await A.page.evaluate(async () => { dayPlans['2026-09-23'] = { Mariam: ['c1'] }; return persist('dayPlans'); });
+    const dp2 = parse(cloud.dayPlans) || {};
+    check('D1-control. one day-plan save from the same stale phone keeps it', JSON.stringify((dp2['2026-09-22'] || {}).Renova) === JSON.stringify(['c2', 'c3']), { dp2 });
+    await A.ctx.close(); await S.ctx.close();
   }
   check('no page errors', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

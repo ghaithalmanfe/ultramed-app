@@ -43,4 +43,6 @@ Line numbers are as on this branch (as of 3014d6c; F4/F5 added since).
 | R3 | Two overlapping saves of the same list (the queued upload and a new save): the second merged its older list against the base the first had just moved, undoing the other phone's edit. | A save merges against the base its list was taken with (S3, S3b). |
 | R4 | A full phone: when a longer queue no longer fitted, the phone's queue was deleted, so a reopen forgot earlier queued saves. | A queue that only adds keys leaves the phone's list as it is (N1). |
 | R5 | Chat and memories on a full phone without connection: "Saved on this device" while nothing was queued; the next refresh dropped the message. | Always queued (in memory at least), honest message and red bar, a memory copy served to the refresh (T1). |
+| R6 | The raced refresh wrote memory (with an edit still on its way) into the phone's copy; with R1 that copy became the base after a reopen without connection, so the edit looked like the cloud's and was dropped. | The raced refresh keeps the confirmed base beside that copy (`um_base:<key>`); a start without a read takes it first (R1 check). |
+| R7 | Two overlapping day-plan saves: the second merged against the base the first had moved (the R3 overlap, for day plans). | A day-plan save merges against the base its list was taken with (D1). |
 
