@@ -1527,7 +1527,7 @@ async function restoreSnapshot(dateStr){
       // that day's sales index; its chunks are still in the cloud (7-day grace)
       await window.storage.set('erpSales', JSON.stringify(snap.erpIndex), true);
       _erpDirty = false; renderErpDirtyPill();
-      erpSales = await loadErpSales();
+      erpAdoptLoaded(await loadErpSales());
     }
     // Records the backup brought back to life leave the recycle bin, or a
     // later "Restore" there would push a second copy with the same id.

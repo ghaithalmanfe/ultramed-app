@@ -28,9 +28,12 @@ if(FIREBASE_ENABLED){
   // Poll for changes made by other reps/devices so data stays reasonably fresh
   // without a full realtime-listener rewrite of every render call.
   setInterval(async ()=>{
-    // Never swap the in-memory sales data underneath an upload or a save in
-    // flight, or over edits the cloud has not confirmed yet.
-    if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving || _erpDirty)) return;
+    // Never refresh underneath a sales upload or a sales save in flight.
+    // Sales edits the cloud has not confirmed (_erpDirty) do NOT stop the
+    // refresh: loadAll keeps that copy in memory by itself, and the team's
+    // visits, clinics and plans — and this phone's queued offline saves —
+    // must keep moving meanwhile (v121: the flag froze them until reload).
+    if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
     if(currentUser && document.visibilityState==='visible'){
       // Queued offline edits must reach the cloud BEFORE a refresh replaces
       // memory with the (still-stale) cloud copy — otherwise they'd be lost.

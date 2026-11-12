@@ -418,8 +418,9 @@ async function erpFetchChunks(keys, timeoutMs){
 // revision is taken as-is; the same period at ANOTHER revision (the cloud's
 // chunks for the current one are gone — e.g. deleted by a stale device) is
 // taken too, re-stamped so the next save writes it back as fresh chunks, and
-// flagged unsaved so the supervisor is offered that save. Returns the ids
-// still missing.
+// counted in _erpPutBack so the supervisor is offered that save (erpAdoptLoaded).
+// Returns the ids still missing.
+let _erpPutBack = 0; // periods the last loadErpSales put back from this phone's copy
 function erpFillFromMirror(sales, prevMirror){
   const exact = {}, byId = {};
   ((prevMirror && prevMirror.periods) || []).forEach(p => { if(p && Array.isArray(p.rows) && p.rows.length){ exact[UMCore.erpRowsKey(p)] = p.rows; byId[p.id] = p; } });
@@ -431,7 +432,7 @@ function erpFillFromMirror(sales, prevMirror){
     const older = byId[p.id];
     if(older){ p.rows = older.rows; p.rowCount = older.rows.length; p.net = older.net != null ? older.net : p.net; p.rev = Date.now(); delete p.rowsMissing; recovered++; }
   });
-  if(recovered){ _erpDirty = true; console.warn(`erpSales: ${recovered} period(s) recovered from this device's copy — save to put them back in the cloud`); }
+  if(recovered){ _erpPutBack += recovered; console.warn(`erpSales: ${recovered} period(s) recovered from this device's copy — save to put them back in the cloud`); }
   return sales.periods.filter(p => p.rowsMissing).map(p => p.id);
 }
 // The mirror must never silently vanish when the phone's storage is full:
@@ -662,13 +663,20 @@ async function loadErpSales(){
   const fetchKeys = UMCore.erpChunkKeys({ periods: index.periods.filter(h => !(h && h.rowsRef && held[h.rowsRef.key] != null && (h.rowsRef.count == null || held[h.rowsRef.key] === h.rowsRef.count))) });
   let docs = {};
   if(fetchKeys.length && !_mirrorUsed.erpSales && !_loadFailed.erpSales) docs = await erpFetchChunks(fetchKeys);
+  _erpPutBack = 0;
   const out = UMCore.erpAssemble(index, docs);
   if(out.missing.length) out.missing = erpFillFromMirror(out.sales, prevMirror);
+  const assembled = out.sales; // what the cloud holds (plus anything put back above)
   // What is on screen never double-counts a day, whatever the cloud holds
   // (a stale-device write, an old-version import): the invariant runs in
-  // memory here too; the next save writes the trimmed copy back.
+  // memory here too, on every load; the next sales save writes the trimmed
+  // copy back. It is derived from the cloud's copy, not an edit of this
+  // phone's: it never marks the sales unsaved (that flag used to stop a
+  // rep's phone from taking the copy it had just read, and every 20-second
+  // refresh after it — v121), and the phone keeps the cloud's copy, so the
+  // next refresh downloads nothing it already holds.
   const inv = UMCore.erpEnforceNoOverlap(out.sales, Date.now(), erpOverlapKeys());
-  if(inv.changed){ out.sales = inv.sales; _erpDirty = true; console.warn(`erpSales: ${inv.changed} overlapping period(s) trimmed at boot — save pending`); }
+  if(inv.changed){ out.sales = inv.sales; console.warn(`erpSales: ${inv.changed} overlapping period(s) trimmed in memory — the next sales save writes them back`); }
   if(out.missing.length){
     // Rows the cloud would not hand over right now: the period stays listed
     // with rowsMissing (its stored chunks are left untouched by any save), the
@@ -679,9 +687,18 @@ async function loadErpSales(){
     if(prevMirror) mirrorSave('erpSales', JSON.stringify(prevMirror)); // keep the last good assembled copy
     setTimeout(() => { retryErpRows({ quiet: true, timeoutMs: 60000 }).catch(() => {}); }, 1500);
   } else if(!_mirrorUsed.erpSales && !_loadFailed.erpSales){
-    erpMirrorSave(out.sales); // cloudGet mirrored the bare index — replace it with the assembled copy
+    erpMirrorSave(assembled); // cloudGet mirrored the bare index — replace it with the assembled copy
   }
   return out.sales;
+}
+// Take a freshly loaded copy as the one on screen. A file put back from this
+// phone's copy is the one thing the cloud lacks: on the supervisor's phone —
+// the only one that saves sales files — it is marked unsaved and the red bar
+// offers the save; anywhere else it is simply shown, and put back again by
+// the next load until the supervisor saves it.
+function erpAdoptLoaded(fresh){
+  erpSales = fresh;
+  if(_erpPutBack && currentUser && currentUser.role === 'supervisor'){ _erpDirty = true; renderErpDirtyPill(); }
 }
 // Second attempt at the rows that did not download at boot (button in the
 // import screen and the warning card, and once automatically after boot).
@@ -750,8 +767,9 @@ function reinsertKeptClinics(prev){
 async function erpReloadFromCloud(){
   try{
     const fresh = await loadErpSales();
-    erpSales = fresh;
-    _erpDirty = false; renderErpDirtyPill();
+    _erpDirty = false;
+    erpAdoptLoaded(fresh);
+    renderErpDirtyPill();
     if(typeof _erpCtxCache !== 'undefined') _erpCtxCache = { key: null, ctx: null };
     renderAll(); renderErpNudge();
     showToast('☁️ وصل حفظٌ سابق للسحابة بعد تأخير — تم تحديث الشاشة');
@@ -979,7 +997,7 @@ async function loadAll(){
     const cgVal = UMCore.safeParse(cg && cg.value, null);
     categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), cgVal || {});
     if(_erpSaving || _erpDirty) console.warn('erpSales: refresh skipped — a save is in flight or unsaved edits exist');
-    else erpSales = es; // already assembled: periods carry their rows
+    else erpAdoptLoaded(es); // already assembled: periods carry their rows
     // An account link confirmed by the cloud while this read was on its way
     // (or a link save still in flight) is newer than the copy read here: keep
     // it, and keep the device copy on it, instead of showing the old link for
