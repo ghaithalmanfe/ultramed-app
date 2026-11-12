@@ -1166,23 +1166,41 @@ function memoryCopy(key){
 }
 const MEMONLY_VISIT = "This phone's storage is full — this visit is only in the app's memory: keep the app open and connected until it says Saved";
 const MEMONLY_OTHER = "This phone's storage is full — these changes are only in the app's memory: keep the app open and connected until it says Saved";
+// v122: a visit photo kept only in the app's memory (photoKeep → 'mem', 12) is
+// on this bar too until it has landed: the visit can reach the cloud before it.
+const MEMONLY_PHOTO = "This phone's storage is full — a photo is only in the app's memory: keep the app open and connected until it says Saved";
+let _memBarTimer = 0; // while such a photo is on the bar: looked at again every second (it lands in the background)
+function memOnlyPhotos(){ return typeof photosToUpload === 'function' ? photosToUpload(true) : 0; }
 function renderMemOnlyBar(){
   let el = document.getElementById('memOnlyBar');
-  if(!_memOnly.size){ if(el) el.remove(); updateSyncBadge(); return; }
+  const nPh = memOnlyPhotos();
+  clearTimeout(_memBarTimer); _memBarTimer = 0;
+  if(!_memOnly.size && !nPh){ if(el) el.remove(); updateSyncBadge(); return; }
   if(!el){
     el = document.createElement('div');
     el.id = 'memOnlyBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
-    el.style.cssText = 'position:fixed; top:10px; left:12px; right:12px; z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:center; pointer-events:none;';
+    el.style.cssText = 'position:fixed; top:10px; left:12px; right:12px; z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:center; pointer-events:none; white-space:pre-line;';
     document.body.appendChild(el);
   }
-  const txt = _memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER;
-  el.textContent = trOf(txt) || txt;
+  const lines = _memOnly.size
+    ? [_memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER].concat(nPh ? [nPh === 1 ? "A photo is only in the app's memory too" : nPh + " photos are only in the app's memory too"] : [])
+    : [nPh === 1 ? MEMONLY_PHOTO : "This phone's storage is full — " + nPh + " photos are only in the app's memory: keep the app open and connected until it says Saved"];
+  const txt = lines.map(t => trOf(t) || t).join('\n');
+  if(el.textContent !== txt) el.textContent = txt; // an alert: said again only when it changes
+  if(nPh) _memBarTimer = setTimeout(memOnlyRecheck, 1000);
   updateSyncBadge();
 }
+// A save of its own decides while one is on its way (its outcome adds to the bar, or lands below).
+function memOnlyRecheck(){ if(_localSaving > 0) _memBarTimer = setTimeout(memOnlyRecheck, 1000); else memOnlyLanded(null); }
+// What was only in memory has landed (key: the list just saved; null: a photo,
+// rechecked): "Saved" once nothing is left only in the app's memory.
 function memOnlyLanded(key){
-  if(!_memOnly.delete(key)) return;
+  const had = key != null && _memOnly.delete(key);
+  if(!had && !document.getElementById('memOnlyBar')) return;
   renderMemOnlyBar();
-  if(!_memOnly.size) showToast('✅ Saved — it reached the cloud', 5000);
+  if(_memOnly.size || memOnlyPhotos()) return;
+  const left = typeof photosToUpload === 'function' ? photosToUpload(false) : 0; // kept on the phone, still on their way
+  showToast(left ? '✅ Saved — it reached the cloud · ⏳ ' + photosLeftText(left) : '✅ Saved — it reached the cloud', 5000);
 }
 // Account links are saved one account at a time with a compare-and-set
 // (saveErpLink, 11-erp.js), never as a whole map. A whole-map save waiting in
@@ -1373,7 +1391,11 @@ async function flushOutbox(){
     }
   }finally{ _flushing = false; }
   updateSyncBadge();
-  if(allOk && pending.length && !memOnly0) showToast('✅ Offline changes uploaded & merged');
+  if(allOk && pending.length && !memOnly0){
+    // v122: a visit's photos upload apart from the queue — the ones still on their way are named, never covered by "uploaded"
+    const left = typeof photosToUpload === 'function' ? photosToUpload(false) : 0;
+    showToast(left ? '✅ Offline changes uploaded & merged · ⏳ ' + photosLeftText(left) : '✅ Offline changes uploaded & merged', left ? 4500 : undefined);
+  }
 }
 function updateSyncBadge(){
   let el = document.getElementById('syncPill');

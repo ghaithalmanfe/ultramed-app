@@ -501,6 +501,10 @@ function renderEditPhotos(visitId){
   const note = photoWaitHTML(v);
   if(note) el.insertAdjacentHTML('afterend', `<div id="editPhotoWait">${note}</div>`);
 }
+// The Edit sheet on screen is still this visit's: a save that settles after
+// the person moved on to another visit's sheet must not paint this visit's
+// photos into it, nor bind its ADD and × to this visit (v122).
+function editSheetShows(visitId){ const el = document.getElementById('editPhotoRow'); return !!el && el.dataset.visit === visitId; }
 function addEditPhoto(visitId){
   const v0 = visits.find(x=>x.id===visitId);
   if(!v0 || !canEditVisit(v0)) return;
@@ -514,11 +518,14 @@ function addEditPhoto(visitId){
     const id = uid();
     v.photos = v.photos || [];
     v.photos.push({id, thumb, pending: true});
-    renderEditPhotos(visitId);
+    if(editSheetShows(visitId)) renderEditPhotos(visitId);
     const r = await persistFor('visits');
+    // removed (×) while that save was on its way: never kept on the phone, never sent
+    const onVisit = () => { const cur = visits.find(x=>x.id===visitId); return !!(cur && (cur.photos||[]).some(p => p && p.id === id)); };
+    if(!onVisit()){ showToast('Photo removed'); return; }
     const kept = await keepVisitPhotos(v.id, [{id, full}]);
-    renderEditPhotos(visitId);
-    showToast(visitSaveMsg(r, kept, true), 4500);
+    if(editSheetShows(visitId)) renderEditPhotos(visitId);
+    showToast(onVisit() ? visitSaveMsg(r, kept, true) : 'Photo removed', 4500);
   }, true);
 }
 async function removeEditPhoto(visitId, photoId){
@@ -527,8 +534,9 @@ async function removeEditPhoto(visitId, photoId){
   v.photos = (v.photos||[]).filter(p=>p.id!==photoId);
   photoForget(photoId); // still waiting to upload: never sent now
   Promise.resolve().then(() => window.storage.delete('photo:'+photoId, true)).catch(()=>{}); // best effort, not awaited: with no signal it never answers (v122)
+  if(editSheetShows(visitId)) renderEditPhotos(visitId); // gone from the sheet at once — its save can wait behind another one
   await persist('visits');
-  renderEditPhotos(visitId);
+  if(editSheetShows(visitId)) renderEditPhotos(visitId);
 }
 async function saveEditVisit(visitId){
   const v = visits.find(x=>x.id===visitId);
