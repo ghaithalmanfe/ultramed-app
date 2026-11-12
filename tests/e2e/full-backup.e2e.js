@@ -70,13 +70,13 @@ function fillCloud(src){ Object.keys(cloud).forEach(k => { delete cloud[k]; }); 
 const J = JSON.stringify;
 const SEEDS = { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true };
 const ROW = (d, doc, cust, net, sm, brand) => [d, doc, 0, (brand || 'Intensiv') + ' Ortho-Strips', 1, net, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
-const repMap = { 'Mariam Zohair': M, 'Renova Ayman': R };
+const repMap = { 'Mariam Sample': M, 'Renova Sample': R };
 const dataUrl = (seed, n) => 'data:image/jpeg;base64,' + Buffer.from(Array.from({ length: n }, (_, i) => (i * 31 + seed * 7) % 256)).toString('base64');
 function smallAccount(){
   const out = {}, put = (k, v, u) => { out[k] = { value: typeof v === 'string' ? v : J(v), updated: u == null ? 1762800000000 : u }; };
   const C = (id, name, rep, docs) => ({ id, name, rep, cls: 'B', area: 'Salmiya', doctors: docs || [] });
   const clinics = [C('c1', 'عيادة النور — Al Noor Dental', M, [{ id: 'd1', name: 'Dr. Sara Al-Ali' }, { id: 'd2', name: 'د. خالد' }]),
-    C('c2', 'Bayan Dental Center 🦷', R, [{ id: 'd3', name: 'Dr. Omar' }]), C('c3', 'Dental 8 Clinic', M)]
+    C('c2', 'Hilal Dental Center 🦷', R, [{ id: 'd3', name: 'Dr. Omar' }]), C('c3', 'Dental 5 Clinic', M)]
     .concat(Array.from({ length: 14 }, (_, i) => C('f' + i, 'Filler Clinic ' + i, i % 2 ? M : R)));
   put('clinics', clinics, 1762810000000);
   put('staff', STAFF());
@@ -87,7 +87,7 @@ function smallAccount(){
   put('visitsArch:2026-10', [v('b1', '2026-10-02', 'c1', M), v('b2', '2026-10-12', 'c2', R), v('b3', '2026-10-22', 'c3', M)]);
   put('visitsIndex', { months: { '2026-09': { n: 3, rev: 1 }, '2026-10': { n: 3, rev: 2 } }, v: 1, updated: 1762800000000 });
   put('tasks', [{ id: 't1', title: 'Send the Tepe price list', rep: M, due: '2026-11-12', done: false }, { id: 't2', title: 'Call Dr. Omar', rep: R, due: '2026-11-13', done: true }]);
-  put('events', [{ id: 'e1', kind: 'request', rep: M, at: '2026-11-03T08:00:00.000Z', text: 'Stand at Bayan' }]);
+  put('events', [{ id: 'e1', kind: 'request', rep: M, at: '2026-11-03T08:00:00.000Z', text: 'Stand at Hilal' }]);
   put('dayPlans', { '2026-11-11': { [M]: [{ clinicId: 'c1', at: '2026-11-11T05:00:00.000Z' }], [R]: [{ clinicId: 'c2' }] }, '2026-11-10': { [M]: [] } });
   put('recycleBin', { clinics: [Object.assign({ _deletedAt: 1762000000000, _label: 'Old Clinic' }, C('cx', 'Old Clinic', M))], products: [], visits: [] });
   put('tombs', { visits: {}, tasks: {}, clinics: { cx: 1762000000000 }, events: {}, dayPlans: {}, doctors: {} });
@@ -103,14 +103,14 @@ function smallAccount(){
   put('chat', [{ id: 'm1', who: M, text: 'صباح الخير 👋', ts: 1762800000000 }]);
   put('memories', [{ id: 'ph2', thumb: dataUrl(2, 60), cap: 'Stand', who: R, ts: 1762800000000 }]);
   put('photo:ph1', dataUrl(3, 6000)); put('photo:ph2', dataUrl(4, 5000));
-  const OCT = [ROW('2026-10-05', 'SINV1', 'Al Noor Dental Co', 25, 'Mariam Zohair'), ROW('2026-10-06', 'SINV2', 'Bayan Dental Center', 30, 'Renova Ayman'),
-    ROW('2026-10-07', 'SINV3', 'Dental 8 Clinic', 12, 'Mariam Zohair'), ROW('2026-10-08', 'SINV4', 'Al Noor Dental Co', 8, 'Mariam Zohair', 'Tepe')];
-  const NOV = [ROW('2026-11-02', 'SINV5', 'Al Noor Dental Co', 40, 'Mariam Zohair'), ROW('2026-11-03', 'SINV6', 'Bayan Dental Center', 15, 'Renova Ayman')];
+  const OCT = [ROW('2026-10-05', 'SINV1', 'Al Noor Dental Co', 25, 'Mariam Sample'), ROW('2026-10-06', 'SINV2', 'Hilal Dental Center', 30, 'Renova Sample'),
+    ROW('2026-10-07', 'SINV3', 'Dental 5 Clinic', 12, 'Mariam Sample'), ROW('2026-10-08', 'SINV4', 'Al Noor Dental Co', 8, 'Mariam Sample', 'Tepe')];
+  const NOV = [ROW('2026-11-02', 'SINV5', 'Al Noor Dental Co', 40, 'Mariam Sample'), ROW('2026-11-03', 'SINV6', 'Hilal Dental Center', 15, 'Renova Sample')];
   const sp = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: repMap, seeds: SEEDS, periods: [
     { id: 'oct', from: '2026-10-01', to: '2026-10-31', net: 75, rowCount: OCT.length, repMap, rev: 3, rows: OCT },
     { id: 'nov', from: '2026-11-01', to: '2026-11-08', net: 55, rowCount: NOV.length, repMap, rev: 1, rows: NOV }] }, 3);   // 3 lines per chunk: several chunks
   put('erpSales', sp.index); Object.keys(sp.docs).forEach(k => put(k, sp.docs[k]));
-  put('erpRows:oct:2:0', [ROW('2026-10-05', 'SINV1', 'Al Noor Dental Co', 25, 'Mariam Zohair')], 1762000000000);   // a replaced version, kept a week
+  put('erpRows:oct:2:0', [ROW('2026-10-05', 'SINV1', 'Al Noor Dental Co', 25, 'Mariam Sample')], 1762000000000);   // a replaced version, kept a week
   const snap = day => ({ clinics, products: [], visits: [], visitsMonths: { '2026-09': 3, '2026-10': 3 }, tasks: [], erpIndex: sp.index, ts: day + 'T06:00:00.000Z' });
   put('snap_2026-11-09', snap('2026-11-09')); put('snap_2026-11-10', snap('2026-11-10'));
   put('someFutureDoc', { a: 1, note: 'a document no data set claims yet' });
@@ -121,7 +121,7 @@ function smallAccount(){
 function bigAccount(scale){
   scale = scale || 1;
   const out = {}, put = (k, v) => { out[k] = { value: typeof v === 'string' ? v : J(v), updated: 1762800000000 }; };
-  const reps = [M, R], sm = ['Mariam Zohair', 'Renova Ayman'];
+  const reps = [M, R], sm = ['Mariam Sample', 'Renova Sample'];
   const clinics = Array.from({ length: 450 }, (_, i) => ({ id: 'bc' + i, name: (i % 3 ? 'Clinic ' : 'عيادة ') + i + ' Dental', rep: reps[i % 2], cls: 'ABC'[i % 3], area: 'Hawalli',
     phone: '000-' + (1000 + i), notes: 'Synthetic clinic ' + i,   // not a phone number
     doctors: [0, 1, 2].map(j => ({ id: 'bd' + i + '_' + j, name: (j ? 'Dr. ' : 'د. ') + 'Name ' + i + '-' + j, title: 'Dentist', phone: '', birthday: '', cadence: '', notes: '', handovers: [] })) }));
