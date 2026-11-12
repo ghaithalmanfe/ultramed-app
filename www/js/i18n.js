@@ -210,6 +210,11 @@
     'Integrity code (sha256):': 'رمز التحقق من سلامة الملف (sha256):',
     'This phone has changes the cloud does not have yet:': 'على هذا الجهاز تغييرات لم تصل إلى السحابة بعد:',
     '(no copy on this phone)': '(لا توجد نسخة منها على هذا الجهاز)',
+    // v122: a photo that reached the cloud while the backup was read; a photo store that did not answer
+    'Reached the cloud while the backup was being read, and could not be read again:': 'وصلت إلى السحابة أثناء قراءة النسخة الاحتياطية، وتعذّرت قراءتها مرة أخرى:',
+    "The file keeps this phone's copy apart where there is one. Take the backup again to have them among the cloud's documents.": 'الملف يحفظ نسخة الجهاز منها بشكل منفصل إن وُجدت. خذ النسخة الاحتياطية مرة أخرى لتكون ضمن مستندات السحابة.',
+    "This phone's photo store did not answer:": 'مخزن الصور على هذا الجهاز لم يستجب:',
+    'A photo still waiting on this phone may be missing from this file. Take the backup again later.': 'قد تكون صورة ما زالت بانتظار الرفع على هذا الجهاز غير موجودة في هذا الملف. خذ النسخة الاحتياطية مرة أخرى لاحقاً.',
     "They are not part of the cloud copy. The file keeps this phone's copy of them apart, and a restore never writes them. Stay connected until they upload, then take the backup again.": 'هذه التغييرات ليست ضمن نسخة السحابة. الملف يحفظ نسخة الجهاز منها بشكل منفصل، والاسترجاع لا يكتبها أبداً. ابقَ متصلاً حتى تُرفع، ثم خذ النسخة الاحتياطية مرة أخرى.',
     'Could not be read:': 'تعذّرت قراءة:',
     "The list of the cloud's documents": 'قائمة مستندات السحابة',
@@ -1015,6 +1020,8 @@
     "only in the app's memory — keep the app open": 'في ذاكرة التطبيق فقط — أبقِ التطبيق مفتوحًا',
     // what the screens say about those photos (v122): the lightbox, the gallery, the red bar, the toasts (counts by pattern below)
     'Photo lost before it uploaded — only this small preview is kept': 'فُقدت الصورة قبل أن تُرفع — بقيت هذه المعاينة الصغيرة فقط',
+    'The full photo is in the cloud — it shows when this phone is connected; this is its small preview': 'الصورة الكاملة في السحابة — تظهر عندما يتصل هذا الهاتف؛ هذه معاينتها الصغيرة',
+    'A photo reached the cloud': 'وصلت صورة إلى السحابة',
     'The full photo is still waiting to upload from the phone that took it — this is its small preview': 'الصورة الكاملة ما زالت بانتظار الرفع من الهاتف الذي التقطها — هذه معاينتها الصغيرة',
     '⏳ marks a photo still waiting to upload — until it arrives, other phones show only its small preview.': '⏳ تعني صورة ما زالت بانتظار الرفع — إلى أن تصل، تُظهر الهواتف الأخرى معاينتها الصغيرة فقط.',
     '⚠️ marks a photo lost before it uploaded — only its small preview is kept.': '⚠️ تعني صورة فُقدت قبل أن تُرفع — بقيت معاينتها الصغيرة فقط.',
@@ -1900,6 +1907,7 @@
     [/^(\d+) photos still waiting to upload$/, function (m) { return 'عدد الصور التي ما زالت بانتظار الرفع: ' + m[1]; }],
     [/^This phone's storage is full — (\d+) photos are only in the app's memory: keep the app open and connected until it says Saved$/, function (m) { return 'ذاكرة هذا الهاتف ممتلئة — عدد الصور الموجودة في ذاكرة التطبيق فقط: ' + m[1] + ' — أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»'; }],
     [/^(\d+) photos are only in the app's memory too$/, function (m) { return 'وعدد الصور الموجودة أيضًا في ذاكرة التطبيق فقط: ' + m[1]; }],
+    [/^(\d+) photos reached the cloud$/, function (m) { return 'عدد الصور التي وصلت إلى السحابة: ' + m[1]; }],
     // a photo waiting for days on another phone (v122): it may never arrive (3 days or more: أيام up to 10, يومًا from 11)
     [/^(\d+) days now — it can only come from the phone that took it, if that phone still has it$/, function (m) { return 'منذ ' + m[1] + ' ' + (+m[1] <= 10 ? 'أيام' : 'يومًا') + ' — لا يمكن أن تصل إلا من الهاتف الذي التقطها، إن كانت ما زالت عليه'; }],
     [/^The full photo has not arrived in (\d+) days — it can only come from the phone that took it, if that phone still has it\. This is its small preview$/, function (m) { return 'لم تصل الصورة الكاملة منذ ' + m[1] + ' ' + (+m[1] <= 10 ? 'أيام' : 'يومًا') + ' — لا يمكن أن تصل إلا من الهاتف الذي التقطها، إن كانت ما زالت عليه. هذه معاينتها الصغيرة'; }],

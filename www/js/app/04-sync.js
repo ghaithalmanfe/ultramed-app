@@ -688,7 +688,7 @@ async function patchVisitPhotosNow(changes){
       const list = byDoc[doc];
       if(doc !== 'live' && _visitsBroken.includes(doc)){ list.forEach(c => { out[c.photoId] = 'failed'; }); continue; } // a month we could not read is never written
       const key = doc === 'live' ? 'visits' : UMCore.visitsArchKey(doc);
-      let res = {}, wrote = false, n = 0;
+      let res = {}, wrote = false, asked = false, n = 0;
       try{
         await storageUpdate(key, cloudStr => {
           res = {}; wrote = false;
@@ -696,9 +696,14 @@ async function patchVisitPhotosNow(changes){
           if(!Array.isArray(arr)){ list.forEach(c => { res[c.photoId] = 'missing'; }); return null; }
           n = arr.length;
           wrote = settleIn(arr, list, res);
+          if(wrote) asked = true; // never reset: a later run of the same transaction finds it settled
           return wrote ? JSON.stringify(arr) : null; // nothing to change → nothing written
         }, 12000);
-      }catch(e){ list.forEach(c => { out[c.photoId] = 'failed'; }); continue; }
+      }catch(e){
+        list.forEach(c => { out[c.photoId] = 'failed'; });
+        if(asked && doc !== 'live') _visitsIdxOwed[doc] = n; // it may have landed with no answer: the phones read it once more
+        continue;
+      }
       Object.assign(out, res);
       // A month's archive is read again by the phones only when its revision
       // in the index moves (as Pass C does for a save) — this phone too: it
@@ -706,7 +711,9 @@ async function patchVisitPhotosNow(changes){
       // what the cloud now holds (another phone's edit may be in it). Taken,
       // the phone stopped reading the month: other phones' edits never showed
       // and its next save of the month put its old copy back (v122 review).
-      if(wrote && doc !== 'live') _visitsIdxOwed[doc] = n;
+      // A transaction can run more than once (the cloud's answer lost, then a
+      // retry that finds the mark settled): any run that asked to write counts.
+      if(asked && doc !== 'live') _visitsIdxOwed[doc] = n;
       // What this phone knows the cloud holds gets the same marks settled, so
       // the next save of the list does not count them as a change of its own.
       const done = list.filter(c => res[c.photoId] === 'done');
@@ -1334,7 +1341,12 @@ function memOnlyLanded(key){
   const had = key != null && _memOnly.delete(key);
   if(!had && !_memPhotoLanded && !document.getElementById('memOnlyBar')) return;
   renderMemOnlyBar();
-  if(_memOnly.size || memOnlyPhotos()) return;
+  if(_memOnly.size || memOnlyPhotos()){
+    // more is left on the bar: a photo that landed is said now — kept for
+    // later, the next removal of a photo would have read as "Saved"
+    if(_memPhotoLanded){ const n = _memPhotoLanded; _memPhotoLanded = 0; showToast(n === 1 ? '✅ A photo reached the cloud' : '✅ ' + n + ' photos reached the cloud', 4000); }
+    return;
+  }
   if(!had && !_memPhotoLanded) return; // gone from the bar without landing (removed): nothing to say
   _memPhotoLanded = 0;
   const left = typeof photosToUpload === 'function' ? photosToUpload(false) : 0; // kept on the phone, still on their way
@@ -1512,6 +1524,7 @@ function offlineToast(msg){
   showToast(msg);
 }
 async function flushOutbox(){
+  if(_bootLoaded && currentUser && typeof photoReadKeptQuiet === 'function') photoReadKeptQuiet(); // the phone's own photo stores need no signal (12-reports.js)
   if(_flushing || !navigator.onLine || !_bootLoaded || !currentUser) return;
   if(typeof retryPhotos === 'function') retryPhotos(); // photos kept on this phone until the cloud holds them (12-reports.js) — in the background, even with nothing queued
   dropQueuedErpMap(); // never replayed (see dropQueuedErpMap)

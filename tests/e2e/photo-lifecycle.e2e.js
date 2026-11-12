@@ -22,7 +22,15 @@
 // - a photo landing while the full backup read the cloud was in neither part
 //   of the file (BACKUP);
 // - removing a photo kept only in memory, with no signal, said "Saved — it
-//   reached the cloud" (MEMRM).
+//   reached the cloud" (MEMRM), also after another one had landed (MEM1).
+// Third review: a past month's mark written with its answer lost (IDXLATE,
+// IDXRETRY) or a look-up that never answers (STARVE) kept the other phones'
+// "waiting"; a second tab holding the photo only in memory (TMEM); a landed
+// photo's mark never settled while IndexedDB did not open (IDBLAND); the
+// phone that took the photo said it "can only come from the phone that took
+// it" (OWNAGE, LANDAGE); a backup while the photo store did not answer, or
+// opened during the read (BKNOTREAD, BKLATE), and the words for a photo that
+// landed during it (BACKUP2).
 // Fake cloud in Node shared by the phones (a photo write can be held: a slow
 // upload); clock pinned to Mon 21 Sep 2026; the 20-second refresh by hand.
 // Names, clinics and doctors are invented.
@@ -97,9 +105,14 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
       update: async (k, fn) => { await window.__cAcquire(k); try{ const cur = await window.__cGet(k); const next = fn(cur == null ? null : cur); if(next == null) return null;
         if(k === 'visitsIndex' && localStorage.getItem('__probe_failIndexOnce') === '1'){ localStorage.removeItem('__probe_failIndexOnce'); window.__idxFailed = true; throw new Error('boom-key visitsIndex (once)'); }
         if(k === 'visits' && /"lost":true/.test(next) && localStorage.getItem('__probe_failLostOnce') === '1'){ localStorage.removeItem('__probe_failLostOnce'); window.__failedOnce = true; throw new Error('boom-key visits (once)'); }
-        await window.__cSet(k, next); return next; } finally { await window.__cRelease(k); } },
+        await window.__cSet(k, next);
+        // the archive's write lands but its answer comes after the app's 12 s limit / the transaction is run again (its answer lost)
+        if(/^visitsArch:/.test(k) && localStorage.getItem('__probe_archLateOnce') === '1'){ localStorage.removeItem('__probe_archLateOnce'); window.__archLate = true; await new Promise(r => setTimeout(r, 13500)); }
+        if(/^visitsArch:/.test(k) && localStorage.getItem('__probe_archRetryOnce') === '1'){ localStorage.removeItem('__probe_archRetryOnce'); window.__archRetry = true; const cur2 = await window.__cGet(k); const next2 = fn(cur2); if(next2 == null) return null; await window.__cSet(k, next2); return next2; }
+        return next; } finally { await window.__cRelease(k); } },
     };
-    const off = clock - Date.now();
+    let add = 0; try{ add = Number(localStorage.getItem('__probe_clockAdd') || 0); }catch(e){} // days later (an app opened again after a long gap)
+    const off = clock + add - Date.now();
     const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
     const _si = window.setInterval.bind(window);
     window.setInterval = (fn, ms, ...a) => { if(ms === 20000){ window.__bgTick = fn; return -1; } return _si(fn, ms, ...a); };
@@ -108,6 +121,7 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
     // IndexedDB that cannot be opened this session (e.g. Chromium: "Encountered full disk while opening backing store for indexedDB.open.")
     const realOpen = IDBFactory.prototype.open;
     window.__realIdbOpen = (n, v) => realOpen.call(indexedDB, n, v);
+    window.__idbRestore = () => { IDBFactory.prototype.open = realOpen; };
     if(localStorage.getItem('__probe_idbHang') === '1'){
       IDBFactory.prototype.open = function(name, ver){
         if(name !== 'um_photos') return realOpen.call(this, name, ver);
@@ -153,7 +167,16 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
     await wirePage(page, label, opts);
     return mkTab(ctx, page, label);
   };
-  const secondTab = async (ph, label) => { const page = await ph.ctx.newPage(); await wirePage(page, label); return mkTab(ph.ctx, page, label); };
+  const secondTab = async (ph, label, opts) => { const page = await ph.ctx.newPage(); await wirePage(page, label, opts); return mkTab(ph.ctx, page, label); };
+  const bootOffline = async (ph, who, role) => {
+    dropHeld(ph.label);
+    await ph.page.goto(`http://localhost:${PORT}/index.html`); await ph.page.waitForTimeout(250);
+    net.down.add(ph.label); await ph.ctx.setOffline(true);
+    await ph.page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
+    await ph.page.waitForTimeout(500);
+    await ph.page.evaluate(() => { window.__toasts = []; const real = showToast; window.showToast = (m, ms) => { window.__toasts.push(String(m)); return real(m, ms); }; });
+  };
+  const waitLineOf = (ph, vid) => ph.page.evaluate(vid => { const v = visits.find(x => x.id === vid); return v ? photoWaitHTML(v).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : null; }, vid);
   const fill = (ph, o) => ph.page.evaluate(o => { closeModal(); switchView('log'); prepLogView(o.clinicId); pickClinic(o.clinicId); pickDoctorSeen(o.docId);
     document.getElementById('visitNotes').value = o.note;
     for(let i = 0; i < (o.photos || 0); i++) visitPhotos.push(window.__shot(i));
@@ -431,9 +454,9 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
     await F.page.evaluate(() => localStorage.setItem('__probe_failLostOnce', '1'));
     await F.boot(M, 'rep');
     await F.tick(); await sleep(500);
-    const failedOnce = await F.page.evaluate(() => !!window.__failedOnce);
     const mid = marks(cv(vid));
-    for(let i = 0; i < 3; i++){ await F.tick(); await sleep(400); }
+    for(let i = 0; i < 4; i++){ await F.tick(); await sleep(600); } // a verdict waits up to 1 s for another tab of the phone to answer
+    const failedOnce = await F.page.evaluate(() => !!window.__failedOnce);
     const c = marks(cv(vid));
     const onPhone = await phoneVisit(F, vid);
     check('LOSTFAIL. a lost photo whose "lost" save failed once is said lost at a later round of the same session, in the cloud and on the phone',
@@ -495,7 +518,8 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
       const pend = document.querySelector('[data-backup-pending]');
       const file = (typeof _fullBackup !== 'undefined' && _fullBackup) ? JSON.parse(await _fullBackup.blob.text()) : null;
       const v = file ? UMCore.verifyBackupFile(file) : null;
-      return { ready: !!document.querySelector('[data-backup-download]'), pendingCard: pend ? pend.innerText : '', dataKeys: file ? Object.keys(file.data) : [], pendKeys: file ? Object.keys(file.pending || {}) : [],
+      const landedCard = document.querySelector('[data-backup-landed]');
+      return { ready: !!document.querySelector('[data-backup-download]'), pendingCard: pend ? pend.innerText : '', landedCard: landedCard ? landedCard.innerText : '', dataKeys: file ? Object.keys(file.data) : [], pendKeys: file ? Object.keys(file.pending || {}) : [],
         file, ok: !!(v && v.ok), kept: [..._photoKept.keys()] };
     });
     api.get = realGet;
@@ -503,15 +527,15 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
     const value = inData ? b.file.data[k].value : inPend ? b.file.pending[k].value : null;
     await S.page.evaluate(() => closeModal());
     await S.ctx.close();
-    return { k, landedAt, ready: b.ready, ok: b.ok, inData, inPend, sameAsCloud: value === cloud[k], pendingCard: b.pendingCard, kept: b.kept };
+    return { k, landedAt, ready: b.ready, ok: b.ok, inData, inPend, sameAsCloud: value === cloud[k], pendingCard: b.pendingCard, landedCard: b.landedCard, from: inPend ? b.file.pending[k].from : null, kept: b.kept };
   };
   await phase('BACKUP', 'full backup: a photo lands while the cloud is read', async () => {
     const r = await backupRun('S-supervisor-bk', false);
     check('BACKUP. a photo kept on the supervisor\'s phone when he starts the full backup, landing during the read, is in the file once — read again, among the cloud\'s documents — and the file verifies',
       r.landedAt && r.ready && r.ok && r.inData && !r.inPend && r.sameAsCloud && !/Visit photo|photo:/.test(r.pendingCard), r);
     const r2 = await backupRun('S-supervisor-bk2', true);
-    check('BACKUP2. …and when it cannot be read again, the file keeps this phone\'s copy of it apart (pending), once',
-      r2.landedAt && r2.ready && r2.ok && !r2.inData && r2.inPend && r2.sameAsCloud, r2);
+    check('BACKUP2. …and when it cannot be read again, the file keeps this phone\'s copy of it apart (pending), once — said as reached the cloud during the read, never as a change the cloud lacks',
+      r2.landedAt && r2.ready && r2.ok && !r2.inData && r2.inPend && r2.sameAsCloud && !/photo:/.test(r2.pendingCard) && /Reached the cloud while the backup was being read/.test(r2.landedCard) && r2.landedCard.includes(r2.k) && /reached the cloud during the read/.test(r2.from || ''), r2);
   });
 
   // =====================================================================
@@ -549,6 +573,258 @@ const oldVisit = (id, rep, clinicId, docId, notes, date) => ({ id, clinicId, rep
     await until(() => F.page.evaluate(() => (window.__toasts || []).some(t => /reached the cloud/.test(t))), 6000);
     const s3 = await F.page.evaluate(() => { const b = document.getElementById('memOnlyBar'); return { bar: b ? b.textContent : null, toasts: window.__toasts.slice() }; });
     check('MEMRM2. …a photo kept only in memory that lands does say "Saved — it reached the cloud", and the bar goes', !s3.bar && s3.toasts.some(t => /Saved — it reached the cloud/.test(t)) && !!cloud['photo:' + pid2], s3);
+    await F.ctx.close();
+  });
+
+
+  // =====================================================================
+  // IDXLATE / IDXRETRY / STARVE — the past month's revision must still move
+  // =====================================================================
+  const idxCase = async (id, probe, label) => {
+    seed();
+    cloud['visitsArch:2026-08'] = JSON.stringify([oldVisit('va', M, 'c1', 'd1', id + ' an August visit', '2026-08-20')]);
+    cloud.visitsIndex = JSON.stringify({ v: 1, months: { '2026-08': { n: 1, rev: 1 } } });
+    const A = await mkPhone('A-Mariam-' + id);
+    const S = await mkPhone('S-supervisor-' + id);
+    await A.boot(M, 'rep');
+    net.photoHold.add(A.label);
+    await pickStub(A, 7);
+    await A.page.evaluate(async () => { openEditVisit('va'); addEditPhoto('va'); await window.__picked; closeModal(); });
+    const pid = await addedId(A, 'va', []);
+    await until(() => ((av('2026-08', 'va') || {}).photos || []).length === 1, 10000);
+    await until(() => heldPhotos.some(h => h.k === 'photo:' + pid), 10000);
+    await sleep(500);
+    await S.boot(G, 'supervisor');
+    const sBefore = await phoneVisit(S, 'va');
+    await A.page.evaluate(p => localStorage.setItem(p, '1'), probe);
+    landPhoto(pid);
+    await until(() => { const p = ((av('2026-08', 'va') || {}).photos || [])[0]; return p && !p.pending; }, 10000);
+    await until(() => A.page.evaluate(() => !_visitsSaving && !_photoSettling), 25000); await sleep(500);
+    const probeHit = await A.page.evaluate(() => ({ late: !!window.__archLate, retry: !!window.__archRetry }));
+    for(let i = 0; i < 3; i++){
+      await A.tick(); await until(() => A.page.evaluate(() => !_visitsSaving && !_photoSettling), 25000); await sleep(300);
+      await S.tick(); await sleep(300);
+    }
+    const sAfter = await phoneVisit(S, 'va');
+    check(id + '. ' + label + ': the month\'s revision still moves and the supervisor\'s phone stops saying "waiting"',
+      (probeHit.late || probeHit.retry) && sBefore && sBefore.photos[0] && sBefore.photos[0].pending && sAfter && sAfter.photos[0] && !sAfter.photos[0].pending,
+      { probeHit, archive: marks(av('2026-08', 'va')), index: J('visitsIndex'), sBefore, sAfter });
+    await A.ctx.close(); await S.ctx.close();
+  };
+  await phase('IDXLATE', 'the archive mark lands but its answer comes after 12 s', () => idxCase('IDXLATE', '__probe_archLateOnce', 'the archive write landed and its answer came after the app\'s 12 s limit'));
+  await phase('IDXRETRY', 'the archive mark lands, the transaction is run again', () => idxCase('IDXRETRY', '__probe_archRetryOnce', 'the archive write landed, the transaction was run again and found nothing to change'));
+  await phase('STARVE', 'an owed revision while a look-up gets no answer', async () => {
+    seed();
+    const devA = 'dHarnessMariam';
+    cloud.visits = JSON.stringify([Object.assign(oldVisit('vlive', M, 'c3', 'd3', 'STARVE a visit with an earlier photo', '2026-09-18'), { photos: [{ id: 'pxold', thumb: thumbURL, pending: true, dev: devA, at: CLOCK - 2 * 3600000 }] })]);
+    cloud['photo:pxold'] = 'data:image/jpeg;base64,AAAA'; // it did land, in an earlier session
+    cloud['visitsArch:2026-08'] = JSON.stringify([oldVisit('va', M, 'c1', 'd1', 'STARVE an August visit', '2026-08-20')]);
+    cloud.visitsIndex = JSON.stringify({ v: 1, months: { '2026-08': { n: 1, rev: 1 } } });
+    const A = await mkPhone('A-Mariam-starve');
+    const S = await mkPhone('S-supervisor-starve');
+    await A.page.goto(`http://localhost:${PORT}/index.html`); await A.page.evaluate(d => localStorage.setItem('um_device', d), devA);
+    net.failKeys[A.label] = [/^photo:pxold$/]; // its download never answers here (a weak link, a big photo)
+    await A.boot(M, 'rep');
+    net.photoHold.add(A.label);
+    await pickStub(A, 7);
+    await A.page.evaluate(async () => { openEditVisit('va'); addEditPhoto('va'); await window.__picked; closeModal(); });
+    const pid = await addedId(A, 'va', []);
+    await until(() => ((av('2026-08', 'va') || {}).photos || []).length === 1, 10000);
+    await until(() => heldPhotos.some(h => h.k === 'photo:' + pid), 10000);
+    await sleep(500);
+    await S.boot(G, 'supervisor');
+    const sBefore = await phoneVisit(S, 'va');
+    await A.page.evaluate(() => localStorage.setItem('__probe_failIndexOnce', '1'));
+    landPhoto(pid);
+    await until(() => { const p = ((av('2026-08', 'va') || {}).photos || [])[0]; return p && !p.pending; }, 10000);
+    await until(() => A.page.evaluate(() => !_visitsSaving && !_photoSettling), 25000); await sleep(500);
+    const idxFailed = await A.page.evaluate(() => !!window.__idxFailed);
+    for(let i = 0; i < 4; i++){
+      await A.tick(); await until(() => A.page.evaluate(() => !_visitsSaving && !_photoSettling), 25000); await sleep(300);
+      await S.tick(); await sleep(300);
+    }
+    const sAfter = await phoneVisit(S, 'va');
+    const st = await A.page.evaluate(() => ({ owed: visitsIndexOwed(), checked: _photoChecked.has('pxold') }));
+    check('STARVE. a revision owed after a failed index write moves at a later round even while the look-up of her earlier photo never answers: the supervisor\'s phone stops saying "waiting"',
+      idxFailed && sBefore && sBefore.photos[0] && sBefore.photos[0].pending && sAfter && sAfter.photos[0] && !sAfter.photos[0].pending && st.owed === 0,
+      { idxFailed, st, index: J('visitsIndex'), sBefore, sAfter });
+    delete net.failKeys[A.label];
+    await A.ctx.close(); await S.ctx.close();
+  });
+
+  // =====================================================================
+  // TMEM — two tabs on a full phone: the photo only in tab 1's memory
+  // =====================================================================
+  await phase('TMEM', 'a second tab and a photo only in the first tab\'s memory', async () => {
+    seed();
+    const A = await mkPhone('A-tab1-mem', { noIDB: true, fullLS: true });
+    const B = await secondTab(A, 'A-tab2-mem', { noIDB: true, fullLS: true });
+    await B.boot(M, 'rep');
+    await B.tick(); await sleep(300);
+    await A.boot(M, 'rep');
+    net.photoHold.add(A.label);
+    const V = await logVisit(A, 'TMEM photo on its way', 1);
+    const keptA = await A.page.evaluate(() => [..._photoKept.values()].map(r => r.on));
+    await B.tick(); await sleep(600); await B.tick(); await sleep(600);
+    const c = marks(cv(V.vid));
+    check('TMEM. a second tab never calls lost a photo the first tab holds only in its memory and is uploading (a full phone)',
+      keptA[0] === 'mem' && c && c[0] && c[0].pending && !c[0].lost, { keptA, cloudMark: c, tab2: await phoneVisit(B, V.vid) });
+    landPhoto(V.pids[0]); await sleep(800); await A.tick(); await sleep(500);
+    const c2 = marks(cv(V.vid));
+    check('TMEM2. …once it lands its mark is uploaded', c2 && c2[0] && !c2[0].lost && !c2[0].pending, { after: c2 });
+    await A.ctx.close();
+  });
+
+  // =====================================================================
+  // IDBLAND — a landed photo whose mark did not land; IndexedDB not opening at the next start
+  // =====================================================================
+  await phase('IDBLAND', 'a landed photo\'s mark, IndexedDB failing at the next start', async () => {
+    seed();
+    const A = await mkPhone('A-Mariam-idbland');
+    const S = await mkPhone('S-supervisor-idbland');
+    await A.boot(M, 'rep');
+    net.photoHold.add(A.label);
+    const V = await logVisit(A, 'IDBLAND photo', 1);
+    net.failKeys[A.label] = [/^visits$/]; // the photo lands, the visits write right after fails (the link drops)
+    landPhoto(V.pids[0]);
+    await sleep(1500);
+    await A.page.evaluate(() => localStorage.setItem('__probe_idbFail', '1')); // at the next start IndexedDB does not open (it did before)
+    delete net.failKeys[A.label];
+    await A.boot(M, 'rep');
+    for(let i = 0; i < 4; i++){ await A.tick(); await sleep(500); }
+    const c = marks(cv(V.vid));
+    await S.boot(G, 'supervisor'); await S.tick(); await sleep(300);
+    check('IDBLAND. a photo the cloud holds, its mark left waiting, IndexedDB not opening at this start: the phone still looks it up in the cloud and its mark settles on every phone',
+      !!cloud['photo:' + V.pids[0]] && c && c[0] && !c[0].pending && !c[0].lost, { cloudMark: c, supervisor: await phoneVisit(S, V.vid) });
+    await A.page.evaluate(() => localStorage.removeItem('__probe_idbFail'));
+    await A.ctx.close(); await S.ctx.close();
+  });
+
+  // =====================================================================
+  // OWNAGE / LANDAGE — the phone that took the photo never says it can only come from "the phone that took it"
+  // =====================================================================
+  await phase('OWNAGE', 'her own photo kept in IndexedDB, 4 days later, no signal', async () => {
+    seed();
+    const A = await mkPhone('A-Mariam-own');
+    await A.boot(M, 'rep');
+    net.photoHold.add(A.label);
+    const V = await logVisit(A, 'OWNAGE photo kept on her phone', 1);
+    await A.page.evaluate(ms => localStorage.setItem('__probe_clockAdd', String(ms)), 4 * DAY + 3600000);
+    await bootOffline(A, M, 'rep'); // the app closed before it uploaded; opened again 4 days later with no signal
+    for(let i = 0; i < 2; i++){ await A.tick(); await sleep(400); }
+    const line = await waitLineOf(A, V.vid);
+    check('OWNAGE. 4 days later, offline, the phone that took the photo and keeps it says "kept on this phone" — never that it can only come from the phone that took it',
+      /kept on this phone/.test(line || '') && !/days now/.test(line || ''), { line });
+    await A.page.evaluate(() => localStorage.removeItem('__probe_clockAdd'));
+    net.down.delete(A.label); await A.ctx.setOffline(false);
+    await A.ctx.close();
+  });
+  await phase('LANDAGE', 'her own 4-day-old photo lands, its mark\'s save fails', async () => {
+    seed();
+    const A = await mkPhone('A-Mariam-land');
+    await A.boot(M, 'rep');
+    net.photoHold.add(A.label);
+    const V = await logVisit(A, 'LANDAGE photo', 1);
+    await A.page.evaluate(ms => localStorage.setItem('__probe_clockAdd', String(ms)), 4 * DAY + 3600000);
+    net.photoHold.delete(A.label);
+    net.failKeys[A.label] = [/^visits$/]; // the visits document cannot be written for a while (the link drops right after the upload)
+    await A.boot(M, 'rep');
+    await until(() => !!cloud['photo:' + V.pids[0]], 10000); await sleep(800);
+    await A.tick(); await sleep(600);
+    const line = await waitLineOf(A, V.vid);
+    check('LANDAGE. her photo has landed (the cloud holds it) while its mark\'s save fails: her phone neither says it is waiting nor that it can only come from the phone that took it',
+      !!cloud['photo:' + V.pids[0]] && !/waiting to upload|days now/.test(line || ''), { line, cloudMark: marks(cv(V.vid)) });
+    delete net.failKeys[A.label];
+    await A.page.evaluate(() => localStorage.removeItem('__probe_clockAdd'));
+    await A.ctx.close();
+  });
+
+  // =====================================================================
+  // BKNOTREAD / BKLATE — a full backup while this phone's photo store does not answer
+  // =====================================================================
+  const bkSetup = async (label) => {
+    seed([oldVisit('vk1', M, 'c1', 'd1', 'BK visit')]);
+    ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18', '2026-09-19', '2026-09-20'].forEach(d => { cloud['snap_' + d] = JSON.stringify({ clinics: [], products: [], visits: [], tasks: [], ts: d + 'T07:00:00.000Z' }); });
+    const S = await mkPhone(label);
+    await S.boot(G, 'supervisor');
+    net.photoHold.add(S.label);
+    await pickStub(S, 5);
+    await S.page.evaluate(async () => { openEditVisit('vk1'); addEditPhoto('vk1'); await window.__picked; closeModal(); });
+    const pid = await addedId(S, 'vk1', []);
+    await until(() => heldPhotos.some(h => h.k === 'photo:' + pid), 10000);
+    await until(() => ((cv('vk1') || {}).photos || []).length === 1, 10000);
+    await S.page.evaluate(() => localStorage.setItem('__probe_idbHang', '1')); // closed before it uploaded; at the next start IndexedDB does not answer
+    net.photoHold.delete(S.label);
+    await S.boot(G, 'supervisor');
+    await sleep(6500); // a round waits 5 s for the store that does not answer
+    return { S, pid };
+  };
+  const runBackup = S => S.page.evaluate(async () => {
+    await openFullBackup();
+    const file = (typeof _fullBackup !== 'undefined' && _fullBackup) ? JSON.parse(await _fullBackup.blob.text()) : null;
+    const v = file ? UMCore.verifyBackupFile(file) : null;
+    const t = sel => { const e = document.querySelector(sel); return e ? e.innerText : ''; };
+    return { ready: !!document.querySelector('[data-backup-download]'), storeCard: t('[data-backup-store]'), pendingCard: t('[data-backup-pending]'),
+      dataKeys: file ? Object.keys(file.data).filter(k => /^photo:/.test(k)) : [], pendKeys: file ? Object.keys(file.pending || {}) : [], ok: !!(v && v.ok) };
+  });
+  await phase('BKNOTREAD', 'a full backup while the photo store does not answer', async () => {
+    const { S, pid } = await bkSetup('S-supervisor-bknr');
+    const b = await runBackup(S);
+    check('BKNOTREAD. a full backup while this phone\'s photo store does not answer says so: a photo still waiting on this phone may be missing from the file',
+      b.ready && b.ok && /This phone's photo store did not answer/.test(b.storeCard), { pid, b });
+    await S.page.evaluate(() => { closeModal(); localStorage.removeItem('__probe_idbHang'); });
+    await S.ctx.close();
+  });
+  await phase('BKLATE', 'the photo store answers during the read: the photo is read and lands', async () => {
+    const { S, pid } = await bkSetup('S-supervisor-bklate');
+    const k = 'photo:' + pid;
+    const realGet = api.get; let trig = null;
+    api.get = async (who, key) => {
+      const r = await realGet(who, key);
+      if(who === S.label && /^snap_/.test(key)){
+        if(!trig){ trig = key; S.page.evaluate(() => { window.__idbRestore(); flushOutbox(); }).catch(() => {}); }
+        await sleep(400); // the daily backups are big
+      }
+      return r;
+    };
+    const b = await runBackup(S);
+    api.get = realGet;
+    check('BKLATE. the photo the phone read and uploaded while the backup read the cloud is in the file, among the cloud\'s documents',
+      trig && b.ready && b.ok && !!cloud[k] && b.dataKeys.includes(k) && !b.pendKeys.includes(k), { trig, b, inCloud: !!cloud[k] });
+    await S.page.evaluate(() => { closeModal(); localStorage.removeItem('__probe_idbHang'); });
+    await S.ctx.close();
+  });
+
+  // =====================================================================
+  // MEM1 — a full phone, two photos only in memory: the first lands, the second is removed offline
+  // =====================================================================
+  await phase('MEM1', 'two memory-only photos: one lands, the other is removed offline', async () => {
+    seed([oldVisit('vm', M, 'c1', 'd1', 'MEM1 visit')]);
+    const F = await mkPhone('F-Mariam-mem1', { noIDB: true, fullLS: true });
+    await F.boot(M, 'rep');
+    net.photoHold.add(F.label);
+    await pickStub(F, 2);
+    await F.page.evaluate(async () => { openEditVisit('vm'); addEditPhoto('vm'); await window.__picked; });
+    const p1 = await addedId(F, 'vm', []);
+    await until(() => heldPhotos.some(h => h.k === 'photo:' + p1), 10000);
+    await pickStub(F, 3);
+    await F.page.evaluate(async () => { addEditPhoto('vm'); await window.__picked; });
+    const p2 = await addedId(F, 'vm', [p1]);
+    await until(() => heldPhotos.some(h => h.k === 'photo:' + p2), 10000);
+    await until(() => ((cv('vm') || {}).photos || []).length === 2, 10000);
+    await F.page.evaluate(() => { window.__toasts = []; });
+    landPhoto(p1);
+    await sleep(3000);
+    const s1 = await F.page.evaluate(() => { const b = document.getElementById('memOnlyBar'); return { bar: b ? b.textContent : null, toasts: window.__toasts.slice() }; });
+    net.down.add(F.label); await F.ctx.setOffline(true);
+    await F.page.evaluate(() => { window.__toasts = []; });
+    await F.page.click(`#editPhotoRow .ph-del[onclick*="'${p2}'"]`);
+    await sleep(3500);
+    const s2 = await F.page.evaluate(() => { const b = document.getElementById('memOnlyBar'); return { bar: b ? b.textContent : null, toasts: window.__toasts.slice(), outbox: outboxList() }; });
+    check('MEM1. the first of two memory-only photos lands: it is said at once ("A photo reached the cloud"), the bar keeps the other',
+      s1.toasts.some(t => /A photo reached the cloud/.test(t)) && /photo is only in the app's memory/.test(s1.bar || ''), s1);
+    check('MEM1b. …then, offline, × on the second: the bar goes and nothing says "Saved — it reached the cloud"',
+      !s2.bar && !s2.toasts.some(t => /reached the cloud/.test(t)) && s2.outbox.includes('visits'), s2);
     await F.ctx.close();
   });
 
