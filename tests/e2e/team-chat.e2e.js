@@ -22,6 +22,12 @@
 //   RN1, RN2: after a read answered from the phone (no signal, or her message
 //     queued), the next read that worked still said "No connection": the read
 //     flags were session-wide and only the full refresh cleared them.
+//   S1, S2 (third review): "Refresh messages" chose its word from what its
+//     reads had found before its wait, and during its second read, as if
+//     still so: her queued message uploaded while it waited for a memory's
+//     save (S2), or a message was sent and landed during its second read
+//     (S1), and the last word was "Yours are still uploading" with nothing
+//     of hers saving or queued — just after "Memory shared with the team".
 //   D1: a memory v121 stored three times under one id (and a message twice)
 //     showed and counted three times on every phone, and every save wrote the
 //     copies back.
@@ -105,6 +111,9 @@ function seed(){
   cloud.chat = JSON.stringify([{ id: 'old1', who: 'Renova', text: 'an earlier message', ts: CLOCK - 60000 }]);
   cloud.memories = JSON.stringify([{ id: 'oldm', thumb: '', cap: 'an earlier memory', tag: '', who: 'Renova', ts: CLOCK - 86400000 }]);
   net.down.clear(); net.holdPhoto.clear(); net.dead = {}; net.lag = {}; net.wlag = {}; net.keyFail = {}; net.failAfter = {}; held = [];
+  // a phone closed between its transaction's write and its release (a check can see the write first) left that
+  // document locked, and every later phase's save of it waited for ever
+  Object.keys(busy).forEach(k => delete busy[k]); Object.keys(queue).forEach(k => delete queue[k]);
 }
 
 (async()=>{
@@ -668,6 +677,74 @@ function seed(){
     const t3 = await refreshNow(A);
     check('RN2b. …after a 20-second refresh with no signal too: the signal back, "Refresh messages" says "Up to date", the new message on screen',
       t3.m === UP_TO_DATE && t3.chat.includes('RN2 posted during the next gap'), t3);
+    await A.ctx.close();
+  });
+
+  // =====================================================================
+  // S — "Refresh messages" said what its reads had found, seconds before:
+  // her queued message uploaded while it waited for a memory's save (S2),
+  // or a message was sent and landed during its second read (S1), and the
+  // last word was "Yours are still uploading" with nothing of hers saving
+  // or queued. It now says how things are when it speaks: a list whose
+  // queued change has uploaded, or whose save has landed, is read once
+  // more first.
+  // =====================================================================
+  // the lists each read of the Team tab asks for ('both', 'chat', 'memories'), the refresh's own reads among them
+  const watchReads = ph => ph.page.evaluate(() => { window.__reads = []; const lt = loadTeam;
+    window.loadTeam = keys => { window.__reads.push(keys ? keys.join('+') : 'both'); return lt(keys); }; });
+  const UPLOADED = '✅ Offline changes uploaded & merged';
+  await phase('S1', '"Refresh messages": a message sent and landed during its second read', async () => {
+    seed();
+    const A = await mkPhone('S1-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    postFromRenova('S1 from Renova');
+    await watchToasts(A); await watchReads(A);
+    net.lag[A.label] = 2000; // a slow link: every read (a transaction's too) answers 2 s later
+    await A.page.evaluate(() => { document.getElementById('chatInput').value = 'S1 first message'; window.__s = sendChat(); });
+    await sleep(300);
+    await A.page.evaluate(() => document.querySelector('#teamChat button[onclick="refreshTeam()"]').click());
+    // its read comes back just after that message landed: set aside, the chat is read again
+    const second = await until(() => A.page.evaluate(() => window.__reads.includes('chat')), 8000);
+    delete net.lag[A.label]; // the link is good again: her next message lands at once, during that second read
+    await sleep(200);
+    await A.page.evaluate(async () => { document.getElementById('chatInput').value = 'S1 second message'; await sendChat(); });
+    await until(async () => (await refreshSaid(A)).length > 0, 15000);
+    const said = (await refreshSaid(A)).pop() || {};
+    await A.page.evaluate(async () => { await window.__s; });
+    const reads = await A.page.evaluate(() => window.__reads);
+    check('S1. a message sent and landed during the refresh\'s second read: its word is true when said — nothing of hers saving or queued, both messages in the cloud once: "Up to date", both on screen with Renova\'s newer one — not "Yours are still uploading"',
+      second && said.m === UP_TO_DATE && said.saving === 0 && !said.queued.length && ['S1 first message', 'S1 second message', 'S1 from Renova'].every(t => (said.chat || '').includes(t))
+        && chatIn('S1 first message').length === 1 && chatIn('S1 second message').length === 1,
+      { said, reads, inCloud: [chatIn('S1 first message').length, chatIn('S1 second message').length] });
+    await A.ctx.close();
+  });
+  await phase('S2', '"Refresh messages" while her message is queued and a memory is on its way; the queue uploads while it waits', async () => {
+    seed();
+    const A = await mkPhone('S2-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    await watchToasts(A);
+    net.down.add(A.label);
+    await A.page.evaluate(async () => { document.getElementById('chatInput').value = 'S2 queued message'; await sendChat(); }); // "Saved on this device"
+    net.down.delete(A.label); // data back without an 'online' event (the phone thought it was online): nothing uploads yet
+    postFromRenova('S2 from Renova');
+    await A.page.evaluate(() => setTeamTab('mem'));
+    await addMemory(A, 'S2 memory');
+    net.wlag[A.label] = 2500; net.writing.length = 0; // a slow link: a write lands 2.5 s after it is sent
+    await A.page.evaluate(() => { window.__m = saveMemory(); });
+    await until(() => net.writing.includes(A.label + ' memories'), 5000); // its photo has landed, the list is on its way
+    await A.page.evaluate(() => { closeModal(); setTeamTab('chat'); }); // she closes the sheet and goes to the chat
+    await A.page.evaluate(() => document.querySelector('#teamChat button[onclick="refreshTeam()"]').click());
+    await sleep(100);
+    net.wlag[A.label] = 300; // the chat's upload goes quicker
+    await A.page.waitForFunction(() => !_flushing);
+    await A.page.evaluate(() => { window.__t = window.__bgTick(); }); // the 20-second refresh while it waits: the queue uploads her message
+    await until(async () => (await refreshSaid(A)).length > 0, 15000);
+    const said = (await refreshSaid(A)).pop() || {};
+    await A.page.evaluate(async () => { await window.__m; await window.__t; });
+    const told = await A.page.evaluate(() => window.__said.map(t => t.m));
+    check('S2. her queued message uploads while "Refresh messages" waits for a memory\'s save: its word, after "Offline changes uploaded & merged" and "Memory shared with the team", with nothing of hers saving or queued, is "Up to date" — her message, Renova\'s newer one and the memory on screen, each in the cloud once — not "Yours are still uploading"',
+      said.m === UP_TO_DATE && said.saving === 0 && !said.queued.length && told.includes(UPLOADED) && told.includes(SHARED) && told.indexOf(SHARED) < told.lastIndexOf(said.m)
+        && ['S2 queued message', 'S2 from Renova'].every(t => (said.chat || '').includes(t)) && (said.mem || '').includes('S2 memory')
+        && chatIn('S2 queued message').length === 1 && memIn('S2 memory').length === 1,
+      { said, told, inCloud: [chatIn('S2 queued message').length, memIn('S2 memory').length] });
     await A.ctx.close();
   });
 
