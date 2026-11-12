@@ -1035,6 +1035,10 @@
     '🔒 Only its owner can edit this event': '🔒 صاحب الحدث فقط يعدّله',
     '🗑️ Moved to recycle bin': '🗑️ نُقلت إلى سلة المحذوفات',
     '📸 Memory shared with the team': '📸 شُوركت الذكرى مع الفريق',
+    // team memories (v122): a second tap while one is being shared; the list kept on the phone only
+    'Already sharing this memory…': 'جارٍ مشاركة هذه الذكرى بالفعل…',
+    '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online': '📴 حُفظت الذكرى على هذا الهاتف — يراها الفريق بعد رفعها، وتُرفع تلقائيًا عند عودة الاتصال',
+    "⚠️ This phone's storage is full — this memory is only in the app's memory: keep the app open until it uploads": '⚠️ ذاكرة هذا الهاتف ممتلئة — هذه الذكرى موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا حتى تُرفع',
     '📸 Photo added': '📸 أُضيفت الصورة',
     '🔄 Up to date': '🔄 محدّث',
     '🖼 Processing photo...': '🖼 جارٍ معالجة الصورة...',
