@@ -1718,7 +1718,90 @@
     'Prescription types not saved — check the connection and make the change again.': 'لم تُحفظ أنواع البريسكريبشن — تحقّق من الاتصال وأعد التعديل.',
     'The previous save is still on its way — tap Save again in a moment.': 'الحفظ السابق ما زال جارياً — اضغط «حفظ» مرة أخرى بعد قليل.',
     // the edit sheet: someone with pads on the visit who is not (or no longer) marked as met
-    '(not marked as met)': '(غير محدد ضمن من قابلتهم)'
+    '(not marked as met)': '(غير محدد ضمن من قابلتهم)',
+
+    // ---- alerts center (v121): the bell, the sheet, the supervisor's settings ----
+    'Alerts': 'التنبيهات',
+    'What needs attention now. Each card says why it shows.': 'ما يحتاج انتباهك الآن. كل بطاقة تذكر سبب ظهورها.',
+    'Nothing needs attention right now.': 'لا شيء يحتاج انتباهك الآن.',
+    'Open': 'فتح',
+    'Upload now': 'ارفع الآن',
+    'Retry the save': 'أعد محاولة الحفظ',
+    'Check now': 'افحص الآن',
+    'Show again': 'أظهره من جديد',
+    'Dismiss for today': 'إخفاء لليوم',
+    'Snooze 3 days': 'تأجيل 3 أيام',
+    'Dismissed for today': 'مخفي لليوم',
+    'Hide the dismissed and snoozed': 'إخفاء المخفية والمؤجلة',
+    'Alert settings': 'إعدادات التنبيهات',
+    "For the whole team: a type switched off shows to no one. Dismiss and snooze stay each person's own.": 'للفريق كله: النوع المُطفأ لا يظهر لأحد. الإخفاء والتأجيل يخصّان كل شخص وحده.',
+    'Missed planned visits': 'زيارات مخططة لم تتم',
+    'No field visit by a set hour': 'لا زيارة ميدانية حتى ساعة محددة',
+    'Month target at risk': 'التارغت الشهري في خطر',
+    'Customers buying less than last month': 'عملاء يشترون أقل من الشهر الماضي',
+    'Sync problems': 'مشاكل المزامنة',
+    'Failed sales file import': 'فشل استيراد ملف المبيعات',
+    'Daily backup': 'النسخة الاحتياطية اليومية',
+    "Clinics whose follow-up date has passed: each person her own, the supervisor everyone's.": 'العيادات التي تجاوزت موعد متابعتها: لكل شخص عياداته، وللمشرف عيادات الجميع.',
+    'Planned in the last 14 days, not visited on the day nor since.': 'مخططة خلال آخر 14 يوماً ولم تُزر في يومها ولا بعده.',
+    'Supervisor only: a person with no field visit logged today by the hour below, on working days.': 'للمشرف فقط: شخص لم يسجّل زيارة ميدانية اليوم حتى الساعة المحددة أدناه، في أيام العمل.',
+    'The month figure (ERP files) below the pace set below, counted in working days to the ERP cut-off.': 'المحقق منذ بداية الشهر (ملفات ERP) تحت الإيقاع المحدد أدناه، محسوباً بأيام العمل حتى آخر تاريخ في ملفات ERP.',
+    'Invoiced sales in the ERP files from day 1 to the cut-off, against the same days of last month.': 'المبيعات المفوترة في ملفات ERP من أول الشهر حتى آخر تاريخ فيها، مقابل الأيام نفسها من الشهر الماضي.',
+    'Changes waiting on the phone for long, and saves that did not reach the cloud.': 'تغييرات تنتظر على الجهاز طويلاً، وعمليات حفظ لم تصل إلى السحابة.',
+    'Supervisor only: the last import on this phone failed.': 'للمشرف فقط: فشل آخر استيراد على هذا الجهاز.',
+    "Supervisor only: today's backup could not be saved, or is not confirmed after the hour below.": 'للمشرف فقط: تعذّر حفظ نسخة اليوم الاحتياطية، أو لم تتأكد بعد الساعة المحددة أدناه.',
+    'No field visit by (hour, 0–23)': 'لا زيارة ميدانية حتى الساعة (0–23)',
+    'Target at risk below (% of an even pace)': 'التارغت في خطر تحت (% من الإيقاع المتساوي)',
+    'Judge the target pace from working day': 'الحكم على إيقاع التارغت من يوم العمل رقم',
+    'Customer down by at least (%)': 'انخفاض العميل بنسبة لا تقل عن (%)',
+    'Customer bought at least (KD, same days last month)': 'اشترى العميل على الأقل (د.ك، الأيام نفسها من الشهر الماضي)',
+    'Changes waiting longer than (minutes)': 'تغييرات تنتظر أكثر من (دقيقة)',
+    "Ask about today's backup after (hour, 0–23)": 'السؤال عن نسخة اليوم الاحتياطية بعد الساعة (0–23)',
+    'Each clinic below has a follow-up date that has passed. Closed clinics are not counted.': 'كل عيادة أدناه تجاوزت موعد متابعتها. العيادات المغلقة لا تُحسب.',
+    'No plan for today.': 'لا توجد خطة لليوم.',
+    'No working day is left after the ERP cut-off.': 'لم يبقَ يوم عمل بعد آخر تاريخ في ملفات ERP.',
+    'Changes on this phone waiting to upload': 'تغييرات على هذا الجهاز تنتظر الرفع',
+    'Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.': 'حُفظت على هذا الجهاز حين تعذّر الوصول إلى السحابة. تُرفع وحدها عند عودة الاتصال — أبقِ التطبيق مفتوحاً حتى ذلك.',
+    'This phone is offline right now.': 'هذا الجهاز غير متصل الآن.',
+    "These changes are not in the cloud and are not waiting to upload: the next refresh shows the cloud's copy. Make them again once the connection is back.": 'هذه التغييرات ليست في السحابة ولا تنتظر الرفع: التحديث القادم يعرض نسخة السحابة. أعِدها عند عودة الاتصال.',
+    'The sales file changes are still on this phone: Retry the save sends them.': 'تغييرات ملفات المبيعات ما زالت على هذا الجهاز: «أعد محاولة الحفظ» يرسلها.',
+    'Sales files — changes not saved yet': 'ملفات المبيعات — تغييرات لم تُحفظ بعد',
+    'The last sales file import failed': 'فشل آخر استيراد لملف مبيعات',
+    'No sales file is saved yet.': 'لا يوجد ملف مبيعات محفوظ بعد.',
+    "Today's backup could not be saved": 'تعذّر حفظ نسخة اليوم الاحتياطية',
+    "Today's backup is not confirmed yet": 'نسخة اليوم الاحتياطية غير مؤكدة بعد',
+    "This phone has not checked today's backup yet: it checks the first time a clinic, visit or task is saved here each day.": 'هذا الجهاز لم يفحص نسخة اليوم الاحتياطية بعد: يفحصها أول مرة تُحفظ فيها عيادة أو زيارة أو مهمة منه كل يوم.',
+    "Check now reads today's backup once and writes it if it is missing.": '«افحص الآن» يقرأ نسخة اليوم مرة واحدة ويكتبها إن لم تكن موجودة.',
+    // toasts (a leading emoji is peeled off and put back)
+    'This phone could not keep the choice — its storage is full': 'لم يستطع هذا الجهاز حفظ اختيارك — ذاكرته ممتلئة',
+    'This phone is offline — the changes upload when the connection is back': 'هذا الجهاز غير متصل — تُرفع التغييرات عند عودة الاتصال',
+    'Uploading…': 'جارٍ الرفع…',
+    'Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.': 'لم تُرفع بعد — السحابة لم تستجب. التغييرات باقية على هذا الجهاز وتُرفع وحدها.',
+    'Sales file changes saved': 'حُفظت تغييرات ملفات المبيعات',
+    'Not saved — check the connection and try again': 'لم يُحفظ — تحقق من الاتصال وحاول مرة أخرى',
+    "This phone's data did not fully load from the cloud — reopen the app on a good connection, then check again": 'بيانات هذا الجهاز لم تُحمَّل كاملة من السحابة — أعد فتح التطبيق على اتصال جيد ثم افحص مرة أخرى',
+    "Today's backup was missing — it is saved now": 'نسخة اليوم الاحتياطية لم تكن موجودة — حُفظت الآن',
+    "Today's backup is in the cloud": 'نسخة اليوم الاحتياطية موجودة في السحابة',
+    "Today's backup could not be saved — try again later": 'تعذّر حفظ نسخة اليوم الاحتياطية — حاول لاحقاً',
+    'Alert settings not saved — check the connection and try again': 'لم تُحفظ إعدادات التنبيهات — تحقق من الاتصال وحاول مرة أخرى',
+    'Alert settings saved for the whole team': 'حُفظت إعدادات التنبيهات للفريق كله',
+    // what a change that did not land was (inside "… — waiting since 10:15")
+    'Calendar events': 'أحداث التقويم',
+    'Day plans': 'خطط الأيام',
+    'Settings (targets, KPI, alerts)': 'الإعدادات (الأهداف، مؤشرات الأداء، التنبيهات)',
+    'Product catalog': 'كتالوج المنتجات',
+    'Team list': 'قائمة الفريق',
+    'Recycle bin': 'سلة المحذوفات',
+    'Notes on sales lines': 'ملاحظات على سطور المبيعات',
+    'Sales files': 'ملفات المبيعات',
+    'Delete log': 'سجل الحذف',
+    'Team chat': 'دردشة الفريق',
+    // why a sales file import failed (the import screen shows them too)
+    'Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry': 'تعذّر التعرف على هذا الملف — صدّر تفاصيل المبيعات أو الأهداف بصيغة CSV/Excel وأعد المحاولة',
+    'Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export': 'قُرئ ملف Excel لكن لم تُعرف فيه مبيعات ولا أهداف — تأكد أنه تصدير تفاصيل المبيعات أو ملف DSR',
+    'Could not open this Excel file — save it as CSV and retry': 'تعذّر فتح ملف Excel هذا — احفظه بصيغة CSV وأعد المحاولة',
+    'This browser is too old to open Excel files — update the browser, or export the report as CSV and retry': 'هذا المتصفح قديم ولا يفتح ملفات Excel — حدّث المتصفح، أو صدّر التقرير بصيغة CSV وأعد المحاولة',
+    'Could not read the file — try again, or paste the report text below': 'تعذّرت قراءة الملف — حاول مرة أخرى، أو الصق نص التقرير أدناه'
   };
 
   // Clinic lists inside coach sentences: "Bayan Dental (never visited), Salam Clinic (12d) +3 more"
@@ -1744,6 +1827,16 @@
     return n + ' دفتر';
   }
   var MONEY = '([\\d.,]+ KD)';
+  var AMT = '(-?[\\d.,]+ KD)';   // an amount that can be negative (alerts center)
+  // The alerts center (v121): whose list it is ("Mariam: …"), and what a
+  // change that did not land was — the names stay, the words are translated.
+  function alertWhoAr(who) {
+    if (who == null) return '';
+    var w = String(who).replace(/^No owner$/, 'بلا مالك').replace(/ \(not on the team list\)$/, ' (خارج قائمة الفريق)');
+    return w + ': ';
+  }
+  function alertKeyAr(label) { return Object.prototype.hasOwnProperty.call(AR, label) ? AR[label] : label; }
+  function alertListAr(s) { return String(s).replace(/, /g, '، '); }
   var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure)\\))?';
 
   // Strings that carry a number or a name are matched by shape, not by text.
@@ -1937,7 +2030,37 @@
     [/^Same days last month: (\d+|—)$/, function (m) { return 'نفس الأيام من الشهر الماضي: ' + m[1]; }],
     [/^incl\. (\d+) pads? left at the clinic$/, function (m) { return 'منها ' + padsAr(m[1]) + ' للعيادة (بدون شخص محدد)'; }],
     [/^incl\. (\d+) pads? to a doctor no longer listed$/, function (m) { return 'منها ' + padsAr(m[1]) + ' لطبيب لم يعد في القائمة'; }],
-    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }]
+    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }],
+    // ---- alerts center (v121): titles, list lines and reasons carry names, dates and figures ----
+    [/^(?:(.+): )?(\d+) follow-ups? overdue$/, function (m) { return alertWhoAr(m[1]) + m[2] + ' متابعة متأخرة'; }],
+    [/^(?:(.+): )?(\d+) planned visits? missed$/, function (m) { return alertWhoAr(m[1]) + m[2] + ' زيارة مخططة لم تتم'; }],
+    [/^(.+): no field visit logged today by (\d{1,2}:\d{2})$/, function (m) { return alertWhoAr(m[1]) + 'لا زيارة ميدانية مسجلة اليوم حتى الساعة ' + m[2]; }],
+    [/^(.+): month target at risk$/, function (m) { return alertWhoAr(m[1]) + 'التارغت الشهري في خطر'; }],
+    [/^(?:(.+): )?(\d+) customers? buying less than last month$/, function (m) { return alertWhoAr(m[1]) + m[2] + ' عميل يشتري أقل من الشهر الماضي'; }],
+    [/^(\d+) saves? did not reach the cloud$/, function (m) { return m[1] === '1' ? 'حفظ واحد لم يصل إلى السحابة' : m[1] + ' عمليات حفظ لم تصل إلى السحابة'; }],
+    [/^(.+) — was due (.+) \((\d+) days? ago\)$/, function (m) { return m[1] + ' — كانت مستحقة ' + m[2] + ' (قبل ' + m[3] + ' يوم)'; }],
+    [/^(.+) — planned (.+)$/, function (m) { return m[1] + ' — مخططة ' + alertListAr(m[2]); }],
+    [new RegExp('^(.+) — ' + AMT + ' vs ' + AMT + ' \\(−(\\d+)%\\)$'), function (m) { return m[1] + ' — ' + m[2] + ' مقابل ' + m[3] + ' (−' + m[4] + '%)'; }],
+    [/^(.+) — waiting since (.+)$/, function (m) { return alertKeyAr(m[1]) + ' — تنتظر منذ ' + alertListAr(m[2]); }],
+    [/^(.+) — not saved at (.+)$/, function (m) { return alertKeyAr(m[1]) + ' — لم يُحفظ (' + alertListAr(m[2]) + ')'; }],
+    [/^\+(\d+) more$/, function (m) { return '+' + m[1] + ' أخرى'; }],
+    [/^Planned in the last (\d+) days and not visited on the planned day, nor since\. A clinic with an overdue follow-up is under overdue follow-ups instead\.$/, function (m) { return 'مخططة خلال آخر ' + m[1] + ' يوماً ولم تُزر في يومها ولا بعده. العيادة التي تأخرت متابعتها تظهر تحت المتابعات المتأخرة بدلاً من هنا.'; }],
+    [/^Checked after (\d{1,2}:\d{2}) on a working day \(the hour is set in alert settings\)\. Only field visits count — calls and phone orders do not\.$/, function (m) { return 'فُحص بعد الساعة ' + m[1] + ' في يوم عمل (الساعة تُحدَّد في إعدادات التنبيهات). تُحسب الزيارات الميدانية فقط — لا المكالمات ولا الطلبات الهاتفية.'; }],
+    [/^Logged today: (\d+) calls?, (\d+) phone orders?\.$/, function (m) { return 'سُجّل اليوم: ' + m[1] + ' مكالمة، ' + m[2] + ' طلب هاتفي.'; }],
+    [/^Today's plan: (\d+) clinics?\.$/, function (m) { return 'خطة اليوم: ' + m[1] + ' عيادة.'; }],
+    [/^In the calendar today: (.+)\.$/, function (m) { return 'في التقويم اليوم: ' + m[1].replace(/ \((Meeting|Training|Conference|Marketing|Personal|Other)\)$/, function (x, t) { return ' (' + (AR[t] || t) + ')'; }) + '.'; }],
+    [new RegExp('^Achieved ' + AMT + ' of the ' + AMT + ' target \\((\\d+)%\\) — ERP sales files to (.+)\\.$'), function (m) { return 'المحقق ' + m[1] + ' من تارغت ' + m[2] + ' (' + m[3] + '%) — من ملفات مبيعات ERP حتى ' + m[4] + '.'; }],
+    [new RegExp('^Working days \\(Sun–Thu\\) to the ERP cut-off: (\\d+) of (\\d+)\\. An even pace would be ' + AMT + ' \\((\\d+)%\\) by then\\.$'), function (m) { return 'أيام العمل (الأحد–الخميس) حتى آخر تاريخ في ملفات ERP: ' + m[1] + ' من ' + m[2] + '. بالإيقاع المتساوي كان المحقق سيبلغ ' + m[3] + ' (' + m[4] + '%) حتى ذلك اليوم.'; }],
+    [new RegExp('^Pace: (\\d+)% of an even pace \\(the alert shows below (\\d+)%\\)\\. At this pace the month ends near ' + AMT + ' \\((\\d+)%\\)\\.$'), function (m) { return 'الإيقاع: ' + m[1] + '% من الإيقاع المتساوي (يظهر التنبيه تحت ' + m[2] + '%). بهذا الإيقاع ينتهي الشهر عند نحو ' + m[3] + ' (' + m[4] + '%).'; }],
+    [new RegExp('^To reach the target: ' + AMT + ' a working day over the (\\d+) working days? left\\.$'), function (m) { return 'لبلوغ التارغت: ' + m[1] + ' في كل يوم عمل خلال ' + m[2] + ' يوم عمل متبقٍ.'; }],
+    [/^Invoiced sales in the ERP files, net of returns: (.+) – (.+), against the same days last month \((.+) – (.+)\)\.$/, function (m) { return 'المبيعات المفوترة في ملفات ERP بعد خصم المرتجعات: ' + m[1] + ' – ' + m[2] + '، مقابل الأيام نفسها من الشهر الماضي (' + m[3] + ' – ' + m[4] + ').'; }],
+    [new RegExp('^Shown when a customer that bought at least ' + AMT + ' in those days last month is down (\\d+)% or more \\(alert settings\\)\\.$'), function (m) { return 'يظهر حين ينخفض عميل اشترى ' + m[1] + ' على الأقل في تلك الأيام من الشهر الماضي بنسبة ' + m[2] + '% أو أكثر (إعدادات التنبيهات).'; }],
+    [/^Tried on (.+) at (\d{1,2}:\d{2}) — the message is below\.$/, function (m) { return 'المحاولة يوم ' + m[1] + ' الساعة ' + m[2] + ' — الرسالة أدناه.'; }],
+    [/^The figures still come from the files saved before — the newest reaches (.+)\.$/, function (m) { return 'الأرقام ما زالت من الملفات المحفوظة قبلها — أحدثها يصل إلى ' + m[1] + '.'; }],
+    [/^The app keeps one backup a day \(clinics, this month's visits, tasks\)\. This phone's check at (\d{1,2}:\d{2}) could not confirm it or write it — the message is below\.$/, function (m) { return 'يحفظ التطبيق نسخة احتياطية واحدة كل يوم (العيادات، زيارات هذا الشهر، المهام). فحص هذا الجهاز الساعة ' + m[1] + ' لم يستطع تأكيدها ولا كتابتها — الرسالة أدناه.'; }],
+    [/^Snoozed until (.+)$/, function (m) { return 'مؤجل حتى ' + m[1]; }],
+    [/^Dismissed or snoozed \((\d+)\)$/, function (m) { return 'المخفية والمؤجلة (' + m[1] + ')'; }],
+    [/^Alerts \((\d+)\)$/, function (m) { return 'التنبيهات (' + m[1] + ')'; }]
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
