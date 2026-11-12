@@ -7,23 +7,28 @@ rules_version = '2';
 // key: { value: <JSON string>, updated: <ms> } (www/js/app/01-config.js,
 // window.storage). These rules replace "any signed-in user may read and
 // write everything" (which, with anonymous sign-in on, meant anyone).
+// They let through every write the app (v120/v121) makes — proven against
+// the app's own storage code in tests/rules (Firestore + Auth emulators):
+//   cd tests/rules && npm ci && npm test
 //
 // BEFORE YOU PUBLISH (Firebase console → Firestore Database → Rules):
-//  1. Replace SUPERVISOR_EMAIL@ultramed-kw.com below with the supervisor's
-//     login e-mail, in lowercase. Do it ONLY in the console, never in this
+//  1. Replace SUPERVISOR_EMAIL@ultramed-kw.com below with the login e-mail
+//     of every person who is "Supervisor" in Admin → Team, in lowercase
+//     (several: 'one', 'two'). Do it ONLY in the console, never in this
 //     file: the repository is public. Left as it is, nobody is supervisor
 //     (the placeholder is upper case and can never match a login), so every
 //     supervisor-only save is refused — safe, but the supervisor cannot work.
-//  2. Authentication → Settings → User actions: untick "Enable create
+//  2. Check that every login the team uses (Admin → Team, and the daily
+//     e-mail job's login) ends with @ultramed-kw.com — any other is refused.
+//  3. Authentication → Settings → User actions: untick "Enable create
 //     (sign-up)". Otherwise anyone can create a password account with an
 //     unused @ultramed-kw.com address and pass the domain check below.
-//  3. Authentication → Sign-in method: disable Anonymous (the app never
+//  4. Authentication → Sign-in method: disable Anonymous (the app never
 //     uses it; these rules refuse it anyway).
-// Proven by tests/rules (Firestore emulator): cd tests/rules && npm ci && npm test
 //
-// WHO WRITES WHAT (inventory of every key; file:line as of v120)
+// WHO WRITES WHAT (every key; file:line as of v120)
 //  Any team phone — reps and the supervisor:
-//   clinics            visits, clinics, doctors (merge save 04-sync.js:1390;
+//   clinics            clinics and doctors (merge save 04-sync.js:1390;
 //                      saveVisit 06-log-visit.js:540, submitAddClinic
 //                      07-clinics.js:553, restoreLostDoctors at start-up
 //                      04-sync.js:272)
@@ -35,21 +40,24 @@ rules_version = '2';
 //   tombs              the team's delete log, persistTombs 04-sync.js:1196
 //   recycleBin         moveToBin 07-clinics.js:993 (a rep deleting her visit)
 //   erpNotes           reasons on returns / free goods, 07-clinics.js:651/687
+//   products           the catalog: a rep's "+ Add product" has no
+//                      supervisor check (10-doctors-products.js:98); prices,
+//                      notes and removals are the supervisor's screens
 //   repairLog          restoreLostDoctors at start-up, 04-sync.js:277
 //   chat, memories     team tab, persistTeam 12-reports.js:484
 //   photo:<id>         savePhotoBlob 12-reports.js:415; deleted by
 //                      removeEditPhoto 08-team-orders.js:518
-//   snap_YYYY-MM-DD    today's backup, maybeSnapshot 04-sync.js:1520; the
-//                      backups 13–19 days old are deleted 04-sync.js:1526
+//   snap_YYYY-MM-DD    today's backup, maybeSnapshot 04-sync.js:1520; old
+//                      backups deleted 04-sync.js:1526
 //   mailLog            the daily e-mail job's log (scripts/daily-report/
 //                      report.js:129); the app only reads it (09-admin.js:64)
+//   staff, benchmarks, categoryGuides — only CREATED, when the account has
+//                      none yet (start-up seeding 04-sync.js:1037-1039)
 //  Supervisor only (every path is behind requireAdmin or a supervisor check):
 //   staff              saveStaff 08-team-orders.js:73 — the team list and
 //                      roles the app shows; rights here never come from it
 //   targets            saveTargets 09-admin.js:129, DSR upload 11-erp.js:736
 //   benchmarks         saveBenchmarks 09-admin.js:141, KPI 16-kpi.js:86
-//   products           prices, notes, catalog 09-admin.js:429 ... (rep's
-//                      "Add product" 10-doctors-products.js:98 is refused)
 //   categoryGuides     saveCategoryGuide 10-doctors-products.js:1826
 //   erpSales, erpRows:<period>:<rev>:<n>
 //                      sales index + row chunks, one batch 04-sync.js:833;
@@ -59,7 +67,8 @@ rules_version = '2';
 //  Reads: the whole team reads every document (the app lists snap_ and
 //  visitsArch: by id range, the e-mail job batch-reads what it reports on).
 //  A key that is not listed here cannot be written by anyone: a new key in a
-//  future app version must be added here, or its saves are refused.
+//  future app version must be added here first, or its saves are refused
+//  (tests/rules scans the app for write targets and names any new one).
 //
 // WHAT THESE RULES CANNOT ENFORCE (the data shape, not the rules, decides)
 //  Each list is ONE document holding every rep's records as a JSON string,
@@ -69,7 +78,8 @@ rules_version = '2';
 //     e.g. change a clinic's owner (`rep`) in `clinics`, which moves that
 //     clinic's sales credit, edit or drop her visits, tasks or plans, put her
 //     records in the delete log (`tombs`), empty the recycle bin, change the
-//     reasons in `erpNotes`, delete any photo;
+//     reasons in `erpNotes`, change catalog prices in `products`, delete any
+//     photo;
 //   - write any content of the right shape: only the document id, the two
 //     fields, their types and (below) a wipe guard on `clinics` are checked.
 //  The app's own screens keep a rep to her records; a modified app or a
@@ -97,8 +107,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ---------- who is signed in ----------
-    // The supervisor's login e-mail(s), lower case. Replace the placeholder
-    // in the Firebase console only (see the top of this file).
+    // Every supervisor login e-mail, lower case. Replace the placeholder in
+    // the Firebase console only (see the top of this file).
     function SUPERVISOR_EMAILS() {
       return ['SUPERVISOR_EMAIL@ultramed-kw.com'];
     }
@@ -125,18 +135,24 @@ service cloud.firestore {
     // Written by every team phone (see the inventory above).
     function isTeamKey(key) {
       return key in ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans',
-                     'events', 'tombs', 'recycleBin', 'erpNotes', 'repairLog',
-                     'chat', 'memories', 'mailLog']
+                     'events', 'tombs', 'recycleBin', 'erpNotes', 'products',
+                     'repairLog', 'chat', 'memories', 'mailLog']
         || key.matches('visitsArch:[0-9]{4}-[0-9]{2}')
         || key.matches('photo:.+');
     }
 
     // Written by the supervisor only.
     function isSupervisorKey(key) {
-      return key in ['staff', 'targets', 'benchmarks', 'products',
-                     'categoryGuides', 'erpSales', 'erpMap', 'erpMapLog',
-                     'rxTypes']
+      return key in ['staff', 'targets', 'benchmarks', 'categoryGuides',
+                     'erpSales', 'erpMap', 'erpMapLog', 'rxTypes']
         || key.matches('erpRows:.+');
+    }
+
+    // Settings any phone creates at start-up when the account has none yet
+    // (04-sync.js:1037-1039). Nobody can delete them, so this never replaces
+    // an existing one: after creation only the supervisor changes them.
+    function isStartupSeedKey(key) {
+      return key in ['staff', 'benchmarks', 'categoryGuides'];
     }
 
     // Exactly the shape window.storage writes: { value: string, updated: number }.
@@ -147,19 +163,26 @@ service cloud.firestore {
         && d.updated is number;
     }
 
-    // A rep's save may not cut the clinic list to under a third of its size,
-    // the line the app's own wipe guard draws (04-sync.js:1380). The
-    // supervisor's bulk delete and restores (allowShrink) are not limited.
+    // A rep's save may not leave less than a tenth of the clinic list — an
+    // emptied list, never an ordinary save: the app itself already refuses
+    // any save that keeps under a third of the clinics (04-sync.js:1380).
+    // The supervisor's bulk delete and restores (allowShrink) are not limited.
     function clinicsNotWiped() {
       return resource == null
-        || request.resource.data.value.size() * 3 >= resource.data.value.size();
+        || request.resource.data.value.size() * 10 >= resource.data.value.size();
+    }
+
+    function writable(key) {
+      return (isTeamKey(key) && (key != 'clinics' || isSupervisor() || clinicsNotWiped()))
+        || (isSupervisorKey(key) && isSupervisor());
     }
 
     // Daily backups snap_YYYY-MM-DD: only the current one is ever written
     // (yesterday/today/tomorrow in UTC, to cover the phone's time zone), so
-    // nobody can overwrite an older backup; one is deleted only once it is
-    // 12+ days old (the app removes those 13–19 days back), so the last 11
-    // days of backups can never be removed.
+    // nobody can overwrite an older backup; one is deleted only once its date
+    // is 11+ days back (the app removes those 13–19 days back; versions
+    // before v119 kept the 12 newest), so the backups of the last 10 days
+    // can never be removed.
     function isSnapKey(key) {
       return key.matches('snap_[0-9]{4}-[0-9]{2}-[0-9]{2}');
     }
@@ -174,18 +197,18 @@ service cloud.firestore {
     }
     function snapAgedOut(key) {
       return isSnapKey(key)
-        && snapDay(key) < request.time - duration.value(12, 'd');
+        && snapDay(key) < request.time - duration.value(11, 'd');
     }
 
     match /state/{key} {
       // get and list (snap_ / visitsArch: id-range queries, the e-mail job's batchGet)
       allow read: if isTeam();
 
-      allow create, update: if isTeam() && wellFormed() && (
-           (isTeamKey(key) && (key != 'clinics' || isSupervisor() || clinicsNotWiped()))
-        || (isSupervisorKey(key) && isSupervisor())
-        || snapIsCurrent(key)
-      );
+      allow create: if isTeam() && wellFormed()
+        && (writable(key) || isStartupSeedKey(key) || snapIsCurrent(key));
+
+      allow update: if isTeam() && wellFormed()
+        && (writable(key) || snapIsCurrent(key));
 
       // Only what the app itself deletes; every other document is never deleted.
       allow delete: if isTeam() && (

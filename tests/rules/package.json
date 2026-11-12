@@ -5,7 +5,8 @@
   "description": "Proves ../../firestore.rules on the local Firestore emulator (port 8295, demo project). Never contacts the real Firebase project.",
   "license": "ISC",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore --project demo-ultramed-rules --config firebase.json \"node --test --test-reporter=spec rules.test.js\""
+    "test": "firebase emulators:exec --only firestore,auth --project demo-ultramed-rules --config firebase.json \"node --test --test-concurrency=1 --test-reporter=spec rules.test.js app-writes.test.js\"",
+    "scan": "node --test --test-reporter=spec --test-name-pattern=\"source scan\" app-writes.test.js"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",
