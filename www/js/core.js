@@ -5659,7 +5659,7 @@
     return v.length > n ? v.slice(0, n - 1) + '…' : v;
   }
   function auditKeyOk(k){ return typeof k === 'string' && k !== '__proto__' && k.charAt(0) !== '_' && !AUDIT_SECRET.test(k); }
-  // "mariam@ultramed-kw.com" → "m•••@ultramed-kw.com": enough to see that it changed
+  // "name@example.com" → "n•••@example.com": enough to see that it changed
   function auditMaskEmail(s){
     var at = s.indexOf('@');
     return at > 0 ? s.charAt(0) + '•••' + s.slice(at) : s;
