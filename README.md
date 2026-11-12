@@ -60,8 +60,8 @@ phones, connect it to a free Firebase project:
    so it is only as safe as step 4: Anonymous off and self sign-up closed, so the
    only logins are the ones you added. The data includes customers, sales and the
    team's details; treat it as confidential. Stronger: also require a verified
-   company address —
-   `allow read, write: if request.auth != null && request.auth.token.email_verified == true && request.auth.token.email.matches('.*@ultramed-kw[.]com$');`
+   company address (put your own domain in place of `example.com`) —
+   `allow read, write: if request.auth != null && request.auth.token.email_verified == true && request.auth.token.email.matches('.*@example[.]com$');`
    Logins added in the console start unverified, so switch this on only after every
    login (the daily e-mail one included) has verified its address — otherwise the
    whole team is locked out.
