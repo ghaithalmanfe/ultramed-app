@@ -8,16 +8,16 @@ const today = '2026-09-24';
 const data = () => ({
   today,
   targets: { Mariam: { revenue: 10000, achieved: 3000, achievedAsOf: '2026-09-23', month: '2026-09' }, Renova: { revenue: 12000, achieved: 4000, achievedAsOf: '2026-09-23', month: '2026-09' } },
-  erpSales: { periods: [{ id: 'sep', from: '2026-09-01', to: '2026-09-22', repMap: { 'Mariam Zohair': 'Mariam', 'Ranova Ayman Mohammed': 'Renova' }, rows: [
-    pack({ date: '2026-09-10', doc: 'SINV1', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 80, sret: 0, salesman: 'Mariam Zohair', brand: 'TEPE', customer: 'My Fatoorah', cls: 'Online Customers' }),
-    pack({ date: '2026-09-15', doc: 'SINV2', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 90, sret: 0, salesman: 'Mariam Zohair', brand: 'TEPE', customer: 'Dental 8 Clinic', cls: 'Clinics' }),
-    pack({ date: '2026-09-20', doc: 'SINV3', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 60.5, sret: 0, salesman: 'Mariam Zohair', brand: 'TEPE', customer: 'My Fatoorah', cls: 'Online Customers' }),
-    pack({ date: '2026-09-21', doc: 'SINV4', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 70, sret: 0, salesman: 'Ranova Ayman Mohammed', brand: 'TEPE', customer: 'Crown Dental Center', cls: 'Dental Centers' }),
-  ] }], repMapGlobal: { 'Mariam Zohair': 'Mariam', 'Ranova Ayman Mohammed': 'Renova' }, returnPolicy: 'erp' },
+  erpSales: { periods: [{ id: 'sep', from: '2026-09-01', to: '2026-09-22', repMap: { 'Mariam Sample': 'Mariam', 'Ranova Sample Person': 'Renova' }, rows: [
+    pack({ date: '2026-09-10', doc: 'SINV1', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 80, sret: 0, salesman: 'Mariam Sample', brand: 'TEPE', customer: 'My Fatoorah', cls: 'Online Customers' }),
+    pack({ date: '2026-09-15', doc: 'SINV2', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 90, sret: 0, salesman: 'Mariam Sample', brand: 'TEPE', customer: 'Dental 5 Clinic', cls: 'Clinics' }),
+    pack({ date: '2026-09-20', doc: 'SINV3', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 60.5, sret: 0, salesman: 'Mariam Sample', brand: 'TEPE', customer: 'My Fatoorah', cls: 'Online Customers' }),
+    pack({ date: '2026-09-21', doc: 'SINV4', type: 'invoice', product: 'P', qty: 1, gross: 100, net: 70, sret: 0, salesman: 'Ranova Sample Person', brand: 'TEPE', customer: 'Summit Dental Center', cls: 'Dental Centers' }),
+  ] }], repMapGlobal: { 'Mariam Sample': 'Mariam', 'Ranova Sample Person': 'Renova' }, returnPolicy: 'erp' },
   clinics: [
-    { id: 'c1', name: 'Dental 8 Clinic', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-09-20', doctors: [] },
+    { id: 'c1', name: 'Dental 5 Clinic', rep: 'Mariam', cls: 'A', nextFollowUp: '2026-09-20', doctors: [] },
     { id: 'c2', name: 'Smile Care', rep: 'Mariam', cls: 'B', nextFollowUp: today, doctors: [] },
-    { id: 'c3', name: 'Crown Dental Center', rep: 'Renova', cls: 'A', doctors: [] },
+    { id: 'c3', name: 'Summit Dental Center', rep: 'Renova', cls: 'A', doctors: [] },
   ],
   erpMap: {},
   visits: [
@@ -55,9 +55,9 @@ describe('daily digest: figures are the app\'s figures', () => {
     assert.match(d.subject, /ملخص الصباح/); assert.match(d.subject, /Mariam/);
     assert.match(d.text, /Mariam: 2% — 230\.50 KD من 10000\.00 KD \(المصدر: ERP to Sep 22\)/);
     assert.doesNotMatch(d.text, /DSR Sep 23/);
-    assert.match(d.text, /Dental 8 Clinic — bring samples/);
+    assert.match(d.text, /Dental 5 Clinic — bring samples/);
     assert.match(d.text, /Smile Care — اليوم/);
-    assert.match(d.text, /Dental 8 Clinic — متأخرة منذ Sep 20/);
+    assert.match(d.text, /Dental 5 Clinic — متأخرة منذ Sep 20/);
     assert.match(d.text, /Send price list/);
     assert.doesNotMatch(d.text, /Renova/); // her own day only
     assert.match(d.html, /dir="rtl"/);
@@ -69,9 +69,9 @@ describe('daily digest: figures are the app\'s figures', () => {
     assert.match(d.text, /زيارات ميدانية: 2 · مكالمات: 1 · طلبات هاتفية: 0 · طلبات: 1 · مبيعات مسجلة: 45\.50 KD/); // joint visit counts for Mariam too
     assert.match(d.text, /مخطط: 2 · تمت: 1 · لم تتم: Smile Care/);
     assert.match(d.text, /Budget\/approval pending/);
-    assert.match(d.text, /Dental 8 Clinic → Oct 1/);
+    assert.match(d.text, /Dental 5 Clinic → Oct 1/);
     assert.match(d.text, /Renova — خطة الغد \(1\)/);
-    assert.match(d.text, /Crown Dental Center/);
+    assert.match(d.text, /Summit Dental Center/);
   });
   test('a stale target is flagged instead of shown as this month\'s', () => {
     const dd = data(); dd.targets.Mariam.month = '2026-08'; dd.targets.Mariam.achievedAsOf = '2026-08-30';

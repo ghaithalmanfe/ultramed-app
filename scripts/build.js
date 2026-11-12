@@ -77,4 +77,4 @@ function build(){
   return { files: listed.length, bytes: html.length };
 }
 if(require.main === module){ const r = build(); console.log(`built ${path.relative(ROOT, OUT) || OUT}: ${r.files} app files inlined, index.html ${Math.round(r.bytes / 1024)} KB`); }
-module.exports = { build, salesDataFiles };
+module.exports = { build, salesDataFiles, holdsSalesLines };

@@ -34,6 +34,7 @@
     'Sign out': 'تسجيل الخروج',
     'Log in': 'دخول',
     'Use your work email and password.': 'استخدم بريد العمل وكلمة المرور.',
+    'First sign-in on this phone: enter your work email and password. After that, your name is enough.': 'أول دخول من هذا الجوال: أدخل بريد العمل وكلمة المرور. بعدها يكفي الضغط على اسمك.',
     'Enter your password to continue.': 'أدخل كلمة المرور للمتابعة.',
     'Change password': 'تغيير كلمة المرور',
     "Enter your current password to confirm it's you.": 'أدخل كلمة المرور الحالية للتأكيد.',
@@ -1060,6 +1061,15 @@
     'Missing from the catalog': 'غير موجود في الكتالوج',
     'Add selected': 'أضف المحدد',
     'Nothing missing from the catalog': 'لا يوجد منتج ناقص في الكتالوج',
+    // duplicate SKUs / barcodes — review only (v121)
+    'Duplicate SKUs / barcodes': 'أكواد أصناف وباركودات مكررة',
+    'Products that share an item code or a barcode. Check each one and correct it on its own page (Edit) — nothing is merged or deleted here.': 'منتجات تشترك في كود الصنف أو الباركود. راجِع كل منتج وصحّحه من صفحته (تعديل) — لا يُدمج ولا يُحذف شيء هنا.',
+    'No two products share an item code or a barcode.': 'لا يوجد منتجان يشتركان في كود الصنف أو الباركود.',
+    'Same item code (SKU)': 'كود الصنف نفسه (SKU)',
+    'Same barcode': 'الباركود نفسه',
+    'Copy the report': 'انسخ التقرير',
+    'Report copied — paste it into a sheet': 'نُسخ التقرير — الصقه في جدول',
+    'Select the report above and copy it': 'حدّد التقرير أعلاه وانسخه',
     'Tick at least one product': 'حدد منتجاً واحداً على الأقل',
     '⚠️ Not saved — nothing was added. Try again with a connection.': '⚠️ لم يُحفظ — لم يُضف أي منتج. أعد المحاولة مع اتصال بالإنترنت.',
     'Intensiv list': 'قائمة Intensiv',
@@ -1752,7 +1762,7 @@
     '(not marked as met)': '(غير محدد ضمن من قابلتهم)'
   };
 
-  // Clinic lists inside coach sentences: "Bayan Dental (never visited), Salam Clinic (12d) +3 more"
+  // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
   function namesAr(list) {
     return list.replace(/ \(never visited\)/g, ' (لم تُزر أبداً)').replace(/ \((\d+)d\)/g, ' (قبل $1 يوم)').replace(/ \+(\d+) more$/, ' +$1 أخرى');
   }
@@ -1779,6 +1789,8 @@
 
   // Strings that carry a number or a name are matched by shape, not by text.
   var PATTERNS = [
+    // duplicate SKUs / barcodes card (v121)
+    [/^(\d+) products share an item code or a barcode — tap to review$/, function (m) { return 'عدد المنتجات المشتركة في كود صنف أو باركود: ' + m[1] + ' — اضغط للمراجعة'; }],
     // sales coach titles
     [/^(\d+) overdue follow-ups?$/, function (m) { return m[1] + ' متابعة متأخرة'; }],
     [/^(\d+) planned visits? never happened$/, function (m) { return m[1] + ' زيارة مخططة لم تحدث'; }],
@@ -1978,7 +1990,7 @@
   var LEAD = /^((?:\p{Extended_Pictographic}|[\u2022\u2023\u25A0-\u25FF\u2190-\u21FF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF\u200D\uFE0F\u20E3])+)\s+([\s\S]+)$/u;
   var MIRROR = { '→': '←', '←': '→', '▶': '◀', '◀': '▶', '›': '‹', '‹': '›' };
 
-  // "Aline Dental Clinic - Jabriya (by hand)" or "not linked": the name stays, the status is translated
+  // "Orion Dental Clinic - Jabriya (by hand)" or "not linked": the name stays, the status is translated
   function trWhere(w) {
     var mm = String(w).match(/^(.*) \(([^()]+)\)$/);
     if (mm) { var t = lookup(mm[2]); return mm[1] + ' (' + (t != null ? t : mm[2]) + ')'; }

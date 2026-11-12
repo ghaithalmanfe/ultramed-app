@@ -23,15 +23,15 @@ const api = {
   list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
   setMany: async entries => { entries.forEach(([k]) => mode.sets.push(k)); if(mode.failSet && entries.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); entries.forEach(([k, v]) => { cloud[k] = v; }); return true; },
 };
-const G = 'Dr. Ghaith', M = 'Mariam', GS = 'Ghaith Al Manfe', MS = 'Mariam Zohair';
-const KH = 'Aline Dental Clinic - Khairan', BYSTANDER = 'Marketing Philips';
+const G = 'Dr. Ghaith', M = 'Mariam', GS = 'Ghaith Al Sample', MS = 'Mariam Sample';
+const KH = 'Orion Dental Clinic - Khairan', BYSTANDER = 'Marketing Philips';
 const SMILE = 'Smile Care Fintas';
-const VARIANT = 'ALINE DENTAL CLINIC - KHAIRAN';
+const VARIANT = 'ORION DENTAL CLINIC - KHAIRAN';
 const row = (d, doc, cust, net, sm, gross) => [d, doc, 0, 'Intensiv Ortho-Strips', 1, gross == null ? net : gross, net, 0, sm, 'Intensiv', cust, 'Clinics', 0, ''];
 const ret = (d, doc, cust, net, sm, ref) => [d, doc, 1, 'Intensiv Ortho-Strips', -1, 0, net, -net, sm, 'Intensiv', cust, 'Clinics', 0, ref];
-const SEP = [row('2026-09-14','SINV7001','Aline Dental Clinic - Salmiya',100,GS), row('2026-09-21','SINV7002',KH,60,GS,96), row('2026-09-22','SINV7003','Dental 8 Clinic',25,MS)];
-const OCT = [row('2026-10-04','SINV7101','Aline Dental Clinic - Salmiya',50,GS), row('2026-10-05','SINV7102','Aline Dental Clinic - Hawally',30,GS),
-  row('2026-10-06','SINV7103',KH,80,GS), row('2026-10-07','SINV7104',KH,15.5,GS), row('2026-10-06','SINV7105','Dental 8 Clinic',40,MS)];
+const SEP = [row('2026-09-14','SINV7001','Orion Dental Clinic - Salmiya',100,GS), row('2026-09-21','SINV7002',KH,60,GS,96), row('2026-09-22','SINV7003','Dental 5 Clinic',25,MS)];
+const OCT = [row('2026-10-04','SINV7101','Orion Dental Clinic - Salmiya',50,GS), row('2026-10-05','SINV7102','Orion Dental Clinic - Hawally',30,GS),
+  row('2026-10-06','SINV7103',KH,80,GS), row('2026-10-07','SINV7104',KH,15.5,GS), row('2026-10-06','SINV7105','Dental 5 Clinic',40,MS)];
 const repMap = { [GS]: G, [MS]: M };
 const sum = rows => Math.round(rows.reduce((s, r) => s + r[6], 0) * 1000) / 1000;
 const makeSplit = (sep, oct) => core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: repMap,
@@ -43,10 +43,10 @@ const split = makeSplit(SEP, OCT);
 const SPLIT_SMILE = makeSplit(SEP, OCT.concat([row('2026-10-08','SINV7108',SMILE,70,MS)]));
 const SPLIT_VAR = makeSplit(SEP, OCT.concat([row('2026-10-02','SINV7129',VARIANT,6,MS)]));
 const CLINICS = [
-  {id:'al1', name:'Aline Dental Clinic - Salmiya', rep:G, cls:'A', doctors:[]},
-  {id:'al2', name:'Aline Dental Clinic - Hawally', rep:G, cls:'B', doctors:[]},
-  {id:'al3', name:'Aline Dental Clinic - Jabriya', rep:G, cls:'B', doctors:[]},
-  {id:'m1', name:'Dental 8 Clinic', rep:M, cls:'A', doctors:[]}];
+  {id:'al1', name:'Orion Dental Clinic - Salmiya', rep:G, cls:'A', doctors:[]},
+  {id:'al2', name:'Orion Dental Clinic - Hawally', rep:G, cls:'B', doctors:[]},
+  {id:'al3', name:'Orion Dental Clinic - Jabriya', rep:G, cls:'B', doctors:[]},
+  {id:'m1', name:'Dental 5 Clinic', rep:M, cls:'A', doctors:[]}];
 function reseed(o = {}){
   Object.keys(cloud).forEach(k => { delete cloud[k]; });
   const sp = o.split || split;
@@ -107,7 +107,7 @@ async function setup(){
     return { g: UMCore.monthAchievement('Dr. Ghaith', d).amount, m: UMCore.monthAchievement('Mariam', d).amount,
       gSep: UMCore.monthAchievement('Dr. Ghaith', sep).amount, mSep: UMCore.monthAchievement('Mariam', sep).amount,
       al1: kd('al1'), al2: kd('al2'), al3: kd('al3'), m1: kd('m1'), id: id ? kd(id) : null,
-      link: Object.prototype.hasOwnProperty.call(erpMap, 'Aline Dental Clinic - Khairan') ? erpMap['Aline Dental Clinic - Khairan'] : null }; }, id || null);
+      link: Object.prototype.hasOwnProperty.call(erpMap, 'Orion Dental Clinic - Khairan') ? erpMap['Orion Dental Clinic - Khairan'] : null }; }, id || null);
   const acctNow = name => page.evaluate(n => { const a = UMCore.erpAccounts(digestData()).accounts.find(x => x.name === n), c = a && clinics.find(x => x.id === a.clinicId);
     return a ? { status: a.status, clinicId: a.clinicId, at: c ? c.name : null, link: a.link } : null; }, name);
   const modal = () => page.evaluate(() => document.getElementById('modalInner').innerText.replace(/\s+/g, ' '));
@@ -175,7 +175,7 @@ const B = { reseed, cloud, mode, G, KH, SMILE, SPLIT_SMILE };
     const s = await sheetNow();
     const kept = await page.evaluate(() => ({ notes: (document.getElementById('profileNotesEdit') || {}).value, doc: (document.getElementById('newDocName') || {}).value }));
     check(`late Undo (${kind}): the card stays, the typed text is kept, the note says Undone and to reopen for the figures`,
-      kept.notes === 'Half typed profile note' && kept.doc === 'Dr. Half Typed' && /Undone/.test(s.note || '') && /Reopen this page/.test(s.note || '') && /Aline Dental Clinic - (Salmiya|Hawally)/.test(s.h3 || ''), { h3: s.h3, note: s.note, kept });
+      kept.notes === 'Half typed profile note' && kept.doc === 'Dr. Half Typed' && /Undone/.test(s.note || '') && /Reopen this page/.test(s.note || '') && /Orion Dental Clinic - (Salmiya|Hawally)/.test(s.h3 || ''), { h3: s.h3, note: s.note, kept });
     check(`late Undo (${kind}): the cloud is back where it was`, kind === 'plain' ? cloudMap()[B.KH] === 'al1' : !(B.SMILE in cloudMap()), cloudMap());
   }
   // 2 · an Undo tapped on the list's "Last change" card that lands late: the person stays on the list with the search
@@ -184,10 +184,10 @@ const B = { reseed, cloud, mode, G, KH, SMILE, SPLIT_SMILE };
   await page.evaluate(() => { closeModal(); openErpLinks({}); }); await sleep(150);
   await slow(1800, 300);
   await ui('undo');
-  await page.evaluate(() => { const s = document.getElementById('elSearch'); s.value = 'Dental 8'; s.dispatchEvent(new Event('input')); });
+  await page.evaluate(() => { const s = document.getElementById('elSearch'); s.value = 'Dental 5'; s.dispatchEvent(new Event('input')); });
   await sleep(2600); await fast();
   const l = await sheetNow(), search = await page.evaluate(() => (document.getElementById('elSearch') || {}).value || null);
-  check('late Undo from the list: the list and its search stay, a toast says Undone', /ERP account links/.test(l.h3 || '') && search === 'Dental 8' && /Undone/.test(l.toast || '') && cloudMap()[B.KH] === 'al1', { h3: l.h3, search, toast: l.toast });
+  check('late Undo from the list: the list and its search stay, a toast says Undone', /ERP account links/.test(l.h3 || '') && search === 'Dental 5' && /Undone/.test(l.toast || '') && cloudMap()[B.KH] === 'al1', { h3: l.h3, search, toast: l.toast });
   // 3 · this device's own earlier write lands while a second save of the same account is on its way: never "another device"
   B.reseed(); await t.boot('Dr. Ghaith', 'supervisor', { '__h_update': '1' });
   await ui('card', 'al1'); await ui('openFrom', B.KH); await ui('pick', 'al3'); await ui('tick'); await ui('save');
