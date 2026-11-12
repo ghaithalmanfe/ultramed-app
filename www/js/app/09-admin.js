@@ -763,7 +763,7 @@ function openMissingClinics(){
     <div id="mcList" style="max-height:300px; overflow-y:auto;"></div>
     <label style="margin-top:10px; font-size:12px;">مندوبة العيادات التي بلا مندوبة معروفة</label>
     <div class="chip-row" id="mcRep">${REPS.map((r,i)=>`<div class="chip small ${i===0?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>
-    <button class="btn" style="margin-top:10px;" onclick="restoreMissingClinics()">✅ إرجاع المعلَّم (<span id="mcCount">0</span>)</button>`
+    <button class="btn" style="margin-top:10px;" onclick="restoreTickedMissingClinics()">✅ إرجاع المعلَّم (<span id="mcCount">0</span>)</button>`
     : `<div class="card" style="margin-top:8px;">🏆 لا يوجد أي اسم ناقص — كل ما يعرفه النظام موجود في قائمتك.</div>`}
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">إغلاق</button>
   `);
@@ -782,33 +782,43 @@ function renderMcList(){
   const c = document.getElementById('mcCount');
   if(c) c.textContent = _mcChecked.size;
 }
-async function restoreMissingClinics(){
+// Its own name: 13-exports.js has the backups sheet's restoreMissingClinics,
+// and one global scope means the later file's function answered this button
+// (and returned without a word) until v121.
+async function restoreTickedMissingClinics(){
   if(!requireAdmin()) return;
   const picked = _mcCands.filter(x=>_mcChecked.has(x.key));
   if(!picked.length){ showToast('لم تعلّم شيئًا'); return; }
   const repEl = document.querySelector('#mcRep .chip.on');
   const fallbackRep = repEl ? repEl.dataset.rep : (REPS[0]||'');
-  let binTouched = false;
+  const live = new Set(storedClinics().map(c => c && c.id)), back = [];
   picked.forEach(x=>{
     const rep = x.rep || fallbackRep;
     if(x.src==='bin'){
-      clinics.push(normalizeClinic(Object.assign({}, x.obj)));
-      untomb('clinics', x.obj.id);
-      recycleBin.clinics = (recycleBin.clinics||[]).filter(b=>!(b && b.id===x.obj.id));
-      binTouched = true;
+      if(live.has(x.obj.id)) return;
+      const clean = Object.assign({}, x.obj); delete clean._deletedAt; delete clean._label;
+      back.push(normalizeClinic(clean));
     } else if(x.src==='visits'){
-      clinics.push(normalizeClinic({id:x.id, name:x.name, rep, cls:'B', notes:'رجعت من سجل الزيارات', addedOn:todayStr()}));
-      untomb('clinics', x.id);
+      if(!live.has(x.id)) back.push(normalizeClinic({id:x.id, name:x.name, rep, cls:'B', notes:'رجعت من سجل الزيارات', addedOn:todayStr()}));
     } else {
-      clinics.push(normalizeClinic({id:uid(), name:x.name, rep, cls:'B', notes:'أُنشئت من عملاء الفواتير', addedOn:todayStr()}));
+      back.push(normalizeClinic({id:uid(), name:x.name, rep, cls:'B', notes:'أُنشئت من عملاء الفواتير', addedOn:todayStr()}));
     }
   });
-  await persist('clinics');
-  if(binTouched) await persist('recycleBin');
-  closeModal();
-  renderAll();
-  if(document.getElementById('clinicList')) renderClinics();
-  showToast(`✅ رجعت ${picked.length} عيادة`);
+  if(!back.length){ showToast('كل ما علّمته موجود في القائمة الآن'); openMissingClinics(); return; }
+  return holdRefresh(async () => {
+    // the delete log first — otherwise the next merge would remove them again
+    await untombMany({ clinics: back.map(c => c.id) });
+    clinics = clinics.concat(back);
+    const ids = new Set(back.map(c => c.id)), before = ((recycleBin && recycleBin.clinics) || []).length;
+    if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(b => !(b && ids.has(b.id)));
+    const r = await persistFor('clinics');
+    if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+    closeModal();
+    renderAll();
+    if(document.getElementById('clinicList')) renderClinics();
+    const ok = r.ok || sentSince('clinics', r);
+    showToast(ok ? `✅ رجعت ${back.length} عيادة` : `⚠️ رجعت ${back.length} عيادة على هذا الجهاز — لم تصل إلى السحابة بعد، وتُرفع عند عودة الاتصال`, 4000);
+  });
 }
 
 // ---- MANAGE CLINICS: bulk import from Excel/CSV + bulk delete ----
