@@ -83,6 +83,7 @@ async function restore(argv, env, log, io){
   let buf;
   try{ buf = fs.readFileSync(a.file); }catch(e){ log.error('Restore', 'cannot read ' + a.file + ' (' + (e.code || 'error') + ')'); return 2; }
   let plaintext = buf;
+  if(B.isZip(buf)){ log.error('Restore', B.ZIP_HINT); return 2; }
   if(B.isBackupFile(buf)){
     const passphrase = await getPassphrase(env, io);
     if(!passphrase){ log.error('Restore', 'the input is encrypted: set BACKUP_PASSPHRASE or run this in a terminal to type it'); return 2; }

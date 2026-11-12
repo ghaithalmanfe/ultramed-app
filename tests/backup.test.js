@@ -463,6 +463,11 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
     // no passphrase and no terminal: a clear message
     const r3 = await runNode('verify.js', [file], env());
     assert.equal(r3.code, 2); assert.match(r3.err, /no passphrase/);
+    // the .zip GitHub hands over, given as it is
+    const zip = path.join(tmp, 'artifact.zip');
+    fs.writeFileSync(zip, Buffer.concat([Buffer.from([0x50, 0x4B, 0x03, 0x04]), Buffer.alloc(200)]));
+    const z = await runNode('verify.js', [zip], env({ BACKUP_PASSPHRASE: PASS }));
+    assert.equal(z.code, 1); assert.match(z.err, /unzip the downloaded artifact first/);
   });
   test('restore.js refuses production before reading the file or contacting anyone', async () => {
     const n0 = fake.requests.length;
@@ -525,6 +530,8 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
     assert.deepEqual(Array.from(fake.projects['demo-only'].docs.keys()).sort(), ['clinics'].concat(Array.from({ length: 9 }, (_, i) => 'visitsArch:2026-0' + (i + 1))).sort());
     const wrong = await runNode('restore.js', [file], restoreEnv('demo-only2', { BACKUP_PASSPHRASE: 'not the passphrase at all' }));
     assert.equal(wrong.code, 1); assert.match(wrong.err, /wrong passphrase/);
+    const z = await runNode('restore.js', [path.join(tmp, 'artifact.zip')], restoreEnv('demo-only2'));
+    assert.equal(z.code, 2); assert.match(z.err, /unzip the downloaded artifact first/);
   });
 });
 

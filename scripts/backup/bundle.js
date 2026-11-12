@@ -159,9 +159,13 @@ function encryptBundle(plaintext, passphrase, meta, kdfParams){
 }
 
 function isBackupFile(buf){ return Buffer.isBuffer(buf) && buf.length >= MAGIC.length && buf.subarray(0, MAGIC.length).equals(MAGIC); }
+// GitHub hands an artifact over as a .zip holding the .umbackup file.
+function isZip(buf){ return Buffer.isBuffer(buf) && buf.length >= 4 && buf.readUInt32BE(0) === 0x504B0304; }
+const ZIP_HINT = 'this is a .zip file: unzip the downloaded artifact first (it holds one .umbackup file)';
 
 // The clear header, without the passphrase (what the file says it is).
 function readHeader(buf){
+  if(isZip(buf)) throw new BackupError('NOT_A_BACKUP', ZIP_HINT);
   if(!isBackupFile(buf)) throw new BackupError('NOT_A_BACKUP', 'this is not an UltraMed backup file (.umbackup)');
   if(buf.length < 12) throw new BackupError('DAMAGED', 'the file is damaged or incomplete');
   const hlen = buf.readUInt32BE(8);
@@ -248,5 +252,5 @@ function prefixTable(manifest, indent){
 module.exports = {
   MAGIC, FORMAT, VERSION, DEFAULT_KDF, BackupError,
   sha256hex, parseJSON, canonicalJSON, compareIds, keyPrefix, buildManifest, buildBundle,
-  encryptBundle, decryptBackup, readHeader, isBackupFile, checkBundle, formatBytes, prefixTable, setOwn, hasOwn,
+  encryptBundle, decryptBackup, readHeader, isBackupFile, isZip, ZIP_HINT, checkBundle, formatBytes, prefixTable, setOwn, hasOwn,
 };
