@@ -1490,6 +1490,8 @@ async function restoreMissingClinics(){
   if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(x => !(x && idSet.has(x.id)));
   const r = await persistFor('clinics');
   if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+  auditRecord({ action: 'restore.clinics', key: 'clinics', id: ids.join(','), label: back.length === 1 ? back[0].name : null,
+    after: { clinics: back.map(c => c.name + (c.rep ? ' · ' + c.rep : '')), count: back.length }, result: r });
   renderAll();
   const note = document.getElementById('recovNote');
   const ok = r.ok || sentSince('clinics', r);
@@ -1539,12 +1541,16 @@ async function restoreSnapshot(dateStr){
       if(recycleBin[k].length !== before) binChanged = true;
     });
     if(binChanged) await persist('recycleBin');
+    // the change log: a whole day put back (written above with plain writes — each one landed, or this threw)
+    auditRecord({ action: 'restore.backup', key: 'snap_' + dateStr, id: dateStr, label: dateStr,
+      after: { clinics: clinics.length, visits: visits.length, tasks: tasks.length, products: products.length }, result: true });
     const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
     closeModal();
     renderAll();
     showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
   }catch(e){
     console.error(e);
+    auditRecord({ action: 'restore.backup', key: 'snap_' + dateStr, id: dateStr, label: dateStr, result: false });
     showToast('Restore failed');
   }
 }
@@ -1560,7 +1566,8 @@ async function restoreDeviceClinics(which){
   clinics = list; hidePlaceholderClinics();
   _seedClinics = false;
   await untombMany({ clinics: list.map(c=>c.id) });
-  const ok = await persist('clinics', {allowShrink:true});
+  const told = await persistTold('clinics', {allowShrink:true}), ok = told.ok;
+  auditRecord({ action: 'restore.device', key: 'clinics', id: which, label: which === 'prev' ? 'um_mirror_prev:clinics' : 'um_mirror:clinics', after: { clinics: list.length }, result: told });
   const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
   closeModal();
   renderAll();
