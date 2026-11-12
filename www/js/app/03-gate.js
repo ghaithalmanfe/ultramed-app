@@ -2,6 +2,7 @@
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- GATE / USER ----
 async function selectUser(name, role){
+  if(typeof dropFullBackup === 'function') dropFullBackup(); // a full backup held for the last sign-in is never handed to the next (13-exports.js)
   currentUser = {name, role};
   if(!FIREBASE_ENABLED){
     try{ await window.storage.set('currentUser', JSON.stringify(currentUser), false); }catch(e){}
@@ -13,6 +14,7 @@ async function selectUser(name, role){
   await loadAll();
 }
 function switchUser(){
+  if(typeof dropFullBackup === 'function') dropFullBackup();
   if(FIREBASE_ENABLED && window.firebase){ firebase.auth().signOut().catch(()=>{}); }
   currentUser = null;
   renderGate();
