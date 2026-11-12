@@ -5637,11 +5637,11 @@
   var AUDIT_RESULTS = { saved: 'Saved', queued: 'Kept on this device — uploads automatically', failed: 'Not saved',
     refused: 'Not saved — refused', timeout: 'No confirmation from the cloud', conflict: 'Not saved — changed on another device first' };
   var AUDIT_FIELDS = {
-    date: 'Date', rep: 'Owner', withRep: 'Joint visit with', met: 'Who was met', orderTotal: 'Order total', items: 'Order lines',
+    date: 'Date', rep: 'Rep', withRep: 'Joint visit with', met: 'Who was met', orderTotal: 'Order total', items: 'Order lines',
     discountPct: 'Discount %', channel: 'Channel', rx: 'Prescriptions given', nextFollowUp: 'Next follow-up', notes: 'Notes',
     noOrderReason: 'No order because', photos: 'Photos', clinic: 'Clinic', contactName: 'Contact person',
     name: 'Name', cls: 'Class', account: 'Account type', dealType: 'Works with us by', contact: 'Contact person', phone: 'Phone',
-    shared: 'Shared account', sharedSince: 'Shared since', gov: 'Government account', prevRep: 'Previous owner', repSince: 'Owner since',
+    shared: 'Shared account', sharedSince: 'Shared since', gov: 'Government account', prevRep: 'Previous rep', repSince: 'Rep since',
     noSaleReason: 'Why no sales yet', profileNotes: 'Profile notes',
     title: 'Specialty', role: 'Role', influence: 'Decision influence', stage: 'Relationship stage', whatsapp: 'WhatsApp', email: 'Email',
     birthday: 'Birthday', cadence: 'Visit rhythm', bestTime: 'Best time to visit', interests: 'Interests', competitor: 'Competitor products used',
