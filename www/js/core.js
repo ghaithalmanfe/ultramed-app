@@ -5652,7 +5652,7 @@
     updated: 'Updated', skipped: 'Skipped', file: 'File', from: 'From', to: 'To', net: 'Net sales', lines: 'Invoice lines',
     salesman: 'Salesman', policy: 'Returns count in', movedTo: 'Visits moved to', already: 'Already in the list', kind: 'Kind',
     coverage: 'Coverage target %', priority: 'Priority target %', conversion: 'Conversion target %', taskRate: 'Task completion target %',
-    kpi: 'KPI settings', uploads: 'Uploaded', '…': 'More fields'
+    kpi: 'KPI settings', replaced: 'Older files replaced', erpAccount: 'ERP account', '…': 'More fields'
   };
   function auditStr(v, n){
     if(v === undefined || v === null) return null;

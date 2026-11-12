@@ -58,9 +58,13 @@ async function purgeIgnoredSalesmen(){
   return removed;
 }
 async function setSalesmanMap(name, value){
+  const had = Object.prototype.hasOwnProperty.call(erpSales.repMapGlobal || {}, name) ? erpSales.repMapGlobal[name] : undefined;
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal || {}, { [name]: value || null });
   erpSales.repMapAt = Object.assign({}, erpSales.repMapAt || {}, { [name]: Date.now() }); // newest decision wins across devices
   const ok = await persist('erpSales');
+  // the change log: who a salesman's lines count for ('ignored' = not read at all)
+  auditRecord({ action: 'sales.salesman', key: 'erpSales', id: name, label: name, before: { salesman: had === undefined ? null : had === null ? 'ignored' : had },
+    after: { salesman: value || 'ignored' }, result: ok, diff: false });
   const removed = value ? 0 : await purgeIgnoredSalesmen();
   renderAll();
   showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : value ? `${name} → ${value}` : `${name} ignored${removed ? ` — ${removed} stored lines removed` : ''}`);
@@ -83,8 +87,10 @@ function salesmenCard(){
 // Prior-invoice returns inside one uploaded period, for the reconciliation sheet.
 function erpPriorReturns(p){ return UMCore.applyReturnPolicy(unpackErpRows(p.rows), 'origin', erpCtx()).filter(r => r.priorReturn); }
 async function setReturnPolicy(v, reopenId){
+  const was = erpReturnPolicy();
   erpSales.returnPolicy = v === 'erp' ? 'erp' : 'origin';
   const ok = await persist('erpSales');
+  auditRecord({ action: 'sales.returns', key: 'erpSales', id: 'returnPolicy', before: { policy: was }, after: { policy: erpSales.returnPolicy }, result: ok });
   renderAll();
   showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : v === 'erp' ? 'Returns now count in the month they were booked' : "Returns now count in the original invoice's month");
   if(reopenId) openErpRecon(reopenId);
@@ -583,7 +589,7 @@ async function erpImportXlsx(buf, fname){
     if(!UMCore.parseErpCsv(csv).error){ await erpAutoImport(csv); return; } // awaited: a save error must reach the status line
   }
   const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: dsrDateFromName(fname) || todayStr()});
-  if(!tg.error){ await applyTargetsFile(tg); return; }
+  if(!tg.error){ await applyTargetsFile(tg, fname); return; }
   if(!UMCore.parseDistribution(sheets, REPS).error && openDistributionPreview(sheets)) return; // a clinic distribution file: preview, saved on tap
   erpStatus('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export', true);
 }
@@ -686,7 +692,9 @@ async function erpAutoSave(repMap){
     rowCount: d.kept.length, importedAt: new Date().toISOString(), repMap, rev: Date.now(), rows: packErpRows(d.kept) };
   erpSales.periods.push(period);
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
-  if(!await persist('erpSales')){ erpSaveFailed(before); return; }
+  const saved = await persist('erpSales');
+  auditSalesImport(period, replaced, saved);
+  if(!saved){ erpSaveFailed(before); return; }
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
   renderErpNudge();
@@ -722,10 +730,14 @@ async function archiveTargetsMonth(){
         changed = true;
       }
     });
-    if(changed) await persist('targets');
+    if(changed){
+      const ok = await persist('targets');
+      // a finished month's figures kept for good (targets._history): record archival
+      auditRecord({ action: 'target.archive', key: 'targets', id: 'history', after: { month: Object.keys(hist).filter(m => REPS.some(r => hist[m] && hist[m][r] && targets[r] && hist[m][r].achievedAsOf === targets[r].achievedAsOf)).sort().slice(-3) }, result: ok });
+    }
   }catch(e){ console.error('archive targets', e); }
 }
-async function applyTargetsFile(tg){
+async function applyTargetsFile(tg, fname){
   const before = JSON.parse(JSON.stringify(targets));
   const pctBefore = targetPctMap();
   Object.keys(tg.targets).forEach(rep => {
@@ -733,7 +745,14 @@ async function applyTargetsFile(tg){
     targets[rep].month = (tg.targets[rep].achievedAsOf || todayStr()).slice(0, 7); // a target belongs to ONE month
   });
   await archiveTargetsMonth(); // the file's month keeps these figures permanently
-  if(!await persist('targets')){
+  const tSaved = await persist('targets');
+  // the change log: each person's sales target before → after (the brand split counted)
+  const people = Object.keys(tg.targets);
+  const tWas = auditTargetFields(before, people), tNow = auditTargetFields(targets, people);
+  if(tWas && tNow){ tWas.brands = {}; tNow.brands = {}; people.forEach(r => { tWas.brands[r] = Object.keys((before[r] || {}).brands || {}).length; tNow.brands[r] = Object.keys((targets[r] || {}).brands || {}).length; }); }
+  auditPeopleChanged(tWas, tNow);
+  auditRecord({ action: 'target.upload', key: 'targets', id: (people[0] && targets[people[0]] && targets[people[0]].month) || null, label: fname ? String(fname) : null, before: tWas, after: tNow, result: tSaved, keepEmpty: true });
+  if(!tSaved){
     targets = before;
     erpStatus('❌ لم تُحفظ الأهداف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى', true);
     return;
@@ -812,7 +831,9 @@ async function erpSavePeriod(){
   erpSales.periods.push(period);
   // Remember who-is-who forever, so every later import is zero-touch.
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
-  if(!await persist('erpSales')){ erpStateRestore(before); closeModal(); openErpImport(); erpSaveFailed(before); return; } // roll back BEFORE the list renders
+  const saved = await persist('erpSales');
+  auditSalesImport(period, replaced, saved);
+  if(!saved){ erpStateRestore(before); closeModal(); openErpImport(); erpSaveFailed(before); return; } // roll back BEFORE the list renders
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
   renderErpNudge();
@@ -832,6 +853,7 @@ async function deleteErpPeriod(id){
   // any action) carries it — so a delete whose write landed late can never
   // "come back" and then vanish again.
   const ok = await persist('erpSales');
+  if(p0) auditRecord({ action: 'sales.delete', key: 'erpSales', id, label: p0.from + ' – ' + p0.to, before: { from: p0.from, to: p0.to, net: p0.net, lines: p0.rowCount || null }, result: ok });
   renderView(activeView); // repaint the live tab so figures drop the deleted file
   showToast(ok ? 'Deleted' : '⚠️ الحذف لم يُحفظ بعد — اضغط شريط إعادة المحاولة');
   openErpImport();
@@ -1836,6 +1858,8 @@ async function elSaveBranch(s){
   keepClinicOnRefresh(c);             // a refresh that read the list before this save lands must not drop it (loadAll)
   delete _persistInfo.clinics;        // persist's early refusals (the factory-list guard) leave it untouched: never read an older save's outcome
   const ok = await persist('clinics');
+  auditRecord({ action: 'clinic.add', key: 'clinics', id: nb.id, label: nm, after: Object.assign(auditClinicFields(c) || {}, { erpAccount: s.name }),
+    result: ok ? true : persistOutcome('clinics').queued ? { res: 'queued' } : false });
   const mine = () => clinics.find(x => x.id === nb.id) || c;
   if(ok){
     if(!clinics.some(x => x.id === nb.id)) clinics.push(c); // a refresh replaced the list while the save was on its way
@@ -2014,6 +2038,10 @@ async function saveErpLink(name, next, shownOld, s, opts){
     if(conflict && seen){ erpMap = seen; _erpMapGen++; mirrorSave('erpMap', JSON.stringify(seen)); renderAll(); } // what the cloud holds now: reopened, the editor shows it
     if(timedOut) elOwnLateAdd(name, next);
     const own = conflict && seen && elOwnLateHas(name, has(seen, name) ? seen[name] : null); // the cloud holds this device's own earlier change
+    // erpMapLog keeps the links that landed; the change log keeps the ones that did not (a late landing is in erpMapLog then)
+    const side = v => v == null || String(v).charAt(0) === '@' ? v : ((erpLinkClinic(v) || {}).name || clinicNameOf(v));
+    auditRecord({ action: 'erpLink.change', key: 'erpMap', id: elLogName(name), label: elLogName(name), before: { link: side(shownOld) }, after: { link: side(next) },
+      result: { res: conflict ? 'conflict' : timedOut ? 'timeout' : 'failed' }, diff: false });
     return conflict ? (own ? { conflict: true, own: true } : { conflict: true }) : timedOut ? { timeout: true } : { failed: true };
   }
   erpMap = committed; _erpMapGen++;
