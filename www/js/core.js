@@ -4984,6 +4984,51 @@
     });
     return out.sort(function(x, y){ return x.product.brand.localeCompare(y.product.brand) || (x.source === y.source ? 0 : x.source === 'list' ? -1 : 1) || x.product.name.localeCompare(y.product.name); });
   }
+  // ==== DUPLICATE SKUs / BARCODES (review only) ====
+  // The owner's request (v121): products that share an item code (the
+  // catalog's `id`: the store / ERP SKU) or a barcode are listed for a person
+  // to review — nothing is merged or deleted, here or on screen. Codes compare
+  // trimmed and case-blind; barcodes as GTINs (digits only, leading zeros
+  // dropped: a 12-digit UPC and the same code written as a 13-digit EAN are one
+  // barcode), and fewer than 6 digits is no barcode. Biggest groups first, then
+  // by value. Pure: the list is never changed.
+  function productDuplicates(products){
+    var norms = {
+      sku: function(v){ return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toUpperCase(); },
+      barcode: function(v){ var d = String(v == null ? '' : v).replace(/\D/g, '').replace(/^0+/, ''); return d.length >= 6 ? d : ''; }
+    };
+    var out = { sku: [], barcode: [], products: 0 }, inGroup = {};
+    ['sku', 'barcode'].forEach(function(kind){
+      var by = {}, order = [];
+      (products || []).forEach(function(p, i){
+        if(!p || typeof p !== 'object') return;
+        var raw = kind === 'sku' ? p.id : p.barcode, k = norms[kind](raw);
+        if(!k) return;
+        if(!Object.prototype.hasOwnProperty.call(by, k)){ by[k] = []; order.push(k); }
+        by[k].push({ index: i, key: String(p._key != null ? p._key : (p.id == null ? '' : p.id)), id: p.id == null ? '' : String(p.id),
+          name: String(p.name || ''), brand: String(p.brand || ''), barcode: p.barcode == null ? '' : String(p.barcode), price: typeof p.price === 'number' ? p.price : null });
+      });
+      order.forEach(function(k){ if(by[k].length > 1){ out[kind].push({ kind: kind, value: k, items: by[k] }); by[k].forEach(function(x){ inGroup[x.index] = 1; }); } });
+      out[kind].sort(function(a, b){ return b.items.length - a.items.length || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0); });
+    });
+    out.products = Object.keys(inGroup).length;
+    return out;
+  }
+  // The review report: one tab-separated line per product in a group, to paste
+  // into a sheet; a cell that would run as a formula is pasted as text.
+  function productDuplicatesReport(d){
+    var cell = function(v){
+      var s = String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+      return /^[=@]/.test(s) || (/^[+-]/.test(s) && !/^[+-]\d+(\.\d+)?$/.test(s)) ? "'" + s : s;
+    };
+    var lines = [['Shared', 'Value', 'Product', 'Brand', 'Item code', 'Barcode', 'Price (KD)'].join('\t')];
+    [['sku', 'Item code'], ['barcode', 'Barcode']].forEach(function(k){
+      ((d && d[k[0]]) || []).forEach(function(g){ (g.items || []).forEach(function(x){
+        lines.push([k[1], g.value, x.name, x.brand, x.id, x.barcode, typeof x.price === 'number' ? x.price.toFixed(3) : ''].map(cell).join('\t'));
+      }); });
+    });
+    return lines.join('\n');
+  }
   function normBrand(s){
     var key = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     return BRAND_ALIASES[key] || String(s || '').toLowerCase().trim();
@@ -5616,7 +5661,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,

@@ -1202,6 +1202,32 @@ describe('rep and customer matching', () => {
     assert.equal(core.catalogGaps(products, rows, [{ id: 'X', name: 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', brand: 'Intensiv', price: 30 }])[1].product.price, 30); // a price given stays
     assert.deepEqual(core.catalogGaps(products.concat(g.map(x => x.product)), rows, builtIn), []);
   });
+  test('productDuplicates: products sharing an item code, or a barcode read as a GTIN, are listed for review — nothing changes', () => {
+    const P = [
+      { id: 'WP-450ME', name: 'Charger', brand: 'Waterpik', barcode: '73950271028', price: 4, _key: 'WP-450ME' },
+      { id: 'WP-450ME', name: 'Cordless Plus', brand: 'Waterpik', barcode: '073950271028', price: 35, _key: 'WP-450ME#2' }, // UPC with its leading zero
+      { id: ' wp-450me', name: 'Reservoir', brand: 'Waterpik', barcode: '' },                         // same code, other spacing and case
+      { id: 'TB-1', name: 'Tip A', brand: 'Waterpik', barcode: '0001234567' }, { id: 'TB-2', name: 'Tip B', brand: 'Waterpik', barcode: '1234567' },
+      { id: 'X', name: 'Short code', brand: 'Other', barcode: '00012' }, { id: 'Y', name: 'Short code 2', brand: 'Other', barcode: '12' }, // under 6 digits: no barcode
+      { id: 'U1', name: 'Unique', brand: 'Other', barcode: '5012345678900' }, null, { name: 'No code' }];
+    const before = JSON.stringify(P);
+    const d = core.productDuplicates(P);
+    assert.deepEqual(d.sku.map(g => [g.value, g.items.map(x => x.name)]), [['WP-450ME', ['Charger', 'Cordless Plus', 'Reservoir']]]);
+    assert.deepEqual(d.barcode.map(g => [g.value, g.items.map(x => x.name)]), [['1234567', ['Tip A', 'Tip B']], ['73950271028', ['Charger', 'Cordless Plus']]]);
+    assert.deepEqual(d.sku[0].items.map(x => x.key), ['WP-450ME', 'WP-450ME#2', ' wp-450me']);    // each opens its own product
+    assert.equal(d.products, 5);                                // a product in two groups counts once
+    assert.equal(JSON.stringify(P), before);                    // nothing merged, nothing removed
+    assert.deepEqual(core.productDuplicates([]), { sku: [], barcode: [], products: 0 });
+    assert.deepEqual(core.productDuplicates([{ id: 'A', barcode: '501234567890' }, { id: 'B', barcode: '501234567891' }]), { sku: [], barcode: [], products: 0 });
+    // the review report: a header and one tab-separated line per product in a group
+    const rep = core.productDuplicatesReport(d).split('\n');
+    assert.equal(rep.length, 1 + 3 + 4);
+    assert.deepEqual(rep[0].split('\t'), ['Shared', 'Value', 'Product', 'Brand', 'Item code', 'Barcode', 'Price (KD)']);
+    assert.deepEqual(rep[1].split('\t'), ['Item code', 'WP-450ME', 'Charger', 'Waterpik', 'WP-450ME', '73950271028', '4.000']);
+    assert.deepEqual(rep[4].split('\t'), ['Barcode', '1234567', 'Tip A', 'Waterpik', 'TB-1', '0001234567', '']);
+    const f = core.productDuplicatesReport({ sku: [{ value: 'A', items: [{ name: '=HYPERLINK("x")', brand: 'B\tC', id: 'A', barcode: '', price: null }] }], barcode: [] }).split('\n')[1].split('\t');
+    assert.deepEqual([f[2], f[3]], ["'=HYPERLINK(\"x\")", 'B C']);       // a formula is pasted as text; a tab never splits a cell
+  });
   test('monthlyTrend: month by month with each month\'s own target, same-day comparison, no invented zeros', () => {
     const row = (d, doc, cust, net, product) => [d, doc, 0, product || 'P', 1, net, net, 0, 'Mariam Sample', 'Intensiv', cust, 'Clinics', 0, ''];
     const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];

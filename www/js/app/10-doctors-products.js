@@ -34,7 +34,7 @@ function renderProducts(){
   filtered.forEach(p=>{ const b = p.brand||'Other'; (byBrand[b]=byBrand[b]||[]).push(p); });
   const brands = Object.keys(byBrand).sort((a,b)=>byBrand[b].length-byBrand[a].length || a.localeCompare(b));
   brands.forEach(b=>byBrand[b].sort((x,y)=>(x.cat||'').localeCompare(y.cat||'')||x.name.localeCompare(y.name)));
-  const gapNote = catalogGapNote();
+  const gapNote = catalogGapNote() + productDupNote();
   if(brands.length===0){ wrap.innerHTML = gapNote + `<div class="empty">No products found.</div>`; return; }
   if(q) brands.forEach(b=>openBrands.add(b));
   wrap.innerHTML = gapNote + brands.map(b=>{
@@ -167,6 +167,56 @@ async function addCatalogGaps(){
   added.forEach(p => openBrands.add(p.brand));
   if(document.getElementById('productListWrap')) renderProducts();
   showToast(`✅ ${added.length} product${added.length === 1 ? '' : 's'} added to the catalog`);
+}
+
+// ---- DUPLICATE SKUs / BARCODES (supervisor, review only) ----
+// The owner's request (v121): products that share an item code or a barcode
+// are listed for review, never merged or deleted automatically. Each opens
+// its own product page, where the supervisor corrects it by hand; the report
+// copies to paste into a sheet (UMCore.productDuplicates / …Report).
+let _dupMemo = { k: null, v: null };
+function productDupList(){
+  const k = products.length + '|' + products.map(p => p ? [p.id, p.barcode, p.name, p.brand, p.price, p._key].join('/') : '').join('\n');
+  if(_dupMemo.k !== k) _dupMemo = { k, v: UMCore.productDuplicates(products) };
+  return _dupMemo.v;
+}
+function productDupNote(){
+  if(!currentUser || currentUser.role !== 'supervisor') return '';
+  let d; try{ d = productDupList(); }catch(e){ console.error('product duplicates', e); return ''; }
+  if(!d.sku.length && !d.barcode.length) return '';
+  return `<div class="card clickable" id="dupNote" style="margin-bottom:10px; border:1.5px solid var(--amber);" onclick="openProductDups()">
+    <div style="font-weight:800; font-size:13.5px;">Duplicate SKUs / barcodes</div>
+    <div style="font-size:12px; color:var(--muted); margin-top:2px;">${d.products} products share an item code or a barcode — tap to review</div></div>`;
+}
+function openProductDups(){
+  if(!requireAdmin()) return;
+  const d = productDupList();
+  const group = g => `<div class="card" style="margin-bottom:8px; padding:8px 12px;">
+      <div style="font-weight:800; font-size:13px;"><span dir="ltr" data-notr>${esc(g.value)}</span> <span style="color:var(--muted); font-weight:400;" data-notr>×${g.items.length}</span></div>
+      ${g.items.map(x => `<div class="row-between" style="padding:6px 0; border-top:1px solid var(--line); cursor:pointer; gap:8px;" data-key="${esc(x.key)}" onclick="openDupProduct(this.dataset.key)">
+        <span style="flex:1; font-size:12.5px;" data-notr>${esc(x.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(x.brand)}${g.kind === 'sku' ? (x.barcode ? ' · ' + esc(x.barcode) : '') : (x.id ? ' · ' + esc(x.id) : '')}</span></span>
+        <b style="white-space:nowrap; font-size:12.5px;" data-notr>${x.price != null ? x.price.toFixed(2) + ' KD' : '—'}</b></div>`).join('')}
+    </div>`;
+  const section = (title, list) => list.length ? `<div class="section-title" style="margin-top:6px;"><span>${title}</span> <span data-notr>(${list.length})</span></div>${list.map(group).join('')}` : '';
+  showModal(`
+    <h3 style="margin-top:0;">Duplicate SKUs / barcodes</h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Products that share an item code or a barcode. Check each one and correct it on its own page (Edit) — nothing is merged or deleted here.</p>
+    ${d.sku.length || d.barcode.length ? '' : '<div class="empty">No two products share an item code or a barcode.</div>'}
+    ${section('Same item code (SKU)', d.sku)}
+    ${section('Same barcode', d.barcode)}
+    <textarea class="export-textarea" id="dupReportText" readonly style="display:none;"></textarea>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn" onclick="copyProductDupReport()">Copy the report</button>
+      <button class="btn secondary" onclick="closeModal()">Close</button>
+    </div>`);
+}
+function openDupProduct(key){ closeModal(); openProductDetail(key); }
+function copyProductDupReport(){
+  const el = document.getElementById('dupReportText'); if(!el) return;
+  el.value = UMCore.productDuplicatesReport(productDupList());
+  el.style.display = 'block'; el.focus(); el.select();
+  let ok = false; try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
+  showToast(ok ? 'Report copied — paste it into a sheet' : 'Select the report above and copy it');
 }
 
 // ---- PLAYBOOK ----
