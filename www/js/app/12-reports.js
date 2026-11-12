@@ -778,34 +778,51 @@ function closeLightbox(e, force){
 const _teamGen = { chat: 0, memories: 0 }, _teamSaving = { chat: 0, memories: 0 };
 function teamList(key){ const map={chat:chatMsgs, memories:memories}; return map[key]; } // the team's lists by cloud key, as they are now
 function setTeamList(key, v){ if(key === 'chat') chatMsgs = v; else memories = v; }
-// a ∪ b by id (a's copy kept), oldest first, the chat's last 300 — the merge persistTeam makes with the cloud
+// a ∪ b by id, ONE entry per id from both lists (the first copy kept, a's before b's; an entry of a
+// without an id kept as it is), oldest first, the chat's last 300 — the merge persistTeam makes with
+// the cloud, and every read. v121 could store a memory several times under one id (Share tapped again
+// while its photo hung): only b's copies were dropped, so every phone showed it three times, the
+// achievements counted it three times, and every save wrote the copies back.
 function teamMerge(key, a, b){
-  let v = Array.isArray(a) ? a.slice() : [];
-  const have = new Set(v.map(x => x && x.id));
+  let v = [];
+  const have = new Set();
+  (Array.isArray(a) ? a : []).forEach(x => { if(x && x.id != null){ if(have.has(x.id)) return; have.add(x.id); } v.push(x); });
   (Array.isArray(b) ? b : []).forEach(x => { if(x && x.id != null && !have.has(x.id)){ v.push(x); have.add(x.id); } });
   v.sort((x, y) => ((x && x.ts) || 0) - ((y && y.ts) || 0));
   if(key === 'chat' && v.length > 300) v = v.slice(-300);
   return v;
 }
-async function loadTeam(){
+// keys: the lists to read (both when left out).
+async function loadTeam(keys){
   // each list is taken (or kept) the moment its own read is back: nothing runs between
   // cloudGet writing the phone's copy and that copy being put back
-  const how = {}; // key → 'cloud' (read from the cloud) | 'queued' (this phone's copy: its own still uploading) | 'phone' (no answer: this phone's copy)
-  await Promise.all(['chat', 'memories'].map(async key => {
+  // how: key → about THIS read only — 'cloud' (read from the cloud: the list now in memory) | 'queued' (a change of
+  // this phone's waits in the queue: what the phone has) | 'kept' (a save of the list ran while it read: the read was
+  // set aside, the list stays as this phone has it) | 'phone' (no answer from the cloud: what the phone has)
+  const how = {};
+  await Promise.all((keys || ['chat', 'memories']).map(async key => {
     const gen0 = _teamGen[key];
-    const queued0 = outboxHas(key);
-    const r = await cloudGet(key).catch(() => null);
-    how[key] = queued0 ? 'queued' : (_mirrorUsed[key] || _loadFailed[key] || (r == null && !navigator.onLine)) ? 'phone' : 'cloud';
+    // The read flags are session-wide and only loadAll cleared them: after one read answered from the phone, a
+    // later one that worked still said "No connection" (v122 review). They describe the latest read now — cloudGet
+    // sets them again when it answers from the phone or not at all — and src says what THIS call got (another read
+    // of the list can change them meanwhile). No save of these lists reads them: persistTeamNow merges with the
+    // cloud's copy by union, in one transaction (and the daily backup holds neither list).
+    delete _mirrorUsed[key]; delete _loadFailed[key];
+    const src = {};
+    const r = await cloudGet(key, src).catch(() => null);
+    how[key] = src.cloud && !(r == null && !navigator.onLine) ? 'cloud' : 'phone';
     try{
       const mine = teamList(key);
       if(_teamGen[key] !== gen0 || _teamSaving[key] > 0){
         console.warn(key + ': a save ran while the refresh read — the list on screen is kept');
         mirrorSave(key, JSON.stringify(teamMerge(key, mine, UMCore.safeParse(mirrorGet(key), null))));
+        how[key] = 'kept'; // "Refresh messages" reads it again once that save is over (it said "Up to date" here)
         return;
       }
       const read = UMCore.safeParse(r && r.value, null);
       const got = Array.isArray(read) ? read : [];
-      if(!outboxHas(key)){ setTeamList(key, got); return; }
+      if(!outboxHas(key)){ setTeamList(key, teamMerge(key, got, null)); return; } // one entry per id
+      how[key] = 'queued'; // the queue as the read came back, not as it began
       const all = teamMerge(key, mine, got); // queued: nothing memory holds is dropped, nor left off the phone's copy
       setTeamList(key, all);
       const gotIds = new Set(got.map(x => x && x.id));
@@ -867,13 +884,25 @@ function setTeamTab(t){
   document.getElementById('teamMem').style.display = t==='mem'?'block':'none';
   if(t==='mem') renderMemories(); else renderChat();
 }
+const TEAM_SAVE_WAIT_MS = 5000; // "Refresh messages" waits at most this long for a save of a list it read
 async function refreshTeam(){
   const how = (await loadTeam()) || {};
   renderChat(); renderMemories();
-  // "Up to date" only when both lists were read from the cloud (v122: it was said after a failed read too)
-  const all = Object.values(how);
-  showToast(all.includes('queued') ? '📤 Yours are still uploading — showing what this phone has'
-          : all.includes('phone') ? '📴 No connection — showing what this phone has'
+  // A save of a list ran while it was read: the read was set aside, the list on screen is this phone's.
+  // That list is read once more when its save is over (v122 review: "Up to date" was said with her
+  // message only queued, and the newer messages the read brought were not shown).
+  const kept = Object.keys(how).filter(k => how[k] === 'kept');
+  if(kept.length){
+    const t0 = Date.now();
+    while(kept.some(k => _teamSaving[k] > 0) && Date.now() - t0 < TEAM_SAVE_WAIT_MS) await new Promise(res => setTimeout(res, 150));
+    const again = kept.filter(k => !(_teamSaving[k] > 0)); // one still saving stays 'kept': still uploading
+    if(again.length){ Object.assign(how, (await loadTeam(again)) || {}); renderChat(); renderMemories(); }
+  }
+  // "Up to date" only when every list on screen is the one just read from the cloud and nothing of this
+  // phone's for it is still saving or queued (v122: it was said after a failed read too)
+  const keys = Object.keys(how);
+  showToast(keys.some(k => how[k] === 'queued' || how[k] === 'kept' || _teamSaving[k] > 0 || outboxHas(k)) ? '📤 Yours are still uploading — showing what this phone has'
+          : keys.some(k => how[k] === 'phone') ? '📴 No connection — showing what this phone has'
           : '\u{1F504} Up to date');
 }
 function fmtWhen(ts){
