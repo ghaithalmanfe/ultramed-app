@@ -1734,6 +1734,7 @@
     'Dismissed for today': 'مخفي لليوم',
     'Hide the dismissed and snoozed': 'إخفاء المخفية والمؤجلة',
     'Alert settings': 'إعدادات التنبيهات',
+    'Back': 'رجوع',
     "For the whole team: a type switched off shows to no one. Dismiss and snooze stay each person's own.": 'للفريق كله: النوع المُطفأ لا يظهر لأحد. الإخفاء والتأجيل يخصّان كل شخص وحده.',
     'Missed planned visits': 'زيارات مخططة لم تتم',
     'No field visit by a set hour': 'لا زيارة ميدانية حتى ساعة محددة',
