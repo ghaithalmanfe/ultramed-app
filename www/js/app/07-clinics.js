@@ -475,6 +475,7 @@ async function nameNamelessClinic(id, raw){
   if(same){
     // the clinic was added again since: its August visits join it, the empty record goes
     if(!await moveToBin('clinics', h, h.name)) return;
+    const moved = visits.filter(v => v && v.clinicId === id).length;
     visits.forEach(v => { if(v && v.clinicId === id) v.clinicId = same.id; });
     Object.keys(dayPlans || {}).forEach(d => Object.keys(dayPlans[d] || {}).forEach(r => {
       dayPlans[d][r] = (dayPlans[d][r] || []).map(e => (typeof e === 'string' ? e : e && e.id) === id ? (typeof e === 'string' ? same.id : Object.assign({}, e, { id: same.id })) : e); }));
@@ -482,11 +483,15 @@ async function nameNamelessClinic(id, raw){
     hiddenPlaceholderClinics = hiddenPlaceholderClinics.filter(c => c && c.id !== id);
     const r1 = await persistFor('visits'), r2 = await persistFor('clinics'); await persist('dayPlans');
     const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2));
+    auditRecord({ action: 'restore.nameless', key: 'clinics', id, label: same.name, before: { name: h.name }, after: { movedTo: same.name, visits: moved },
+      result: ok ? true : ((r1.outcome && r1.outcome.queued) || (r2.outcome && r2.outcome.queued)) ? { res: 'queued' } : false });
     showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
   } else {
+    const was = h.name;
     h.name = name;
     clinics.push(normalizeClinic(h)); hidePlaceholderClinics();
     const r = await persistFor('clinics');
+    auditRecord({ action: 'restore.nameless', key: 'clinics', id, label: name, before: { name: was }, after: { name }, result: r });
     showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
   }
   renderAll();
@@ -548,12 +553,14 @@ async function submitAddClinic(){
   const acctEl2 = document.querySelector('#mClinicAcct .chip.on');
   const newEl2 = document.querySelector('#mClinicNew .chip.on');
 
-  clinics.push(normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
-    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
-  await persist('clinics');
+  const nc = normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
+    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()});
+  clinics.push(nc);
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.add', key: 'clinics', id: nc.id, label: nc.name, after: auditClinicFields(nc), result: r });
   closeModal();
   renderClinics();
-  showToast('🌟 New clinic added — territory growing');
+  saveToast(r, 'clinics', '🌟 New clinic added — territory growing');
 }
 
 function openClinicDetail(id){
@@ -700,9 +707,11 @@ async function saveNoSaleReason(clinicId, val){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
   if(!canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
+  const was = c.noSaleReason || null;
   c.noSaleReason = (val||'').trim();
-  await persist('clinics');
-  showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { noSaleReason: was }, after: { noSaleReason: c.noSaleReason || null }, result: r });
+  saveToast(r, 'clinics', c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
 }
 // The ERP accounts whose invoices count on this branch (supervisor): each can
 // be moved from here, and another account can be counted here — the editor
@@ -904,15 +913,20 @@ async function saveEditClinic(id){
     fresh = Array.isArray(arr) ? arr.find(x=>x && x.id===id) : null;
   }catch(e){}
   const same = (a, b) => JSON.stringify(a===undefined?null:a) === JSON.stringify(b===undefined?null:b);
+  const was = auditClinicFields(c), mine = []; // the change log: what the record held, and the fields this person changed
   Object.keys(form).forEach(f=>{
     const touched = !(f in base) || !same(form[f], base[f]);
-    if(touched) c[f] = form[f];
-    else if(fresh && f in fresh && !same(fresh[f], c[f])) c[f] = fresh[f];
+    if(touched){ c[f] = form[f]; mine.push(f); }
+    else if(fresh && f in fresh && !same(fresh[f], c[f])) c[f] = fresh[f]; // another device's change: not this person's
   });
   window._ecBase = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  // closing a clinic archives it (out of every list, history kept); reopening brings it back
+  const now = auditClinicFields(c);
+  const act = mine.includes('cls') && was.cls !== 'Closed' && now.cls === 'Closed' ? 'clinic.close' : mine.includes('cls') && was.cls === 'Closed' && now.cls !== 'Closed' ? 'clinic.reopen' : 'clinic.edit';
+  auditRecord({ action: act, key: 'clinics', id: c.id, label: c.name, before: was, after: now, fields: mine, result: r });
   closeModal();
-  showToast('✅ Clinic updated');
+  saveToast(r, 'clinics', '✅ Clinic updated');
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
 }
@@ -955,6 +969,7 @@ async function saveEditProduct(key){
   const price = priceRaw==='' ? null : parseFloat(priceRaw);
   if(price!==null && (isNaN(price) || price<0)){ showToast('Enter a valid price'); return; }
   const oldKey = productKey(p), oldId = p.id;
+  const was = auditProductFields(p); // the change log
   p.name = name;
   p.brand = document.getElementById('epBrand').value.trim() || 'Other';
   p.id = code;
@@ -962,7 +977,7 @@ async function saveEditProduct(key){
   p.desc = document.getElementById('epDesc').value.trim();
   p.specialties = Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec);
   assignProductKeys();
-  const saves = [persist('products')];
+  const saves = [persistTold('products')];
   if(code !== oldId){
     // every visit, order line and bin entry that pointed at the old key now points at the new one
     const newKey = productKey(p);
@@ -978,9 +993,10 @@ async function saveEditProduct(key){
     if(n) saves.push(persist('visits'));
     if(nb) saves.push(persist('recycleBin'));
   }
-  await Promise.all(saves);
+  const [r] = await Promise.all(saves);
+  auditRecord({ action: 'product.edit', key: 'products', id: p.id, label: p.name, before: was, after: auditProductFields(p), result: r });
   closeModal();
-  showToast('✅ Product updated');
+  saveToast(r, 'products', '✅ Product updated');
   if(document.getElementById('productListWrap')) renderProducts();
   if(document.getElementById('apPriceBody')) renderAdminPrices();
 }
@@ -1017,12 +1033,14 @@ async function removeProduct(key){
   const idx = products.indexOf(p);
   if(idx<0) return;
   const copy = {...p}; delete copy._key;
-  if(!await moveToBin('products', copy, p.name)) return;
+  const log = { action: 'product.delete', key: 'products', id: p.id, label: p.name, before: auditProductFields(p) };
+  if(!await moveToBin('products', copy, p.name)){ auditRecord(Object.assign(log, { result: false })); return; } // no safety copy, nothing deleted
   products.splice(idx,1);
   assignProductKeys();
-  await persist('products');
+  const r = await persistTold('products');
+  auditRecord(Object.assign(log, { result: r }));
   closeModal();
-  showToast('Moved to recycle bin');
+  saveToast(r, 'products', 'Moved to recycle bin');
   if(document.getElementById('productListWrap')) renderProducts();
 }
 // A clinic the team still visits must stay REACHABLE even after deletion:
@@ -1084,13 +1102,15 @@ async function confirmRecreateClinic(id){
   if(clinics.some(c=>c.id===id)){ showToast('This clinic is already back'); closeModal(); return; }
   const repEl = document.querySelector('#rcRepChips .chip.on');
   const clsEl = document.querySelector('#rcClsChips .chip.on');
-  clinics.push(normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
-    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() }));
+  const nc = normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
+    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() });
+  clinics.push(nc);
   untomb('clinics', id); // alive again — cleared from every delete log, team-wide
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'restore.recreate', key: 'clinics', id, label: name, after: Object.assign(auditClinicFields(nc) || {}, { visits: visits.filter(v => v && v.clinicId === id).length || null }), result: r });
   closeModal();
   renderAll();
-  showToast('♻️ Clinic re-created — all its history is attached');
+  saveToast(r, 'clinics', '♻️ Clinic re-created — all its history is attached');
   openClinicDetail(id);
 }
 async function restoreFromBin(kind, idx){
@@ -1109,8 +1129,9 @@ async function restoreFromBin(kind, idx){
   }
   untomb(kind, clean.id);
   recycleBin[kind].splice(idx,1);
-  const saves = [persist('recycleBin')];
-  if(!alreadyLive) saves.push(persist(kind));
+  // the record's own list decides what the person is told (and what the change log records)
+  const own = alreadyLive ? Promise.resolve(null) : persistTold(kind);
+  const saves = [persistTold('recycleBin'), own];
   if(kind==='visits'){
     // the clinic's "last visit" must reflect the restored visit
     const clinic = clinics.find(c=>c.id===clean.clinicId);
@@ -1120,17 +1141,22 @@ async function restoreFromBin(kind, idx){
       if(last !== (clinic.lastVisit||null)){ clinic.lastVisit = last; saves.push(persist('clinics')); }
     }
   }
-  await Promise.all(saves);
-  showToast(alreadyLive ? '✅ Already restored' : '✅ Restored');
+  const [rb, rk] = await Promise.all(saves);
+  const label = item._label || item.name || clean.id;
+  const what = kind === 'visits' ? auditVisitFields(clean) : kind === 'clinics' ? auditClinicFields(clean) : auditProductFields(clean);
+  if(alreadyLive){ auditRecord({ action: 'restore.bin', key: 'recycleBin', id: clean.id, label, after: { kind, already: true }, result: rb }); showToast('✅ Already restored'); }
+  else { auditRecord({ action: 'restore.bin', key: kind, id: clean.id, label, after: what, result: rk }); saveToast(rk, kind, '✅ Restored'); }
   renderAll();
   if(document.getElementById('apTabData')) { setAdminTab('data'); setDataSub('bin'); } // only refresh the bin view if it is open
 }
 async function purgeFromBin(kind, idx){
   if(!requireAdmin()) return;
-  if(!(recycleBin[kind]||[])[idx]) return;
+  const item = (recycleBin[kind]||[])[idx];
+  if(!item) return;
   recycleBin[kind].splice(idx,1);
-  await persist('recycleBin');
-  showToast('Permanently deleted');
+  const r = await persistTold('recycleBin');
+  auditRecord({ action: 'bin.purge', key: 'recycleBin', id: item.id, label: item._label || item.name || item.id, before: { kind }, result: r });
+  saveToast(r, 'recycleBin', 'Permanently deleted');
   setAdminTab('data'); setDataSub('bin');
 }
 function adminBinHTML(){

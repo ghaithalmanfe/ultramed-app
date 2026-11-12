@@ -5642,6 +5642,7 @@
     noOrderReason: 'No order because', photos: 'Photos', clinic: 'Clinic', contactName: 'Contact person',
     name: 'Name', cls: 'Class', account: 'Account type', dealType: 'Works with us by', contact: 'Contact person', phone: 'Phone',
     shared: 'Shared account', sharedSince: 'Shared since', gov: 'Government account', prevRep: 'Previous owner', repSince: 'Owner since',
+    noSaleReason: 'Why no sales yet', profileNotes: 'Profile notes',
     title: 'Specialty', role: 'Role', influence: 'Decision influence', stage: 'Relationship stage', whatsapp: 'WhatsApp', email: 'Email',
     birthday: 'Birthday', cadence: 'Visit rhythm', bestTime: 'Best time to visit', interests: 'Interests', competitor: 'Competitor products used',
     nextStep: 'Next step', handover: 'Handover', handovers: 'Handovers', sells: 'Also sells',
@@ -5649,7 +5650,7 @@
     brand: 'Brand', code: 'Product code', price: 'Price (KD)', desc: 'Description', specialties: 'Recommended for', salesNotes: 'Sales notes',
     clinics: 'Clinics', doctors: 'Doctors', products: 'Products', tasks: 'Tasks', count: 'How many', changes: 'Changes', added: 'Added',
     updated: 'Updated', skipped: 'Skipped', file: 'File', from: 'From', to: 'To', net: 'Net sales', lines: 'Invoice lines',
-    salesman: 'Salesman', policy: 'Returns count in', movedTo: 'Visits moved to', place: 'Where', kind: 'Kind',
+    salesman: 'Salesman', policy: 'Returns count in', movedTo: 'Visits moved to', already: 'Already in the list', kind: 'Kind',
     coverage: 'Coverage target %', priority: 'Priority target %', conversion: 'Conversion target %', taskRate: 'Task completion target %',
     kpi: 'KPI settings', uploads: 'Uploaded', '…': 'More fields'
   };
