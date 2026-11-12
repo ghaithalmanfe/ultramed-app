@@ -5647,7 +5647,7 @@
     birthday: 'Birthday', cadence: 'Visit rhythm', bestTime: 'Best time to visit', interests: 'Interests', competitor: 'Competitor products used',
     nextStep: 'Next step', handover: 'Handover', handovers: 'Handovers', sells: 'Also sells',
     revenue: 'Sales target (KD)', visits: 'Visits', brands: 'Brand targets', month: 'Month', link: 'Counted at',
-    brand: 'Brand', code: 'Product code', price: 'Price (KD)', desc: 'Description', specialties: 'Recommended for', salesNotes: 'Sales notes',
+    brand: 'Brand', code: 'Product code', price: 'Price (KD)', desc: 'Description', specialties: 'Recommended for', salesNotes: 'Sales notes', materials: 'Sales materials',
     clinics: 'Clinics', doctors: 'Doctors', products: 'Products', tasks: 'Tasks', count: 'How many', changes: 'Changes', added: 'Added',
     updated: 'Updated', skipped: 'Skipped', file: 'File', from: 'From', to: 'To', net: 'Net sales', lines: 'Invoice lines',
     salesman: 'Salesman', policy: 'Returns count in', movedTo: 'Visits moved to', already: 'Already in the list', kind: 'Kind',
