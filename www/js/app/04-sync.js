@@ -1343,6 +1343,7 @@ function offlineToast(msg){
 }
 async function flushOutbox(){
   if(_flushing || !navigator.onLine || !_bootLoaded || !currentUser) return;
+  if(typeof retryPhotos === 'function') retryPhotos(); // photos kept on this phone until the cloud holds them (12-reports.js) — in the background, even with nothing queued
   dropQueuedErpMap(); // never replayed (see dropQueuedErpMap)
   const pending = outboxList();
   if(!pending.length) return;

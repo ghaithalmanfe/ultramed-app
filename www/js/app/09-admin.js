@@ -523,7 +523,7 @@ function renderVisitLog(){
           ${rxLinesHTML(v,c)}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
-          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
         </div>
         ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
       </div>
