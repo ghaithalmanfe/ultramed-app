@@ -147,7 +147,7 @@ async function restore(argv, env, log, io){
 
   // ---- 5. read everything back and compare ----
   const back = await F.listCollection({ firestore: ends.firestore, project: target, collection: 'state', idToken: s.idToken,
-    pageSize: Number(env.BACKUP_PAGE_SIZE) > 0 ? Math.min(300, Math.floor(Number(env.BACKUP_PAGE_SIZE))) : 25, retry, log: log.info });
+    pageSize: Number(env.BACKUP_PAGE_SIZE) > 0 ? Math.min(300, Math.floor(Number(env.BACKUP_PAGE_SIZE))) : 10, retry, log: log.info });
   let same = 0, differ = 0, missing = 0;
   for(const w of writes){
     const d = back.docs.get(w.id);

@@ -320,6 +320,20 @@ describe('configuration and log hygiene (firestore.js)', () => {
     const s = F.scrub('to a.b@x.co with eyJhbGciOiJ.eyJzdWIiOiIx.c2lnbmF0dXJl, Bearer abc.def, ?key=AIzaSyAlkAW4-Eq4LKXtVOSx0wdP_UMzxht5_r4&x=1, hunter2-secret', ['hunter2-secret']);
     assert.doesNotMatch(s, /@|eyJ|abc\.def|AIza|hunter2/);
   });
+  test('the passphrase prompt reads a hidden line from a terminal; the variable wins; no terminal gives null', async () => {
+    const { EventEmitter } = require('node:events');
+    const { getPassphrase } = require('../scripts/backup/verify.js');
+    const tty = Object.assign(new EventEmitter(), { isTTY: true, isRaw: false, setRawMode(v){ this.isRaw = v; }, resume(){}, pause(){}, setEncoding(){} });
+    let shown = '';
+    const p = getPassphrase({}, { stdin: tty, err: { write: s => { shown += s; } } });
+    tty.emit('data', 'secret-passx');
+    tty.emit('data', '\u007fphrase\r');
+    assert.equal(await p, 'secret-passphrase');
+    assert.equal(tty.isRaw, false, 'the terminal is put back as it was');
+    assert.ok(!shown.includes('secret'), 'nothing typed is shown');
+    assert.equal(await getPassphrase({ BACKUP_PASSPHRASE: 'from-env' }, { stdin: tty }), 'from-env');
+    assert.equal(await getPassphrase({}, { stdin: { isTTY: false } }), null);
+  });
 });
 
 // ---------- run.js ----------

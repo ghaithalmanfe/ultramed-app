@@ -21,7 +21,8 @@
 //     falling back to REPORT_LOGIN_EMAIL / REPORT_LOGIN_PASSWORD (the daily e-mails' login)
 //   BACKUP_TIER        daily | weekly | monthly | manual (file name only; default manual)
 //   BACKUP_OUT_DIR     where the file goes (default ./backups; --out wins)
-//   BACKUP_PAGE_SIZE   documents per page (default 25)
+//   BACKUP_PAGE_SIZE   documents per page (default 10: a document can be up to
+//                      1 MiB, so one answer stays around 10 MB at most)
 //   FIRESTORE_EMULATOR_HOST + FIREBASE_AUTH_EMULATOR_HOST   a local emulator (tests)
 // Exit code: 0 written (or not configured), 1 failed (nothing written), 2 bad arguments.
 'use strict';
@@ -95,7 +96,7 @@ async function backup(env, argv, log, now){
   const app = F.appFirebaseConfig();
   const ends = F.endpoints(env);
   const retry = F.retryOptions(env);
-  const pageSize = intIn(env.BACKUP_PAGE_SIZE, 1, 300, 25);
+  const pageSize = intIn(env.BACKUP_PAGE_SIZE, 1, 300, 10);
   const project = app.projectId;
 
   log.info('UltraMed database backup (' + tier + ') of project ' + project + ', started ' + now.toISOString());
