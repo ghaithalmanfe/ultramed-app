@@ -4,8 +4,9 @@
 // file (spreadsheet, CSV, or JSON holding ERP lines) outside the synthetic
 // fixtures, no invoice number as the ERP prints it, no private key or token.
 // Test data is invented (tests/e2e/fixtures). A genuine false positive goes in
-// tests/confidential-allow.txt with its reason; an entry that no longer matches
-// anything fails the test too, so that list stays short.
+// tests/confidential-allow.txt as a pattern or a placeholder with its reason —
+// never a real address or number (that file is public too); an entry that no
+// longer matches anything fails the test, so the list stays short.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs'), path = require('path');
@@ -68,15 +69,17 @@ function trackedFiles(){
   return [...new Set(list)].filter(f => !SELF.has(f) && fs.existsSync(path.join(ROOT, f)) && fs.statSync(path.join(ROOT, f)).isFile());
 }
 
-// One entry per line:  <rule> <path or glob, * = any file> <the flagged text>  # why
-function readAllow(){
-  const src = fs.readFileSync(path.join(ROOT, ALLOW_FILE), 'utf8');
+// One entry per line:  <rule> <path or glob, * = any characters> <placeholder or /regex/>  # why
+// A /regex/ is tested against the flagged text as the rule normalizes it (a phone: its 8 digits).
+function readAllow(src){
+  src = src == null ? fs.readFileSync(path.join(ROOT, ALLOW_FILE), 'utf8') : src;
   return src.split('\n').map((l, i) => ({ l: l.replace(/\s+#.*$/, '').trim(), n: i + 1 })).filter(x => x.l && !x.l.startsWith('#')).map(x => {
     const m = x.l.match(/^(\S+)\s+(\S+)\s+(.+)$/);
-    assert.ok(m, `${ALLOW_FILE}:${x.n}: expected "<rule> <path> <text>"`);
+    assert.ok(m, `${ALLOW_FILE}:${x.n}: expected "<rule> <path> <placeholder or /regex/>"`);
     assert.ok(RULES.some(r => r.id === m[1]) || m[1] === 'sales-file', `${ALLOW_FILE}:${x.n}: unknown rule "${m[1]}"`);
     const glob = new RegExp('^' + m[2].split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
-    return { rule: m[1], glob, text: m[3].trim(), line: x.n, used: 0 };
+    const t = m[3].trim(), rx = t.match(/^\/(.+)\/([a-z]*)$/);
+    return { rule: m[1], glob, text: t, re: rx ? new RegExp(rx[1], rx[2]) : null, line: x.n, used: 0 };
   });
 }
 
@@ -85,7 +88,8 @@ function scan(files, allow, base){
   const found = [];
   const allowed = (rule, file, text) => {
     const r = RULES.find(x => x.id === rule), norm = r && r.norm ? r.norm : (s => s);
-    const hit = allow.find(a => a.rule === rule && a.glob.test(file) && norm(a.text) === norm(text));
+    const v = norm(text);
+    const hit = allow.find(a => a.rule === rule && a.glob.test(file) && (a.re ? a.re.test(v) : norm(a.text) === v));
     if(hit) hit.used++;
     return !!hit;
   };
@@ -155,10 +159,12 @@ test('the guard catches each kind of leak (and says where, never what)', () => {
     assert.deepEqual(found.map(kind).sort(), ['email', 'erp-doc', 'json', 'mobile', 'mobile', 'secret', 'secret', 'sheet'], found.join('\n'));
     assert.ok(!found.some(s => /fixtures/.test(s)), 'the synthetic fixtures folder may hold data files');
     assert.ok(found.every(s => !s.includes('ultramed-kw') && !s.includes(bare) && !s.includes(tok)), 'the report names the place, never the value');
-    // an allow-list entry clears exactly its own text, however it is written
-    const allow = [{ rule: 'mobile', glob: /.*/, text: '6543-2109', used: 0 }];
-    assert.equal(scan(['tests/a.js'], allow, dir).filter(s => /\(mobile\)/.test(s)).length, 1);
-    assert.equal(allow[0].used, 1);
+    // an allow-list entry clears exactly what it describes, however the number is written
+    const allow = readAllow('mobile tests/* 6543-2109  # a placeholder\nsecret tests/a.js /^gh[p]_/  # a pattern\nemail www/* /^x/  # no match');
+    const left = scan(['tests/a.js'], allow, dir);
+    assert.equal(left.filter(s => /\(mobile\)/.test(s)).length, 1);
+    assert.equal(left.filter(s => /\(secret\)/.test(s)).length, 1);
+    assert.deepEqual(allow.map(a => a.used), [1, 1, 0]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

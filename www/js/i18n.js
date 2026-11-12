@@ -34,6 +34,7 @@
     'Sign out': 'تسجيل الخروج',
     'Log in': 'دخول',
     'Use your work email and password.': 'استخدم بريد العمل وكلمة المرور.',
+    'First sign-in on this phone: enter your work email and password. After that, your name is enough.': 'أول دخول من هذا الجوال: أدخل بريد العمل وكلمة المرور. بعدها يكفي الضغط على اسمك.',
     'Enter your password to continue.': 'أدخل كلمة المرور للمتابعة.',
     'Change password': 'تغيير كلمة المرور',
     "Enter your current password to confirm it's you.": 'أدخل كلمة المرور الحالية للتأكيد.',

@@ -10,6 +10,7 @@ const server = http.createServer((req,res)=>{
 });
 const cloud = {};
 cloud.staff = require('./_env.js').twoRepStaff(); // two reps + a non-selling supervisor, as these checks assume
+cloud.clinics = JSON.stringify(require('./fixtures/clinics.js')); // invented clinics: the app ships none since v121
 const api = {
   get: async k => k in cloud ? cloud[k] : null,
   set: async (k, v) => { cloud[k] = v; return true; },
