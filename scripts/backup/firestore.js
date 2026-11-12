@@ -162,7 +162,7 @@ async function listCollection(o){
   for(;;){
     page++;
     const qs = new URLSearchParams();
-    qs.set('pageSize', String(o.pageSize || 25));
+    qs.set('pageSize', String(o.pageSize || 10));
     if(token) qs.set('pageToken', token);
     if(o.readTime) qs.set('readTime', o.readTime);
     let r;
