@@ -898,10 +898,27 @@ async function refreshTeam(){
     const again = kept.filter(k => !(_teamSaving[k] > 0)); // one still saving stays 'kept': still uploading
     if(again.length){ Object.assign(how, (await loadTeam(again)) || {}); renderChat(); renderMemories(); }
   }
-  // "Up to date" only when every list on screen is the one just read from the cloud and nothing of this
-  // phone's for it is still saving or queued (v122: it was said after a failed read too)
+  // The word says how things are when it is said, not what a read found seconds before (third v122 review:
+  // her queued message uploaded while the refresh waited for a memory's save, or a save began and landed
+  // during the second read, and the last word was "Yours are still uploading" with nothing of hers saving or
+  // queued, just after "Memory shared with the team"). A list whose 'queued' or 'kept' no longer holds,
+  // nothing of it saving or queued now, is read once more first. Each list at most once here: a second
+  // round only for the other list, had it stopped holding during the first round's read.
   const keys = Object.keys(how);
-  showToast(keys.some(k => how[k] === 'queued' || how[k] === 'kept' || _teamSaving[k] > 0 || outboxHas(k)) ? '📤 Yours are still uploading — showing what this phone has'
+  const pending = k => _teamSaving[k] > 0 || outboxHas(k);
+  const reread = new Set();
+  for(let round = 0; round < keys.length; round++){
+    const stale = keys.filter(k => !reread.has(k) && (how[k] === 'queued' || how[k] === 'kept') && !pending(k));
+    if(!stale.length) break;
+    stale.forEach(k => reread.add(k));
+    Object.assign(how, (await loadTeam(stale)) || {}); renderChat(); renderMemories();
+  }
+  // "Still uploading" while something of hers for a list on screen is saving or queued now, or when a change
+  // of hers overlapped that list's last read: a save ran while it read ('kept', the read set aside), or it
+  // came back queued ('queued' that no longer holds: only another tab of the app can cause that by now).
+  // "Up to date" only when every list on screen is the one just read from the cloud (v122: it was said
+  // after a failed read too).
+  showToast(keys.some(k => pending(k) || how[k] === 'kept' || how[k] === 'queued') ? '📤 Yours are still uploading — showing what this phone has'
           : keys.some(k => how[k] === 'phone') ? '📴 No connection — showing what this phone has'
           : '\u{1F504} Up to date');
 }
