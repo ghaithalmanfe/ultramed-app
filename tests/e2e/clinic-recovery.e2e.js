@@ -127,6 +127,25 @@ function seed(){
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   s = await sheet();
   check('Arabic: the sheet speaks Arabic', /موجودة في نسخة احتياطية وليست في القائمة الآن/.test(s.text) && /آخر ظهور في نسخة احتياطية/.test(s.text), (s.text || '').slice(0, 300));
+  // ---- Admin → Manage clinics → "Missing clinics": its own button brings back what is ticked THERE ----
+  // (until v121 the button called the backups sheet's function of the same name, which returned without a word)
+  seed();
+  await boot(G, 'supervisor');
+  const mc = await page.evaluate(async () => {
+    openManageClinics(); await new Promise(r => setTimeout(r, 50));
+    const open = [...document.querySelectorAll('#modalInner button')].find(b => /العيادات الناقصة/.test(b.textContent));
+    if(!open) return { err: 'no missing-clinics button' };
+    open.click(); await new Promise(r => setTimeout(r, 80));
+    const go = [...document.querySelectorAll('#modalInner button')].find(b => /إرجاع المعلَّم/.test(b.textContent));
+    if(!go) return { err: 'no bring-back button', text: document.getElementById('modalInner').innerText.slice(0, 300) };
+    const n = (document.getElementById('mcCount') || {}).textContent;
+    go.click(); await new Promise(r => setTimeout(r, 450));
+    return { n, toast: document.getElementById('toast').textContent };
+  });
+  const mcl = JSON.parse(cloud.clinics), mbin = JSON.parse(cloud.recycleBin || '{}');
+  check('Admin missing clinics: its own button brings the ticked clinic back from the recycle bin, and says it was saved',
+    !mc.err && mc.n === '1' && mcl.some(c => c.id === 'r3' && c.name === 'Zenith Dental Center') && !(mbin.clinics || []).some(x => x && x.id === 'r3') && /✅/.test(mc.toast || ''),
+    { mc, ids: mcl.map(c => c.id).filter(id => !/^f/.test(id)) });
   // ---- v121: what a phone still holds is OFFERED; nothing changes until someone taps ----
   const sleep = ms => page.evaluate(t => new Promise(r => setTimeout(r, t)), ms);
   const modal = () => page.evaluate(() => (document.getElementById('modalInner') || {}).innerText.replace(/\s+/g, ' '));
