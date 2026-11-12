@@ -937,6 +937,9 @@ async function loadAll(){
       onPhone('products', products); onPhone('tasks', tasks); onPhone('dayPlans', dayPlans); onPhone('events', events);
       onPhone('targets', targets); onPhone('staff', staff); onPhone('recycleBin', recycleBin); onPhone('benchmarks', BENCHMARKS);
       onPhone('categoryGuides', categoryGuides); onPhone('erpNotes', erpNotes);
+      // that copy may hold an edit whose save is still on its way: keep beside it the base the
+      // cloud last confirmed, so a reopen without a connection still counts the edit as this phone's
+      ['clinics', 'tasks', 'events'].forEach(k => { if(!lf0[k] && !(k === 'clinics' && seed0)) keepMergeBaseOnPhone(k); });
     }
     const clinicsDoc = UMCore.safeParse(c && c.value, null);
     const clinicsBefore = clinics;
@@ -963,7 +966,7 @@ async function loadAll(){
       // read from the phone's copy (offline start, or the read failed) and nothing queued:
       // that copy is what this phone last saw the cloud hold — the base, so the next save
       // never puts back this phone's copy of records it did not touch
-      else if(!mergeBaseFor(k) && r && r.value != null) setMergeBase(k, r.value);
+      else if(!mergeBaseFor(k) && r && r.value != null){ mergeBaseFromPhone(k); if(!mergeBaseFor(k)) setMergeBase(k, r.value); }
     });
     targets = UMCore.safeParse(tg && tg.value, {});
     // Merge so newly seeded categories appear even for users with a saved copy,
@@ -1453,8 +1456,9 @@ function mergeBaseFromPhone(key){
 // loaded/saved (_dpBase) win, every other date|rep list takes the cloud's —
 // so a clinic removed from a plan on another device stays removed.
 let _dpBase = null;
-function mergeDayPlans(local, cloud){
-  const base = _dpBase ? UMCore.safeParse(_dpBase, null) : null;
+function mergeDayPlans(local, cloud, baseStr){
+  const b = baseStr !== undefined ? baseStr : _dpBase; // the base the saved list was taken with (an overlapping save may move _dpBase)
+  const base = b ? UMCore.safeParse(b, null) : null;
   return UMCore.mergeDayPlans3(local || {}, cloud || {}, base, _tombstones.dayPlans);
 }
 // ---- Saves vs the background refresh (v121) ----
@@ -1506,6 +1510,7 @@ async function persistNow(key, opts){
   const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap, erpNotes};
   let value = key === 'clinics' ? storedClinics() : map[key]; // hoisted: the catch mirrors the MERGED copy, not the pre-merge one
   const base0 = mergeBaseFor(key); // the base this list was taken with: an overlapping save of the same list may move it meanwhile
+  const dpBase0 = _dpBase;          // likewise for the day plans
   _persistInfo[key] = null;
   // What THIS call did — kept for persistOutcome, and told to its own caller
   // (opts.told, see persistFor): another save of the same key can start before
@@ -1534,7 +1539,7 @@ async function persistNow(key, opts){
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
         let v = local;
         if(cloud){
-          const r = key === 'dayPlans' ? mergeDayPlans(local, cloud) : mergeById(key, local, cloud, base0);
+          const r = key === 'dayPlans' ? mergeDayPlans(local, cloud, dpBase0) : mergeById(key, local, cloud, base0);
           v = r.merged;
           // Wipe guard: a merged clinic list SHRINKING far below the cloud copy
           // means something is deleting en masse (poisoned delete log, corrupt
