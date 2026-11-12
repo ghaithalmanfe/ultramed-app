@@ -4110,14 +4110,16 @@ describe('missing clinics, from the daily backups (v116)', () => {
   });
 });
 
-// ---------- full backup (v119): what the cloud holds, and the file ----------
-describe('cloudInventory / fullBackupFile', () => {
+// ---------- full backup to this device (v120): what the cloud holds, and the file ----------
+describe('full backup: inventory, file, integrity', () => {
   const J = JSON.stringify;
+  const crypto = require('crypto');
+  const nodeSha = s => crypto.createHash('sha256').update(String(s), 'utf8').digest('hex');
   const team = () => ({
     visits: { value: J([{ id: 'v1' }, { id: 'v2' }, { id: 'vMoved' }]), updated: 1000 },
     'visitsArch:2026-09': { value: J([{ id: 'v3' }, { id: 'vMoved' }]), updated: 900 },   // a visit in two documents for a moment
-    'visitsArch:2026-08': { value: J([{ id: 'v4' }, { date: '2026-08-02' }]), updated: 800 }, // an old visit with no id still counts
-    visitsIndex: { value: J({ months: ['2026-08', '2026-09'] }), updated: 1000 },
+    'visitsArch:2026-08': { value: J([{ id: 'v4' }, { date: '2026-08-02' }, null]), updated: 800 }, // an old visit with no id still counts; a null is nothing
+    visitsIndex: { value: J({ months: { '2026-08': { n: 2, rev: 1 }, '2026-09': { n: 2, rev: 2 }, '2026-07': { n: 1, rev: 1 } }, v: 1 }), updated: 1000 },
     clinics: { value: J([{ id: 'c1', doctors: [{ id: 'd1' }, { id: 'd2' }] }, { id: 'c2', doctors: [] }, { id: 'c3' }]), updated: 2000 },
     tasks: { value: J([{ id: 't1' }]), updated: 10 }, events: { value: J([]), updated: 11 },
     dayPlans: { value: J({ '2026-11-10': { Mariam: [{ id: 'c1' }], Renova: [{ id: 'c2' }] }, '2026-11-11': { Mariam: [] } }), updated: 12 },
@@ -4137,76 +4139,187 @@ describe('cloudInventory / fullBackupFile', () => {
     tombs: { value: J({ clinics: { z: 1 }, visits: { y: 2, w: 3 } }), updated: 20 },
     'photo:1': { value: 'data:image/jpeg;base64,AAAA', updated: 21 }, 'photo:2': { value: 'data:image/jpeg;base64,BBBB', updated: 22 },
     repairLog: { value: J([{}]), updated: 23 }, mailLog: { value: J({ last: {}, history: [{}, {}] }), updated: 24 }, erpMapLog: { value: J([{}, {}, {}]), updated: 25 },
-    chat: { value: J([{ id: 1 }]), updated: 26 },
-    'snap_2026-11-10': { value: J({ clinics: [] }), updated: 27 },
+    chat: { value: J([{ id: 1 }]), updated: 26 }, memories: { value: J([{ id: 'm' }, { id: 'n' }]), updated: 27 },
+    categoryGuides: { value: J({ Tepe: {}, Waterpik: {} }), updated: 28 }, erpNotes: { value: J({ c1: 'x' }), updated: 29 },
+    'snap_2026-11-10': { value: J({ clinics: [{ id: 'c1' }], products: [], visits: [{ id: 'v1' }], tasks: [] }), updated: 30 },
+    'snap_2026-11-09': { value: J({ clinics: [{ id: 'c1' }, { id: 'c2' }], visits: [] }), updated: 31 },
     someNewDoc: { value: J({ a: 1 }), updated: null },
   });
   const by = inv => Object.fromEntries(inv.sets.map(s => [s.id === 'other' ? 'other:' + s.key : s.id, s]));
+  const meta = { app: 'v120', project: 'test-project', takenAt: '2026-11-11T10:00:00.000Z', takenBy: 'Dr. Ghaith' };
 
-  test('counts what a person would count, per data set', () => {
+  test('counts what a person would count, per data set — the daily backups included', () => {
     const s = by(core.cloudInventory(team()));
     assert.equal(s.visits.records, 6, 'live + archives, a visit in two documents counted once, one without an id still counted');
     assert.deepEqual([s.visits.docs, s.visits.extra.archivedMonths, s.visits.daily], [4, 2, 'month']);
+    assert.deepEqual(s.visits.extra.missingMonths, ['2026-07'], 'a month the index lists whose document is not in the cloud is named');
     assert.deepEqual([s.clinics.records, s.doctors.records, s.doctors.docs, s.doctors.inside], [3, 2, 0, 'clinics']);
     assert.equal(s.dayPlans.records, 3, 'one plan per person per day');
     assert.deepEqual([s.erpSales.records, s.erpSales.extra], [3, { lines: 5, missingChunks: 1, staleChunks: 1 }],
       'files from the index; lines actually present in the chunks it points to, plus legacy inline lines; a chunk it points to that is gone is reported');
     assert.equal(s.erpSales.daily, 'list');
     assert.deepEqual([s.targets.records, s.targets.extra.pastMonths], [2, 2], 'people with a target, not the history key');
-    assert.deepEqual([s.erpMap.records, s.staff.records, s.rxTypes.records, s.recycleBin.records, s.tombs.records, s.photos.records, s.logs.records, s.chat.records],
-      [2, 3, 2, 3, 3, 2, 6, 1]);
+    assert.deepEqual([s.erpMap.records, s.staff.records, s.rxTypes.records, s.recycleBin.records, s.tombs.records, s.photos.records, s.logs.records, s.chat.records, s.memories.records, s.categoryGuides.records, s.erpNotes.records],
+      [2, 3, 2, 3, 3, 2, 6, 1, 2, 2, 1]);
+    assert.deepEqual([s.snapshots.records, s.snapshots.extra, s.snapshots.daily, s.snapshots.docs], [2, { newest: '2026-11-10', oldest: '2026-11-09' }, 'self', 2]);
     assert.equal(s.benchmarks.records, null, 'settings: nothing to count, no number invented');
     assert.equal(s['other:someNewDoc'].docs, 1, 'a document no set claims is still listed, by name');
     assert.equal(s.events.records, 0);
   });
-  test('the daily backups are neither counted nor part of the file; totals add up', () => {
+  test('every document belongs to exactly one line; totals add up', () => {
     const docs = team(), inv = core.cloudInventory(docs);
-    assert.ok(!inv.sets.some(x => x.key && x.key.startsWith('snap_')));
-    assert.equal(inv.docs, Object.keys(docs).length - 1);
-    assert.equal(inv.sets.reduce((n, x) => n + x.docs, 0), inv.docs, 'every document belongs to exactly one line');
+    assert.equal(inv.docs, Object.keys(docs).length, 'the daily backups are part of it');
+    assert.equal(inv.sets.reduce((n, x) => n + x.docs, 0), inv.docs);
     assert.equal(inv.sets.reduce((n, x) => n + x.bytes, 0), inv.bytes);
     assert.equal(by(inv).clinics.updated, 2000);
     assert.equal(by(inv).visits.updated, 1000, 'the newest change of the set');
   });
-  test('size is UTF-8 bytes as stored (Arabic counts double)', () => {
-    const inv = core.cloudInventory({ staff: { value: '["مريم"]', updated: 1 } });
-    assert.equal(inv.bytes, 4 + 8);
+  test('size is UTF-8 bytes as stored — as TextEncoder and Buffer write them, a lone surrogate included', () => {
+    assert.equal(core.cloudInventory({ staff: { value: '["مريم"]', updated: 1 } }).bytes, 4 + 8);
+    // a lone high surrogate followed by a non-ASCII letter: U+FFFD (3) + é (2) — the cherry-picked count said 4
+    for(const s of ['\ud800é', '\ud800中', '\udc00a', 'a\ud800', '🦷', 'مريم 🦷 x', '\ud800𐀀'])
+      assert.equal(core.utf8Len(s), Buffer.byteLength(s, 'utf8'), J(s));
+    for(const s of ['', 'abc', 'مريم 🦷', '\ud800é', 'x\udfff'])
+      assert.deepEqual(Buffer.from(core.utf8Bytes(s)), Buffer.from(s, 'utf8'), J(s));
   });
-  test('a document that does not parse gives no figure, and says which one', () => {
+  test('sha256Hex is SHA-256 of the UTF-8 bytes (checked against Node for every padding length and mixed scripts)', () => {
+    for(let n = 0; n <= 130; n++){ const s = 'a'.repeat(n); assert.equal(core.sha256Hex(s), nodeSha(s), 'length ' + n); }
+    for(const s of ['مريم — رانوفا', '🦷🪥', '\ud800é', 'x'.repeat(70000) + 'ي'])
+      assert.equal(core.sha256Hex(s), nodeSha(s));
+    assert.equal(core.sha256Hex(new Uint8Array([1, 2, 3])), crypto.createHash('sha256').update(Buffer.from([1, 2, 3])).digest('hex'));
+    assert.equal(core.sha256Hex('abc'), 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', 'the FIPS 180-4 test vector');
+  });
+  test('a document that does not read as its data gives no figure, and says which one', () => {
     const docs = team(); docs['visitsArch:2026-08'] = { value: '[{"id":', updated: 1 };
     const s = by(core.cloudInventory(docs));
     assert.equal(s.visits.records, null);
     assert.deepEqual(s.visits.unreadable, ['visitsArch:2026-08']);
     assert.equal(s.clinics.records, 3, 'the other sets are unaffected');
+    const bad = by(core.cloudInventory(Object.assign(team(), { 'erpRows:p1:2:1': { value: 'oops', updated: 1 } })));
+    assert.equal(bad.erpSales.extra.lines, null, 'a chunk the index needs that does not read: no line count');
   });
   test('an empty cloud gives no lines', () => {
     assert.deepEqual(core.cloudInventory({}), { sets: [], docs: 0, bytes: 0 });
   });
-  test('the file holds every document except the daily backups, each value exactly as stored', () => {
+  test('the file holds every document — the daily backups too — each value exactly as stored, with a manifest and one integrity code', () => {
     const docs = team();
-    const f = core.fullBackupFile(docs, { app: 'v119', project: 'ultramed-field-ops', takenAt: '2026-11-11T10:00:00.000Z', takenBy: 'Dr. Ghaith' });
-    assert.equal(f.kind, 'ultramed-full-backup');
-    assert.equal(f.format, 1);
-    assert.deepEqual([f.app, f.project, f.takenBy], ['v119', 'ultramed-field-ops', 'Dr. Ghaith']);
-    const keys = Object.keys(docs).filter(k => !k.startsWith('snap_')).sort();
-    assert.deepEqual(Object.keys(f.data), keys);
-    assert.equal(f.documents, keys.length);
-    keys.forEach(k => assert.equal(f.data[k].value, docs[k].value, k));
-    assert.equal(f.data.someNewDoc.updated, null);
-    assert.ok(f.inventory.some(x => x.set === 'erpSales' && x.records === 3 && x.lines === 5));
-    // it survives the trip through a file
-    const back = JSON.parse(JSON.stringify(f));
+    const f = core.fullBackupFile(docs, meta);
+    assert.deepEqual([f.kind, f.format, f.app, f.project, f.takenAt, f.takenBy], ['ultramed-full-backup', 2, 'v120', 'test-project', '2026-11-11T10:00:00.000Z', 'Dr. Ghaith']);
+    const keys = Object.keys(docs).sort();
+    assert.deepEqual(Object.keys(f.data).sort(), keys);
+    keys.forEach(k => { assert.equal(f.data[k].value, docs[k].value, k); assert.equal(f.data[k].updated, docs[k].updated, k); });
+    assert.equal(f.manifest.documents, keys.length);
+    assert.equal(f.manifest.bytes, keys.reduce((n, k) => n + Buffer.byteLength(docs[k].value, 'utf8'), 0));
+    assert.deepEqual(f.manifest.parts.map(p => p.key), keys, 'one part per document, by name');
+    f.manifest.parts.forEach(p => { assert.equal(p.sha256, nodeSha(docs[p.key].value), p.key); assert.equal(p.bytes, Buffer.byteLength(docs[p.key].value, 'utf8')); });
+    const part = k => f.manifest.parts.find(p => p.key === k);
+    assert.deepEqual([part('clinics').counts, part('erpRows:p1:2:0').counts, part('visits').counts, part('snap_2026-11-10').counts, part('photo:1').counts, part('benchmarks').counts, part('someNewDoc').set],
+      [{ clinics: 3, doctors: 2 }, { lines: 2 }, { visits: 3 }, { clinics: 1, products: 0, visits: 1, tasks: 0 }, { photos: 1 }, {}, 'other']);
+    assert.equal(f.integrity.sha256, nodeSha(core.backupCanonical(f)));
+    assert.ok(f.inventory.some(x => x.set === 'erpSales' && x.records === 3 && x.extra.lines === 5));
+    assert.ok(f.inventory.some(x => x.set === 'snapshots' && x.records === 2));
+    assert.deepEqual(f.pending, {});
+    const back = JSON.parse(J(f));   // it survives the trip through a file
     keys.forEach(k => assert.equal(back.data[k].value, docs[k].value, k));
+    const v = core.verifyBackupFile(back, nodeSha);
+    assert.equal(v.ok, true, v.problems.join('; '));
+    assert.equal(v.documents, keys.length);
   });
-  test('odd document names are kept, never turned into object properties of the prototype', () => {
-    const docs = { ['__proto__']: { value: '"x"', updated: 1 }, constructor: { value: '"y"', updated: 2 } };
+  test('the phone\'s streaming writer gives the same file, skips a key read twice, and refuses a value that is not text', () => {
+    const docs = team(), b = core.backupBuilder(meta);
+    let text = b.head();
+    Object.keys(docs).sort().forEach(k => { text += b.addDoc(k, docs[k].value, docs[k].updated, nodeSha(docs[k].value)); });
+    assert.equal(b.addDoc('clinics', docs.clinics.value, 1, 'x'), '', 'the same key again adds nothing');
+    assert.throws(() => b.addDoc('weird', { a: 1 }, null, 'x'), /not stored as text/);
+    text += b.pendingStart();
+    text += b.tail(nodeSha(b.canonical()));
+    assert.deepEqual(JSON.parse(text), core.fullBackupFile(docs, meta));
+  });
+  test('this phone\'s unsent changes are kept apart (pending), counted and checked', () => {
+    const docs = team();
+    const f = core.fullBackupFile(docs, meta, { tasks: { value: J([{ id: 't1' }, { id: 't9' }]), from: 'um_mirror:tasks' }, visits: { value: null, from: null } });
+    assert.deepEqual(Object.keys(f.pending).sort(), ['tasks', 'visits']);
+    assert.equal(f.pending.tasks.value, J([{ id: 't1' }, { id: 't9' }]));
+    assert.equal(f.data.tasks.value, docs.tasks.value, 'the cloud copy stays the cloud\'s');
+    assert.deepEqual(f.manifest.pending.map(p => [p.key, p.from, p.sha256 && p.sha256.length]), [['tasks', 'um_mirror:tasks', 64], ['visits', null, null]]);
+    assert.equal(core.verifyBackupFile(f, nodeSha).ok, true);
+    const t = JSON.parse(J(f)); t.pending.tasks.value = J([{ id: 't1' }]);
+    assert.match(core.verifyBackupFile(t, nodeSha).problems.join('\n'), /pending tasks: sha256/);
+  });
+  test('verify catches every change: a value, a missing or added part, a count, the header, the code, the inventory', () => {
+    const f = core.fullBackupFile(team(), meta);
+    const v = mut => { const x = JSON.parse(J(f)); mut(x); return core.verifyBackupFile(x, nodeSha).problems.join('\n'); };
+    assert.match(v(x => { x.data.clinics.value = x.data.clinics.value.replace('c1', 'c9'); }), /clinics: sha256 does not match/);
+    assert.match(v(x => { delete x.data['erpRows:p1:2:1']; }), /erpRows:p1:2:1: in the manifest, missing from the data/);
+    assert.match(v(x => { x.data.extra = { value: '1', updated: null }; }), /extra: in the data, not in the manifest/);
+    assert.match(v(x => { x.manifest.parts.find(p => p.key === 'clinics').counts.clinics = 4; }), /clinics: the record counts in the manifest do not match|integrity sha256 does not match/);
+    assert.match(v(x => { x.takenBy = 'Someone'; }), /integrity sha256 does not match/);
+    assert.match(v(x => { x.integrity.sha256 = '0'.repeat(64); }), /integrity sha256 does not match/);
+    assert.match(v(x => { delete x.integrity; }), /no integrity code/);
+    assert.match(v(x => { x.inventory.find(s => s.set === 'visits').records = 7; }), /inventory: "visits"/);
+    assert.match(v(x => { x.data.visits.updated = 5; }), /visits: the time it was last written changed/);
+    assert.equal(core.verifyBackupFile({ kind: 'something else' }).ok, false);
+    const old = core.verifyBackupFile({ kind: 'ultramed-full-backup', format: 1, data: { clinics: { value: '[1]', updated: null } } });
+    assert.equal(old.ok, false);
+    assert.match(old.problems[0], /format 1/);
+    assert.equal(old.documents, 1, 'a format-1 file is still counted');
+  });
+  test('odd document names are kept as names, never as object properties of the prototype', () => {
     const raw = JSON.parse('{"__proto__":{"value":"\\"x\\"","updated":1},"constructor":{"value":"\\"y\\"","updated":2}}');
     const f = core.fullBackupFile(raw, {});
-    const back = JSON.parse(JSON.stringify(f));
-    assert.equal(back.documents, 2);
+    const back = JSON.parse(J(f));
+    assert.equal(back.manifest.documents, 2);
     assert.equal(Object.prototype.hasOwnProperty.call(back.data, '__proto__'), true);
     assert.equal(back.data.constructor.value, '"y"');
     assert.equal(core.cloudInventory(raw).docs, 2);
-    assert.ok(docs);
+    assert.equal(core.verifyBackupFile(back, nodeSha).ok, true);
+  });
+  test('the read plan covers every possible key exactly once, the single documents before the families', () => {
+    const ranges = core.backupRanges();
+    const inR = (k, r) => (r.from == null || k >= r.from) && (r.to == null || k < r.to);
+    const sample = Object.keys(team()).concat(['', 'a', 'zzz', 'erpRows:', 'erpRows:', 'erpRows:\u{1F600}', 'photo:', 'photo:x', 'snap_', 'snap_￿', 'visitsArch:', 'visitsArch:9999-99', 'visitsIndex', '￿', 'erpRowsX', 'snap', 'photo']);
+    sample.forEach(k => assert.equal(ranges.filter(r => inR(k, r)).length, 1, 'key ' + J(k)));
+    const firstFamily = ranges.findIndex(r => r.prefix);
+    assert.ok(firstFamily > 0 && ranges.slice(firstFamily).every(r => r.prefix), 'single documents first');
+    assert.deepEqual(ranges.filter(r => r.prefix).map(r => r.prefix), ['visitsArch:', 'erpRows:', 'photo:', 'snap_'], 'the daily backups last');
+    const where = k => ranges.find(r => inR(k, r));
+    assert.ok(where('clinics').keys.includes('clinics') && where('chat').keys.includes('chat'), 'a range of single documents lists the app\'s documents in it');
+    assert.ok(where('erpSales').keys.includes('erpSales') && where('visitsIndex').keys.includes('visitsIndex'));
+    assert.ok(ranges.every(r => r.page >= 1 && r.page <= 20));
+    assert.deepEqual(core.backupReadOrder(['snap_1', 'erpRows:a:1:0', 'clinics', 'photo:p', 'visitsArch:2026-01', 'erpSales', 'clinics', 'zz']),
+      ['clinics', 'erpSales', 'zz', 'visitsArch:2026-01', 'erpRows:a:1:0', 'photo:p', 'snap_1']);
+    assert.deepEqual([core.backupPartLabel('erpRows:p:1:0'), core.backupPartLabel('staff'), core.backupPartLabel('snap_2026-11-01'), core.backupPartLabel('nope')],
+      ['Lines of the sales files', 'Team list', 'Daily backups', null]);
+  });
+  // The owner's list (every state key the app uses) checked against the app's
+  // own code: every key it reads or writes in the cloud must belong to a data
+  // set, so a new kind of record cannot slip into the file unnamed.
+  test('every cloud key the app\'s code uses belongs to a data set of the backup', () => {
+    const fs = require('fs'), path = require('path');
+    const dir = path.join(__dirname, '..', 'www', 'js', 'app');
+    const src = fs.readdirSync(dir).filter(f => f.endsWith('.js')).map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('\n')
+      + fs.readFileSync(path.join(__dirname, '..', 'scripts', 'daily-report', 'report.js'), 'utf8');
+    const keys = new Set(), prefixes = new Set();
+    const add = (k, rest) => { if(/^\s*\+/.test(rest || '')) prefixes.add(k); else keys.add(k); };
+    let m;
+    const callRe = /(?:storage\.(?:get|set|update|delete|list)|persist|persistFor|persistTeam|storageUpdate|cloudGet)\(\s*'([^']+)'(\s*\+)?/g;
+    while((m = callRe.exec(src))) add(m[1], m[2]);
+    const writeRe = /writeDoc\(idToken,\s*'([^']+)'/g;   // the daily e-mail run writes its own log
+    while((m = writeRe.exec(src))) keys.add(m[1]);
+    const persistMap = src.match(/const map = \{(clinics, products, visits[^}]*)\}/);
+    assert.ok(persistMap, 'persist()\'s key map is where the test expects it');
+    persistMap[1].split(',').map(x => x.split(':')[0].trim()).filter(Boolean).forEach(k => keys.add(k));
+    const teamMap = src.match(/const map=\{(chat:[^}]*)\}/);
+    assert.ok(teamMap, 'persistTeam()\'s key map is where the test expects it');
+    teamMap[1].split(',').map(x => x.split(':')[0].trim()).forEach(k => keys.add(k));
+    (src.match(/readDocs\(idToken, \[([^\]]*)\]/g) || []).forEach(l => (l.match(/'([^']+)'/g) || []).forEach(q => keys.add(q.slice(1, -1))));
+    prefixes.add(core.VISITS_ARCH_PREFIX); prefixes.add(core.erpRowsKey({ id: 'ID', rev: 1 }).split('ID')[0]);   // the chunk documents' family, as core names them
+    const LOCAL_ONLY = ['currentUser'];   // the sign-in on a phone without the cloud (03-gate.js) — never a cloud document
+    const unclaimed = [...keys].filter(k => !LOCAL_ONLY.includes(k) && core.backupSetOf(k) === 'other')
+      .concat([...prefixes].filter(p => core.backupSetOf(p + 'x') === 'other').map(p => p + '…'));
+    assert.deepEqual(unclaimed, [], 'keys the app stores that no data set of the backup claims');
+    ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans', 'events', 'staff', 'targets', 'products', 'recycleBin', 'tombs', 'benchmarks', 'erpSales', 'erpMap', 'erpMapLog',
+     'erpNotes', 'rxTypes', 'categoryGuides', 'repairLog', 'mailLog', 'chat', 'memories'].forEach(k => assert.ok(keys.has(k), 'the scan found ' + k));
+    ['snap_', 'photo:', 'visitsArch:', 'erpRows:'].forEach(p => assert.ok(prefixes.has(p), 'the scan found the family ' + p));
   });
 });
