@@ -416,6 +416,7 @@ async function loadVisits(){
       withTimeout(window.storage.get('visitsIndex', true), 8000).catch(() => null),
     ]);
   }catch(e){
+    if(_deviceStale.visits){ _mirrorUsed.visits = true; return visits; } // the device copy is older than memory (a full phone)
     const m = UMCore.safeParse(mirrorGet('visits'), null);
     if(Array.isArray(m)){ _mirrorUsed.visits = true; return m; }
     _loadFailed.visits = true;
@@ -881,6 +882,7 @@ async function cloudGet(key){
     }
     return r;
   }catch(e){
+    if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ _mirrorUsed[key] = true; return { value: mem }; } } // the device copy is older than memory (a full phone)
     const m = mirrorGet(key);
     if(m != null){ _mirrorUsed[key] = true; return { value: m }; }
     _loadFailed[key] = true;
@@ -958,6 +960,10 @@ async function loadAll(){
     [['clinics', c], ['tasks', t], ['events', ev]].forEach(([k, r]) => {
       if(!_loadFailed[k] && !_mirrorUsed[k]){ setMergeBase(k, r && r.value != null ? r.value : null); if(!outboxHas(k)) dropMergeBaseOnPhone(k); }
       else if(outboxHas(k)) mergeBaseFromPhone(k);
+      // read from the phone's copy (offline start, or the read failed) and nothing queued:
+      // that copy is what this phone last saw the cloud hold — the base, so the next save
+      // never puts back this phone's copy of records it did not touch
+      else if(!mergeBaseFor(k) && r && r.value != null) setMergeBase(k, r.value);
     });
     targets = UMCore.safeParse(tg && tg.value, {});
     // Merge so newly seeded categories appear even for users with a saved copy,
@@ -1128,7 +1134,12 @@ function outboxWrite(list){
   _outboxMem.clear(); list.forEach(k => _outboxMem.add(k));
   const str = JSON.stringify(list);
   let ok = deviceSet('um_outbox', str, true);
-  if(!ok){ try{ localStorage.removeItem('um_outbox'); if(list.length) localStorage.setItem('um_outbox', str); ok = true; }catch(e){} }
+  if(!ok){
+    let dev = null; try{ dev = JSON.parse(localStorage.getItem('um_outbox') || '[]'); }catch(e){}
+    // only a list that DROPS a key must replace the phone's one (so a sent key never comes back);
+    // one that only adds keys leaves it: removed, a reopen would forget every earlier queued save
+    if(!(Array.isArray(dev) && dev.every(k => list.includes(k)))){ try{ localStorage.removeItem('um_outbox'); if(list.length) localStorage.setItem('um_outbox', str); ok = true; }catch(e){} }
+  }
   _outboxDeviceBad = !ok; // an older device queue must not bring back what was sent
   updateSyncBadge();
   return ok;
@@ -1139,7 +1150,7 @@ function outboxHas(key){ return outboxList().includes(key); }
 // What a queued key holds in memory, for the reads that would otherwise
 // serve its older device copy.
 function memoryCopy(key){
-  const v = key === 'clinics' ? storedClinics() : ({ visits, tasks, dayPlans, events })[key];
+  const v = key === 'clinics' ? storedClinics() : ({ visits, tasks, dayPlans, events, chat: chatMsgs, memories })[key];
   return v === undefined ? null : JSON.stringify(v);
 }
 const MEMONLY_VISIT = "This phone's storage is full — this visit is only in the app's memory: keep the app open and connected until it says Saved";
@@ -1494,6 +1505,7 @@ async function persistNow(key, opts){
   if(key === 'erpSales') return persistErpSales(); // split storage: index + row chunks
   const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap, erpNotes};
   let value = key === 'clinics' ? storedClinics() : map[key]; // hoisted: the catch mirrors the MERGED copy, not the pre-merge one
+  const base0 = mergeBaseFor(key); // the base this list was taken with: an overlapping save of the same list may move it meanwhile
   _persistInfo[key] = null;
   // What THIS call did — kept for persistOutcome, and told to its own caller
   // (opts.told, see persistFor): another save of the same key can start before
@@ -1522,7 +1534,7 @@ async function persistNow(key, opts){
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
         let v = local;
         if(cloud){
-          const r = key === 'dayPlans' ? mergeDayPlans(local, cloud) : mergeById(key, local, cloud, mergeBaseFor(key));
+          const r = key === 'dayPlans' ? mergeDayPlans(local, cloud) : mergeById(key, local, cloud, base0);
           v = r.merged;
           // Wipe guard: a merged clinic list SHRINKING far below the cloud copy
           // means something is deleting en masse (poisoned delete log, corrupt
