@@ -375,6 +375,8 @@
     'Create': 'إنشاء',
     '🗑 Recycle bin is empty': '🗑 سلة المحذوفات فارغة',
     'Restore': 'استرجاع',
+    'This backup is from another month: restoring it would erase this month\'s visits. To bring back clinics, use "Find missing clinics".': 'هذه النسخة من شهر آخر: استرجاعها يمحو زيارات هذا الشهر. لإرجاع عيادات استخدم «ابحث عن العيادات الناقصة».',
+    'Restore failed — the backup could not be read': 'تعذّر الاسترجاع — لم تُقرأ النسخة الاحتياطية',
     'Restore this clinic': 'استرجاع هذه العيادة',
 
     // ---- Calendar ----
@@ -1858,6 +1860,9 @@
 
   // Strings that carry a number or a name are matched by shape, not by text.
   var PATTERNS = [
+    // whole-day Restore (v121): what it removes, asked first; what it restored
+    [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits and the sales files stay as they are\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات تبقى كما هي.'; }],
+    [/^Restored (\S+) — (\d+) clinics, (\d+) visits$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — ' + m[2] + ' عيادة، ' + m[3] + ' زيارة'; }],
     // duplicate SKUs / barcodes card (v121)
     [/^(\d+) products share an item code or a barcode — tap to review$/, function (m) { return 'عدد المنتجات المشتركة في كود صنف أو باركود: ' + m[1] + ' — اضغط للمراجعة'; }],
     // sales coach titles
