@@ -458,24 +458,30 @@ function pickQuickDate(days){
   document.getElementById('followUpDate').value = localDateStr(d);
 }
 
+// Double-tap guard: repeated saves created duplicate visit rows in the field
+// (verified against real exported data). It holds until the save settles —
+// v122: it was 4 seconds, and a save still on its way after that (a slow
+// cloud; a photo upload with no signal) let a second tap file the visit twice.
+let _visitSaveBusy = false;
 async function saveVisit(){
-  // Double-tap guard: repeated saves within a few seconds created duplicate
-  // visit rows in the field (verified against real exported data).
-  const now = Date.now();
-  if(window._lastVisitSaveAt && now - window._lastVisitSaveAt < 4000){ showToast('Already saving…'); return; }
-  window._lastVisitSaveAt = now;
+  if(_visitSaveBusy){ showToast('Already saving…'); return; }
+  _visitSaveBusy = true;
+  try{ await saveVisitNow(); }
+  finally{ _visitSaveBusy = false; }
+}
+async function saveVisitNow(){
   let clinicId = selectedClinicId;
   // A rep files visits under their own name only — "logging as" is a
   // supervisor control, enforced here too so no stale screen can bypass it.
   // Marking a colleague as joint stays open to everyone: both were there.
   const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
   const joint = jointRep;
-  if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ window._lastVisitSaveAt = 0; showToast('Choose which rep you are logging for'); return; }
+  if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ showToast('Choose which rep you are logging for'); return; }
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
-    if(!name){ window._lastVisitSaveAt = 0; showToast('Enter a clinic name'); return; }
+    if(!name){ showToast('Enter a clinic name'); return; }
     const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
-    if(dup){ window._lastVisitSaveAt = 0; showToast('A clinic with this name already exists'); return; }
+    if(dup){ showToast('A clinic with this name already exists'); return; }
     const clsEl = document.querySelector('#newClinicClsChips .chip.on');
     const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
     clinicId = uid();
@@ -485,12 +491,11 @@ async function saveVisit(){
       contact: document.getElementById('newClinicContact').value.trim(),
       phone: document.getElementById('newClinicPhone').value.trim()}));
   }
-  if(!clinicId){ window._lastVisitSaveAt = 0; showToast('Pick a clinic first'); return; }
+  if(!clinicId){ showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be
   // followed up or verified. New inline-created clinics are exempt (no roster
   // yet) — the picker offers "+ Add doctor" for everyone else.
   if(!newClinicMode && selectedDoctorIds.length === 0){
-    window._lastVisitSaveAt = 0;
     const cRef = clinics.find(x=>x.id===clinicId);
     showToast((cRef && (cRef.doctors||[]).length) ? '👨‍⚕️ Pick who you met — required' : '👨‍⚕️ Add the doctor you met first (+ Add doctor)');
     return;
