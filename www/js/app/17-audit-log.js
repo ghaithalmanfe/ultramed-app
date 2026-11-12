@@ -192,6 +192,23 @@ const auditTargetFields = auditSafe((t, people) => {
   (people || []).forEach(r => { const x = (t || {})[r] || {}; out.revenue[r] = x.revenue || 0; out.visits[r] = x.visits || 0; });
   return out;
 });
+// Doctors a clinic just gained (addDoctorsToClinic's newIds): one entry each.
+const auditDoctorsAdded = auditSafe((c, r, result) => {
+  ((r && r.newIds) || []).forEach(id => {
+    const d = ((c && c.doctors) || []).find(x => x && x.id === id);
+    if(d) auditRecord({ action: 'doctor.add', key: 'clinics', id: c.id + '|' + id, label: auditDoctorLabel(c, d), after: auditDoctorFields(d), result });
+  });
+  return true;
+});
+// { field: { person: value } } before and after: keep only the people whose value changed (in place).
+const auditPeopleChanged = auditSafe((was, now) => {
+  if(!was || !now) return null;
+  Object.keys(Object.assign({}, was, now)).forEach(f => {
+    const a = was[f] || {}, b = now[f] || {};
+    Object.keys(Object.assign({}, a, b)).forEach(p => { if(a[p] === b[p]){ delete a[p]; delete b[p]; } });
+  });
+  return true;
+});
 // What a free-text reason box holds (the sheet may be gone — then no reason).
 const auditReasonFrom = auditSafe(id => { const el = document.getElementById(id); return el && el.value ? el.value.trim().slice(0, 300) : null; });
 
@@ -204,6 +221,10 @@ const auditReasonFrom = auditSafe(id => { const el = document.getElementById(id)
 let _cl = null; // { month, by, group, failed, limit, seq, data }
 const AUDIT_KEY_LABELS = { visits: 'Visits', clinics: 'Clinics', tasks: 'Tasks', events: 'Calendar events', dayPlans: 'Day plans', tombs: 'Deletions', chat: 'Team chat', memories: 'Memories' };
 const AUDIT_KIND_LABELS = { clinics: 'Clinic', products: 'Product', visits: 'Visit' };
+// A reason the app gives itself is stored as a code ('#…') and shown in the reader's language.
+const AUDIT_REASON_CODES = { '#undo-erp-link': 'Undo of an ERP account link change' };
+// A label map read with a key from stored data: own entries only (a stored "constructor" is not a label).
+function auditOwn(map, k){ return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k); }
 const AUDIT_GROUP_ORDER = ['visits', 'clinics', 'doctors', 'team', 'targets', 'sales', 'products', 'restore', 'sync'];
 function clMonths(){
   const out = [], d = new Date(); d.setDate(1);
@@ -265,7 +286,7 @@ function clFiltersHTML(all, sup){
   const st = _cl;
   let h = '';
   if(sup){
-    const names = [...new Set(staff.map(s => s && s.name).concat(all.map(e => e.by)).filter(Boolean))];
+    const names = [...new Set(staff.map(s => s && s.name).concat(all.map(e => e.by)).filter(n => typeof n === 'string' && n))];
     h += `<div class="chip-row" id="clPeople" style="margin-bottom:6px;"><div class="chip small ${st.by === 'all' ? 'on' : ''}" data-by="all" onclick="clPick('by', this.dataset.by)"><span>Everyone</span></div>${names.map(n =>
       `<div class="chip small ${st.by === n ? 'on' : ''}" data-by="${esc(n)}" onclick="clPick('by', this.dataset.by)"><bdi dir="auto">${esc(n)}</bdi></div>`).join('')}</div>`;
   }
@@ -275,7 +296,7 @@ function clFiltersHTML(all, sup){
 }
 function clWhen(at){
   const d = new Date(at);
-  if(isNaN(d.getTime())) return String(at || '');
+  if(isNaN(d.getTime())) return clS(at);
   try{ return d.toLocaleString(uiLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
   catch(e){ return String(at); }
 }
@@ -289,7 +310,7 @@ function clVal(v, field){
   if(v === false) return '<span>No</span>';
   if(v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return '<span style="color:var(--muted);">—</span>';
   if(field === 'role' && (v === 'rep' || v === 'supervisor')) return `<span>${v === 'rep' ? 'Sales Rep' : 'Supervisor'}</span>`;
-  if(field === 'kind' && AUDIT_KIND_LABELS[v]) return `<span>${AUDIT_KIND_LABELS[v]}</span>`;
+  if(field === 'kind' && auditOwn(AUDIT_KIND_LABELS, v)) return `<span>${AUDIT_KIND_LABELS[v]}</span>`;
   if(field === 'policy' && (v === 'erp' || v === 'origin')) return `<span>${v === 'erp' ? 'the month it was booked' : "the original invoice's month"}</span>`;
   return `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(UMCore.auditText(v))}</bdi>`;
 }
@@ -298,26 +319,34 @@ function clChangesHTML(e){
   const ch = UMCore.auditChanges(e);
   if(!ch.length) return '';
   const both = e.before != null && e.after != null, arrow = uiLang === 'ar' ? '←' : '→';
-  const label = f => Object.prototype.hasOwnProperty.call(UMCore.AUDIT_FIELDS, f) ? `<span>${esc(UMCore.AUDIT_FIELDS[f])}</span>` : `<bdi dir="auto">${esc(f)}</bdi>`;
+  const label = f => auditOwn(UMCore.AUDIT_FIELDS, f) ? `<span>${esc(UMCore.AUDIT_FIELDS[f])}</span>` : `<bdi dir="auto">${esc(clS(f))}</bdi>`;
   return `<div style="font-size:12.5px; margin-top:6px; line-height:1.6;">${ch.slice(0, 16).map(c =>
-    `<div data-field="${esc(c.field)}">${label(c.field)}: ${both ? clVal(c.from, c.field) + ` <span aria-hidden="true">${arrow}</span> ` + clVal(c.to, c.field) : clVal(e.after != null ? c.to : c.from, c.field)}</div>`).join('')}</div>`;
+    `<div data-field="${esc(clS(c.field))}">${label(c.field)}: ${both ? clVal(c.from, c.field) + ` <span aria-hidden="true">${arrow}</span> ` + clVal(c.to, c.field) : clVal(e.after != null ? c.to : c.from, c.field)}</div>`).join('')}</div>`;
 }
+// Entries come from a shared document: every value is shown as text, and one
+// odd entry shows as unreadable instead of taking the list down with it.
+function clS(x){ return x == null ? '' : String(x); }
 function clEntryHTML(e, pending){
-  const ok = e.ok === true, queued = e.res === 'queued';
-  const action = Object.prototype.hasOwnProperty.call(UMCore.AUDIT_ACTIONS, e.action) ? UMCore.AUDIT_ACTIONS[e.action] : e.action;
-  const res = Object.prototype.hasOwnProperty.call(UMCore.AUDIT_RESULTS, e.res) ? UMCore.AUDIT_RESULTS[e.res] : (ok ? 'Saved' : 'Not saved');
-  const role = e.role === 'supervisor' ? 'Supervisor' : e.role === 'rep' ? 'Sales Rep' : '';
-  const label = e.action === 'sync.upload' && AUDIT_KEY_LABELS[e.key] ? `<div style="font-weight:600; font-size:13px; margin-top:4px;"><span>${AUDIT_KEY_LABELS[e.key]}</span></div>`
-    : e.label ? `<div dir="auto" style="font-weight:600; font-size:13px; margin-top:4px; overflow-wrap:anywhere;">${esc(e.label)}</div>` : '';
-  return `<div class="card" data-audit="${esc(e.eid || '')}" data-action="${esc(e.action || '')}" data-res="${esc(e.res || '')}" style="padding:10px 12px; margin-bottom:8px; border-inline-start:4px solid ${ok ? 'var(--sage)' : queued ? 'var(--amber)' : 'var(--coral)'};">
+  try{
+    const ok = e.ok === true, queued = e.res === 'queued';
+    const action = auditOwn(UMCore.AUDIT_ACTIONS, e.action) ? UMCore.AUDIT_ACTIONS[e.action] : clS(e.action);
+    const res = auditOwn(UMCore.AUDIT_RESULTS, e.res) ? UMCore.AUDIT_RESULTS[e.res] : (ok ? 'Saved' : 'Not saved');
+    const role = e.role === 'supervisor' ? 'Supervisor' : e.role === 'rep' ? 'Sales Rep' : '';
+    const label = e.action === 'sync.upload' && auditOwn(AUDIT_KEY_LABELS, e.key) ? `<div style="font-weight:600; font-size:13px; margin-top:4px;"><span>${AUDIT_KEY_LABELS[e.key]}</span></div>`
+      : e.label ? `<div dir="auto" style="font-weight:600; font-size:13px; margin-top:4px; overflow-wrap:anywhere;">${esc(clS(e.label))}</div>` : '';
+    const why = e.reason ? `<div style="font-size:12.5px; margin-top:4px;"><span>Reason</span>: ${auditOwn(AUDIT_REASON_CODES, e.reason) ? `<span>${AUDIT_REASON_CODES[e.reason]}</span>` : `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(clS(e.reason))}</bdi>`}</div>` : '';
+    return `<div class="card" data-audit="${esc(clS(e.eid))}" data-action="${esc(clS(e.action))}" data-res="${esc(clS(e.res))}" style="padding:10px 12px; margin-bottom:8px; border-inline-start:4px solid ${ok ? 'var(--sage)' : queued ? 'var(--amber)' : 'var(--coral)'};">
     <div class="row-between" style="gap:8px; align-items:flex-start;"><b style="font-size:13.5px;"><span>${esc(action)}</span></b><span class="badge ${ok ? 'done' : queued ? 'today' : 'overdue'}"><span>${esc(res)}</span></span></div>
-    <div class="clinic-sub" style="margin-top:2px;"><bdi dir="auto">${esc(e.by || '—')}</bdi>${role ? ` · <span>${role}</span>` : ''} · <span dir="auto">${esc(clWhen(e.at))}</span></div>
-    ${label}${clChangesHTML(e)}
-    ${e.reason ? `<div style="font-size:12.5px; margin-top:4px;"><span>Reason</span>: <bdi dir="auto" style="overflow-wrap:anywhere;">${esc(e.reason)}</bdi></div>` : ''}
+    <div class="clinic-sub" style="margin-top:2px;"><bdi dir="auto">${esc(clS(e.by) || '—')}</bdi>${role ? ` · <span>${role}</span>` : ''} · <span dir="auto">${esc(clWhen(e.at))}</span></div>
+    ${label}${clChangesHTML(e)}${why}
     ${e.trimmed ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>Details removed to keep the month under the size limit.</span></div>' : ''}
     ${pending ? '<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;">⏳ <span>Recorded on this phone — waiting to upload to the change log.</span></div>' : ''}
     ${e.src === 'erpMapLog' ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>From the ERP account-link log.</span></div>' : ''}
   </div>`;
+  }catch(err){
+    console.warn('change log: an entry could not be shown', err);
+    return '<div class="card" style="padding:10px 12px; margin-bottom:8px; color:var(--muted); font-size:12.5px;"><span>An entry that could not be read.</span></div>';
+  }
 }
 function clRender(){
   const st = _cl, body = document.getElementById('clBody'), filters = document.getElementById('clFilters');
