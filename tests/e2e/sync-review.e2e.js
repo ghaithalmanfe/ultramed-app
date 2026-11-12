@@ -15,6 +15,7 @@
 //  R1      an edit kept on the phone by a refresh that raced its save rides along
 //          with the next upload after a reopen without connection
 //  D1      two overlapping day-plan saves keep the plan another phone changed
+//  V1      a visit logged while another visits save is on its way is kept
 // Port 8251. ONLY=S1,N2 runs a subset.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
@@ -75,7 +76,7 @@ const tk = id => (parse(cloud.tasks) || []).find(t => t.id === id) || {};
       window.storage = {
         get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; },
         set: async (k, v) => window.__cSet(k, v), setMany: async e => window.__cSetMany(e), delete: async k => window.__cDel(k), list: async p => ({ keys: await window.__cList(p) }),
-        update: async (k, fn) => { if(window.__hang && new RegExp(window.__hang).test(k)) return new Promise(() => {}); await window.__cAcquire(); try{ const cur = await window.__cGet(k); const next = fn(cur == null ? null : cur); if(next == null) return null; await window.__cSet(k, next); return next; } finally { await window.__cRelease(); } },
+        update: async (k, fn) => { if(window.__hang && new RegExp(window.__hang).test(k)) return new Promise(() => {}); if(window.__slow && new RegExp(window.__slow.re).test(k)) await new Promise(r => setTimeout(r, window.__slow.ms)); await window.__cAcquire(); try{ const cur = await window.__cGet(k); const next = fn(cur == null ? null : cur); if(next == null) return null; await window.__cSet(k, next); return next; } finally { await window.__cRelease(); } },
       };
       const off = clock - Date.now();
       const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
@@ -342,6 +343,24 @@ const tk = id => (parse(cloud.tasks) || []).find(t => t.id === id) || {};
     const dp2 = parse(cloud.dayPlans) || {};
     check('D1-control. one day-plan save from the same stale phone keeps it', JSON.stringify((dp2['2026-09-22'] || {}).Renova) === JSON.stringify(['c2', 'c3']), { dp2 });
     await A.ctx.close(); await S.ctx.close();
+  }
+  // V1: a visit logged while another visits save is still on its way (a slow line,
+  // two visits back to back) stays on the phone and reaches the cloud
+  if(!ONLY || ONLY.has('V1')){
+    seedCloud();
+    const A = await mkPhone('V1-A'); await A.boot('Mariam', 'rep');
+    const v = await A.page.evaluate(async () => {
+      const mk = id => ({ id, clinicId: 'c1', rep: 'Mariam', date: '2026-09-21', ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: [], orderTotal: 0, doctorIds: [], notes: '' });
+      window.__slow = { re: '^visits$', ms: 1200 };
+      visits.push(mk('vA')); const p1 = persist('visits');
+      await new Promise(r => setTimeout(r, 300));
+      visits.push(mk('vB')); const p2 = persist('visits');
+      const r = await Promise.all([p1, p2]); window.__slow = null;
+      return { r, mem: visits.map(x => x.id) };
+    });
+    const ids = (parse(cloud.visits) || []).map(x => x && x.id);
+    check('V1. a visit logged while another visits save is on its way stays on the phone and reaches the cloud', v.mem.includes('vA') && v.mem.includes('vB') && ids.includes('vA') && ids.includes('vB'), { v, cloud: ids });
+    await A.ctx.close();
   }
   check('no page errors', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
