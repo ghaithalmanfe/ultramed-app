@@ -716,6 +716,7 @@ async function archiveTargetsMonth(){
     if(_loadFailed.targets || _mirrorUsed.targets) return;
     const hist = targets._history = targets._history || {};
     let changed = false;
+    const months = new Set(); // the change log: the months whose figures were kept
     REPS.forEach(rep => {
       const t = targets[rep];
       if(!t || !t.achievedAsOf) return;
@@ -727,13 +728,13 @@ async function archiveTargetsMonth(){
         ((cur.achievedAsOf||'') === t.achievedAsOf && JSON.stringify(cur) !== JSON.stringify(t));
       if(fresher){
         hist[m][rep] = JSON.parse(JSON.stringify(t));
-        changed = true;
+        changed = true; months.add(m);
       }
     });
     if(changed){
       const ok = await persist('targets');
       // a finished month's figures kept for good (targets._history): record archival
-      auditRecord({ action: 'target.archive', key: 'targets', id: 'history', after: { month: Object.keys(hist).filter(m => REPS.some(r => hist[m] && hist[m][r] && targets[r] && hist[m][r].achievedAsOf === targets[r].achievedAsOf)).sort().slice(-3) }, result: ok });
+      auditRecord({ action: 'target.archive', key: 'targets', id: 'history', after: { month: [...months].sort() }, result: ok });
     }
   }catch(e){ console.error('archive targets', e); }
 }

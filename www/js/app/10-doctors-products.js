@@ -1712,7 +1712,7 @@ async function addProductMaterial(pid){
   document.getElementById('pMatUrl').value='';
   const r = await persistTold('products');
   const m = p.materials[p.materials.length - 1];
-  auditRecord({ action: 'product.edit', key: 'products', id: p.id, label: p.name, after: { materials: m.title + ' · ' + m.url }, result: r });
+  auditRecord({ action: 'product.edit', key: 'products', id: p.id, label: p.name, after: { materials: m.title, url: m.url }, result: r }); // the link apart, so a key in it is never kept
   renderProductMaterials(pid);
   saveToast(r, 'products', '📄 Material added');
 }
@@ -1723,7 +1723,7 @@ async function removeProductMaterial(pid, idx){
   const gone = p.materials.splice(idx, 1)[0];
   delete p.docUrl;
   const r = await persistTold('products');
-  if(gone) auditRecord({ action: 'product.edit', key: 'products', id: p.id, label: p.name, before: { materials: gone.title + ' · ' + gone.url }, result: r });
+  if(gone) auditRecord({ action: 'product.edit', key: 'products', id: p.id, label: p.name, before: { materials: gone.title, url: gone.url }, result: r });
   if(!r.ok) saveToast(r, 'products', '');
   renderProductMaterials(pid);
 }

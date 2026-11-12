@@ -319,6 +319,7 @@ function clVal(v, field){
   if(v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return '<span style="color:var(--muted);">—</span>';
   if(field === 'role' && (v === 'rep' || v === 'supervisor')) return `<span>${v === 'rep' ? 'Sales Rep' : 'Supervisor'}</span>`;
   if(field === 'kind' && auditOwn(AUDIT_KIND_LABELS, v)) return `<span>${AUDIT_KIND_LABELS[v]}</span>`;
+  if(field === 'salesman' && v === 'ignored') return '<span>ignored</span>';
   if(field === 'policy' && (v === 'erp' || v === 'origin')) return `<span>${v === 'erp' ? 'the month it was booked' : "the original invoice's month"}</span>`;
   return `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(UMCore.auditText(v))}</bdi>`;
 }
