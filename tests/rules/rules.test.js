@@ -209,10 +209,30 @@ describe('a rep (a password login on the company domain)', () => {
   });
   test('cannot write a document the app does not use, or any other collection', async () => {
     const db = login(REP_A);
-    for(const k of ['foo', 'clinics2', 'Clinics', 'snap_latest', 'visitsArch:2026', 'visitsArch:2026-10-01', 'currentUser', 'erpRows', 'photo:', 'auditLog:2026-11'])
+    for(const k of ['foo', 'clinics2', 'Clinics', 'snap_latest', 'visitsArch:2026', 'visitsArch:2026-10-01', 'currentUser', 'erpRows', 'photo:',
+      'auditLog:', 'auditLog:2026', 'auditLog:2026-11-12', 'auditlog:2026-11', 'auditLogs:2026-11', 'audit:2026-11'])
       await assertFails(save(db, k, []));
     await assertFails(setDoc(doc(db, 'users', 'x'), { value: '[]', updated: 1 }));
     await assertFails(getDoc(doc(db, 'users', 'x')));
+  });
+  test('the change log: every phone appends to a month document auditLog:YYYY-MM (any month, an offline phone catches up); nobody deletes one', async () => {
+    const append = (db, key, e) => runTransaction(db, async tx => {
+      const cur = await tx.get(ref(db, key));
+      const d = cur.exists() ? JSON.parse(cur.data().value) : { v: 1, month: key.slice(9), entries: [], dropped: 0, trimmed: 0 };
+      d.entries.push(e);
+      tx.set(ref(db, key), stored(d));
+    });
+    for(const [email, who] of [[REP_A, 'Rep A'], [REP_B, 'Rep B'], [SUP, 'Supervisor']]){
+      await assertSucceeds(append(login(email), F.AUDIT, { eid: 'e-' + who, at: new Date().toISOString(), by: who }));
+      await assertSucceeds(append(login(email), 'auditLog:2026-09', { eid: 'old-' + who, at: '2026-09-30T20:00:00.000Z', by: who }));
+    }
+    const d = JSON.parse(await storedValue(F.AUDIT));
+    assert.deepEqual(d.entries.map(e => e.eid), ['seed-1', 'e-Rep A', 'e-Rep B', 'e-Supervisor']);
+    for(const email of [REP_A, SUP]){
+      await assertFails(remove(login(email), F.AUDIT));
+      await assertFails(remove(login(email), 'auditLog:2026-09'));
+    }
+    assert.ok(await exists(F.AUDIT) && await exists('auditLog:2026-09'));
   });
   test('only the app\'s document shape { value: string, updated: number } is accepted', async () => {
     const db = login(REP_A);
@@ -310,7 +330,7 @@ describe('the supervisor (an e-mail in SUPERVISOR_EMAILS)', () => {
   });
   test('cannot delete documents the app never deletes', async () => {
     const db = login(SUP);
-    for(const k of ['clinics', 'visits', 'staff', 'erpSales', 'products', 'tombs', 'recycleBin', 'targets'])
+    for(const k of ['clinics', 'visits', 'staff', 'erpSales', 'products', 'tombs', 'recycleBin', 'targets', F.AUDIT])
       await assertFails(remove(db, k));
   });
   test('cannot write a document the app does not use', async () => {

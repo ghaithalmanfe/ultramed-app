@@ -48,6 +48,7 @@ const INVENTORY = {
   staff: 'supervisor', targets: 'supervisor', benchmarks: 'supervisor', categoryGuides: 'supervisor', erpSales: 'supervisor',
   erpMap: 'supervisor', erpMapLog: 'supervisor', rxTypes: 'supervisor',
   'visitsArch:YYYY-MM': 'team', 'photo:<id>': 'team', 'snap_YYYY-MM-DD': 'team', 'erpRows:<period>:<rev>:<n>': 'supervisor',
+  'auditLog:YYYY-MM': 'team', // the change log (17-audit-log.js, audit-trail release)
 };
 // Targets computed at run time, each resolved to inventory keys.
 const DYNAMIC = [
@@ -62,6 +63,7 @@ const DYNAMIC = [
   { file: '04-sync.js', arg: "'snap_'+", is: 'snap_YYYY-MM-DD' },
   { file: '08-team-orders.js', arg: "'photo:'+", is: 'photo:<id>' },
   { file: '12-reports.js', arg: "'photo:'+", is: 'photo:<id>' },
+  { file: '17-audit-log.js', arg: 'UMCore.AUDIT_PREFIX + m', is: 'auditLog:YYYY-MM (auditFlush 17-audit-log.js:129, audit-trail release)' },
 ];
 const LOCAL_ONLY = { currentUser: '03-gate.js:7 — only when Firebase is off (localStorage); never in the cloud' };
 // The first argument of a call: up to the first comma or closing parenthesis
@@ -166,6 +168,30 @@ const unseed = (...keys) => asAdmin(async col => { for(const k of keys) await co
 // mergeList: persist(key) for a merge-safe list → storageUpdate → storage.update (04-sync.js:1390/1497)
 const mergeList = (s, key, item) => s.update(key, cur => { const a = P(cur, []); return J((Array.isArray(a) ? a : []).filter(x => x && x.id !== item.id).concat([item])); });
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// The change log's merge: the real UMCore.auditAppend when the code under test
+// has it (the audit-trail release), else a stand-in writing the same document
+// { v, month, entries, dropped, trimmed } — what auditFlush hands storageUpdate.
+let _auditAppend = null;
+function auditAppend(cur, list, month){
+  if(!_auditAppend){
+    const core = require(path.join(WWW, 'js', 'core.js'));
+    _auditAppend = typeof core.auditAppend === 'function' ? (c, l, m) => core.auditAppend(c, l, { month: m })
+      : (c, l, m) => { const d = P(c, null) || { v: 1, month: m, entries: [], dropped: 0, trimmed: 0 }; const have = new Set(d.entries.map(e => e.eid)); const fresh = l.filter(e => !have.has(e.eid));
+        return { value: fresh.length ? J(Object.assign({}, d, { entries: d.entries.concat(fresh) })) : null, broken: false }; };
+  }
+  return _auditAppend(cur, list, month);
+}
+// auditFlush (17-audit-log.js:116-136): each month this phone holds entries for, one transaction
+const auditFlush = async (s, entries) => {
+  const byMonth = {};
+  entries.forEach(e => { const m = e.at.slice(0, 7); (byMonth[m] = byMonth[m] || []).push(e); });
+  for(const m of Object.keys(byMonth).sort()){
+    let broken = false;
+    await s.update('auditLog:' + m, cur => { const r = auditAppend(cur, byMonth[m], m); broken = !!r.broken; return r.value; });
+    assert.equal(broken, false, 'auditLog:' + m + ' read as something else');
+  }
+};
+const auditEntry = (me, at) => ({ eid: uid(), at: at || new Date().toISOString(), by: me, action: 'visit.add', key: 'visits', label: 'Test clinic 1', result: true });
 const TEAM_SITES = [
   { label: 'start-up reads: loadAll (04-sync.js:943-960), team data (12-reports.js:457), archives and backups lists (04-sync.js:497, 13-exports.js:1391), photo, mail log',
     keys: [], run: async (s) => {
@@ -244,6 +270,15 @@ const TEAM_SITES = [
       await s.set('photo:' + id, 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==', true); // a retried save of the same visit
       await s.delete('photo:' + id, true);
       await s.delete(PHOTO, true);
+    } },
+  { label: 'auditLog: the change log — auditFlush 17-audit-log.js:129 appends this phone\'s entries to the month document, last month\'s too after a day offline; the screen reads it (:264)',
+    keys: ['auditLog:YYYY-MM'], run: async (s, me) => {
+      const now = auditEntry(me), late = auditEntry(me, lastMonth() + '-28T09:00:00.000Z');
+      await auditFlush(s, [late, now]);
+      await auditFlush(s, [now]); // a retry of entries already there writes nothing
+      const doc = P((await s.get('auditLog:' + now.at.slice(0, 7), true)).value, {});
+      assert.ok(doc.entries.some(e => e.eid === now.eid), 'the entry is in the month document');
+      assert.ok(P((await s.get('auditLog:' + lastMonth(), true)).value, {}).entries.some(e => e.eid === late.eid));
     } },
 ];
 // maybeSnapshot (04-sync.js:1507-1528) on a phone whose calendar is in time zone tz
@@ -432,6 +467,22 @@ describe('the app\'s own storage code on the emulator: no write it makes is refu
     await Promise.all([add(repA, 'A'), add(repB, 'B'), add(sup, 'S')]);
     const ids = P(await storedValue('visits'), []).map(v => v.id);
     for(const id of ['v-A', 'v-B', 'v-S']) assert.ok(ids.includes(id), id);
+  });
+  test('the change log: rep A, rep B and the supervisor append to the same month document at once — every entry lands', async () => {
+    await reseed();
+    const m = new Date().toISOString().slice(0, 7);
+    const mine = { A: auditEntry('Rep A'), B: auditEntry('Rep B'), S: auditEntry('Supervisor') };
+    await Promise.all([auditFlush(repA.s, [mine.A]), auditFlush(repB.s, [mine.B]), auditFlush(sup.s, [mine.S])]);
+    const eids = P(await storedValue('auditLog:' + m), {}).entries.map(e => e.eid);
+    for(const k of ['A', 'B', 'S']) assert.ok(eids.includes(mine[k].eid), k);
+  });
+  test('the change log: no other id is accepted, and no phone can delete a month', async () => {
+    await reseed();
+    const e = [auditEntry('Rep A')];
+    for(const key of ['auditLog:2026-11-12', 'auditLog:', 'auditLog:2026', 'auditlog:2026-11', 'auditLogs:2026-11', 'audit:2026-11', 'changeLog:2026-11'])
+      await assert.rejects(repA.s.update(key, cur => auditAppend(cur, e, '2026-11').value), x => x && x.code === 'permission-denied', key);
+    for(const p of [repA, repB, sup]) await assert.rejects(p.s.delete(F.AUDIT, true), x => x && x.code === 'permission-denied', p.name);
+    assert.ok(await storedValue(F.AUDIT));
   });
   test('the boundary, with real logins: on a rep\'s phone the supervisor-only saves are refused, the account unchanged', async () => {
     for(const site of SUPERVISOR_SITES.filter(x => x.keys.every(k => INVENTORY[k] === 'supervisor'))){
