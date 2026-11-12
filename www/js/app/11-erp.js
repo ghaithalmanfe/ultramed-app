@@ -1124,7 +1124,7 @@ function openErpRecon(id){
 // erpMap holds the links set by hand — { ERP customer name: clinicId |
 // '@channel' | '@ignore' } — and every other name is matched automatically
 // (UMCore.matchCustomer). A link chosen by mistake (the owner's case: a new
-// Aline branch that was not in the app yet, linked to another branch) is
+// branch that was not in the app yet, linked to another branch) is
 // changed here: the account list (openErpLinks), the editor (openErpLinkEdit)
 // and its check-before-saving page (openErpLinkPreview), reached from the
 // clinic card, the reconciliation audit, "Unrecognized customer names" and the

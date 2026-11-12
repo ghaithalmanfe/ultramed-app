@@ -813,7 +813,7 @@
     if(!n) return { clinicId: null, channel: false, method: 'none' };
     var toks = n.split(' ');
     // Token-overlap scoring; collect EVERY clinic tied at the top score so two
-    // branches of the same clinic ("Aline Salmiya" vs "Aline Hawally") are
+    // branches of the same clinic ("Orion Salmiya" vs "Orion Hawally") are
     // never silently merged — a tie is reported as ambiguous, not guessed.
     var bestScore = 0, tied = [];
     (clinics || []).forEach(function(c){
@@ -848,7 +848,7 @@
     }
     return { clinicId: null, channel: false, method: 'none' };
   }
-  // Branches of one clinic ("Aline Salmiya" / "Aline Hawally") form a FAMILY:
+  // Branches of one clinic ("Orion Salmiya" / "Orion Hawally") form a FAMILY:
   // same rep, same distinctive first name-token (4+ chars, so "New X"/"New Y"
   // never merge on a generic word). Sales and returns are aggregated per
   // family so one clinic never LOOKS invoiced or returned twice just because
@@ -877,7 +877,7 @@
       var ids = group.map(function(c){ return c.id; }).sort();
       var tok = key.split('|')[0];
       // Human label: the original word whose normalized form IS the family
-      // token ("Aline"), never a noise word like "Dr." that norm discards.
+      // token ("Orion"), never a noise word like "Dr." that norm discards.
       var lead = tok;
       var words = String(group[0].name || '').trim().split(/\s+/);
       for(var i = 0; i < words.length; i++){
@@ -1278,7 +1278,7 @@
     var t = normClinicHint(h);
     if(t.length < 2 || /^ksa$/.test(t)) return false;
     var toks = t.split(' ').filter(Boolean);
-    // "SN", "Dental 8" carry a real identifier; "H", "Dental", "Clinic" do not
+    // "QX", "Dental 5" carry a real identifier; "H", "Dental", "Clinic" do not
     return toks.some(function(w){ return PURE_NOISE.indexOf(w) < 0 && (w.length >= 2 || /^\d$/.test(w)) && (w.length >= 2 || toks.length > 1); });
   }
   function isAreaHint(h){ var t = normClinicHint(h).split(' ').filter(Boolean); return t.length > 0 && t.every(function(w){ return AREA_WORDS.indexOf(w) >= 0 || /^\d+$/.test(w); }); }
@@ -1304,7 +1304,7 @@
     if(/^\d|\d{3,}/.test(t) || NOT_A_PERSON.test(t)) return false;   // "No Hygienist", "1 / Arab", "Floater", a phone number
     return /[A-Za-z؀-ۿ]{3}/.test(t);
   }
-  // "Ms. Tala, Ms.Ruby and Ms.Mimi" → three people
+  // "Ms. Dima, Ms.Ruby and Ms.Mimi" → three people
   function splitPeople(cell){
     var t = String(cell || '').trim();
     if(!/(,|&|\band\b|\+)/i.test(t)) return [t];
@@ -1334,7 +1334,7 @@
       var words = name.split(/\s+/);
       var ci = -1;
       for(var i = 0; i < words.length; i++) if(CLINIC_WORD.test(words[i])){ ci = i; break; }
-      if(ci >= 0){                                   // "Rina. Delta Clinic" / "Mia Asnan Tower"
+      if(ci >= 0){                                   // "Rina. Bayside Clinic" / "Mia Asnan Tower"
         var cut = Math.max(1, ci - 1);
         hint = words.slice(cut).join(' '); name = words.slice(0, cut).join(' ');
       } else if(words.length >= 2){
@@ -3732,7 +3732,7 @@
   }
   // Matches each distribution row to app clinics and returns the plan:
   // exact names (or the ERP name map) first, then the branch-aware hint
-  // matcher, then a whole branch family ("Aline Dental Centers" → every Aline
+  // matcher, then a whole branch family ("Orion Dental Centers" → every Orion
   // branch); a pharmacy is only taken when the account says pharmacy, and a
   // clinic named exactly by one row is never swept up by another's family.
   function planDistribution(dist, clinics, erpMap, since){
@@ -3752,7 +3752,7 @@
     dist.rows.forEach(function(r, i){
       if(found[i]) return;
       var wantsPh = isPh(r.account), free = live.filter(function(c){ return claimed[c.id] == null && isPh(c.name) === wantsPh; });
-      // A group account ("Aline Dental Centers", "NHC - Dr. Nael Al Hazeem
+      // A group account ("Orion Dental Centers", "DFC - Dr. Faris Al Sample
       // Dental Centers") covers every branch whose name holds all its words;
       // any other account must carry exactly the same words as one clinic, so
       // "Smile Hub … Shaab" never lands on the Mangaf branch.
@@ -3862,7 +3862,7 @@
         });
         if(byArea.length) pool = byArea;
       }
-      if(pool.length > 1){                           // "Delta Clinic" vs "Delta Medical Service": count every word, not just the rare ones
+      if(pool.length > 1){                           // "Bayside Clinic" vs "Bayside Medical Service": count every word, not just the rare ones
         var ht = fullTokens(h), best = -1, bestIds = [];
         pool.forEach(function(id){ var c = clinics.find(function(x){ return x.id === id; }); var ct = fullTokens(c ? c.name : ''); var ov = ht.filter(function(t){ return ct.indexOf(t) >= 0; }).length; if(ov > best){ best = ov; bestIds = [id]; } else if(ov === best) bestIds.push(id); });
         if(bestIds.length === 1 && best > 0) pool = bestIds;
