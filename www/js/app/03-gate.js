@@ -61,9 +61,12 @@ async function submitChangePassword(){
     const cred = firebase.auth.EmailAuthProvider.credential(email, current);
     await user.reauthenticateWithCredential(cred);
     await user.updatePassword(next);
+    // the change log: that it changed, by whom — never the password itself
+    auditRecord({ action: 'staff.password', key: 'auth', id: currentUser.name, label: currentUser.name, result: true });
     closeModal();
     showToast('✅ Password updated');
   }catch(e){
+    auditRecord({ action: 'staff.password', key: 'auth', id: currentUser.name, label: currentUser.name, result: false });
     if(e.code==='auth/wrong-password') showToast('Current password is incorrect');
     else if(e.code==='auth/weak-password') showToast('Choose a stronger password');
     else if(e.code==='auth/too-many-requests') showToast('Too many attempts — try again later');

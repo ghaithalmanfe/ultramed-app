@@ -339,6 +339,7 @@ function renderMore(){
     ${tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()')}
     ${tile(I('chart'),'Month by month','Sales, field work and KPI against earlier months','openMonthByMonth()')}
     ${tile(I('clipboard'),'Requests, escalations & stands','Log client requests, escalations and stands','openClientLog()')}
+    ${tile(I('shield'),'Change log', sup ? 'Who changed what and when — and whether each save landed' : 'Your changes and whether each save landed','openChangeLog()')}
     ${tile(I('bot'),'Assistant','Ask anything about your data','openAssistant()')}
     ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
     ${sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}
