@@ -1567,7 +1567,7 @@ async function restoreDeviceClinics(which){
   _seedClinics = false;
   await untombMany({ clinics: list.map(c=>c.id) });
   const told = await persistTold('clinics', {allowShrink:true}), ok = told.ok;
-  auditRecord({ action: 'restore.device', key: 'clinics', id: which, label: which === 'prev' ? 'um_mirror_prev:clinics' : 'um_mirror:clinics', after: { clinics: list.length }, result: told });
+  auditRecord({ action: 'restore.device', key: 'clinics', id: which, after: { clinics: list.length }, result: told });
   const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
   closeModal();
   renderAll();
