@@ -1271,7 +1271,7 @@ function downloadXlsx(filename, rows, sheetName){
   const bytes = makeXlsx(rows, sheetName);
   return tryDownload(filename, new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
-function tryDownload(filename, content, mime){
+function tryDownload(filename, content, mime, keepMs){
   try{
     // Excel needs a UTF-8 BOM to read Arabic clinic/doctor names correctly —
     // without it every non-ASCII cell turns into mojibake.
@@ -1282,7 +1282,7 @@ function tryDownload(filename, content, mime){
     const a = document.createElement('a');
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    setTimeout(()=>URL.revokeObjectURL(url), keepMs || 2000); // a large file (the full backup) can take a while to start on a phone
     return true;
   }catch(e){ console.error('download failed', e); return false; }
 }
@@ -1689,7 +1689,7 @@ function downloadFullBackup(){
   if(!requireAdmin()) return;
   const b = _fullBackup;
   if(!b || b.by !== currentUser.name){ showToast('Read the cloud again before downloading'); return; }
-  const ok = tryDownload(b.name, b.blob, 'application/json');
+  const ok = tryDownload(b.name, b.blob, 'application/json', 120000);
   showToast(ok ? 'Download started — keep the file outside the app' : 'The file could not be prepared on this device — try again');
 }
 // ---- Missing clinics, from the daily backups (v116) ----

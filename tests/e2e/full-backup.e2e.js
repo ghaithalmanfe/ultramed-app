@@ -298,7 +298,9 @@ const latinLeft = page => page.evaluate(() => {
 // Firestore). Measures the JS heap while the backup reads, and after it.
 async function bigRun(heapMB, scale){
   fillCloud(bigAccount(scale));
-  const out = { bytes: Object.values(cloud).reduce((s, d) => s + Buffer.byteLength(d.value, 'utf8'), 0), crashed: false };
+  const out = { bytes: Object.values(cloud).reduce((s, d) => s + Buffer.byteLength(d.value, 'utf8'), 0), crashed: false, base: 0, peak: 0, retained: 0 };
+  // a tab that ran out of memory never answers again: every call gets a deadline
+  const T = (p, ms) => Promise.race([p, sleep(ms || 20000).then(() => { throw new Error('no answer — the tab is gone'); })]);
   const opts = launchOpts();
   opts.args = (opts.args || []).concat(heapMB ? ['--js-flags=--max-old-space-size=' + heapMB] : []);
   const br = await chromium.launch(opts);
@@ -308,29 +310,31 @@ async function bigRun(heapMB, scale){
     pg.on('crash', () => { out.crashed = true; });
     await bootB(pg, G);
     const cdp = await ctx.newCDPSession(pg);
-    const heap = async () => (await cdp.send('Runtime.getHeapUsage')).usedSize;
-    await cdp.send('HeapProfiler.collectGarbage'); await pg.waitForTimeout(300); await cdp.send('HeapProfiler.collectGarbage');
-    out.base = await heap();
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const heap = async () => (await T(cdp.send('Runtime.getHeapUsage'))).usedSize;
+    const gc = async () => { await T(cdp.send('HeapProfiler.collectGarbage')); await pg.waitForTimeout(300); await T(cdp.send('HeapProfiler.collectGarbage')); };
+    await gc();
+    out.base = out.peak = await heap();
+    await T(cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 }));
     const t0 = Date.now();
-    await pg.evaluate(() => { openExport(); setTimeout(() => { const b = [...document.querySelectorAll('#modalInner button')].find(x => /Full backup/.test(x.textContent)); if(b) b.click(); }, 60); });
-    out.peak = out.base; out.done = false;
+    await T(pg.evaluate(() => { openExport(); setTimeout(() => { const b = [...document.querySelectorAll('#modalInner button')].find(x => /Full backup/.test(x.textContent)); if(b) b.click(); }, 60); }));
+    out.done = false;
+    let silent = 0;
     while(Date.now() - t0 < 300000 && !out.crashed){
-      try{ out.peak = Math.max(out.peak, await heap()); }catch(e){}
-      out.done = await pg.evaluate(() => !!document.querySelector('[data-backup-download], [data-backup-failed]')).catch(() => false);
+      try{ out.peak = Math.max(out.peak, await heap()); silent = 0; }catch(e){ if(++silent >= 3){ out.crashed = true; break; } }
+      out.done = await T(pg.evaluate(() => !!document.querySelector('[data-backup-download], [data-backup-failed]'))).catch(() => false);
       if(out.done) break;
       await sleep(100);
     }
     out.ms = Date.now() - t0;
     if(out.crashed) return out;
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
-    await cdp.send('HeapProfiler.collectGarbage'); await pg.waitForTimeout(300); await cdp.send('HeapProfiler.collectGarbage');
+    await T(cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 }));
+    await gc();
     out.retained = (await heap()) - out.base;
-    out.ready = await pg.evaluate(() => !!document.querySelector('[data-backup-download]'));
-    if(out.ready){ const f = await download(pg); out.path = f.path; out.fileBytes = Buffer.byteLength(f.text); }
-    await cdp.detach().catch(() => {});
-  }catch(e){ out.error = String(e && e.message || e); if(/crash|Target closed|has been closed/i.test(out.error)) out.crashed = true; }
-  finally{ await br.close().catch(() => {}); }
+    out.ready = await T(pg.evaluate(() => !!document.querySelector('[data-backup-download]')));
+    if(out.ready){ const f = await T(download(pg), 60000); out.path = f.path; out.fileBytes = Buffer.byteLength(f.text); }
+    await T(cdp.detach(), 5000).catch(() => {});
+  }catch(e){ out.error = String(e && e.message || e); if(/crash|Target closed|has been closed|tab is gone/i.test(out.error)) out.crashed = true; }
+  finally{ await T(br.close(), 15000).catch(() => {}); }
   return out;
 }
 
@@ -515,7 +519,7 @@ async function bigRun(heapMB, scale){
   check('Firestore: a rep can neither open nor run the full read', !repB.sheet && repB.read === 'refused' && !stats.queries.some(q => q.l != null && q.l <= 25 && !(q.f || []).length), { repB, q: stats.queries.length });
 
   // ===== 7) a large account inside a phone's budget: a capped JS heap and a 4× slower CPU =====
-  const HEAP_MB = +(process.env.BK_HEAP_MB || 384), SCALE = +(process.env.BK_SCALE || 1);
+  const HEAP_MB = +(process.env.BK_HEAP_MB || 128), SCALE = +(process.env.BK_SCALE || 3);   // a ~47 MB account (120 photos) in a 128 MB JS heap: the app open with it holds ~24 MB
   const big = await bigRun(HEAP_MB, SCALE);
   const MB = x => Math.round(x / 1048576 * 10) / 10;
   console.log(`large account x${SCALE}: ${MB(big.bytes)} MB in the cloud, file ${big.fileBytes ? MB(big.fileBytes) : '?'} MB, ${Math.round((big.ms || 0) / 1000)} s at 4x slower CPU, JS heap cap ${HEAP_MB} MB: app open ${MB(big.base || 0)} MB, peak +${MB((big.peak || 0) - (big.base || 0))} MB, kept after the read +${MB(big.retained || 0)} MB${big.crashed ? ', THE TAB CRASHED' : ''}${big.error ? ' (' + big.error.slice(0, 120) + ')' : ''}`);
