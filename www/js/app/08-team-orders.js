@@ -533,6 +533,7 @@ async function removeEditPhoto(visitId, photoId){
   if(!v || !canEditVisit(v)) return;
   v.photos = (v.photos||[]).filter(p=>p.id!==photoId);
   photoForget(photoId); // still waiting to upload: never sent now
+  if(typeof memOnlyLanded === 'function') memOnlyLanded(null); // off the red bar if it was only in memory — removed, never "Saved" (04)
   Promise.resolve().then(() => window.storage.delete('photo:'+photoId, true)).catch(()=>{}); // best effort, not awaited: with no signal it never answers (v122)
   if(editSheetShows(visitId)) renderEditPhotos(visitId); // gone from the sheet at once — its save can wait behind another one
   await persist('visits');
