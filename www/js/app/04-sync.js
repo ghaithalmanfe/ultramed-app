@@ -1403,6 +1403,9 @@ function mergeById(key, local, cloud, base){
     // three-way merge (a stale copy, or a phone still on an older version)
     return key === 'clinics' ? dropTombedDoctors(r.value) : r.value;
   });
+  // A photo the cloud already holds stays uploaded (v122): a phone whose copy
+  // of the visit still says "waiting to upload" never puts that mark back.
+  if(key === 'visits' && typeof UMCore.settlePhotoMarks === 'function') merged.forEach(x => { if(x && cloudById[x.id]) UMCore.settlePhotoMarks(x, cloudById[x.id]); });
   cloud.forEach(x => {
     if(x && x.id != null && !have.has(x.id) && !ts.has(x.id)){ merged.push(x); recovered++; }
   });

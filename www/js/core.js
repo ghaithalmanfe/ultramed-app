@@ -3746,6 +3746,19 @@
     });
     return stray;
   }
+  // A visit photo is marked "waiting to upload" (pending) until the phone that
+  // took it sees the cloud hold it (v122). The mark only ever goes: when the
+  // cloud's copy of the visit has that photo without it, this copy drops it
+  // too, so a phone whose copy is older never puts it back. Changes `local` in
+  // place (the visit on screen); returns how many marks went. A visit without
+  // photos is left exactly as it is.
+  function settlePhotoMarks(local, cloud){
+    if(!local || !cloud || !Array.isArray(local.photos) || !Array.isArray(cloud.photos)) return 0;
+    var up = Object.create(null), n = 0;
+    cloud.photos.forEach(function(p){ if(p && p.id != null && !p.pending) up[p.id] = true; });
+    local.photos.forEach(function(p){ if(p && p.pending && up[p.id]){ delete p.pending; n++; } });
+    return n;
+  }
   // Every sheet of a workbook that holds people, merged and de-duplicated.
   function parseContactWorkbook(sheets, specialties, opts){
     var all = [], perSheet = [], skipped = 0;
@@ -6318,7 +6331,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
-    visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
+    visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
     RX_MAX, RX_DEFAULT_TYPES, rxQty, rxTypeList, rxTypeName, rxTypesProblem, visitRxLines, cleanVisitRx, rxSig, rxText, remapVisitDoctors, rxWindows, rxLedger,
