@@ -392,6 +392,7 @@ function renderAll(){
   // not a projection, so on the Log tab only its history list refreshes.
   if(activeView === 'log') renderLogHistory();
   else renderView(activeView);
+  if(typeof renderAlertsBell === 'function') renderAlertsBell(); // the header bell follows every change (19-alerts.js)
 }
 function setClinicRepFilter(v){ clinicRepFilter=ownRepOnly(v); renderAll(); setClinicMode(clinicMode); }
 function setReportRepFilter(v){ reportRepFilter=ownRepOnly(v); renderAll(); renderReports(); }

@@ -931,6 +931,7 @@ async function cloudGet(key){
   }
 }
 async function loadAll(){
+  _loadDepth++; // the saves this refresh makes on its own are not the person's (noteSaveOutcome)
   try{
     const mapGen0 = _erpMapGen; // a link saved while this read runs is newer than what it brings back
     const rxGen0 = _rxTypesGen; // likewise a prescription-types save
@@ -1052,7 +1053,7 @@ async function loadAll(){
     if(!Array.isArray(tasks)) tasks = [];
     if(!dayPlans || typeof dayPlans !== 'object') dayPlans = {};
     if(!categoryGuides) categoryGuides = JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED));
-  }
+  }finally{ _loadDepth--; }
   hidePlaceholderClinics();
   if(!_bootCrashed && !_seedClinics) restoreLostDoctors().catch(e => console.warn('phone copies', e)); // local copies only, never blocks the start
   // Rep filters default once per sign-in; the background refresh keeps
@@ -1345,7 +1346,36 @@ function mergeDayPlans(local, cloud){
   const base = _dpBase ? UMCore.safeParse(_dpBase, null) : null;
   return UMCore.mergeDayPlans3(local || {}, cloud || {}, base, _tombstones.dayPlans);
 }
+// Every save's outcome is kept for the alerts center (v121): a save that
+// reached neither the cloud nor the outbox is remembered on this phone until a
+// later save of the same data lands. The writes a refresh makes on its own
+// (loadAll: seeds, repairs, the archive of a closed month) are not the
+// person's changes and retry by themselves — they are not remembered.
+const SAVE_FAIL = 'um_saveFail'; // key → { at, who }
+let _loadDepth = 0;              // a refresh (loadAll) is running
+function saveFailMap(){ try{ const m = JSON.parse(localStorage.getItem(SAVE_FAIL)||'{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }catch(e){ return {}; } }
+function noteSaveOutcome(key, ok){
+  // account links and prescription types are saved by their own compare-and-set
+  // and say so there; sales file changes that did not land stay on screen
+  // behind the red retry bar (_erpDirty), which the alerts center reads itself
+  if(key === 'erpMap' || key === 'rxTypes' || key === 'erpSales') return;
+  const m = saveFailMap(), had = Object.prototype.hasOwnProperty.call(m, key);
+  if(ok || outboxHas(key)){ if(!had) return; delete m[key]; }
+  else m[key] = { at: Date.now(), who: currentUser ? currentUser.name : null };
+  try{ localStorage.setItem(SAVE_FAIL, JSON.stringify(m)); }catch(e){}
+}
+// [{key, at}] — this person's saves that did not land
+function saveFailures(who){
+  const m = saveFailMap();
+  return Object.keys(m).filter(k => m[k] && m[k].at > 0 && (!m[k].who || m[k].who === who)).map(k => ({ key: k, at: m[k].at }));
+}
 async function persist(key, opts){
+  const auto = _loadDepth > 0;
+  const ok = await persistKey(key, opts);
+  if(!auto) noteSaveOutcome(key, ok);
+  return ok;
+}
+async function persistKey(key, opts){
   opts = opts || {};
   // Account links are saved one account at a time with a compare-and-set
   // (saveErpLink, 11-erp.js). A whole-map write here would silently undo a
@@ -1526,12 +1556,15 @@ async function storageUpdate(key, fn, ms){
   return next;
 }
 const SNAP_DAY = 'um_snapDay'; // this phone already found or wrote today's backup (v119: no download of it on every start)
+// What this phone's last backup check found — 'found' | 'written' | 'failed' (v121: the alerts center says it)
+const SNAP_LAST = 'um_snapLast';
+function snapNote(result, msg){ try{ localStorage.setItem(SNAP_LAST, JSON.stringify({ day: todayStr(), at: Date.now(), result, msg: msg ? String(msg).slice(0, 200) : '' })); }catch(e){} }
 async function maybeSnapshot(){
   try{
     const day = todayStr(), key = 'snap_' + day;
     try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
     const existing = await window.storage.get(key, true).catch(()=>null);
-    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} return; } // already snapshotted today
+    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} snapNote('found'); return; } // already snapshotted today
     // The sales index is tiny and its chunks stay in the cloud for a week
     // after being replaced, so the daily backup can restore the sales files too.
     const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
@@ -1541,12 +1574,13 @@ async function maybeSnapshot(){
     const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
     await window.storage.set(key, JSON.stringify({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}), true);
     try{ localStorage.setItem(SNAP_DAY, day); }catch(e){}
+    snapNote('written');
     // Keep 12 days: the backups that aged out are deleted by name — listing
     // them would download every backup in full (the cloud has no light listing).
     for(let i = 13; i <= 19; i++){
       const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() - i);
       await window.storage.delete('snap_' + UMCore.localDateStr(d), true).catch(()=>null);
     }
-  }catch(e){ console.error('snapshot error', e); }
+  }catch(e){ console.error('snapshot error', e); snapNote('failed', e && e.message ? e.message : e); }
 }
 
