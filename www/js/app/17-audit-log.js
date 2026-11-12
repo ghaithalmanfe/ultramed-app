@@ -135,18 +135,23 @@ function auditFlush(){
 }
 
 // ---- the fields each kind of record shows in the log ----
-function auditDoctorNameIn(c, v, id){
+// These run in the save paths, so none of them may ever throw: odd data gives
+// null (the entry then has fewer details), never a stopped save or toast.
+function auditSafe(fn){ return function(){ try{ return fn.apply(null, arguments); }catch(e){ console.warn('change log: fields', e); return null; } }; }
+const auditDoctorNameIn = auditSafe((c, v, id) => {
   const d = c && (c.doctors || []).find(x => x && x.id === id);
   return d && d.name ? d.name : (v && v.doctorNames && v.doctorNames[id]) || null;
-}
-function auditVisitFields(v){
+});
+const auditVisitFields = auditSafe(v => {
   if(!v) return null;
   const c = clinics.find(x => x && x.id === v.clinicId);
   const ids = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
+  const one = Array.isArray(v.orders) && v.orders.length === 1 ? v.orders[0] : null;
   const f = { date: v.date || null, rep: v.rep || null, withRep: v.withRep || null,
     met: ids.map(id => auditDoctorNameIn(c, v, id) || 'a doctor no longer listed'),
     channel: v.callOnly ? (v.channel || 'call') : null, contactName: v.contactName || null,
     orderTotal: v.orderTaken ? (v.orderTotal || 0) : null, items: v.orderTaken ? ((v.orderItems || []).length || null) : null,
+    discountPct: v.orderTaken && one && one.discountPct ? one.discountPct : null,
     rx: null, nextFollowUp: v.nextFollowUp || null, notes: v.notes || null, noOrderReason: v.noOrderReason || null,
     photos: (v.photos || []).length || null };
   try{
@@ -154,41 +159,41 @@ function auditVisitFields(v){
     if(lines.length) f.rx = UMCore.rxText(lines, { list: UMCore.rxTypeList(rxTypesDoc), doctorName: id => auditDoctorNameIn(c, v, id) });
   }catch(e){}
   return f;
-}
-function auditVisitLabel(v){ return v ? (clinicNameOf(v.clinicId, v) + (v.date ? ' · ' + v.date : '')) : null; }
+});
+const auditVisitLabel = auditSafe(v => v ? (clinicNameOf(v.clinicId, v) + (v.date ? ' · ' + v.date : '')) : null);
 function auditVisitAction(v, verb){ return (v && v.orderOnly ? 'order.' : (v && v.callOnly && verb === 'add') ? 'call.' : 'visit.') + verb; }
-function auditClinicFields(c){
+const auditClinicFields = auditSafe(c => {
   if(!c) return null;
   return { name: c.name || null, rep: c.rep || null, cls: c.cls || null, account: c.account || null, dealType: c.dealType || null,
     contact: c.contact || null, phone: c.phone || null, shared: c.shared ? true : null, sharedSince: c.sharedSince || null,
     gov: c.gov == null ? null : !!c.gov, prevRep: c.prevRep || null, repSince: c.repSince || null };
-}
+});
 const AUDIT_DOC_KEYS = ['name', 'title', 'role', 'influence', 'stage', 'phone', 'whatsapp', 'email', 'birthday', 'cadence', 'bestTime', 'interests', 'competitor', 'nextStep', 'notes'];
-function auditDoctorFields(d){
+const auditDoctorFields = auditSafe(d => {
   if(!d) return null;
   const f = {};
   AUDIT_DOC_KEYS.forEach(k => { f[k] = d[k] == null || d[k] === '' ? null : d[k]; });
   f.handovers = (d.handovers || []).length || null;
   return f;
-}
-function auditDoctorLabel(c, d){ return (d && d.name ? d.name : '—') + (c && c.name ? ' · ' + c.name : ''); }
-function auditStaffFields(s){
+});
+const auditDoctorLabel = auditSafe((c, d) => (d && d.name ? d.name : '—') + (c && c.name ? ' · ' + c.name : ''));
+const auditStaffFields = auditSafe(s => {
   if(!s) return null;
   return { name: s.name || null, role: s.role || null, email: s.email || null, sells: s.role === 'supervisor' ? s.sells !== false : null };
-}
-function auditProductFields(p){
+});
+const auditProductFields = auditSafe(p => {
   if(!p) return null;
   return { name: p.name || null, brand: p.brand || null, code: p.id == null ? null : String(p.id), price: p.price == null ? null : p.price,
     desc: p.desc || null, specialties: (p.specialties || []).length ? p.specialties.slice() : null, salesNotes: p.salesNotes || null };
-}
-// { field: { person: value } } of the monthly targets, for the people given
-function auditTargetFields(t, people){
+});
+// { revenue: { person: KD }, visits: { person: n } } of the monthly targets, for the people given
+const auditTargetFields = auditSafe((t, people) => {
   const out = { revenue: {}, visits: {} };
   (people || []).forEach(r => { const x = (t || {})[r] || {}; out.revenue[r] = x.revenue || 0; out.visits[r] = x.visits || 0; });
   return out;
-}
+});
 // What a free-text reason box holds (the sheet may be gone — then no reason).
-function auditReasonFrom(id){ const el = document.getElementById(id); return el && el.value ? el.value.trim().slice(0, 300) : null; }
+const auditReasonFrom = auditSafe(id => { const el = document.getElementById(id); return el && el.value ? el.value.trim().slice(0, 300) : null; });
 
 // ---- the screen: More → Change log ----
 // A supervisor sees everyone's entries (filter by person); a rep only her own
@@ -198,6 +203,7 @@ function auditReasonFrom(id){ const el = document.getElementById(id); return el 
 // — never "no changes".
 let _cl = null; // { month, by, group, failed, limit, seq, data }
 const AUDIT_KEY_LABELS = { visits: 'Visits', clinics: 'Clinics', tasks: 'Tasks', events: 'Calendar events', dayPlans: 'Day plans', tombs: 'Deletions', chat: 'Team chat', memories: 'Memories' };
+const AUDIT_KIND_LABELS = { clinics: 'Clinic', products: 'Product', visits: 'Visit' };
 const AUDIT_GROUP_ORDER = ['visits', 'clinics', 'doctors', 'team', 'targets', 'sales', 'products', 'restore', 'sync'];
 function clMonths(){
   const out = [], d = new Date(); d.setDate(1);
@@ -283,6 +289,8 @@ function clVal(v, field){
   if(v === false) return '<span>No</span>';
   if(v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return '<span style="color:var(--muted);">—</span>';
   if(field === 'role' && (v === 'rep' || v === 'supervisor')) return `<span>${v === 'rep' ? 'Sales Rep' : 'Supervisor'}</span>`;
+  if(field === 'kind' && AUDIT_KIND_LABELS[v]) return `<span>${AUDIT_KIND_LABELS[v]}</span>`;
+  if(field === 'policy' && (v === 'erp' || v === 'origin')) return `<span>${v === 'erp' ? 'the month it was booked' : "the original invoice's month"}</span>`;
   return `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(UMCore.auditText(v))}</bdi>`;
 }
 function clChangesHTML(e){
