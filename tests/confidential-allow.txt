@@ -4,3 +4,5 @@
 email   www/js/app/*        name@ultramed-kw.com                 # the sign-in and team forms' placeholder: shows the format, reaches no one
 secret  www/js/app/01-config.js  /^AIza[0-9A-Za-z_-]{35}$/       # the Firebase web config apiKey: public by design (sign-in and the security rules guard the data)
 mobile  tests/*             /^(\d)\1(\d)\2(\d)\3(\d)\4$/         # invented test numbers are four repeated digit pairs (99887766)
+email   tests/rules/*       /^test-[a-z0-9-]+@ultramed-kw\.com$/i   # invented emulator logins: the rules check the company domain, so test logins carry it; "test-" names reach no one
+email   tests/rules/*       SUPERVISOR_EMAIL@ultramed-kw.com      # the rules' placeholder, replaced in the Firebase console only

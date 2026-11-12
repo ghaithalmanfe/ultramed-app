@@ -100,7 +100,7 @@ describe('signed-out, anonymous and other sign-in methods are refused everything
 });
 
 describe('only password logins on the company domain', () => {
-  const outsiders = ['someone@gmail.com', 'boss@ultramed-kw.com.evil.io', 'boss@evil-ultramed-kw.com',
+  const outsiders = ['someone@gmail.com', 'test-boss@ultramed-kw.com.evil.io', 'boss@evil-ultramed-kw.com',
     'boss@ultramedXkw.com', 'boss@ultramed-kw.co', 'boss@sub.ultramed-kw.com', 'ultramed-kw.com@gmail.com'];
   for(const email of outsiders){
     test(`${email}: cannot read or write`, async () => {
