@@ -200,6 +200,14 @@ const auditDoctorsAdded = auditSafe((c, r, result) => {
   });
   return true;
 });
+// A sales file saved (or not): its dates, net, lines, whose salesmen, how many older files it replaced.
+const auditSalesImport = auditSafe((period, replaced, ok) => {
+  if(!period) return null;
+  const sm = Object.keys(period.repMap || {}).map(k => k + (period.repMap[k] ? ' → ' + period.repMap[k] : ''));
+  auditRecord({ action: 'sales.import', key: 'erpSales', id: period.id, label: period.from + ' – ' + period.to,
+    after: { from: period.from, to: period.to, net: period.net, lines: period.rowCount || null, salesman: sm, replaced: replaced || null }, result: ok });
+  return true;
+});
 // { field: { person: value } } before and after: keep only the people whose value changed (in place).
 const auditPeopleChanged = auditSafe((was, now) => {
   if(!was || !now) return null;
