@@ -1186,15 +1186,19 @@ describe('rep and customer matching', () => {
       R('Sonicare 4300', 'Philips Export BV', 1, 49),                    // Philips is in the catalog: not offered
       R('Inspection Fee for Intensiv Handpiece', 'Maintenance ', 1, 10), R('Delivery', 'Delivery Charge', 1, 2), R('Kit A', 'Combo/Bundle/Kit', 1, 30),
       R('Tepe poster', 'Tepe - Marketing Materials / Items', 1, 0)];
-    const builtIn = [{ id: 'OS40M-DS/3', name: 'OS40M Intensiv Ortho-Strips Coarse, Double-Sided CONTOURING', brand: 'Intensiv', price: 35 },
-      { id: 'OS80XC-DS/3', name: 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', brand: 'Intensiv', price: 35 }];
+    // the list carries no prices (the code is public, v121): a listed item is priced from the invoices, or not at all
+    const builtIn = [{ id: 'OS40M-DS/3', name: 'OS40M Intensiv Ortho-Strips Coarse, Double-Sided CONTOURING', brand: 'Intensiv' },
+      { id: 'OS80XC-DS/3', name: 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', brand: 'Intensiv' },
+      { id: 'IPR-DC Set', name: 'Intensiv IPR-Distancecontrol', brand: 'Intensiv' }];
     const g = core.catalogGaps(products, rows, builtIn);
     assert.deepEqual(g.map(x => [x.product.brand, x.product.name, x.product.price, x.source, x.sold]), [
       ['B&L Biotech', 'Bio Gel A', 9, 'erp', 5],                            // usual price 9 (twice) over 12; the return is not "sold"
-      ['Intensiv', 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', 35, 'list', 2]]); // OS40M is in by its code
-    assert.equal(g[0].last, '2026-10-03'); assert.equal(g[1].last, '2026-09-20');
+      ['Intensiv', 'Intensiv IPR-Distancecontrol', null, 'list', 0],        // never sold in the files: no price, never a made-up one
+      ['Intensiv', 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', 35, 'list', 2]]); // 2 for 70 on the invoice; OS40M is in by its code
+    assert.equal(g[0].last, '2026-10-03'); assert.equal(g[2].last, '2026-09-20');
     assert.equal(g[0].product.id, 'erp-bio-gel-a');
-    g[1].product.price = 1; assert.equal(builtIn[1].price, 35);          // a copy, never the list itself
+    g[2].product.price = 1; assert.equal(builtIn[1].price, undefined);   // a copy, never the list itself
+    assert.equal(core.catalogGaps(products, rows, [{ id: 'X', name: 'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION', brand: 'Intensiv', price: 30 }])[1].product.price, 30); // a price given stays
     assert.deepEqual(core.catalogGaps(products.concat(g.map(x => x.product)), rows, builtIn), []);
   });
   test('monthlyTrend: month by month with each month\'s own target, same-day comparison, no invented zeros', () => {

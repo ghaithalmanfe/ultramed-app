@@ -2,6 +2,7 @@
 // product sold in the ERP files under a brand the catalog lacks, offered to the
 // supervisor on the Products screen and added only on tap — a failed save adds
 // nothing; services (inspection fees) never appear; reps never see the note.
+// Prices come from the invoices in the sales files (the code ships none, v121).
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -75,6 +76,9 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   const cat = JSON.parse(cloud.products);
   const sw = cat.find(p => p.name === 'WG-69 A, Intensiv Swingle, W&H Synea, without light');
   check('14 Intensiv products saved with code, price and category; the unticked one not', cat.length === 16 && cat.filter(p => p.brand === 'Intensiv').length === 15 && sw && sw.id === 'WG-69 A' && sw.price === 380 && sw.cat === 'IPR Handpiece' && !cat.some(p => p.name === 'Bio Gel A'), cat.length);
+  // the code carries no prices (v121): each comes from the invoices in the files, or stays blank
+  const ej = cat.find(p => p.name === 'Intensiv Ejector'), os80 = cat.find(p => p.id === 'OS80XC-DS/3');
+  check('prices come from the sales files (2 strips for 70 → 35.00); one the files never sold has none', os80 && os80.price === 35 && ej && ej.price == null, { os80: os80 && os80.price, ejector: ej && ej.price });
   txt = await page.evaluate(() => document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '));
   check('the list now shows Intensiv; the note shows only what is left (1)', /Intensiv \(16\)|Intensiv \(15\)/.test(txt) && /1 product missing from the catalog/.test(txt) && /OS80XC Intensiv Ortho-Strips/.test(txt), txt.slice(0, 300));
   // a rep never sees the note
