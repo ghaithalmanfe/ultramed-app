@@ -432,10 +432,30 @@ const _photoLanded = new Set();  // photos this phone saw land this session: the
 const _photoChecked = new Set(); // this phone's own waiting photos looked up in the cloud this session
 const _photoLost = new Set();    // …found in no store of this phone and not in the cloud: their visits say lost (asked again until that lands)
 const _photoGone = new Set();    // photos this phone let go of this session (landed, or removed): never read back from a store whose delete lags
+const _photoAskedUnread = new Set(); // own waiting photos the cloud did not have while this phone's stores could not be read: asked again once they are
 const _photoSession = new Set(); // photos taken on this phone this session (marked on a visit before they are kept)
 let _photoDbP = null, _photoRead = false, _photoRetrying = false, _photoSettling = null, _photoSettleAgain = false, _photoDev = null;
 const PHOTO_DB_MS = 5000;      // an IndexedDB open that has not answered by then is taken as "not read" (asked again later)
 const PHOTO_STALE_DAYS = 3;    // a photo waiting longer than this on another phone is said with its age (it may never arrive)
+// Other tabs or windows of the app on this phone share its stores and its
+// mark: one may hold a photo only in its memory (a full phone) while its
+// upload is on its way. Asked before a photo is called lost (needs no storage).
+const _photoBC = (() => { try{ return typeof BroadcastChannel === 'function' ? new BroadcastChannel('um_photos') : null; }catch(e){ return null; } })();
+if(_photoBC) _photoBC.addEventListener('message', e => {
+  const m = e && e.data;
+  if(m && m.ask != null && (_photoKept.has(m.ask) || _photoUp[m.ask] || _photoSession.has(m.ask))){ try{ _photoBC.postMessage({ have: m.ask }); }catch(x){} }
+});
+function photoOtherTabHas(id, ms){
+  if(!_photoBC) return Promise.resolve(false);
+  return new Promise(res => {
+    let t = 0;
+    const on = e => { if(e && e.data && e.data.have === id) done(true); };
+    const done = v => { clearTimeout(t); _photoBC.removeEventListener('message', on); res(v); };
+    _photoBC.addEventListener('message', on);
+    t = setTimeout(() => done(false), ms || 1000);
+    try{ _photoBC.postMessage({ ask: id }); }catch(e){ done(false); }
+  });
+}
 // This phone's mark on the photos it takes: after a restart it knows which
 // waiting photos were its own, so one it no longer holds is looked up in the
 // cloud — uploaded (the mark goes) or lost (said). The id lives with this
@@ -515,6 +535,14 @@ async function photoReadKept(){
   else if(db){ try{ ((await photoDbDo('readonly', st => st.getAll())) || []).forEach(add('idb')); }catch(e){ ok = false; } }
   try{ Object.keys(localStorage).forEach(k => { if(k.startsWith(PHOTO_LS)) add('ls')(UMCore.safeParse(localStorage.getItem(k), null)); }); }catch(e){ ok = false; }
   _photoRead = ok;
+}
+// The stores read at start whatever the signal (flushOutbox, 04): with no
+// signal the screens said a photo kept here was only on "the phone that took
+// it" — this phone. Redrawn when the read added anything.
+function photoReadKeptQuiet(){
+  if(_photoRead) return;
+  const n0 = _photoKept.size;
+  photoReadKept().then(() => { if(_photoKept.size !== n0 && typeof renderAll === 'function') renderAll(); }).catch(() => {});
 }
 // One photo in this phone's stores, read now — another tab or window of the
 // app (the same stores) may have kept it after this one read them → its
@@ -610,7 +638,7 @@ async function settlePhotosOnce(){
     if(!p.pending) return; // lost: only a landing changes it
     if(_photoKept.has(p.id) || _photoUp[p.id] || _photoSession.has(p.id)) return; // still on its way from this phone
     if(_photoLost.has(p.id)){ changes.push({ visitId: v.id, photoId: p.id, lost: true }); return; } // its verdict, until that lands
-    if(p.dev && p.dev === me && _photoRead && !_photoChecked.has(p.id) && lookups.length < 3) lookups.push({ visitId: v.id, photoId: p.id });
+    if(p.dev && p.dev === me && !_photoChecked.has(p.id) && (_photoRead || !_photoAskedUnread.has(p.id)) && lookups.length < 3) lookups.push({ visitId: v.id, photoId: p.id });
   }));
   if(!changes.length && !lookups.length){
     if(typeof visitsIndexOwed === 'function' && visitsIndexOwed() && navigator.onLine) await patchVisitPhotos([]); // a month's revision still to move (04)
@@ -621,14 +649,19 @@ async function settlePhotosOnce(){
     let r;
     try{ r = await withTimeout(window.storage.get('photo:' + c.photoId, true), 15000); }catch(e){ continue; } // no answer: asked again next round
     if(r && r.value){ _photoChecked.add(c.photoId); _photoLanded.add(c.photoId); changes.push({ visitId: c.visitId, photoId: c.photoId, lost: false }); continue; }
+    if(!_photoRead){ _photoAskedUnread.add(c.photoId); continue; } // the stores were not read: no verdict (asked again once they are)
     const held = await photoFindKept(c.photoId); // not in the cloud: is it on this phone after all (another tab)?
     if(held === undefined) continue; // a store did not answer: no verdict this round
+    if(held){ _photoChecked.add(c.photoId); if(!_photoKept.has(c.photoId)) _photoKept.set(c.photoId, held); photoUpload(c.photoId, held.data); continue; } // kept here: sent from here
+    if(await photoOtherTabHas(c.photoId, 1000)) continue; // another tab holds it or is sending it: asked again next round
     _photoChecked.add(c.photoId);
-    if(held){ if(!_photoKept.has(c.photoId)) _photoKept.set(c.photoId, held); photoUpload(c.photoId, held.data); continue; } // kept here: sent from here
     _photoLost.add(c.photoId);
     changes.push({ visitId: c.visitId, photoId: c.photoId, lost: true });
   }
-  if(!changes.length) return;
+  if(!changes.length){
+    if(typeof visitsIndexOwed === 'function' && visitsIndexOwed()) await patchVisitPhotos([]); // a month's revision still to move (04) — a look-up that found nothing never holds it back
+    return;
+  }
   const res = await patchVisitPhotos(changes);
   let moved = 0;
   changes.forEach(c => {
@@ -673,16 +706,21 @@ function photoStaleText(days){ return days + ' days now — it can only come fro
 // lost before they uploaded ({lost: true}: only the thumbnail exists).
 function photoWaitHTML(v){
   const ps = ((v && v.photos) || []).filter(p => p);
-  const waiting = ps.filter(p => p.pending), lost = ps.filter(p => p.lost && !p.pending);
+  // this phone knows before its mark's save lands: one it saw land is not
+  // waiting, one it found in no store and not in the cloud is lost
+  const waiting = ps.filter(p => p.pending && !_photoLanded.has(p.id) && !_photoLost.has(p.id));
+  const lost = ps.filter(p => !_photoLanded.has(p.id) && ((p.lost && !p.pending) || (p.pending && _photoLost.has(p.id))));
+  const me = photoDevice();
   let out = '';
   if(waiting.length){
     let here = 0, mem = 0, old = 0;
-    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r){ if(photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r){ if(p.dev !== me && photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
     const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
     if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
     if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");
-    // not on this phone for days: it can only come from the phone that took
-    // it — which may no longer have it (its data cleared, the phone replaced)
+    // another phone's photo, not here for days: it can only come from the
+    // phone that took it — which may no longer have it (its data cleared, the
+    // phone replaced). Never said of this phone's own: it holds it, sends it or settles it.
     if(old) parts.push(photoStaleText(old));
     out += `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(parts.join(' · '))}</div>`;
   }
@@ -751,8 +789,10 @@ async function showLightbox(photoId, cap, direct){
     if(ph && ph.thumb && (ph.pending || ph.lost)){
       img.src = ph.thumb;
       img.style.cssText = 'width:min(100%, 520px); height:auto; object-fit:contain;';
-      const days = ph.pending ? photoWaitDays(ph) : 0;
-      lbNote(!ph.pending ? PHOTO_LOST_1 : days >= PHOTO_STALE_DAYS
+      const own = ph.dev && ph.dev === photoDevice();
+      const days = ph.pending && !own ? photoWaitDays(ph) : 0;
+      lbNote(ph.pending && _photoLanded.has(photoId) ? '⏳ The full photo is in the cloud — it shows when this phone is connected; this is its small preview'
+        : (!ph.pending || _photoLost.has(photoId)) ? PHOTO_LOST_1 : days >= PHOTO_STALE_DAYS
         ? '⏳ The full photo has not arrived in ' + days + ' days — it can only come from the phone that took it, if that phone still has it. This is its small preview'
         : '⏳ The full photo is still waiting to upload from the phone that took it — this is its small preview');
     }
