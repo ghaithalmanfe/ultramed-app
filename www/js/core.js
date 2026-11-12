@@ -747,11 +747,11 @@
     }
     return prev[b.length];
   }
-  // ERP salesman names rarely equal app rep names ("Ranova Ayman Mohammed" vs
+  // ERP salesman names rarely equal app rep names ("Ranova Sample Person" vs
   // "Renova"). Guess by comparing each name token with edit distance ≤ 2.
-  // An ERP salesman name ("Ghaith Al Manfe", "Ranova Ayman Mohammed") is
+  // An ERP salesman name ("Ghaith Al Sample", "Ranova Sample Person") is
   // matched to an app rep by any name part: the rep's own name parts count
-  // too, so "Dr. Ghaith" in the app still finds "Ghaith Al Manfe" — titles
+  // too, so "Dr. Ghaith" in the app still finds "Ghaith Al Sample" — titles
   // (Dr, Mr, Mrs) and parts under 3 letters never match on their own.
   var NAME_TITLES = { dr: 1, mr: 1, mrs: 1, ms: 1, miss: 1, eng: 1, prof: 1 };
   function nameParts(s){
@@ -813,7 +813,7 @@
     if(!n) return { clinicId: null, channel: false, method: 'none' };
     var toks = n.split(' ');
     // Token-overlap scoring; collect EVERY clinic tied at the top score so two
-    // branches of the same clinic ("Aline Salmiya" vs "Aline Hawally") are
+    // branches of the same clinic ("Orion Salmiya" vs "Orion Hawally") are
     // never silently merged — a tie is reported as ambiguous, not guessed.
     var bestScore = 0, tied = [];
     (clinics || []).forEach(function(c){
@@ -848,7 +848,7 @@
     }
     return { clinicId: null, channel: false, method: 'none' };
   }
-  // Branches of one clinic ("Aline Salmiya" / "Aline Hawally") form a FAMILY:
+  // Branches of one clinic ("Orion Salmiya" / "Orion Hawally") form a FAMILY:
   // same rep, same distinctive first name-token (4+ chars, so "New X"/"New Y"
   // never merge on a generic word). Sales and returns are aggregated per
   // family so one clinic never LOOKS invoiced or returned twice just because
@@ -877,7 +877,7 @@
       var ids = group.map(function(c){ return c.id; }).sort();
       var tok = key.split('|')[0];
       // Human label: the original word whose normalized form IS the family
-      // token ("Aline"), never a noise word like "Dr." that norm discards.
+      // token ("Orion"), never a noise word like "Dr." that norm discards.
       var lead = tok;
       var words = String(group[0].name || '').trim().split(/\s+/);
       for(var i = 0; i < words.length; i++){
@@ -1236,7 +1236,7 @@
   // The team's own spreadsheets are messy by nature: a title row above the
   // header, several people columns ("Doctor", "Dentist", "Hygienist"), a
   // phone column called "Contact Number", a name cell that also carries the
-  // role and the clinic ("Maram Aline Hygenist"), abbreviations for clinics,
+  // role and the clinic ("Lina Aline Hygenist"), abbreviations for clinics,
   // and the same person repeated across sheets. Everything below exists to
   // turn that into clean, de-duplicated contacts attached to the right clinic.
   var PERSON_HDR = /hygien|dentist|doctor|dr\.?\s|contact\s*name|^name$|physician|staff|person|طبيب|دكتور|^اسم$|اسم (الطبيب|الدكتور|الشخص|جهة الاتصال|الممرض)/i;
@@ -1278,7 +1278,7 @@
     var t = normClinicHint(h);
     if(t.length < 2 || /^ksa$/.test(t)) return false;
     var toks = t.split(' ').filter(Boolean);
-    // "SN", "Dental 8" carry a real identifier; "H", "Dental", "Clinic" do not
+    // "QX", "Dental 5" carry a real identifier; "H", "Dental", "Clinic" do not
     return toks.some(function(w){ return PURE_NOISE.indexOf(w) < 0 && (w.length >= 2 || /^\d$/.test(w)) && (w.length >= 2 || toks.length > 1); });
   }
   function isAreaHint(h){ var t = normClinicHint(h).split(' ').filter(Boolean); return t.length > 0 && t.every(function(w){ return AREA_WORDS.indexOf(w) >= 0 || /^\d+$/.test(w); }); }
@@ -1304,7 +1304,7 @@
     if(/^\d|\d{3,}/.test(t) || NOT_A_PERSON.test(t)) return false;   // "No Hygienist", "1 / Arab", "Floater", a phone number
     return /[A-Za-z؀-ۿ]{3}/.test(t);
   }
-  // "Ms. Bidya, Ms.Abby and Ms.Moly" → three people
+  // "Ms. Dima, Ms.Ruby and Ms.Mimi" → three people
   function splitPeople(cell){
     var t = String(cell || '').trim();
     if(!/(,|&|\band\b|\+)/i.test(t)) return [t];
@@ -1312,9 +1312,9 @@
     if(parts.length < 2 || !parts.every(looksLikeName)) return [t];
     return parts;
   }
-  // "Maram Aline Hygenist" → {name:'Maram', hint:'Aline', title:'Hygienist'}
-  // "Dr Aseel Yousfan Hygenist Nael Hazem" → name 'Dr Aseel Yousfan', hint 'Nael Hazem'
-  // "Dana El Shatty Kuwait Hospital Hyg" → name 'Dana El Shatty', hint 'Kuwait Hospital'
+  // "Lina Aline Hygenist" → {name:'Lina', hint:'Aline', title:'Hygienist'}
+  // "Dr Hala Example Hygenist Nael Hazem" → name 'Dr Hala Example', hint 'Nael Hazem'
+  // "Dana El Sample Kuwait Hospital Hyg" → name 'Dana El Sample', hint 'Kuwait Hospital'
   function splitPersonHint(raw, clinics){
     var s = String(raw || '').replace(/[“”"]/g, ' ').replace(/\s+/g, ' ').trim();
     var m = s.match(HYG_TOKEN);
@@ -1328,17 +1328,17 @@
     after = after.replace(fill, ' ').replace(/\s+/g, ' ').trim();
     var name = before.replace(/[.,]+$/, '').trim(), hint = after, area = '';
     if(hint && isAreaHint(hint)){ area = hint; hint = ''; }      // "iane Bayan Hygenist Jahra" → Jahra is where, not who
-    if(!name && after){                              // "Hygeinist Anwar New Care" → the name follows the role
+    if(!name && after){                              // "Hygeinist Rana Sample Care" → the name follows the role
       var w = after.split(' '); name = w[0]; hint = w.slice(1).join(' ');
     } else if(!hint){
       var words = name.split(/\s+/);
       var ci = -1;
       for(var i = 0; i < words.length; i++) if(CLINIC_WORD.test(words[i])){ ci = i; break; }
-      if(ci >= 0){                                   // "Marlyn. Gulf Clinic" / "Pia Asnan Tower"
+      if(ci >= 0){                                   // "Rina. Bayside Clinic" / "Mia Asnan Tower"
         var cut = Math.max(1, ci - 1);
         hint = words.slice(cut).join(' '); name = words.slice(0, cut).join(' ');
       } else if(words.length >= 2){
-        // "Maram Aline" / "Dr Ghoson Al Ali Moh": the shortest tail that names a clinic we know, or an abbreviation we expand
+        // "Lina Aline" / "Dr Rana Al Demo Moh": the shortest tail that names a clinic we know, or an abbreviation we expand
         for(var k = words.length - 1; k >= 1; k--){
           var tail = words.slice(k).join(' ');
           var aliased = normClinicHint(tail) !== tail.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -1710,6 +1710,114 @@
   // deleted: 'bin' | 'log' | null }] (owner, then name), people: [{ rep, now,
   // most, mostDate }] (open clinics per owner now, and the most any backup had),
   // offTeam: owners of live or missing clinics who are not on the team list }.
+  // The name the app itself wrote down for a clinic: the follow-up task a visit
+  // sets reads "Follow up: <the clinic's name>" and carries the clinic's id
+  // (06-log-visit.js). For clinics that lost their name (the August restore's
+  // "⚠️ Restored clinic — rename me"), the newest such task gives it back: the
+  // id links them, nothing is matched by spelling. → { clinicId: name }
+  var FOLLOW_UP_TASK = 'Follow up: ';
+  function clinicNamesFromTasks(tasks, ids){
+    var want = Object.create(null), best = Object.create(null), out = Object.create(null);
+    (ids || []).forEach(function(id){ if(id != null) want[id] = 1; });
+    (Array.isArray(tasks) ? tasks : []).forEach(function(t){
+      if(!t || t.kind !== 'followup' || t.clinicId == null || !want[t.clinicId] || typeof t.text !== 'string') return;
+      if(t.text.indexOf(FOLLOW_UP_TASK) !== 0) return;
+      var name = t.text.slice(FOLLOW_UP_TASK.length).trim(), at = String(t.created || '');
+      if(!name || /rename me/i.test(name)) return;
+      if(!best[t.clinicId] || at > best[t.clinicId].at) best[t.clinicId] = { at: at, name: name };
+    });
+    Object.keys(best).forEach(function(id){ out[id] = best[id].name; });
+    return out;
+  }
+  // What giving clinics back would change in the sales figures: every ERP line
+  // that would count for ANOTHER person once `add` joins the list (a name
+  // starting to match an account; the rule of every figure, erpRowRep). A line
+  // that only changes clinic for the same person is not a move.
+  function erpAddClinicMoves(data, add, cache){
+    data = data || {};
+    var out = [];
+    if(!(add || []).length) return out;
+    var c0 = data.clinics || [], c1 = c0.concat(add), map = data.erpMap || {};
+    // `cache` (an empty object the caller keeps): the lines grouped by account
+    // and the matches before, read once for several checks on the SAME list
+    var k = cache || {};
+    var famKey = function(c){
+      var tok = normClinicName(c && c.name).split(' ')[0] || '';
+      return c && c.rep && tok.length >= 4 ? tok + '|' + c.rep + '|' + familyTypeSig(c.name) : null;
+    };
+    var normOf = function(s){ var t = normClinicName(s); return { toks: t ? t.split(' ') : [], flat: t.replace(/ /g, '') }; };
+    if(!k.byName){
+      k.byName = Object.create(null); k.names = []; k.norm = Object.create(null); k.fams = Object.create(null);
+      erpEachLine(data.erpSales, function(r, p, n){ (k.byName[n] || (k.names.push(n), k.norm[n] = normOf(n), k.byName[n] = [])).push([r, p.repMap || {}]); });
+      c0.forEach(function(c){ var f = famKey(c); if(f) k.fams[f] = 1; });
+      k.m0 = erpMatcher(c0, map);
+    }
+    // matchCustomer can only answer differently for a name an added clinic
+    // could take part in: a shared word (the token pass), one name inside the
+    // other (the spelling pass) — unless the clinic joins a branch family, which
+    // can change other names' answers: then every name is checked
+    var X = add.map(function(c){ return normOf(c && c.name); });
+    var all = add.some(function(c){ var f = famKey(c); return !!f && !!k.fams[f]; });
+    var touches = function(nn){
+      return X.some(function(x){
+        if(nn.toks.some(function(t){ return x.toks.indexOf(t) >= 0; })) return true;
+        return nn.flat.length >= 4 && x.flat.length >= 4 && (x.flat.indexOf(nn.flat) >= 0 || nn.flat.indexOf(x.flat) >= 0);
+      });
+    };
+    // an account linked by hand (erpMap) to a returning clinic's own id counts at
+    // no clinic while that id is missing from the list, and at the clinic once it
+    // is back — the raw match is the same both times, so it is always checked
+    var addIds = Object.create(null);
+    add.forEach(function(c){ if(c && c.id != null) addIds[c.id] = 1; });
+    var linkedHere = function(n){ return Object.prototype.hasOwnProperty.call(map, n) && addIds[map[n]] === 1; };
+    var m1 = erpMatcher(c1, map);
+    k.names.forEach(function(n){
+      var linked = linkedHere(n);
+      if(!all && !linked && !touches(k.norm[n])) return;
+      var a = k.m0(n), b = m1(n);
+      if(!linked && (a && a.clinicId) === (b && b.clinicId) && (a && a.method) === (b && b.method)) return;
+      k.byName[n].forEach(function(x){
+        var r = x[0], ra = erpRepOfMatch(a, r, c0, x[1]), rb = erpRepOfMatch(b, r, c1, x[1]);
+        if(ra !== rb) out.push({ customer: n, date: r.date || null, from: ra, to: rb, net: Number(r.net) || 0 });
+      });
+    });
+    return out;
+  }
+  // People a clinic's visits met whose record is gone from its doctor list
+  // (most lost in August–September, before visits kept the names of the people
+  // met): one entry per doctor id, with the visits that name it, newest first.
+  // A doctor deleted in the app (delete log key "clinicId|doctorId") is not
+  // lost. One pass over the visits. → { clinicId: [{ id, name, visits }] }
+  function lostDoctors(clinics, visits, deleted){
+    var byId = Object.create(null), have = Object.create(null), found = Object.create(null), out = Object.create(null);
+    (clinics || []).forEach(function(c){
+      if(!c || c.id == null) return;
+      byId[c.id] = c; have[c.id] = Object.create(null);
+      (Array.isArray(c.doctors) ? c.doctors : []).forEach(function(d){ if(d && d.id != null) have[c.id][d.id] = 1; });
+    });
+    var gone = function(k){ return !!deleted && (typeof deleted.has === 'function' ? deleted.has(k) : !!deleted[k]); };
+    (visits || []).forEach(function(v){
+      if(!v || v.clinicId == null || !byId[v.clinicId]) return;
+      // the people met, and anyone a prescription line on the visit names
+      var rxIds = (Array.isArray(v.rx) ? v.rx : []).map(function(x){ return x && x.doctorId; }).filter(function(x){ return x != null && x !== ''; });
+      var cid = v.clinicId, ids = (Array.isArray(v.doctorIds) ? v.doctorIds : []).concat(v.doctorId ? [v.doctorId] : [], rxIds), seen = Object.create(null);
+      ids.forEach(function(id){
+        if(id == null || id === '' || seen[id] || have[cid][id] || gone(cid + '|' + id)) return;
+        seen[id] = 1;
+        var F = found[cid] || (found[cid] = Object.create(null));
+        var e = F[id] || (F[id] = { id: id, name: '', visits: [] });
+        e.visits.push({ id: v.id, date: v.date || '', rep: v.rep || '', notes: String(v.notes || '').trim() });
+        if(!e.name && v.doctorNames && v.doctorNames[id]) e.name = String(v.doctorNames[id]);
+      });
+    });
+    var desc = function(a, b){ return a < b ? 1 : a > b ? -1 : 0; };
+    Object.keys(found).forEach(function(cid){
+      out[cid] = Object.keys(found[cid]).map(function(id){
+        var e = found[cid][id]; e.visits.sort(function(a, b){ return desc(a.date, b.date); }); return e;
+      }).sort(function(a, b){ return desc(a.visits[0].date, b.visits[0].date); });
+    });
+    return out;
+  }
   function clinicsMissingFromBackups(current, snaps, opts){
     opts = opts || {};
     var live = Object.create(null), bin = Object.create(null), log = Object.create(null), team = Object.create(null);
@@ -3732,7 +3840,7 @@
   }
   // Matches each distribution row to app clinics and returns the plan:
   // exact names (or the ERP name map) first, then the branch-aware hint
-  // matcher, then a whole branch family ("Aline Dental Centers" → every Aline
+  // matcher, then a whole branch family ("Orion Dental Centers" → every Orion
   // branch); a pharmacy is only taken when the account says pharmacy, and a
   // clinic named exactly by one row is never swept up by another's family.
   function planDistribution(dist, clinics, erpMap, since){
@@ -3752,15 +3860,15 @@
     dist.rows.forEach(function(r, i){
       if(found[i]) return;
       var wantsPh = isPh(r.account), free = live.filter(function(c){ return claimed[c.id] == null && isPh(c.name) === wantsPh; });
-      // A group account ("Aline Dental Centers", "NHC - Dr. Nael Al Hazeem
+      // A group account ("Orion Dental Centers", "DFC - Dr. Faris Al Sample
       // Dental Centers") covers every branch whose name holds all its words;
       // any other account must carry exactly the same words as one clinic, so
-      // "Dr.Teeth … Shaab" never lands on the Mangaf branch.
+      // "Smile Hub … Shaab" never lands on the Mangaf branch.
       var group = /\b(centers|centres|clinics|branches)\b/i.test(r.account) || /^\s*[A-Z]{2,5}\s*-\s*/.test(r.account);
       var ht = toks(r.account.replace(/\b(centers|centres|clinics|branches)\b/ig, '').replace(/^\s*[A-Z]{2,5}\s*-\s*/, ''));
       var hits = free.filter(function(c){ var ct = toks(c.name); return group ? sub(ht, ct) : (sub(ht, ct) && sub(ct, ht)); });
       if(!hits.length){
-        // Only a near name ("Meena Dental" for "Meena Dental Speciality
+        // Only a near name ("Sample Dental" for "Sample Dental Speciality
         // Center"): never moved on a guess — fine if it is already right,
         // otherwise listed for a manual look.
         var GEN = ['hospital', 'moh', 'care', 'services', 'service', 'speciality', 'specialty', 'ph', 'health', 'centre', 'polyclinic'];
@@ -3862,7 +3970,7 @@
         });
         if(byArea.length) pool = byArea;
       }
-      if(pool.length > 1){                           // "Gulf Clinic" vs "Gulf Medical Service": count every word, not just the rare ones
+      if(pool.length > 1){                           // "Bayside Clinic" vs "Bayside Medical Service": count every word, not just the rare ones
         var ht = fullTokens(h), best = -1, bestIds = [];
         pool.forEach(function(id){ var c = clinics.find(function(x){ return x.id === id; }); var ct = fullTokens(c ? c.name : ''); var ov = ht.filter(function(t){ return ct.indexOf(t) >= 0; }).length; if(ov > best){ best = ov; bestIds = [id]; } else if(ov === best) bestIds.push(id); });
         if(bestIds.length === 1 && best > 0) pool = bestIds;
@@ -4428,7 +4536,7 @@
   }
   // ==== RETURNS OF EARLIER INVOICES ====
   // A return document names the invoice it reverses in its remarks
-  // ("Philip SINV0076017"). When that invoice belongs to an earlier month,
+  // ("Philip SINV1234"). When that invoice belongs to an earlier month,
   // the ERP still deducts the return in the month it was booked — so a rep's
   // new month opens with last month's goods coming back. The 'origin' policy
   // moves such returns to the month of the original invoice instead.
@@ -4611,6 +4719,44 @@
     var have = {};
     var merged = (local || []).filter(Boolean).slice();
     merged.forEach(function(d){ have[d.id] = 1; });
+    (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
+    return dedupeDoctors(merged);
+  }
+  // ---- Three-way merge of one shared record (v121) ----
+  // A phone used to save its whole copy of every record: whatever another
+  // phone had changed meanwhile was undone, even in records this phone never
+  // touched. `base` is the record as the cloud last confirmed it to THIS
+  // phone (read from it or written by it). Field by field: changed here only
+  // → this phone's value; changed in the cloud only → the cloud's; changed on
+  // both → this phone's (the newest save, as before) or `fieldMerge[k]` when
+  // given. No base, or the record missing on a side → this phone's copy, as
+  // before. Never mutates its inputs. `fromCloud`: the result took anything
+  // from the cloud (the caller then shows the merged copy).
+  function sameValue(a, b){ return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); }
+  function merge3Record(local, cloud, base, fieldMerge){
+    if(!local || !cloud || !base || typeof local !== 'object' || typeof cloud !== 'object' || typeof base !== 'object') return { value: local, fromCloud: false };
+    var out = {}, took = false, seen = {}, keys = [];
+    [local, cloud].forEach(function(o){ Object.keys(o).forEach(function(k){ if(!seen[k]){ seen[k] = 1; keys.push(k); } }); });
+    keys.forEach(function(k){
+      var L = local[k], C = cloud[k], B = base[k];
+      var mine = !sameValue(L, B), theirs = !sameValue(C, B), v = L;
+      if(theirs && !mine){ v = C; took = true; }
+      else if(theirs && mine && fieldMerge && typeof fieldMerge[k] === 'function'){ v = fieldMerge[k](L, C, B); if(!sameValue(v, L)) took = true; }
+      if(v !== undefined) out[k] = v;
+    });
+    return took ? { value: out, fromCloud: true } : { value: local, fromCloud: false };
+  }
+  // A clinic's doctors when both phones changed the list: one record per
+  // person, each doctor merged field by field against the base (a doctor
+  // added on either side is kept, as before; deletions are the delete log's).
+  function mergeDoctorLists3(local, cloud, base){
+    var b = {}, c = {}, have = {};
+    (base || []).forEach(function(d){ if(d && d.id != null) b[d.id] = d; });
+    (cloud || []).forEach(function(d){ if(d && d.id != null) c[d.id] = d; });
+    var merged = (local || []).filter(Boolean).map(function(d){
+      have[d.id] = 1;
+      return (c[d.id] && b[d.id]) ? merge3Record(d, c[d.id], b[d.id]).value : d;
+    });
     (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
     return dedupeDoctors(merged);
   }
@@ -4941,11 +5087,19 @@
   // in the ERP files under a brand the catalog has nothing of (services,
   // delivery, packaging, marketing items and kits excluded). Each comes with
   // the usual invoiced unit price (gross ÷ qty, most frequent), how many were
-  // sold and the last invoice date. Nothing is added here — the supervisor
-  // ticks what to add. Pure.
+  // sold and the last invoice date. A list item that carries no price (the
+  // code ships none since v121 — it is public) takes the same usual invoiced
+  // price from the rows, or none when the files never sold it. Nothing is
+  // added here — the supervisor ticks what to add. Pure.
   var NON_PRODUCT_RE = /maintenance|delivery|packaging|service|marketing|inspection fee|freight|shipping/i;
+  function usualUnitPrice(prices){                  // {unit price: lines} → the most frequent, the higher on a tie
+    var best = null;
+    Object.keys(prices || {}).forEach(function(u){ if(best == null || prices[u] > prices[best] || (prices[u] === prices[best] && +u > +best)) best = u; });
+    return best == null ? null : +best;
+  }
   function catalogGaps(products, rows, builtIn){
     var key = function(n){ return String(n || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+    var unit = function(r){ return r.qty > 0 && r.gross > 0 ? Math.round(r.gross / r.qty * 1000) / 1000 : null; };
     var names = {}, ids = {}, brands = {};
     (products || []).forEach(function(p){ if(!p) return; names[key(p.name)] = 1; if(p.id != null) ids[key(p.id)] = 1; brands[normBrand(p.brand)] = 1; });
     var out = [], taken = {};
@@ -4955,23 +5109,71 @@
       var c = {}; for(var k in p) c[k] = p[k];
       out.push({ product: c, source: 'list', sold: 0, last: null });
     });
-    var agg = {}, listIdx = {};
+    var agg = {}, listIdx = {}, listPrices = {};
     out.forEach(function(x, i){ listIdx[key(x.product.name)] = i; });
     (rows || []).forEach(function(r){
-      var b = normBrand(r.brand), k = key(r.product);
-      if(listIdx[k] != null && r.type !== 'return'){ var li = out[listIdx[k]]; li.sold += Number(r.qty) || 0; if(!li.last || r.date > li.last) li.last = r.date; }
+      var b = normBrand(r.brand), k = key(r.product), u = unit(r);
+      if(listIdx[k] != null && r.type !== 'return'){
+        var li = out[listIdx[k]]; li.sold += Number(r.qty) || 0; if(!li.last || r.date > li.last) li.last = r.date;
+        if(u != null){ var lp = listPrices[k] || (listPrices[k] = {}); lp[u] = (lp[u] || 0) + 1; }
+      }
       if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(r.product || '') || b === 'bundles' || brands[b] || names[k] || taken[k]) return;
       var a = agg[k] || (agg[k] = { name: String(r.product).replace(/\s+/g, ' ').trim(), brand: String(r.brand || 'Other').trim(), prices: {}, sold: 0, last: '' });
-      if(r.qty > 0 && r.gross > 0){ var u = Math.round(r.gross / r.qty * 1000) / 1000; a.prices[u] = (a.prices[u] || 0) + 1; }
+      if(u != null) a.prices[u] = (a.prices[u] || 0) + 1;
       if(r.type !== 'return'){ a.sold += Number(r.qty) || 0; if(r.date > a.last) a.last = r.date; }
     });
+    out.forEach(function(x){ if(x.product.price == null) x.product.price = usualUnitPrice(listPrices[key(x.product.name)]); });
     Object.keys(agg).forEach(function(k){
-      var a = agg[k], best = null;
-      Object.keys(a.prices).forEach(function(u){ if(best == null || a.prices[u] > a.prices[best] || (a.prices[u] === a.prices[best] && +u > +best)) best = u; });
-      out.push({ product: { id: 'erp-' + slugify(a.name), name: a.name, brand: a.brand, cat: a.brand, price: best == null ? null : +best, stock: true },
+      var a = agg[k];
+      out.push({ product: { id: 'erp-' + slugify(a.name), name: a.name, brand: a.brand, cat: a.brand, price: usualUnitPrice(a.prices), stock: true },
         source: 'erp', sold: a.sold, last: a.last || null });
     });
     return out.sort(function(x, y){ return x.product.brand.localeCompare(y.product.brand) || (x.source === y.source ? 0 : x.source === 'list' ? -1 : 1) || x.product.name.localeCompare(y.product.name); });
+  }
+  // ==== DUPLICATE SKUs / BARCODES (review only) ====
+  // The owner's request (v121): products that share an item code (the
+  // catalog's `id`: the store / ERP SKU) or a barcode are listed for a person
+  // to review — nothing is merged or deleted, here or on screen. Codes compare
+  // trimmed and case-blind; barcodes as GTINs (digits only, leading zeros
+  // dropped: a 12-digit UPC and the same code written as a 13-digit EAN are one
+  // barcode), and fewer than 6 digits is no barcode. Biggest groups first, then
+  // by value. Pure: the list is never changed.
+  function productDuplicates(products){
+    var norms = {
+      sku: function(v){ return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toUpperCase(); },
+      barcode: function(v){ var d = String(v == null ? '' : v).replace(/\D/g, '').replace(/^0+/, ''); return d.length >= 6 ? d : ''; }
+    };
+    var out = { sku: [], barcode: [], products: 0 }, inGroup = {};
+    ['sku', 'barcode'].forEach(function(kind){
+      var by = {}, order = [];
+      (products || []).forEach(function(p, i){
+        if(!p || typeof p !== 'object') return;
+        var raw = kind === 'sku' ? p.id : p.barcode, k = norms[kind](raw);
+        if(!k) return;
+        if(!Object.prototype.hasOwnProperty.call(by, k)){ by[k] = []; order.push(k); }
+        by[k].push({ index: i, key: String(p._key != null ? p._key : (p.id == null ? '' : p.id)), id: p.id == null ? '' : String(p.id),
+          name: String(p.name || ''), brand: String(p.brand || ''), barcode: p.barcode == null ? '' : String(p.barcode), price: typeof p.price === 'number' ? p.price : null });
+      });
+      order.forEach(function(k){ if(by[k].length > 1){ out[kind].push({ kind: kind, value: k, items: by[k] }); by[k].forEach(function(x){ inGroup[x.index] = 1; }); } });
+      out[kind].sort(function(a, b){ return b.items.length - a.items.length || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0); });
+    });
+    out.products = Object.keys(inGroup).length;
+    return out;
+  }
+  // The review report: one tab-separated line per product in a group, to paste
+  // into a sheet; a cell that would run as a formula is pasted as text.
+  function productDuplicatesReport(d){
+    var cell = function(v){
+      var s = String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ').trim();
+      return /^[=@]/.test(s) || (/^[+-]/.test(s) && !/^[+-]\d+(\.\d+)?$/.test(s)) ? "'" + s : s;
+    };
+    var lines = [['Shared', 'Value', 'Product', 'Brand', 'Item code', 'Barcode', 'Price (KD)'].join('\t')];
+    [['sku', 'Item code'], ['barcode', 'Barcode']].forEach(function(k){
+      ((d && d[k[0]]) || []).forEach(function(g){ (g.items || []).forEach(function(x){
+        lines.push([k[1], g.value, x.name, x.brand, x.id, x.barcode, typeof x.price === 'number' ? x.price.toFixed(3) : ''].map(cell).join('\t'));
+      }); });
+    });
+    return lines.join('\n');
   }
   function normBrand(s){
     var key = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -5593,6 +5795,516 @@
     return out;
   }
 
+  // ---- Full backup to this device (v120): every cloud document in one file ----
+  // The daily backups (snap_*) sit in the same database as the data and keep
+  // only part of it, so the supervisor can take EVERYTHING off the cloud in one
+  // file (Export → "Full backup", 13-exports.js): every document of the cloud
+  // collection "state" — the daily backups too — each value exactly as stored.
+  // The phone reads the cloud part by part and writes the file as it goes, so
+  // it never holds the whole account in memory. These helpers are the whole
+  // logic of that file, shared as they are by scripts/backup/verify.js (the
+  // integrity check, counts per key) and scripts/backup/restore.js (into a TEST
+  // cloud only — never from the app).
+  //
+  // The file (format 2):
+  //   { kind, format, app, project, takenAt, takenBy, note,
+  //     data:      { key: { value: <the stored text>, updated: ms|null } }   every cloud document
+  //     pending:   { key: { value: <this phone's copy>|null, from } }       this phone's changes the cloud did not
+  //                                                                          have yet (the outbox) — NOT the cloud copy
+  //     manifest:  { documents, bytes, parts: [{ key, set, updated, bytes, sha256, counts }],
+  //                  pending: [{ key, from, bytes, sha256 }] },
+  //     inventory: [ one line per data set ],
+  //     integrity: { algorithm: 'sha256', of: 'backupCanonical', sha256 } }
+  // bytes = the UTF-8 length of the stored text, sha256 = of those bytes,
+  // counts = what that one document holds ({clinics: 17, doctors: 3},
+  // {lines: 1200}, {visits: 312} …; null when it does not read as the data its
+  // name says). integrity.sha256 covers the header and the whole manifest, so a
+  // changed, missing or added part, a changed count or header is caught.
+  var BACKUP_KIND = 'ultramed-full-backup', BACKUP_FORMAT = 2;
+  var BACKUP_NOTE = 'Every document of the cloud collection "state" (the daily backups too), each value exactly as stored (data). ' +
+    'pending = changes saved on this phone that had not reached the cloud when the backup was taken: NOT part of the cloud copy, never written by a restore. ' +
+    'manifest = every part with its UTF-8 size, sha256 and record counts; integrity.sha256 = sha256 of the canonical manifest. ' +
+    'Check: node scripts/backup/verify.js <file>. Restore (a test cloud only): node scripts/backup/restore.js <file> --into <name>.test-cloud.json';
+  // UTF-8 exactly as the browser's TextEncoder and Node's Buffer write it: a
+  // lone surrogate becomes U+FFFD (3 bytes).
+  function utf8Len(s){
+    s = String(s == null ? '' : s);
+    var n = 0;
+    for(var i = 0; i < s.length; i++){
+      var c = s.charCodeAt(i);
+      if(c < 0x80) n += 1;
+      else if(c < 0x800) n += 2;
+      else if(c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xFC00) === 0xDC00){ n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+  function utf8Bytes(s){
+    s = String(s == null ? '' : s);
+    var out = new Uint8Array(utf8Len(s)), j = 0;
+    for(var i = 0; i < s.length; i++){
+      var c = s.charCodeAt(i);
+      if(c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length && (s.charCodeAt(i + 1) & 0xFC00) === 0xDC00){ c = 0x10000 + ((c - 0xD800) << 10) + (s.charCodeAt(i + 1) - 0xDC00); i++; }
+      else if(c >= 0xD800 && c <= 0xDFFF) c = 0xFFFD;
+      if(c < 0x80) out[j++] = c;
+      else if(c < 0x800){ out[j++] = 0xC0 | (c >> 6); out[j++] = 0x80 | (c & 63); }
+      else if(c < 0x10000){ out[j++] = 0xE0 | (c >> 12); out[j++] = 0x80 | ((c >> 6) & 63); out[j++] = 0x80 | (c & 63); }
+      else { out[j++] = 0xF0 | (c >> 18); out[j++] = 0x80 | ((c >> 12) & 63); out[j++] = 0x80 | ((c >> 6) & 63); out[j++] = 0x80 | (c & 63); }
+    }
+    return out;
+  }
+  // SHA-256 (FIPS 180-4) of a string's UTF-8 bytes, or of a Uint8Array, as
+  // hex — the phone's own fallback when crypto.subtle is missing (an old
+  // WebView); unit-tested against Node's crypto.
+  var SHA256_K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  function sha256Hex(input){
+    var m = typeof input === 'string' ? utf8Bytes(input) : (input instanceof Uint8Array ? input : utf8Bytes(String(input == null ? '' : input)));
+    var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var w = new Int32Array(64), K = SHA256_K;
+    var block = function(b, o){
+      for(var t = 0; t < 16; t++) w[t] = (b[o + 4 * t] << 24) | (b[o + 4 * t + 1] << 16) | (b[o + 4 * t + 2] << 8) | b[o + 4 * t + 3];
+      for(t = 16; t < 64; t++){
+        var x = w[t - 15], y = w[t - 2];
+        var s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+        var s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+        w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+      }
+      var a = H[0], bb = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+      for(t = 0; t < 64; t++){
+        var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        var t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[t] + w[t]) | 0;
+        var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        var t2 = (S0 + ((a & bb) ^ (a & c) ^ (bb & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a) | 0; H[1] = (H[1] + bb) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+      H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+    };
+    var len = m.length, full = len - (len % 64);
+    for(var off = 0; off < full; off += 64) block(m, off);
+    var tail = new Uint8Array((len % 64) < 56 ? 64 : 128);
+    tail.set(m.subarray(full)); tail[len - full] = 0x80;
+    var hi = Math.floor(len / 0x20000000), lo = (len % 0x20000000) * 8;   // the length in bits, 64-bit big-endian
+    for(var i = 0; i < 4; i++){ tail[tail.length - 8 + i] = (hi >>> (24 - 8 * i)) & 255; tail[tail.length - 4 + i] = (lo >>> (24 - 8 * i)) & 255; }
+    for(off = 0; off < tail.length; off += 64) block(tail, off);
+    return H.map(function(v){ return ('0000000' + (v >>> 0).toString(16)).slice(-8); }).join('');
+  }
+  var _isArr = Array.isArray;
+  var _isObj = function(v){ return !!v && typeof v === 'object' && !_isArr(v); };
+  var _ownKeys = function(o){ return _isObj(o) ? Object.keys(o) : []; };
+  var _len = function(v){ return v.filter(function(x){ return x != null; }).length; };
+  var _arrDoc = function(unit){ return function(k, v){ if(!_isArr(v)) return null; var c = {}; c[unit] = _len(v); return { counts: c }; }; };
+  var _objDoc = function(unit){ return function(k, v){ if(!_isObj(v)) return null; var c = {}; c[unit] = Object.keys(v).length; return { counts: c }; }; };
+  // Stable text of a small value (object keys sorted): counts are compared by it.
+  function _canon(v){
+    if(_isArr(v)) return '[' + v.map(_canon).join(',') + ']';
+    if(_isObj(v)) return '{' + Object.keys(v).sort().map(function(k){ return JSON.stringify(k) + ':' + _canon(v[k]); }).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  // The data sets a person recognises, in the order the screen and the verify
+  // script list them. keys / prefixes claim the documents (every key the app
+  // stores is claimed — tests/core.test.js reads the app's code to check it; a
+  // document no set claims is still in the file, listed by its name).
+  // doc(key, value) reads ONE stored value (parsed JSON; the text itself for
+  // `raw` sets) → { counts, …what the set needs to add its documents up }, or
+  // null when it is not the data its name says. sum(documents, unreadable)
+  // gives the set's line; without it the set adds up counts[unit].
+  // daily: what the daily backup keeps of it ('yes', 'month' = this month's
+  // visits only, 'list' = the list of sales files without their lines, 'no',
+  // 'self' = the daily backups themselves).
+  var BACKUP_SETS = [
+    { id: 'visits', label: 'Visits', unit: 'visits', daily: 'month', keys: ['visits', 'visitsIndex'], prefixes: [VISITS_ARCH_PREFIX],
+      doc: function(k, v){
+        if(k === 'visitsIndex'){
+          if(!_isObj(v)) return null;
+          var ms = _isArr(v.months) ? v.months.filter(function(m){ return typeof m === 'string'; }) : _ownKeys(v.months);
+          return { counts: { months: ms.length }, months: ms };
+        }
+        if(!_isArr(v)) return null;
+        var ids = [], noId = 0;
+        v.forEach(function(x){ if(x == null) return; if(x.id == null) noId++; else ids.push(String(x.id)); });
+        return { counts: { visits: ids.length + noId }, ids: ids, noId: noId, month: k === 'visits' ? null : k.slice(VISITS_ARCH_PREFIX.length) };
+      },
+      sum: function(docs){
+        // the live month + every archived month: a visit counted once even while
+        // it sits in two documents for a moment (its date was just edited)
+        var seen = Object.create(null), n = 0, months = [], listed = null;
+        docs.forEach(function(d){
+          var f = d.facts;
+          if(d.key === 'visitsIndex'){ listed = f.months; return; }
+          if(f.month) months.push(f.month);
+          n += f.noId;
+          f.ids.forEach(function(id){ if(!(id in seen)){ seen[id] = 1; n++; } });
+        });
+        var have = Object.create(null); months.forEach(function(m){ have[m] = 1; });
+        return { records: n, extra: { archivedMonths: months.length, missingMonths: (listed || []).filter(function(m){ return !have[m]; }).sort() } };
+      } },
+    { id: 'clinics', label: 'Clinics and branches', unit: 'clinics', daily: 'yes', keys: ['clinics'],
+      doc: function(k, v){
+        if(!_isArr(v)) return null;
+        var docs = 0;
+        v.forEach(function(c){ if(c && _isArr(c.doctors)) docs += _len(c.doctors); });
+        return { counts: { clinics: _len(v), doctors: docs } };
+      } },
+    { id: 'doctors', label: 'Doctors (kept inside the clinics)', unit: 'doctors', daily: 'yes', inside: 'clinics' },
+    { id: 'tasks', label: 'Tasks', unit: 'tasks', daily: 'yes', keys: ['tasks'], doc: _arrDoc('tasks') },
+    { id: 'events', label: 'Requests, escalations & stands', unit: 'entries', daily: 'no', keys: ['events'], doc: _arrDoc('entries') },
+    { id: 'dayPlans', label: 'Day plans', unit: 'plans', daily: 'no', keys: ['dayPlans'],
+      doc: function(k, d){   // {date: {person: plan}} — one plan per person per day
+        if(!_isObj(d)) return null;
+        return { counts: { plans: Object.keys(d).reduce(function(s, day){ return s + _ownKeys(d[day]).length; }, 0) } };
+      } },
+    { id: 'erpSales', label: 'Sales files (ERP)', unit: 'files', daily: 'list', keys: ['erpSales'], prefixes: ['erpRows:'],
+      doc: function(k, v){
+        if(k === 'erpSales'){
+          if(!_isObj(v)) return null;
+          var periods = (_isArr(v.periods) ? v.periods : []).filter(Boolean), inline = 0;
+          periods.forEach(function(p){ if(_isArr(p.rows) && !p.rowsMissing) inline += p.rows.length; });   // legacy: lines kept in the index
+          return { counts: { files: periods.length }, wanted: erpChunkKeys(v), inline: inline };
+        }
+        return _isArr(v) ? { counts: { lines: v.length } } : null;
+      },
+      sum: function(docs, bad){
+        // the index lists the files, their lines live in chunk documents: the
+        // lines counted are the ones actually present in the chunks the index
+        // points to; a chunk it points to that is not there is reported, and
+        // chunks of replaced files (kept a week) are counted apart
+        var idx = null, chunks = Object.create(null), badSet = Object.create(null);
+        (bad || []).forEach(function(k){ badSet[k] = 1; });
+        docs.forEach(function(d){ if(d.key === 'erpSales') idx = d.facts; else chunks[d.key] = d.facts.counts.lines; });
+        if(!idx) return { records: null, extra: { lines: null, missingChunks: 0, staleChunks: Object.keys(chunks).length } };
+        var wanted = Object.create(null), lines = idx.inline, missing = 0, unknown = false;
+        idx.wanted.forEach(function(k){ wanted[k] = 1; });
+        Object.keys(wanted).forEach(function(k){ if(k in chunks) lines += chunks[k]; else if(badSet[k]) unknown = true; else missing++; });
+        var stale = Object.keys(chunks).concat(Object.keys(badSet)).filter(function(k){ return k !== 'erpSales' && !wanted[k]; }).length;
+        return { records: idx.counts.files, extra: { lines: unknown ? null : lines, missingChunks: missing, staleChunks: stale } };
+      } },
+    { id: 'erpMap', label: 'ERP account links', unit: 'accounts', daily: 'no', keys: ['erpMap'], doc: _objDoc('accounts') },
+    { id: 'targets', label: 'Targets (DSR)', unit: 'people', daily: 'no', keys: ['targets'],
+      doc: function(k, t){
+        if(!_isObj(t)) return null;
+        return { counts: { people: Object.keys(t).filter(function(x){ return x.charAt(0) !== '_'; }).length, pastMonths: _ownKeys(t._history).length } };
+      },
+      sum: function(docs){ var c = docs.length ? docs[0].facts.counts : null; return c ? { records: c.people, extra: { pastMonths: c.pastMonths } } : { records: null, extra: {} }; } },
+    { id: 'staff', label: 'Team list', unit: 'people', daily: 'no', keys: ['staff'], doc: _arrDoc('people') },
+    { id: 'products', label: 'Product catalog', unit: 'products', daily: 'yes', keys: ['products'], doc: _arrDoc('products') },
+    { id: 'rxTypes', label: 'Prescription types', unit: 'types', daily: 'no', keys: ['rxTypes'],
+      doc: function(k, r){ return _isObj(r) ? { counts: _isArr(r.types) ? { types: _len(r.types) } : {} } : null; } },
+    { id: 'categoryGuides', label: 'Selling guides', unit: 'guides', daily: 'no', keys: ['categoryGuides'], doc: _objDoc('guides') },
+    { id: 'erpNotes', label: 'Sales notes', unit: 'notes', daily: 'no', keys: ['erpNotes'], doc: _objDoc('notes') },
+    { id: 'benchmarks', label: 'Discount limits and KPI settings', unit: null, daily: 'no', keys: ['benchmarks'],
+      doc: function(k, v){ return _isObj(v) ? { counts: {} } : null; } },   // settings: nothing to count, no number invented
+    { id: 'recycleBin', label: 'Recycle bin (kept 30 days)', unit: 'items', daily: 'no', keys: ['recycleBin'],
+      doc: function(k, b){ return _isObj(b) ? { counts: { items: Object.keys(b).reduce(function(s, x){ return s + (_isArr(b[x]) ? _len(b[x]) : 0); }, 0) } } : null; } },
+    { id: 'tombs', label: 'Delete log', unit: 'deletes', daily: 'no', keys: ['tombs'],
+      doc: function(k, t){ return _isObj(t) ? { counts: { deletes: Object.keys(t).reduce(function(s, x){ return s + _ownKeys(t[x]).length; }, 0) } } : null; } },
+    { id: 'photos', label: 'Photos', unit: 'photos', daily: 'no', raw: true, prefixes: ['photo:'], doc: function(){ return { counts: { photos: 1 } }; } },
+    { id: 'chat', label: 'Team chat', unit: 'messages', daily: 'no', keys: ['chat'], doc: _arrDoc('messages') },
+    { id: 'memories', label: 'Memories', unit: 'memories', daily: 'no', keys: ['memories'], doc: _arrDoc('memories') },
+    { id: 'logs', label: 'Logs (repairs, e-mails, account links)', unit: 'entries', daily: 'no', keys: ['repairLog', 'mailLog', 'erpMapLog'],
+      doc: function(k, v){
+        if(k === 'mailLog') return _isObj(v) ? { counts: { entries: _isArr(v.history) ? _len(v.history) : 0 } } : null;
+        return _isArr(v) ? { counts: { entries: _len(v) } } : null;
+      } },
+    { id: 'snapshots', label: 'Daily backups (inside the database)', unit: 'days', daily: 'self', prefixes: ['snap_'],
+      doc: function(k, s){
+        if(!_isObj(s)) return null;
+        var c = {};
+        ['clinics', 'visits', 'products', 'tasks'].forEach(function(x){ if(_isArr(s[x])) c[x] = _len(s[x]); });
+        return { counts: c, day: k.slice(5) };
+      },
+      sum: function(docs){
+        var days = docs.map(function(d){ return d.facts.day; }).sort();
+        return { records: docs.length, extra: { newest: days.length ? days[days.length - 1] : null, oldest: days.length ? days[0] : null } };
+      } },
+  ];
+  // The families of many documents, by key prefix: read range by range, page
+  // by page, after the single documents (so the sales and visits indexes are
+  // read before the documents they point to; a replaced sales file's chunks
+  // stay a week, so the index read first still finds its own). page = how
+  // many documents one read brings (each ≤ ~1 MB).
+  var BACKUP_FAMILIES = [
+    { prefix: VISITS_ARCH_PREFIX, label: 'Visits of past months', page: 6 },
+    { prefix: 'erpRows:', label: 'Lines of the sales files', page: 10 },
+    { prefix: 'photo:', label: 'Photos', page: 6 },
+    { prefix: 'snap_', label: 'Daily backups', page: 2 },
+  ];
+  var BACKUP_ID_TOP = '';   // above every character the app puts in a key
+  function _backupDef(key){
+    key = String(key);
+    for(var i = 0; i < BACKUP_SETS.length; i++){
+      var d = BACKUP_SETS[i];
+      if(d.keys && d.keys.indexOf(key) !== -1) return d;
+      if(d.prefixes) for(var j = 0; j < d.prefixes.length; j++) if(key.indexOf(d.prefixes[j]) === 0) return d;
+    }
+    return null;
+  }
+  // 'visits', 'erpSales', … or 'other' for a document no set claims.
+  function backupSetOf(key){ var d = _backupDef(key); return d ? d.id : 'other'; }
+  // What to call one part on screen: its family ('Lines of the sales files'),
+  // else its set ('Team list'), else null (an "other document").
+  function backupPartLabel(key){
+    key = String(key);
+    for(var i = 0; i < BACKUP_FAMILIES.length; i++) if(key.indexOf(BACKUP_FAMILIES[i].prefix) === 0) return BACKUP_FAMILIES[i].label;
+    var d = _backupDef(key);
+    return d ? d.label : null;
+  }
+  // One stored document → { set, facts } (facts null: not the data its name says).
+  function backupDocInfo(key, value){
+    var def = _backupDef(key);
+    if(!def) return { set: 'other', facts: { counts: {} } };   // kept exactly as stored, nothing to count
+    if(def.raw) return { set: def.id, facts: def.doc(String(key), value) };
+    var v = safeParse(value, undefined);
+    var f = v === undefined ? null : def.doc(String(key), v);
+    return { set: def.id, facts: f || null };
+  }
+  // entries: [{ key, set, bytes, updated, facts }] → one line per data set, in
+  // BACKUP_SETS order, then every document no set claims by its name:
+  // { id, label, unit, daily, records (null: nothing countable, or a document
+  // that does not read — never a guess), extra, docs, bytes, updated (the
+  // newest change), inside (the document it is kept in), unreadable: [keys] }.
+  function backupInventory(entries){
+    var bySet = Object.create(null), other = [];
+    (entries || []).forEach(function(e){ if(e.set === 'other') other.push(e); else (bySet[e.set] = bySet[e.set] || []).push(e); });
+    var sets = [];
+    BACKUP_SETS.forEach(function(def){
+      if(def.inside){
+        var host = (bySet[def.inside] || [])[0];
+        if(!host) return;
+        var hc = host.facts && host.facts.counts;
+        sets.push({ id: def.id, label: def.label, unit: def.unit, daily: def.daily, inside: def.inside, docs: 0, bytes: 0,
+          updated: typeof host.updated === 'number' ? host.updated : null, records: hc && typeof hc[def.unit] === 'number' ? hc[def.unit] : null,
+          extra: {}, unreadable: host.facts ? [] : [host.key] });
+        return;
+      }
+      var docs = bySet[def.id];
+      if(!docs || !docs.length) return;   // nothing of this set in the cloud
+      var good = docs.filter(function(d){ return !!d.facts; });
+      var bad = docs.filter(function(d){ return !d.facts; }).map(function(d){ return d.key; }).sort();
+      var res;
+      if(def.sum) res = def.sum(good, bad);
+      else {
+        var n = 0, ok = !!def.unit;
+        good.forEach(function(d){ var c = d.facts.counts; if(c && typeof c[def.unit] === 'number') n += c[def.unit]; else ok = false; });
+        res = { records: ok ? n : null, extra: {} };
+      }
+      var updated = null;
+      docs.forEach(function(d){ if(typeof d.updated === 'number' && (updated == null || d.updated > updated)) updated = d.updated; });
+      sets.push({ id: def.id, label: def.label, unit: def.unit, daily: def.daily, inside: null, docs: docs.length,
+        bytes: docs.reduce(function(s, d){ return s + d.bytes; }, 0), updated: updated,
+        records: bad.length || !res || res.records == null ? null : res.records, extra: (res && res.extra) || {}, unreadable: bad });
+    });
+    other.sort(function(a, b){ return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; }).forEach(function(e){
+      sets.push({ id: 'other', key: e.key, label: e.key, unit: null, daily: 'no', inside: null, docs: 1, bytes: e.bytes,
+        updated: typeof e.updated === 'number' ? e.updated : null, records: null, extra: {}, unreadable: [] });
+    });
+    return { sets: sets, docs: (entries || []).length, bytes: (entries || []).reduce(function(s, e){ return s + e.bytes; }, 0) };
+  }
+  function _docEntry(o){ return o && typeof o === 'object' ? o : { value: o, updated: null }; }
+  // docs: {key: {value, updated}} → the inventory (the daily backups included).
+  function cloudInventory(docs){
+    var entries = Object.keys(docs || {}).sort().map(function(k){
+      var d = _docEntry(docs[k]), info = backupDocInfo(k, d.value);
+      return { key: k, set: info.set, bytes: utf8Len(d.value), updated: typeof d.updated === 'number' ? d.updated : null, facts: info.facts };
+    });
+    return backupInventory(entries);
+  }
+  // The text everything hangs on: the header and the whole manifest. Its
+  // sha256 is integrity.sha256 — the same text in the phone, the verify script
+  // and the restore script, whatever the order of the file's own keys.
+  function backupCanonical(f){
+    f = f || {};
+    var m = _isObj(f.manifest) ? f.manifest : {}, nn = function(x){ return x === undefined ? null : x; };
+    return JSON.stringify([nn(f.kind), nn(f.format), nn(f.app), nn(f.project), nn(f.takenAt), nn(f.takenBy), nn(m.documents), nn(m.bytes),
+      (_isArr(m.parts) ? m.parts : []).map(function(p){ p = p || {}; return [nn(p.key), nn(p.set), nn(p.updated), nn(p.bytes), nn(p.sha256), nn(p.counts)]; }),
+      (_isArr(m.pending) ? m.pending : []).map(function(p){ p = p || {}; return [nn(p.key), nn(p.from), nn(p.bytes), nn(p.sha256)]; })]);
+  }
+  // Writes the file as text pieces, one document at a time, so the phone can
+  // hand each piece to the file and let it go:
+  //   head() → addDoc(...)… → pendingStart() → addPending(...)… → tail(sha256 of canonical())
+  // The caller hashes (crypto.subtle on the phone, sha256Hex as its fallback,
+  // Node's crypto in the scripts). A key already written is skipped ('').
+  function backupBuilder(meta){
+    meta = meta || {};
+    var str = function(x){ return x == null ? null : String(x); };
+    var head = { kind: BACKUP_KIND, format: BACKUP_FORMAT, app: str(meta.app), project: str(meta.project), takenAt: str(meta.takenAt), takenBy: str(meta.takenBy), note: BACKUP_NOTE };
+    var parts = [], entries = [], pend = [], seen = Object.create(null), seenP = Object.create(null), nData = 0, nPend = 0, stage = 'data';
+    var byKey = function(a, b){ return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; };
+    var manifest = function(){
+      return { documents: parts.length, bytes: parts.reduce(function(s, p){ return s + p.bytes; }, 0),
+        parts: parts.slice().sort(byKey), pending: pend.slice().sort(byKey) };
+    };
+    return {
+      head: function(){ var s = JSON.stringify(head); return s.slice(0, -1) + ',"data":{'; },
+      addDoc: function(key, value, updated, sha256, bytes){
+        if(stage !== 'data') throw new Error('backupBuilder: every document comes before the pending changes');
+        key = String(key);
+        if(typeof value !== 'string') throw new Error('backupBuilder: ' + key + ' is not stored as text');
+        if(seen[key]) return '';
+        seen[key] = 1;
+        var up = typeof updated === 'number' && isFinite(updated) ? updated : null;
+        var info = backupDocInfo(key, value), n = typeof bytes === 'number' ? bytes : utf8Len(value);
+        parts.push({ key: key, set: info.set, updated: up, bytes: n, sha256: String(sha256), counts: info.facts ? info.facts.counts : null });
+        entries.push({ key: key, set: info.set, bytes: n, updated: up, facts: info.facts });
+        return (nData++ ? ',' : '') + JSON.stringify(key) + ':' + JSON.stringify({ value: value, updated: up });
+      },
+      pendingStart: function(){ if(stage !== 'data') return ''; stage = 'pending'; return '},"pending":{'; },
+      addPending: function(key, from, value, sha256, bytes){
+        if(stage !== 'pending') throw new Error('backupBuilder: pendingStart() first');
+        key = String(key);
+        if(seenP[key]) return '';
+        seenP[key] = 1;
+        var v = typeof value === 'string' ? value : null, fr = str(from);
+        pend.push({ key: key, from: fr, bytes: v == null ? 0 : (typeof bytes === 'number' ? bytes : utf8Len(v)), sha256: v == null ? null : String(sha256) });
+        return (nPend++ ? ',' : '') + JSON.stringify(key) + ':' + JSON.stringify({ value: v, from: fr });
+      },
+      documents: function(){ return parts.length; },
+      pendingKeys: function(){ return pend.map(function(p){ return p.key; }); },
+      manifest: manifest,
+      inventory: function(){ return backupInventory(entries); },
+      canonical: function(){ return backupCanonical(Object.assign({}, head, { manifest: manifest() })); },
+      tail: function(sha256){
+        var t = stage === 'data' ? '},"pending":{' : '';
+        stage = 'done';
+        var inv = backupInventory(entries).sets.map(function(s){
+          return { set: s.id === 'other' ? 'other:' + s.key : s.id, label: s.label, documents: s.docs, bytes: s.bytes, records: s.records, unit: s.unit, extra: s.extra, unreadable: s.unreadable };
+        });
+        return t + '},"manifest":' + JSON.stringify(manifest()) + ',"inventory":' + JSON.stringify(inv) +
+          ',"integrity":' + JSON.stringify({ algorithm: 'sha256', of: 'backupCanonical', sha256: String(sha256) }) + '}';
+      }
+    };
+  }
+  // The whole file in one go (tests, scripts; the phone writes the same pieces
+  // as it reads). docs: {key: {value, updated}}; pending: {key: {value, from}}.
+  function fullBackupFile(docs, meta, pending){
+    var b = backupBuilder(meta), text = b.head();
+    Object.keys(docs || {}).sort().forEach(function(k){ var d = _docEntry(docs[k]); text += b.addDoc(k, d.value, d.updated, sha256Hex(d.value)); });
+    text += b.pendingStart();
+    Object.keys(pending || {}).sort().forEach(function(k){
+      var p = _docEntry(pending[k]), v = typeof p.value === 'string' ? p.value : null;
+      text += b.addPending(k, p.from, v, v == null ? null : sha256Hex(v));
+    });
+    text += b.tail(sha256Hex(b.canonical()));
+    return JSON.parse(text);
+  }
+  // Checks a backup file (the parsed object): every part against its size,
+  // sha256 and counts, nothing missing or added, the pending changes, and the
+  // integrity code over the manifest. hash(text) → hex sha256 of its UTF-8
+  // (Node's crypto in scripts/backup/verify.js). → { ok, problems: [text],
+  // parts: [{ key, set, counts, bytes, ok }], pending: [...], sets (the
+  // inventory recomputed from the data), documents, bytes, header fields }.
+  function verifyBackupFile(f, hash){
+    hash = hash || sha256Hex;
+    var problems = [], parts = [], pending = [];
+    var out = { ok: false, problems: problems, parts: parts, pending: pending, sets: [], documents: 0, bytes: 0,
+      format: f && f.format, app: f && f.app, project: f && f.project, takenAt: f && f.takenAt, takenBy: f && f.takenBy,
+      sha256: f && _isObj(f.integrity) ? f.integrity.sha256 : null };
+    if(!_isObj(f) || f.kind !== BACKUP_KIND){ problems.push('not an UltraMed full backup file'); return out; }
+    var data = _isObj(f.data) ? f.data : null, m = _isObj(f.manifest) ? f.manifest : null;
+    if(f.format !== BACKUP_FORMAT){
+      problems.push(f.format === 1 ? 'format 1 (made before the integrity check): there is no sha256 in it to check' : 'unknown format: ' + f.format);
+      if(data && f.format === 1){
+        var inv1 = cloudInventory(data);
+        out.sets = inv1.sets; out.documents = inv1.docs; out.bytes = inv1.bytes;
+      }
+      return out;
+    }
+    if(!data) problems.push('no data section');
+    if(!m || !_isArr(m.parts)) problems.push('no manifest');
+    if(!data || !m || !_isArr(m.parts)) return out;
+    var listed = Object.create(null), entries = [], has = function(o, k){ return Object.prototype.hasOwnProperty.call(o, k); };
+    m.parts.forEach(function(p, i){
+      if(!_isObj(p) || typeof p.key !== 'string'){ problems.push('manifest entry ' + i + ' names no document'); return; }
+      if(listed[p.key]){ problems.push(p.key + ': listed twice in the manifest'); return; }
+      listed[p.key] = 1;
+      var row = { key: p.key, set: p.set, counts: p.counts == null ? null : p.counts, bytes: p.bytes, ok: true };
+      parts.push(row);
+      if(!has(data, p.key)){ problems.push(p.key + ': in the manifest, missing from the data'); row.ok = false; return; }
+      var d = data[p.key];
+      if(!_isObj(d) || typeof d.value !== 'string'){ problems.push(p.key + ': no stored text'); row.ok = false; return; }
+      var n = utf8Len(d.value), up = d.updated === undefined ? null : d.updated;
+      if(n !== p.bytes){ problems.push(p.key + ': size changed (' + p.bytes + ' bytes in the manifest, ' + n + ' in the data)'); row.ok = false; }
+      if(hash(d.value) !== p.sha256){ problems.push(p.key + ': sha256 does not match — the value was changed'); row.ok = false; }
+      if(up !== (p.updated === undefined ? null : p.updated)){ problems.push(p.key + ': the time it was last written changed'); row.ok = false; }
+      var info = backupDocInfo(p.key, d.value), counts = info.facts ? info.facts.counts : null;
+      if(info.set !== p.set){ problems.push(p.key + ': data set "' + p.set + '" in the manifest, "' + info.set + '" by its name'); row.ok = false; }
+      if(_canon(counts) !== _canon(row.counts)){ problems.push(p.key + ': the record counts in the manifest do not match the data'); row.ok = false; }
+      row.bytes = n; row.counts = counts;
+      entries.push({ key: p.key, set: info.set, bytes: n, updated: up, facts: info.facts });
+    });
+    Object.keys(data).forEach(function(k){ if(!listed[k]) problems.push(k + ': in the data, not in the manifest'); });
+    if(m.documents !== m.parts.length) problems.push('the manifest says ' + m.documents + ' documents and lists ' + m.parts.length);
+    var total = entries.reduce(function(s, e){ return s + e.bytes; }, 0);
+    if(m.bytes !== total && entries.length === m.parts.length) problems.push('the manifest total (' + m.bytes + ' bytes) does not add up (' + total + ')');
+    var pd = _isObj(f.pending) ? f.pending : {}, pl = _isArr(m.pending) ? m.pending : [], plisted = Object.create(null);
+    pl.forEach(function(p, i){
+      if(!_isObj(p) || typeof p.key !== 'string'){ problems.push('pending entry ' + i + ' names nothing'); return; }
+      plisted[p.key] = 1;
+      var row = { key: p.key, from: p.from == null ? null : p.from, bytes: p.bytes, ok: true };
+      pending.push(row);
+      if(!has(pd, p.key)){ problems.push('pending ' + p.key + ': in the manifest, missing from the file'); row.ok = false; return; }
+      var v = _isObj(pd[p.key]) ? pd[p.key].value : undefined;
+      if(v == null){ if(p.sha256 != null || p.bytes !== 0){ problems.push('pending ' + p.key + ': its copy is missing'); row.ok = false; } return; }
+      if(typeof v !== 'string' || utf8Len(v) !== p.bytes || hash(v) !== p.sha256){ problems.push('pending ' + p.key + ': sha256 or size does not match — the copy was changed'); row.ok = false; }
+    });
+    Object.keys(pd).forEach(function(k){ if(!plisted[k]) problems.push('pending ' + k + ': in the file, not in the manifest'); });
+    var want = _isObj(f.integrity) ? f.integrity.sha256 : null;
+    if(!want) problems.push('no integrity code (integrity.sha256)');
+    else if(hash(backupCanonical(f)) !== want) problems.push('integrity sha256 does not match the manifest — the file was changed');
+    var inv = backupInventory(entries);
+    out.sets = inv.sets; out.documents = entries.length; out.bytes = inv.bytes;
+    if(_isArr(f.inventory)){
+      var shown = Object.create(null);
+      f.inventory.forEach(function(s){ if(_isObj(s) && typeof s.set === 'string') shown[s.set] = s; });
+      inv.sets.forEach(function(s){
+        var id = s.id === 'other' ? 'other:' + s.key : s.id, w = shown[id];
+        if(!w) problems.push('inventory: "' + id + '" is missing');
+        else if(w.records !== s.records || w.documents !== s.docs) problems.push('inventory: "' + id + '" says ' + w.records + ' in ' + w.documents + ' documents, the data holds ' + s.records + ' in ' + s.docs);
+      });
+    }
+    out.ok = !problems.length;
+    return out;
+  }
+  // How the phone reads the whole collection from the cloud adapter
+  // (storage.scan, 01-config.js): id ranges that together cover every
+  // possible key exactly once — the single documents between the families
+  // first, then each family. A range that fails is named by what it holds
+  // (keys: the app's documents that fall in it).
+  function backupRanges(){
+    var fam = BACKUP_FAMILIES.slice().sort(function(a, b){ return a.prefix < b.prefix ? -1 : 1; });
+    var known = [];
+    BACKUP_SETS.forEach(function(d){ (d.keys || []).forEach(function(k){ known.push(k); }); });
+    known.sort();
+    var out = [], from = null;
+    var gap = function(to){
+      out.push({ id: 'docs:' + (from == null ? '' : from) + '…' + (to == null ? '' : to), from: from, to: to, page: 20, prefix: null, label: null,
+        keys: known.filter(function(k){ return (from == null || k >= from) && (to == null || k < to); }) });
+    };
+    fam.forEach(function(f){ gap(f.prefix); from = f.prefix + BACKUP_ID_TOP; });
+    gap(null);
+    BACKUP_FAMILIES.forEach(function(f){ out.push({ id: f.prefix, from: f.prefix, to: f.prefix + BACKUP_ID_TOP, page: f.page, prefix: f.prefix, label: f.label, keys: [] }); });
+    return out;
+  }
+  // The same order for a store read key by key (list + get): every key once,
+  // the single documents first, then each family; sorted within.
+  function backupReadOrder(keys){
+    var seen = Object.create(null), groups = [[]].concat(BACKUP_FAMILIES.map(function(){ return []; }));
+    (keys || []).forEach(function(k){
+      k = String(k);
+      if(seen[k]) return;
+      seen[k] = 1;
+      var g = 0;
+      for(var i = 0; i < BACKUP_FAMILIES.length; i++) if(k.indexOf(BACKUP_FAMILIES[i].prefix) === 0){ g = i + 1; break; }
+      groups[g].push(k);
+    });
+    return [].concat.apply([], groups.map(function(g){ return g.sort(); }));
+  }
+
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
     money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
@@ -5604,8 +6316,8 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
@@ -5613,6 +6325,8 @@
     daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
-    productMovement, pmNormName
+    productMovement, pmNormName,
+    cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
+    backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder
   };
 });

@@ -25,11 +25,11 @@ async function blockFirebase(ctx){
 }
 // The roster these harnesses were written for: two reps and a supervisor who
 // does NOT sell (a supervisor sells by default since v95; the selling case is
-// covered by supervisor-sells.e2e.js).
+// covered by supervisor-sells.e2e.js). The addresses are invented.
 function twoRepStaff(){
   return JSON.stringify([
-    {name:'Mariam', role:'rep', email:'mariam@ultramed-kw.com'},
-    {name:'Renova', role:'rep', email:'r.ayman@ultramed-kw.com'},
-    {name:'Dr. Ghaith', role:'supervisor', email:'drgaith@ultramed-kw.com', sells:false}]);
+    {name:'Mariam', role:'rep', email:'mariam@example.com'},
+    {name:'Renova', role:'rep', email:'renova@example.com'},
+    {name:'Dr. Ghaith', role:'supervisor', email:'ghaith@example.com', sells:false}]);
 }
 module.exports = { WWW, launchOpts, salesFixture, blockFirebase, twoRepStaff };

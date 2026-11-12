@@ -2,6 +2,7 @@
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- GATE / USER ----
 async function selectUser(name, role){
+  if(typeof dropFullBackup === 'function') dropFullBackup(); // a full backup held for the last sign-in is never handed to the next (13-exports.js)
   currentUser = {name, role};
   if(!FIREBASE_ENABLED){
     try{ await window.storage.set('currentUser', JSON.stringify(currentUser), false); }catch(e){}
@@ -13,6 +14,7 @@ async function selectUser(name, role){
   await loadAll();
 }
 function switchUser(){
+  if(typeof dropFullBackup === 'function') dropFullBackup();
   if(FIREBASE_ENABLED && window.firebase){ firebase.auth().signOut().catch(()=>{}); }
   currentUser = null;
   renderGate();
@@ -90,6 +92,10 @@ function renderGate(){
 }
 function gateTap(name){
   if(!FIREBASE_ENABLED){ selectUser(name, USERS[name].role); return; }
+  // The code carries names only (it is public): a phone that has not signed
+  // in yet does not know this person's address — ask for it instead of a
+  // password that could never work. After that the phone keeps the team list.
+  if(!(USERS[name] || {}).email){ openEmailLogin(name); return; }
   showModal(`
     <h3 style="margin-top:0;">${esc(name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your password to continue.</p>
@@ -101,11 +107,13 @@ function gateTap(name){
     if(el){ el.focus(); el.onkeydown = (e)=>{ if(e.key==='Enter') submitGateLogin(name); }; }
   }, 80);
 }
-function openEmailLogin(){
+function openEmailLogin(name){
   if(!FIREBASE_ENABLED){ showToast('Offline mode — tap your name'); return; }
+  const who = typeof name === 'string' && name ? name : '';
   showModal(`
-    <h3 style="margin-top:0;">Sign in</h3>
-    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Use your work email and password.</p>
+    <h3 style="margin-top:0;">${who ? esc(who) : 'Sign in'}</h3>
+    ${who ? `<p style="color:var(--muted); font-size:13px; margin-top:-6px;">First sign-in on this phone: enter your work email and password. After that, your name is enough.</p>`
+      : `<p style="color:var(--muted); font-size:13px; margin-top:-6px;">Use your work email and password.</p>`}
     <input type="email" id="elEmail" placeholder="name@ultramed-kw.com" autocomplete="username">
     <input type="password" id="elPwd" placeholder="Password" style="margin-top:8px;" autocomplete="current-password">
     <button class="btn" onclick="submitEmailLogin()">Log in</button>

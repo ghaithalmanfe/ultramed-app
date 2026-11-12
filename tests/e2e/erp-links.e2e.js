@@ -1,5 +1,5 @@
 // ERP account links: where an account's invoices count can be changed after a
-// wrong choice (v113). The owner's case: Aline has three branches, all his; a
+// wrong choice (v113). The owner's case: Orion has three branches, all his; a
 // fourth branch (Khairan) opened before it was in the app, so its ERP account
 // was linked by hand to Salmiya. Reproduces that no screen could change the
 // link, then checks the editor from every entry point (clinic card, audit,
@@ -62,21 +62,21 @@ const api = {
 };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info).slice(0,600):'')); if(!ok) failed++; }
-const G = 'Dr. Ghaith', M = 'Mariam', GS = 'Ghaith Al Manfe', MS = 'Mariam Zohair';
-const KH = 'Aline Dental Clinic - Khairan', BYSTANDER = 'Marketing Philips';
+const G = 'Dr. Ghaith', M = 'Mariam', GS = 'Ghaith Al Sample', MS = 'Mariam Sample';
+const KH = 'Orion Dental Clinic - Khairan', BYSTANDER = 'Marketing Philips';
 const QUOTED = `Dr. O'Neil "Smile" Clinic`;
-const LONG = 'Al Salam International Hospital Dental Department Jabriya Branch Block Three Building Seven';
+const LONG = 'Sample Sample General Hospital Dental Department Jabriya Branch Block Three Building Seven';
 const SMILE = 'Smile Care Fintas';                 // an account no clinic matches, invoiced by Mariam's salesman
-const VARIANT = 'ALINE DENTAL CLINIC - KHAIRAN';   // a spelling variant of Khairan's account
+const VARIANT = 'ORION DENTAL CLINIC - KHAIRAN';   // a spelling variant of Khairan's account
 
-// ---- seed: three Aline branches (his), a Mariam clinic; Sep + Oct sales in split storage ----
+// ---- seed: three Orion branches (his), a Mariam clinic; Sep + Oct sales in split storage ----
 // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
 const row = (d, doc, cust, net, sm, gross) => [d, doc, 0, 'Intensiv Ortho-Strips', 1, gross == null ? net : gross, net, 0, sm, 'Intensiv', cust, 'Clinics', 0, ''];
 const ret = (d, doc, cust, net, sm, ref) => [d, doc, 1, 'Intensiv Ortho-Strips', -1, 0, net, -net, sm, 'Intensiv', cust, 'Clinics', 0, ref];
-const SEP = [row('2026-09-14','SINV7001','Aline Dental Clinic - Salmiya',100,GS), row('2026-09-21','SINV7002',KH,60,GS,96), // 37.5% off: within A's 40%, over the 35% of other classes
-  row('2026-09-22','SINV7003','Dental 8 Clinic',25,MS)];
-const OCT = [row('2026-10-04','SINV7101','Aline Dental Clinic - Salmiya',50,GS), row('2026-10-05','SINV7102','Aline Dental Clinic - Hawally',30,GS),
-  row('2026-10-06','SINV7103',KH,80,GS), row('2026-10-07','SINV7104',KH,15.5,GS), row('2026-10-06','SINV7105','Dental 8 Clinic',40,MS),
+const SEP = [row('2026-09-14','SINV7001','Orion Dental Clinic - Salmiya',100,GS), row('2026-09-21','SINV7002',KH,60,GS,96), // 37.5% off: within A's 40%, over the 35% of other classes
+  row('2026-09-22','SINV7003','Dental 5 Clinic',25,MS)];
+const OCT = [row('2026-10-04','SINV7101','Orion Dental Clinic - Salmiya',50,GS), row('2026-10-05','SINV7102','Orion Dental Clinic - Hawally',30,GS),
+  row('2026-10-06','SINV7103',KH,80,GS), row('2026-10-07','SINV7104',KH,15.5,GS), row('2026-10-06','SINV7105','Dental 5 Clinic',40,MS),
   // issued by a salesman outside the team: they count for nobody, so no month figure moves
   row('2026-10-03','SINV7106',QUOTED,12,'Stranger'), row('2026-10-03','SINV7107',LONG,7,'Stranger')];
 const repMap = { [GS]: G, [MS]: M };
@@ -95,7 +95,7 @@ const SPLIT_NONAME = makeSplit(SEP, OCT.concat([row('2026-10-02','SINV7131','',1
 const CRN = 'Smile Clinic\r\nFintas';               // a two-line cell: CSV and XLSX keep the CR inside a name
 const EVIL = "Smile');window.__xss=(window.__xss||0)+1;//";   // a quote and code: as a clinic name it must stay text
 const WORD = 'X'.repeat(420);                       // a long name with no space to break at
-const BIG = ('Al Salam International Hospital Dental Department ').repeat(700).slice(0, 32000).trim(); // Excel's cell limit is 32,767
+const BIG = ('Sample Sample General Hospital Dental Department ').repeat(700).slice(0, 32000).trim(); // Excel's cell limit is 32,767
 const PROTO_NAMES = ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf'];
 const SPLIT_CR = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7141',CRN,70,GS), row('2026-10-08','SINV7142',CRN,30,GS)]));
 const SPLIT_PROTO = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7151','__proto__',33,GS)]));
@@ -109,16 +109,16 @@ const EVILP = "Bond');window.__xss=(window.__xss||0)+1;//";  // a quote and code
 const SM_APOS = "Dana O'Hara", SM_EVIL = "Rami');window.__xss=(window.__xss||0)+1;//";   // salesmen
 const BR_APOS = "Kerr's", BR_EVIL = "Kerr');window.__xss=(window.__xss||0)+1;//";          // brands (= categories of ERP-added products)
 const SPLIT_APOS = makeSplit(SEP, OCT.concat([
-  ['2026-10-06','SRET7201',1,APOS,-1,0,-8,8,GS,'Kerr','Aline Dental Clinic - Hawally','Clinics',0,'SINV7102'],   // a return of that product
-  ['2026-10-06','SINV7202',0,APOS,2,10,0,0,GS,'Kerr','Aline Dental Clinic - Hawally','Clinics',0,''],            // free goods (worth 10 KD), on an all-free invoice: "sample" by default
-  ['2026-10-06','SINV7203',0,EVILP,1,4,0,0,GS,'Kerr','Aline Dental Clinic - Hawally','Clinics',0,'']]));
-const SPLIT_SM = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7211','Dental 8 Clinic',5,SM_APOS), row('2026-10-07','SINV7212','Dental 8 Clinic',4,SM_EVIL)]),
+  ['2026-10-06','SRET7201',1,APOS,-1,0,-8,8,GS,'Kerr','Orion Dental Clinic - Hawally','Clinics',0,'SINV7102'],   // a return of that product
+  ['2026-10-06','SINV7202',0,APOS,2,10,0,0,GS,'Kerr','Orion Dental Clinic - Hawally','Clinics',0,''],            // free goods (worth 10 KD), on an all-free invoice: "sample" by default
+  ['2026-10-06','SINV7203',0,EVILP,1,4,0,0,GS,'Kerr','Orion Dental Clinic - Hawally','Clinics',0,'']]));
+const SPLIT_SM = makeSplit(SEP, OCT.concat([row('2026-10-07','SINV7211','Dental 5 Clinic',5,SM_APOS), row('2026-10-07','SINV7212','Dental 5 Clinic',4,SM_EVIL)]),
   Object.assign({}, repMap, { [SM_APOS]: 'Renova', [SM_EVIL]: 'Renova' }));
 const CLINICS = [
-  {id:'al1', name:'Aline Dental Clinic - Salmiya', rep:G, cls:'A', doctors:[]},
-  {id:'al2', name:'Aline Dental Clinic - Hawally', rep:G, cls:'B', doctors:[]},
-  {id:'al3', name:'Aline Dental Clinic - Jabriya', rep:G, cls:'B', doctors:[]},
-  {id:'m1', name:'Dental 8 Clinic', rep:M, cls:'A', doctors:[]}];
+  {id:'al1', name:'Orion Dental Clinic - Salmiya', rep:G, cls:'A', doctors:[]},
+  {id:'al2', name:'Orion Dental Clinic - Hawally', rep:G, cls:'B', doctors:[]},
+  {id:'al3', name:'Orion Dental Clinic - Jabriya', rep:G, cls:'B', doctors:[]},
+  {id:'m1', name:'Dental 5 Clinic', rep:M, cls:'A', doctors:[]}];
 const CL_EXTRA = CLINICS.concat([{id:'pe1', name:'Pearl Dental Clinic', rep:'', cls:'B', doctors:[]},   // no rep
   {id:'ft1', name:'Former Team Clinic', rep:'Hessa', cls:'B', doctors:[]},                               // a rep who is not on the team
   {id:'cl1', name:'Old Harbour Dental', rep:M, cls:'Closed', doctors:[]}]);
@@ -186,9 +186,9 @@ reseed();
     return { g: UMCore.monthAchievement('Dr. Ghaith', d).amount, m: UMCore.monthAchievement('Mariam', d).amount,
       gSep: UMCore.monthAchievement('Dr. Ghaith', sep).amount, mSep: UMCore.monthAchievement('Mariam', sep).amount,
       al1: kd('al1'), al2: kd('al2'), al3: kd('al3'), m1: kd('m1'), id: id ? kd(id) : null,
-      link: Object.prototype.hasOwnProperty.call(erpMap, 'Aline Dental Clinic - Khairan') ? erpMap['Aline Dental Clinic - Khairan'] : null,
+      link: Object.prototype.hasOwnProperty.call(erpMap, 'Orion Dental Clinic - Khairan') ? erpMap['Orion Dental Clinic - Khairan'] : null,
       bystander: erpMap['Marketing Philips'] || null,
-      mirror: (JSON.parse(localStorage.getItem('um_mirror:erpMap') || '{}'))['Aline Dental Clinic - Khairan'] || null }; }, id || null);
+      mirror: (JSON.parse(localStorage.getItem('um_mirror:erpMap') || '{}'))['Orion Dental Clinic - Khairan'] || null }; }, id || null);
   // where an account counts in memory right now, as the list reads it
   const acctNow = name => page.evaluate(n => { const a = UMCore.erpAccounts(digestData()).accounts.find(x => x.name === n), c = a && clinics.find(x => x.id === a.clinicId);
     return a ? { status: a.status, clinicId: a.clinicId, at: c ? c.name : null, link: a.link } : null; }, name);
@@ -274,11 +274,11 @@ reseed();
   await boot();
   await ui('card', 'al1'); a = await ui('openFrom', KH);
   const ed = await modal();
-  check('card → Move… opens the editor on the account, counted at Salmiya, no NaN/undefined', !a.err && ed.includes(KH) && /Aline Dental Clinic - Salmiya/.test(ed) && !bad(ed).length, { a, bad: bad(ed), ed: ed.slice(0, 300) });
+  check('card → Move… opens the editor on the account, counted at Salmiya, no NaN/undefined', !a.err && ed.includes(KH) && /Orion Dental Clinic - Salmiya/.test(ed) && !bad(ed).length, { a, bad: bad(ed), ed: ed.slice(0, 300) });
   const tg = await page.evaluate(() => [...document.querySelectorAll('#modalInner [data-target]')].map(x => x.dataset.target));
-  check('editor offers the Aline branches, a new branch, and the not-a-clinic choices', ['al2','al3','@new','@auto','@channel','@ignore'].every(t => tg.includes(t)), tg);
+  check('editor offers the Orion branches, a new branch, and the not-a-clinic choices', ['al2','al3','@new','@auto','@channel','@ignore'].every(t => tg.includes(t)), tg);
   const inv = await page.evaluate(() => { const d = document.querySelector('#modalInner details'); if(!d) return null; d.open = true; return d.innerText.replace(/\s+/g, ' '); });
-  check('"Show the invoices (3)": each document with its date, KD and salesman', /Show the invoices \(3\)/.test(inv || '') && /SINV7104/.test(inv || '') && /Ghaith Al Manfe/.test(inv || ''), inv);
+  check('"Show the invoices (3)": each document with its date, KD and salesman', /Show the invoices \(3\)/.test(inv || '') && /SINV7104/.test(inv || '') && /Ghaith Al Sample/.test(inv || ''), inv);
   a = await ui('fits');
   check('phone (390 px): the editor fits — no sideways scroll, nothing wider than the sheet', a.page && a.sheet && !a.wide.length, a);
   await ui('pick', '@new');
@@ -304,7 +304,7 @@ reseed();
   check('…the origin sheet reopens with "Saved — … now counts at …" and an Undo button', /Saved/.test(note.text || '') && /now counts at/.test(note.text || '') && note.undo, note);
   await sleep(300);
   const log = JSON.parse(cloud.erpMapLog || '[]');
-  check('…the change is logged in erpMapLog (who, from, to)', log.length >= 1 && log[0].n === KH && log[0].f === 'al1' && log[0].t === newId && log[0].by === G && log[0].fc === 'Aline Dental Clinic - Salmiya', log[0]);
+  check('…the change is logged in erpMapLog (who, from, to)', log.length >= 1 && log[0].n === KH && log[0].f === 'al1' && log[0].t === newId && log[0].by === G && log[0].fc === 'Orion Dental Clinic - Salmiya', log[0]);
   const c1 = await ui('card', 'al1'), c2 = await ui('card', newId);
   check('…the cards follow: Khairan gone from Salmiya, on the new branch with all its invoices (3 × · 155.50 KD)', c1.text != null && !c1.links.includes(KH) && c2.links.includes(KH) && /155\.50/.test(c2.text || ''), { c1, c2 });
 
@@ -323,7 +323,7 @@ reseed();
   check('…both changes are in the log, newest first', log2.length === 2 && log2[0].f === (made2 && made2.id) && log2[0].t === 'al1' && log2[1].t === (made2 && made2.id), log2);
   await boot(); await ui('edit', KH); await sleep(250);
   const last = await page.evaluate(() => { const e = document.getElementById('elLast'); return e && e.offsetParent ? e.innerText.replace(/\s+/g, ' ') : null; });
-  check('the editor shows the last change from the log: when, who, and where it counted before', /Last change:/.test(last || '') && /Dr\. Ghaith/.test(last || '') && /before:/.test(last || '') && /Aline Dental Clinic - Khairan/.test(last || ''), last);
+  check('the editor shows the last change from the log: when, who, and where it counted before', /Last change:/.test(last || '') && /Dr\. Ghaith/.test(last || '') && /before:/.test(last || '') && /Orion Dental Clinic - Khairan/.test(last || ''), last);
   const tg3 = await page.evaluate(() => [...document.querySelectorAll('#modalInner [data-target]')].map(x => x.dataset.target));
   check('[D1] the removed branch is no longer offered', !!made2 && !tg3.includes(made2.id) && !tg3.includes('al1'), tg3); // al1: "counted here now", not a choice
   await ui('pick', 'al3'); await ui('tick'); await ui('save');
@@ -362,10 +362,10 @@ reseed();
   await boot(); await ui('edit', KH); await ui('pick', '@new');
   nf = await ui('newFields');
   check('(e) a name that already exists is refused inline and Save is disabled', /already exists/.test(nf.nameErr || '') && nf.saveDisabled === true, nf);
-  a = await ui('setNewName', 'Aline Dental Clinic - Khairan Mall');
+  a = await ui('setNewName', 'Orion Dental Clinic - Khairan Mall');
   await ui('tick');
   nf = await ui('newFields');
-  check('(e) typing a new name keeps the focus, clears the error and joins the Aline branch group', a.focused && !nf.nameErr && nf.saveDisabled === false && /Aline/.test(nf.hint || '') && /Joins/.test(nf.hint || ''), { a, nf });
+  check('(e) typing a new name keeps the focus, clears the error and joins the Orion branch group', a.focused && !nf.nameErr && nf.saveDisabled === false && /Orion/.test(nf.hint || '') && /Joins/.test(nf.hint || ''), { a, nf });
   // (f) the links were not loaded from the cloud (device copy shown): changes are paused
   reseed(); mode.failGet = /^erpMap$/; await boot(G, 'supervisor', { 'um_mirror:erpMap': JSON.stringify({ [KH]: 'al1' }) }); mode.failGet = null;
   await ui('edit', KH);
@@ -382,15 +382,15 @@ reseed();
   check('[D4] …after the conflict Save is disabled (it could never succeed from this page) and "Open it again" is offered', e4.saveDisabled === true && e4.reopen, e4);
   await page.evaluate(() => { const b = document.getElementById('elReopen'); if(b) b.click(); }); await page.waitForTimeout(150);
   const reo = await page.evaluate(() => ({ h3: (document.querySelector('#modalInner h3') || {}).innerText, text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), shownOld: _el ? _el.shownOld : null }));
-  check('[D4] …"Open it again" reopens the editor on the cloud\'s link (Jabriya)', /Where do this account/.test(reo.h3 || '') && /Counted now at Aline Dental Clinic - Jabriya/.test(reo.text) && reo.shownOld === 'al3', { h3: reo.h3, shownOld: reo.shownOld, text: reo.text.slice(0, 260) });
+  check('[D4] …"Open it again" reopens the editor on the cloud\'s link (Jabriya)', /Where do this account/.test(reo.h3 || '') && /Counted now at Orion Dental Clinic - Jabriya/.test(reo.text) && reo.shownOld === 'al3', { h3: reo.h3, shownOld: reo.shownOld, text: reo.text.slice(0, 260) });
   await boot(); await ui('edit', KH); await ui('pick', 'al2'); await ui('tick');
-  cloud.erpMap = JSON.stringify(Object.assign(cloudMap(), { 'Dental 8 Clinic': 'm1' }));  // another device linked another account
+  cloud.erpMap = JSON.stringify(Object.assign(cloudMap(), { 'Dental 5 Clinic': 'm1' }));  // another device linked another account
   await ui('save');
   f = await figs();
-  check('(b) another account linked elsewhere meanwhile: both links survive, memory takes the cloud copy', cloudMap()[KH] === 'al2' && cloudMap()['Dental 8 Clinic'] === 'm1' && cloudMap()[BYSTANDER] === '@ignore' && f.link === 'al2' && (await page.evaluate(() => erpMap['Dental 8 Clinic'])) === 'm1', { map: cloudMap(), f });
+  check('(b) another account linked elsewhere meanwhile: both links survive, memory takes the cloud copy', cloudMap()[KH] === 'al2' && cloudMap()['Dental 5 Clinic'] === 'm1' && cloudMap()[BYSTANDER] === '@ignore' && f.link === 'al2' && (await page.evaluate(() => erpMap['Dental 5 Clinic'])) === 'm1', { map: cloudMap(), f });
   const cm = cloudMap(); delete cm[KH]; cloud.erpMap = JSON.stringify(cm);              // another device removed Khairan's link
-  await ui('edit', 'Dental 8 Clinic'); await ui('pick', '@auto'); await ui('save');
-  check('(c) saving another account never brings a removed link back', !(KH in cloudMap()) && !('Dental 8 Clinic' in cloudMap()) && cloudMap()[BYSTANDER] === '@ignore' && (await figs()).link === null, cloudMap());
+  await ui('edit', 'Dental 5 Clinic'); await ui('pick', '@auto'); await ui('save');
+  check('(c) saving another account never brings a removed link back', !(KH in cloudMap()) && !('Dental 5 Clinic' in cloudMap()) && cloudMap()[BYSTANDER] === '@ignore' && (await figs()).link === null, cloudMap());
 
   // =============== 6) to another rep's clinic: the months and KD first, closed months need a tick ===============
   reseed(); await boot();
@@ -439,10 +439,10 @@ reseed();
   check('…and the editor opens on exactly that name', qn.name === QUOTED && (await modal()).includes(QUOTED), qn);
 
   // =============== 9) a link to a removed clinic ===============
-  reseed({ erpMap: { [KH]: 'al1', [BYSTANDER]: '@ignore', 'Aline Dental Clinic - Hawally': 'gone1' } }); await boot();
+  reseed({ erpMap: { [KH]: 'al1', [BYSTANDER]: '@ignore', 'Orion Dental Clinic - Hawally': 'gone1' } }); await boot();
   a = await ui('list');
-  check('the account linked to a removed clinic is listed first, as "removed clinic"', a.first === 'Aline Dental Clinic - Hawally' && /removed clinic/.test(a.text || ''), a);
-  a = await ui('auditRow', 'Aline Dental Clinic - Hawally');
+  check('the account linked to a removed clinic is listed first, as "removed clinic"', a.first === 'Orion Dental Clinic - Hawally' && /removed clinic/.test(a.text || ''), a);
+  a = await ui('auditRow', 'Orion Dental Clinic - Hawally');
   check('the audit says عيادة محذوفة (counted for whoever issued it), not ✅', /عيادة محذوفة/.test(a.row || '') && !/✅/.test(a.row || ''), a);
   const del = await page.evaluate(() => { deleteClinic('al1'); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
   check('removing Salmiya warns that an ERP account is linked to it by hand', /linked to this clinic by hand/.test(del) && /move them first/.test(del), del.slice(0, 300));
@@ -453,9 +453,9 @@ reseed();
   await page.evaluate(() => { const b = [...document.querySelectorAll('#clinicErpAccounts button')].find(x => /Count another ERP account here/.test(x.innerText)); if(b) b.click(); });
   await page.waitForTimeout(150);
   const pk = await page.evaluate(() => ({ text: document.getElementById('modalInner').innerText.replace(/\s+/g, ' '), first: [...document.querySelectorAll('#elList [data-erp-link]')].map(x => x.dataset.erpLink).slice(0, 3) }));
-  check('pick mode: the list for Jabriya puts the accounts that look like it first (Aline …), not the ones already counted there', /Looks like this clinic/i.test(pk.text) && pk.first[0] === KH && !pk.first.includes('Aline Dental Clinic - Jabriya'), pk);
+  check('pick mode: the list for Jabriya puts the accounts that look like it first (Orion …), not the ones already counted there', /Looks like this clinic/i.test(pk.text) && pk.first[0] === KH && !pk.first.includes('Orion Dental Clinic - Jabriya'), pk);
   await ui('openFrom', KH); pv = await ui('preview');
-  check('…tapping Khairan goes straight to the check: Salmiya → Jabriya, nobody\'s figures change, SINV7002 leaves class A\'s limit (tick)', !pv.err && /Aline Dental Clinic - Jabriya/.test(pv.text) && /nobody's sales figures change/.test(pv.text) && pv.closedOk, pv);
+  check('…tapping Khairan goes straight to the check: Salmiya → Jabriya, nobody\'s figures change, SINV7002 leaves class A\'s limit (tick)', !pv.err && /Orion Dental Clinic - Jabriya/.test(pv.text) && /nobody's sales figures change/.test(pv.text) && pv.closedOk, pv);
   await ui('tick'); await ui('save');
   a = await ui('note'); const cj = await page.evaluate(() => ({ h3: document.querySelector('#modalInner h3').innerText, links: [...document.querySelectorAll('#clinicErpAccounts [data-erp-link]')].map(x => x.dataset.erpLink) }));
   check('…saved: back on the Jabriya card, which now lists Khairan, with the Saved note', cloudMap()[KH] === 'al3' && /Jabriya/.test(cj.h3) && cj.links.includes(KH) && /Saved/.test(a.text || ''), { cj, a, map: cloudMap() });
@@ -563,7 +563,7 @@ reseed();
   await page.evaluate(() => { closeModal(); openAddClinic(); document.getElementById('mClinicName').value = 'Half typed clinic'; });
   await sleep(2600); mode.delay = null;
   let s17 = await page.evaluate(() => ({ h3: document.querySelector('#modalInner h3').innerText, typed: (document.getElementById('mClinicName') || {}).value || null, shown: document.getElementById('modalBack').classList.contains('show'),
-    toast: document.getElementById('toast').textContent, link: erpMap['Aline Dental Clinic - Khairan'] }));
+    toast: document.getElementById('toast').textContent, link: erpMap['Orion Dental Clinic - Khairan'] }));
   check('[D3] it lands while "Add clinic" is open with typed text: that sheet is untouched; memory follows; a toast names the account and where it counts now',
     /Add clinic/.test(s17.h3) && s17.typed === 'Half typed clinic' && s17.shown && s17.link === 'al3' && s17.toast.includes(KH) && /Jabriya/.test(s17.toast), s17);
   await ui('list');
@@ -579,14 +579,14 @@ reseed();
   const during = await page.evaluate(async () => { document.getElementById('elSave').click(); await new Promise(r => setTimeout(r, 120));
     const back = document.getElementById('elBack'); return { saving: !!(_erpLinkSaving || _elBusy), backDisabled: !!(back && back.disabled) }; });
   check('[D3] while "Saving…" the page offers no way to another account: ‹ Pick another is disabled', during.saving && during.backDisabled, during);
-  await page.evaluate(() => { closeModal(); openErpLinkEdit('Dental 8 Clinic', 'links'); });
+  await page.evaluate(() => { closeModal(); openErpLinkEdit('Dental 5 Clinic', 'links'); });
   await sleep(1900); mode.delay = null;
   const s17b = await page.evaluate(() => ({ el: _el ? _el.name : null, h3: document.querySelector('#modalInner h3').innerText, acct: (document.querySelector('#modalInner [dir="auto"]') || {}).innerText || null,
     note: !!document.getElementById('erpImportNote'), toast: document.getElementById('toast').textContent }));
-  check('[D3] it finishes while another account\'s editor is open: that editor stays as it was (no note, no page swap, its state untouched)', s17b.el === 'Dental 8 Clinic' && /Where do this account/.test(s17b.h3) && s17b.acct === 'Dental 8 Clinic' && !s17b.note, s17b);
-  check('[D3] …the toast names the account that was saved (Khairan, now at Jabriya) — never the one on screen', s17b.toast.includes(KH) && /Jabriya/.test(s17b.toast) && !/Dental 8/.test(s17b.toast), s17b.toast);
+  check('[D3] it finishes while another account\'s editor is open: that editor stays as it was (no note, no page swap, its state untouched)', s17b.el === 'Dental 5 Clinic' && /Where do this account/.test(s17b.h3) && s17b.acct === 'Dental 5 Clinic' && !s17b.note, s17b);
+  check('[D3] …the toast names the account that was saved (Khairan, now at Jabriya) — never the one on screen', s17b.toast.includes(KH) && /Jabriya/.test(s17b.toast) && !/Dental 5/.test(s17b.toast), s17b.toast);
   await ui('list'); a = await ui('undo');
-  check('[D3] …Undo from the list undoes Khairan (back at Salmiya) and leaves Dental 8 alone', !a.err && cloudMap()[KH] === 'al1' && !('Dental 8 Clinic' in cloudMap()), { a, map: cloudMap() });
+  check('[D3] …Undo from the list undoes Khairan (back at Salmiya) and leaves Dental 5 alone', !a.err && cloudMap()[KH] === 'al1' && !('Dental 5 Clinic' in cloudMap()), { a, map: cloudMap() });
   // (c) a retry is confirmed first, then the timed-out first attempt lands
   reseed(); await boot();
   await page.evaluate(() => { ERP_LINK_WRITE_MS = 300; });
@@ -611,7 +611,7 @@ reseed();
   await page.evaluate(async () => { const p = loadAll(); await new Promise(r => setTimeout(r, 30)); document.getElementById('elSave').click(); await p;
     for(let i = 0; i < 100 && (_elBusy || _erpLinkSaving); i++) await new Promise(r => setTimeout(r, 50)); await new Promise(r => setTimeout(r, 150)); });
   mode.delay = null; mode.getDelay = null;
-  const c18 = await page.evaluate(() => { const b = clinics.find(c => c.name === 'Aline Dental Clinic - Khairan') || null; return { err: (document.getElementById('elErr') || {}).innerText || null, branch: b ? b.id : null, link: erpMap['Aline Dental Clinic - Khairan'] }; });
+  const c18 = await page.evaluate(() => { const b = clinics.find(c => c.name === 'Orion Dental Clinic - Khairan') || null; return { err: (document.getElementById('elErr') || {}).innerText || null, branch: b ? b.id : null, link: erpMap['Orion Dental Clinic - Khairan'] }; });
   check('[D5] a refresh that read the clinics before the new branch landed: the branch stays in memory and the link is saved (no "not in the list any more")', !!c18.branch && c18.link === c18.branch && cloudMap()[KH] === c18.branch && !/not in the list/.test(c18.err || ''), c18);
   // (b) the refresh's older list arrives after the link was confirmed
   reseed(); await boot();
@@ -621,7 +621,7 @@ reseed();
     for(let i = 0; i < 100 && (_elBusy || _erpLinkSaving); i++) await new Promise(r => setTimeout(r, 50));
     await p; await new Promise(r => setTimeout(r, 150)); });
   mode.getDelay = null;
-  const c18b = await page.evaluate(() => { const n = 'Aline Dental Clinic - Khairan', x = UMCore.erpAccounts(digestData()).accounts.find(y => y.name === n); return { link: erpMap[n], inMem: clinics.some(c => c.id === erpMap[n]), status: x && x.status }; });
+  const c18b = await page.evaluate(() => { const n = 'Orion Dental Clinic - Khairan', x = UMCore.erpAccounts(digestData()).accounts.find(y => y.name === n); return { link: erpMap[n], inMem: clinics.some(c => c.id === erpMap[n]), status: x && x.status }; });
   check('[D5] …and when that refresh lands after the link was confirmed, the branch is still in memory: the account counts at it (never "removed clinic")', c18b.inMem && c18b.status === 'hand' && cloudMap()[KH] === c18b.link, c18b);
 
   // =============== 19) [D6] notes that must be true ===============
@@ -649,13 +649,13 @@ reseed();
   // =============== 20) [D7] smaller ===============
   // (a) the list keeps its search across ‹ Back, Save and ‹ Pick another
   reseed(); await boot();
-  await ui('list', { back: 'import' }); await ui('search', 'Dental 8');
-  await ui('openFrom', 'Dental 8 Clinic'); await ui('backBtn');
+  await ui('list', { back: 'import' }); await ui('search', 'Dental 5');
+  await ui('openFrom', 'Dental 5 Clinic'); await ui('backBtn');
   let ls = await ui('listState');
-  check('[D7] the account list keeps its search across ‹ Back from the editor', ls.q === 'Dental 8' && JSON.stringify(ls.cards) === JSON.stringify(['Dental 8 Clinic']), ls);
-  await ui('openFrom', 'Dental 8 Clinic'); await ui('pick', 'al3'); await ui('tick'); await ui('save');
+  check('[D7] the account list keeps its search across ‹ Back from the editor', ls.q === 'Dental 5' && JSON.stringify(ls.cards) === JSON.stringify(['Dental 5 Clinic']), ls);
+  await ui('openFrom', 'Dental 5 Clinic'); await ui('pick', 'al3'); await ui('tick'); await ui('save');
   ls = await ui('listState');
-  check('[D7] …and after a save', cloudMap()['Dental 8 Clinic'] === 'al3' && ls.q === 'Dental 8' && ls.cards.includes('Dental 8 Clinic'), { ls, map: cloudMap() });
+  check('[D7] …and after a save', cloudMap()['Dental 5 Clinic'] === 'al3' && ls.q === 'Dental 5' && ls.cards.includes('Dental 5 Clinic'), { ls, map: cloudMap() });
   await ui('card', 'al2');
   await page.evaluate(() => { const b = [...document.querySelectorAll('#clinicErpAccounts button')].find(x => /Count another ERP account here/.test(x.innerText)); if(b) b.click(); });
   await page.waitForTimeout(120);
@@ -672,7 +672,7 @@ reseed();
   a = await ui('card', 'cl1');
   const chip = await page.evaluate(() => [...document.querySelectorAll('#clinicErpAccounts button')].some(b => /Count another ERP account here/.test(b.innerText)));
   check('[D7] a Closed clinic\'s card does not offer "Count another ERP account here…"', a.text !== null && !chip, { text: a.text, chip });
-  await page.evaluate(() => openErpLinkPreviewFor('Dental 8 Clinic', 'cl1', 'clinic:cl1')); await page.waitForTimeout(200);
+  await page.evaluate(() => openErpLinkPreviewFor('Dental 5 Clinic', 'cl1', 'clinic:cl1')); await page.waitForTimeout(200);
   pv = await ui('preview'); await ui('tick'); const pv2 = await ui('preview');
   check('[D7] …and the check page refuses a Closed clinic as the target: it says so and Save stays disabled', /closed/i.test(pv.err || '') && pv.saveDisabled === true && pv2.saveDisabled === true, { err: pv.err, s1: pv.saveDisabled, s2: pv2.saveDisabled });
   // (d) bulk delete names the hand links first
@@ -740,11 +740,11 @@ reseed();
   // (3) the change log is bounded by its size, not only by its count: one long name cannot fill a document
   reseed({ split: SPLIT_BIG }); await boot();
   mode.maxBytes = { re: /^erpMapLog$/, bytes: 1048576 };   // a Firestore document holds at most 1 MiB
-  await page.evaluate(async n => { for(let i = 0; i < 40; i++) erpLinkLog(n, i % 2 ? 'al1' : 'al2', i === 39 ? 'al3' : i % 2 ? 'al2' : 'al1'); await _elLogChain; await erpLinkLog('Dental 8 Clinic', null, 'al3'); }, BIG);
+  await page.evaluate(async n => { for(let i = 0; i < 40; i++) erpLinkLog(n, i % 2 ? 'al1' : 'al2', i === 39 ? 'al3' : i % 2 ? 'al2' : 'al1'); await _elLogChain; await erpLinkLog('Dental 5 Clinic', null, 'al3'); }, BIG);
   mode.maxBytes = null;
   const lgs = cloud.erpMapLog || '', lg = JSON.parse(lgs || '[]');
   check('[S3] 40 changes to an account with a 32,000-character name: the log stays far below a document\'s 1 MiB and records every one of them, and the next change too',
-    Buffer.byteLength(lgs) < 262144 && lg.length === 41 && lg[0].n === 'Dental 8 Clinic' && lg[0].t === 'al3' && lg[1].f === 'al1' && lg[1].t === 'al3', { bytes: Buffer.byteLength(lgs), entries: lg.length, top: lg.slice(0, 2).map(e => [String(e.n).slice(0, 24), e.f, e.t]) });
+    Buffer.byteLength(lgs) < 262144 && lg.length === 41 && lg[0].n === 'Dental 5 Clinic' && lg[0].t === 'al3' && lg[1].f === 'al1' && lg[1].t === 'al3', { bytes: Buffer.byteLength(lgs), entries: lg.length, top: lg.slice(0, 2).map(e => [String(e.n).slice(0, 24), e.f, e.t]) });
   await ui('edit', BIG); await sleep(300);
   const lastBig = await page.evaluate(() => { const e = document.getElementById('elLast'); return e && e.offsetParent ? e.innerText.replace(/\s+/g, ' ') : null; });
   check('[S3] …and that account\'s editor still finds its last change in the log', /Last change:/.test(lastBig || '') && /Dr\. Ghaith/.test(lastBig || '') && /Salmiya/.test(lastBig || ''), lastBig);
@@ -753,11 +753,11 @@ reseed();
   reseed({ clinics: CL_EXTRA }); await boot();
   const s4 = await page.evaluate(n => saveErpLink(n, 'cl1', 'al1'), KH);
   check('[S4] saveErpLink refuses a Closed clinic as a new target (a console call, a page left open): nothing is written', !!s4 && !s4.ok && cloudMap()[KH] === 'al1' && (await figs()).link === 'al1', { s4, map: cloudMap() });
-  reseed({ clinics: CL_EXTRA, erpMap: { [KH]: 'al1', [BYSTANDER]: '@ignore', 'Dental 8 Clinic': 'cl1' } }); await boot();
-  await ui('edit', 'Dental 8 Clinic'); await ui('pick', 'm1'); await ui('tick'); a = await ui('save');
-  const s4b = cloudMap()['Dental 8 Clinic'];
+  reseed({ clinics: CL_EXTRA, erpMap: { [KH]: 'al1', [BYSTANDER]: '@ignore', 'Dental 5 Clinic': 'cl1' } }); await boot();
+  await ui('edit', 'Dental 5 Clinic'); await ui('pick', 'm1'); await ui('tick'); a = await ui('save');
+  const s4b = cloudMap()['Dental 5 Clinic'];
   a = await ui('undo');
-  check('[S4] an account linked to a Closed clinic is moved away — and Undo puts it back there (Undo restores; a Closed clinic is never offered)', s4b === 'm1' && !a.err && cloudMap()['Dental 8 Clinic'] === 'cl1', { s4b, a, map: cloudMap() });
+  check('[S4] an account linked to a Closed clinic is moved away — and Undo puts it back there (Undo restores; a Closed clinic is never offered)', s4b === 'm1' && !a.err && cloudMap()['Dental 5 Clinic'] === 'cl1', { s4b, a, map: cloudMap() });
 
   // (5) a long name with no space wraps instead of pushing a sheet sideways
   reseed({ split: SPLIT_WORD }); await boot();
@@ -948,7 +948,7 @@ reseed();
   await ui('edit', KH); await ui('pick', 'al3'); await ui('tick');
   await page.evaluate(() => { document.getElementById('elSave').click(); });
   await sleep(100);
-  await page.evaluate(() => { closeModal(); openErpLinkEdit('Aline Dental Clinic - Hawally', 'links'); });
+  await page.evaluate(() => { closeModal(); openErpLinkEdit('Orion Dental Clinic - Hawally', 'links'); });
   await sleep(150);
   await ui('pick', 'al3');
   const d5 = await ui('preview'), k5 = await page.evaluate(() => _elSheet);
@@ -959,7 +959,7 @@ reseed();
   check('[V5] an editor opened while another account\'s save runs: its Save waits (disabled) and is enabled when that save ends — the page is not redrawn',
     d5.saveDisabled === true && a5.saveDisabled === false && !a5.err && k5 === k5b.sheet && k5b.mark === 'kept' && cloudMap()[KH] === 'al3' && t5.includes(KH), { d5: d5.saveDisabled, a5: { saveDisabled: a5.saveDisabled, err: a5.err }, k5, k5b, t5 });
   a = await ui('save');
-  check('[V5] …and that Save then saves', !a.err && cloudMap()['Aline Dental Clinic - Hawally'] === 'al3' && cloudMap()[KH] === 'al3', { a, map: cloudMap() });
+  check('[V5] …and that Save then saves', !a.err && cloudMap()['Orion Dental Clinic - Hawally'] === 'al3' && cloudMap()[KH] === 'al3', { a, map: cloudMap() });
 
   // =============== 23) [Q] ERP names inside older inline handlers ===============
   // A product, salesman or brand name from the ERP file reaches its handler only through a data-* attribute: an
@@ -1052,7 +1052,7 @@ reseed();
   reseed(); guard.length = 0;
   await boot(G, 'supervisor', { um_outbox: JSON.stringify(['erpMap']), 'um_mirror:erpMap': JSON.stringify({ [KH]: 'al3' }) });
   await sleep(300);
-  const ob = await page.evaluate(() => ({ outbox: outboxList(), link: erpMap['Aline Dental Clinic - Khairan'], mirrorUsed: !!_mirrorUsed.erpMap }));
+  const ob = await page.evaluate(() => ({ outbox: outboxList(), link: erpMap['Orion Dental Clinic - Khairan'], mirrorUsed: !!_mirrorUsed.erpMap }));
   a = await ui('list');
   check('outbox: a queued "erpMap" is dropped at boot — the cloud copy is read, the list is not paused, the cloud is untouched', !ob.outbox.includes('erpMap') && ob.link === 'al1' && !ob.mirrorUsed && !/changes are paused/.test(a.text || '') && !/changes are paused/.test(await modal()) && cloudMap()[KH] === 'al1' && guard.length === 0, { ob, guard });
   const pg = await page.evaluate(async () => { const r = await persist('erpMap'); return r; });

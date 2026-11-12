@@ -75,7 +75,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   const cloudKeys = () => Object.keys(cloud).filter(k => /^erp/.test(k)).sort();
 
   // ---------- setup: legacy account + a September DSR whose as-of is 14/9 ----------
-  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
+  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 5 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Summit Dental Center',rep:'Renova',cls:'A'}]);
   cloud.erpSales = JSON.stringify({ periods: [{ id:'seed_sales3_aug26', from: SEED.from, to: SEED.to, net: SEED.net, rowCount: SEED.rowCount, repMap: SEED.repMap, rows: SEED.rows }],
     repMapGlobal: SEED.repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true } });
   cloud.targets = JSON.stringify({ Mariam: { revenue: 10000, achieved: 3000, achievedAsOf: '2026-09-14' }, Renova: { revenue: 12000, achieved: 4000, achievedAsOf: '2026-09-14' } });
@@ -93,7 +93,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   const fileRows = core.parseErpCsv(toCsv(sheets[0].rows)).rows;
   const monthOf = sm => Math.round(fileRows.filter(r => r.salesman === sm && r.date >= '2026-09-01').reduce((t, r) => t + r.net, 0) * 100) / 100;
   // the sales file (1–21 Sep) is newer than the DSR (14 Sep) → it is used ALONE, never added to the DSR
-  const expected = { Mariam: monthOf('Mariam Zohair'), Renova: monthOf('Ranova Ayman Mohammed') };
+  const expected = { Mariam: monthOf('Mariam Sample'), Renova: monthOf('Ranova Sample Person') };
 
   // ---------- 1) import → Today moves, and the note says before → after ----------
   await importFile();
@@ -132,7 +132,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
 
   // ---------- 3) older file after newer → asks, dismiss = cancelled ----------
   // craft an older cumulative CSV (Sep 1–10, Mariam only) and push it through the auto path
-  const olderCsv = 'Date,Type,Invoice#,Account,Customer Class,Product,Quantity,Sales Gross,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name\n2026-09-03,SalesInvoice,SINVOLD1,Dental 8 Clinic,Clinics,P,1,100,0,0,100,TEPE,Mariam Zohair\n';
+  const olderCsv = 'Date,Type,Invoice#,Account,Customer Class,Product,Quantity,Sales Gross,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name\n2026-09-03,SalesInvoice,SINVOLD1,Dental 5 Clinic,Clinics,P,1,100,0,0,100,TEPE,Mariam Sample\n';
   dialogs.length = 0;
   const beforeOld = await state();
   await page.evaluate(async (csv) => { openErpImport(); await erpAutoImport(csv); }, olderCsv);
@@ -208,12 +208,12 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('mirror falls back to a smaller copy instead of vanishing when storage is full', mirror.ok && mirror.bytes <= 20000, mirror);
 
   // ---------- 9) two devices imported overlapping Sep files ----------
-  const mkRow = (d, sm, net) => [d, 'X' + d + sm, 0, 'P', 1, net, net, 0, sm, 'TEPE', 'Dental 8 Clinic', 'Clinics', 0, ''];
+  const mkRow = (d, sm, net) => [d, 'X' + d + sm, 0, 'P', 1, net, net, 0, sm, 'TEPE', 'Dental 5 Clinic', 'Clinics', 0, ''];
   const mtdBase = await page.evaluate(() => erpMtdMap());
   // (a) the other device's file is OLDER than ours → it must lose entirely
   let idx = JSON.parse(cloud.erpSales);
-  cloud['erpRows:dev2old:1:0'] = JSON.stringify([mkRow('2026-09-10', 'Mariam Zohair', 999)]);
-  idx.periods.push({ id: 'dev2old', from: '2026-09-02', to: '2026-09-21', net: 999, rowCount: 1, importedAt: '2026-09-20T00:00:00.000Z', rev: 1, repMap: { 'Mariam Zohair': 'Mariam' }, rowsRef: { key: 'erpRows:dev2old:1', chunks: 1, count: 1 } });
+  cloud['erpRows:dev2old:1:0'] = JSON.stringify([mkRow('2026-09-10', 'Mariam Sample', 999)]);
+  idx.periods.push({ id: 'dev2old', from: '2026-09-02', to: '2026-09-21', net: 999, rowCount: 1, importedAt: '2026-09-20T00:00:00.000Z', rev: 1, repMap: { 'Mariam Sample': 'Mariam' }, rowsRef: { key: 'erpRows:dev2old:1', chunks: 1, count: 1 } });
   cloud.erpSales = JSON.stringify(idx);
   await page.evaluate(() => setReturnPolicy('origin'));
   await page.waitForTimeout(300);
@@ -222,15 +222,15 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('older overlapping file from another device is tombstoned, MTD unchanged', !s.periods.some(p=>p.id==='dev2old') && !!JSON.parse(cloud.erpSales).removed.dev2old && JSON.stringify(mtdNow)===JSON.stringify(mtdBase), { periods: s.periods.map(p=>p.id), mtd: mtdNow });
   // (b) the other device's file is NEWER → our Sep period loses Mariam's rows to it
   idx = JSON.parse(cloud.erpSales);
-  cloud['erpRows:dev2new:1:0'] = JSON.stringify([mkRow('2026-09-10', 'Mariam Zohair', 500)]);
-  idx.periods.push({ id: 'dev2new', from: '2026-09-01', to: '2026-09-21', net: 500, rowCount: 1, importedAt: '2027-01-01T00:00:00.000Z', rev: 1, repMap: { 'Mariam Zohair': 'Mariam' }, rowsRef: { key: 'erpRows:dev2new:1', chunks: 1, count: 1 } });
+  cloud['erpRows:dev2new:1:0'] = JSON.stringify([mkRow('2026-09-10', 'Mariam Sample', 500)]);
+  idx.periods.push({ id: 'dev2new', from: '2026-09-01', to: '2026-09-21', net: 500, rowCount: 1, importedAt: '2027-01-01T00:00:00.000Z', rev: 1, repMap: { 'Mariam Sample': 'Mariam' }, rowsRef: { key: 'erpRows:dev2new:1', chunks: 1, count: 1 } });
   cloud.erpSales = JSON.stringify(idx);
   await page.evaluate(() => setReturnPolicy('erp'));
   await page.waitForTimeout(300);
   s = await state();
   mtdNow = await page.evaluate(() => erpMtdMap());
   const sepLocal = await page.evaluate(() => { const p = erpPeriods().find(x => x.from >= '2026-09-01' && x.id !== 'dev2new'); return p && { rows: p.rows.length, salesmen: [...new Set(p.rows.map(r => r[8]))] }; });
-  check('newer overlapping file from another device wins Mariam\'s days; our period keeps only Renova', s.periods.some(p=>p.id==='dev2new') && sepLocal && sepLocal.salesmen.length===1 && sepLocal.salesmen[0]==='Ranova Ayman Mohammed' && mtdNow.Mariam.amount===500, { sepLocal, mtd: mtdNow });
+  check('newer overlapping file from another device wins Mariam\'s days; our period keeps only Renova', s.periods.some(p=>p.id==='dev2new') && sepLocal && sepLocal.salesmen.length===1 && sepLocal.salesmen[0]==='Ranova Sample Person' && mtdNow.Mariam.amount===500, { sepLocal, mtd: mtdNow });
   await page.evaluate(() => setReturnPolicy('origin')); await page.waitForTimeout(300); // same policy as the baseline
   await importFile(); s = await state(); // our fresh upload is now the newest → takes the month back
   mtdNow = await page.evaluate(() => erpMtdMap());
@@ -263,8 +263,8 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   // ---------- 12) doctors: one person, one record ----------
   // seed a clinic with duplicates + a visit pointing at the duplicate id
   cloud.clinics = JSON.stringify([
-    {id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A', doctors:[{id:'d1',name:'Dr. Ahmed'},{id:'d2',name:'dr ahmed',title:'Periodontist'},{id:'d3',name:'Dr. Sara'}]},
-    {id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
+    {id:'c1',name:'Dental 5 Clinic',rep:'Mariam',cls:'A', doctors:[{id:'d1',name:'Dr. Ahmed'},{id:'d2',name:'dr ahmed',title:'Periodontist'},{id:'d3',name:'Dr. Sara'}]},
+    {id:'c2',name:'Summit Dental Center',rep:'Renova',cls:'A'}]);
   cloud.visits = JSON.stringify([{id:'v1', clinicId:'c1', rep:'Mariam', date:'2026-09-15', ts: 1, doctorIds:['d2'], doctorId:'d2', products:[], orderTaken:false}]);
   await boot();
   const docs = await page.evaluate(() => {
