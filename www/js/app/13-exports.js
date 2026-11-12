@@ -1774,11 +1774,27 @@ async function restoreMissingClinics(){
 async function restoreSnapshot(dateStr){ return holdRefresh(() => restoreSnapshotNow(dateStr)); }
 async function restoreSnapshotNow(dateStr){
   if(!requireAdmin()) return; // a restore replaces the whole team's data
-  if(!confirm(`Restore data from ${dateStr}? This will replace the current clinics, tasks and this month's visits with that day's backup (past months' visits are kept).`)) return;
+  // A backup of another month holds THAT month's visits: written over this
+  // month, it would erase every visit the team logged since the 1st (v121).
+  if(String(dateStr).slice(0, 7) !== todayStr().slice(0, 7)){
+    showToast('This backup is from another month: restoring it would erase this month\'s visits. To bring back clinics, use "Find missing clinics".', 7000);
+    return;
+  }
+  let snap;
   try{
     const res = await window.storage.get('snap_'+dateStr, true);
     if(!res){ showToast('Backup not found'); return; }
-    const snap = JSON.parse(res.value);
+    snap = JSON.parse(res.value);
+  }catch(e){ console.error(e); showToast('Restore failed — the backup could not be read'); return; }
+  // What the restore removes, said before anything changes.
+  const held = list => new Set((Array.isArray(list) ? list : []).map(x => x && x.id));
+  const hc = held(snap.clinics), ht = held(snap.tasks), hv = held(snap.visits), today = todayStr();
+  const goneC = storedClinics().filter(c => c && !hc.has(c.id)).length;
+  const goneT = (tasks || []).filter(t => t && !ht.has(t.id)).length;
+  const goneV = (visits || []).filter(v => v && UMCore.visitHome(v, today) === 'live' && !hv.has(v.id)).length;
+  const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits and the sales files stay as they are.`;
+  if(!confirm(trOf(ask) || ask)) return;
+  try{
     clinics = normalizeClinics(snap.clinics||[]); hidePlaceholderClinics();
     products = snap.products || products;
     // The backup holds the visits of ITS month; older months live in their
@@ -1797,7 +1813,11 @@ async function restoreSnapshotNow(dateStr){
       setMergeBase(k, str); // the cloud now holds exactly this (the next merge's base)
     }
     await persistVisits({ authoritative: true });
-    if(snap.erpIndex && Array.isArray(snap.erpIndex.periods)){
+    // The sales files stay as they are: an older index would drop every file
+    // imported since that day from every figure. Only a wiped index (no file
+    // at all) takes the backup's.
+    const haveFiles = !!(erpSales && Array.isArray(erpSales.periods) && erpSales.periods.length);
+    if(!haveFiles && snap.erpIndex && Array.isArray(snap.erpIndex.periods) && snap.erpIndex.periods.length){
       // that day's sales index; its chunks are still in the cloud (7-day grace)
       await window.storage.set('erpSales', JSON.stringify(snap.erpIndex), true);
       _erpDirty = false; renderErpDirtyPill();

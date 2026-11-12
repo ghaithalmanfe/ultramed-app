@@ -62,7 +62,8 @@ function seed(){
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if(m.type()==='error' && !/gstatic|firebase|net::ERR|Failed to load resource|boom-get/i.test(m.text())) errors.push('console: '+m.text()); });
-  page.on('dialog', d => d.accept());
+  const dialogs = [];
+  page.on('dialog', d => { dialogs.push(d.message()); d.accept(); });
   await page.exposeFunction('__cGet', api.get); await page.exposeFunction('__cSet', api.set);
   await page.exposeFunction('__cDel', api.del); await page.exposeFunction('__cList', api.list);
   await page.exposeFunction('__cSetMany', api.setMany);
@@ -151,6 +152,29 @@ function seed(){
   const modal = () => page.evaluate(() => (document.getElementById('modalInner') || {}).innerText.replace(/\s+/g, ' '));
   const toast = () => page.evaluate(() => document.getElementById('toast').textContent);
   const confirmTap = async () => { await page.evaluate(() => { const b = document.querySelector('#modalInner button[data-ask]'); if(!b) throw new Error('no confirm button'); b.click(); }); await sleep(350); };
+  // ---- whole-day Restore (Export → Automatic backups): never across a month, says what goes first, keeps the sales files ----
+  seed();
+  cloud['snap_2026-09-28'] = JSON.stringify({ clinics: [M1, G1].concat(FILL), products: [], visits: [{ id: 'vs', clinicId: 'm1', rep: M, date: '2026-09-27' }], tasks: [] });
+  {
+    const RMR = { 'Mariam Sample': M }, rowR = ['2026-10-05', 'SINV9', 0, 'Intensiv Ortho-Strips', 1, 50, 50, 0, 'Mariam Sample', 'Intensiv', 'Dental 5 Clinic', 'Clinics', 0, ''];
+    const spR = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: RMR, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true },
+      periods: [{ id: 'oc', from: '2026-10-01', to: '2026-10-15', net: 50, rowCount: 1, importedAt: '2026-10-16T08:00:00.000Z', repMap: RMR, rev: 1, rows: [rowR] }] });
+    Object.keys(cloud).filter(k => /^erp/.test(k)).forEach(k => { delete cloud[k]; });
+    cloud.erpSales = JSON.stringify(spR.index); Object.keys(spR.docs).forEach(k => { cloud[k] = JSON.stringify(spR.docs[k]); });
+    const oldIdx = JSON.parse(JSON.stringify(spR.index)); oldIdx.periods = [Object.assign({}, oldIdx.periods[0], { id: 'old', from: '2026-09-01', to: '2026-09-30' })];
+    cloud['snap_2026-10-18'] = JSON.stringify({ clinics: [M1, G1, R1b].concat(FILL), products: [], visits: [], tasks: [], erpIndex: oldIdx });
+  }
+  await boot(G, 'supervisor');
+  const octVisits = cloud.visits;
+  await page.evaluate(async () => { await restoreSnapshot('2026-09-28'); await new Promise(r => setTimeout(r, 300)); });
+  check('whole-day Restore: a backup from another month is refused — this month\'s visits stay', cloud.visits === octVisits && /another month/.test(await toast()), { toast: await toast(), visits: cloud.visits });
+  dialogs.length = 0;
+  await page.evaluate(async () => { await restoreSnapshot('2026-10-18'); await new Promise(r => setTimeout(r, 500)); });
+  const askR = dialogs.find(m => /^Restore data from 2026-10-18/.test(m)) || '';
+  check('whole-day Restore: the question says what it removes before anything changes', /0 clinics, 0 tasks and 2 visits of this month/.test(askR), askR);
+  const esR = JSON.parse(cloud.erpSales || '{}');
+  check('whole-day Restore: the sales files stay as they are (an older index never drops a file imported since)', (esR.periods || []).some(p => p.id === 'oc') && !(esR.periods || []).some(p => p.id === 'old'), (esR.periods || []).map(p => p.id));
+  check('whole-day Restore: the same-month backup is applied', JSON.parse(cloud.clinics).some(c => c.id === 'r1') && /Restored 2026-10-18/.test(await toast()), { toast: await toast() });
   // August and September visits sit in their month's archive document once saved
   const allV = () => Object.keys(cloud).filter(k => k === 'visits' || /^visitsArch:/.test(k)).reduce((a, k) => { const v = JSON.parse(cloud[k]); return a.concat(Array.isArray(v) ? v : ((v && v.visits) || [])); }, []);
   // ---- doctors without a name ----
