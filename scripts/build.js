@@ -27,6 +27,9 @@ function copyDir(from, to, skip){
 // [date, invoice, …] arrays, or objects naming a customer), stops the build.
 const SHEET = /\.(xlsx|xlsm|xls|csv)$/i;
 function holdsSalesLines(v){
+  // a full backup taken on the phone (Export → Full backup) or a test cloud
+  // restored from one (scripts/backup/restore.js) holds the whole account
+  if(v && typeof v === 'object' && (v.kind === 'ultramed-full-backup' || v.kind === 'ultramed-test-cloud')) return true;
   const lines = Array.isArray(v) ? v : (v && typeof v === 'object' && Array.isArray(v.rows) ? v.rows : null);
   return !!lines && lines.some(r => Array.isArray(r)
     ? r.length >= 11 && typeof r[0] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r[0])

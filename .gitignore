@@ -10,3 +10,8 @@ android/.idea/
 
 # built site (scripts/build.js) — GitHub Pages publishes it
 dist/
+
+# full backups taken on the phone, and test clouds restored from them
+# (scripts/backup) — the whole account: customers, sales, the team
+ultramed-full-backup-*.json
+*.test-cloud.json
