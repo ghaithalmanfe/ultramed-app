@@ -575,47 +575,89 @@ function closeLightbox(e, force){
 }
 
 // ---------- team data ----------
+// Saves vs the refresh (v122). loadTeam — the 20-second refresh, opening the
+// Team tab, "Refresh messages" — put the list it read over memory. A message
+// or memory whose save was still on its way, or queued on this phone, was not
+// in that copy: the queue's next upload, built from memory, sent the list
+// without it and emptied the queue — gone everywhere, after "Saved on this
+// device". Now the rule the other lists follow (v121, _localGen in 04-sync.js),
+// per list: every save of chat or memories moves _teamGen[key] and is counted
+// in _teamSaving[key] while it runs; a read that began before it moved, or
+// ends while one runs, keeps memory and puts it back in the phone's copy (the
+// read overwrote it) — the next refresh reads again. A list queued on this
+// phone keeps what memory holds, with what the phone's copy adds. These lists
+// only grow (nothing in them is edited or deleted): a union loses nothing.
+const _teamGen = { chat: 0, memories: 0 }, _teamSaving = { chat: 0, memories: 0 };
+function teamList(key){ const map={chat:chatMsgs, memories:memories}; return map[key]; } // the team's lists by cloud key, as they are now
+function setTeamList(key, v){ if(key === 'chat') chatMsgs = v; else memories = v; }
+// a ∪ b by id (a's copy kept), oldest first, the chat's last 300 — the merge persistTeam makes with the cloud
+function teamMerge(key, a, b){
+  let v = Array.isArray(a) ? a.slice() : [];
+  const have = new Set(v.map(x => x && x.id));
+  (Array.isArray(b) ? b : []).forEach(x => { if(x && x.id != null && !have.has(x.id)){ v.push(x); have.add(x.id); } });
+  v.sort((x, y) => ((x && x.ts) || 0) - ((y && y.ts) || 0));
+  if(key === 'chat' && v.length > 300) v = v.slice(-300);
+  return v;
+}
 async function loadTeam(){
-  try{
-    const [c,m] = await Promise.all([
-      cloudGet('chat').catch(()=>null),
-      cloudGet('memories').catch(()=>null),
-    ]);
-    chatMsgs = c ? JSON.parse(c.value) : [];
-    memories = m ? JSON.parse(m.value) : [];
-  }catch(e){ chatMsgs=[]; memories=[]; }
+  // each list is taken (or kept) the moment its own read is back: nothing runs between
+  // cloudGet writing the phone's copy and that copy being put back
+  await Promise.all(['chat', 'memories'].map(async key => {
+    const gen0 = _teamGen[key];
+    const r = await cloudGet(key).catch(() => null);
+    try{
+      const mine = teamList(key);
+      if(_teamGen[key] !== gen0 || _teamSaving[key] > 0){
+        console.warn(key + ': a save ran while the refresh read — the list on screen is kept');
+        mirrorSave(key, JSON.stringify(teamMerge(key, mine, UMCore.safeParse(mirrorGet(key), null))));
+        return;
+      }
+      const read = UMCore.safeParse(r && r.value, null);
+      const got = Array.isArray(read) ? read : [];
+      if(!outboxHas(key)){ setTeamList(key, got); return; }
+      const all = teamMerge(key, mine, got); // queued: nothing memory holds is dropped, nor left off the phone's copy
+      setTeamList(key, all);
+      const gotIds = new Set(got.map(x => x && x.id));
+      if(all.some(x => x && !gotIds.has(x.id))) mirrorSave(key, JSON.stringify(all));
+    }catch(e){ console.warn('team ' + key, e); } // the list on screen is kept
+  }));
 }
 // Read → union → write as ONE atomic step (v121): two phones posting at the
 // same moment each wrote the whole list back, so the later write dropped the
 // other's message — and a read that failed fell through to a blind write.
 async function persistTeam(key){
-  const map={chat:chatMsgs, memories:memories};
-  let value = map[key]; // hoisted: the catch mirrors the merged copy
+  _teamGen[key]++; _teamSaving[key]++; // a refresh on its way keeps this list (loadTeam)
+  try{ return await persistTeamNow(key); }
+  finally{ _teamSaving[key]--; _teamGen[key]++; }
+}
+async function persistTeamNow(key){
+  let value = null, seen = new Set(); // the merged copy (the catch keeps it on the phone) and every id it was made of
   try{
     const str = await storageUpdate(key, cur => {
       const cloud = cur != null ? UMCore.safeParse(cur, null) : null;
-      let v = (map[key] || []).slice();
-      if(Array.isArray(cloud)){
-        const have = new Set(v.map(x=>x && x.id));
-        cloud.forEach(x=>{ if(x && x.id != null && !have.has(x.id)){ v.push(x); have.add(x.id); } });
-        v.sort((a,b)=>(a.ts||0)-(b.ts||0));
-        if(key==='chat' && v.length>300) v = v.slice(-300);
-      }
-      value = v;
-      return JSON.stringify(v);
+      const mine = teamList(key); // as it is now: a message sent since this save began goes too
+      seen = new Set(mine.concat(Array.isArray(cloud) ? cloud : []).map(x => x && x.id));
+      value = Array.isArray(cloud) ? teamMerge(key, mine, cloud) : mine.slice();
+      return JSON.stringify(value);
     }, 12000);
     if(str == null) throw new Error(key + ' update failed');
-    if(key==='chat') chatMsgs = value; else memories = value;
-    mirrorSave(key, str);
-    if(outboxHas(key)) outboxRemove(key);
-    memOnlyLanded(key);
+    // Never put back the copy this save took (v122): a message sent while it was on its way (the
+    // queue's upload running when she sent one) dropped out of memory, and the next upload, built
+    // from memory, lost it. What was added meanwhile stays — on the phone too — and the queue keeps
+    // the list until a save carries it.
+    const later = teamList(key).filter(x => x && !seen.has(x.id));
+    const now = later.length ? teamMerge(key, value, later) : value;
+    setTeamList(key, now);
+    mirrorSave(key, later.length ? JSON.stringify(now) : str);
+    if(!later.length){ if(outboxHas(key)) outboxRemove(key); memOnlyLanded(key); }
     return true;
   }
   catch(e){
-    // queued in memory always (it uploads while the app stays open); on the phone when both fit
+    // queued in memory always (it uploads while the app stays open); on the phone when both fit —
+    // everything memory holds, with what this save had merged from the cloud
     let onPhone = false;
     try{
-      const mOk = mirrorSave(key, JSON.stringify(value || map[key]));
+      const mOk = mirrorSave(key, JSON.stringify(teamMerge(key, teamList(key), value)));
       onPhone = outboxAdd(key) && mOk;
     }catch(e2){}
     if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); }
@@ -693,7 +735,10 @@ async function sendChat(){
     }
     chatMsgs.push(msg);
     if(chatMsgs.length>300) chatMsgs = chatMsgs.slice(-300);
-    inp.value=''; clearChatPhoto();
+    // Clear only what this send took (v122): a photo attached, or words typed, while its
+    // photo uploaded are her next message — they were wiped from the draft unsent.
+    if(pendingChatPhoto === ph) clearChatPhoto();
+    if(inp.value.trim() === text) inp.value = '';
     await persistTeam('chat');
     renderChat();
     window.scrollTo(0, document.body.scrollHeight);
@@ -706,6 +751,7 @@ async function sendChat(){
 // ---------- memories ----------
 function pickMemoryPhoto(){
   pickImage(({full,thumb})=>{
+    const pm = {id:uid(), full, thumb};
     showModal(`
       <h3 style="margin-top:0;">\u{1F4F8} Add a memory</h3>
       <img src="${thumb}" style="width:100%; border-radius:14px; margin-bottom:12px;">
@@ -713,29 +759,39 @@ function pickMemoryPhoto(){
       <input type="text" id="memCap" placeholder="What's happening here?">
       <label>Tag it</label>
       <div class="chip-row" id="memTags">${['\u{1F3C6} Win','\u{1F697} On the road','\u{1F3E5} Clinic visit','\u{1F91D} Team','\u{1F389} Celebration','\u{1F4E6} Product'].map((t,i)=>`<div class="chip small ${i===0?'on':''}" data-tag="${t}" onclick="pickModalCls(this)">${t}</div>`).join('')}</div>
-      <button class="btn" onclick="saveMemory('${full.length}')">Share memory</button>
+      <button class="btn" id="memShareBtn" data-mem="${pm.id}" onclick="saveMemory()">Share memory</button>
     `);
-    window._pendingMem = {id:uid(), full, thumb};
+    window._pendingMem = pm;
   }, false);
 }
-let memSaving = false; // one share at a time: a second tap while the photo uploads stored the memory twice
+// One share per memory at a time: a second tap while its photo uploads stored it
+// twice. Another memory shares beside it (v122): one guard for all refused it
+// without a word, and the first share, when it finished, cleared and closed
+// whatever sheet was open — the second memory was lost while the screen said
+// "Memory shared with the team".
+const _memSharing = new Set();
+// this memory's sheet is the one on screen (she may have closed it and opened another meanwhile)
+function memSheetShown(pm){ const b = document.getElementById('memShareBtn'); return !!b && b.dataset.mem === pm.id && document.getElementById('modalBack').classList.contains('show'); }
 async function saveMemory(){
   const pm = window._pendingMem;
-  if(!pm || memSaving) return;
-  memSaving = true;
+  if(!pm) return;
+  if(_memSharing.has(pm.id)){ showToast('Already sharing this memory…'); return; }
+  _memSharing.add(pm.id);
   try{
     const cap = (document.getElementById('memCap').value||'').trim();
     const tagEl = document.querySelector('#memTags .chip.on');
     const ok = await savePhotoBlob(pm.id, pm.full); // gives up after PHOTO_UP_MS: the sheet stays open with the photo
     if(!ok){ showToast('⚠️ Photo failed to upload — try again'); return; }
     if(!memories.some(m => m && m.id === pm.id)) memories.push({id:pm.id, thumb:pm.thumb, cap, tag:tagEl?tagEl.dataset.tag:'', who:currentUser.name, ts:Date.now()});
-    await persistTeam('memories');
-    window._pendingMem=null;
-    closeModal();
+    const saved = await persistTeam('memories');
+    if(window._pendingMem === pm){ window._pendingMem = null; if(memSheetShown(pm)) closeModal(); } // only this memory's sheet
     setTeamTab('mem');
     renderBadges();
-    showToast('\u{1F4F8} Memory shared with the team');
-  } finally { memSaving = false; }
+    // The real outcome (v122): "shared with the team" was said for a memory only kept on this phone.
+    if(saved) showToast('\u{1F4F8} Memory shared with the team');
+    else showToast(_memOnly.has('memories') ? "⚠️ This phone's storage is full — this memory is only in the app's memory: keep the app open until it uploads"
+                                            : '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online', 4000);
+  } finally { _memSharing.delete(pm.id); }
 }
 function renderMemories(){
   const el = document.getElementById('memGrid');
