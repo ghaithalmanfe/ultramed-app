@@ -294,7 +294,13 @@ function seedCloud(){
   await new Promise(r => setTimeout(r, 300));
   await X.page.evaluate(() => { tomb('tasks', 'tX3'); });
   await settle(() => tombsIn('tasks').includes('tX3'));
-  const x3 = await X.page.evaluate(() => ({ local: tombSet('tasks').has('tX3'), unpublished: !!(_tombsUnpublished.tasks && _tombsUnpublished.tasks.has('tX3')) }));
+  // The cloud holds it the moment the fake cloud takes the write; the phone
+  // marks it published only once its own write call has come back (the
+  // transaction's release, a round trip later) — read the phone after that,
+  // never in between (CI caught the read landing in that gap).
+  const x3state = () => X.page.evaluate(() => ({ local: tombSet('tasks').has('tX3'), unpublished: !!(_tombsUnpublished.tasks && _tombsUnpublished.tasks.has('tX3')) }));
+  let x3 = await x3state();
+  for(let i = 0; i < 60 && x3.unpublished; i++){ await new Promise(r => setTimeout(r, 100)); x3 = await x3state(); }
   check('5c. a delete made while this phone\'s previous write of the log is on its way reaches the log too (and is not forgotten here)', tombsIn('tasks').includes('tX2') && tombsIn('tasks').includes('tX3') && x3.local && !x3.unpublished, { cloud: tombsIn('tasks'), x3 });
   mode.slow.chat = 1200;
   const msg = (id, from) => ({ id, from, text: 'hello from ' + from, ts: Date.now() });
