@@ -675,14 +675,16 @@ async function sendChat(){
   if(btn) btn.style.opacity = '.4';
   try{
     const msg = {id:uid(), who:currentUser.name, text, ts:Date.now()};
-    if(pendingChatPhoto){
-      const ok = await savePhotoBlob(pendingChatPhoto.id, pendingChatPhoto.full);
+    const ph = pendingChatPhoto; // as attached when Send was tapped (the preview can be cleared while it uploads)
+    if(ph){
+      // Gives up after PHOTO_UP_MS (v122: with no signal it never answered and the chat could not send again).
+      const ok = await savePhotoBlob(ph.id, ph.full);
       if(!ok){
         // Keep the draft — never silently drop the photo the user attached.
         showToast('⚠️ Photo failed to upload — try again');
         return;
       }
-      msg.photoId = pendingChatPhoto.id; msg.thumb = pendingChatPhoto.thumb;
+      msg.photoId = ph.id; msg.thumb = ph.thumb;
     }
     chatMsgs.push(msg);
     if(chatMsgs.length>300) chatMsgs = chatMsgs.slice(-300);
@@ -711,20 +713,24 @@ function pickMemoryPhoto(){
     window._pendingMem = {id:uid(), full, thumb};
   }, false);
 }
+let memSaving = false; // one share at a time: a second tap while the photo uploads stored the memory twice
 async function saveMemory(){
   const pm = window._pendingMem;
-  if(!pm) return;
-  const cap = (document.getElementById('memCap').value||'').trim();
-  const tagEl = document.querySelector('#memTags .chip.on');
-  const ok = await savePhotoBlob(pm.id, pm.full);
-  if(!ok) return;
-  memories.push({id:pm.id, thumb:pm.thumb, cap, tag:tagEl?tagEl.dataset.tag:'', who:currentUser.name, ts:Date.now()});
-  await persistTeam('memories');
-  window._pendingMem=null;
-  closeModal();
-  setTeamTab('mem');
-  renderBadges();
-  showToast('\u{1F4F8} Memory shared with the team');
+  if(!pm || memSaving) return;
+  memSaving = true;
+  try{
+    const cap = (document.getElementById('memCap').value||'').trim();
+    const tagEl = document.querySelector('#memTags .chip.on');
+    const ok = await savePhotoBlob(pm.id, pm.full); // gives up after PHOTO_UP_MS: the sheet stays open with the photo
+    if(!ok){ showToast('⚠️ Photo failed to upload — try again'); return; }
+    if(!memories.some(m => m && m.id === pm.id)) memories.push({id:pm.id, thumb:pm.thumb, cap, tag:tagEl?tagEl.dataset.tag:'', who:currentUser.name, ts:Date.now()});
+    await persistTeam('memories');
+    window._pendingMem=null;
+    closeModal();
+    setTeamTab('mem');
+    renderBadges();
+    showToast('\u{1F4F8} Memory shared with the team');
+  } finally { memSaving = false; }
 }
 function renderMemories(){
   const el = document.getElementById('memGrid');
