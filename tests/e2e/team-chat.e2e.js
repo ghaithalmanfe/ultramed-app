@@ -16,6 +16,15 @@
 //     only in the app's memory on a full phone): "Memory shared with the team"
 //     replaced the honest message.
 //   C5, M4: a send / share that lands is unchanged.
+//   RF1–RF4 (v122 review): "Refresh messages" while a save of that list was on
+//     its way said "Up to date" — the read was set aside (the list on screen
+//     kept), her message only queued, the newer messages it read not shown.
+//   RN1, RN2: after a read answered from the phone (no signal, or her message
+//     queued), the next read that worked still said "No connection": the read
+//     flags were session-wide and only the full refresh cleared them.
+//   D1: a memory v121 stored three times under one id (and a message twice)
+//     showed and counted three times on every phone, and every save wrote the
+//     copies back.
 // Fake cloud in Node (shared by the phones), clock pinned to Mon 21 Sep 2026,
 // the 20-second refresh driven by hand (window.__bgTick), the photo picker
 // stubbed (it hands a photo over as pickImage does). Names are invented.
@@ -515,6 +524,186 @@ function seed(){
     const t3 = await tap();
     check('UP. "Refresh messages": "Up to date" after a real read; with no signal it says it shows what the phone has; with a message still to upload it says so — never "Up to date"',
       t1 === '🔄 Up to date' && t2 === '📴 No connection — showing what this phone has' && t3 === '📤 Yours are still uploading — showing what this phone has', { t1, t2, t3 });
+    await A.ctx.close();
+  });
+
+  const UP_TO_DATE = '🔄 Up to date', STILL_UP = '📤 Yours are still uploading — showing what this phone has', NO_CONN = '📴 No connection — showing what this phone has';
+  // every toast with what the screen showed, and what of this phone's was still saving or queued, at that moment
+  const watchToasts = ph => ph.page.evaluate(() => { window.__said = []; const prev = window.showToast;
+    window.showToast = (m, ms) => { window.__said.push({ m: String(m), chat: (document.getElementById('chatList') || {}).innerText || '', mem: (document.getElementById('memGrid') || {}).innerText || '',
+      saving: _teamSaving.chat + _teamSaving.memories, queued: ['chat', 'memories'].filter(k => outboxHas(k)) }); return prev(m, ms); }; });
+  const refreshSaid = ph => ph.page.evaluate(s => (window.__said || []).filter(t => s.includes(t.m)), [UP_TO_DATE, STILL_UP, NO_CONN]);
+  // she taps "Refresh messages" → what it said once it has said it (with the screen at that moment)
+  const refreshNow = async ph => {
+    const n = (await refreshSaid(ph)).length;
+    await ph.page.evaluate(() => document.querySelector('#teamChat button[onclick="refreshTeam()"]').click());
+    await until(async () => (await refreshSaid(ph)).length > n, 20000);
+    return (await refreshSaid(ph)).slice(n).pop() || {};
+  };
+  // a message a colleague posted after this phone last read the chat
+  const postFromRenova = text => { const l = J('chat') || []; l.push({ id: 'rv-' + text.replace(/\W+/g, '-'), who: 'Renova', text, ts: CLOCK + 5000 + l.length }); cloud.chat = JSON.stringify(l); };
+
+  // =====================================================================
+  // RF — "Refresh messages" while a save of that list is on its way: the
+  // read was set aside (the list on screen kept) and "Up to date" was said
+  // — her message only queued, the newer messages the read had brought not
+  // on screen. It now waits for that save (5 s at most) and reads it again.
+  // =====================================================================
+  await phase('RF1', '"Refresh messages" while her message is being saved and its save is refused', async () => {
+    seed();
+    const A = await mkPhone('RF1-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    postFromRenova('RF1 from Renova');
+    net.lag[A.label] = 2500; net.keyFail[A.label] = new Set(['chat']); // reads get through slowly, the chat's commit does not
+    await watchToasts(A);
+    await A.page.evaluate(() => { document.getElementById('chatInput').value = 'RF1 my message'; window.__s = sendChat(); });
+    await sleep(400);
+    const said = await refreshNow(A);
+    await A.page.evaluate(async () => { await window.__s; });
+    const all = await refreshSaid(A), s = await team(A, 'chat');
+    check('RF1. "Refresh messages" while her message\'s save is refused: never "Up to date" — "Yours are still uploading", her message queued, and Renova\'s newer message on screen with hers',
+      said.m === STILL_UP && !all.some(t => t.m === UP_TO_DATE) && s.queued && chatIn('RF1 my message').length === 0 && said.chat.includes('RF1 from Renova') && said.chat.includes('RF1 my message'),
+      { said, queued: s.queued, inCloud: chatIn('RF1 my message').length, toasts: s.toasts });
+    await A.ctx.close();
+  });
+  await phase('RF1c', 'the same, the queue\'s own message already shown that minute', async () => {
+    seed();
+    const A = await mkPhone('RF1c-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    postFromRenova('RF1c from Renova');
+    await A.page.evaluate(() => { _lastOfflineToast = Date.now(); }); // "Saved on this device" shows once a minute
+    net.lag[A.label] = 2500; net.keyFail[A.label] = new Set(['chat']);
+    await watchToasts(A);
+    await A.page.evaluate(() => { document.getElementById('chatInput').value = 'RF1c my message'; window.__s = sendChat(); });
+    await sleep(400);
+    const said = await refreshNow(A);
+    await A.page.evaluate(async () => { await window.__s; });
+    const told = await A.page.evaluate(() => window.__said.map(t => t.m)), s = await team(A, 'chat');
+    check('RF1c. …when the queue\'s own message was already shown that minute, the only word she gets is "Yours are still uploading" — never "Up to date"',
+      told.length === 1 && told[0] === STILL_UP && s.queued && said.chat.includes('RF1c from Renova'), { told, queued: s.queued });
+    await A.ctx.close();
+  });
+  await phase('RF2', '"Refresh messages" while her message is still on its way: it waits for the save, then reads again', async () => {
+    seed();
+    const A = await mkPhone('RF2-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    postFromRenova('RF2 from Renova');
+    net.lag[A.label] = 1000; net.wlag[A.label] = 2500; // a slow link: the message lands about 3.5 s after Send
+    await watchToasts(A);
+    await A.page.evaluate(() => { document.getElementById('chatInput').value = 'RF2 my message'; window.__s = sendChat(); });
+    await sleep(400);
+    const said = await refreshNow(A);
+    await A.page.evaluate(async () => { await window.__s; });
+    check('RF2. her message\'s save still on its way when the read came back: "Up to date" only once it has landed — nothing saving or queued, it is in the cloud once, and the screen shows the list read then (Renova\'s newer message too)',
+      said.m === UP_TO_DATE && said.saving === 0 && !said.queued.length && said.chat.includes('RF2 from Renova') && said.chat.includes('RF2 my message') && chatIn('RF2 my message').length === 1,
+      { said, inCloud: chatIn('RF2 my message').length });
+    await A.ctx.close();
+  });
+  await phase('RF3', '"Refresh messages" while her message is on its way longer than the refresh waits', async () => {
+    seed();
+    const A = await mkPhone('RF3-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    net.lag[A.label] = 1000; net.wlag[A.label] = 7000; // the message lands about 8 s after Send — the refresh waits 5 s
+    await watchToasts(A);
+    await A.page.evaluate(() => { document.getElementById('chatInput').value = 'RF3 my message'; window.__s = sendChat(); });
+    await sleep(400);
+    const said = await refreshNow(A);
+    await A.page.evaluate(async () => { await window.__s; }); // it lands
+    const all = await refreshSaid(A);
+    check('RF3. a save still on its way once the refresh has waited: "Yours are still uploading" while it uploads — never "Up to date" — and it then lands once',
+      said.m === STILL_UP && said.saving > 0 && !all.some(t => t.m === UP_TO_DATE) && chatIn('RF3 my message').length === 1, { said, inCloud: chatIn('RF3 my message').length });
+    await A.ctx.close();
+  });
+  await phase('RF4', '"Refresh messages" while a memory\'s save is refused', async () => {
+    seed();
+    const A = await mkPhone('RF4-Mariam'); await A.boot(M, 'rep'); await A.openTeam('mem');
+    const l = J('memories') || []; l.push({ id: 'rv-mem', thumb: '', cap: 'RF4 from Renova', tag: '', who: 'Renova', ts: CLOCK + 5000 }); cloud.memories = JSON.stringify(l);
+    await addMemory(A, 'RF4 my memory');
+    net.lag[A.label] = 2500; net.keyFail[A.label] = new Set(['memories']); net.txReads.length = 0;
+    await watchToasts(A);
+    await A.page.evaluate(() => { window.__m = saveMemory(); });
+    await until(() => net.txReads.includes(A.label + ' memories'), 5000); // its list is being saved
+    await sleep(300);
+    await A.page.evaluate(() => { closeModal(); setTeamTab('chat'); }); // she goes to the chat meanwhile
+    const said = await refreshNow(A);
+    await A.page.evaluate(async () => { await window.__m; });
+    const all = await refreshSaid(A), s = await team(A, 'memories');
+    check('RF4. "Refresh messages" while a memory\'s save is refused: "Yours are still uploading", never "Up to date"; the memory queued, and Renova\'s newer memory shown with hers',
+      said.m === STILL_UP && !all.some(t => t.m === UP_TO_DATE) && s.queued && memIn('RF4 my memory').length === 0 && said.mem.includes('RF4 from Renova') && said.mem.includes('RF4 my memory'),
+      { said, queued: s.queued, inCloud: memIn('RF4 my memory').length });
+    await A.ctx.close();
+  });
+
+  // =====================================================================
+  // RN — "Refresh messages" after a read answered from the phone: the read
+  // flags were session-wide (only the full refresh cleared them), so the
+  // next read that worked still said "No connection".
+  // =====================================================================
+  await phase('RN1', '"Refresh messages" once the signal is back and the queue has uploaded', async () => {
+    seed();
+    const A = await mkPhone('RN1-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    await watchToasts(A);
+    net.down.add(A.label);
+    await A.page.evaluate(async () => { document.getElementById('chatInput').value = 'RN1 queued message'; await sendChat(); });
+    const t1 = await refreshNow(A); // no signal, her message still to upload
+    net.down.delete(A.label);
+    await A.page.evaluate(async () => { await flushOutbox(); }); // the signal back: what the 'online' event does
+    postFromRenova('RN1 reply from Renova');
+    const t2 = await refreshNow(A);
+    check('RN1. no signal, her message queued: "Yours are still uploading"; the signal back and the queue uploaded, "Refresh messages" reads the cloud: "Up to date", the reply on screen — not "No connection"',
+      t1.m === STILL_UP && t2.m === UP_TO_DATE && t2.chat.includes('RN1 reply from Renova') && chatIn('RN1 queued message').length === 1, { t1: t1.m, t2 });
+    await A.ctx.close();
+  });
+  await phase('RN2', '"Refresh messages" once the signal is back after a read that failed', async () => {
+    seed();
+    const A = await mkPhone('RN2-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    await watchToasts(A);
+    net.down.add(A.label);
+    const t1 = await refreshNow(A);
+    net.down.delete(A.label);
+    postFromRenova('RN2 posted while she had no signal');
+    const t2 = await refreshNow(A);
+    check('RN2. "Refresh messages" with no signal says so; the signal back, the next one reads the cloud: "Up to date", the new message on screen — not "No connection"',
+      t1.m === NO_CONN && t2.m === UP_TO_DATE && t2.chat.includes('RN2 posted while she had no signal'), { t1: t1.m, t2 });
+    net.down.add(A.label);
+    await A.tick(); // the 20-second refresh with no signal: every list from the phone
+    net.down.delete(A.label);
+    postFromRenova('RN2 posted during the next gap');
+    const t3 = await refreshNow(A);
+    check('RN2b. …after a 20-second refresh with no signal too: the signal back, "Refresh messages" says "Up to date", the new message on screen',
+      t3.m === UP_TO_DATE && t3.chat.includes('RN2 posted during the next gap'), t3);
+    await A.ctx.close();
+  });
+
+  // =====================================================================
+  // D1 — a memory v121 stored three times under one id (Share tapped again
+  // while its photo hung with no signal), a message twice: every phone
+  // showed and counted the copies, and every save wrote them back (the
+  // merge dropped copies only from its second list; a plain read took the
+  // cloud's list as it was)
+  // =====================================================================
+  await phase('D1', 'a memory stored three times under one id, a message twice', async () => {
+    seed();
+    const dupm = { id: 'dupm', thumb: '', cap: 'D1 tripled memory', tag: '', who: 'Renova', ts: CLOCK - 3600000 };
+    cloud.memories = JSON.stringify((J('memories') || []).concat([dupm, dupm, dupm]));
+    const dupc = { id: 'dupc', who: 'Renova', text: 'D1 doubled message', ts: CLOCK - 30000 };
+    cloud.chat = JSON.stringify((J('chat') || []).concat([dupc, dupc]));
+    const A = await mkPhone('D1-Mariam'); await A.boot(M, 'rep'); await A.openTeam('mem');
+    const cards = () => A.page.evaluate(() => [...document.querySelectorAll('#memGrid .mcard')].filter(c => /D1 tripled memory/.test(c.innerText)).length);
+    const c0 = await cards();
+    const counted = await A.page.evaluate(() => memories.filter(m => m && m.who === 'Renova').length); // what "Memory Maker" counts (3 to earn it)
+    await addMemory(A, 'D1 new memory');
+    await share(A);
+    await until(() => memIn('D1 new memory').length === 1, 8000); await sleep(400);
+    const c1 = await cards();
+    check('D1. a memory stored three times under one id: one card, counted once for its author\'s achievements, and the next save of the list writes it once',
+      c0 === 1 && c1 === 1 && counted === 2 && memIn('D1 tripled memory').length === 1 && memIn('D1 new memory').length === 1,
+      { cardsBefore: c0, cardsAfterShare: c1, countedForRenova: counted, inCloud: memIn('D1 tripled memory').length });
+    await A.page.evaluate(() => setTeamTab('chat'));
+    const shown = await A.page.evaluate(() => (document.getElementById('chatList').innerText.match(/D1 doubled message/g) || []).length);
+    await A.page.evaluate(async () => { document.getElementById('chatInput').value = 'D1 next message'; await sendChat(); });
+    check('D1b. a message stored twice under one id: shown once, and the next send writes it once', shown === 1 && chatIn('D1 doubled message').length === 1 && chatIn('D1 next message').length === 1,
+      { shown, inCloud: chatIn('D1 doubled message').length });
+    const merged = await A.page.evaluate(() => teamMerge('memories',
+      [{ id: 'x', cap: 'first copy', ts: 1 }, { id: 'x', cap: 'second copy', ts: 1 }, { cap: 'no id', ts: 2 }, { id: 'y', cap: 'y', ts: 3 }],
+      [{ id: 'y', cap: 'y again', ts: 3 }, { id: 'x', cap: 'cloud copy', ts: 1 }, { id: 'z', cap: 'z', ts: 4 }]).map(m => m.cap));
+    check('D1c. the merge keeps one entry per id from both lists (the first copy) and an entry without an id', JSON.stringify(merged) === JSON.stringify(['first copy', 'no id', 'y', 'z']), merged);
     await A.ctx.close();
   });
 
