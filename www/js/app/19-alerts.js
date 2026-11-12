@@ -35,6 +35,7 @@ const ALERT_NUMBERS = [
 ];
 let _alerts = { shown: [], hidden: [] };   // the last computed lists: the bell and the sheet show the same
 let _alertsSig = '';
+const _alertsCache = {};                   // UMCore.alertsFor's: the sales rules rerun only when what they read changed
 let _alertsShowHidden = false;
 
 function alertsStateKey(){ return ALERT_STATE + (currentUser ? currentUser.name : ''); }
@@ -60,7 +61,7 @@ function alertsCompute(){
   const now = Date.now(), today = todayStr();
   const list = UMCore.alertsFor({ today, now, user: { name: currentUser.name, role: currentUser.role }, reps: REPS.slice(),
     team: staff.map(s => s && s.name).filter(Boolean), data: { clinics, visits, dayPlans, events, targets, erpSales, erpMap },
-    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate });
+    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, cache: _alertsCache });
   return UMCore.alertsVisible(list, alertsState(), today, now);
 }
 function alertsSheetOpen(){

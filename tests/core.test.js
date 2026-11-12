@@ -4146,7 +4146,7 @@ describe('alerts center (v121)', () => {
     const role = who === G ? 'supervisor' : 'rep';
     const data = o.data || DATA();
     return core.alertsFor({ today: o.today || TODAY, now: o.now || at(13, 30), hour: o.hour != null ? o.hour : 13, user: { name: who, role },
-      reps: o.reps || [M, R], team: o.team || [M, R, G], data, settings: o.settings || null, device: o.device || {} });
+      reps: o.reps || [M, R], team: o.team || [M, R, G], data, settings: o.settings || null, device: o.device || {}, cache: o.cache });
   };
   const ids = list => list.map(a => a.id);
   const one = (list, id) => list.find(a => a.id === id);
@@ -4304,6 +4304,23 @@ describe('alerts center (v121)', () => {
     // what has run out is dropped from the stored state
     const later = core.alertStateNext(st, null, null, '2026-11-20', new Date(2026, 10, 20).getTime());
     assert.deepEqual([Object.keys(later.dismissed), Object.keys(later.snoozed)], [[], []]);
+  });
+  test('the sales rules run again only when what they read changed (input.cache) — and say the same as without it', () => {
+    const cache = {}, d = DATA();
+    const a1 = run(M, { data: d, cache }), a2 = run(M, { data: d, cache });
+    assert.equal(one(a2, 'drop:Mariam:2026-11'), one(a1, 'drop:Mariam:2026-11'), 'the same object: not computed again');
+    assert.deepEqual(a1, run(M, { data: DATA() }));
+    // a new revision of the November file: Dental Eight bought 700 more — no longer down
+    d.erpSales.periods[1] = Object.assign({}, d.erpSales.periods[1], { rev: 2, rows: NOV.concat([row('2026-11-05', 'SINV15', 'Dental Eight Clinic', 700, MS)]) });
+    const a3 = run(M, { data: d, cache });
+    assert.ok(!a3.some(x => x.type === 'drop'));
+    assert.deepEqual(a3, run(M, { data: d }));
+    // a clinic handed over: the other person's view changes at once
+    d.clinics.find(x => x.id === 'r1').rep = M;
+    assert.ok(run(M, { data: d, cache }).some(x => x.id === 'drop:Mariam:2026-11' && x.items.some(i => i.clinicId === 'r1')));
+    // a target changed: the target card follows
+    d.targets[M].revenue = 1500;
+    assert.ok(!run(M, { data: d, cache }).some(x => x.type === 'target'));
   });
   test('erpSpanCovered: the files carrying the person cover every day, a weekend gap allowed', () => {
     const d = { erpSales: { periods: PERIODS() } };
