@@ -33,24 +33,24 @@ const parse = s => { try{ return JSON.parse(s); }catch(e){ return null; } };
 const CLOCK = new Date('2026-09-21T10:00:00').getTime();
 
 // ---- sales fixture: two files of the same salesman whose days overlap (5–10 Sep) ----
-const row = (d, doc, sm, net, cust) => [d, doc, 0, 'P-1', 1, net, net, 0, sm, 'TEPE', cust || 'Dental 8 Clinic', 'Clinics', 0, ''];
-const OLD_ROWS = ['2026-09-01','2026-09-03','2026-09-05','2026-09-08','2026-09-10'].map((d, i) => row(d, 'SO' + i, 'Mariam Zohair', 100));
-const NEW_ROWS = ['2026-09-05','2026-09-08','2026-09-10','2026-09-12','2026-09-15'].map((d, i) => row(d, 'SN' + i, 'Mariam Zohair', 100));
-const head = (id, from, to, rows, importedAt, rev, repMap) => ({ id, from, to, net: rows.length * 100, rowCount: rows.length, importedAt, rev, repMap: repMap || { 'Mariam Zohair': 'Mariam' }, rowsRef: { key: `erpRows:${id}:${rev}`, chunks: 1, count: rows.length } });
+const row = (d, doc, sm, net, cust) => [d, doc, 0, 'P-1', 1, net, net, 0, sm, 'TEPE', cust || 'Dental 5 Clinic', 'Clinics', 0, ''];
+const OLD_ROWS = ['2026-09-01','2026-09-03','2026-09-05','2026-09-08','2026-09-10'].map((d, i) => row(d, 'SO' + i, 'Mariam Sample', 100));
+const NEW_ROWS = ['2026-09-05','2026-09-08','2026-09-10','2026-09-12','2026-09-15'].map((d, i) => row(d, 'SN' + i, 'Mariam Sample', 100));
+const head = (id, from, to, rows, importedAt, rev, repMap) => ({ id, from, to, net: rows.length * 100, rowCount: rows.length, importedAt, rev, repMap: repMap || { 'Mariam Sample': 'Mariam' }, rowsRef: { key: `erpRows:${id}:${rev}`, chunks: 1, count: rows.length } });
 function seedCloud(){
   Object.keys(cloud).forEach(k => delete cloud[k]);
   cloud.staff = twoRepStaff();
   cloud.clinics = JSON.stringify([
-    { id: 'c1', name: 'Dental 8 Clinic', rep: 'Mariam', cls: 'A', doctors: [{ id: 'd1', name: 'Dr. Ahmed' }] },
-    { id: 'c2', name: 'Crown Dental Center', rep: 'Renova', cls: 'A', doctors: [{ id: 'd2', name: 'Dr. Sara' }] },
-    { id: 'c3', name: 'Bayan Dental Center', rep: 'Mariam', cls: 'B', doctors: [{ id: 'd3', name: 'Dr. Noor' }] }]);
+    { id: 'c1', name: 'Dental 5 Clinic', rep: 'Mariam', cls: 'A', doctors: [{ id: 'd1', name: 'Dr. Ahmed' }] },
+    { id: 'c2', name: 'Summit Dental Center', rep: 'Renova', cls: 'A', doctors: [{ id: 'd2', name: 'Dr. Sara' }] },
+    { id: 'c3', name: 'Hilal Dental Center', rep: 'Mariam', cls: 'B', doctors: [{ id: 'd3', name: 'Dr. Noor' }] }]);
   cloud.visits = '[]'; cloud.tasks = '[]'; cloud.events = '[]'; cloud.dayPlans = '{}';
   cloud.recycleBin = JSON.stringify({ clinics: [], products: [], visits: [] });
   cloud.targets = JSON.stringify({ Mariam: { revenue: 10000, month: '2026-09' }, Renova: { revenue: 12000, month: '2026-09' } });
   cloud.erpSales = JSON.stringify({ periods: [
       head('p-old', '2026-09-01', '2026-09-10', OLD_ROWS, '2026-09-11T08:00:00.000Z', 1),
       head('p-new', '2026-09-05', '2026-09-15', NEW_ROWS, '2026-09-16T08:00:00.000Z', 1)],
-    repMapGlobal: { 'Mariam Zohair': 'Mariam', 'Ranova Ayman Mohammed': 'Renova' }, returnPolicy: 'erp',
+    repMapGlobal: { 'Mariam Sample': 'Mariam', 'Ranova Sample Person': 'Renova' }, returnPolicy: 'erp',
     seeds: { orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true } });
   cloud['erpRows:p-old:1:0'] = JSON.stringify(OLD_ROWS);
   cloud['erpRows:p-new:1:0'] = JSON.stringify(NEW_ROWS);
@@ -121,8 +121,8 @@ function seedCloud(){
   const s1 = await S.page.evaluate(() => ({ paused: erpLinksPaused(), pill: !!document.getElementById('erpDirtyPill') }));
   check('1e. the supervisor\'s account-link editor is not paused on a "red bar" that is not on screen', s1.paused !== 'busy' || s1.pill, s1);
   // the supervisor imports another file: every phone follows on its next refresh
-  await S.page.evaluate(async (rows) => { erpSales.periods.push({ id: 'p-ren', from: '2026-09-14', to: '2026-09-17', importedAt: new Date().toISOString(), rev: Date.now(), repMap: { 'Ranova Ayman Mohammed': 'Renova' }, rowCount: rows.length, net: 300, rows }); return persist('erpSales'); },
-    [row('2026-09-14', 'SR1', 'Ranova Ayman Mohammed', 100, 'Crown Dental Center'), row('2026-09-17', 'SR2', 'Ranova Ayman Mohammed', 200, 'Crown Dental Center')]);
+  await S.page.evaluate(async (rows) => { erpSales.periods.push({ id: 'p-ren', from: '2026-09-14', to: '2026-09-17', importedAt: new Date().toISOString(), rev: Date.now(), repMap: { 'Ranova Sample Person': 'Renova' }, rowCount: rows.length, net: 300, rows }); return persist('erpSales'); },
+    [row('2026-09-14', 'SR1', 'Ranova Sample Person', 100, 'Summit Dental Center'), row('2026-09-17', 'SR2', 'Ranova Sample Person', 200, 'Summit Dental Center')]);
   await A.tick();
   const a3 = await A.page.evaluate(() => ({ has: erpPeriods().some(p => p.id === 'p-ren'), ren: (erpMtdMap().Renova || {}).amount, mar: (erpMtdMap().Mariam || {}).amount }));
   check('1f. a sales file the supervisor imports reaches a rep\'s phone on its next refresh (figures follow the cloud)', a3.has && a3.ren === 300 && a3.mar === 700, a3);
@@ -160,7 +160,7 @@ function seedCloud(){
   // Mariam is in the field with no connection: she logs a visit at c1 (its last visit / follow-up) and adds a task
   mode.offline.add('A2-Mariam');
   const qa = await A2.page.evaluate(async () => { const c = clinics.find(x => x.id === 'c1'); c.lastVisit = '2026-09-21'; c.nextFollowUp = '2026-09-28'; const ok1 = await persist('clinics');
-    tasks.push({ id: 'tA', text: 'Follow up: Dental 8 Clinic', done: false, created: '2026-09-21', rep: 'Mariam', clinicId: 'c1', dueDate: '2026-09-28', kind: 'followup' }); const ok2 = await persist('tasks');
+    tasks.push({ id: 'tA', text: 'Follow up: Dental 5 Clinic', done: false, created: '2026-09-21', rep: 'Mariam', clinicId: 'c1', dueDate: '2026-09-28', kind: 'followup' }); const ok2 = await persist('tasks');
     return { ok1, ok2, outbox: outboxList() }; });
   // meanwhile the supervisor hands c3 to Renova, notes c1, records Dr. Ahmed's phone, and closes Renova's task
   const sv = await S2.page.evaluate(async () => { const c3 = clinics.find(x => x.id === 'c3'); c3.rep = 'Renova'; c3.phone = '+965 1111';

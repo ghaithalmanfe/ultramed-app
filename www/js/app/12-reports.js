@@ -608,15 +608,20 @@ async function persistTeam(key){
     if(key==='chat') chatMsgs = value; else memories = value;
     mirrorSave(key, str);
     if(outboxHas(key)) outboxRemove(key);
+    memOnlyLanded(key);
     return true;
   }
   catch(e){
+    // queued in memory always (it uploads while the app stays open); on the phone when both fit
+    let onPhone = false;
     try{
       const mOk = mirrorSave(key, JSON.stringify(value || map[key]));
-      if(mOk) outboxAdd(key);
+      onPhone = outboxAdd(key) && mOk;
     }catch(e2){}
+    if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); }
     updateSyncBadge();
-    offlineToast('📴 Saved on this device — uploads automatically when back online');
+    offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
+                         : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     return false;
   }
 }

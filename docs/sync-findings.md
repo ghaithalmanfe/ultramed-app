@@ -33,3 +33,16 @@ Line numbers are as on this branch (as of 3014d6c; F4/F5 added since).
 - **A merge save that timed out but landed**: it is queued ("saved on this device"); the flush merges again by id — nothing lost or doubled (the message understates). Sales saves re-read the cloud when a late commit lands.
 - **A phone with a days-old device copy coming online**: with nothing queued, the start reads the cloud; whole documents served from the device copy are re-read before any write (`_mirrorUsed`). With queued keys it is F2 (now three-way).
 - **The wipe guard** (clinic list shrinking below a third of the cloud's) is unchanged and still applies after the three-way merge.
+
+## Independent review of the fixes (v121) — fixed, harness `tests/e2e/sync-review.e2e.js` (port 8251)
+
+| # | Scenario | Fix |
+|---|----------|-----|
+| R1 | A phone that starts without reading the cloud (offline, or the read failed) had no merge base: its next upload put back its own copy of every record (a handover, a closed task). | A list read from the phone's copy, with nothing queued, takes that copy as its base (S1, S1b). |
+| R2 | A full phone: lists saved online whose device copies failed were put back from the older copies by a refresh without connection, and the next upload removed the saved note from the cloud. | A failed read never serves a device copy older than memory (`cloudGet`, `loadVisits`) (N2a, N2b). |
+| R3 | Two overlapping saves of the same list (the queued upload and a new save): the second merged its older list against the base the first had just moved, undoing the other phone's edit. | A save merges against the base its list was taken with (S3, S3b). |
+| R4 | A full phone: when a longer queue no longer fitted, the phone's queue was deleted, so a reopen forgot earlier queued saves. | A queue that only adds keys leaves the phone's list as it is (N1). |
+| R5 | Chat and memories on a full phone without connection: "Saved on this device" while nothing was queued; the next refresh dropped the message. | Always queued (in memory at least), honest message and red bar, a memory copy served to the refresh (T1). |
+| R6 | The raced refresh wrote memory (with an edit still on its way) into the phone's copy; with R1 that copy became the base after a reopen without connection, so the edit looked like the cloud's and was dropped. | The raced refresh keeps the confirmed base beside that copy (`um_base:<key>`); a start without a read takes it first (R1 check). |
+| R7 | Two overlapping day-plan saves: the second merged against the base the first had moved (the R3 overlap, for day plans). | A day-plan save merges against the base its list was taken with (D1). |
+
