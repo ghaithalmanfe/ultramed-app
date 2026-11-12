@@ -4109,3 +4109,170 @@ describe('missing clinics, from the daily backups (v116)', () => {
     assert.deepEqual(core.clinicsMissingFromBackups(cur, [], {}), { missing: [], people: [{ rep: 'Dr. Ghaith', now: 1, most: 0, mostDate: null }, { rep: 'Mariam', now: 1, most: 0, mostDate: null }], offTeam: [] });
   });
 });
+
+// ---------- Change log (audit trail) ----------
+describe('change log: what an entry keeps', () => {
+  test('auditSummarize cuts long text and lists, keeps no file, no secret field, a masked e-mail and no token in a link', () => {
+    const s = core.auditSummarize({
+      notes: 'x'.repeat(500), list: Array.from({ length: 20 }, (_, i) => 'Dr ' + i), photo: 'data:image/jpeg;base64,AAAA',
+      password: 'p4ss', apiKey: 'k', token: 't', sessionId: 's', pin: '1234', _key: 'internal', email: 'name@example.com',
+      link: 'https://files.example.com/a.pdf?token=abc&x=1', plain: 'https://example.com/b?page=2', deep: { a: { b: { c: 1 } } }, n: 1.23456 });
+    assert.equal(s.notes.length, 120);
+    assert.ok(s.notes.endsWith('…'));
+    assert.deepEqual(s.list.slice(-2), ['Dr 7', '… +12']);
+    assert.equal(s.list.length, 9);
+    assert.equal(s.photo, '[file]');
+    ['password', 'apiKey', 'token', 'sessionId', 'pin', '_key'].forEach(k => assert.ok(!(k in s), k + ' must never be kept'));
+    assert.equal(s.email, 'n•••@example.com');
+    assert.equal(s.link, 'https://files.example.com/a.pdf?…');
+    assert.equal(s.plain, 'https://example.com/b?page=2');
+    assert.deepEqual(s.deep, { a: { b: '…' } });
+    assert.equal(s.n, 1.235);
+    assert.equal(core.auditSummarize(NaN), null);
+    assert.equal(core.auditSummarize(undefined), null);
+  });
+  test('auditSummarize: a key named __proto__ is dropped, never set', () => {
+    const o = JSON.parse('{"__proto__": {"polluted": 1}, "name": "A"}');
+    const s = core.auditSummarize(o);
+    assert.deepEqual(Object.keys(s), ['name']);
+    assert.equal(({}).polluted, undefined);
+  });
+  test('auditDiff keeps the changed fields only; empty ≡ empty; key order does not count', () => {
+    const d = core.auditDiff({ name: 'A', phone: '', rep: 'Mariam', notes: null, tags: [], m: { a: 1, b: 2 } },
+      { name: 'B', phone: '555', rep: 'Mariam', notes: '', tags: null, m: { b: 2, a: 1 } });
+    assert.deepEqual(d, { before: { name: 'A', phone: '' }, after: { name: 'B', phone: '555' }, n: 2 });
+    assert.equal(core.auditDiff({ a: 1 }, { a: 1 }).n, 0);
+    assert.deepEqual(core.auditDiff({ shared: false }, { shared: true }).after, { shared: true }); // false is a value, not "empty"
+  });
+  test('auditDiff: a created record gives its non-empty fields, a removed one too; fields / ignore narrow it; secrets never', () => {
+    assert.deepEqual(core.auditDiff(null, { name: 'New', phone: '', rep: 'Renova', password: 'x' }), { before: null, after: { name: 'New', rep: 'Renova' }, n: 2 });
+    assert.deepEqual(core.auditDiff({ name: 'Old', cls: 'B', notes: '' }, null), { before: { name: 'Old', cls: 'B' }, after: null, n: 2 });
+    assert.deepEqual(core.auditDiff({ a: 1, b: 1, c: 1 }, { a: 2, b: 2, c: 2 }, { fields: ['a', 'b'], ignore: ['b'] }), { before: { a: 1 }, after: { a: 2 }, n: 1 });
+  });
+  test('auditEntry: who, when, what, bounded — ok only for a save that landed', () => {
+    const at = Date.UTC(2026, 10, 11, 7, 30);
+    const e = core.auditEntry({ action: 'clinic.edit', key: 'clinics', id: 'c1', label: 'L'.repeat(400), before: { name: 'A' }, after: { name: 'B' }, reason: '  typo ', ok: true },
+      { by: 'Dr. Ghaith', role: 'supervisor', now: at });
+    assert.equal(e.at, '2026-11-11T07:30:00.000Z');
+    assert.equal(e.by, 'Dr. Ghaith'); assert.equal(e.role, 'supervisor');
+    assert.equal(e.ok, true); assert.equal(e.res, 'saved');
+    assert.equal(e.label.length, 120);
+    assert.equal(e.reason, 'typo');
+    assert.ok(/^a[0-9a-z]+$/.test(e.eid));
+    const q = core.auditEntry({ action: 'visit.add', res: 'queued', ok: true }, { by: 'Mariam', role: 'rep' });
+    assert.equal(q.ok, false, 'kept on the phone is not "saved"');
+    assert.equal(q.res, 'queued');
+    assert.equal(core.auditEntry({ action: 'visit.add' }, {}).res, 'failed');
+    assert.equal(core.auditEntry({ action: 'visit.add', res: 'nonsense', ok: false }, {}).res, 'failed');
+    assert.equal(core.auditEntry({ action: 'x', reason: '   ' }, {}).reason, null);
+  });
+  test('auditEntry: an oversized entry is cut down to the limit', () => {
+    const big = {}; for(let i = 0; i < 14; i++) big['f' + i] = Array.from({ length: 8 }, () => 'y'.repeat(120));
+    const e = core.auditEntry({ action: 'clinic.import', after: big, before: big }, { by: 'G', role: 'supervisor' });
+    assert.ok(JSON.stringify(e).length <= core.AUDIT_LIMITS.entry, JSON.stringify(e).length);
+  });
+});
+
+describe('change log: the month document', () => {
+  const E = (eid, at, x) => Object.assign({ eid, at, by: 'Mariam', role: 'rep', action: 'visit.add', key: 'visits', id: eid, label: null,
+    before: null, after: { notes: 'n'.repeat(60) }, reason: null, ok: true, res: 'saved' }, x || {});
+  test('appends, never twice the same entry, never edits what is there, keeps time order', () => {
+    const first = core.auditAppend(null, [E('e2', '2026-11-11T08:00:00.000Z')], { month: '2026-11' });
+    assert.equal(first.added, 1);
+    const doc1 = JSON.parse(first.value);
+    assert.deepEqual([doc1.v, doc1.month, doc1.entries.length, doc1.dropped, doc1.trimmed], [1, '2026-11', 1, 0, 0]);
+    const again = core.auditAppend(first.value, [E('e2', '2026-11-11T08:00:00.000Z', { label: 'changed?' })], { month: '2026-11' });
+    assert.deepEqual(again, { value: null, added: 0, broken: false }, 'a retry adds nothing');
+    const second = JSON.parse(core.auditAppend(first.value, [E('e3', '2026-11-11T09:00:00.000Z'), E('e1', '2026-11-11T07:00:00.000Z')], { month: '2026-11' }).value);
+    assert.deepEqual(second.entries.map(e => e.eid), ['e1', 'e2', 'e3'], 'an entry queued offline lands in its time');
+    assert.deepEqual(second.entries[1], doc1.entries[0], 'the entry already there is unchanged');
+  });
+  test('past the size cap the oldest lose their before → after first, then go — counted', () => {
+    let cur = null;
+    for(let i = 0; i < 6; i++){
+      const r = core.auditAppend(cur, [E('e' + i, '2026-11-0' + (i + 1) + 'T08:00:00.000Z')], { month: '2026-11', maxChars: 1300 });
+      cur = r.value;
+    }
+    const doc = JSON.parse(cur);
+    assert.ok(JSON.stringify(doc.entries).length <= 1300);
+    assert.ok(doc.trimmed > 0, 'details trimmed');
+    const trimmed = doc.entries.filter(e => e.trimmed);
+    trimmed.forEach(e => { assert.equal(e.before, null); assert.equal(e.after, null); assert.ok(e.by && e.action && e.at && e.res, 'who / what / when / result stay'); });
+    assert.equal(doc.entries[doc.entries.length - 1].eid, 'e5', 'the newest is kept');
+    const many = core.auditAppend(null, Array.from({ length: 5 }, (_, i) => E('m' + i, '2026-11-0' + (i + 1) + 'T08:00:00.000Z')), { month: '2026-11', maxEntries: 3 });
+    const md = JSON.parse(many.value);
+    assert.deepEqual([md.entries.map(e => e.eid), md.dropped], [['m2', 'm3', 'm4'], 2]);
+  });
+  test('a document that is not a change log is never written over', () => {
+    assert.deepEqual(core.auditAppend('"hello"', [E('x', '2026-11-11T08:00:00.000Z')]), { value: null, added: 0, broken: true });
+    assert.deepEqual(core.auditAppend('{bad json', [E('x', '2026-11-11T08:00:00.000Z')]), { value: null, added: 0, broken: true });
+    assert.deepEqual(core.auditAppend('{"other": 1}', [E('x', '2026-11-11T08:00:00.000Z')]).broken, true);
+    assert.equal(core.auditDocOf('{bad', '2026-11').broken, true);
+    assert.equal(core.auditDocOf(null, '2026-11').broken, false);
+    const legacy = core.auditAppend(JSON.stringify([E('old', '2026-11-01T08:00:00.000Z')]), [E('new', '2026-11-02T08:00:00.000Z')], { month: '2026-11' });
+    assert.deepEqual(JSON.parse(legacy.value).entries.map(e => e.eid), ['old', 'new']);
+  });
+});
+
+describe('change log: who sees what', () => {
+  const es = [
+    { eid: 'g1', at: '2026-11-11T09:00:00.000Z', by: 'Dr. Ghaith', role: 'supervisor', action: 'clinic.edit', ok: true, res: 'saved' },
+    { eid: 'm1', at: '2026-11-11T08:00:00.000Z', by: 'Mariam', role: 'rep', action: 'visit.add', ok: true, res: 'saved' },
+    { eid: 'm2', at: '2026-11-11T10:00:00.000Z', by: 'Mariam', role: 'rep', action: 'visit.delete', ok: false, res: 'failed' },
+    { eid: 'r1', at: '2026-11-11T07:00:00.000Z', by: 'Renova', role: 'rep', action: 'order.add', ok: false, res: 'queued' },
+    { eid: 'm1', at: '2026-11-11T08:00:00.000Z', by: 'Mariam', role: 'rep', action: 'visit.add', ok: true, res: 'saved' }, // the phone's queued copy of one in the cloud
+    null, 'junk'];
+  const ids = l => l.map(e => e.eid);
+  test('a rep sees her own entries only — whatever filter she asks for', () => {
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Mariam', role: 'rep' } })), ['m2', 'm1']);
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Mariam', role: 'rep' }, by: 'Dr. Ghaith' })), ['m2', 'm1']);
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Mariam', role: 'rep' }, by: 'all' })), ['m2', 'm1']);
+    assert.deepEqual(core.auditView(es, { viewer: { role: 'rep' } }), []);
+    assert.deepEqual(core.auditView(es, {}), []);
+  });
+  test('the supervisor sees everyone, newest first, and narrows by person, kind of change and "not saved"', () => {
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Dr. Ghaith', role: 'supervisor' } })), ['m2', 'g1', 'm1', 'r1']);
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Dr. Ghaith', role: 'supervisor' }, by: 'Renova' })), ['r1']);
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Dr. Ghaith', role: 'supervisor' }, group: 'visits' })), ['m2', 'm1', 'r1']);
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Dr. Ghaith', role: 'supervisor' }, group: 'clinics' })), ['g1']);
+    assert.deepEqual(ids(core.auditView(es, { viewer: { name: 'Dr. Ghaith', role: 'supervisor' }, failed: true })), ['m2', 'r1']);
+  });
+  test('auditGroupOf: known kinds, and "other" for anything else (prototype names included)', () => {
+    assert.equal(core.auditGroupOf('erpLink.change'), 'sales');
+    assert.equal(core.auditGroupOf('restore.bin'), 'restore');
+    assert.equal(core.auditGroupOf('bin.purge'), 'restore');
+    assert.equal(core.auditGroupOf('constructor.x'), 'other');
+    assert.equal(core.auditGroupOf(null), 'other');
+  });
+});
+
+describe('change log: before → after in plain words', () => {
+  test('auditChanges lists each field once, in order; auditText writes values plainly', () => {
+    assert.deepEqual(core.auditChanges({ before: { name: 'A', phone: '' }, after: { name: 'B', phone: '555' } }),
+      [{ field: 'name', from: 'A', to: 'B' }, { field: 'phone', from: '', to: '555' }]);
+    assert.deepEqual(core.auditChanges({ before: null, after: { date: '2026-11-11' } }), [{ field: 'date', from: undefined, to: '2026-11-11' }]);
+    assert.deepEqual(core.auditChanges({ before: { name: 'Gone' }, after: null }), [{ field: 'name', from: 'Gone', to: undefined }]);
+    assert.deepEqual(core.auditChanges({ before: '…', after: 'junk' }), []);
+    assert.equal(core.auditText(['Dr. A', 'Dr. B', '… +3']), 'Dr. A, Dr. B, … +3');
+    assert.equal(core.auditText({ Mariam: 1000, Renova: 1200 }), 'Mariam: 1000; Renova: 1200');
+    assert.equal(core.auditText(true), 'Yes'); assert.equal(core.auditText(null), '—'); assert.equal(core.auditText([]), '—');
+  });
+  test('the ERP account-link log is read as entries of one month, never copied', () => {
+    const at = new Date(2026, 10, 11, 9, 0).getTime(), oct = new Date(2026, 9, 30, 9, 0).getTime();
+    const out = core.auditFromErpMapLog([
+      { n: 'Smile Dental', f: null, t: 'm1', fc: null, tc: 'Dental 8 Clinic', by: 'Dr. Ghaith', at },
+      { n: 'Web shop', f: 'm1', t: '@channel', fc: 'Dental 8 Clinic', tc: null, by: 'Dr. Ghaith', at: at + 1 },
+      { n: 'Old', f: null, t: '@ignore', by: 'Dr. Ghaith', at: oct }, { n: 'bad', at: 'x' }, null], '2026-11');
+    assert.deepEqual(out.map(e => [e.label, e.before.link, e.after.link, e.ok, e.res, e.action, e.src]),
+      [['Smile Dental', null, 'Dental 8 Clinic', true, 'saved', 'erpLink.change', 'erpMapLog'], ['Web shop', 'Dental 8 Clinic', '@channel', true, 'saved', 'erpLink.change', 'erpMapLog']]);
+    assert.equal(core.auditFromErpMapLog(null, '2026-11').length, 0);
+  });
+  test('every action, group, result and field label has its Arabic', () => {
+    const i18n = require('../www/js/i18n.js');
+    ['AUDIT_ACTIONS', 'AUDIT_GROUP_LABELS', 'AUDIT_RESULTS', 'AUDIT_FIELDS'].forEach(m => Object.keys(core[m]).forEach(k => {
+      const ar = i18n.tr(core[m][k]);
+      assert.ok(ar && /[؀-ۿ]/.test(ar), `${m}.${k} (${core[m][k]}) has no Arabic`);
+    }));
+    assert.equal(i18n.tr('Change log'), 'سجل التغييرات');
+  });
+});
