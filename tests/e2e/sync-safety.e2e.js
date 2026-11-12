@@ -86,7 +86,7 @@ function seedCloud(){
       await page.waitForTimeout(300);
       await page.evaluate(() => { window.__toasts = []; const real = showToast; window.showToast = (m, ms) => { window.__toasts.push(String(m)); return real(m, ms); }; });
     };
-    const tick = () => page.evaluate(async () => { await window.__bgTick(); });
+    const tick = async () => { await page.waitForFunction(() => !_flushing); await page.evaluate(async () => { await window.__bgTick(); }); }; // as 20 s later: a queue flush still running is done by then
     return { page, boot, tick, label, ctx };
   };
   const visit = (id, clinicId, rep, extra) => Object.assign({ id, clinicId, rep, date: '2026-09-21', ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: [], orderTotal: 0, doctorIds: [], notes: '' }, extra || {});
@@ -223,6 +223,51 @@ function seedCloud(){
   const r3d = await P.page.evaluate(() => ({ screen: (clinics.find(c => c.id === 'c2') || {}).cls, phone: ((JSON.parse(localStorage.getItem('um_mirror:clinics') || '[]')).find(c => c.id === 'c2') || {}).cls }));
   check('3d. a read of the list that arrives after the save: the screen and the phone\'s own copy (what an offline start shows) keep the saved edit', r3d.screen === 'C' && r3d.phone === 'C' && cl('c2').cls === 'C', r3d);
   await P.ctx.close();
+
+  // =====================================================================
+  // 4) A visit saved with no connection on a phone whose storage is full:
+  //    neither the queue entry nor the phone's copy could be written. The
+  //    save said "kept in memory" — but nothing retried it, and the next
+  //    refresh put the phone's older copy over it: the visit vanished.
+  // =====================================================================
+  seedCloud();
+  const F = await mkPhone('F-Mariam'); await F.boot('Mariam', 'rep');
+  const full = () => F.page.evaluate(() => { const real = window.__realSet = window.__realSet || Storage.prototype.setItem;
+    Storage.prototype.setItem = function(k, v){ if(/^um_outbox$|^um_mirror:/.test(k)) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return real.call(this, k, v); }; });
+  const roomy = () => F.page.evaluate(() => { if(window.__realSet) Storage.prototype.setItem = window.__realSet; });
+  await full(); mode.offline.add('F-Mariam');
+  const f0 = await F.page.evaluate(async (v) => { visits.push(v); const r = await persistFor('visits'); return { ok: r.ok, toasts: window.__toasts.slice() }; }, visit('vF1', 'c1', 'Mariam'));
+  await F.tick();
+  const f1 = await F.page.evaluate(() => ({ has: visits.some(v => v.id === 'vF1'), outbox: outboxList() }));
+  await F.page.evaluate(() => loadAll()); // a refresh that reads anyway (after the queue's retries ran out)
+  const f2 = await F.page.evaluate(() => ({ has: visits.some(v => v.id === 'vF1'), bar: (document.getElementById('memOnlyBar') || {}).textContent || '', toasts: window.__toasts.slice() }));
+  check('4a. storage full, no connection: the visit is still there after a refresh tick and after a full refresh — the queue is kept in memory, the older phone copy is never served', f1.has && f1.outbox.includes('visits') && f2.has, { f1, has2: f2.has });
+  check('4b. …and a red bar says the truth until it uploads — nothing claims "Saved"', /storage is full — this visit is only in the app's memory/.test(f2.bar) && !f2.toasts.some(t => /Saved|محفوظة|حُفظ/.test(t)), { bar: f2.bar, toasts: f2.toasts });
+  mode.offline.delete('F-Mariam');
+  await F.tick();
+  const f3 = await F.page.evaluate(() => ({ outbox: outboxList(), bar: !!document.getElementById('memOnlyBar'), toasts: window.__toasts.slice(-3) }));
+  check('4c. back online: the next refresh uploads it, the red bar goes, and only then it says Saved', (parse(cloud.visits) || []).some(v => v.id === 'vF1') && f3.outbox.length === 0 && !f3.bar && f3.toasts.some(t => /Saved/.test(t)), f3);
+  await roomy();
+  await F.page.evaluate(() => loadAll()); await F.page.waitForFunction(() => !_flushing); // room again: the next refresh downloads the sales rows the phone dropped
+  // nearly full, with a copy the cloud can send again (the sales rows): the app makes room first
+  mode.offline.add('F-Mariam');
+  const f4 = await F.page.evaluate(async (v) => {
+    const real = window.__realSet || Storage.prototype.setItem;
+    const used = () => { let n = 0; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); n += k.length + (localStorage.getItem(k) || '').length; } return n; };
+    const quota = used() + 60;
+    Storage.prototype.setItem = function(k, val){ const old = localStorage.getItem(k); if(used() - (old != null ? k.length + old.length : 0) + k.length + String(val).length > quota) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return real.call(this, k, val); };
+    const rowsBefore = ((JSON.parse(localStorage.getItem('um_mirror:erpSales') || '{}').periods) || []).reduce((n, p) => n + ((p && p.rows) || []).length, 0);
+    visits.push(v); const r = await persistFor('visits');
+    Storage.prototype.setItem = real;
+    const es = JSON.parse(localStorage.getItem('um_mirror:erpSales') || 'null');
+    return { outcome: r.outcome, onPhone: JSON.parse(localStorage.getItem('um_mirror:visits') || '[]').some(x => x.id === v.id), outbox: JSON.parse(localStorage.getItem('um_outbox') || '[]'),
+      rowsBefore, rowsAfter: ((es && es.periods) || []).reduce((n, p) => n + ((p && p.rows) || []).length, 0), heads: ((es && es.periods) || []).length, bar: !!document.getElementById('memOnlyBar'), screen: erpPeriods().reduce((n, p) => n + (p.rows || []).length, 0) };
+  }, visit('vF2', 'c1', 'Mariam'));
+  check('4d. nearly full: the phone first drops its copy of the sales rows (the cloud sends them again), then keeps the visit and the queue entry — no red bar; the figures on screen are untouched', f4.onPhone && f4.outbox.includes('visits') && f4.rowsBefore > 0 && f4.rowsAfter === 0 && f4.heads === 2 && !f4.bar && f4.screen === 7 && f4.outcome.mirrored, f4);
+  mode.offline.delete('F-Mariam');
+  await F.tick();
+  check('4e. …and it uploads on the next refresh', (parse(cloud.visits) || []).some(v => v.id === 'vF2'));
+  await F.ctx.close();
 
   check('no page errors on any phone', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

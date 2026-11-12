@@ -467,7 +467,9 @@ function visitsMirrorSave(all){
   if(mirrorSave('visits', JSON.stringify(all))) return true;
   // device storage full: keep this quarter so the offline screen still has it
   const cutoff = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
-  return mirrorSave('visits', JSON.stringify((all || []).filter(v => v && (!v.date || v.date >= cutoff))));
+  const ok = mirrorSave('visits', JSON.stringify((all || []).filter(v => v && (!v.date || v.date >= cutoff))));
+  if(ok) _deviceStale.visits = true; // a partial copy: a queued list is served from memory, not from it
+  return ok;
 }
 function visitsArchivesObj(){ const o = {}; Object.keys(_visitsArch).forEach(m => { o[m] = _visitsArch[m].arr; }); return o; }
 async function loadVisits(){
@@ -475,6 +477,7 @@ async function loadVisits(){
   const gen0 = _localGen; // a save that runs while this reads makes what it read older than memory (v121)
   const today = todayStr();
   if(outboxHas('visits')){
+    if(_deviceStale.visits){ _mirrorUsed.visits = true; return visits; } // its device copy is older than memory (a full phone)
     const mm = UMCore.safeParse(mirrorGet('visits'), undefined);
     if(Array.isArray(mm)){ _mirrorUsed.visits = true; return mm; } // queued offline edits win until flushed
   }
@@ -922,6 +925,7 @@ let _bootCrashed = false; // loadAll hit an error — state may be partial, neve
 // outbox flushes); an unreachable cloud falls back to the mirror.
 async function cloudGet(key){
   if(outboxHas(key)){
+    if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ _mirrorUsed[key] = true; return { value: mem }; } } // its device copy is older than memory (a full phone)
     const mm = mirrorGet(key);
     if(mm != null && UMCore.safeParse(mm, undefined) !== undefined){
       _mirrorUsed[key] = true; // offline edits win until flushed — but never authoritative
@@ -1140,13 +1144,95 @@ const MERGE_KEYS = { visits: 'visits', tasks: 'tasks', clinics: 'clinics', event
 function withTimeout(pr, ms){
   return Promise.race([pr, new Promise((_, rej)=>setTimeout(()=>rej(new Error('timeout')), ms))]);
 }
-function mirrorSave(key, str){ try{ localStorage.setItem('um_mirror:'+key, str); return true; }catch(e){ return false; } }
+// ---- A full phone (v121) ----
+// The device copies and the queue share the phone's small web storage. When
+// it was full, a save "kept in memory only" had lost its queue entry too:
+// nothing retried it, and the next refresh put the phone's older copy (or
+// the cloud's) over it — the visit vanished. Now the queue also lives in
+// memory; a key whose device copy could not be written is served from
+// memory, never from that older copy (_deviceStale); before giving up, the
+// phone's copy of the sales rows is dropped (the cloud sends them again);
+// and what is still only in memory is said by a red bar until it uploads.
+const _outboxMem = new Set();
+let _outboxDeviceBad = false; // the device queue could not be rewritten: memory is the queue this session
+const _deviceStale = {};      // key → its device copy is older than memory
+const _memOnly = new Set();   // queued saves the phone could not keep (bar until they upload)
+function deviceSet(k, v, mayFree){
+  try{ localStorage.setItem(k, v); return true; }catch(e){}
+  if(mayFree && freeDeviceRoom()){ try{ localStorage.setItem(k, v); return true; }catch(e){} }
+  return false;
+}
+// Room on a full phone — only a copy the cloud can send again: the rows of
+// the sales files this phone holds as the cloud stores them (each file's
+// rows stay in the cloud under their key; the next start downloads them).
+// Never a copy that may be the only one (a file put back from this phone,
+// unsaved sales, the copies kept aside as um_mirror_prev:*).
+function freeDeviceRoom(){
+  if(_erpDirty || _erpSaving) return false;
+  let m = null; try{ m = UMCore.safeParse(localStorage.getItem('um_mirror:erpSales'), null); }catch(e){}
+  if(!m || !Array.isArray(m.periods)) return false;
+  let freed = 0;
+  const periods = m.periods.map(p => {
+    if(!p || !Array.isArray(p.rows) || !p.rows.length || p.rowsMissing || !p.rowsRef || p.rowsRef.key !== UMCore.erpRowsKey(p)) return p;
+    freed += p.rows.length; const q = Object.assign({}, p); delete q.rows; return q;
+  });
+  if(!freed) return false;
+  try{ localStorage.setItem('um_mirror:erpSales', JSON.stringify(Object.assign({}, m, { periods }))); }
+  catch(e){ try{ localStorage.removeItem('um_mirror:erpSales'); }catch(e2){ return false; } }
+  console.warn(`device storage full: ${freed} sales rows dropped from this phone's copy — they download again from the cloud`);
+  return true;
+}
+function mirrorSave(key, str){
+  if(deviceSet('um_mirror:' + key, str, key !== 'erpSales')){ delete _deviceStale[key]; return true; }
+  _deviceStale[key] = true;
+  return false;
+}
 function mirrorGet(key){ try{ return localStorage.getItem('um_mirror:'+key); }catch(e){ return null; } }
-function outboxList(){ try{ return JSON.parse(localStorage.getItem('um_outbox')||'[]'); }catch(e){ return []; } }
-function outboxWrite(list){ try{ localStorage.setItem('um_outbox', JSON.stringify(list)); }catch(e){} updateSyncBadge(); }
-function outboxAdd(key){ const l = outboxList(); if(!l.includes(key)){ l.push(key); outboxWrite(l); } }
+function outboxList(){
+  let dev = []; if(!_outboxDeviceBad){ try{ dev = JSON.parse(localStorage.getItem('um_outbox')||'[]'); }catch(e){} }
+  const out = Array.isArray(dev) ? dev.slice() : [];
+  _outboxMem.forEach(k => { if(!out.includes(k)) out.push(k); });
+  return out;
+}
+// The queue is now exactly `list` — in memory always; on the phone if it fits.
+function outboxWrite(list){
+  _outboxMem.clear(); list.forEach(k => _outboxMem.add(k));
+  const str = JSON.stringify(list);
+  let ok = deviceSet('um_outbox', str, true);
+  if(!ok){ try{ localStorage.removeItem('um_outbox'); if(list.length) localStorage.setItem('um_outbox', str); ok = true; }catch(e){} }
+  _outboxDeviceBad = !ok; // an older device queue must not bring back what was sent
+  updateSyncBadge();
+  return ok;
+}
+function outboxAdd(key){ const l = outboxList(); if(!l.includes(key)){ l.push(key); return outboxWrite(l); } return !_outboxDeviceBad; }
 function outboxRemove(key){ outboxWrite(outboxList().filter(k=>k!==key)); }
 function outboxHas(key){ return outboxList().includes(key); }
+// What a queued key holds in memory, for the reads that would otherwise
+// serve its older device copy.
+function memoryCopy(key){
+  const v = key === 'clinics' ? storedClinics() : ({ visits, tasks, dayPlans, events })[key];
+  return v === undefined ? null : JSON.stringify(v);
+}
+const MEMONLY_VISIT = "This phone's storage is full — this visit is only in the app's memory: keep the app open and connected until it says Saved";
+const MEMONLY_OTHER = "This phone's storage is full — these changes are only in the app's memory: keep the app open and connected until it says Saved";
+function renderMemOnlyBar(){
+  let el = document.getElementById('memOnlyBar');
+  if(!_memOnly.size){ if(el) el.remove(); updateSyncBadge(); return; }
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'memOnlyBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
+    el.style.cssText = 'position:fixed; top:10px; left:12px; right:12px; z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:center; pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  const txt = _memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER;
+  el.textContent = trOf(txt) || txt;
+  updateSyncBadge();
+}
+function memOnlyLanded(key){
+  if(!_memOnly.delete(key)) return;
+  renderMemOnlyBar();
+  if(!_memOnly.size) showToast('✅ Saved — it reached the cloud', 5000);
+}
 // Account links are saved one account at a time with a compare-and-set
 // (saveErpLink, 11-erp.js), never as a whole map. A whole-map save waiting in
 // the outbox (no version queues one, but a device copy can hold anything) is
@@ -1310,6 +1396,7 @@ async function flushOutbox(){
   if(!pending.length) return;
   _flushing = true;
   let allOk = true;
+  const memOnly0 = _memOnly.size; // its own "Saved" toast says it when such a save lands
   try{
     await refreshTombs(); // learn the team's deletes before pushing our queue
     for(const key of pending){
@@ -1319,12 +1406,12 @@ async function flushOutbox(){
     }
   }finally{ _flushing = false; }
   updateSyncBadge();
-  if(allOk && pending.length) showToast('✅ Offline changes uploaded & merged');
+  if(allOk && pending.length && !memOnly0) showToast('✅ Offline changes uploaded & merged');
 }
 function updateSyncBadge(){
   let el = document.getElementById('syncPill');
   const n = outboxList().length;
-  const show = !navigator.onLine || n > 0;
+  const show = (!navigator.onLine || n > 0) && !_memOnly.size; // the red bar (renderMemOnlyBar) says it all on a full phone
   if(!show){ if(el) el.style.display='none'; return; }
   if(!el){
     el = document.createElement('div');
@@ -1437,7 +1524,7 @@ async function holdRefresh(fn){ _localGen++; _localSaving++; try{ return await f
 async function persist(key, opts){
   if(!LOCAL_KEYS[key]) return persistNow(key, opts);
   _localGen++; _localSaving++;
-  try{ return await persistNow(key, opts); }
+  try{ const ok = await persistNow(key, opts); if(ok === true) memOnlyLanded(key); return ok; }
   finally{ _localSaving--; _localGen++; }
 }
 async function persistNow(key, opts){
@@ -1575,19 +1662,21 @@ async function persistNow(key, opts){
     const queueable = MERGE_KEYS[key] || key === 'dayPlans';
     const toSave = (typeof value !== 'undefined' && value !== null) ? value : map[key]; // the MERGED copy when the merge ran
     const mOk = mirrorSave(key, JSON.stringify(toSave));
+    let onPhone = mOk;
     if(queueable){
       // Queued even when the device store is full: the copy in memory still
       // uploads the moment the cloud is back — as long as the app stays open.
-      outboxAdd(key);
+      onPhone = outboxAdd(key) && mOk; // the queue entry and the copy, both on the phone
       keepMergeBaseOnPhone(key); // what the cloud last confirmed: the upload merges against it, even after a reopen
+      if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); } // the truth stays on screen until it uploads
       updateSyncBadge();
-      offlineToast(mOk ? '📴 Saved on this device — uploads automatically when back online'
-                       : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+      offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
+                           : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     } else {
       offlineToast(mOk ? '📴 No connection — retry this save when back online'
                        : '⚠️ Device storage full — retry this save when back online');
     }
-    tell({ ok: false, queued: !!queueable, mirrored: mOk });
+    tell({ ok: false, queued: !!queueable, mirrored: onPhone });
     return false;
   }
 }
