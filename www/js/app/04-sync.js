@@ -1315,24 +1315,37 @@ function absorbTombs(doc){
 }
 // The shared delete log is itself a UNION document (max timestamp wins, 7-day
 // retention) — safe to write from any device at any time, safe to queue.
+// Read → union → write as ONE atomic step (v121): it used to read the log,
+// then write the whole log back — a phone deleting at the same moment (or a
+// write the app gave up on, delivered later by the cloud's client) lost the
+// other phone's delete, which that phone then forgot too (reconcileTombs).
 async function persistTombs(){
   try{
-    const cur = await withTimeout(window.storage.get('tombs', true), 5000);
-    const cloud = cur ? (UMCore.safeParse(cur.value, null) || {}) : {};
-    reconcileTombs(cloud); // BEFORE the union: a delete revived elsewhere must not be re-published from our stale copy
-    const cutoff = Date.now() - 7*86400000;
-    const out = {};
-    Object.keys(_tombstones).forEach(k=>{
-      out[k] = {};
-      [cloud[k]||{}, tombsDoc[k]||{}].forEach(src=>Object.keys(src).forEach(id=>{
-        if(_untombed[k] && _untombed[k].has(id)) return; // revived — drop from the shared log
-        if((src[id]||0) > cutoff) out[k][id] = Math.max(out[k][id]||0, src[id]);
-      }));
-    });
+    let out = null;
+    const written = await storageUpdate('tombs', cur => {
+      const cloud = cur != null ? (UMCore.safeParse(cur, null) || {}) : {};
+      reconcileTombs(cloud); // BEFORE the union: a delete revived elsewhere must not be re-published from our stale copy
+      const cutoff = Date.now() - 7*86400000;
+      out = {};
+      Object.keys(_tombstones).forEach(k=>{
+        out[k] = {};
+        [cloud[k]||{}, tombsDoc[k]||{}].forEach(src=>Object.keys(src).forEach(id=>{
+          if(_untombed[k] && _untombed[k].has(id)) return; // revived — drop from the shared log
+          if((src[id]||0) > cutoff) out[k][id] = Math.max(out[k][id]||0, src[id]);
+        }));
+      });
+      return JSON.stringify(out);
+    }, 12000);
+    if(written == null) throw new Error('tombs update failed');
+    // A delete made here while the write was on its way is not in it: kept
+    // (and still unpublished) for the write its own tomb() started.
+    const pub = UMCore.safeParse(written, {}) || {};
+    Object.keys(tombsDoc || {}).forEach(k => Object.keys(tombsDoc[k] || {}).forEach(id => {
+      if(!(_untombed[k] && _untombed[k].has(id)) && !((out[k] = out[k] || {})[id])) out[k][id] = tombsDoc[k][id];
+    }));
     tombsDoc = out;
     absorbTombs(out);
-    await withTimeout(window.storage.set('tombs', JSON.stringify(out), true), 7000);
-    Object.keys(_tombsUnpublished).forEach(k=>_tombsUnpublished[k].clear());
+    Object.keys(_tombsUnpublished).forEach(k => [..._tombsUnpublished[k]].forEach(id => { if(pub[k] && pub[k][id] != null) _tombsUnpublished[k].delete(id); }));
     if(outboxHas('tombs')) outboxRemove('tombs');
     return true;
   }catch(e){ outboxAdd('tombs'); return false; }

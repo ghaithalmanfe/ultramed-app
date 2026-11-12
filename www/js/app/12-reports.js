@@ -465,23 +465,27 @@ async function loadTeam(){
     memories = m ? JSON.parse(m.value) : [];
   }catch(e){ chatMsgs=[]; memories=[]; }
 }
+// Read → union → write as ONE atomic step (v121): two phones posting at the
+// same moment each wrote the whole list back, so the later write dropped the
+// other's message — and a read that failed fell through to a blind write.
 async function persistTeam(key){
   const map={chat:chatMsgs, memories:memories};
   let value = map[key]; // hoisted: the catch mirrors the merged copy
   try{
-    try{
-      const cur = await withTimeout(window.storage.get(key, true), 5000);
-      const cloud = cur ? UMCore.safeParse(cur.value, null) : null;
+    const str = await storageUpdate(key, cur => {
+      const cloud = cur != null ? UMCore.safeParse(cur, null) : null;
+      let v = (map[key] || []).slice();
       if(Array.isArray(cloud)){
-        const have = new Set(value.map(x=>x && x.id));
-        cloud.forEach(x=>{ if(x && x.id != null && !have.has(x.id)) value.push(x); });
-        value.sort((a,b)=>(a.ts||0)-(b.ts||0));
-        if(key==='chat' && value.length>300) value = value.slice(-300);
-        if(key==='chat') chatMsgs = value; else memories = value;
+        const have = new Set(v.map(x=>x && x.id));
+        cloud.forEach(x=>{ if(x && x.id != null && !have.has(x.id)){ v.push(x); have.add(x.id); } });
+        v.sort((a,b)=>(a.ts||0)-(b.ts||0));
+        if(key==='chat' && v.length>300) v = v.slice(-300);
       }
-    }catch(e){}
-    const str = JSON.stringify(value);
-    await withTimeout(window.storage.set(key, str, true), 7000);
+      value = v;
+      return JSON.stringify(v);
+    }, 12000);
+    if(str == null) throw new Error(key + ' update failed');
+    if(key==='chat') chatMsgs = value; else memories = value;
     mirrorSave(key, str);
     if(outboxHas(key)) outboxRemove(key);
     return true;

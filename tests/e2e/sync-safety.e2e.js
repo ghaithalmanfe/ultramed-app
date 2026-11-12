@@ -12,7 +12,7 @@ const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.s
 
 // ---- fake cloud (in Node: shared by every phone, survives reloads) ----
 const cloud = {};
-const mode = { failGet: null, failSet: null, offline: new Set(), slow: {}, reads: [], writes: [] };
+const mode = { failGet: null, failSet: null, offline: new Set(), slow: {}, slowSet: {}, reads: [], writes: [] };
 let held = false; const waiters = [];   // one transaction at a time, first come first served
 const acquire = async () => { if(!held){ held = true; return true; } await new Promise(r => waiters.push(r)); return true; };
 const release = async () => { const next = waiters.shift(); if(next) next(); else held = false; return true; };
@@ -21,7 +21,8 @@ const api = {
   // mode.slow[k] = ms: the next read of k answers with the value as it is when the read ARRIVES, delivered ms later
   get: async (who, k) => { off(who); mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); const v = k in cloud ? cloud[k] : null;
     if(mode.slow[k]){ const ms = mode.slow[k]; delete mode.slow[k]; await new Promise(r => setTimeout(r, ms)); } return v; },
-  set: async (who, k, v) => { off(who); if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set'); mode.writes.push(k); cloud[k] = v; return true; },
+  set: async (who, k, v) => { off(who); if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set');
+    if(mode.slowSet[k]){ const ms = mode.slowSet[k]; delete mode.slowSet[k]; await new Promise(r => setTimeout(r, ms)); } mode.writes.push(k); cloud[k] = v; return true; }, // mode.slowSet[k] = ms: the next write of k lands ms later
   setMany: async (who, e) => { off(who); if(mode.failSet && e.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); e.forEach(([k, v]) => { mode.writes.push(k); cloud[k] = v; }); return true; },
   del: async (who, k) => { off(who); delete cloud[k]; return true; },
   list: async (who, p) => { off(who); return Object.keys(cloud).filter(k => k.startsWith(p)); },
@@ -268,6 +269,42 @@ function seedCloud(){
   await F.tick();
   check('4e. …and it uploads on the next refresh', (parse(cloud.visits) || []).some(v => v.id === 'vF2'));
   await F.ctx.close();
+
+  // =====================================================================
+  // 5) Two phones write the shared delete log (or the team chat) at the
+  //    same time: each read the log, added its own delete and wrote the
+  //    whole log back — the later write dropped the other phone's delete
+  //    (and that phone then forgot it too), so a stale phone could bring
+  //    the record back. The same for two chat messages.
+  // =====================================================================
+  seedCloud();
+  const X = await mkPhone('X-Mariam'), Y = await mkPhone('Y-Renova');
+  await X.boot('Mariam', 'rep'); await Y.boot('Renova', 'rep');
+  const tombsIn = k => Object.keys(((parse(cloud.tombs) || {})[k]) || {});
+  const settle = async (test) => { for(let i = 0; i < 60 && !test(); i++) await new Promise(r => setTimeout(r, 100)); };
+  mode.slow.tombs = 1200; // Mariam's read of the log is slow: Renova writes in between
+  await X.page.evaluate(() => { tomb('tasks', 'tX'); });
+  await new Promise(r => setTimeout(r, 300));
+  await Y.page.evaluate(() => { tomb('tasks', 'tY'); });
+  await settle(() => tombsIn('tasks').includes('tX'));
+  await new Promise(r => setTimeout(r, 300));
+  check('5a. two phones deleting at the same moment: the shared delete log keeps both deletes', tombsIn('tasks').includes('tX') && tombsIn('tasks').includes('tY'), tombsIn('tasks'));
+  mode.slowSet.tombs = 1200; // a second delete on the same phone while its first write is on its way (after the log was put together)
+  await X.page.evaluate(() => { tomb('tasks', 'tX2'); });
+  await new Promise(r => setTimeout(r, 300));
+  await X.page.evaluate(() => { tomb('tasks', 'tX3'); });
+  await settle(() => tombsIn('tasks').includes('tX3'));
+  const x3 = await X.page.evaluate(() => ({ local: tombSet('tasks').has('tX3'), unpublished: !!(_tombsUnpublished.tasks && _tombsUnpublished.tasks.has('tX3')) }));
+  check('5c. a delete made while this phone\'s previous write of the log is on its way reaches the log too (and is not forgotten here)', tombsIn('tasks').includes('tX2') && tombsIn('tasks').includes('tX3') && x3.local && !x3.unpublished, { cloud: tombsIn('tasks'), x3 });
+  mode.slow.chat = 1200;
+  const msg = (id, from) => ({ id, from, text: 'hello from ' + from, ts: Date.now() });
+  const pX = X.page.evaluate(async (m) => { chatMsgs.push(m); return persistTeam('chat'); }, msg('mX', 'Mariam'));
+  await new Promise(r => setTimeout(r, 300));
+  await Y.page.evaluate(async (m) => { chatMsgs.push(m); return persistTeam('chat'); }, msg('mY', 'Renova'));
+  await pX;
+  const chat = (parse(cloud.chat) || []).map(m => m.id);
+  check('5b. two chat messages sent at the same moment: both stay in the team chat', chat.includes('mX') && chat.includes('mY'), chat);
+  await X.ctx.close(); await Y.ctx.close();
 
   check('no page errors on any phone', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
