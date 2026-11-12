@@ -39,8 +39,9 @@ const lastMonth = () => { const [y, m] = kuwaitDay(0).split('-').map(Number); co
 const PHOTO = 'photo:mh3k2x9q7f1a';
 const CHUNK = 'erpRows:mh1a2b3c4d:1762300000000:0';
 const ARCH = 'visitsArch:' + lastMonth();
+const AUDIT = 'auditLog:' + kuwaitDay(0).slice(0, 7); // the change log's month document (17-audit-log.js, audit-trail release)
 const TEAM_KEYS = ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans', 'events', 'tombs', 'recycleBin',
-  'erpNotes', 'products', 'repairLog', 'chat', 'memories', 'mailLog', ARCH, PHOTO];
+  'erpNotes', 'products', 'repairLog', 'chat', 'memories', 'mailLog', ARCH, AUDIT, PHOTO];
 const SUPERVISOR_KEYS = ['staff', 'targets', 'benchmarks', 'categoryGuides', 'erpSales', 'erpMap', 'erpMapLog', 'rxTypes', CHUNK];
 const STARTUP_SEED_KEYS = ['staff', 'benchmarks', 'categoryGuides']; // created by any phone when missing (04-sync.js:1037-1039)
 const SNAP_KEYS = [snap(0), snap(-5), snap(-14)];
@@ -62,6 +63,7 @@ function makeSeed(){
     recycleBin: { clinics: [], products: [], visits: [] },
     erpNotes: {}, repairLog: [], chat: [], memories: [],
     mailLog: { last: null, history: [] },
+    [AUDIT]: { v: 1, month: kuwaitDay(0).slice(0, 7), entries: [{ eid: 'seed-1', at: new Date().toISOString(), by: 'Rep B', action: 'visit.add', key: 'visits', result: true }], dropped: 0, trimmed: 0 },
     [PHOTO]: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==',
     staff: [{ name: 'Rep A', role: 'rep', email: REP_A }, { name: 'Rep B', role: 'rep', email: REP_B }, { name: 'Supervisor', role: 'supervisor', email: SUP }],
     targets: { 'Rep A': { revenue: 1000 } }, benchmarks: { coverage: 80 }, products: [{ id: 'p1', name: 'Test brush', brand: 'Test', price: 4 }],
@@ -78,6 +80,6 @@ module.exports = {
   ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, RULES_FILE, RAW_RULES, PLACEHOLDER, rulesFor,
   SUP, SUP2, REP_A, REP_B, REPORTS,
   utcDay, kuwaitDay, localDay, snap, lastMonth,
-  PHOTO, CHUNK, ARCH, TEAM_KEYS, SUPERVISOR_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS,
+  PHOTO, CHUNK, ARCH, AUDIT, TEAM_KEYS, SUPERVISOR_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS,
   clinicList, makeSeed, asValue, stored,
 };
