@@ -1434,8 +1434,8 @@ async function renderBackupsList(){
 // file on the phone as it goes (UMCore.backupBuilder: each value exactly as
 // stored, a manifest with every part's size, sha256 and record counts, one
 // integrity code — scripts/backup/verify.js checks it). The text is folded
-// into the file every few MB, so the page never holds the whole account in its
-// memory. It writes nothing to the cloud. A part that cannot be read gives NO
+// into the file every megabyte, so the page never holds the whole account in
+// its memory (a 47 MB account in a 128 MB JS heap: tests/e2e/full-backup.e2e.js). It writes nothing to the cloud. A part that cannot be read gives NO
 // file and names the part; this phone's changes the cloud does not have yet
 // (the outbox) are shown, and kept apart in the file. Supervisor only — the
 // button, and every function below. The app has no way to restore this file:
@@ -1472,8 +1472,8 @@ async function bkSha256(bytes){
   }catch(e){}
   return UMCore.sha256Hex(bytes);   // an old WebView without crypto.subtle: the same SHA-256, from core.js
 }
-// The file, written as it is read: pieces of text folded into Blobs every few
-// MB (a Blob lives outside the page's JS memory).
+// The file, written as it is read: pieces of text folded into a Blob every
+// megabyte (a Blob lives outside the page's JS memory).
 function bkWriter(){
   const blobs = [];
   let strs = [], n = 0;
