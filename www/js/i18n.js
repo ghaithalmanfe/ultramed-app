@@ -1042,6 +1042,8 @@
     "⚠️ This phone's storage is full — this memory is only in the app's memory: keep the app open until it uploads": '⚠️ ذاكرة هذا الهاتف ممتلئة — هذه الذكرى موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا حتى تُرفع',
     '📸 Photo added': '📸 أُضيفت الصورة',
     '🔄 Up to date': '🔄 محدّث',
+    '📤 Yours are still uploading — showing what this phone has': '📤 ما أرسلته ما زال يُرفع — يظهر ما على هذا الهاتف', // Refresh messages (v122)
+    '📴 No connection — showing what this phone has': '📴 لا يوجد اتصال — يظهر ما على هذا الهاتف',
     '🖼 Processing photo...': '🖼 جارٍ معالجة الصورة...',
 
     // ---- quick dates, filters, statuses ----

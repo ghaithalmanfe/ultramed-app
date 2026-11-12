@@ -671,9 +671,12 @@ function teamMerge(key, a, b){
 async function loadTeam(){
   // each list is taken (or kept) the moment its own read is back: nothing runs between
   // cloudGet writing the phone's copy and that copy being put back
+  const how = {}; // key → 'cloud' (read from the cloud) | 'queued' (this phone's copy: its own still uploading) | 'phone' (no answer: this phone's copy)
   await Promise.all(['chat', 'memories'].map(async key => {
     const gen0 = _teamGen[key];
+    const queued0 = outboxHas(key);
     const r = await cloudGet(key).catch(() => null);
+    how[key] = queued0 ? 'queued' : (_mirrorUsed[key] || _loadFailed[key] || (r == null && !navigator.onLine)) ? 'phone' : 'cloud';
     try{
       const mine = teamList(key);
       if(_teamGen[key] !== gen0 || _teamSaving[key] > 0){
@@ -688,8 +691,9 @@ async function loadTeam(){
       setTeamList(key, all);
       const gotIds = new Set(got.map(x => x && x.id));
       if(all.some(x => x && !gotIds.has(x.id))) mirrorSave(key, JSON.stringify(all));
-    }catch(e){ console.warn('team ' + key, e); } // the list on screen is kept
+    }catch(e){ console.warn('team ' + key, e); how[key] = 'phone'; } // the list on screen is kept
   }));
+  return how;
 }
 // Read → union → write as ONE atomic step (v121): two phones posting at the
 // same moment each wrote the whole list back, so the later write dropped the
@@ -745,9 +749,13 @@ function setTeamTab(t){
   if(t==='mem') renderMemories(); else renderChat();
 }
 async function refreshTeam(){
-  await loadTeam();
+  const how = (await loadTeam()) || {};
   renderChat(); renderMemories();
-  showToast('\u{1F504} Up to date');
+  // "Up to date" only when both lists were read from the cloud (v122: it was said after a failed read too)
+  const all = Object.values(how);
+  showToast(all.includes('queued') ? '📤 Yours are still uploading — showing what this phone has'
+          : all.includes('phone') ? '📴 No connection — showing what this phone has'
+          : '\u{1F504} Up to date');
 }
 function fmtWhen(ts){
   const d=new Date(ts), n=new Date();

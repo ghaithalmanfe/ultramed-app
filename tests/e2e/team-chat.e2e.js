@@ -499,11 +499,29 @@ function seed(){
   });
 
   // =====================================================================
+  // UP — "Refresh messages" says "Up to date" only after a real read
+  // =====================================================================
+  await phase('UP', '"Refresh messages" tells the truth', async () => {
+    seed();
+    const A = await mkPhone('UP-Mariam'); await A.boot(M, 'rep'); await A.openTeam('chat');
+    const tap = async () => { const n = await toastCount(A); await A.page.evaluate(() => document.querySelector('#teamChat button[onclick="refreshTeam()"]').click()); await until(async () => (await toastCount(A)) > n, 10000); return (await toastsFrom(A, n)).pop(); };
+    const t1 = await tap();
+    net.down.add(A.label);
+    const t2 = await tap();
+    await A.page.evaluate(async () => { document.getElementById('chatInput').value = 'UP queued message'; await sendChat(); });
+    net.down.delete(A.label);
+    const t3 = await tap();
+    check('UP. "Refresh messages": "Up to date" after a real read; with no signal it says it shows what the phone has; with a message still to upload it says so — never "Up to date"',
+      t1 === '🔄 Up to date' && t2 === '📴 No connection — showing what this phone has' && t3 === '📤 Yours are still uploading — showing what this phone has', { t1, t2, t3 });
+    await A.ctx.close();
+  });
+
+  // =====================================================================
   // AR — Arabic for every new message
   // =====================================================================
   await phase('AR', 'Arabic', async () => {
     const A = await mkPhone('AR-Mariam'); await A.boot(M, 'rep');
-    const out = await A.page.evaluate(strs => strs.map(s => [s, window.UMI18N ? UMI18N.tr(s) : null]), [BUSY, ON_PHONE, MEM_ONLY]);
+    const out = await A.page.evaluate(strs => strs.map(s => [s, window.UMI18N ? UMI18N.tr(s) : null]), [BUSY, ON_PHONE, MEM_ONLY, '📴 No connection — showing what this phone has', '📤 Yours are still uploading — showing what this phone has']);
     const bad = out.filter(([, a]) => !a || !/[؀-ۿ]/.test(a));
     check('AR. every new message has its Arabic', bad.length === 0, bad.length ? bad : out.map(x => x[1]));
     await A.ctx.close();
