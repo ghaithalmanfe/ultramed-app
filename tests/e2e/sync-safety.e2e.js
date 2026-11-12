@@ -12,13 +12,15 @@ const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.s
 
 // ---- fake cloud (in Node: shared by every phone, survives reloads) ----
 const cloud = {};
-const mode = { failGet: null, failSet: null, offline: new Set(), reads: [], writes: [] };
+const mode = { failGet: null, failSet: null, offline: new Set(), slow: {}, reads: [], writes: [] };
 let held = false; const waiters = [];   // one transaction at a time, first come first served
 const acquire = async () => { if(!held){ held = true; return true; } await new Promise(r => waiters.push(r)); return true; };
 const release = async () => { const next = waiters.shift(); if(next) next(); else held = false; return true; };
 const off = who => { if(mode.offline.has(who)) throw new Error('boom-offline'); };   // that phone has no connection
 const api = {
-  get: async (who, k) => { off(who); mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
+  // mode.slow[k] = ms: the next read of k answers with the value as it is when the read ARRIVES, delivered ms later
+  get: async (who, k) => { off(who); mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); const v = k in cloud ? cloud[k] : null;
+    if(mode.slow[k]){ const ms = mode.slow[k]; delete mode.slow[k]; await new Promise(r => setTimeout(r, ms)); } return v; },
   set: async (who, k, v) => { off(who); if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set'); mode.writes.push(k); cloud[k] = v; return true; },
   setMany: async (who, e) => { off(who); if(mode.failSet && e.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); e.forEach(([k, v]) => { mode.writes.push(k); cloud[k] = v; }); return true; },
   del: async (who, k) => { off(who); delete cloud[k]; return true; },
@@ -182,6 +184,45 @@ function seedCloud(){
   const r3 = { c2: { cls: cl('c2').cls, d2: ((cl('c2').doctors || []).find(d => d.id === 'd2') || {}).title }, c1: cl('c1').nextFollowUp, c3: cl('c3').rep };
   check('2e. reopened offline, then online: the queue still keeps every edit the other phone made meanwhile', offBoot.c1 === '2026-10-05' && offBoot.outbox.includes('clinics') && r3.c1 === '2026-10-05' && r3.c2.cls === 'B' && r3.c2.d2 === 'Orthodontist' && r3.c3 === 'Renova', { offBoot, r3 });
   await A2.ctx.close(); await S2.ctx.close();
+
+  // =====================================================================
+  // 3) A save made while a background refresh was on its way: when its
+  //    slowest read came back, the refresh put back the copies it had read
+  //    BEFORE the save — on screen, and in the next save of that list (the
+  //    change undone; a recycle-bin entry gone for good).
+  // =====================================================================
+  seedCloud();
+  cloud.visits = JSON.stringify([visit('vM', 'c1', 'Mariam', { date: '2026-09-20' }), visit('vD1', 'c1', 'Mariam', { date: '2026-09-19' }), visit('vD2', 'c3', 'Mariam', { date: '2026-09-18' })]);
+  const P = await mkPhone('P-supervisor'); await P.boot('Dr. Ghaith', 'supervisor');
+  const startRefresh = async () => { mode.slow.erpSales = 1500; await P.page.evaluate(() => { window.__la = loadAll(); }); await P.page.waitForTimeout(250); };
+  const endRefresh = () => P.page.evaluate(async () => { await window.__la; });
+  await startRefresh();
+  await P.page.evaluate(async () => { clinics.find(c => c.id === 'c3').rep = 'Renova'; return persist('clinics'); });
+  await endRefresh();
+  const r3a = await P.page.evaluate(() => (clinics.find(c => c.id === 'c3') || {}).rep);
+  await P.page.evaluate(async () => { clinics.find(c => c.id === 'c2').notes = 'next edit'; return persist('clinics'); });
+  check('3a. a clinic edit saved while a refresh was on its way stays — on screen, and in the cloud after the next save', r3a === 'Renova' && cl('c3').rep === 'Renova' && cl('c2').notes === 'next edit', { screen: r3a, cloud: cl('c3').rep });
+  await startRefresh();
+  await P.page.evaluate(async () => { visits.find(v => v.id === 'vM').clinicId = 'c3'; return persist('visits'); });
+  await endRefresh();
+  const r3b = await P.page.evaluate(() => (visits.find(v => v.id === 'vM') || {}).clinicId);
+  await addVisit(P, visit('vN', 'c2', 'Renova'));
+  const vmCloud = ((parse(cloud.visits) || []).find(v => v.id === 'vM') || {}).clinicId;
+  check('3b. a visit moved to another clinic while a refresh was on its way stays moved — on screen, and after the next visit save', r3b === 'c3' && vmCloud === 'c3', { screen: r3b, cloud: vmCloud });
+  await startRefresh();
+  await P.page.evaluate(async () => { await deleteVisit('vD1'); });
+  await endRefresh();
+  const r3c = await P.page.evaluate(() => (recycleBin.visits || []).map(v => v.id));
+  await P.page.evaluate(async () => { await deleteVisit('vD2'); });
+  const bin = ((parse(cloud.recycleBin) || {}).visits || []).map(v => v.id);
+  check('3c. a visit deleted while a refresh was on its way keeps its recycle-bin entry after the next delete', r3c.includes('vD1') && bin.includes('vD1') && bin.includes('vD2'), { screen: r3c, cloud: bin });
+  // the read of the clinic list itself arrives after the save (answered with the copy from before it)
+  mode.slow.clinics = 1500; await P.page.evaluate(() => { window.__la = loadAll(); }); await P.page.waitForTimeout(250);
+  await P.page.evaluate(async () => { clinics.find(c => c.id === 'c2').cls = 'C'; return persist('clinics'); });
+  await endRefresh();
+  const r3d = await P.page.evaluate(() => ({ screen: (clinics.find(c => c.id === 'c2') || {}).cls, phone: ((JSON.parse(localStorage.getItem('um_mirror:clinics') || '[]')).find(c => c.id === 'c2') || {}).cls }));
+  check('3d. a read of the list that arrives after the save: the screen and the phone\'s own copy (what an offline start shows) keep the saved edit', r3d.screen === 'C' && r3d.phone === 'C' && cl('c2').cls === 'C', r3d);
+  await P.ctx.close();
 
   check('no page errors on any phone', Object.values(errors).every(e => e.length === 0), errors);
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
