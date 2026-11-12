@@ -1,12 +1,12 @@
 'use strict';
-// Proves ../../firestore.rules on the local Firestore emulator (port 8295,
-// demo project "demo-ultramed-rules": the emulator never reaches the real
-// Firebase project). Run from tests/rules:  npm ci && npm test
+// Who may read, write and delete what: ../../firestore.rules on the local
+// Firestore emulator (demo project — never the real one), with tokens shaped
+// like Firebase Auth's (password, anonymous, custom, Google, phone).
+// Run from tests/rules:  npm ci && npm test
 //
 // The committed rules carry a placeholder for the supervisor's e-mail; the
-// suite puts a fictional test login in its place, exactly as the owner puts
+// suite puts fictional test logins in its place, exactly as the owner puts
 // the real one in the console — and checks the file as committed too.
-// Every login below is fictional (test-…@ultramed-kw.com).
 const { describe, test, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -16,65 +16,15 @@ const {
   doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs,
   documentId, runTransaction, writeBatch, setLogLevel,
 } = require('firebase/firestore');
+const F = require('./fixtures');
+const { PROJECT, HOST, PORT, RAW_RULES, PLACEHOLDER, SUP, SUP2, REP_A, REP_B, REPORTS, snap, utcDay, kuwaitDay,
+  PHOTO, CHUNK, TEAM_KEYS, SUPERVISOR_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS, clinicList, asValue, stored } = F;
 setLogLevel('silent'); // the refusals below are expected; the SDK would log each one
 
-const PROJECT = 'demo-ultramed-rules';
-const [HOST, PORT] = (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8295').split(':');
-// RULES_FILE=<path> runs the same suite on another rules file (e.g. the old
-// open rule, to see what it lets through).
-const RULES_FILE = process.env.RULES_FILE ? path.resolve(process.env.RULES_FILE) : path.join(__dirname, '..', '..', 'firestore.rules');
-const REPORT_JS = path.join(__dirname, '..', '..', 'scripts', 'daily-report', 'report.js');
-const PLACEHOLDER = 'SUPERVISOR_EMAIL@ultramed-kw.com';
-const RAW_RULES = fs.readFileSync(RULES_FILE, 'utf8');
-
-const SUP = 'test-supervisor@ultramed-kw.com';
-const REP_A = 'test-rep-a@ultramed-kw.com';
-const REP_B = 'test-rep-b@ultramed-kw.com';
-const REPORTS = 'test-reports@ultramed-kw.com'; // a dedicated login for the e-mail job
-const rulesFor = (supervisorEmail) => RAW_RULES.replace(`['${PLACEHOLDER}']`, `['${supervisorEmail}']`);
-
-// ---- dates (UTC, as request.time is) ----
-const utcDay = (offset) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + offset); return d.toISOString().slice(0, 10); };
-const kuwaitToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuwait', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-const snap = (offset) => 'snap_' + utcDay(offset);
-
-// ---- every key the app and the e-mail job use (see the inventory in firestore.rules) ----
-const TEAM_KEYS = ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans', 'events', 'tombs', 'recycleBin',
-  'erpNotes', 'repairLog', 'chat', 'memories', 'mailLog', 'visitsArch:2026-10', 'photo:mh3k2x9q7f1a'];
-const SUPERVISOR_KEYS = ['staff', 'targets', 'benchmarks', 'products', 'categoryGuides', 'erpSales',
-  'erpMap', 'erpMapLog', 'rxTypes', 'erpRows:mh1a2b3c4d:1762300000000:0'];
-const SNAP_KEYS = [snap(0), snap(-5), snap(-14)];
-const ALL_KEYS = TEAM_KEYS.concat(SUPERVISOR_KEYS, SNAP_KEYS);
-
-const clinicList = (n) => Array.from({ length: n }, (_, i) => ({
-  id: 'c-' + i, name: 'Test clinic ' + i, rep: i % 2 ? 'Rep A' : 'Rep B', cls: 'B', notes: '', doctors: [{ id: 'd' + i, name: 'Dr. Test ' + i }],
-}));
-const SEED = {
-  clinics: clinicList(30),
-  visits: [{ id: 'v1', clinicId: 'c-1', rep: 'Rep A', date: utcDay(0) }],
-  visitsIndex: { months: { '2026-10': { n: 1, rev: 1 } }, v: 1 },
-  'visitsArch:2026-10': [{ id: 'v0', clinicId: 'c-2', rep: 'Rep B', date: '2026-10-05' }],
-  tasks: [{ id: 't1', rep: 'Rep A', text: 'Call back' }],
-  dayPlans: { [utcDay(0)]: { 'Rep A': ['c-1'] } },
-  events: [{ id: 'e1', kind: 'stand', clinicId: 'c-1', rep: 'Rep A' }],
-  tombs: { visits: {}, tasks: {}, clinics: {}, events: {}, dayPlans: {}, doctors: {} },
-  recycleBin: { clinics: [], products: [], visits: [] },
-  erpNotes: {}, repairLog: [], chat: [], memories: [],
-  mailLog: { last: null, history: [] },
-  'photo:mh3k2x9q7f1a': 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==',
-  staff: [{ name: 'Rep A', role: 'rep', email: REP_A }, { name: 'Rep B', role: 'rep', email: REP_B }, { name: 'Supervisor', role: 'supervisor', email: SUP }],
-  targets: { 'Rep A': { revenue: 1000 } }, benchmarks: { coverage: 80 }, products: [{ id: 'p1', name: 'Test brush', price: 4 }],
-  categoryGuides: {}, erpSales: { periods: [] }, erpMap: {}, erpMapLog: [], rxTypes: { rev: 1, types: [] },
-  'erpRows:mh1a2b3c4d:1762300000000:0': [],
-};
-SNAP_KEYS.forEach(k => { SEED[k] = { clinics: [], visits: [], tasks: [], ts: new Date().toISOString() }; });
-const asValue = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
-const stored = (v) => ({ value: asValue(v), updated: Date.now() }); // exactly what window.storage writes
-
-let env;
+let env, SEED;
 const ref = (db, key) => doc(db, 'state', key);
 const read = (db, key) => getDoc(ref(db, key));
-const save = (db, key, v) => setDoc(ref(db, key), stored(v === undefined ? SEED[key] || [] : v));
+const save = (db, key, v) => setDoc(ref(db, key), stored(v === undefined ? (SEED[key] !== undefined ? SEED[key] : []) : v));
 const remove = (db, key) => deleteDoc(ref(db, key));
 const listPrefix = (db, prefix) => getDocs(query(collection(db, 'state'), where(documentId(), '>=', prefix), where(documentId(), '<', prefix + '')));
 const uidOf = (s) => 'u-' + String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -83,6 +33,7 @@ const login = (email, extra) => env.authenticatedContext(uidOf(email), passwordT
 const withProvider = (provider, email) => env.authenticatedContext(uidOf(provider + (email || '')), Object.assign(email ? { email } : {}, { firebase: { sign_in_provider: provider, identities: {} } })).firestore();
 
 async function seed(){
+  SEED = F.makeSeed();
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async ctx => {
     const db = ctx.firestore(), b = writeBatch(db);
@@ -95,7 +46,8 @@ async function exists(key){ let e = null; await env.withSecurityRulesDisabled(as
 async function storedValue(key){ let v = null; await env.withSecurityRulesDisabled(async ctx => { const s = await getDoc(ref(ctx.firestore(), key)); v = s.exists() ? s.data().value : null; }); return v; }
 
 before(async () => {
-  env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: rulesFor(SUP), host: HOST, port: Number(PORT) } });
+  // two supervisor logins, the list form the owner uses when there are several
+  env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: F.rulesFor(SUP, SUP2), host: HOST, port: Number(PORT) } });
 });
 after(async () => { if(env) await env.cleanup(); });
 beforeEach(seed);
@@ -137,10 +89,12 @@ describe('signed-out, anonymous and other sign-in methods are refused everything
       await assertFails(save(db, 'staff', [{ name: 'Intruder', role: 'supervisor', email: REP_A }]));
       await assertFails(save(db, snap(0)));
       await assertFails(save(db, 'photo:new1'));
-      await assertFails(remove(db, 'photo:mh3k2x9q7f1a'));
+      await assertFails(remove(db, PHOTO));
       await assertFails(remove(db, snap(-14)));
       await assertFails(remove(db, 'clinics'));
-      assert.ok(await exists('clinics') && await exists('photo:mh3k2x9q7f1a') && await exists(snap(-14)));
+      await unseed('benchmarks');
+      await assertFails(save(db, 'benchmarks')); // not even the start-up seeding
+      assert.ok(await exists('clinics') && await exists(PHOTO) && await exists(snap(-14)));
     });
   }
 });
@@ -172,7 +126,7 @@ describe('a rep (a password login on the company domain)', () => {
     const db = login(REP_A);
     for(const k of ALL_KEYS) await assertSucceeds(read(db, k));
   });
-  test('can run the id-range lists the app runs (backups, visit archives) and the old whole-collection read', async () => {
+  test('can run the id-range lists the app runs (backups, visit archives) and a whole-collection read', async () => {
     const db = login(REP_A);
     const snaps = await assertSucceeds(listPrefix(db, 'snap_'));
     assert.equal(snaps.size, SNAP_KEYS.length);
@@ -194,7 +148,7 @@ describe('a rep (a password login on the company domain)', () => {
     await assertSucceeds(runTransaction(db, async tx => {
       const cur = await tx.get(ref(db, 'visits'));
       const arr = JSON.parse(cur.data().value);
-      arr.push({ id: 'v2', clinicId: 'c-3', rep: 'Rep A', date: utcDay(0) });
+      arr.push({ id: 'v2', clinicId: 'c-3', rep: 'Rep A', date: kuwaitDay(0) });
       tx.set(ref(db, 'visits'), stored(arr));
     }));
     await assertSucceeds(save(db, 'visitsArch:2026-09', [{ id: 'v9', date: '2026-09-30' }]));
@@ -205,10 +159,18 @@ describe('a rep (a password login on the company domain)', () => {
       await assertFails(save(login(REP_A), key));
       assert.equal(await storedValue(key), asValue(SEED[key]));
     });
-    test(`cannot create ${key} when it is missing`, async () => {
+    if(!STARTUP_SEED_KEYS.includes(key)) test(`cannot create ${key} when it is missing`, async () => {
       await unseed(key);
       await assertFails(save(login(REP_A), key));
       assert.equal(await exists(key), false);
+    });
+  }
+  for(const key of STARTUP_SEED_KEYS){
+    test(`can create ${key} only when the account has none (start-up seeding) — never change it after`, async () => {
+      await unseed(key);
+      const db = login(REP_A);
+      await assertSucceeds(save(db, key));
+      await assertFails(save(db, key, { changed: true }));
     });
   }
   test('cannot save the sales file: the batch of row chunks + index lands all or nothing (setMany)', async () => {
@@ -221,31 +183,33 @@ describe('a rep (a password login on the company domain)', () => {
   });
   test('cannot delete any document the app never deletes', async () => {
     const db = login(REP_A);
-    for(const k of TEAM_KEYS.filter(k => !k.startsWith('photo:')).concat(SUPERVISOR_KEYS)) await assertFails(remove(db, k));
+    for(const k of TEAM_KEYS.filter(k => k !== PHOTO).concat(SUPERVISOR_KEYS)) await assertFails(remove(db, k));
     for(const k of TEAM_KEYS.concat(SUPERVISOR_KEYS)) assert.ok(await exists(k), k + ' is still there');
   });
   test('can delete a visit photo (removeEditPhoto)', async () => {
-    await assertSucceeds(remove(login(REP_A), 'photo:mh3k2x9q7f1a'));
-    assert.equal(await exists('photo:mh3k2x9q7f1a'), false);
+    await assertSucceeds(remove(login(REP_A), PHOTO));
+    assert.equal(await exists(PHOTO), false);
   });
   test('cannot delete the sales row chunks (only the supervisor\'s save prunes them)', async () => {
-    await assertFails(remove(login(REP_A), 'erpRows:mh1a2b3c4d:1762300000000:0'));
+    await assertFails(remove(login(REP_A), CHUNK));
   });
-  test('cannot wipe the clinic list: a save under a third of its size is refused', async () => {
+  test('cannot empty the clinic list: a save leaving under a tenth of it is refused', async () => {
     const db = login(REP_A);
     await assertFails(save(db, 'clinics', []));
-    await assertFails(save(db, 'clinics', clinicList(7)));
+    await assertFails(save(db, 'clinics', clinicList(2)));
     assert.equal(await storedValue('clinics'), asValue(SEED.clinics));
   });
-  test('ordinary clinic saves still land (a clinic or doctor more or less, notes edited)', async () => {
+  test('every clinic save the app itself allows still lands — down to a third of the list (the app\'s own guard)', async () => {
     const db = login(REP_A);
+    await assertSucceeds(save(db, 'clinics', clinicList(10)));
+    await seed();
     await assertSucceeds(save(db, 'clinics', clinicList(29)));
     await assertSucceeds(save(db, 'clinics', clinicList(31)));
-    await assertSucceeds(save(db, 'clinics', clinicList(31).map(c => Object.assign(c, { notes: '' }))));
+    await assertSucceeds(save(db, 'clinics', clinicList(31).map(c => Object.assign(c, { doctors: [] }))));
   });
   test('cannot write a document the app does not use, or any other collection', async () => {
     const db = login(REP_A);
-    for(const k of ['foo', 'clinics2', 'Clinics', 'snap_latest', 'visitsArch:2026', 'visitsArch:2026-10-01', 'currentUser', 'erpRows', 'photo:'])
+    for(const k of ['foo', 'clinics2', 'Clinics', 'snap_latest', 'visitsArch:2026', 'visitsArch:2026-10-01', 'currentUser', 'erpRows', 'photo:', 'auditLog:2026-11'])
       await assertFails(save(db, k, []));
     await assertFails(setDoc(doc(db, 'users', 'x'), { value: '[]', updated: 1 }));
     await assertFails(getDoc(doc(db, 'users', 'x')));
@@ -268,9 +232,9 @@ describe('daily backups (snap_YYYY-MM-DD)', () => {
     await assertSucceeds(save(login(REP_B), snap(0)));
     await assertSucceeds(save(login(SUP), snap(0)));
   });
-  test(`Kuwait's date (${kuwaitToday}) and the UTC days either side are accepted (a phone's time zone)`, async () => {
+  test(`Kuwait's date (${kuwaitDay(0)}) and the UTC days either side are accepted (a phone's time zone)`, async () => {
     const db = login(REP_A);
-    for(const k of ['snap_' + kuwaitToday, snap(-1), snap(1)]) await assertSucceeds(save(db, k));
+    for(const k of ['snap_' + kuwaitDay(0), snap(-1), snap(1)]) await assertSucceeds(save(db, k));
   });
   test('nobody can overwrite an older backup or write one ahead — not even the supervisor', async () => {
     for(const email of [REP_A, SUP]){
@@ -279,16 +243,16 @@ describe('daily backups (snap_YYYY-MM-DD)', () => {
     }
     assert.equal(await storedValue(snap(-5)), asValue(SEED[snap(-5)]));
   });
-  test('a backup 13 or more days old is deleted by any team phone (the app\'s clean-up, 13–19 days back)', async () => {
+  test('a backup 11 or more days old is deleted by any team phone (the app\'s clean-up)', async () => {
     const db = login(REP_A);
     await assertSucceeds(remove(db, snap(-14)));
-    for(const k of [snap(-13), snap(-19), 'snap_2026-01-05']) await assertSucceeds(remove(db, k));
+    for(const k of [snap(-11), snap(-13), snap(-19), 'snap_2026-01-05']) await assertSucceeds(remove(db, k));
     assert.equal(await exists(snap(-14)), false);
   });
-  test('the last 11 days of backups cannot be deleted — not even by the supervisor', async () => {
+  test('the backups of the last 10 days cannot be deleted — not even by the supervisor', async () => {
     for(const email of [REP_A, SUP]){
       const db = login(email);
-      for(const k of [snap(0), snap(-5), snap(-11), snap(1)]) await assertFails(remove(db, k));
+      for(const k of [snap(0), snap(-5), snap(-10), snap(1)]) await assertFails(remove(db, k));
     }
     assert.ok(await exists(snap(0)) && await exists(snap(-5)));
   });
@@ -301,15 +265,19 @@ describe('daily backups (snap_YYYY-MM-DD)', () => {
   });
 });
 
-describe('the supervisor (the e-mail in SUPERVISOR_EMAILS)', () => {
+describe('the supervisor (an e-mail in SUPERVISOR_EMAILS)', () => {
   for(const key of SUPERVISOR_KEYS){
     test(`can save ${key}`, async () => {
       await assertSucceeds(save(login(SUP), key));
     });
   }
-  test('can create the supervisor documents on a fresh account (the start-up seeding)', async () => {
+  test('a second supervisor login in the list has the same rights', async () => {
+    const db = login(SUP2);
+    for(const key of ['staff', 'targets', 'erpMap', 'rxTypes']) await assertSucceeds(save(db, key));
+  });
+  test('can create the supervisor documents on a fresh account', async () => {
     const db = login(SUP);
-    for(const key of ['staff', 'products', 'benchmarks', 'categoryGuides', 'rxTypes']){
+    for(const key of SUPERVISOR_KEYS){
       await unseed(key);
       await assertSucceeds(save(db, key));
     }
@@ -335,10 +303,10 @@ describe('the supervisor (the e-mail in SUPERVISOR_EMAILS)', () => {
     }));
   });
   test('deletes sales row chunks that are no longer referenced (the save\'s clean-up)', async () => {
-    await assertSucceeds(remove(login(SUP), 'erpRows:mh1a2b3c4d:1762300000000:0'));
+    await assertSucceeds(remove(login(SUP), CHUNK));
   });
-  test('may shrink the clinic list (bulk delete, restore from a backup)', async () => {
-    await assertSucceeds(save(login(SUP), 'clinics', clinicList(4)));
+  test('may shrink the clinic list as far as he likes (bulk delete, restore from a backup)', async () => {
+    await assertSucceeds(save(login(SUP), 'clinics', clinicList(1)));
   });
   test('cannot delete documents the app never deletes', async () => {
     const db = login(SUP);
@@ -360,16 +328,15 @@ describe('the supervisor (the e-mail in SUPERVISOR_EMAILS)', () => {
 
 describe('nobody can make themselves supervisor', () => {
   test('a rep cannot rewrite the team list to promote herself', async () => {
-    const db = login(REP_A);
     const promoted = SEED.staff.map(s => s.email === REP_A ? Object.assign({}, s, { role: 'supervisor' }) : s);
-    await assertFails(save(db, 'staff', promoted));
-    await unseed('staff');
-    await assertFails(save(db, 'staff', promoted));
+    await assertFails(save(login(REP_A), 'staff', promoted));
+    assert.equal(await storedValue('staff'), asValue(SEED.staff));
   });
-  test('being listed as supervisor in the staff document gives no rights', async () => {
-    await env.withSecurityRulesDisabled(ctx => setDoc(ref(ctx.firestore(), 'staff'), stored([{ name: 'Rep A', role: 'supervisor', email: REP_A }])));
+  test('being listed as supervisor in the staff document gives no rights — even one she created on an empty account', async () => {
+    await unseed('staff');
     const db = login(REP_A);
-    for(const k of ['targets', 'staff', 'erpMap', 'products']) await assertFails(save(db, k));
+    await assertSucceeds(save(db, 'staff', [{ name: 'Rep A', role: 'supervisor', email: REP_A }])); // start-up seeding
+    for(const k of ['targets', 'staff', 'erpMap', 'erpSales', 'rxTypes']) await assertFails(save(db, k));
   });
   test('token claims give no rights (role / admin / supervisor claims)', async () => {
     const db = login(REP_A, { role: 'supervisor', admin: true, supervisor: true });
@@ -392,10 +359,10 @@ describe('the daily e-mail job (scripts/daily-report/report.js), same REST reque
     }, email ? { email, email_verified: false } : {})) + '.';
   };
   // The key list the job reads first, taken from report.js itself, plus what it reads next.
-  const src = fs.readFileSync(REPORT_JS, 'utf8');
+  const src = fs.readFileSync(path.join(F.ROOT, 'scripts', 'daily-report', 'report.js'), 'utf8');
   const m = src.match(/readDocs\(idToken, \[([^\]]+)\]\)/);
   const BASE_KEYS = m ? m[1].split(',').map(s => s.trim().replace(/^'|'$/g, '')) : [];
-  const JOB_KEYS = BASE_KEYS.concat(['visitsArch:2026-10', 'erpRows:mh1a2b3c4d:1762300000000:0', 'mailLog']);
+  const JOB_KEYS = BASE_KEYS.concat([F.ARCH, CHUNK, 'mailLog']);
   const batchGet = (tk, keys) => fetch(`${DOCS}:batchGet`, {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + tk },
     body: JSON.stringify({ documents: keys.map(k => `projects/${PROJECT}/databases/(default)/documents/state/${k}`) }),
@@ -453,5 +420,6 @@ describe('the rules exactly as committed (placeholder not yet replaced)', () => 
     await assertSucceeds(read(db, 'staff'));
     await assertSucceeds(save(db, 'visits'));
     await assertSucceeds(save(db, 'clinics'));
+    await assertSucceeds(save(db, 'products'));
   });
 });
