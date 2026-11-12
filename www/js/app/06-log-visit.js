@@ -31,6 +31,7 @@ function jointPeople(){
   return [...REPS, ...sups.filter(n=>!REPS.includes(n))];
 }
 function prepLogView(qClinicId){
+  _logFormGen++; setLogFormBusy(false); // a new form: never locked by a save of an earlier one (saveVisit)
   renderLogHistory();
   const asOpts = logAsOptions();
   logAsRep = asOpts.includes(logAsRep) ? logAsRep : (REPS.includes(currentUser.name) || !REPS.length ? currentUser.name : REPS[0]);
@@ -462,14 +463,34 @@ function pickQuickDate(days){
 // (verified against real exported data). It holds until the save settles —
 // v122: it was 4 seconds, and a save still on its way after that (a slow
 // cloud; a photo upload with no signal) let a second tap file the visit twice.
-let _visitSaveBusy = false;
-async function saveVisit(){
-  if(_visitSaveBusy){ showToast('Already saving…'); return; }
-  _visitSaveBusy = true;
-  try{ await saveVisitNow(); }
-  finally{ _visitSaveBusy = false; }
+// It belongs to the form being saved: that form is locked and says "Saving
+// the visit…" until the save settles (nothing can be added to it and lost),
+// while a NEW form — opened meanwhile — saves at once (the visits saves queue
+// one after another anyway). The form generation moves with every new form.
+let _logFormGen = 0;
+const _visitSaveBusy = new Set(); // generations of the forms being saved
+function setLogFormBusy(on){
+  const view = document.getElementById('view-log');
+  if(!view) return;
+  if(on && document.activeElement && view.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur(); // no more typing into the form being saved
+  view.classList.toggle('log-saving', !!on);
+  view.setAttribute('aria-busy', on ? 'true' : 'false');
+  let note = document.getElementById('logSavingNote');
+  if(on && !note){
+    const btn = [...view.querySelectorAll('button')].find(b => (b.getAttribute('onclick') || '').trim() === 'saveVisit()');
+    if(btn){ btn.insertAdjacentHTML('afterend', '<div id="logSavingNote" class="log-saving-note" role="status">⏳ Saving the visit…</div>'); note = document.getElementById('logSavingNote'); }
+  }
+  if(!on && note) note.remove();
 }
-async function saveVisitNow(){
+async function saveVisit(){
+  const gen = _logFormGen;
+  if(_visitSaveBusy.has(gen)){ showToast('Already saving…'); return; }
+  _visitSaveBusy.add(gen);
+  setLogFormBusy(true);
+  try{ await saveVisitNow(gen); }
+  finally{ _visitSaveBusy.delete(gen); if(gen === _logFormGen) setLogFormBusy(false); }
+}
+async function saveVisitNow(gen){
   let clinicId = selectedClinicId;
   // A rep files visits under their own name only — "logging as" is a
   // supervisor control, enforced here too so no stale screen can bypass it.
@@ -523,11 +544,12 @@ async function saveVisitNow(){
   const metNames = visitDoctorNames(clinicId, visit.doctorIds); if(metNames) visit.doctorNames = metNames; // v119: a lost doctor record can come back from its visits
   if(visitMood) visit.mood = visitMood;                // the doctor's satisfaction, as the rep read it (optional)
   // Photos (v122): the visit never waits for an upload. It carries each
-  // thumbnail inline, marked "waiting to upload" until the cloud holds the
-  // full photo; the full photos are kept on this phone right after the visit
-  // is saved, and uploaded in the background (keepVisitPhotos, 12).
+  // thumbnail inline, marked "waiting to upload" (with this phone's mark)
+  // until the cloud holds the full photo; the full photos are kept on this
+  // phone before the visit is saved, and uploaded in the background once it
+  // is (keepVisitPhotos / photoMark, 12).
   const shots = visitPhotos.slice();
-  if(shots.length) visit.photos = shots.map(ph => ({id:ph.id, thumb:ph.thumb, pending:true}));
+  if(shots.length) visit.photos = shots.map(ph => photoMark(ph.id, ph.thumb));
   // Prescription pads given: only what was typed for the people met (or the
   // clinic), whole pads, known types — cleaned by the one save path. "Yes"
   // with every count at 0 stores nothing, like an order with no items. An
@@ -539,18 +561,25 @@ async function saveVisitNow(){
   const clinic = clinics.find(c=>c.id===clinicId);
   visits.push(visit);
   if(clinic){ clinic.lastVisit = todayStr(); clinic.nextFollowUp = followUp; }
+  // The full photos go to the phone at the same time as the visit is saved
+  // (they were only in this page's memory: a save that takes a while on a
+  // weak link must not hold them there, and the visit never waits for them).
+  const keeping = shots.length ? keepVisitPhotos(visit.id, shots, { upload: false }) : null;
 
   // This save's own outcome, read the moment its visits write settles: the
   // offline queue may send visits again while the follow-up step runs, and
   // that later save is not this one (persistFor / sentSince, 04).
   const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
-  const kept = shots.length ? await keepVisitPhotos(visit.id, shots) : null;
+  const kept = keeping ? await keeping : null;
+  shots.forEach(ph => photoUpload(ph.id, ph.full)); // in the background, once the visit is saved or queued
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
   if(navigator.vibrate) navigator.vibrate(12); // a small physical "saved" cue in the field
   const msg = visitSaveMsg(vs, kept);
   showToast(msg, kept ? 4500 : undefined);
   renderAll();
-  switchView('today');
+  // Today only from this same form: a new form opened meanwhile (or another
+  // screen) is left where the person is.
+  if(gen === undefined || (gen === _logFormGen && activeView === 'log')) switchView('today');
 }
 // What a visit save (or a photo added to a visit) did, in the toast. Without
 // photos: exactly the messages it always had.

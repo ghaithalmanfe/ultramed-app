@@ -3747,17 +3747,34 @@
     return stray;
   }
   // A visit photo is marked "waiting to upload" (pending) until the phone that
-  // took it sees the cloud hold it (v122). The mark only ever goes: when the
-  // cloud's copy of the visit has that photo without it, this copy drops it
-  // too, so a phone whose copy is older never puts it back. Changes `local` in
-  // place (the visit on screen); returns how many marks went. A visit without
-  // photos is left exactly as it is.
+  // took it sees the cloud hold it (v122); a photo that phone no longer holds
+  // and the cloud does not have (the app closed while it was only in memory)
+  // is marked lost instead — its small preview stays on the visit. A mark only
+  // ever moves forward: waiting → lost → uploaded (no mark; "lost" was that
+  // phone's finding, a landing is a fact). When the cloud's copy of the visit
+  // has a photo further on, this copy moves it the same way, so a phone whose
+  // copy is older never puts "waiting" back. Changes `local` in place (the
+  // visit on screen); returns how many marks moved. A visit without photos is
+  // left exactly as it is.
+  var PHOTO_MARK_RANK = { waiting: 0, lost: 1, up: 2 };
+  function photoMarkState(p){ return p && p.pending ? 'waiting' : (p && p.lost ? 'lost' : 'up'); }
   function settlePhotoMarks(local, cloud){
     if(!local || !cloud || !Array.isArray(local.photos) || !Array.isArray(cloud.photos)) return 0;
-    var up = Object.create(null), n = 0;
-    cloud.photos.forEach(function(p){ if(p && p.id != null && !p.pending) up[p.id] = true; });
-    local.photos.forEach(function(p){ if(p && p.pending && up[p.id]){ delete p.pending; n++; } });
+    var st = Object.create(null), n = 0;
+    cloud.photos.forEach(function(p){ if(p && p.id != null) st[p.id] = photoMarkState(p); });
+    local.photos.forEach(function(p){ if(p && st[p.id] && st[p.id] !== 'waiting' && settlePhotoMark(p, st[p.id] === 'lost')) n++; });
     return n;
+  }
+  // One photo's mark moves forward to uploaded (lost false) or lost; a mark
+  // already there or further on is left as it is. Changes `p` in place;
+  // returns whether it moved.
+  function settlePhotoMark(p, lost){
+    if(!p) return false;
+    var to = lost ? 'lost' : 'up';
+    if(PHOTO_MARK_RANK[to] <= PHOTO_MARK_RANK[photoMarkState(p)]) return false;
+    delete p.pending;
+    if(lost) p.lost = true; else delete p.lost;
+    return true;
   }
   // Every sheet of a workbook that holds people, merged and de-duplicated.
   function parseContactWorkbook(sheets, specialties, opts){
@@ -6331,7 +6348,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
-    visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, VISITS_ARCH_PREFIX,
+    visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
     RX_MAX, RX_DEFAULT_TYPES, rxQty, rxTypeList, rxTypeName, rxTypesProblem, visitRxLines, cleanVisitRx, rxSig, rxText, remapVisitDoctors, rxWindows, rxLedger,

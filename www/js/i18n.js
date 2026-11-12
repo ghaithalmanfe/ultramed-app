@@ -946,6 +946,7 @@
     'Add a quick note about the call': 'أضف ملاحظة سريعة عن المكالمة',
     'Add at least one product': 'أضف منتجاً واحداً على الأقل',
     'Already saving…': 'جارٍ الحفظ بالفعل…',
+    'Saving the visit…': 'جارٍ حفظ الزيارة…', // the form, locked while its visit saves (v122)
     'Another clinic already has that name': 'يوجد عيادة أخرى بنفس الاسم',
     'Choose a stronger password': 'اختر كلمة مرور أقوى',
     'Could not copy': 'تعذّر النسخ',

@@ -504,6 +504,13 @@ async function persistVisitsInner(opts){
     // with a great many photos; say so plainly instead of retrying a save
     // that can never land.
     const VISITS_DOC_MAX = 950000;
+    // What each transaction committed, as the exact string it wrote (v122).
+    // `written` holds the merged objects, which ARE the visits on screen: an
+    // edit made while the commit was on its way changed them too, and
+    // recording their JSON afterwards counted that edit as stored — the save
+    // it started then found nothing to write and still said "saved".
+    const writtenStr = {};
+    const committedStr = (res, arr) => typeof res === 'string' ? res : JSON.stringify(arr);
     const writeUnion = async (doc, arr) => {
       let merged = arr, tooBig = false;
       const res = await storageUpdate(keyOf(doc), cloudStr => {
@@ -519,6 +526,7 @@ async function persistVisitsInner(opts){
       }
       if(res == null) throw new Error('visits update failed');
       written[doc] = merged;
+      writtenStr[doc] = committedStr(res, merged);
       note(doc, merged);
       return merged;
     };
@@ -558,6 +566,7 @@ async function persistVisitsInner(opts){
       }, 12000);
       if(res == null) throw new Error('visits tidy failed');
       written[doc] = tidy;
+      writtenStr[doc] = committedStr(res, tidy);
     }
     // Pass C — the month index (what exists, and a revision per month for cheap refreshes).
     const now = Date.now();
@@ -572,9 +581,9 @@ async function persistVisitsInner(opts){
         return JSON.stringify(idx);
       }, 12000);
       if(res == null) throw new Error('visits index failed');
-      writtenMonths.forEach(m => { _visitsArch[m] = { rev: now, arr: written[m], json: JSON.stringify(written[m]) }; });
+      writtenMonths.forEach(m => { _visitsArch[m] = { rev: now, arr: written[m], json: writtenStr[m] }; });
     }
-    if(written.live){ _visitsLive = written.live; _visitsLoaded = JSON.stringify(written.live); }
+    if(written.live){ _visitsLive = written.live; _visitsLoaded = writtenStr.live; }
     // Memory: this device's list in its own order, plus what other devices
     // added (recovered by the unions), minus what the delete log removed.
     const cloudAll = UMCore.visitsAssemble(_visitsLive, visitsArchivesObj(), today);
@@ -593,6 +602,97 @@ async function persistVisitsInner(opts){
     visitsMirrorSave(visits);
     return true;
   }finally{ _visitsSaving = false; }
+}
+// Settle photo marks on visits the cloud holds, and nothing else (v122):
+// when a photo lands its visit stops saying "waiting to upload" (or, for a
+// photo lost before it uploaded, says so) — that one mark, in the document
+// that holds the visit, in one transaction. Saving the whole list instead
+// wrote this phone's copy of every visit back over the cloud: an edit made on
+// another phone meanwhile (notes, a photo added or removed) was undone. Runs
+// in the visits save chain, so it never overlaps a save of this phone's list.
+// changes: [{ visitId, photoId, lost }] → { [photoId]: 'done' (the cloud's
+// copy is settled) | 'missing' (no such visit or photo in the cloud) |
+// 'failed' (not reached — asked again next round) }.
+// The document the cloud last showed holding a visit, else where it belongs now.
+function visitDocOf(id){
+  if((_visitsLive || []).some(v => v && v.id === id)) return 'live';
+  const m = Object.keys(_visitsArch).find(k => (_visitsArch[k].arr || []).some(v => v && v.id === id));
+  if(m) return m;
+  const v = (visits || []).find(x => x && x.id === id);
+  return v ? UMCore.visitHome(v, todayStr()) : 'live';
+}
+function patchVisitPhotos(changes){
+  const out = {}, todo = [];
+  // a month that could not be read is never written: those wait, untouched,
+  // for a round where it loaded (and never hold up the refresh meanwhile)
+  (changes || []).forEach(c => { const d = visitDocOf(c.visitId); if(d !== 'live' && _visitsBroken.includes(d)) out[c.photoId] = 'failed'; else todo.push(c); });
+  if(!todo.length) return Promise.resolve(out);
+  const run = () => patchVisitPhotosNow(todo).then(r => Object.assign(out, r));
+  _localGen++; _localSaving++; // a refresh on its way keeps the lists (see persist)
+  const p = _visitsSaveChain.then(run, run);
+  _visitsSaveChain = p.catch(() => {});
+  return p.finally(() => { _localSaving--; _localGen++; });
+}
+async function patchVisitPhotosNow(changes){
+  const out = {};
+  if(!changes.length) return out;
+  _visitsSaving = true;
+  try{
+    const byDoc = {};
+    changes.forEach(c => { const d = visitDocOf(c.visitId); (byDoc[d] = byDoc[d] || []).push(c); });
+    const settleIn = (arr, list, res) => { // → whether anything changed; res[photoId] = 'done' | 'missing'
+      let changed = false;
+      list.forEach(c => {
+        const v = arr.find(x => x && x.id === c.visitId);
+        const p = v && Array.isArray(v.photos) ? v.photos.find(x => x && x.id === c.photoId) : null;
+        if(!p){ if(res) res[c.photoId] = 'missing'; return; }
+        if(res) res[c.photoId] = 'done';
+        if(UMCore.settlePhotoMark(p, c.lost)) changed = true;
+      });
+      return changed;
+    };
+    for(const doc of Object.keys(byDoc)){
+      const list = byDoc[doc];
+      if(doc !== 'live' && _visitsBroken.includes(doc)){ list.forEach(c => { out[c.photoId] = 'failed'; }); continue; } // a month we could not read is never written
+      const key = doc === 'live' ? 'visits' : UMCore.visitsArchKey(doc);
+      let res = {}, wrote = false, n = 0;
+      try{
+        await storageUpdate(key, cloudStr => {
+          res = {}; wrote = false;
+          const arr = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
+          if(!Array.isArray(arr)){ list.forEach(c => { res[c.photoId] = 'missing'; }); return null; }
+          n = arr.length;
+          wrote = settleIn(arr, list, res);
+          return wrote ? JSON.stringify(arr) : null; // nothing to change → nothing written
+        }, 12000);
+      }catch(e){ list.forEach(c => { out[c.photoId] = 'failed'; }); continue; }
+      Object.assign(out, res);
+      // A month's archive is read again by the other phones only when its
+      // revision in the index moves (as Pass C does for a save).
+      if(wrote && doc !== 'live'){
+        const now = Date.now();
+        try{
+          await storageUpdate('visitsIndex', cloudStr => {
+            const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
+            idx.months = Object.assign({}, idx.months || {});
+            idx.months[doc] = { n, rev: now };
+            Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
+            idx.v = 1; idx.updated = now;
+            return JSON.stringify(idx);
+          }, 12000);
+          if(_visitsArch[doc]) _visitsArch[doc].rev = now;
+        }catch(e){ console.warn('visits index (photo mark)', e); } // the month holds the mark; the others see it when its revision next moves
+      }
+      // What this phone knows the cloud holds gets the same marks settled, so
+      // the next save of the list does not count them as a change of its own.
+      const done = list.filter(c => res[c.photoId] === 'done');
+      if(!done.length) continue;
+      const restring = str => { const arr = typeof str === 'string' ? UMCore.safeParse(str, null) : null; return Array.isArray(arr) && settleIn(arr, done, null) ? JSON.stringify(arr) : str; };
+      if(doc === 'live'){ if(_visitsLoaded != null) _visitsLoaded = restring(_visitsLoaded); }
+      else if(_visitsArch[doc]) _visitsArch[doc].json = restring(_visitsArch[doc].json);
+    }
+  }finally{ _visitsSaving = false; }
+  return out;
 }
 async function loadErpSales(){
   const prevMirror = UMCore.safeParse(mirrorGet('erpSales'), null); // assembled copy from last time

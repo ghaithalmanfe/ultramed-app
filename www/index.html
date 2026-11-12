@@ -93,6 +93,9 @@
   .quickdate button.on{background:#C9A664; border-color:#A9854B; color:#022917; font-weight:700; box-shadow:0 2px 8px rgba(0,0,0,.25);}
   .btn{width:100%; padding:15px; border:1.5px solid rgba(196,228,206,.45); border-radius:14px; background:var(--green); color:#FFFFFF; font-weight:600; font-size:16px; cursor:pointer; font-family:inherit; margin-top:18px; transition:transform .12s ease, opacity .12s ease; -webkit-tap-highlight-color:transparent;}
   .btn:active{transform:scale(.97); opacity:.85;}
+  /* v122: a visit being saved locks its form (saveVisit, 06) — nothing can be added to it and then lost */
+  #view-log.log-saving > *:not(.btn):not(#logSavingNote):not(#logHistory):not(.section-title){pointer-events:none; opacity:.5;}
+  .log-saving-note{margin-top:10px; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.14); color:#FFFFFF; font-size:13.5px; font-weight:600; text-align:center;}
   .btn.secondary{background:var(--green-dim); color:var(--green-dark); border:none; font-weight:600;}
   .btn.ghost{background:transparent; color:var(--coral-ink); border:none; margin-top:8px; font-weight:500;}
   .btn.small{padding:9px; font-size:13px; margin-top:8px;}
