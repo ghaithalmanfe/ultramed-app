@@ -1770,7 +1770,9 @@ async function restoreMissingClinics(){
   await openClinicRecovery();
   const n2 = document.getElementById('recovNote'); if(n2) n2.innerHTML = msg; else if(note) note.innerHTML = msg;
 }
-async function restoreSnapshot(dateStr){
+// v121: a refresh on its way must not put the replaced lists back over a restore (holdRefresh, 04)
+async function restoreSnapshot(dateStr){ return holdRefresh(() => restoreSnapshotNow(dateStr)); }
+async function restoreSnapshotNow(dateStr){
   if(!requireAdmin()) return; // a restore replaces the whole team's data
   if(!confirm(`Restore data from ${dateStr}? This will replace the current clinics, tasks and this month's visits with that day's backup (past months' visits are kept).`)) return;
   try{
@@ -1792,13 +1794,14 @@ async function restoreSnapshot(dateStr){
       const str = JSON.stringify(val);
       await window.storage.set(k, str, true);
       mirrorSave(k, str);
+      setMergeBase(k, str); // the cloud now holds exactly this (the next merge's base)
     }
     await persistVisits({ authoritative: true });
     if(snap.erpIndex && Array.isArray(snap.erpIndex.periods)){
       // that day's sales index; its chunks are still in the cloud (7-day grace)
       await window.storage.set('erpSales', JSON.stringify(snap.erpIndex), true);
       _erpDirty = false; renderErpDirtyPill();
-      erpSales = await loadErpSales();
+      erpAdoptLoaded(await loadErpSales());
     }
     // Records the backup brought back to life leave the recycle bin, or a
     // later "Restore" there would push a second copy with the same id.
@@ -1822,7 +1825,8 @@ async function restoreSnapshot(dateStr){
 // Restore the clinic list from a copy kept on this device (mirror). Replaces
 // the in-memory list, clears delete-log entries, then merges with the cloud so
 // nothing saved by other devices meanwhile is lost.
-async function restoreDeviceClinics(which){
+async function restoreDeviceClinics(which){ return holdRefresh(() => restoreDeviceClinicsNow(which)); } // (v121, see restoreSnapshot)
+async function restoreDeviceClinicsNow(which){
   if(!requireAdmin()) return;
   const raw = which==='prev' ? (function(){ try{ return localStorage.getItem('um_mirror_prev:clinics'); }catch(e){ return null; } })() : mirrorGet('clinics');
   const list = normalizeClinics(UMCore.safeParse(raw, null));
