@@ -335,8 +335,13 @@ function clChangesHTML(e){
   if(!ch.length) return '';
   const both = e.before != null && e.after != null, arrow = uiLang === 'ar' ? '←' : '→';
   const label = f => auditOwn(UMCore.AUDIT_FIELDS, f) ? `<span>${esc(UMCore.AUDIT_FIELDS[f])}</span>` : `<bdi dir="auto">${esc(clS(f))}</bdi>`;
-  return `<div style="font-size:12.5px; margin-top:6px; line-height:1.6;">${ch.slice(0, 16).map(c =>
-    `<div data-field="${esc(clS(c.field))}">${label(c.field)}: ${both ? clVal(c.from, c.field) + ` <span aria-hidden="true">${arrow}</span> ` + clVal(c.to, c.field) : clVal(e.after != null ? c.to : c.from, c.field)}</div>`).join('')}</div>`;
+  // long values (notes, lists) one under the other — "before" then "after" — instead of one wrapped line,
+  // where text in two directions would interleave
+  const long = c => (UMCore.auditText(c.from).length + UMCore.auditText(c.to).length) > 44;
+  const row = c => !both ? `${label(c.field)}: ${clVal(e.after != null ? c.to : c.from, c.field)}`
+    : long(c) ? `${label(c.field)}:<div style="padding-inline-start:12px;"><span style="color:var(--muted);">Before</span>: ${clVal(c.from, c.field)}</div><div style="padding-inline-start:12px;"><span style="color:var(--muted);">After</span>: ${clVal(c.to, c.field)}</div>`
+    : `${label(c.field)}: ${clVal(c.from, c.field)} <span aria-hidden="true">${arrow}</span> ${clVal(c.to, c.field)}`;
+  return `<div style="font-size:12.5px; margin-top:6px; line-height:1.6;">${ch.slice(0, 16).map(c => `<div data-field="${esc(clS(c.field))}">${row(c)}</div>`).join('')}</div>`;
 }
 // Entries come from a shared document: every value is shown as text, and one
 // odd entry shows as unreadable instead of taking the list down with it.
@@ -351,7 +356,7 @@ function clEntryHTML(e, pending){
       : e.label ? `<div dir="auto" style="font-weight:600; font-size:13px; margin-top:4px; overflow-wrap:anywhere;">${esc(clS(e.label))}</div>` : '';
     const why = e.reason ? `<div style="font-size:12.5px; margin-top:4px;"><span>Reason</span>: ${auditOwn(AUDIT_REASON_CODES, e.reason) ? `<span>${AUDIT_REASON_CODES[e.reason]}</span>` : `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(clS(e.reason))}</bdi>`}</div>` : '';
     return `<div class="card" data-audit="${esc(clS(e.eid))}" data-action="${esc(clS(e.action))}" data-res="${esc(clS(e.res))}" style="padding:10px 12px; margin-bottom:8px; border-inline-start:4px solid ${ok ? 'var(--sage)' : queued ? 'var(--amber)' : 'var(--coral)'};">
-    <div class="row-between" style="gap:8px; align-items:flex-start;"><b style="font-size:13.5px;"><span>${esc(action)}</span></b><span class="badge ${ok ? 'done' : queued ? 'today' : 'overdue'}"><span>${esc(res)}</span></span></div>
+    <div class="row-between" style="gap:8px; align-items:flex-start;"><b style="font-size:13.5px; flex:1; min-width:0;"><span>${esc(action)}</span></b><span class="badge ${ok ? 'done' : queued ? 'today' : 'overdue'}" style="white-space:normal; max-width:55%; text-align:center;"><span>${esc(res)}</span></span></div>
     <div class="clinic-sub" style="margin-top:2px;"><bdi dir="auto">${esc(clS(e.by) || '—')}</bdi>${role ? ` · <span>${role}</span>` : ''} · <span dir="auto">${esc(clWhen(e.at))}</span></div>
     ${label}${clChangesHTML(e)}${why}
     ${e.trimmed ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>Details removed to keep the month under the size limit.</span></div>' : ''}

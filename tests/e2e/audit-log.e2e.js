@@ -261,9 +261,9 @@ function seed(){
   // ================= 5) who sees what =================
   seed();
   await boot(M, 'rep');
-  await logVisit('m1', ['m1-d1'], 'mariam visit');
+  await logVisit('m1', ['m1-d1'], 'mariam visit'); await flush(); // landed before this phone is wiped for the next person
   await boot(R, 'rep');
-  await ev(async () => { closeModal(); openCallLog('r1'); document.getElementById('clNotes').value = 'renova call'; await saveCallLog(); });
+  await ev(async () => { closeModal(); openCallLog('r1'); document.getElementById('clNotes').value = 'renova call'; await saveCallLog(); }); await flush();
   await boot(G, 'supervisor');
   await ev(async () => { openEditClinic('m1'); document.getElementById('ecPhone').value = '55554444'; await saveEditClinic('m1'); });
   await ev(async () => { await saveErpLink('Smile Dental W.L.L', 'm1', null, null); });
