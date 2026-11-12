@@ -368,6 +368,16 @@ function erpStatus(msg, isErr){
   el.style.color = isErr ? 'var(--coral)' : 'var(--muted)';
   el.textContent = msg;
 }
+// The last sales / targets file import on this phone and how it ended (v121):
+// the alerts center shows a failed one until an import works. A cancel, an
+// empty paste or a file of ignored salesmen only is not a failure.
+const ERP_IMPORT_LOG = 'um_erpImport';
+function noteErpImport(ok, msg){
+  try{ localStorage.setItem(ERP_IMPORT_LOG, JSON.stringify({ at: Date.now(), ok: !!ok, msg: ok ? '' : String(msg || '').slice(0, 300), who: currentUser ? currentUser.name : null })); }catch(e){}
+  if(typeof renderAlertsBell === 'function') renderAlertsBell();
+}
+function lastErpImport(){ try{ const v = JSON.parse(localStorage.getItem(ERP_IMPORT_LOG) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }catch(e){ return null; } }
+function erpImportFailed(msg){ erpStatus(msg, true); noteErpImport(false, msg); }
 // ---- Product movement: every brand → its products ranked by real paid sales ----
 // Built from the stored ERP rows (team sales only — ignored salesmen are never
 // read), classified fast / mid / slow by invoice frequency and units per month.
@@ -533,9 +543,9 @@ function erpHandleFile(input){
   input.value = ''; // so picking the same file again always re-fires onchange
   if(_erpImporting){ erpStatus('⏳ ملف آخر قيد الاستيراد — انتظر حتى ينتهي', true); return; }
   erpStatus(`📖 Reading ${f.name}…`);
-  const fail = e => erpStatus('❌ Import failed: ' + (e && e.message ? e.message : e), true);
+  const fail = e => erpImportFailed('❌ Import failed: ' + (e && e.message ? e.message : e));
   const reader = new FileReader();
-  reader.onerror = () => erpStatus('❌ Could not read the file — try again, or paste the report text below', true);
+  reader.onerror = () => erpImportFailed('❌ Could not read the file — try again, or paste the report text below');
   if(/\.xlsx?$/i.test(f.name) || /spreadsheet|excel/i.test(f.type || '')){
     reader.onload = () => { try{ erpImportXlsx(reader.result, f.name).catch(fail); }catch(e){ fail(e); } };
     reader.readAsArrayBuffer(f);
@@ -567,12 +577,12 @@ function dsrDateFromName(name){
 }
 async function erpImportXlsx(buf, fname){
   if(typeof DecompressionStream === 'undefined'){
-    erpStatus('❌ This browser is too old to open Excel files — update the browser, or export the report as CSV and retry', true);
+    erpImportFailed('❌ This browser is too old to open Excel files — update the browser, or export the report as CSV and retry');
     return;
   }
   let sheets;
   try{ sheets = await UMCore.readXlsx(buf); }
-  catch(e){ erpStatus('❌ Could not open this Excel file — save it as CSV and retry', true); return; }
+  catch(e){ erpImportFailed('❌ Could not open this Excel file — save it as CSV and retry'); return; }
   erpStatus('🔎 File opened — detecting sales / targets…');
   const toCsv = rows => rows.map(r => (r||[]).map(v => {
     const s = String(v == null ? '' : v);
@@ -585,7 +595,7 @@ async function erpImportXlsx(buf, fname){
   const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: dsrDateFromName(fname) || todayStr()});
   if(!tg.error){ await applyTargetsFile(tg); return; }
   if(!UMCore.parseDistribution(sheets, REPS).error && openDistributionPreview(sheets)) return; // a clinic distribution file: preview, saved on tap
-  erpStatus('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export', true);
+  erpImportFailed('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export');
 }
 // One entry point, zero-touch: detect sales vs targets and enter the data.
 // Sales files auto-save when every ERP salesman is already known (stored
@@ -605,7 +615,7 @@ async function erpAutoImport(text){
       // allowed to replace a whole year of stored data with mis-read dates.
       const span = UMCore.daysBetween(totals.from, totals.to);
       if(span > 400 || totals.to > UMCore.localDateStr(new Date(Date.now() + 2 * 86400000))){
-        erpStatus(`❌ تواريخ الملف غير منطقية (${fmtDate(totals.from)} – ${fmtDate(totals.to)}) — تأكد من صيغة التاريخ في التصدير (يوم/شهر/سنة) ثم أعد الرفع`, true);
+        erpImportFailed(`❌ تواريخ الملف غير منطقية (${fmtDate(totals.from)} – ${fmtDate(totals.to)}) — تأكد من صيغة التاريخ في التصدير (يوم/شهر/سنة) ثم أعد الرفع`);
         return;
       }
       if(sales.dropped > 0 && !confirm(`${sales.dropped} سطرًا في الملف بلا تاريخ أو رقم فاتورة ولن تُقرأ (سيُقرأ ${sales.rows.length}).\nالمتابعة؟`)){
@@ -638,7 +648,7 @@ async function erpAutoImport(text){
     }
     const tg = UMCore.parseTargetsFile(text, REPS);
     if(!tg.error){ await applyTargetsFile(tg); return; }
-    erpStatus('❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry', true);
+    erpImportFailed('❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry');
   } finally { _erpImporting = false; }
 }
 // A new file only replaces its own salesmen's rows inside overlapping saved
@@ -671,7 +681,7 @@ function erpAbsorbOverlaps(t, newSalesmen, repMap){
 // the figures looked updated until the next open put the old file back.
 function erpSaveFailed(before){
   erpStateRestore(before);
-  erpStatus('❌ لم يُحفظ الملف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى', true);
+  erpImportFailed('❌ لم يُحفظ الملف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى');
   showToast('❌ لم يُحفظ ملف المبيعات — أعد المحاولة');
 }
 async function erpAutoSave(repMap){
@@ -687,6 +697,7 @@ async function erpAutoSave(repMap){
   erpSales.periods.push(period);
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   if(!await persist('erpSales')){ erpSaveFailed(before); return; }
+  noteErpImport(true);
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
   renderErpNudge();
@@ -735,9 +746,10 @@ async function applyTargetsFile(tg){
   await archiveTargetsMonth(); // the file's month keeps these figures permanently
   if(!await persist('targets')){
     targets = before;
-    erpStatus('❌ لم تُحفظ الأهداف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى', true);
+    erpImportFailed('❌ لم تُحفظ الأهداف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى');
     return;
   }
+  noteErpImport(true);
   renderToday();
   if(document.getElementById('coachCard')) renderCoach();
   const note = targetPctNote(pctBefore, targetPctMap());
@@ -813,6 +825,7 @@ async function erpSavePeriod(){
   // Remember who-is-who forever, so every later import is zero-touch.
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   if(!await persist('erpSales')){ erpStateRestore(before); closeModal(); openErpImport(); erpSaveFailed(before); return; } // roll back BEFORE the list renders
+  noteErpImport(true);
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
   renderErpNudge();

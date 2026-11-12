@@ -5613,16 +5613,19 @@
   var ALERT_SNOOZE_DAYS = 3;
   var ALERT_SEV = { high: 0, medium: 1, low: 2 };
   // The supervisor's choices (BENCHMARKS.alerts) over the defaults: every type
-  // on unless switched off, every number within its limits.
-  function alertSettings(saved){
+  // on unless switched off, every number within its limits — a number out of
+  // its limits (or not a number) falls back to `base` (the settings in force,
+  // when given) or the default.
+  function alertSettings(saved, base){
     var s = saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+    var B = base ? alertSettings(base) : ALERT_DEFAULTS;
     var types = s.types && typeof s.types === 'object' ? s.types : {};
     var out = { types: {} };
     ALERT_TYPES.forEach(function(t){ out.types[t] = types[t] !== false; });
     Object.keys(ALERT_DEFAULTS).forEach(function(k){
       var raw = s[k], v = Number(raw), L = ALERT_LIMITS[k];
       var ok = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) && isFinite(v) && v >= L[0] && v <= L[1];
-      out[k] = !ok ? ALERT_DEFAULTS[k] : k === 'dropMinKD' ? Math.round(v * 100) / 100 : Math.round(v);
+      out[k] = !ok ? B[k] : k === 'dropMinKD' ? Math.round(v * 100) / 100 : Math.round(v);
     });
     return out;
   }
@@ -5937,6 +5940,6 @@
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
     matchCatalogProduct, crossSellPlan,
     productMovement, pmNormName,
-    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, alertSettings, alertsFor, alertsVisible, alertStateNext, erpSpanCovered
+    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, alertSettings, alertsFor, alertsVisible, alertStateNext, erpSpanCovered
   };
 });
