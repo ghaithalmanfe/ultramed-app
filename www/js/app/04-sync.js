@@ -580,7 +580,15 @@ async function persistVisitsInner(opts){
     const cloudIds = new Set(cloudAll.map(v => v && v.id));
     const mine = local.filter(v => cloudIds.has(v.id) || _visitsBroken.includes(homeById[v.id]));
     const haveIds = new Set(mine.map(v => v.id));
-    visits = mine.concat(cloudAll.filter(v => v && !ts.has(v.id) && !haveIds.has(v.id)));
+    // A visit added on this phone while this save was on its way is not in
+    // what it wrote: it stays (v122) — the save it started runs next and
+    // writes it. Dropped here, that save found nothing to write and still
+    // said "saved" (a background save — a photo's "uploaded" mark, the
+    // queue's flush — made it likely).
+    const took = new Set(local.map(v => v.id));
+    const later = (visits || []).filter(v => v && v.id != null && !took.has(v.id) && !ts.has(v.id) && !haveIds.has(v.id));
+    later.forEach(v => haveIds.add(v.id));
+    visits = mine.concat(later, cloudAll.filter(v => v && !ts.has(v.id) && !haveIds.has(v.id)));
     visitsMirrorSave(visits);
     return true;
   }finally{ _visitsSaving = false; }
