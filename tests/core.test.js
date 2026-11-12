@@ -4417,3 +4417,50 @@ describe('full backup: inventory, file, integrity', () => {
     ['snap_', 'photo:', 'visitsArch:', 'erpRows:'].forEach(p => assert.ok(prefixes.has(p), 'the scan found the family ' + p));
   });
 });
+
+// ---------- three-way merge of shared records (v121) ----------
+describe('merge3Record', () => {
+  const base = { id: 'c1', rep: 'Mariam', notes: '', lastVisit: null, cls: 'A' };
+  test('a field changed only in the cloud takes the cloud value; one changed only here keeps this phone\'s', () => {
+    const local = Object.assign({}, base, { lastVisit: '2026-09-21' });
+    const cloud = Object.assign({}, base, { rep: 'Renova', notes: 'supervisor' });
+    const r = core.merge3Record(local, cloud, base);
+    assert.equal(r.fromCloud, true);
+    assert.deepEqual(r.value, { id: 'c1', rep: 'Renova', notes: 'supervisor', lastVisit: '2026-09-21', cls: 'A' });
+  });
+  test('a field changed on both sides keeps this phone\'s value (the newest save), unless a field merger is given', () => {
+    const local = Object.assign({}, base, { cls: 'B' }), cloud = Object.assign({}, base, { cls: 'C' });
+    assert.equal(core.merge3Record(local, cloud, base).value.cls, 'B');
+    assert.equal(core.merge3Record(local, cloud, base, { cls: (L, C) => L + C }).value.cls, 'BC');
+  });
+  test('nothing changed in the cloud, or no base at all: this phone\'s own object, untouched', () => {
+    const local = Object.assign({}, base, { cls: 'B' });
+    const same = core.merge3Record(local, Object.assign({}, base), base);
+    assert.equal(same.fromCloud, false); assert.equal(same.value, local);
+    const nob = core.merge3Record(local, Object.assign({}, base, { rep: 'Renova' }), null);
+    assert.equal(nob.fromCloud, false); assert.equal(nob.value, local);
+  });
+  test('a field the cloud added or removed follows the cloud when this phone left it alone; a field removed here stays removed', () => {
+    const cloud = Object.assign({}, base, { shared: true }); delete cloud.notes;
+    const local = Object.assign({}, base); delete local.cls;
+    const r = core.merge3Record(local, cloud, base);
+    assert.deepEqual(r.value, { id: 'c1', rep: 'Mariam', lastVisit: null, shared: true });
+  });
+  test('inputs are never mutated', () => {
+    const local = Object.assign({}, base, { lastVisit: '2026-09-21' }), cloud = Object.assign({}, base, { rep: 'Renova' });
+    const l0 = JSON.stringify(local), c0 = JSON.stringify(cloud), b0 = JSON.stringify(base);
+    core.merge3Record(local, cloud, base);
+    assert.equal(JSON.stringify(local), l0); assert.equal(JSON.stringify(cloud), c0); assert.equal(JSON.stringify(base), b0);
+  });
+});
+describe('mergeDoctorLists3', () => {
+  test('each doctor merges field by field; a doctor added on either side is kept, once per person', () => {
+    const base = [{ id: 'd1', name: 'Dr. Ahmed', phone: '' }];
+    const local = [{ id: 'd1', name: 'Dr. Ahmed', phone: '', title: 'Endodontist' }, { id: 'd5', name: 'Dr. Lina' }];
+    const cloud = [{ id: 'd1', name: 'Dr. Ahmed', phone: '+965 2222' }, { id: 'd9', name: 'Dr. Zain' }, { id: 'd7', name: 'DR LINA' }];
+    const m = core.mergeDoctorLists3(local, cloud, base);
+    assert.deepEqual(m.doctors.map(d => d.id), ['d1', 'd5', 'd9']);
+    assert.deepEqual(m.doctors[0], { id: 'd1', name: 'Dr. Ahmed', phone: '+965 2222', title: 'Endodontist' });
+    assert.deepEqual(m.remap, { d7: 'd5' });
+  });
+});

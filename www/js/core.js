@@ -4722,6 +4722,44 @@
     (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
     return dedupeDoctors(merged);
   }
+  // ---- Three-way merge of one shared record (v121) ----
+  // A phone used to save its whole copy of every record: whatever another
+  // phone had changed meanwhile was undone, even in records this phone never
+  // touched. `base` is the record as the cloud last confirmed it to THIS
+  // phone (read from it or written by it). Field by field: changed here only
+  // → this phone's value; changed in the cloud only → the cloud's; changed on
+  // both → this phone's (the newest save, as before) or `fieldMerge[k]` when
+  // given. No base, or the record missing on a side → this phone's copy, as
+  // before. Never mutates its inputs. `fromCloud`: the result took anything
+  // from the cloud (the caller then shows the merged copy).
+  function sameValue(a, b){ return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); }
+  function merge3Record(local, cloud, base, fieldMerge){
+    if(!local || !cloud || !base || typeof local !== 'object' || typeof cloud !== 'object' || typeof base !== 'object') return { value: local, fromCloud: false };
+    var out = {}, took = false, seen = {}, keys = [];
+    [local, cloud].forEach(function(o){ Object.keys(o).forEach(function(k){ if(!seen[k]){ seen[k] = 1; keys.push(k); } }); });
+    keys.forEach(function(k){
+      var L = local[k], C = cloud[k], B = base[k];
+      var mine = !sameValue(L, B), theirs = !sameValue(C, B), v = L;
+      if(theirs && !mine){ v = C; took = true; }
+      else if(theirs && mine && fieldMerge && typeof fieldMerge[k] === 'function'){ v = fieldMerge[k](L, C, B); if(!sameValue(v, L)) took = true; }
+      if(v !== undefined) out[k] = v;
+    });
+    return took ? { value: out, fromCloud: true } : { value: local, fromCloud: false };
+  }
+  // A clinic's doctors when both phones changed the list: one record per
+  // person, each doctor merged field by field against the base (a doctor
+  // added on either side is kept, as before; deletions are the delete log's).
+  function mergeDoctorLists3(local, cloud, base){
+    var b = {}, c = {}, have = {};
+    (base || []).forEach(function(d){ if(d && d.id != null) b[d.id] = d; });
+    (cloud || []).forEach(function(d){ if(d && d.id != null) c[d.id] = d; });
+    var merged = (local || []).filter(Boolean).map(function(d){
+      have[d.id] = 1;
+      return (c[d.id] && b[d.id]) ? merge3Record(d, c[d.id], b[d.id]).value : d;
+    });
+    (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
+    return dedupeDoctors(merged);
+  }
 
   // ---- ERP sales storage split ----
   // Every uploaded period's rows used to sit inside ONE cloud document. A
@@ -6278,7 +6316,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, mergeDayPlans3, mergeRecycleBin, sameFirstName,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
