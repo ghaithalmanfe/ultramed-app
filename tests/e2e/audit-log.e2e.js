@@ -86,12 +86,16 @@ function seed(){
       delete: async k => window.__cDel(k),
       list: async p => ({ keys: await window.__cList(p) }),
     };
-    const off = new Date(2026, 10, 11, 10, 0, 0).getTime() - Date.now();   // Wed 11 Nov 2026, 10:00, ticking
+    // Wed 11 Nov 2026 from 10:00, ticking; each boot a minute later than the one before, so time only moves forward
+    let step = 0; try{ step = +localStorage.getItem('__h_clock') || 0; }catch(e){}
+    const off = new Date(2026, 10, 11, 10, 0, 0).getTime() + step * 60000 - Date.now();
     const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
   });
+  let boots = 0;
   const boot = async (who, role, local) => {
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(120);
-    await page.evaluate(l => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){} }, local || null);
+    local = Object.assign({ __h_clock: String(++boots) }, local || {});
+    await page.evaluate(l => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){} }, local);
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(200);
     await page.evaluate(async ({ who, role }) => { await selectUser(who, role); window.__toasts = []; const real = showToast; window.showToast = (m, ms) => { window.__toasts.push(String(m)); real(m, ms); }; }, { who, role });
     await sleep(250);
