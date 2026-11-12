@@ -1764,11 +1764,18 @@
         return nn.flat.length >= 4 && x.flat.length >= 4 && (x.flat.indexOf(nn.flat) >= 0 || nn.flat.indexOf(x.flat) >= 0);
       });
     };
+    // an account linked by hand (erpMap) to a returning clinic's own id counts at
+    // no clinic while that id is missing from the list, and at the clinic once it
+    // is back — the raw match is the same both times, so it is always checked
+    var addIds = Object.create(null);
+    add.forEach(function(c){ if(c && c.id != null) addIds[c.id] = 1; });
+    var linkedHere = function(n){ return Object.prototype.hasOwnProperty.call(map, n) && addIds[map[n]] === 1; };
     var m1 = erpMatcher(c1, map);
     k.names.forEach(function(n){
-      if(!all && !touches(k.norm[n])) return;
+      var linked = linkedHere(n);
+      if(!all && !linked && !touches(k.norm[n])) return;
       var a = k.m0(n), b = m1(n);
-      if((a && a.clinicId) === (b && b.clinicId) && (a && a.method) === (b && b.method)) return;
+      if(!linked && (a && a.clinicId) === (b && b.clinicId) && (a && a.method) === (b && b.method)) return;
       k.byName[n].forEach(function(x){
         var r = x[0], ra = erpRepOfMatch(a, r, c0, x[1]), rb = erpRepOfMatch(b, r, c1, x[1]);
         if(ra !== rb) out.push({ customer: n, date: r.date || null, from: ra, to: rb, net: Number(r.net) || 0 });
@@ -1791,7 +1798,9 @@
     var gone = function(k){ return !!deleted && (typeof deleted.has === 'function' ? deleted.has(k) : !!deleted[k]); };
     (visits || []).forEach(function(v){
       if(!v || v.clinicId == null || !byId[v.clinicId]) return;
-      var cid = v.clinicId, ids = (Array.isArray(v.doctorIds) ? v.doctorIds : []).concat(v.doctorId ? [v.doctorId] : []), seen = Object.create(null);
+      // the people met, and anyone a prescription line on the visit names
+      var rxIds = (Array.isArray(v.rx) ? v.rx : []).map(function(x){ return x && x.doctorId; }).filter(function(x){ return x != null && x !== ''; });
+      var cid = v.clinicId, ids = (Array.isArray(v.doctorIds) ? v.doctorIds : []).concat(v.doctorId ? [v.doctorId] : [], rxIds), seen = Object.create(null);
       ids.forEach(function(id){
         if(id == null || id === '' || seen[id] || have[cid][id] || gone(cid + '|' + id)) return;
         seen[id] = 1;

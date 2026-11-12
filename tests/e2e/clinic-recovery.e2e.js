@@ -131,6 +131,7 @@ function seed(){
   const sleep = ms => page.evaluate(t => new Promise(r => setTimeout(r, t)), ms);
   const modal = () => page.evaluate(() => (document.getElementById('modalInner') || {}).innerText.replace(/\s+/g, ' '));
   const toast = () => page.evaluate(() => document.getElementById('toast').textContent);
+  const confirmTap = async () => { await page.evaluate(() => { const b = document.querySelector('#modalInner button[data-ask]'); if(!b) throw new Error('no confirm button'); b.click(); }); await sleep(350); };
   // August and September visits sit in their month's archive document once saved
   const allV = () => Object.keys(cloud).filter(k => k === 'visits' || /^visitsArch:/.test(k)).reduce((a, k) => { const v = JSON.parse(cloud[k]); return a.concat(Array.isArray(v) ? v : ((v && v.visits) || [])); }, []);
   // ---- doctors without a name ----
@@ -161,7 +162,7 @@ function seed(){
   await page.evaluate(async () => { await nameLostDoctor('m1', 'dE', 'dr amal', 'm1', 'copy'); }); await sleep(80);
   const askD = await modal(), ve5a = JSON.parse(cloud.visits).find(v => v.id === 've5') || {};
   check('a name already on the list is ASKED first — nothing moves on the first tap', /Dr\. Amal is already on this clinic's list\. Move these visits to this doctor\?/.test(askD) && (ve5a.doctorIds || []).join() === 'dE', { ask: askD.slice(0, 200), ve5: ve5a.doctorIds });
-  await page.evaluate(async () => { await nameLostDoctor('m1', 'dE', 'dr amal', 'm1', 'copy', true); }); await sleep(300);
+  await confirmTap();
   const ve5 = JSON.parse(cloud.visits).find(v => v.id === 've5') || {};
   m1 = JSON.parse(cloud.clinics).find(c => c.id === 'm1');
   check('after the second tap the visit joins Dr. Amal; no second Dr. Amal', (ve5.doctorIds || []).join() === 'dA' && ve5.doctorId === 'dA' && (m1.doctors || []).length === 3, { ve5: ve5.doctorIds, docs: (m1.doctors || []).map(d => d.id) });
@@ -196,7 +197,7 @@ function seed(){
   check('a new name shows the clinic again with its visit', (live3.find(c => c.id === 'p1') || {}).name === 'Smile Point Clinic');
   check('the name of a clinic already in the list is ASKED first — nothing moves on the first tap',
     /Al Seef Hospital is already in the list/.test(askC) && w2a.clinicId === 'p2' && live3.some(c => c.id === 'p2'), { ask: askC.slice(0, 240), w2: w2a.clinicId });
-  await page.evaluate(async () => { await nameNamelessClinic('p2', 'al seef hospital', 'typed', true); }); await sleep(300);
+  await confirmTap();
   live3 = JSON.parse(cloud.clinics);
   const w2 = JSON.parse(cloud.visits).find(v => v.id === 'w2') || {};
   check('after the second tap its visit moves there and the empty record goes to the recycle bin', w2.clinicId === 'rs' && !live3.some(c => c.id === 'p2') && /p2/.test(cloud.recycleBin || ''), { w2: w2.clinicId, p2: live3.some(c => c.id === 'p2') });
@@ -237,7 +238,7 @@ function seed(){
   await page.evaluate(async () => { await nameNamelessClinic('q2', '32 Dental', 'task'); }); await sleep(80);
   const ask32 = await modal();
   check('"32 Dental" is already Renova\'s: asked first', /32 Dental is already in the list/.test(ask32) && !!JSON.parse(cloud.clinics).find(c => c.id === 'q2'), ask32.slice(0, 200));
-  await page.evaluate(async () => { await nameNamelessClinic('q2', '32 Dental', 'task', true); }); await sleep(350);
+  await confirmTap();
   L4 = JSON.parse(cloud.clinics);
   const V4 = allV(), T4 = JSON.parse(cloud.tasks), DP4 = JSON.parse(cloud.dayPlans || '{}');
   check('after the second tap its visit, task and plan entry join 32 Dental and the empty record goes',
@@ -247,7 +248,7 @@ function seed(){
   const askOff = await modal();
   check('"Office" would make Mariam\'s September invoice count for Renova: that is shown and asked first, nothing changes yet',
     /1 sales lines would then count for another person: Mariam → Renova 1/.test(askOff) && /Use the name anyway/.test(askOff) && /rename me/.test((JSON.parse(cloud.clinics).find(c => c.id === 'q3') || {}).name || ''), askOff.slice(0, 300));
-  await page.evaluate(async () => { await nameNamelessClinic('q3', 'Office', 'task', true); }); await sleep(250);
+  await confirmTap();
   check('after the second tap "Office" is named', (JSON.parse(cloud.clinics).find(c => c.id === 'q3') || {}).name === 'Office');
   const det4 = await page.evaluate(async () => { closeModal(); openClinicDetail('rs'); await new Promise(r => setTimeout(r, 50)); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
   check('lost doctors: Al Seef says two doctors from earlier visits have no name', /2 doctors from earlier visits have no name/.test(det4), det4.slice(0, 300));
@@ -257,7 +258,8 @@ function seed(){
   const sh5 = await modal();
   check('lost doctors: the sheet shows what each one\'s visits say', /Doctors without a name/.test(sh5) && /Asked for samples/.test(sh5), sh5.slice(0, 300));
   await page.evaluate(async () => { await nameLostDoctor('rs', 'dL1', 'Dr. Lina', 'rs', 'typed'); }); await sleep(250);
-  await page.evaluate(async () => { await nameLostDoctor('rs', 'dL2', 'dr khaled', 'rs', 'typed', true); }); await sleep(300);
+  await page.evaluate(async () => { await nameLostDoctor('rs', 'dL2', 'dr khaled', 'rs', 'typed'); }); await sleep(80);
+  await confirmTap();
   const seef = JSON.parse(cloud.clinics).find(c => c.id === 'rs') || {}, x6 = allV().find(v => v.id === 'x6') || {};
   check('lost doctors: a typed name brings the doctor back with the same id', (seef.doctors || []).some(d => d.id === 'dL1' && d.name === 'Dr. Lina'), seef.doctors);
   check('lost doctors: confirmed, the visit moves to the doctor already listed — no second Dr. Khaled',
@@ -276,6 +278,63 @@ function seed(){
   });
   check('Arabic: the cards, sheets and questions speak Arabic', /طبيب من زيارات سابقة بدون اسم/.test(ar4) && /الاسم الذي سجّله التطبيق لها/.test(ar4) && /استخدم هذا الاسم/.test(ar4)
     && /سطر مبيعات سيُحسب عندها لشخص آخر/.test(ar4) && /استخدم الاسم رغم ذلك/.test(ar4) && /أطباء بدون اسم/.test(ar4) && /لا يتغير شيء حتى تضغط/.test(ar4), ar4.slice(0, 700));
+  // ---- v121 review fixes ----
+  {
+    seed();
+    const OLD = Date.now() - 30 * 86400000, NOW = Date.now();
+    cloud.clinics = JSON.stringify([M1, G1, C('r32', '32 Dental', R), C('rm', 'Smile Point', M),
+      Object.assign(PH('z1'), { doctors: [D('dq', 'Dr. Qasim', { title: 'Endodontist', phone: '1111' })] }), PH('z2'), PH('z3'), PH('z4'), PH('z5')].concat(FILL));
+    cloud.visits = JSON.stringify([
+      { id: 'y1', clinicId: 'z1', rep: R, date: '2026-10-03', doctorIds: ['dq', 'dz'], doctorId: 'dq' }, { id: 'y2', clinicId: 'z2', rep: R, date: '2026-10-04' },
+      { id: 'y3', clinicId: 'z3', rep: R, date: '2026-10-05' }, { id: 'y5', clinicId: 'z5', rep: R, date: '2026-10-06' },
+      { id: 'y6', clinicId: 'r32', rep: R, date: '2026-10-07', doctorIds: ['dold'], doctorId: 'dold' }, { id: 'y7', clinicId: 'r32', rep: R, date: '2026-10-08', doctorIds: ['dlx'], doctorId: 'dlx' }]);
+    const FU = (id, cid, name) => ({ id, text: 'Follow up: ' + name, done: false, created: '2026-10-01', rep: R, dueDate: '2026-10-20', clinicId: cid, kind: 'followup' });
+    cloud.tasks = JSON.stringify([FU('u1', 'z1', '32 Dental'), FU('u2', 'z2', 'Smile Point'), FU('u3', 'z3', 'Hidden Gem')]);
+    const tombsDoc = { visits: {}, tasks: {}, clinics: { z4: NOW - 60000 }, events: {}, dayPlans: {}, doctors: { 'r32|dold': OLD } };
+    cloud.tombs = JSON.stringify(tombsDoc);
+    const copyZ = JSON.stringify([{ id: 'z1', name: '32 Dental', rep: R, doctors: [{ id: 'dz', name: 'Dr. Zaid' }] }, { id: 'z5', name: 'Jahra Clinic', rep: M, phone: '2468', doctors: [] }]);
+    await boot(R, 'rep', { 'um_mirror_prev:clinics': copyZ, um_tombs: JSON.stringify(tombsDoc) });
+    await page.waitForTimeout(600);
+    await page.evaluate(() => { switchView('clinics'); setClinicMode('list'); openNamelessClinics(); }); await sleep(60);
+    const sh = await page.evaluate(() => [...document.querySelectorAll('#modalInner [data-nameless]')].map(e => e.dataset.nameless));
+    check('fix: a nameless record another device already handled (delete log) is not offered', !sh.includes('z4') && sh.includes('z1'), sh);
+    // a rep cannot merge into another rep's clinic: nothing changes
+    await page.evaluate(async () => { await nameNamelessClinic('z2', 'Smile Point', 'task'); }); await sleep(80);
+    check('fix: a rep cannot merge her nameless clinic into another rep\'s clinic — nothing changes', /Another clinic already has this name/.test(await modal()) && (allV().find(v => v.id === 'y2') || {}).clinicId === 'z2', (await modal()).slice(0, 200));
+    // the sales check needs every file's rows on this phone
+    await page.evaluate(() => { openNamelessClinics(); erpSales.periods = [{ id: 'gone', from: '2026-09-01', to: '2026-09-30', rowsMissing: true }]; }); await sleep(40);
+    await page.evaluate(async () => { await nameNamelessClinic('z3', 'Hidden Gem', 'task'); }); await sleep(80);
+    check('fix: with a sales file missing on this phone, a name is not applied — nothing changes', /Some sales files did not load/.test(await modal()) && /rename me/.test((JSON.parse(cloud.clinics).find(c => c.id === 'z3') || {}).name || ''), (await modal()).slice(0, 200));
+    await page.evaluate(() => { erpSales.periods = []; openNamelessClinics(); }); await sleep(40);
+    // the copy's owner never replaces today's owner
+    await page.evaluate(async () => { await nameNamelessClinic('z5', 'Jahra Clinic', 'copy'); }); await sleep(250);
+    const z5 = JSON.parse(cloud.clinics).find(c => c.id === 'z5') || {};
+    check('fix: the phone copy gives back the name and details, never another owner', z5.name === 'Jahra Clinic' && z5.rep === R && z5.phone === '2468', z5);
+    // the confirming tap answers one question: if its clinic changed, nothing happens
+    await page.evaluate(() => openNamelessClinics()); await sleep(40);
+    await page.evaluate(async () => { await nameNamelessClinic('z1', '32 Dental', 'copy'); }); await sleep(80);
+    const ask1 = await modal();
+    await page.evaluate(() => { clinics.find(c => c.id === 'r32').name = '32 Dental Old'; });
+    await confirmTap();
+    check('fix: a confirming tap whose clinic changed meanwhile changes nothing', /rename me/.test((JSON.parse(cloud.clinics).find(c => c.id === 'z1') || {}).name || '') && /This changed since you were asked/.test(await toast()), { ask: ask1.slice(0, 160), toast: await toast() });
+    await page.evaluate(() => { clinics.find(c => c.id === 'r32').name = '32 Dental'; openNamelessClinics(); }); await sleep(40);
+    // the merge carries the nameless record's doctors and the copy's; a double tap runs once
+    await page.evaluate(async () => { await nameNamelessClinic('z1', '32 Dental', 'copy'); }); await sleep(80);
+    check('the merge question says the doctors go too', /visits, tasks, plan entries and doctors/.test(await modal()) && /2 doctors/.test(await modal()), (await modal()).slice(0, 260));
+    await page.evaluate(() => { const b = document.querySelector('#modalInner button[data-ask]'); b.click(); b.click(); }); await sleep(450);
+    const r32 = JSON.parse(cloud.clinics).find(c => c.id === 'r32') || {}, bin = JSON.parse(cloud.recycleBin || '{}');
+    const binZ1 = ((bin.clinics) || []).filter(x => x.id === 'z1').length;
+    check('fix: the merge keeps the doctors — the nameless record\'s own (with details) and the one this phone kept',
+      (r32.doctors || []).some(d => d.id === 'dq' && d.phone === '1111') && (r32.doctors || []).some(d => d.id === 'dz' && d.name === 'Dr. Zaid'), (r32.doctors || []).map(d => d.id + ':' + d.name));
+    check('fix: a double tap merges once (one recycle-bin copy)', binZ1 === 1 && (allV().find(v => v.id === 'y1') || {}).clinicId === 'r32', { binZ1 });
+    // doctor removals stay in the delete log for good; "left / removed on purpose" takes one off the list
+    const lostR32 = await page.evaluate(() => (UMCore.lostDoctors(clinics.filter(c => c.id === 'r32'), visits, tombSet('doctors')).r32 || []).map(e => e.id));
+    check('fix: a doctor removed on purpose a month ago is not offered as lost', !lostR32.includes('dold') && lostR32.includes('dlx'), lostR32);
+    await page.evaluate(async () => { closeModal(); await markDoctorGone('r32', 'dlx', 'r32'); }); await sleep(300);
+    const lostAfter = await page.evaluate(() => (UMCore.lostDoctors(clinics.filter(c => c.id === 'r32'), visits, tombSet('doctors')).r32 || []).map(e => e.id));
+    check('fix: "Left the clinic or removed on purpose" takes the doctor off the list and into the shared delete log', !lostAfter.includes('dlx') && !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dlx'], { lostAfter, tomb: !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dlx'] });
+    check('fix: the old doctor delete is still in the shared log after that save', !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dold']);
+  }
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

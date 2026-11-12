@@ -1062,7 +1062,9 @@ const _tombstones = (()=>{
   try{
     const raw = JSON.parse(localStorage.getItem('um_tombs')||'{}');
     const cutoff = Date.now() - 7*86400000;
-    Object.keys(out).forEach(k=>Object.keys(raw[k]||{}).forEach(id=>{ if(raw[k][id] > cutoff) out[k].add(id); }));
+    // doctor removals are kept for good (v121): after 7 days a removed doctor would
+    // otherwise come back as "lost" on the Doctors-without-a-name sheet
+    Object.keys(out).forEach(k=>Object.keys(raw[k]||{}).forEach(id=>{ if(k === 'doctors' || raw[k][id] > cutoff) out[k].add(id); }));
   }catch(e){}
   return out;
 })();
@@ -1138,7 +1140,7 @@ async function persistTombs(){
       out[k] = {};
       [cloud[k]||{}, tombsDoc[k]||{}].forEach(src=>Object.keys(src).forEach(id=>{
         if(_untombed[k] && _untombed[k].has(id)) return; // revived — drop from the shared log
-        if((src[id]||0) > cutoff) out[k][id] = Math.max(out[k][id]||0, src[id]);
+        if(k === 'doctors' || (src[id]||0) > cutoff) out[k][id] = Math.max(out[k][id]||0, src[id] || 0);
       }));
     });
     tombsDoc = out;

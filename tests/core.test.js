@@ -4139,6 +4139,10 @@ describe('names the app recorded, and what a returning clinic moves (v120)', () 
     assert.deepEqual(core.erpAddClinicMoves(data, [{ id: 'p3', name: 'Al-Noor Clinic', rep: 'Renova', doctors: [] }], cache).map(m => [m.customer, m.from, m.to]), [['Alnoor', 'Mariam', 'Renova']]);
     assert.deepEqual(core.erpAddClinicMoves(data, [cedar], cache).map(m => m.date), ['2026-09-14']);
     assert.equal(core.erpAddClinicMoves(data, [cedar, { id: 'p3', name: 'Al-Noor Clinic', rep: 'Renova', doctors: [] }], cache).length, 2);
+    // an account linked BY HAND to the returning clinic's own id counts at no clinic while it is missing, at the clinic once back
+    const linked = { clinics, erpMap: { 'KMS GMS Trading Co': 'p4' }, erpSales: { periods: [{ id: 'q', from: '2026-09-01', to: '2026-09-30', repMap: { 'Mariam Zohair': 'Mariam' },
+      rows: [row('2026-09-14', 'S9', 'KMS GMS Trading Co', 40, 'Mariam Zohair')] }] } };
+    assert.deepEqual(core.erpAddClinicMoves(linked, [{ id: 'p4', name: 'Totally Different Name', rep: 'Renova', doctors: [] }]).map(m => [m.customer, m.from, m.to]), [['KMS GMS Trading Co', 'Mariam', 'Renova']]);
   });
   test('lostDoctors: who the visits met and the clinic no longer lists, deleted ones left out, newest first', () => {
     const clinics = [{ id: 'c1', name: 'Basma', doctors: [{ id: 'dA', name: 'Dr. Amal' }] }, { id: 'c2', name: 'Blue', doctors: [] }];
@@ -4154,5 +4158,8 @@ describe('names the app recorded, and what a returning clinic moves (v120)', () 
     assert.equal(r.c1[0].visits[1].notes, 'liked it');
     assert.equal(r.c2[0].name, 'Dr. Eman');
     assert.deepEqual(Object.keys(core.lostDoctors(clinics, visits, { 'c1|dD': 1, 'c1|dB': 1, 'c1|dC': 1, 'c2|dE': 1 })), []);
+    // a doctor named only on a prescription line of the visit is lost too
+    const rxOnly = core.lostDoctors([{ id: 'c3', doctors: [] }], [{ id: 'v9', clinicId: 'c3', date: '2026-10-01', rx: [{ type: 't', name: 'T', qty: 2, doctorId: 'dR' }, { type: 't', name: 'T', qty: 1, doctorId: null }] }], null);
+    assert.deepEqual((rxOnly.c3 || []).map(e => e.id), ['dR']);
   });
 });
