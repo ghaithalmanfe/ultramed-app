@@ -1013,6 +1013,16 @@
     'Photo waiting to upload': 'صورة بانتظار الرفع',
     'kept on this phone': 'محفوظة على هذا الهاتف',
     "only in the app's memory — keep the app open": 'في ذاكرة التطبيق فقط — أبقِ التطبيق مفتوحًا',
+    // what the screens say about those photos (v122): the lightbox, the gallery, the red bar, the toasts (counts by pattern below)
+    'Photo lost before it uploaded — only this small preview is kept': 'فُقدت الصورة قبل أن تُرفع — بقيت هذه المعاينة الصغيرة فقط',
+    'The full photo is still waiting to upload from the phone that took it — this is its small preview': 'الصورة الكاملة ما زالت بانتظار الرفع من الهاتف الذي التقطها — هذه معاينتها الصغيرة',
+    '⏳ marks a photo still waiting to upload — until it arrives, other phones show only its small preview.': '⏳ تعني صورة ما زالت بانتظار الرفع — إلى أن تصل، تُظهر الهواتف الأخرى معاينتها الصغيرة فقط.',
+    '⚠️ marks a photo lost before it uploaded — only its small preview is kept.': '⚠️ تعني صورة فُقدت قبل أن تُرفع — بقيت معاينتها الصغيرة فقط.',
+    "This phone's storage is full — a photo is only in the app's memory: keep the app open and connected until it says Saved": 'ذاكرة هذا الهاتف ممتلئة — صورة موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»',
+    "A photo is only in the app's memory too": 'وصورة أيضًا موجودة في ذاكرة التطبيق فقط',
+    '1 photo still waiting to upload': 'صورة واحدة ما زالت بانتظار الرفع',
+    "⚠️ This phone's storage is full — the photo was added only in the app's memory: keep the app open and connected until it says Saved": '⚠️ ذاكرة هذا الهاتف ممتلئة — أُضيفت الصورة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»',
+    'Photo removed': 'حُذفت الصورة',
     '✅ Changes saved': '✅ حُفظت التغييرات',
     '✅ Clinic updated': '✅ حُدّثت العيادة',
     '✅ Evaluation targets updated': '✅ حُدّثت أهداف التقييم',
@@ -1883,6 +1893,15 @@
   var PATTERNS = [
     // photos waiting to upload (v122): "⏳ 2 photos waiting to upload" (the sign is kept by the leading-symbol rule)
     [/^(\d+) photos waiting to upload$/, function (m) { return 'عدد الصور بانتظار الرفع: ' + m[1]; }],
+    // …said per photo: "⏳ 3 photos waiting to upload · 1 kept on this phone · 2 only in the app's memory — keep the app open" (each part by itself)
+    [/^(\d+) kept on this phone$/, function (m) { return 'المحفوظ منها على هذا الهاتف: ' + m[1]; }],
+    [/^(\d+) only in the app's memory — keep the app open$/, function (m) { return 'الموجود منها في ذاكرة التطبيق فقط: ' + m[1] + ' — أبقِ التطبيق مفتوحًا'; }],
+    [/^(\d+) photos lost before they uploaded — only their small previews are kept$/, function (m) { return 'عدد الصور التي فُقدت قبل أن تُرفع: ' + m[1] + ' — بقيت معايناتها الصغيرة فقط'; }],
+    [/^(\d+) photos still waiting to upload$/, function (m) { return 'عدد الصور التي ما زالت بانتظار الرفع: ' + m[1]; }],
+    [/^This phone's storage is full — (\d+) photos are only in the app's memory: keep the app open and connected until it says Saved$/, function (m) { return 'ذاكرة هذا الهاتف ممتلئة — عدد الصور الموجودة في ذاكرة التطبيق فقط: ' + m[1] + ' — أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»'; }],
+    [/^(\d+) photos are only in the app's memory too$/, function (m) { return 'وعدد الصور الموجودة أيضًا في ذاكرة التطبيق فقط: ' + m[1]; }],
+    // the Visit photos gallery when some have no full photo in the cloud yet
+    [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها.'; }],
     // whole-day Restore (v121): what it removes, asked first; what it restored
     [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits and the sales files stay as they are\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات تبقى كما هي.'; }],
     [/^Restored (\S+) — (\d+) clinics, (\d+) visits$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — ' + m[2] + ' عيادة، ' + m[3] + ' زيارة'; }],
@@ -2020,7 +2039,7 @@
     [/^(\d+) top clinics quiet for 30\+ days$/, function (m) { return m[1] + ' عيادة مهمة هادئة أكثر من 30 يوماً'; }],
     [/^Search to see all (\d+) clinics$/, function (m) { return 'ابحث لعرض كل الـ' + m[1] + ' عيادة'; }],
     [/^(\d+) of (\d+) unlocked — keep going, you’re building something\.$/, function (m) { return m[1] + ' من ' + m[2] + ' مفتوحة — واصل، أنت تبني شيئاً.'; }],
-    [/^(\d+) photos across (\d+) visits\. Tap any photo to view it full size\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها بالحجم الكامل.'; }],
+    [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it full size\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها بالحجم الكامل.'; }],
     [/^(\d+) open tasks? (?:are|is) still pending \((\d+)% completion\)\.$/, function (m) { return m[1] + ' مهمة مفتوحة ما زالت معلّقة (' + m[2] + '% إنجاز).'; }],
     [/^(\d+) visited \+ (\d+) not visited = (\d+) active clinics — most urgent first\.$/, function (m) { return m[1] + ' مُزارة + ' + m[2] + ' غير مُزارة = ' + m[3] + ' عيادة نشطة — الأكثر إلحاحاً أولاً.'; }],
     [/^(\d+) of the highest-value \(A\/B class\) clinics went unvisited this period\.$/, function (m) { return m[1] + ' من أعلى العيادات قيمة (فئة A/B) لم تُزر هذه الفترة.'; }],

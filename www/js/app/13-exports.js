@@ -1553,8 +1553,10 @@ async function readCloudForBackup(take, onProgress){
 }
 // This phone's changes the cloud does not have yet: every key in the outbox
 // (its newest copy is on this phone only — um_mirror:<key>, the delete log in
-// um_tombs), and sales changes not saved. → [{key, from, value|null}]
-function bkPending(){
+// um_tombs), sales changes not saved, and (v122) the full visit photos this
+// phone keeps until the cloud holds them — unless the read found them in the
+// cloud (readKeys: the photo: keys the backup read). → [{key, from, value|null}]
+function bkPending(readKeys){
   const out = [], seen = new Set();
   outboxList().forEach(k => {
     if(seen.has(k)) return;
@@ -1571,6 +1573,12 @@ function bkPending(){
     try{ v = JSON.stringify(erpSales); }catch(e){}
     out.push({ key: 'erpSales', from: 'memory: sales changes not saved', value: v });
   }
+  if(typeof _photoKept !== 'undefined') _photoKept.forEach(r => {
+    const k = r && r.data ? 'photo:' + r.id : null;
+    if(!k || seen.has(k) || (readKeys && readKeys.has(k))) return;
+    seen.add(k);
+    out.push({ key: k, from: r.on === 'idb' ? 'IndexedDB um_photos' : r.on === 'ls' ? 'um_photo:' + r.id : 'memory: photo waiting to upload', value: String(r.data) });
+  });
   return out;
 }
 function bkWhy(w){ return w && BK_WHY[w] ? ` — <span>${esc(BK_WHY[w])}</span>` : ''; }
@@ -1650,9 +1658,11 @@ async function openFullBackup(){
   const w = bkWriter();
   w.push(b.head());
   let res = null, err = null, stopped = false;
+  const readPhotos = new Set(); // the photo: documents the read found (a photo still kept on this phone is in the file once)
   try{
     res = await readCloudForBackup(async d => {
       if(!bkAlive(run)){ stopped = true; throw new Error('the sheet was closed'); }
+      if(String(d.key).startsWith('photo:')) readPhotos.add(String(d.key));
       const bytes = bkBytes(d.value);
       w.push(b.addDoc(d.key, d.value, d.updated, await bkSha256(bytes), bytes.length));
     }, n => { const el = document.getElementById('fullBackupCount'); if(el && run === _fullBackupRun) el.textContent = bkNum(n); });
@@ -1661,7 +1671,9 @@ async function openFullBackup(){
   const body = document.getElementById('fullBackupBody');
   if(err || res || !b.documents()){ body.innerHTML = bkFailedHTML(res, err, b.documents()); return; }
   // this phone's changes the cloud does not have yet: kept apart, never mixed into the cloud copy
-  const pend = bkPending();
+  if(typeof photoReadKept === 'function') await photoReadKept().catch(() => {}); // photos an earlier session left waiting here
+  if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;
+  const pend = bkPending(readPhotos);
   w.push(b.pendingStart());
   for(const p of pend){
     const bytes = p.value == null ? null : bkBytes(p.value);

@@ -589,18 +589,41 @@ async function keepVisitPhotos(visitId, shots, opts){
   shots.forEach(ph => _photoSession.add(ph.id));
   const where = await Promise.all(shots.map(ph => photoKeep({ id: ph.id, data: ph.full, visitId, ts: Date.now() })));
   if(!(opts && opts.upload === false)) shots.forEach(ph => photoUpload(ph.id, ph.full));
+  if(where.includes('mem') && typeof renderMemOnlyBar === 'function') renderMemOnlyBar(); // the red bar names it until it lands (04)
   return where.includes('mem') ? 'mem' : 'phone';
 }
 function photoPending(id){ return (visits || []).some(v => v && Array.isArray(v.photos) && v.photos.some(p => p && p.id === id && p.pending)); }
-// Under a visit's thumbnails: what its photos still wait for.
+// A visit's own entry for a photo ({id, thumb, pending | lost}), or null.
+function visitPhotoEntry(id){
+  for(const v of (visits || [])) for(const p of ((v && Array.isArray(v.photos)) ? v.photos : [])) if(p && p.id === id) return p;
+  return null;
+}
+// The photos this phone still has to send to the cloud: all it keeps, or only
+// those kept in the app's memory (a full phone) — for the red bar and the toasts.
+function photosToUpload(memOnly){ let n = 0; _photoKept.forEach(r => { if(r && !r.up && (!memOnly || r.on === 'mem')) n++; }); return n; }
+function photosLeftText(n){ return n === 1 ? '1 photo still waiting to upload' : n + ' photos still waiting to upload'; }
+const PHOTO_LOST_1 = '⚠️ Photo lost before it uploaded — only this small preview is kept';
+// Under a visit's thumbnails: what its photos still wait for, said per photo —
+// kept on this phone (IndexedDB or the web storage), only in the app's memory,
+// or neither (on the phone that took it, or not kept yet) — and the photos
+// lost before they uploaded ({lost: true}: only the thumbnail exists).
 function photoWaitHTML(v){
-  const waiting = ((v && v.photos) || []).filter(p => p && p.pending);
-  if(!waiting.length) return '';
-  const mem = waiting.some(p => (_photoKept.get(p.id) || {}).on === 'mem');
-  const here = waiting.some(p => _photoKept.has(p.id));
-  const what = waiting.length === 1 ? 'Photo waiting to upload' : waiting.length + ' photos waiting to upload';
-  const txt = mem ? '⚠️ ' + what + " · only in the app's memory — keep the app open" : '⏳ ' + what + (here ? ' · kept on this phone' : '');
-  return `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(txt)}</div>`;
+  const ps = ((v && v.photos) || []).filter(p => p);
+  const waiting = ps.filter(p => p.pending), lost = ps.filter(p => p.lost && !p.pending);
+  let out = '';
+  if(waiting.length){
+    let here = 0, mem = 0;
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r) return; if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
+    if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
+    if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");
+    out += `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(parts.join(' · '))}</div>`;
+  }
+  if(lost.length){
+    const txt = lost.length === 1 ? PHOTO_LOST_1 : '⚠️ ' + lost.length + ' photos lost before they uploaded — only their small previews are kept';
+    out += `<div class="photo-lost" style="font-size:12px; color:var(--coral-ink); margin-top:4px;">${esc(txt)}</div>`;
+  }
+  return out;
 }
 async function loadPhotoBlob(id){
   try{ const r = await window.storage.get('photo:'+id, true); return r? r.value : null; }
@@ -626,17 +649,43 @@ function addVisitPhoto(){
 function removeVisitPhoto(id){ visitPhotos = visitPhotos.filter(p=>p.id!==id); renderVisitPhotos(); }
 
 // ---------- lightbox ----------
+let _lbRun = 0; // the tap the lightbox shows: a slow read for an earlier tap never replaces it
+// The line under the caption (v122): what the picture is when it is not the full photo.
+function lbNote(txt){
+  let el = document.getElementById('lbNote');
+  if(!el && txt){
+    el = document.createElement('div'); el.id = 'lbNote'; el.className = 'lbcap'; el.setAttribute('data-notr', '');
+    el.style.cssText = 'margin-top:8px; font-size:13px; color:#FFD27A;';
+    document.getElementById('lightbox').appendChild(el);
+  }
+  if(!el) return;
+  el.textContent = txt ? (trOf(txt) || txt) : '';
+  el.style.display = txt ? '' : 'none';
+}
 async function showLightbox(photoId, cap, direct){
-  const lb=document.getElementById('lightbox');
+  const run = ++_lbRun;
+  const lb=document.getElementById('lightbox'), img = document.getElementById('lbImg');
   document.getElementById('lbCap').textContent = cap||'';
-  document.getElementById('lbImg').src = direct || '';
+  img.src = direct || '';
+  img.style.cssText = ''; lbNote(null);
   lb.classList.add('show');
   if(!direct){
     const local = visitPhotos.find(p=>p.id===photoId);
     if(!local && !_photoKept.has(photoId) && photoPending(photoId)) await photoReadKept().catch(()=>{}); // kept by an earlier session, not read yet
     const kept = _photoKept.get(photoId); // still waiting to upload: this phone's copy
+    // the cloud is asked even while the visit says waiting: its mark can be late
     const data = local ? local.full : (kept && kept.data) ? kept.data : await loadPhotoBlob(photoId);
-    if(data) document.getElementById('lbImg').src = data;
+    if(run !== _lbRun) return; // another photo was tapped meanwhile
+    if(data){ img.src = data; return; }
+    // No full photo on this phone or in the cloud (v122): a visit photo still
+    // waiting to upload on the phone that took it, or lost before it did —
+    // its thumbnail, enlarged, said for what it is (never an empty frame).
+    const ph = visitPhotoEntry(photoId);
+    if(ph && ph.thumb && (ph.pending || ph.lost)){
+      img.src = ph.thumb;
+      img.style.cssText = 'width:min(100%, 520px); height:auto; object-fit:contain;';
+      lbNote(ph.pending ? '⏳ The full photo is still waiting to upload from the phone that took it — this is its small preview' : PHOTO_LOST_1);
+    }
   }
 }
 function closeLightbox(e, force){

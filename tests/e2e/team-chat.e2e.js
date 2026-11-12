@@ -264,6 +264,8 @@ function seed(){
     const s = await team(A, 'chat');
     check('C4. a message sent while the queue\'s upload of the chat is on its way (its own save then refused): it stays in memory, on the phone and queued',
       writing && chatIn('C4 queued message').length === 1 && s.mem.includes('C4 sent meanwhile') && Array.isArray(s.copy) && s.copy.includes('C4 sent meanwhile') && s.queued, { writing, cloud: cloudTexts().chat, s });
+    const allToasts = await A.page.evaluate(() => (window.__toasts || []).slice());
+    check('C4c. …and the queue\'s upload never says "Offline changes uploaded & merged" while that message is still waiting', !allToasts.some(t => /Offline changes uploaded & merged/.test(t)), allToasts);
     delete net.wlag[A.label]; delete net.keyFail[A.label]; delete net.failAfter[A.label];
     await A.tick(); await sleep(300);
     const after = await team(A, 'chat');

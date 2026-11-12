@@ -586,6 +586,8 @@ async function saveVisitNow(gen){
 function visitSaveMsg(vs, kept, added){
   const saved = vs.ok || sentSince('visits', vs); // queued here, sent by the queue meanwhile = saved
   const onPhone = !saved && !!(vs.outcome && vs.outcome.queued && vs.outcome.mirrored);
+  // A photo added to a visit already saved: only that change is in memory (the red bar says until when)
+  if(!saved && !onPhone && added) return "⚠️ This phone's storage is full — the photo was added only in the app's memory: keep the app open and connected until it says Saved";
   if(!saved && !onPhone) return '⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال';
   if(kept === 'mem') return "⚠️ This phone's storage is full — the photo is only in the app's memory: keep the app open until it uploads";
   if(!kept) return saved ? visitSavedMsg() : '📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال';
