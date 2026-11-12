@@ -681,7 +681,7 @@ describe('parseErpCsv', () => {
   const CSV = [
     'Some Report Title,,,,,,,,,,',
     'Date,Invoice#,Product,Quantity,Sales Gross,Name,Sales Return Amount,Net Sales,Brand,Customer,Class',
-    '01-08-2026,SINV5029,Waterpik Cordless Plus BLACK,1.00,40.000,Ranova Sample Person,0.000,32.000,WATERPIK,My Fatoorah,Online Customers',
+    '01-08-2026,SINV5029,Waterpik Cordless Plus BLACK,1.00,40.000,Ranova Sample Person,0.000,32.000,WATERPIK,Sample Pay,Online Customers',
     '01-08-2026,SINV5032,Mini Flosser INT,10.00,24.000,Mr. Other Salesman,0.000,14.400,TEPE,"Sample General Trading Company W.L.L",Hypermarkets and Supermarkets',
     '13-08-2026,SRT9253,Pap+ Toothpaste,(1.00-),0.000,Mr. Other Salesman,9.000,(8.100-),Hismile,"Sample Trading & Contracting Co. W.L.L",Hypermarkets and Supermarkets',
     ',,,,,,,,,,',
@@ -695,7 +695,7 @@ describe('parseErpCsv', () => {
     assert.equal(a.doc, 'SINV5029');
     assert.equal(a.net, 32);
     assert.equal(a.salesman, 'Ranova Sample Person');
-    assert.equal(a.customer, 'My Fatoorah');
+    assert.equal(a.customer, 'Sample Pay');
     assert.equal(c.type, 'return');
     assert.equal(c.net, -8.1);
     assert.equal(c.sret, 9);
@@ -711,7 +711,7 @@ describe('parseErpPdfText', () => {
   const PDF_TEXT = `Date Invoice# Account Product Quantity Sales Gross Discount Sales Sales Amount NameSales Return
 Amount
 01-08-2026 SINV5029 080001 Waterpik Cordless Plus
-BLACK 1.00 40.000 8.000 32.000 Ranova Sample Person0.000 0.000 32.000 WATERPIKMy Fatoorah WP-462ME 05/0001Online CustomersSalesInvoice Credit 01-08-2026 MIV2005
+BLACK 1.00 40.000 8.000 32.000 Ranova Sample Person0.000 0.000 32.000 WATERPIKSample Pay WP-462ME 05/0001Online CustomersSalesInvoice Credit 01-08-2026 MIV2005
 13-08-2026 SRT9253 060001 Pap+ Toothpaste (1.00-) 0.000 0.000 0.000 Mr. Other Salesman9.000 0.900 (8.100-) HismileSample Trading & Contracting
 Co. W.L.L (Sup# 10000001) 10016-WT 73/0001Hypermarkets and
 SupermarketsSalesReturn
@@ -726,7 +726,7 @@ Credit`;
     assert.equal(inv.net, 32);
     assert.equal(inv.salesman, 'Ranova Sample Person');
     assert.equal(inv.brand, 'WATERPIK');
-    assert.equal(inv.customer, 'My Fatoorah');
+    assert.equal(inv.customer, 'Sample Pay');
     assert.equal(inv.cls, 'Online Customers');
     assert.equal(ret.type, 'return');
     assert.equal(ret.net, -8.1);
@@ -1777,7 +1777,7 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     const csv = [
       'Date,Type,Invoice#,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Account,Customer Class,Name',
       '2026-08-05,SalesReturn,SRT9165,Waterpik Ion,-3,0,0,0,45,4.5,-40.5,WATERPIK,Sample Trading,Hypermarkets,Mr. Other Salesman',
-      '2026-08-06,SalesInvoice,SINV5029,Waterpik Cordless,1,40,8,32,0,0,32,WATERPIK,My Fatoorah,Online Customers ,Ranova Sample',
+      '2026-08-06,SalesInvoice,SINV5029,Waterpik Cordless,1,40,8,32,0,0,32,WATERPIK,Sample Pay,Online Customers ,Ranova Sample',
     ].join('\n');
     const res = core.parseErpCsv(csv);
     assert.equal(res.error, null);
@@ -1855,7 +1855,7 @@ describe('report helpers: forecast, returns, coach data payloads', () => {
     // The sales-detail export's header (Ultramed_Sales3) on an invented line: recognized as ERP sales.
     const salesCsv = [
       ',Date,Type,,Invoice#,Date of Stock Issue,Stock Issue #,Code,Account,Customer Class,Code,AltCode,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name,Remarks,',
-      ',2026-08-01 00:00:00,SalesInvoice,Credit,SINV5029,2026-08-01,MIV1,080001,My Fatoorah,Online Customers ,WP,05,Waterpik,1,40,8,32,0,0,32,WATERPIK,Ranova Sample Person,notes,',
+      ',2026-08-01 00:00:00,SalesInvoice,Credit,SINV5029,2026-08-01,MIV1,080001,Sample Pay,Online Customers ,WP,05,Waterpik,1,40,8,32,0,0,32,WATERPIK,Ranova Sample Person,notes,',
     ].join('\n');
     assert.equal(core.parseErpCsv(salesCsv).error, null);
     // The DSR sheet's shape (invented figures): rejected by the sales parser (no per-row date/doc),
