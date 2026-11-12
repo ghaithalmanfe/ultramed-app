@@ -2,6 +2,9 @@
 // product sold in the ERP files under a brand the catalog lacks, offered to the
 // supervisor on the Products screen and added only on tap — a failed save adds
 // nothing; services (inspection fees) never appear; reps never see the note.
+// Prices come from the invoices in the sales files (the code ships none, v121).
+// Duplicate SKUs / barcodes (v121): products sharing an item code or a barcode
+// are listed for the supervisor to review — never merged, never deleted.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
@@ -52,11 +55,11 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   const H = ',Date,Type,,Invoice#,Date of Stock Issue,Stock Issue #,Code,Account,Customer Class,Code,AltCode,Product,Quantity,Sales Gross,Discount Sales,Sales Amount,Sales Return Amount,Discount. Sales Ret,Net Sales,Brand,Name,Remarks,';
   const L = (d, inv, acct, qty, gross, product, brand, sm) => `,${d},SalesInvoice,Credit,${inv},${d},MIV${inv},001,${acct},Clinics,X1,01/1,"${product}",${qty},${gross},0,${gross},0,0,${gross},${brand},${sm},,`;
   const csv = [H,
-    L('01/10/2026','SINV1','Alpha Dental Center',2,70,'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION','Intensiv','Mariam Zohair'),
-    L('02/10/2026','SINV2','Alpha Dental Center',1,380,'WG-69 A, Intensiv Swingle, W&H Synea, without light','Intensiv','Mariam Zohair'),
-    L('03/10/2026','SINV3','Alpha Dental Center',3,27,'Bio Gel A','B&L Biotech','Mariam Zohair'),
-    L('04/10/2026','SINV4','Alpha Dental Center',1,48,'Inspection Fee for Intensiv Handpiece','Maintenance','Mariam Zohair'),
-    L('05/10/2026','SINV5','Alpha Dental Center',1,49,'Sonicare 4100 White','Philips Export BV','Mariam Zohair')].join('\n');
+    L('01/10/2026','SINV1','Alpha Dental Center',2,70,'OS80XC Intensiv Ortho-Strips Coarse, Double-Sided REDUCTION','Intensiv','Mariam Sample'),
+    L('02/10/2026','SINV2','Alpha Dental Center',1,380,'WG-69 A, Intensiv Swingle, W&H Synea, without light','Intensiv','Mariam Sample'),
+    L('03/10/2026','SINV3','Alpha Dental Center',3,27,'Bio Gel A','B&L Biotech','Mariam Sample'),
+    L('04/10/2026','SINV4','Alpha Dental Center',1,48,'Inspection Fee for Intensiv Handpiece','Maintenance','Mariam Sample'),
+    L('05/10/2026','SINV5','Alpha Dental Center',1,49,'Sonicare 4100 White','Philips Export BV','Mariam Sample')].join('\n');
   await page.goto('http://localhost:8203/index.html'); await page.waitForTimeout(300);
   await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(250);
   await page.evaluate(async (csv) => { window.confirm = () => true; openErpImport(); await erpAutoImport(csv); await new Promise(r => setTimeout(r, 300));
@@ -75,12 +78,40 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   const cat = JSON.parse(cloud.products);
   const sw = cat.find(p => p.name === 'WG-69 A, Intensiv Swingle, W&H Synea, without light');
   check('14 Intensiv products saved with code, price and category; the unticked one not', cat.length === 16 && cat.filter(p => p.brand === 'Intensiv').length === 15 && sw && sw.id === 'WG-69 A' && sw.price === 380 && sw.cat === 'IPR Handpiece' && !cat.some(p => p.name === 'Bio Gel A'), cat.length);
+  // the code carries no prices (v121): each comes from the invoices in the files, or stays blank
+  const ej = cat.find(p => p.name === 'Intensiv Ejector'), os80 = cat.find(p => p.id === 'OS80XC-DS/3');
+  check('prices come from the sales files (2 strips for 70 → 35.00); one the files never sold has none', os80 && os80.price === 35 && ej && ej.price == null, { os80: os80 && os80.price, ejector: ej && ej.price });
   txt = await page.evaluate(() => document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '));
   check('the list now shows Intensiv; the note shows only what is left (1)', /Intensiv \(16\)|Intensiv \(15\)/.test(txt) && /1 product missing from the catalog/.test(txt) && /OS80XC Intensiv Ortho-Strips/.test(txt), txt.slice(0, 300));
-  // a rep never sees the note
+  // ---- Duplicate SKUs / barcodes (owner's request, v121): a review list — never merged, never deleted ----
+  const DUPS = [{ id: 'TB-100E', name: 'Sample Flosser Tip A', brand: 'Waterpik', barcode: '073950111218', price: 3 },
+    { id: 'tb-100e ', name: 'Sample Flosser Tip B', brand: 'Waterpik', barcode: '0739501112190', price: 3.5 },   // the same code, other case
+    { id: 'X-1', name: 'Sample Flosser Tip C', brand: 'Waterpik', barcode: '73950111218' }];                    // Tip A's barcode without its leading zero
+  const nBefore = await page.evaluate(() => products.length);
+  check('no duplicates, no card', !/Duplicate SKUs/.test(txt), txt.slice(0, 120));
+  await page.evaluate((d) => { d.forEach(p => products.push(p)); assignProductKeys(); renderProducts(); }, DUPS);
+  txt = await page.evaluate(() => document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '));
+  check('the supervisor sees "Duplicate SKUs / barcodes": 3 products share an item code or a barcode', /Duplicate SKUs \/ barcodes 3 products share an item code or a barcode — tap to review/.test(txt), txt.slice(0, 300));
+  const rv = await page.evaluate(() => { openProductDups(); const m = document.getElementById('modalBack');
+    return { txt: m.innerText.replace(/\s+/g, ' '), acts: [...m.querySelectorAll('button, [onclick]')].map(b => (b.getAttribute('onclick') || '') + ' ' + b.textContent).join(' | ') }; });
+  check('the review lists the same item code and the same barcode (read as a GTIN), with no merge or delete action', /Same item code \(SKU\) \(1\)/i.test(rv.txt) && /TB-100E ×2/.test(rv.txt) && /Same barcode \(1\)/i.test(rv.txt) && /73950111218 ×2/.test(rv.txt)
+    && /Sample Flosser Tip A/.test(rv.txt) && /Sample Flosser Tip B/.test(rv.txt) && /Sample Flosser Tip C/.test(rv.txt) && /nothing is merged or deleted here/.test(rv.txt) && !/merge|delete|remove|persist/i.test(rv.acts), rv);
+  const report = await page.evaluate(() => { copyProductDupReport(); return document.getElementById('dupReportText').value; });
+  check('the report: a header and one tab-separated line per product in a group', report.split('\n').length === 5 && report.split('\n').every(l => l.split('\t').length === 7) && /^Item code\tTB-100E\tSample Flosser Tip A/.test(report.split('\n')[1]), report);
+  const opened = await page.evaluate(() => { const row = [...document.querySelectorAll('#modalBack [data-key]')].find(r => /Tip C/.test(r.innerText)); row.click(); return document.getElementById('modalBack').innerText; });
+  check('a line opens that product\'s own page (where it is corrected by hand)', /Sample Flosser Tip C/.test(opened) && /Item code/.test(opened) && /X-1/.test(opened), opened.slice(0, 200));
+  await page.evaluate(() => closeModal());
+  check('nothing changed: the same products in memory, nothing written to the cloud', await page.evaluate(n => products.length === n + 3, nBefore) && JSON.parse(cloud.products).length === 16);
+  // a rep never sees either note
   await page.evaluate(async () => { await selectUser('Mariam', 'rep'); }); await page.waitForTimeout(250);
-  txt = await page.evaluate(() => { switchView('products'); return document.getElementById('productListWrap').innerText; });
-  check('a rep sees the Intensiv products but not the supervisor note', /Intensiv/.test(txt) && !/missing from the catalog/.test(txt));
+  txt = await page.evaluate((d) => { d.forEach(p => products.push(p)); assignProductKeys(); switchView('products'); return document.getElementById('productListWrap').innerText; }, DUPS);
+  check('a rep sees the Intensiv products but not the supervisor notes', /Intensiv/.test(txt) && !/missing from the catalog/.test(txt) && !/Duplicate SKUs/.test(txt));
+  // Arabic, last (going back to English reloads the page)
+  await page.evaluate(async () => { await selectUser('Dr. Ghaith', 'supervisor'); }); await page.waitForTimeout(250);
+  const ar = await page.evaluate(async (d) => { d.forEach(p => products.push(p)); assignProductKeys(); setUiLang('ar'); switchView('products'); await new Promise(r => setTimeout(r, 120));
+    const t = document.getElementById('productListWrap').innerText.replace(/\s+/g, ' '); openProductDups(); await new Promise(r => setTimeout(r, 120));
+    const m = document.getElementById('modalBack').innerText.replace(/\s+/g, ' '); closeModal(); return { t, m }; }, DUPS);
+  check('Arabic: the card and the review in Arabic, the product names kept', /أكواد أصناف وباركودات مكررة/.test(ar.t) && /عدد المنتجات المشتركة في كود صنف أو باركود: 3/.test(ar.t) && /كود الصنف نفسه/.test(ar.m) && /الباركود نفسه/.test(ar.m) && /لا يُدمج ولا يُحذف شيء هنا/.test(ar.m) && /Sample Flosser Tip A/.test(ar.m), ar);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

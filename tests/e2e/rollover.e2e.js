@@ -37,15 +37,15 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
     await page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
     await page.waitForTimeout(300);
   };
-  // seed: clinics, September visits, September DSR targets (as-of Sep 14), Aug ERP seed, and the real Sep sales file
-  const c1 = { id:'c1', name:'Dental 8 Clinic', rep:'Mariam', cls:'A', doctors:[{id:'d1', name:'Dr. Ahmed'}] }, c2 = { id:'c2', name:'Crown Dental Center', rep:'Renova', cls:'A', doctors:[] };
+  // seed: clinics, September visits, September DSR targets (as-of Sep 14), Aug ERP seed, and the synthetic Sep sales file
+  const c1 = { id:'c1', name:'Dental 5 Clinic', rep:'Mariam', cls:'A', doctors:[{id:'d1', name:'Dr. Ahmed'}] }, c2 = { id:'c2', name:'Summit Dental Center', rep:'Renova', cls:'A', doctors:[] };
   cloud.clinics = JSON.stringify([c1, c2]);
   cloud.visits = JSON.stringify([
     { id:'v1', clinicId:'c1', rep:'Mariam', date:'2026-09-15', ts:1, doctorIds:['d1'], products:[], orderTaken:true, orders:[{id:'o1', items:[{productId:'x', qty:1}], discountPct:0, gross:100, discountAmount:0, total:100, notes:''}], orderItems:{x:1}, orderGross:100, orderDiscount:0, orderTotal:100, nextFollowUp:'2026-10-02' },
     { id:'v2', clinicId:'c1', rep:'Mariam', date:'2026-09-29', ts:2, doctorIds:['d1'], products:[], orderTaken:false, orderTotal:0 },
     { id:'v3', clinicId:'c2', rep:'Renova', date:'2026-09-30', ts:3, doctorIds:[], products:[], orderTaken:false, orderTotal:0 },
   ]);
-  cloud.targets = JSON.stringify({ Mariam: { revenue: 9071.2, visits: 40, achieved: 791.18, achievedAsOf: '2026-09-05', month: '2026-09', brands: { Waterpik: 1000 }, achievedBrands: { Waterpik: 200 } }, Renova: { revenue: 11364.8, visits: 40, achieved: 449.67, achievedAsOf: '2026-09-05', month: '2026-09' } });
+  cloud.targets = JSON.stringify({ Mariam: { revenue: 9000, visits: 40, achieved: 750.5, achievedAsOf: '2026-09-05', month: '2026-09', brands: { Waterpik: 1000 }, achievedBrands: { Waterpik: 200 } }, Renova: { revenue: 11500, visits: 40, achieved: 450.25, achievedAsOf: '2026-09-05', month: '2026-09' } });
   cloud.erpSales = JSON.stringify({ periods: [{ id:'seed_sales3_aug26', from: SEED.from, to: SEED.to, net: SEED.net, rowCount: SEED.rowCount, repMap: SEED.repMap, rows: SEED.rows, importedAt:'2026-08-27T00:00:00Z' }], repMapGlobal: SEED.repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true }, returnPolicy: 'erp' });
 
   // ---- September 21: upload the sales file, note the figures ----
@@ -81,12 +81,12 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
   check('Oct 1: the app sees the new month', oct.today==='2026-10-01', oct.today);
   check('Oct 1: month-to-date sales restart from zero (no October invoices yet)', Object.keys(oct.mtd).length===0, oct.mtd);
   check('Oct 1: the Today card flags that the target is from September and asks for the new DSR', /Target is from September 2026/.test(oct.card) && /المدخلات الشهرية مطلوبة/.test(oct.nudge) && /2026|October/.test(oct.nudge), { card: oct.card.split('\n').filter(l=>/Target is|Source/.test(l)), nudge: oct.nudge.slice(0,70) });
-  check('Oct 1: September\'s official figures were archived and its month report still shows target/achieved/%', oct.hist.includes('2026-09') && /التارغت/.test(oct.sepReport) && /9071\.20/.test(oct.sepReport) && /%/.test(oct.sepReport), { hist: oct.hist, sep: oct.sepReport.split('\n').slice(0,10) });
+  check('Oct 1: September\'s official figures were archived and its month report still shows target/achieved/%', oct.hist.includes('2026-09') && /التارغت/.test(oct.sepReport) && /9000\.00/.test(oct.sepReport) && /%/.test(oct.sepReport), { hist: oct.hist, sep: oct.sepReport.split('\n').slice(0,10) });
   check('Oct 1: the hero week (Sun 27 Sep – Thu 1 Oct) counts the Sep 29/30 visits, nothing from mid-September', /2 visits/.test(oct.hero), oct.hero.split('\n').slice(0,3));
   check('Oct 1: reports view renders across the month boundary', oct.reports > 200, oct.reports);
   // upload October's DSR (synthetic, as parseDsrTargets would return it)
   const afterDsr = await p2.evaluate(async () => {
-    await applyTargetsFile({ targets: { Mariam: { revenue: 9500, achieved: 120.5, achievedAsOf: '2026-10-01', brands: { Waterpik: 1200 }, achievedBrands: {} }, Renova: { revenue: 12000, achieved: 0, achievedAsOf: '2026-10-01', brands: {}, achievedBrands: {} } }, matched: [{ rep: 'Mariam', name: 'Mariam Zohair', revenue: 9500, achieved: 120.5 }, { rep: 'Renova', name: 'Ranova Ayman', revenue: 12000 }], unmatched: [] });
+    await applyTargetsFile({ targets: { Mariam: { revenue: 9500, achieved: 120.5, achievedAsOf: '2026-10-01', brands: { Waterpik: 1200 }, achievedBrands: {} }, Renova: { revenue: 12000, achieved: 0, achievedAsOf: '2026-10-01', brands: {}, achievedBrands: {} } }, matched: [{ rep: 'Mariam', name: 'Mariam Sample', revenue: 9500, achieved: 120.5 }, { rep: 'Renova', name: 'Ranova Sample', revenue: 12000 }], unmatched: [] });
     closeModal();
     return { pct: targetPctMap(), card: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '', month: targets.Mariam.month, hist: Object.keys(targets._history||{}) };
   });

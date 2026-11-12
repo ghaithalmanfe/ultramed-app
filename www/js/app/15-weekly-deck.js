@@ -279,13 +279,13 @@ function wdRangeAr(a, b){ const A = new Date(a + 'T00:00:00'), B = new Date(b + 
 // the team's names as they write them in Arabic (anyone not listed keeps the Latin spelling)
 const WD_NAMES_AR = { 'Mariam': 'مريم', 'Renova': 'رانوفا', 'Dr. Ghaith': 'د. غيث' };
 const WD_NAME_RE = new RegExp('(' + Object.keys(WD_NAMES_AR).sort((a, b) => b.length - a.length).map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
-// a team name inside a longer Latin name ("Al Mariam Clinic", "Mariam Zohair") is left alone
+// a team name inside a longer Latin name ("Al Mariam Clinic", "Mariam Sample") is left alone
 function wdArNames(s){
   return String(s == null ? '' : s).replace(WD_NAME_RE, (m, n, off, str) => /[A-Za-z][.']?\s?$/.test(str.slice(0, off)) || /^\s?[A-Za-z]/.test(str.slice(off + m.length)) ? m : WD_NAMES_AR[n]);
 }
 // Arabic slide text with Latin names and amounts inside: right-to-left marks at
 // the field boundaries keep the reading order (clinic · amount · person), a
-// left-to-right mark keeps "The Breath Co." and "32 Dental Clinic" whole, and a
+// left-to-right mark keeps "The Breath Co." and "24 Sample Clinic" whole, and a
 // negative amount reads "−111" (the Unicode bidi rules PowerPoint follows; the
 // Arabic slides avoid a leading minus where they can). No mark ever sits between
 // an Arabic letter and an Arabic comma (some viewers then mis-shape the word).

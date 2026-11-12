@@ -9,6 +9,7 @@ const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/j
 const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0]); fs.readFile(f,(e,d)=>{ if(e){res.writeHead(404);res.end();return;} res.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'text/plain'}); res.end(d); }); });
 const cloud = {}; let lock = Promise.resolve();
 cloud.staff = require('./_env.js').twoRepStaff(); // two reps + a non-selling supervisor, as these checks assume
+cloud.clinics = JSON.stringify(require('./fixtures/clinics.js')); // invented clinics: the app ships none since v121
 const mode = { failGet: null, reads: [] };
 const api = {
   get: async k => { mode.reads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },

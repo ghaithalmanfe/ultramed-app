@@ -13,6 +13,7 @@ const server = http.createServer((req,res)=>{
 });
 const cloud = {};
 cloud.staff = require('./_env.js').twoRepStaff(); // two reps + a non-selling supervisor, as these checks assume
+cloud.clinics = JSON.stringify(require('./fixtures/clinics.js')); // invented clinics: the app ships none since v121
 let lock = Promise.resolve(); // update() serialises like a transaction
 const opts = { delaySet: 0 };
 const api = {
@@ -282,7 +283,7 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
   const rs8 = await A.page.evaluate(async (cid) => {
     openEditClinic(cid);
     const other = JSON.parse(await (await window.storage.get('clinics')).value);
-    other.find(c=>c.id===cid).phone = '55500011'; // another device changed the phone meanwhile
+    other.find(c=>c.id===cid).phone = '55667788'; // another device changed the phone meanwhile
     await window.storage.set('clinics', JSON.stringify(other));
     document.getElementById('ecName').value = 'Renamed Clinic X';
     await saveEditClinic(cid);
@@ -290,7 +291,7 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
     const cc = JSON.parse(await (await window.storage.get('clinics')).value).find(x=>x.id===cid);
     return { name: c.name, phone: c.phone, cloudName: cc.name, cloudPhone: cc.phone };
   }, m0[9].id);
-  check('RS-8: my rename and the other device\'s phone change both survive', rs8.name==='Renamed Clinic X' && rs8.phone==='55500011' && rs8.cloudName==='Renamed Clinic X' && rs8.cloudPhone==='55500011', rs8);
+  check('RS-8: my rename and the other device\'s phone change both survive', rs8.name==='Renamed Clinic X' && rs8.phone==='55667788' && rs8.cloudName==='Renamed Clinic X' && rs8.cloudPhone==='55667788', rs8);
   // RS-9: the joint partner is not offered Delete
   await A.boot(reps[1], 'rep');
   const rs9 = await A.page.evaluate(() => { openEditVisit('v2'); const t = document.getElementById('modalInner').innerText; closeModal(); return t; });

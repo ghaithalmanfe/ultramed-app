@@ -5,7 +5,7 @@ const { WWW, launchOpts, salesFixture, blockFirebase } = require('./_env.js');
 const PORT = 8222;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const server = http.createServer((req,res)=>{ const f = path.join(WWW, req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0]); fs.readFile(f,(e,d)=>{ if(e){res.writeHead(404);res.end();return;} res.writeHead(200,{'Content-Type':MIME[path.extname(f)]||'text/plain'}); res.end(d); }); });
-const cloud = {};
+const cloud = { clinics: JSON.stringify(require('./fixtures/clinics.js')) }; // invented clinics: the app ships none since v121
 const api = { get: async k => k in cloud ? cloud[k] : null, set: async (k, v) => { cloud[k] = v; return true; }, setMany: async e => { e.forEach(([k, v]) => { cloud[k] = v; }); return true; }, del: async k => { delete cloud[k]; return true; }, list: async p => Object.keys(cloud).filter(k => k.startsWith(p)) };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info).slice(0,400):'')); if(!ok) failed++; }
