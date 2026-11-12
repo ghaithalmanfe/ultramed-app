@@ -58,6 +58,10 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
       const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
     }, offset == null ? SEP_OFFSET : offset);
     const boot = async (who, role) => {
+      // A device reloaded while one of its own saves held the fake cloud's single lock kept it for good (a page that
+      // went away never sends its release): every later save on every device timed out (CI, 12 Nov 2026 — on v121's
+      // code too). A delete shares the delete log in the background (persistTombs): that save ends first.
+      for(let i = 0; i < 100 && releaseFn; i++) await new Promise(r => setTimeout(r, 50));
       await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
       await page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
       await page.waitForTimeout(300);
