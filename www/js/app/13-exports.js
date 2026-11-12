@@ -1371,7 +1371,7 @@ function openExport(){
     </div>
 
     ${currentUser.role==='supervisor'?`<div class="section-title" style="margin-top:4px;">Full backup to this device</div>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">The daily backups below stay inside the same database as the data and keep only part of it. This takes everything — clinics, doctors, visits, sales files, targets, team, settings — in one file you keep outside the app.</p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">The daily backups below stay inside the same database as the data and keep only part of it. This takes everything — clinics, doctors, visits, sales files, targets, team, settings and the daily backups themselves — in one file you keep outside the app.</p>
     <button class="btn" style="margin:6px 0 14px;" onclick="openFullBackup()">💾 <span>Full backup — count and download everything</span></button>
     <div class="section-title" style="margin-top:4px;">Automatic backups</div>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;">Once a day a snapshot of the clinics, products, tasks and this month's visits is saved automatically, inside the same database. If those ever look wrong, you can restore an earlier day here.</p>
@@ -1424,41 +1424,194 @@ async function renderBackupsList(){
     el.innerHTML = `<div style="color:var(--muted); font-size:13px;">Couldn't load backups right now.</div>`;
   }
 }
-// ---- Full backup to this device (v119, supervisor) ----
+// ---- Full backup to this device (v120, supervisor) ----
 // The daily backups (snap_*) sit in the same database as the data and keep
 // only part of it (clinics, products, tasks, this month's visits, the list of
 // sales files): they do not survive the loss of the project itself, and the
 // team list, targets, account links, sales lines, older months' visits… are
-// not in them at all. This reads EVERY cloud document except those copies,
-// straight from the server and writing nothing anywhere, shows per data set
-// what the cloud holds (UMCore.cloudInventory) and hands over one file
-// (UMCore.fullBackupFile) to keep outside the app. A read that fails offers
-// no file: an incomplete read is never handed over as a backup.
+// not in them at all. This reads EVERY document of the cloud collection — the
+// daily backups too — straight from the server, part by part, and writes one
+// file on the phone as it goes (UMCore.backupBuilder: each value exactly as
+// stored, a manifest with every part's size, sha256 and record counts, one
+// integrity code — scripts/backup/verify.js checks it). The text is folded
+// into the file every few MB, so the page never holds the whole account in its
+// memory. It writes nothing to the cloud. A part that cannot be read gives NO
+// file and names the part; this phone's changes the cloud does not have yet
+// (the outbox) are shown, and kept apart in the file. Supervisor only — the
+// button, and every function below. The app has no way to restore this file:
+// scripts/backup/restore.js puts it into a TEST cloud only.
 let _fullBackup = null, _fullBackupRun = 0;
+const BK_PAGE_MS = 90000, BK_GET_MS = 60000, BK_LIST_MS = 90000, BK_AHEAD = 4, BK_FOLD = 1048576;
 const BK_UNIT_AR = { visits: 'زيارة', clinics: 'عيادة', doctors: 'طبيب', tasks: 'مهمة', entries: 'سجل', plans: 'خطة', files: 'ملف',
   accounts: 'حساب', people: 'شخص', products: 'منتج', types: 'نوع', guides: 'دليل', notes: 'ملاحظة', items: 'عنصر',
-  deletes: 'عملية حذف', photos: 'صورة', messages: 'رسالة', memories: 'ذكرى' };
-const BK_DAILY = { yes: 'In the daily backup', month: 'Daily backup: this month only', list: 'Daily backup: the list of files only, not their lines', no: 'Not in the daily backup' };
+  deletes: 'عملية حذف', photos: 'صورة', messages: 'رسالة', memories: 'ذكرى', days: 'يوم' };
+const BK_DAILY = { yes: 'In the daily backup', month: 'Daily backup: this month only', list: 'Daily backup: the list of files only, not their lines',
+  no: 'Not in the daily backup', self: 'The daily backups themselves — in this file too' };
+const BK_WHY = { timeout: 'no answer in time', error: 'the cloud refused or the connection dropped', gone: 'listed, then gone when read', 'not-text': 'not stored as text' };
 function bkUnit(u){ return uiLang === 'ar' ? (BK_UNIT_AR[u] || u) : u; }
 function bkSize(b){ return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
 function bkNum(n){ return Number(n).toLocaleString('en-US'); }
-// {docs: {key: {value, updated}}, failed: [keys not read]} — every cloud
-// document except the daily backups. The cloud adapter reads them in one go
-// (storage.dump); any other store is listed, then read key by key.
-async function readCloudForBackup(){
+// A file still held from an earlier read is dropped at every sign-in and
+// sign-out (03-gate.js), and a read still running stops: nobody who signs in
+// after the supervisor on the same phone gets his file.
+function dropFullBackup(){ _fullBackup = null; _fullBackupRun++; }
+// The sheet this run opened is still the one on screen.
+function bkAlive(run){
+  const back = document.getElementById('modalBack');
+  return run === _fullBackupRun && !!document.getElementById('fullBackupBody') && !!back && back.classList.contains('show');
+}
+function bkBytes(s){ return typeof TextEncoder === 'function' ? new TextEncoder().encode(s) : UMCore.utf8Bytes(s); }
+async function bkSha256(bytes){
+  try{
+    if(window.crypto && crypto.subtle && typeof crypto.subtle.digest === 'function'){
+      const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      let h = '';
+      for(let i = 0; i < d.length; i++) h += (d[i] < 16 ? '0' : '') + d[i].toString(16);
+      return h;
+    }
+  }catch(e){}
+  return UMCore.sha256Hex(bytes);   // an old WebView without crypto.subtle: the same SHA-256, from core.js
+}
+// The file, written as it is read: pieces of text folded into Blobs every few
+// MB (a Blob lives outside the page's JS memory).
+function bkWriter(){
+  const blobs = [];
+  let strs = [], n = 0;
+  return {
+    push(s){ if(!s) return; strs.push(s); n += s.length; if(n >= BK_FOLD){ blobs.push(new Blob(strs)); strs = []; n = 0; } },
+    blob(){ if(strs.length){ blobs.push(new Blob(strs)); strs = []; n = 0; } return new Blob(blobs, { type: 'application/json' }); }
+  };
+}
+function bkProject(){
+  const st = window.storage || {};
+  if(st.kind === 'firestore' && FIREBASE_ENABLED) return FIREBASE_CONFIG.projectId;
+  return st.kind === 'local' ? 'this browser only (no cloud)' : String(st.kind || 'unknown storage');
+}
+function bkFileName(){
+  const d = new Date();
+  return 'ultramed-full-backup-' + todayStr() + '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + '.json';
+}
+// Reads every document of the cloud, one at a time into take({key, value,
+// updated}). The cloud adapter reads id ranges page by page (storage.scan,
+// 01-config.js; UMCore.backupRanges covers every key once); any other store
+// is listed, then read key by key, a few at a time (UMCore.backupReadOrder).
+// Stops at the first part that cannot be read and returns {part, rest} —
+// part: {key} | {range} | {list}, with why; rest: what was not read after it —
+// or null when everything was read. Supervisor only.
+async function readCloudForBackup(take, onProgress){
+  if(!currentUser || currentUser.role !== 'supervisor') throw new Error('full backup: supervisor only');
   const st = window.storage;
-  if(typeof st.dump === 'function') return await withTimeout(st.dump({ skipPrefix: 'snap_' }), 180000);
-  const list = await withTimeout(st.list('', true), 60000);
-  const keys = ((list && list.keys) || []).filter(k => !k.startsWith('snap_'));
-  const docs = Object.create(null), failed = [];
-  for(const k of keys){
-    try{
-      const r = await withTimeout(st.get(k, true, { server: true }), 30000);
-      if(r && r.value != null) docs[k] = { value: r.value, updated: null };
-      else failed.push(k); // listed a moment ago, not readable now: not a complete picture
-    }catch(e){ failed.push(k); }
+  let n = 0;
+  const got = async d => { await take(d); n++; if(onProgress) onProgress(n); };
+  const why = e => /timeout/.test(String(e && e.message)) ? 'timeout' : 'error';
+  if(typeof st.scan === 'function'){
+    const ranges = UMCore.backupRanges();
+    for(let i = 0; i < ranges.length; i++){
+      const r = ranges[i];
+      let after = null;
+      for(;;){
+        let page = null, err = null;
+        for(let attempt = 0; attempt < 2 && !page; attempt++){   // one retry: a phone's connection drops for a moment
+          if(attempt) await new Promise(res => setTimeout(res, 1500));
+          try{ page = await withTimeout(st.scan({ from: r.from, to: r.to }, { after, limit: r.page }), BK_PAGE_MS); }catch(e){ err = e; page = null; }
+        }
+        if(!page) return { part: { range: r, why: why(err) }, rest: ranges.slice(i + 1) };
+        const docs = page.docs || [];
+        for(const d of docs){
+          if(typeof d.value !== 'string') return { part: { key: d.key, why: 'not-text' }, rest: ranges.slice(i + 1) };
+          await got(d);
+        }
+        if(docs.length < r.page) break;
+        after = docs[docs.length - 1].key;
+      }
+    }
+    return null;
   }
-  return { docs, failed };
+  let keys;
+  try{ const l = await withTimeout(st.list('', true), BK_LIST_MS); keys = UMCore.backupReadOrder((l && l.keys) || []); }
+  catch(e){ return { part: { list: true, why: why(e) }, rest: [] }; }
+  let next = 0;
+  const inflight = [];
+  const pump = () => {
+    while(inflight.length < BK_AHEAD && next < keys.length){
+      const k = keys[next++];
+      inflight.push({ k, p: withTimeout(st.get(k, true, { server: true }), BK_GET_MS).then(r => ({ r }), e => ({ e })) });
+    }
+  };
+  pump();
+  while(inflight.length){
+    const { k, p } = inflight.shift();
+    const { r, e } = await p;
+    const rest = () => keys.slice(keys.indexOf(k) + 1);
+    if(e) return { part: { key: k, why: why(e) }, rest: rest() };
+    if(!r || r.value == null) return { part: { key: k, why: 'gone' }, rest: rest() };   // listed a moment ago, not readable now
+    if(typeof r.value !== 'string') return { part: { key: k, why: 'not-text' }, rest: rest() };
+    await got({ key: k, value: r.value, updated: typeof r.updated === 'number' ? r.updated : null });
+    pump();
+  }
+  return null;
+}
+// This phone's changes the cloud does not have yet: every key in the outbox
+// (its newest copy is on this phone only — um_mirror:<key>, the delete log in
+// um_tombs), and sales changes not saved. → [{key, from, value|null}]
+function bkPending(){
+  const out = [], seen = new Set();
+  outboxList().forEach(k => {
+    if(seen.has(k)) return;
+    seen.add(k);
+    let v = null, from = null;
+    try{
+      if(k === 'tombs'){ v = localStorage.getItem('um_tombs'); from = 'um_tombs'; }
+      else { v = mirrorGet(k); from = 'um_mirror:' + k; }
+    }catch(e){}
+    out.push({ key: k, from: v == null ? null : from, value: v == null ? null : String(v) });
+  });
+  if(_erpDirty && !seen.has('erpSales')){
+    let v = null;
+    try{ v = JSON.stringify(erpSales); }catch(e){}
+    out.push({ key: 'erpSales', from: 'memory: sales changes not saved', value: v });
+  }
+  return out;
+}
+function bkWhy(w){ return w && BK_WHY[w] ? ` — <span>${esc(BK_WHY[w])}</span>` : ''; }
+function bkPartLi(key, w){
+  const label = UMCore.backupPartLabel(key);
+  return `<li><span>${esc(label || 'Other document')}</span> <span data-notr dir="ltr">(${esc(key)})</span>${bkWhy(w)}</li>`;
+}
+function bkFailedHTML(res, err, n){
+  const part = res && res.part, items = [], notRead = [];
+  if(part){
+    if(part.list) items.push(`<li><span>The list of the cloud's documents</span> <span data-notr dir="ltr">(list)</span>${bkWhy(part.why)}</li>`);
+    else if(part.key != null) items.push(bkPartLi(part.key, part.why));
+    else if(part.range && part.range.prefix) items.push(`<li><span>${esc(part.range.label)}</span> <span data-notr dir="ltr">(${esc(part.range.prefix)}…)</span>${bkWhy(part.why)}</li>`);
+    else if(part.range){
+      part.range.keys.forEach(k => items.push(bkPartLi(k)));
+      items.push(`<li><span>and any other document kept between them</span>${bkWhy(part.why)}</li>`);
+    }
+    (res.rest || []).forEach(x => {
+      if(typeof x === 'string') notRead.push(UMCore.backupPartLabel(x) || 'Other documents');
+      else if(x.prefix) notRead.push(x.label);
+      else x.keys.forEach(k => notRead.push(UMCore.backupPartLabel(k)));
+    });
+  }
+  const later = [...new Set(notRead.filter(Boolean))];
+  return `<div class="card" data-backup-failed style="margin-bottom:10px;">
+      <div style="font-weight:700;">⚠️ <span>No backup file: the cloud could not be read completely.</span></div>
+      ${items.length ? `<div style="font-size:12.5px; margin-top:6px;"><span>Could not be read:</span></div><ul style="margin:4px 0 0; padding-inline-start:18px; font-size:12.5px;">${items.join('')}</ul>` : ''}
+      ${later.length ? `<div style="color:var(--muted); font-size:12px; margin-top:6px;"><span>Not read after it (the read stopped there):</span> ${later.map(l => `<span>${esc(l)}</span>`).join(' · ')}</div>` : ''}
+      ${!part && err ? `<div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>The read stopped on this phone:</span> <span data-notr dir="ltr">${esc(String((err && err.message) || err).slice(0, 160))}</span></div>` : ''}
+      ${!part && !err && !n ? '<div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>The cloud returned no documents.</span></div>' : ''}
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Check the connection and try again. Nothing was changed.</span></div>
+    </div>
+    <button class="btn" onclick="openFullBackup()"><span>Try again</span></button>`;
+}
+function bkPendingHTML(pend){
+  if(!pend.length) return '';
+  return `<div class="card" data-backup-pending style="margin-bottom:10px; border-inline-start:4px solid var(--amber);">
+      <div style="font-weight:700;">⚠️ <span>This phone has changes the cloud does not have yet:</span></div>
+      <div style="margin-top:4px;">${pend.map(p => `<span>${esc(UMCore.backupPartLabel(p.key) || 'Other document')}</span> <span data-notr dir="ltr">(${esc(p.key)})</span>${p.value == null ? ' <span>(no copy on this phone)</span>' : ''}`).join(' · ')}</div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>They are not part of the cloud copy. The file keeps this phone's copy of them apart, and a restore never writes them. Stay connected until they upload, then take the backup again.</span></div>
+    </div>`;
 }
 function fullBackupLineHTML(s){
   const other = s.id === 'other', x = s.extra || {};
@@ -1470,10 +1623,12 @@ function fullBackupLineHTML(s){
   if(s.id === 'targets' && x.pastMonths) facts.push(`<span>Past months kept:</span> ${bkNum(x.pastMonths)}`);
   if(s.id === 'erpSales' && x.lines != null) facts.push(`<span>Invoice lines:</span> ${bkNum(x.lines)}`);
   if(s.id === 'erpSales' && x.staleChunks) facts.push(`<span>Earlier versions kept for a week:</span> ${bkNum(x.staleChunks)}`);
+  if(s.id === 'snapshots' && x.oldest) facts.push(`<span>Days:</span> <span data-notr dir="ltr">${esc(x.oldest)} … ${esc(x.newest)}</span>`);
   if(s.updated) facts.push(`<span>Last change:</span> ${localDateStr(new Date(s.updated))}`);
   const warn = [];
   if(x.missingChunks) warn.push(`⚠️ <span>Parts of a sales file are missing from the cloud:</span> ${bkNum(x.missingChunks)}`);
-  if(s.unreadable && s.unreadable.length) warn.push(`⚠️ <span>Could not be read as data — kept in the file exactly as stored:</span> <span data-notr dir="auto">${s.unreadable.map(esc).join(', ')}</span>`);
+  if(x.missingMonths && x.missingMonths.length) warn.push(`⚠️ <span>Months the visits list names whose document is not in the cloud:</span> <span data-notr dir="ltr">${x.missingMonths.map(esc).join(', ')}</span>`);
+  if(s.unreadable && s.unreadable.length) warn.push(`⚠️ <span>Not in the expected form — kept in the file exactly as stored:</span> <span data-notr dir="auto">${s.unreadable.map(esc).join(', ')}</span>`);
   return `<div class="card" data-set="${esc(other ? 'other:' + s.key : s.id)}" style="padding:9px 12px; margin-bottom:6px;">
     <div class="row-between" style="gap:8px;">${other
       ? `<span style="font-weight:700;"><span data-notr dir="auto">${esc(s.key)}</span> <span style="font-weight:400; color:var(--muted); font-size:11.5px;">(<span>other document</span>)</span></span>`
@@ -1484,48 +1639,57 @@ function fullBackupLineHTML(s){
   </div>`;
 }
 async function openFullBackup(){
-  if(!currentUser || currentUser.role !== 'supervisor') return;
-  const run = ++_fullBackupRun;
+  if(!requireAdmin()) return;
+  const run = ++_fullBackupRun, by = currentUser.name;
   _fullBackup = null;
   showModal(`<h3 style="margin-top:0;">💾 <span>Full backup</span></h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;"><span>This screen only reads — nothing in the cloud changes.</span></p>
-    <div id="fullBackupBody" style="font-size:13px;"><span>Reading every record in the cloud…</span></div>`);
-  let res = null, err = null;
-  try{ res = await readCloudForBackup(); }catch(e){ err = e; console.error('full backup: read', e); }
+    <div id="fullBackupBody" style="font-size:13px;"><div><span>Reading every record in the cloud…</span></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Documents read so far:</span> <b id="fullBackupCount">0</b></div></div>`);
+  const b = UMCore.backupBuilder({ app: APP_REV, project: bkProject(), takenAt: new Date().toISOString(), takenBy: by });
+  const w = bkWriter();
+  w.push(b.head());
+  let res = null, err = null, stopped = false;
+  try{
+    res = await readCloudForBackup(async d => {
+      if(!bkAlive(run)){ stopped = true; throw new Error('the sheet was closed'); }
+      const bytes = bkBytes(d.value);
+      w.push(b.addDoc(d.key, d.value, d.updated, await bkSha256(bytes), bytes.length));
+    }, n => { const el = document.getElementById('fullBackupCount'); if(el && run === _fullBackupRun) el.textContent = bkNum(n); });
+  }catch(e){ err = e; if(!stopped) console.error('full backup: read', e); }
+  if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;   // closed, opened again, or someone else signed in
   const body = document.getElementById('fullBackupBody');
-  if(run !== _fullBackupRun || !body) return; // opened again, or another sheet took its place
-  const docs = (res && res.docs) || {};
-  const failed = (res && res.failed) || [];
-  const n = Object.keys(docs).length;
-  if(err || failed.length || !n){
-    body.innerHTML = `<div class="card" data-backup-failed style="margin-bottom:10px;">
-      <div style="font-weight:700;">⚠️ <span>No backup file: the cloud could not be read completely.</span></div>
-      ${failed.length ? `<div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Documents not read:</span> ${bkNum(failed.length)}</div>` : ''}
-      ${!err && !failed.length ? '<div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>The cloud returned no documents.</span></div>' : ''}
-      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Check the connection and try again. Nothing was changed.</span></div>
-    </div>
-    <button class="btn" onclick="openFullBackup()"><span>Try again</span></button>`;
-    return;
+  if(err || res || !b.documents()){ body.innerHTML = bkFailedHTML(res, err, b.documents()); return; }
+  // this phone's changes the cloud does not have yet: kept apart, never mixed into the cloud copy
+  const pend = bkPending();
+  w.push(b.pendingStart());
+  for(const p of pend){
+    const bytes = p.value == null ? null : bkBytes(p.value);
+    w.push(b.addPending(p.key, p.from, p.value, bytes ? await bkSha256(bytes) : null, bytes ? bytes.length : 0));
   }
-  const inv = UMCore.cloudInventory(docs);
-  const file = UMCore.fullBackupFile(docs, { app: APP_REV, project: FIREBASE_ENABLED ? FIREBASE_CONFIG.projectId : 'this device only',
-    takenAt: new Date().toISOString(), takenBy: currentUser.name });
-  const text = JSON.stringify(file);
-  _fullBackup = { name: 'ultramed-full-backup-' + todayStr() + '.json', text };
+  const sha = await bkSha256(bkBytes(b.canonical()));
+  w.push(b.tail(sha));
+  const blob = w.blob();
+  if(!bkAlive(run) || currentUser.name !== by) return;
+  const inv = b.inventory();
+  _fullBackup = { name: bkFileName(), blob, by, sha, documents: b.documents() };
   body.innerHTML = `
     <div class="card" data-backup-summary style="margin-bottom:10px;">
-      <div><span>Documents read:</span> <b>${bkNum(inv.docs)}</b> · <span>File size:</span> <b data-notr>${bkSize(new Blob([text]).size)}</b></div>
-      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Not in the file: the daily backups — copies of the same data that stay in the cloud (listed under Automatic backups).</span></div>
+      <div><span>Documents read:</span> <b>${bkNum(b.documents())}</b> · <span>File size:</span> <b data-notr>${bkSize(blob.size)}</b></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Every document of the cloud, the daily backups too, exactly as stored.</span></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Integrity code (sha256):</span> <span data-notr dir="ltr" style="font-family:monospace;">${esc(sha.slice(0, 16))}…</span></div>
     </div>
+    ${bkPendingHTML(pend)}
     <button class="btn" data-backup-download onclick="downloadFullBackup()">⬇️ <span>Download the backup file</span></button>
     <p style="color:var(--muted); font-size:12px; margin:4px 0 12px;"><span>Keep the file outside the app — Google Drive, e-mail or a computer. It holds customer, sales and team data: do not share it.</span></p>
     <div class="section-title" style="margin-top:4px;"><span>What the cloud holds</span></div>
     ${inv.sets.map(fullBackupLineHTML).join('')}`;
 }
 function downloadFullBackup(){
+  if(!requireAdmin()) return;
   const b = _fullBackup;
-  if(!b){ showToast('Read the cloud again before downloading'); return; }
-  const ok = tryDownload(b.name, b.text, 'application/json');
+  if(!b || b.by !== currentUser.name){ showToast('Read the cloud again before downloading'); return; }
+  const ok = tryDownload(b.name, b.blob, 'application/json');
   showToast(ok ? 'Download started — keep the file outside the app' : 'The file could not be prepared on this device — try again');
 }
 // ---- Missing clinics, from the daily backups (v116) ----

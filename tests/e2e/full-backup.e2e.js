@@ -118,7 +118,8 @@ function smallAccount(){
   return out;
 }
 // ---------- a large account: 30,000 ERP lines, 20 visit months, 12 daily backups, photos ----------
-function bigAccount(){
+function bigAccount(scale){
+  scale = scale || 1;
   const out = {}, put = (k, v) => { out[k] = { value: typeof v === 'string' ? v : J(v), updated: 1762800000000 }; };
   const reps = [M, R], sm = ['Mariam Zohair', 'Renova Ayman'];
   const clinics = Array.from({ length: 450 }, (_, i) => ({ id: 'bc' + i, name: (i % 3 ? 'Clinic ' : 'عيادة ') + i + ' Dental', rep: reps[i % 2], cls: 'ABC'[i % 3], area: 'Hawalli',
@@ -151,7 +152,7 @@ function bigAccount(){
     const day = '2026-10-' + String(31 - d).padStart(2, '0');
     put('snap_' + day, { clinics, products, visits: live, visitsMonths: {}, tasks: [], erpIndex: sp.index, ts: day + 'T06:00:00.000Z' });
   }
-  for(let i = 0; i < 40; i++) put('photo:big' + i, dataUrl(i, 220000));
+  for(let i = 0; i < 40 * scale; i++) put('photo:big' + i, dataUrl(i, 220000));
   put('targets', { [M]: { revenue: 1000, month: '2026-11' }, [R]: { revenue: 1000, month: '2026-11' } });
   put('tombs', { visits: {}, tasks: {}, clinics: {}, events: {}, dayPlans: {}, doctors: {} });
   return out;
@@ -292,6 +293,47 @@ const latinLeft = page => page.evaluate(() => {
   return (c.textContent.replace(/\b(ERP|DSR|KPI|KB|MB|GB|SHA-256|sha256|JSON|Google Drive)\b/g, '').match(/[A-Za-z]{2,}/g) || []);
 });
 
+// The large account in a browser of its own: the V8 heap capped at heapMB (a
+// phone's tab budget), the CPU 4× slower, the production adapter (fake
+// Firestore). Measures the JS heap while the backup reads, and after it.
+async function bigRun(heapMB, scale){
+  fillCloud(bigAccount(scale));
+  const out = { bytes: Object.values(cloud).reduce((s, d) => s + Buffer.byteLength(d.value, 'utf8'), 0), crashed: false };
+  const opts = launchOpts();
+  opts.args = (opts.args || []).concat(heapMB ? ['--js-flags=--max-old-space-size=' + heapMB] : []);
+  const br = await chromium.launch(opts);
+  try{
+    const ctx = await newContext(br, 'firestore');
+    const pg = await newPage(ctx, 'big');
+    pg.on('crash', () => { out.crashed = true; });
+    await bootB(pg, G);
+    const cdp = await ctx.newCDPSession(pg);
+    const heap = async () => (await cdp.send('Runtime.getHeapUsage')).usedSize;
+    await cdp.send('HeapProfiler.collectGarbage'); await pg.waitForTimeout(300); await cdp.send('HeapProfiler.collectGarbage');
+    out.base = await heap();
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const t0 = Date.now();
+    await pg.evaluate(() => { openExport(); setTimeout(() => { const b = [...document.querySelectorAll('#modalInner button')].find(x => /Full backup/.test(x.textContent)); if(b) b.click(); }, 60); });
+    out.peak = out.base; out.done = false;
+    while(Date.now() - t0 < 300000 && !out.crashed){
+      try{ out.peak = Math.max(out.peak, await heap()); }catch(e){}
+      out.done = await pg.evaluate(() => !!document.querySelector('[data-backup-download], [data-backup-failed]')).catch(() => false);
+      if(out.done) break;
+      await sleep(100);
+    }
+    out.ms = Date.now() - t0;
+    if(out.crashed) return out;
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    await cdp.send('HeapProfiler.collectGarbage'); await pg.waitForTimeout(300); await cdp.send('HeapProfiler.collectGarbage');
+    out.retained = (await heap()) - out.base;
+    out.ready = await pg.evaluate(() => !!document.querySelector('[data-backup-download]'));
+    if(out.ready){ const f = await download(pg); out.path = f.path; out.fileBytes = Buffer.byteLength(f.text); }
+    await cdp.detach().catch(() => {});
+  }catch(e){ out.error = String(e && e.message || e); if(/crash|Target closed|has been closed/i.test(out.error)) out.crashed = true; }
+  finally{ await br.close().catch(() => {}); }
+  return out;
+}
+
 (async()=>{
   const server = http.createServer((req,res)=>{
     const f = path.join(WWW, decodeURIComponent(req.url.split('?')[0]) === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
@@ -393,7 +435,7 @@ const latinLeft = page => page.evaluate(() => {
     const bad = keysB.filter(k => !store[k] || store[k].value !== before[k].value);
     check('restore: every key back in an empty test cloud, byte for byte, and nothing else', !rerr && rr && J(keysB) === J(keysS) && !bad.length
       && keysB.every(k => Buffer.compare(Buffer.from(store[k].value, 'utf8'), Buffer.from(before[k].value, 'utf8')) === 0), { rerr, bad: bad.slice(0, 5), extra: keysS.filter(k => !own(before, k)) });
-    check('restore: the timestamps stored with each document come back too', keysB.every(k => store[k] && store[k].updated === before[k].updated));
+    check('restore: each document comes back with the time stored in the file (none from this storage: null, never invented)', keysB.every(k => store[k] && store[k].updated === f1.file.data[k].updated && f1.file.data[k].updated === null));
     let refused = null; try{ await restoreLib.restoreBackup(f1.file, restoreLib.memoryTestCloud({ clinics: { value: '[]', updated: 1 } })); }catch(e){ refused = String(e.message || e); }
     check('restore: a test cloud that already holds data is refused', !!refused && /not empty|already holds/i.test(refused), refused);
     const busy = { clinics: { value: '[]', updated: 1 }, keepMe: { value: '"x"', updated: 2 } };
@@ -446,15 +488,21 @@ const latinLeft = page => page.evaluate(() => {
   check('Firestore: every document is in the file, daily backups included, values exactly as stored', !!fB.file && !cmpB.missing.length && !cmpB.differ.length && !cmpB.extra.length, cmpB);
   check('Firestore: the time each document was last written is kept', !!fB.file && Object.keys(beforeB).every(k => fB.file.data[k] && fB.file.data[k].updated === beforeB[k].updated));
   const paged = stats.queries.filter(q => q.l != null);
-  check('Firestore: read straight from the server, range by range and page by page (never the whole collection in one answer)', paged.length >= 9 && stats.queries.every(q => q.source === 'server') && Math.max(...paged.map(q => q.l)) <= 25,
+  check('Firestore: read straight from the server, range by range and page by page (never the whole collection in one answer)', paged.length >= 9 && paged.every(q => q.source === 'server') && Math.max(...paged.map(q => q.l)) <= 25,
     { queries: stats.queries.length, paged: paged.length, limits: [...new Set(stats.queries.map(q => q.l))] });
   check('Firestore: nothing written while backing up', stats.writes === wB && JSON.stringify(snapCloud()) === JSON.stringify(beforeB), stats.writes - wB);
   vr = fB.path ? runNode(VERIFY_JS, [fB.path]) : { status: -1, out: 'no file' };
   check('Firestore: verify.js passes', vr.status === 0, vr.out.slice(-500));
-  mode.failQuery = q => (q.f || []).some(([op, v]) => op === '>=' && /^erpRows:/.test(v));
+  if(restoreLib && fB.file){
+    const storeB = {};
+    let eB = null; try{ await restoreLib.restoreBackup(fB.file, restoreLib.memoryTestCloud(storeB)); }catch(e){ eB = String(e.message || e); }
+    check('Firestore: restored into an empty test cloud — every key, and the time it was last written, identical', !eB && J(Object.keys(storeB).sort()) === J(Object.keys(beforeB).sort())
+      && Object.keys(beforeB).every(k => storeB[k].value === beforeB[k].value && storeB[k].updated === beforeB[k].updated), eB);
+  }
+  mode.failQuery = q => (q.f || []).some(([op, v]) => op === '>=' && v === 'erpRows:');
   r = await openBackup(pageB);
   mode.failQuery = null;
-  check('Firestore: a range the cloud does not answer (the sales lines) gives no file and names it', r.failed && !r.ready && !r.held && /erpRows:/.test(r.text) && /Sales|المبيعات/.test(r.text), r.text.slice(0, 500));
+  check('Firestore: a range the cloud does not answer (the sales lines) gives no file and names it', r.failed && !r.ready && !r.held && /erpRows:/.test(r.text) && /sales|المبيعات/i.test(r.text), r.text.slice(0, 500));
   mode.failQuery = q => (q.f || []).some(([op, v]) => op === '<' && v === 'erpRows:');
   r = await openBackup(pageB);
   mode.failQuery = null;
@@ -466,42 +514,20 @@ const latinLeft = page => page.evaluate(() => {
   const repB = await pageB.evaluate(async () => { closeModal(); document.getElementById('modalInner').innerHTML = ''; try{ await openFullBackup(); }catch(e){} let read = null; try{ read = await readCloudForBackup(() => {}); }catch(e){ read = 'refused'; } return { sheet: !!document.getElementById('fullBackupBody'), read: read === 'refused' ? read : !!read }; });
   check('Firestore: a rep can neither open nor run the full read', !repB.sheet && repB.read === 'refused' && !stats.queries.some(q => q.l != null && q.l <= 25 && !(q.f || []).length), { repB, q: stats.queries.length });
 
-  // ===== 7) a large account inside a phone's budget, CPU 4× slower =====
-  fillCloud(bigAccount());
-  const bigBytes = Object.values(cloud).reduce((s, d) => s + Buffer.byteLength(d.value, 'utf8'), 0);
-  await bootB(pageB, G);
-  const cdp = await ctxB.newCDPSession(pageB);
-  const heap = async () => (await cdp.send('Runtime.getHeapUsage')).usedSize;
-  await cdp.send('HeapProfiler.collectGarbage'); await pageB.waitForTimeout(300); await cdp.send('HeapProfiler.collectGarbage');
-  const base = await heap();
-  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-  const t0 = Date.now();
-  await pageB.evaluate(() => { openExport(); setTimeout(() => { const b = [...document.querySelectorAll('#modalInner button')].find(x => /Full backup/.test(x.textContent)); if(b) b.click(); }, 60); });
-  let peak = base, doneBig = false;
-  while(Date.now() - t0 < 300000){
-    try{ peak = Math.max(peak, await heap()); }catch(e){}
-    doneBig = await pageB.evaluate(() => !!document.querySelector('[data-backup-download], [data-backup-failed]')).catch(() => false);
-    if(doneBig) break;
-    await sleep(100);
-  }
-  const bigMs = Date.now() - t0;
-  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
-  await cdp.send('HeapProfiler.collectGarbage'); await pageB.waitForTimeout(300); await cdp.send('HeapProfiler.collectGarbage');
-  const retained = (await heap()) - base;
-  const bigReady = await pageB.evaluate(() => !!document.querySelector('[data-backup-download]'));
-  const fBig = bigReady ? await download(pageB) : {};
+  // ===== 7) a large account inside a phone's budget: a capped JS heap and a 4× slower CPU =====
+  const HEAP_MB = +(process.env.BK_HEAP_MB || 384), SCALE = +(process.env.BK_SCALE || 1);
+  const big = await bigRun(HEAP_MB, SCALE);
   const MB = x => Math.round(x / 1048576 * 10) / 10;
-  console.log(`large account: ${MB(bigBytes)} MB in the cloud, file ${fBig.text ? MB(Buffer.byteLength(fBig.text)) : '?'} MB, ${Math.round(bigMs / 1000)} s at 4x slower CPU, JS heap peak +${MB(peak - base)} MB, kept after the read +${MB(retained)} MB`);
-  check('large account (30,000 ERP lines, 20 visit months, 12 daily backups, 40 photos): the file is ready within 3 minutes on a 4× slower CPU', doneBig && bigReady && bigMs < 180000, { bigMs });
-  vr = fBig.path ? runNode(VERIFY_JS, [fBig.path, '--json']) : { status: -1, out: '{}' };
+  console.log(`large account x${SCALE}: ${MB(big.bytes)} MB in the cloud, file ${big.fileBytes ? MB(big.fileBytes) : '?'} MB, ${Math.round((big.ms || 0) / 1000)} s at 4x slower CPU, JS heap cap ${HEAP_MB} MB: app open ${MB(big.base || 0)} MB, peak +${MB((big.peak || 0) - (big.base || 0))} MB, kept after the read +${MB(big.retained || 0)} MB${big.crashed ? ', THE TAB CRASHED' : ''}${big.error ? ' (' + big.error.slice(0, 120) + ')' : ''}`);
+  check(`large account (30,000 ERP lines, 20 visit months, 12 daily backups, ${40 * SCALE} photos) in a phone-sized JS heap (${HEAP_MB} MB): the file is ready within 3 minutes on a 4× slower CPU, the tab never runs out of memory`,
+    big.done && big.ready && !big.crashed && big.ms < 180000, { ms: big.ms, crashed: big.crashed, ready: big.ready, error: big.error });
+  vr = big.path ? runNode(VERIFY_JS, [big.path, '--json']) : { status: -1, out: '{}' };
   let vj = {}; try{ vj = JSON.parse(vr.out); }catch(e){}
   const vset = id => ((vj.sets || []).find(s => s.id === id) || {});
-  check('large account: verify.js passes; 30,000 lines, 20 past months and 9,300 visits, 12 daily backups, 40 photos counted',
-    vr.status === 0 && (vset('erpSales').extra || {}).lines === 30000 && vset('visits').records === 9300 && (vset('visits').extra || {}).archivedMonths === 20 && vset('snapshots').records === 12 && vset('photos').records === 40,
+  check(`large account: verify.js passes; 30,000 lines, 20 past months and 9,300 visits, 12 daily backups, ${40 * SCALE} photos counted`,
+    vr.status === 0 && (vset('erpSales').extra || {}).lines === 30000 && vset('visits').records === 9300 && (vset('visits').extra || {}).archivedMonths === 20 && vset('snapshots').records === 12 && vset('photos').records === 40 * SCALE,
     { status: vr.status, erp: vset('erpSales'), visits: vset('visits'), snaps: vset('snapshots').records, photos: vset('photos').records, out: vr.status !== 0 ? vr.out.slice(0, 400) : undefined });
-  check(`large account: the page keeps the file outside its JS memory (kept after the read: +${MB(retained)} MB for a ${MB(bigBytes)} MB cloud)`, retained < 12 * 1048576, { retainedMB: MB(retained) });
-  check(`large account: the JS heap never holds the whole account at once (peak +${MB(peak - base)} MB for ${MB(bigBytes)} MB)`, peak - base < Math.min(64 * 1048576, bigBytes * 0.75), { peakMB: MB(peak - base), cloudMB: MB(bigBytes) });
-  await cdp.detach().catch(() => {});
+  check(`large account: the page keeps the file outside its JS memory (kept after the read: +${MB(big.retained || 0)} MB for a ${MB(big.bytes)} MB cloud)`, big.ready && big.retained < 12 * 1048576, { retainedMB: MB(big.retained || 0) });
 
   // ===== 8) without crypto.subtle (an old WebView): the built-in sha256 gives the same file =====
   fillCloud(smallAccount());

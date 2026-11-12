@@ -25,6 +25,7 @@ if(!window.storage){
       firebase.auth().onAuthStateChanged(user => { if(user) resolve(user); });
     });
     window.storage = {
+      kind: 'firestore', // the team's cloud (the full backup names the project only for this one)
       // opts.server: answer from the server only — never from the SDK's
       // in-memory cache — for reads whose whole point is "what is in the
       // cloud RIGHT NOW" (the pre-read before a sales save).
@@ -88,25 +89,25 @@ if(!window.storage){
         snap.forEach(d => { if(d.id.startsWith(prefix)) keys.push(d.id); });
         return { keys };
       },
-      // Every document at once, straight from the server — the supervisor's
-      // full backup (Export → Full backup, 13-exports.js). opts.skipPrefix
-      // leaves an id range out without downloading it (the daily backups:
-      // large copies of the same data). Reads only, writes nothing.
-      async dump(opts){
+      // One page of an id range, straight from the server — the supervisor's
+      // full backup (Export → Full backup, 13-exports.js) reads the whole
+      // collection this way, range by range (UMCore.backupRanges) and page by
+      // page, so a phone never holds more than one page of it at a time.
+      // range {from, to}: from ≤ id < to (null = open); opts {after, limit}.
+      // Reads only, writes nothing.
+      async scan(range, opts){
         await authReady;
-        const col = db.collection('state');
         const idPath = firebase.firestore.FieldPath.documentId();
-        const skip = opts && opts.skipPrefix;
-        const queries = skip ? [col.where(idPath, '<', skip), col.where(idPath, '>=', skip + '')] : [col];
-        const docs = Object.create(null);
-        for(const q of queries){
-          const snap = await q.get({ source: 'server' });
-          snap.forEach(d => {
-            const x = d.data() || {};
-            docs[d.id] = { value: x.value, updated: typeof x.updated === 'number' ? x.updated : null };
-          });
-        }
-        return { docs, failed: [] };
+        let q = db.collection('state');
+        if(range && range.from != null) q = q.where(idPath, '>=', range.from);
+        if(range && range.to != null) q = q.where(idPath, '<', range.to);
+        q = q.orderBy(idPath);
+        if(opts && opts.after != null) q = q.startAfter(opts.after);
+        q = q.limit(Math.max(1, (opts && opts.limit) || 20));
+        const snap = await q.get({ source: 'server' });
+        const docs = [];
+        snap.forEach(d => { const x = d.data() || {}; docs.push({ key: d.id, value: x.value, updated: typeof x.updated === 'number' ? x.updated : null }); });
+        return { docs };
       }
     };
     console.log('UltraMed Field Ops: syncing via Firebase Firestore');
@@ -115,6 +116,7 @@ if(!window.storage){
   window.storage = (function(){
     const PREFIX = 'ultramed_';
     return {
+      kind: 'local', // this browser only — no cloud
       async get(key){
         const raw = localStorage.getItem(PREFIX + key);
         return raw === null ? null : { value: raw };
