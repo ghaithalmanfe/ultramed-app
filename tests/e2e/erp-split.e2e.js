@@ -1,4 +1,4 @@
-// End-to-end check of the split ERP storage against the REAL uploaded file,
+// End-to-end check of the split ERP storage against an uploaded file of the real shape (synthetic data),
 // in a real browser, with a fake cloud that survives reloads and can fail.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
@@ -72,7 +72,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   const cloudKeys = () => Object.keys(cloud).filter(k => /^erp/.test(k)).sort();
 
   // ---------- 1) LEGACY account: rows inline in the single erpSales document ----------
-  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'},{id:'c3',name:'Bayan Dental Center',rep:'Mariam',cls:'B'}]);
+  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 5 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Summit Dental Center',rep:'Renova',cls:'A'},{id:'c3',name:'Hilal Dental Center',rep:'Mariam',cls:'B'}]);
   cloud.erpSales = JSON.stringify({ periods: [{ id:'seed_sales3_aug26', from: SEED.from, to: SEED.to, net: SEED.net, rowCount: SEED.rowCount, repMap: SEED.repMap, rows: SEED.rows }],
     repMapGlobal: SEED.repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true } });
   const legacyBytes = cloud.erpSales.length;
@@ -147,7 +147,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   // ---------- 6) TWO DEVICES: a period imported elsewhere is kept; a tombstone wins ----------
   const idx2 = JSON.parse(cloud.erpSales);
   const other = { id:'other-device', from:'2026-07-01', to:'2026-07-31', net: 10, rowCount: 1, repMap:{}, rev: 5, rowsRef:{ key:'erpRows:other-device:5', chunks:1, count:1 } };
-  cloud['erpRows:other-device:5:0'] = JSON.stringify([['2026-07-03','SINV1',0,'P',1,10,10,0,'Mariam Zohair','TEPE','Dental 8 Clinic','Clinics',0]]);
+  cloud['erpRows:other-device:5:0'] = JSON.stringify([['2026-07-03','SINV1',0,'P',1,10,10,0,'Mariam Sample','TEPE','Dental 5 Clinic','Clinics',0]]);
   idx2.periods.push(other);
   idx2.removed = Object.assign({}, idx2.removed, { [s.periods[0].id]: Date.now() }); // the other device deleted the Aug period
   cloud.erpSales = JSON.stringify(idx2);

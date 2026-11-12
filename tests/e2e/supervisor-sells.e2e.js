@@ -63,13 +63,13 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   cloud.staff = JSON.stringify([
     {name:'Mariam', role:'rep', email:'m@x.com'}, {name:'Renova', role:'rep', email:'r@x.com'},
     {name:'Dr. Ghaith', role:'supervisor', email:'g@x.com', sells:false}]);
-  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
+  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 5 Clinic',rep:'Mariam',cls:'A'},{id:'c2',name:'Summit Dental Center',rep:'Renova',cls:'A'}]);
   cloud.erpSales = JSON.stringify({ periods: [], repMapGlobal: SEED.repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true } });
   await boot();
   let reps = await page.evaluate(() => REPS.slice());
   check('with "Also sells" switched off the supervisor is not a rep', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova']), reps);
   // even without the flag the supervisor can log a visit under his OWN name (he visits clinics too)
-  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 8 Clinic',rep:'Mariam',cls:'A',doctors:[{id:'d1',name:'Dr. A'}]},{id:'c2',name:'Crown Dental Center',rep:'Renova',cls:'A'}]);
+  cloud.clinics = JSON.stringify([{id:'c1',name:'Dental 5 Clinic',rep:'Mariam',cls:'A',doctors:[{id:'d1',name:'Dr. A'}]},{id:'c2',name:'Summit Dental Center',rep:'Renova',cls:'A'}]);
   await boot();
   const own = await page.evaluate(async () => {
     switchView('log'); prepLogView('c1');
@@ -102,8 +102,8 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('with sells:true the supervisor joins REPS', JSON.stringify(reps)===JSON.stringify(['Mariam','Renova','Dr. Ghaith']), reps);
   const chips = await page.evaluate(() => { openAdminPanel(); setAdminTab('territory'); return [...document.querySelectorAll('#apTerrBody .chip')].map(c => c.textContent.trim()); });
   check('clinic assignment offers the supervisor as an owner', chips.includes('Dr. Ghaith'), chips.slice(0,6));
-  const guess = await page.evaluate(() => UMCore.guessRepMap(['Ghaith Al Manfe', 'Mariam Zohair', 'Mr. Sundeep Kohli'], REPS));
-  check('his ERP salesman name maps to him by first name', guess['Ghaith Al Manfe']==='Dr. Ghaith' && guess['Mr. Sundeep Kohli']===null, guess);
+  const guess = await page.evaluate(() => UMCore.guessRepMap(['Ghaith Al Sample', 'Mariam Sample', 'Mr. Other Salesman'], REPS));
+  check('his ERP salesman name maps to him by first name', guess['Ghaith Al Sample']==='Dr. Ghaith' && guess['Mr. Other Salesman']===null, guess);
 
   // ---- 3) handover: Crown → Dr. Ghaith from 1 Sep keeps nothing for Renova; from 1 Oct keeps all of Sep for her ----
   await page.evaluate(() => closeModal());
@@ -125,12 +125,12 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('handing a clinic back in the same month clears the handover', c2.rep==='Renova' && !c2.prevRep && !c2.repSince, c2);
 
   // ---- 4) a name once ignored that now matches a seller is asked about again ----
-  const es = JSON.parse(cloud.erpSales); es.repMapGlobal = Object.assign({}, es.repMapGlobal, { 'Ghaith Al Manfe': null }); cloud.erpSales = JSON.stringify(es);
+  const es = JSON.parse(cloud.erpSales); es.repMapGlobal = Object.assign({}, es.repMapGlobal, { 'Ghaith Al Sample': null }); cloud.erpSales = JSON.stringify(es);
   await boot();
   const asked = await page.evaluate(() => {
-    const stored = erpSales.repMapGlobal || {}; const guess = UMCore.guessRepMap(['Ghaith Al Manfe','Reem Omar'], REPS);
+    const stored = erpSales.repMapGlobal || {}; const guess = UMCore.guessRepMap(['Ghaith Al Sample','Reem Fictional'], REPS);
     const known = sm => Object.prototype.hasOwnProperty.call(stored, sm) && !(stored[sm] === null && guess[sm]);
-    return { ghaith: known('Ghaith Al Manfe'), reem: known('Reem Omar') };
+    return { ghaith: known('Ghaith Al Sample'), reem: known('Reem Fictional') };
   });
   check('an ignored name that now matches the selling supervisor is re-asked; other ignored names stay silent', asked.ghaith===false && asked.reem===true, asked);
 

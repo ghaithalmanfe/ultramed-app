@@ -49,10 +49,10 @@ function buildAndWrite(out){
   const dmy=iso=>iso.slice(8,10)+'/'+iso.slice(5,7)+'/'+iso.slice(0,4);
   // September 1–21: 146 lines, both reps, clinics + channels, a few returns.
   const prods=[['Waterpik Cordless Plus BLACK','WATERPIK',35],['C3 Plaque Defense Brush Head White','Philips Export BV',11.5],['Sonicare 4100','Philips Export BV',49],['Tepe Interdental Mixed','TEPE',3.25],['Flash Tongue Scraper Pink','FLASH',4.5],['GC Tooth Mousse','GC',9.75]];
-  const custM=[['Dental 8 Clinic','Clinics'],['My Fatoorah','Online Customers'],['Sultan Center','Hypermarkets and Supermarkets'],['Smile Care Clinic','Clinics'],['Al Salam Hospital','Hospitals']];
-  const custR=[['Crown Dental Center','Dental Centers'],['My Fatoorah','Online Customers'],['Sultan Center','Hypermarkets and Supermarkets'],['Bright Dental Center','Dental Centers'],['Al Salam Hospital','Hospitals']];
-  const sm=['Mariam Zohair','Ranova Ayman Mohammed'];
-  const others=['Mr. Sundeep Kohli','Reem Omar'];
+  const custM=[['Dental 5 Clinic','Clinics'],['My Fatoorah','Online Customers'],['Sample Hypermarket','Hypermarkets and Supermarkets'],['Smile Care Clinic','Clinics'],['Sample Hospital','Hospitals']];
+  const custR=[['Summit Dental Center','Dental Centers'],['My Fatoorah','Online Customers'],['Sample Hypermarket','Hypermarkets and Supermarkets'],['Bright Dental Center','Dental Centers'],['Sample Hospital','Hospitals']];
+  const sm=['Mariam Sample','Ranova Sample Person'];
+  const others=['Mr. Other Salesman','Reem Fictional'];
   let inv=75800, n=0;
   for(let i=0;i<961;i++){
     const day=1+Math.floor((i<146?i:i-146)*21/(i<146?146:815)); const iso='2026-09-'+String(day).padStart(2,'0');

@@ -78,11 +78,11 @@ const T = { ortho: { id: 'tortho', name: 'Ortho care prescription', active: true
 const TYPES = (types) => ({ v: 1, rev: 3, by: G, at: '2026-10-01T09:00:00', types: types || [T.ortho, T.white, T.impl, T.kids] });
 const line = (t, qty, doctorId) => ({ type: t.id, name: t.name, qty, doctorId });
 const CLINICS = () => [
-  { id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A', dealType: 'prescription', doctors: [
+  { id: 'm1', name: 'Dental 5 Clinic', rep: M, cls: 'A', dealType: 'prescription', doctors: [
     { id: 'm1-d1', name: 'Dr. Huda Ali', title: 'Orthodontist', handovers: [{ id: 'h1', date: '2026-10-12', kind: 'prescription', what: 'Rx pads', qty: 2, by: M }] },
     { id: 'm1-d2', name: 'Dr. Omar Saleh', title: 'General Dentist' }] },
   { id: 'm2', name: 'Smile Care Clinic', rep: M, cls: 'B', doctors: [{ id: 'm2-d1', name: 'Dr. Sara Nasser' }] },
-  { id: 'r1', name: 'Crown Dental Center', rep: R, cls: 'A', doctors: [{ id: 'r1-d1', name: 'Dr. Faisal Adel' }] }];
+  { id: 'r1', name: 'Summit Dental Center', rep: R, cls: 'A', doctors: [{ id: 'r1-d1', name: 'Dr. Faisal Adel' }] }];
 const V = (id, clinicId, rep, date, doctorIds, rx, x) => Object.assign({ id, clinicId, rep, withRep: null, date, ts: new Date(date + 'T09:00:00').getTime(),
   doctorIds, doctorId: doctorIds[0] || null, products: [], orderTaken: false, orders: [], orderItems: [], orderGross: 0, orderDiscount: 0, orderTotal: 0,
   notes: 'seed ' + id, nextFollowUp: null, noOrderReason: null, rx }, x || {});
@@ -203,7 +203,7 @@ function reseed(o = {}){
         orderGross: 0, orderDiscount: 0, orderTotal: 0, doctorId: 'm1-d1', doctorIds: ['m1-d1'], nextFollowUp: null, notes: '', noOrderReason: null, rx });
       visits.push(mk('r3a', [{ type: 'tortho', name: 'Ortho care prescription', qty: 1, doctorId: 'm1-d1' }]), mk('r3b', [{ type: 'twhite', name: 'Whitening prescription', qty: 1, doctorId: 'm1-d1' }]));
       const rows = buildVisitsCSV(null); visits = visits.filter(v => v.id !== 'r3a' && v.id !== 'r3b');
-      return { head: rows[0], today: rows.filter(r => r[0] === todayStr() && r[5] === 'Dental 8 Clinic').length }; });
+      return { head: rows[0], today: rows.filter(r => r[0] === todayStr() && r[5] === 'Dental 5 Clinic').length }; });
     check('R3 two same-day visits that differ only in their prescriptions are two rows in the visits CSV, with the pads columns',
       csv.today === 2 && csv.head.includes('Prescription pads given') && csv.head.includes('Prescription pads detail'), csv);
     // R4 — duplicate doctor records merged at the supervisor's boot: the lines follow the survivor
@@ -525,7 +525,7 @@ function reseed(o = {}){
     reseed(); await boot(M, 'rep');
     await form('m1', ['m1-d1']); await typeQty('m1-d1', 'tortho', 1); await save('');
     await form('m1', ['m1-d1']); await typeQty('m1-d1', 'twhite', 1); await save(''); f = await figs();
-    const n2 = await ev(() => buildVisitsCSV(null).filter(r => r[0] === todayStr() && r[5] === 'Dental 8 Clinic').length);
+    const n2 = await ev(() => buildVisitsCSV(null).filter(r => r[0] === todayStr() && r[5] === 'Dental 5 Clinic').length);
     check('a second same-day visit with other lines is its own visit (Huda 8 → 10; two CSV rows)', f.huda.total === 10 && n2 === 2, { huda: f.huda, n2 });
     await ev(async () => { const l = visits.slice().sort((a, b) => b.ts - a.ts)[0]; visits.push(Object.assign(JSON.parse(JSON.stringify(l)), { id: uid() })); await persist('visits'); }); f = await figs();
     check('…an exact double-save still counts once (10)', f.huda.total === 10, f.huda);

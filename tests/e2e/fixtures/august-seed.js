@@ -2,18 +2,20 @@
 // against. Until v118 they read the app's one-time import, the supervisor's
 // real ERP export shipped in www/ (and so published to everyone); v119 took
 // real sales data off the public site, so this builds a file of the same
-// shape instead — same counts, same ERP salesmen, nothing real:
+// shape instead — same counts, nothing real (v121: the salesmen's names are
+// invented too):
 //   1,343 packed lines dated 1–26 Aug 2026, 225 of them returns;
-//   312 for the team's two salesmen (Ranova Ayman Mohammed 244, Mariam Zohair 68),
-//   1,031 for the two mapped to "not my team" (Mr. Sundeep Kohli 916, Reem Omar 115).
-// Customers, products, invoice numbers and amounts are invented.
+//   312 for the team's two salesmen (Ranova Sample Person 244, Mariam Sample 68),
+//   1,031 for the two mapped to "not my team" (Mr. Other Salesman 916, Reem Fictional 115).
+// Salesmen, customers, invoice numbers and amounts are invented (My Fatoorah is
+// kept: the app treats that payment platform's account as the online channel).
 // Packed line, as the app stores it:
 //   [date, invoice, type 0 invoice | 1 return, product, qty, gross, net, return, salesman, brand, customer, class, discount on return]
 'use strict';
 
-const REP_MAP = { 'Ranova Ayman Mohammed': 'Renova', 'Mariam Zohair': 'Mariam', 'Mr. Sundeep Kohli': null, 'Reem Omar': null };
+const REP_MAP = { 'Ranova Sample Person': 'Renova', 'Mariam Sample': 'Mariam', 'Mr. Other Salesman': null, 'Reem Fictional': null };
 // [ERP salesman, lines, of which returns]
-const SALESMEN = [['Mr. Sundeep Kohli', 916, 193], ['Ranova Ayman Mohammed', 244, 28], ['Reem Omar', 115, 4], ['Mariam Zohair', 68, 0]];
+const SALESMEN = [['Mr. Other Salesman', 916, 193], ['Ranova Sample Person', 244, 28], ['Reem Fictional', 115, 4], ['Mariam Sample', 68, 0]];
 const PRODUCTS = [
   ['Waterpik Cordless Plus BLACK', 'WATERPIK', 35], ['C3 Plaque Defense Brush Head White', 'Philips Export BV', 11.5],
   ['Sonicare 4100', 'Philips Export BV', 49], ['Tepe Interdental Mixed', 'TEPE', 3.25], ['Flash Tongue Scraper Pink', 'FLASH', 4.5],
@@ -21,11 +23,11 @@ const PRODUCTS = [
 ];
 // The team's customers are the ones the September fixture uses; the rest are made up.
 const CUSTOMERS = {
-  'Mariam Zohair': [['Dental 8 Clinic', 'Clinics'], ['My Fatoorah', 'Online Customers'], ['Smile Care Clinic', 'Clinics'], ['Sultan Center', 'Hypermarkets and Supermarkets']],
-  'Ranova Ayman Mohammed': [['Crown Dental Center', 'Clinics'], ['Bright Dental Center', 'Clinics'], ['My Fatoorah', 'Online Customers'], ['Sample Pharmacy 1', 'Pharmacy']],
-  'Mr. Sundeep Kohli': [['Sample Hypermarket 1', 'Hypermarkets and Supermarkets'], ['Sample Hypermarket 2', 'Hypermarkets and Supermarkets'],
+  'Mariam Sample': [['Dental 5 Clinic', 'Clinics'], ['My Fatoorah', 'Online Customers'], ['Smile Care Clinic', 'Clinics'], ['Sample Hypermarket', 'Hypermarkets and Supermarkets']],
+  'Ranova Sample Person': [['Summit Dental Center', 'Clinics'], ['Bright Dental Center', 'Clinics'], ['My Fatoorah', 'Online Customers'], ['Sample Pharmacy 1', 'Pharmacy']],
+  'Mr. Other Salesman': [['Sample Hypermarket 1', 'Hypermarkets and Supermarkets'], ['Sample Hypermarket 2', 'Hypermarkets and Supermarkets'],
     ['Sample Hypermarket 3', 'Hypermarkets and Supermarkets'], ['Sample Trading Co', 'Other Customers'], ['Sample Platform', 'Platform Customers']],
-  'Reem Omar': [['Sample Pharmacy 2', 'Pharmacy'], ['Sample Pharmacy 3', 'Pharmacy'], ['Sample Trading Co', 'Other Customers']],
+  'Reem Fictional': [['Sample Pharmacy 2', 'Pharmacy'], ['Sample Pharmacy 3', 'Pharmacy'], ['Sample Trading Co', 'Other Customers']],
 };
 const r3 = x => Math.round(x * 1000) / 1000;
 

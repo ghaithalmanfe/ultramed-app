@@ -704,8 +704,9 @@ function erpHandLinksTo(ids){
 
 // ---- MISSING-CLINIC FINDER ----
 // When backups can't bring a clinic back, the app still knows its name from
-// somewhere: the recycle bin, the names stamped on its visits, the original
-// factory list, or the customers inside the uploaded invoice files. This
+// somewhere: the recycle bin, the names stamped on its visits, or the
+// customers inside the uploaded invoice files (no clinic list ships with the
+// code since v121 — it is public). This
 // screen shows every name the system has ever seen that is NOT in the current
 // list, and restores whichever ones the supervisor ticks — history intact
 // where the original id survives.
@@ -731,12 +732,7 @@ function missingClinicCandidates(){
     const s = stamped[id];
     take({src:'visits', label:`🚗 له ${s.n} زيارة مسجلة`, id, name:s.name, rep:s.rep, key:'vis:'+id});
   });
-  // 3. the original factory list
-  CLINICS_SEED.forEach(c=>{
-    if(haveIds.has(c.id)) return;
-    take({src:'seed', label:'📋 من القائمة الأصلية', obj:c, name:c.name, rep:c.rep||'', key:'seed:'+c.id});
-  });
-  // 4. invoice customers that match no clinic (may include non-clinic accounts — unticked by default)
+  // 3. invoice customers that match no clinic (may include non-clinic accounts — unticked by default)
   const custs = {};
   erpPeriods().forEach(p=>erpViewRows(p).forEach(r=>{
     const cu = (r.customer||'').trim(); if(!cu) return;
@@ -752,9 +748,9 @@ let _mcCands = [], _mcChecked = new Set();
 function openMissingClinics(){
   if(!requireAdmin()) return;
   _mcCands = missingClinicCandidates();
-  // bin / visits / factory candidates are almost certainly real clinics — pre-ticked
+  // bin / visits candidates are almost certainly real clinics — pre-ticked
   _mcChecked = new Set(_mcCands.filter(x=>x.src!=='erp').map(x=>x.key));
-  const ORDER = {bin:0, visits:1, seed:2, erp:3};
+  const ORDER = {bin:0, visits:1, erp:2};
   _mcCands.sort((a,b)=>ORDER[a.src]-ORDER[b.src] || a.name.localeCompare(b.name));
   showModal(`
     <h3 style="margin-top:0;">🔍 العيادات الناقصة</h3>
@@ -803,9 +799,6 @@ async function restoreMissingClinics(){
     } else if(x.src==='visits'){
       clinics.push(normalizeClinic({id:x.id, name:x.name, rep, cls:'B', notes:'رجعت من سجل الزيارات', addedOn:todayStr()}));
       untomb('clinics', x.id);
-    } else if(x.src==='seed'){
-      clinics.push(normalizeClinic(Object.assign({}, x.obj)));
-      untomb('clinics', x.obj.id);
     } else {
       clinics.push(normalizeClinic({id:uid(), name:x.name, rep, cls:'B', notes:'أُنشئت من عملاء الفواتير', addedOn:todayStr()}));
     }

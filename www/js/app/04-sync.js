@@ -55,12 +55,6 @@ function normalizeClinics(list){
     .filter(c => c && typeof c === 'object')
     .map(c => { try{ return normalizeClinic(c); }catch(e){ console.error('bad clinic record kept raw', c && c.id, e); return c; } });
 }
-// One-time official figures from DSR_23.08.26.xlsx, shipped with the app at
-// the supervisor's request so the numbers apply without re-uploading the file.
-// Applied once on the supervisor's next login (guarded by achievedAsOf, and
-// inert after August 2026); a NEWER DSR upload still overrides it as usual.
-const DSR_SEED = { month: '2026-08', asOf: '2026-08-23', targets:
-{"Mariam":{"revenue":11621.92,"brands":{"B&L Biotech":780,"Combo/ Bundle/ Kit":828,"EverBrands":23,"Philips Sonicare":1840,"Waterpik":1610,"Intensiv":4700,"SCHEU":69,"Shenzen":12.42,"BHF":25.3,"Tepe":138,"The Breath Co.":621,"HiSmile":115,"Flash":805,"UNDO":55.2},"achieved":5298.36,"achievedBrands":{"Combo/ Bundle/ Kit":30,"Philips Sonicare":148.76,"Waterpik":92.12,"Intensiv":4615,"Tepe":30.8,"The Breath Co.":247.18,"UNDO":39.5,"Maintenance":95},"achievedAsOf":"2026-08-23"},"Renova":{"revenue":12563.08,"brands":{"B&L Biotech":1520,"Combo/ Bundle/ Kit":972,"EverBrands":27,"Philips Sonicare":2160,"Waterpik":1890,"Intensiv":1300,"SCHEU":81,"UNIVET":2533,"Shenzen":14.58,"BHF":29.7,"Tepe":162,"The Breath Co.":729,"HiSmile":135,"Flash":945,"UNDO":64.8},"achieved":7501.411,"achievedBrands":{"B&L Biotech":643.5,"EverBrands":50.05,"Philips Sonicare":1383.43,"Waterpik":616.98,"Intensiv":187,"SCHEU":16.5,"UNIVET":2558,"BHF":4.32,"Tepe":396.825,"The Breath Co.":1110.856,"Flash":37.55,"UNDO":101.4,"Maintenance":395},"achievedAsOf":"2026-08-23"}} };
 // Official product photos from ultramedgcc.com (the company's own store),
 // matched by SKU/barcode first and exact title-similarity second. Filled in
 // ONCE for products that have no image yet — a photo the supervisor set by
@@ -309,23 +303,6 @@ async function deepRestoreSweep(){
     }
   }catch(e){ console.error('deep restore failed, will retry next open', e); }
 }
-async function applyDsrSeed(){
-  if(currentUser.role !== 'supervisor') return;               // supervisor's upload path only
-  if(_loadFailed.targets || _mirrorUsed.targets) return;      // a failed/offline read is NOT an empty account
-  if(todayStr().slice(0,7) !== DSR_SEED.month) return;        // inert after the DSR's month
-  let changed = false;
-  Object.keys(DSR_SEED.targets).forEach(rep => {
-    const cur = targets[rep] || {};
-    // Skip if this rep already carries figures as fresh as (or fresher than)
-    // the seed — a newer DSR upload must never be rolled back.
-    if(cur.achievedAsOf && cur.achievedAsOf >= DSR_SEED.asOf) return;
-    targets[rep] = Object.assign({}, cur, DSR_SEED.targets[rep]);
-    changed = true;
-  });
-  if(!changed) return;
-  await persist('targets');
-  showToast('📊 DSR 23.08 figures applied — Mariam 5,298.36 · Renova 7,501.41');
-}
 let _loadFailed = {}; // docs whose LAST read rejected — a failed read is not an empty account
 let _mirrorUsed = {}; // docs served from the local mirror (offline) — never authoritative
 // ---- ERP sales: split storage (index document + row-chunk documents) ----
@@ -346,7 +323,7 @@ const ERP_CHUNK_READ_MS = 15000;
 let ERP_WRITE_MS = 45000; // one atomic commit for chunks + index
 const ERP_ORPHAN_GRACE_MS = 7 * 86400000; // an unreferenced chunk is deleted only after this long — a week, so a deleted or replaced file can still be restored from a daily backup
 // The same salesman can appear under two spellings in the ERP ("Mariam
-// Zohair" / "Mariam  Zohair" / a middle name added): overlap decisions key
+// Sample" / "Mariam  Sample" / a middle name added): overlap decisions key
 // on the REP the name maps to, or on the normalized name when unmapped —
 // never on the raw string.
 function erpSalesmanKey(name, repMap){
@@ -841,7 +818,7 @@ function erpOlderThanStored(t, salesmen){
   });
   return newest;
 }
-let _seedClinics = false; // clinics on screen are the factory list, not the account's
+let _seedClinics = false; // no clinic list was read: what is on screen is not the account's (never saved over it)
 let _bootCrashed = false; // loadAll hit an error — state may be partial, never snapshot it
 // One read rule everywhere: cloud first (with a timeout); a key with queued
 // offline edits prefers the LOCAL mirror (it is newer than the cloud until the
@@ -914,8 +891,11 @@ async function loadAll(){
     const notDeleted = key => { const ts = tombSet(key); return x => !(x && ts.has(x.id)); };
     const clinicsDoc = UMCore.safeParse(c && c.value, null);
     const clinicsBefore = clinics;
-    clinics = normalizeClinics((clinicsDoc || CLINICS_SEED.map(x=>({...x}))).filter(notDeleted('clinics')).map(dropTombedDoctors));
-    _seedClinics = !clinicsDoc; // factory list on screen — never allowed to overwrite live data
+    // No clinic list ships with the app (the code is public, v121): an account
+    // without one starts empty and builds it (Admin → Manage clinics → Import,
+    // or Territory → Upload a clinic distribution).
+    clinics = normalizeClinics((clinicsDoc || []).filter(notDeleted('clinics')).map(dropTombedDoctors));
+    _seedClinics = !clinicsDoc; // nothing read — never allowed to overwrite live data
     if(clinicsDoc) reinsertKeptClinics(clinicsBefore); // a branch saved while this read was on its way stays
     products = UMCore.safeParse(p && p.value, null) || PRODUCTS_SEED;
     assignProductKeys();
@@ -983,12 +963,11 @@ async function loadAll(){
     await autoRestoreWipe();
     await deepRestoreSweep();
     archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
-    if(_seedClinics && !c && readOk('clinics')){ await persist('clinics', {allowSeed:true}); _seedClinics = false; } // genuinely fresh account
+    if(_seedClinics && !c && readOk('clinics')) _seedClinics = false; // genuinely fresh account: nothing to write — its first clinic creates the list
     if(!p && readOk('products')) await persist('products');
     if(!st && readOk('staff')) await persist('staff');
     if(!bm && readOk('benchmarks')) await persist('benchmarks');
     if(!cg && readOk('categoryGuides')) await persist('categoryGuides');
-    await applyDsrSeed();
     if(currentUser && currentUser.role === 'supervisor' && !_loadFailed.erpSales && !_mirrorUsed.erpSales) await purgeIgnoredSalesmen();
     await applyProductImgSeed();
     await restoreOrphanClinics();
@@ -997,7 +976,7 @@ async function loadAll(){
     // already parsed fine — only fill in whatever is still missing.
     console.error('load error', e);
     _bootCrashed = true;
-    if(!Array.isArray(clinics) || !clinics.length){ clinics = normalizeClinics(CLINICS_SEED.map(x=>({...x}))); _seedClinics = true; }
+    if(!Array.isArray(clinics) || !clinics.length){ clinics = []; _seedClinics = true; }
     if(!Array.isArray(products) || !products.length) products = PRODUCTS_SEED;
     if(!Array.isArray(visits)) visits = [];
     if(!Array.isArray(tasks)) tasks = [];

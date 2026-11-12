@@ -60,7 +60,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
     {id:'a', name:'Alpha Dental Center', rep:M, cls:'A', doctors:[{id:'d1', name:'Dr. Huda Ali', influence:'decider'}]},
     {id:'b', name:'Beta Clinic', rep:M, cls:'B', doctors:[]},
     {id:'moh', name:'Ministry Of Health', rep:M, shared:true, sharedWith:[M, G], doctors:[]},
-    {id:'h', name:'Royale Hayat Hospital', rep:'Renova', cls:'B', doctors:[]}]);
+    {id:'h', name:'Sample Royal Hospital', rep:'Renova', cls:'B', doctors:[]}]);
   cloud.targets = JSON.stringify({ [M]: {revenue: 1000, month:'2026-10'} });
   cloud.benchmarks = JSON.stringify({ coverage: 70, priority: 90, conversion: 25, tasks: 85 });
   cloud.visits = JSON.stringify([{id:'v0', date:'2026-09-14', ts: 0, rep:M, clinicId:'b', doctorIds:[], products:['p1']}, {id:'v1', date:'2026-10-05', ts: 1, rep:M, clinicId:'a', doctorIds:['d1'], products:['p1']}]);

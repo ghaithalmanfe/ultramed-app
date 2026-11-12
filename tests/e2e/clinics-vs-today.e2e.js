@@ -22,16 +22,16 @@ const api = {
 };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info):'')); if(!ok) failed++; }
-const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova', GS = 'Ghaith Al Manfe', MS = 'Mariam Zohair', RS = 'Renova Ayman';
+const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova', GS = 'Ghaith Al Sample', MS = 'Mariam Sample', RS = 'Renova Sample';
 const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Intensiv Ortho-Strips', 1, net, net, 0, sm, 'Intensiv', cust, 'Clinics', 0, ''];
 const ret = (d, doc, cust, net, sm, ref) => [d, doc, 1, 'Intensiv Ortho-Strips', -1, 0, net, -net, sm, 'Intensiv', cust, 'Clinics', 0, ref];
 // A file that runs from mid-September into October, then an October file.
-const SEPOCT = [row('2026-09-20','SINV8001','Dental 8 Clinic',100,MS), row('2026-09-25','SINV8002','Meena Dental',70,RS),
-  row('2026-10-01','SINV8003','My Fatoorah',12,MS), row('2026-10-02','SINV8004','Dental 8 Clinic',40,MS)];
-const OCT = [row('2026-10-05','SINV8101','Dental 8 Clinic',25,MS), row('2026-10-06','SINV8102','Meena Dental',30,RS),
+const SEPOCT = [row('2026-09-20','SINV8001','Dental 5 Clinic',100,MS), row('2026-09-25','SINV8002','Mira Dental',70,RS),
+  row('2026-10-01','SINV8003','My Fatoorah',12,MS), row('2026-10-02','SINV8004','Dental 5 Clinic',40,MS)];
+const OCT = [row('2026-10-05','SINV8101','Dental 5 Clinic',25,MS), row('2026-10-06','SINV8102','Mira Dental',30,RS),
   row('2026-10-06','SINV8103','Marketing Philips',5,MS), row('2026-10-06','SINV8104','Unknown Trading Co',9,MS),
-  row('2026-10-05','SINV8105','Bayan Dental Center',50,GS),
-  ret('2026-10-07','SRET8106','Dental 8 Clinic',-20,MS,'SINV8001')];   // returns September's invoice: counted in September
+  row('2026-10-05','SINV8105','Hilal Dental Center',50,GS),
+  ret('2026-10-07','SRET8106','Dental 5 Clinic',-20,MS,'SINV8001')];   // returns September's invoice: counted in September
 const repMap = { [GS]: G, [MS]: M, [RS]: R };
 const sum = rows => Math.round(rows.reduce((s, r) => s + r[6], 0) * 1000) / 1000;
 const split = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: repMap,
@@ -46,10 +46,10 @@ function seed(o = {}){
   cloud.erpMap = JSON.stringify({ 'Marketing Philips': '@ignore' });
   cloud.staff = JSON.stringify([{name:M, role:'rep', email:'m@x.com'}, {name:R, role:'rep', email:'r@x.com'}, Object.assign({name:G, role:'supervisor', email:'g@x.com'}, o.gSells === false ? { sells: false } : {})]); // he sells (no target)
   cloud.clinics = JSON.stringify([
-    {id:'m1', name:'Dental 8 Clinic', rep:M, cls:'A', doctors:[]},
+    {id:'m1', name:'Dental 5 Clinic', rep:M, cls:'A', doctors:[]},
     {id:'m2', name:'Bright Smile Clinic', rep:M, cls:'B', doctors:[]},
-    {id:'r1', name:'Meena Dental', rep:R, cls:'B', doctors:[]},
-    {id:'g1', name:'Bayan Dental Center', rep:G, cls:'A', doctors:[]}]);
+    {id:'r1', name:'Mira Dental', rep:R, cls:'B', doctors:[]},
+    {id:'g1', name:'Hilal Dental Center', rep:G, cls:'A', doctors:[]}]);
   cloud.targets = JSON.stringify(Object.assign({ [M]: { revenue: 1000, month: '2026-10' }, [R]: { revenue: 1000, month: '2026-10' } }, o.targets || {}));
   // an order typed in a visit: the "logged" figure must never read as invoiced sales
   cloud.visits = JSON.stringify([{ id: 'v1', clinicId: 'm1', rep: M, date: '2026-10-05', orderTaken: true, orderTotal: 500, orders: [{ total: 500, items: [] }] }]);
@@ -114,7 +114,7 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   seed();
   await boot(G, 'supervisor');
   const a = await ach();
-  check('fixture: October figures — Mariam 91 (65 at Dental 8 + 9 unlinked + 12 online + 5 ignored), Renova 30, Dr. Ghaith 50', a.m === 91 && a.r === 30 && a.g === 50, a);
+  check('fixture: October figures — Mariam 91 (65 at Dental 5 + 9 unlinked + 12 online + 5 ignored), Renova 30, Dr. Ghaith 50', a.m === 91 && a.r === 30 && a.g === 50, a);
   const tdy = await today();
   check('Today card: Mariam 91.00 KD of 1000.00 KD, Renova 30.00 KD, Team 121.00 KD (only people with a target)', /Mariam \d+% 91\.00 KD of 1000\.00 KD/.test(tdy) && /Renova \d+% 30\.00 KD of 1000\.00 KD/.test(tdy) && /121\.00 KD of 2000\.00 KD/.test(tdy), tdy.slice(0, 400));
 
@@ -129,8 +129,8 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   let c = await clinicsCard(M);
   const bought = tileKD(c, /^Bought/), chan = tileKD(c, /Online \/ channels/), ign = kd(c.parts.ignored) || 0;
   check('REPRO: Clinics card for Mariam — Bought + online / channels + ignored = her Today figure (91)', bought != null && chan != null && Math.round((bought + chan + ign) * 100) / 100 === 91, { bought, chan, ign, tiles: c.tiles });
-  const d8 = c.list.find(x => /^Dental 8 Clinic/.test(x.name));
-  check('REPRO: Dental 8 Clinic shows October only: 65.00 KD (no September invoice, no return of a September invoice)', !!d8 && kd(d8.row) === 65, d8);
+  const d8 = c.list.find(x => /^Dental 5 Clinic/.test(x.name));
+  check('REPRO: Dental 5 Clinic shows October only: 65.00 KD (no September invoice, no return of a September invoice)', !!d8 && kd(d8.row) === 65, d8);
   check('the card says which days it reads: this month, sales files to Oct 8 (as the Today card)', /This month/.test(c.sub) && /sales files to Oct 8/.test(c.sub), c.sub);
   check('reconciliation: clinics 74 + online / channels 12 + ignored accounts 5', kd(c.parts.clinics) === 74 && kd(c.parts.channels) === 12 && kd(c.parts.ignored) === 5, c.parts);
   check('reconciliation total: 91.00 KD — the same figure as the Today screen', kd(c.parts.total) === 91 && /Today screen/.test(c.parts.total || ''), c.parts.total);
@@ -154,12 +154,12 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   check('as Mariam: no one else\'s figure in her reconciliation', !/Renova|Dr\. Ghaith/.test(c.rec), c.rec);
   // ---- management report: the buyers table reads the same month ----
   await boot(G, 'supervisor');
-  const mr = await page.evaluate(() => { reportRepFilter = 'Mariam'; const html = buildMasterReportBody('en', 'full'); const m = html.match(/<td>Dental 8 Clinic<\/td><td>Mariam<\/td><td><span class="num">(\d+)<\/span><\/td><td>([^<]+)</); return m ? { inv: +m[1], val: m[2] } : null; });
-  check('management report: Dental 8 Clinic in "Accounts that bought" = 65.00 (October only)', !!mr && /65\.00/.test(mr.val), mr);
+  const mr = await page.evaluate(() => { reportRepFilter = 'Mariam'; const html = buildMasterReportBody('en', 'full'); const m = html.match(/<td>Dental 5 Clinic<\/td><td>Mariam<\/td><td><span class="num">(\d+)<\/span><\/td><td>([^<]+)</); return m ? { inv: +m[1], val: m[2] } : null; });
+  check('management report: Dental 5 Clinic in "Accounts that bought" = 65.00 (October only)', !!mr && /65\.00/.test(mr.val), mr);
   // ---- the DSR gives the targets and their brand split only (owner's rule): its achieved column is never shown ----
   const dsr = await page.evaluate(async () => { const keep = JSON.stringify(targets); const realPersist = window.persist; window.persist = async () => true;
     try{ await applyTargetsFile({ targets: { Renova: { revenue: 1000, achieved: 777.77, achievedAsOf: '2026-10-07', brands: { Intensiv: 600, Tepe: 400 } } },
-      matched: [{ rep: 'Renova', name: 'Ranova Ayman', revenue: 1000, achieved: 777.77, brandCount: 2 }], unmatched: [] });
+      matched: [{ rep: 'Renova', name: 'Ranova Sample', revenue: 1000, achieved: 777.77, brandCount: 2 }], unmatched: [] });
       return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); }
     finally { window.persist = realPersist; targets = JSON.parse(keep); try{ closeModal(); }catch(e){} } });
   check('DSR upload sheet: target and brand targets only — the DSR\'s own achieved (777.77) is not shown, and it says achieved comes from ERP', !/777\.77/.test(dsr) && /1000\.00 KD/.test(dsr) && /2 brand targets/.test(dsr) && /Achieved always comes from the ERP sales files/.test(dsr), dsr.slice(0, 600));
