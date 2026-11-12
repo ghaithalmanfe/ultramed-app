@@ -286,6 +286,8 @@
     'Your visits met them, but their names were lost (most in August–September) and no backup holds them. Use a name this phone kept or a visit recorded, or write the name you remember: their visits, orders and prescriptions join it. Nothing changes until you tap. Leave empty anyone who left or was removed on purpose.': 'قابلتهم في زياراتك لكن أسماءهم ضاعت (أغلبها في أغسطس وسبتمبر) ولا توجد في أي نسخة احتياطية. استخدم اسماً حفظه هذا الجوال أو سجّلته زيارة، أو اكتب الاسم الذي تتذكره: تنضم إليه زياراته وطلباته ووصفاته. لا يتغير شيء حتى تضغط. اترك فارغاً من ترك العيادة أو حُذف عن قصد.',
     'Enter the doctor name': 'اكتب اسم الطبيب',
     '⚠️ Saved on this device — not in the cloud yet': '⚠️ حُفظ على هذا الجهاز — لم يصل إلى السحابة بعد',
+    'Saved on this device — uploads automatically when back online': 'حُفظ على هذا الجهاز — يُرفع تلقائياً عند عودة الاتصال',
+    'Device storage full — kept in memory only: keep the app open until it uploads': 'ذاكرة الجهاز ممتلئة — محفوظ في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحاً حتى يُرفع',
     'The app recorded its name:': 'الاسم الذي سجّله التطبيق لها:',
     'Already in the list — its visits move there': 'موجودة في القائمة — تنتقل زياراتها إليها',
     'sales lines would then count for another person': 'سطر مبيعات سيُحسب عندها لشخص آخر',
