@@ -51,6 +51,11 @@
 // writes; reads for the supervisor), optionally exported daily to a
 // retention-locked Cloud Storage bucket. Until then this client log is the
 // team's honest record of what the app did, not proof against tampering.
+// Security rules that list the keys a phone may write must include the month
+// documents — e.g. `|| key.matches('auditLog:[0-9]{4}-[0-9]{2}')` in
+// isTeamKey — or every append is refused: the changes themselves still save,
+// and their entries wait on each phone (up to AUDIT_QUEUE_MAX), shown as
+// "waiting to upload" on this screen.
 const AUDIT_QUEUE_KEY = 'um_auditQueue';   // entries this phone has not got into the cloud yet: [{ m: 'YYYY-MM', e }]
 const AUDIT_QUEUE_MAX = 300;
 let AUDIT_WRITE_MS = 8000;
