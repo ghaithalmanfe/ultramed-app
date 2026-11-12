@@ -491,31 +491,42 @@ function renderEditPhotos(visitId){
   const v = visits.find(x=>x.id===visitId);
   const el = document.getElementById('editPhotoRow');
   if(!v || !el) return;
+  el.dataset.visit = visitId; // repainted when one of its photos finishes uploading (photoLanded, 12)
   el.innerHTML = (v.photos||[]).map(p=>`<div class="ph-wrap">
       <img class="photo-thumb" src="${p.thumb}" onclick="showLightbox('${p.id}','Visit photo')">
       <button class="ph-del" onclick="removeEditPhoto('${visitId}','${p.id}')">&times;</button>
     </div>`).join('') +
     `<div class="photo-add" onclick="addEditPhoto('${visitId}')">\u{1F4F7}<span>ADD</span></div>`;
+  const prev = document.getElementById('editPhotoWait'); if(prev) prev.remove();
+  const note = photoWaitHTML(v);
+  if(note) el.insertAdjacentHTML('afterend', `<div id="editPhotoWait">${note}</div>`);
 }
 function addEditPhoto(visitId){
-  const v = visits.find(x=>x.id===visitId);
-  if(!v || !canEditVisit(v)) return;
+  const v0 = visits.find(x=>x.id===visitId);
+  if(!v0 || !canEditVisit(v0)) return;
   pickImage(async ({full, thumb})=>{
+    // Like a new visit's photo (v122): on the visit at once, marked "waiting
+    // to upload", the full photo kept on this phone and uploaded in the
+    // background — the sheet never waits for the upload (with no signal it
+    // never answered, and the photo was in no list).
+    const v = visits.find(x=>x.id===visitId); // the list may have been refreshed while the photo was picked
+    if(!v) return;
     const id = uid();
-    if(await savePhotoBlob(id, full)){
-      v.photos = v.photos || [];
-      v.photos.push({id, thumb});
-      await persist('visits');
-      renderEditPhotos(visitId);
-      showToast('\u{1F4F8} Photo added');
-    }
+    v.photos = v.photos || [];
+    v.photos.push({id, thumb, pending: true});
+    renderEditPhotos(visitId);
+    const r = await persistFor('visits');
+    const kept = await keepVisitPhotos(v.id, [{id, full}]);
+    renderEditPhotos(visitId);
+    showToast(visitSaveMsg(r, kept, true), 4500);
   }, true);
 }
 async function removeEditPhoto(visitId, photoId){
   const v = visits.find(x=>x.id===visitId);
   if(!v || !canEditVisit(v)) return;
   v.photos = (v.photos||[]).filter(p=>p.id!==photoId);
-  try{ await window.storage.delete('photo:'+photoId, true); }catch(e){}
+  photoForget(photoId); // still waiting to upload: never sent now
+  Promise.resolve().then(() => window.storage.delete('photo:'+photoId, true)).catch(()=>{}); // best effort, not awaited: with no signal it never answers (v122)
   await persist('visits');
   renderEditPhotos(visitId);
 }
