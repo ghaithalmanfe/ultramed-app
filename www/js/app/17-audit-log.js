@@ -147,7 +147,8 @@ const auditVisitFields = auditSafe(v => {
   const c = clinics.find(x => x && x.id === v.clinicId);
   const ids = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
   const one = Array.isArray(v.orders) && v.orders.length === 1 ? v.orders[0] : null;
-  const f = { date: v.date || null, rep: v.rep || null, withRep: v.withRep || null,
+  // the rep only when it is not the person making the change (the entry's `by` already says it)
+  const f = { date: v.date || null, rep: v.rep && !(currentUser && currentUser.name === v.rep) ? v.rep : null, withRep: v.withRep || null,
     met: ids.map(id => auditDoctorNameIn(c, v, id) || 'a doctor no longer listed'),
     channel: v.callOnly ? (v.channel || 'call') : null, contactName: v.contactName || null,
     orderTotal: v.orderTaken ? (v.orderTotal || 0) : null, items: v.orderTaken ? ((v.orderItems || []).length || null) : null,

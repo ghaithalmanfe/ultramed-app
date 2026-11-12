@@ -609,21 +609,25 @@ async function saveReschedule(clinicId){
   if(!c) return;
   const val = document.getElementById('rfDate').value;
   if(!val){ showToast('Pick a date'); return; }
+  const was = c.nextFollowUp || null;
   c.nextFollowUp = val;
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { nextFollowUp: was }, after: { nextFollowUp: val }, result: r });
   await scheduleFollowUp(c, val, c.rep);
   closeModal();
-  showToast('Follow-up rescheduled');
+  saveToast(r, 'clinics', 'Follow-up rescheduled');
   renderAll();
 }
 async function clearFollowUp(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
+  const was = c.nextFollowUp || null;
   c.nextFollowUp = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { nextFollowUp: was }, after: { nextFollowUp: null }, result: r });
   await scheduleFollowUp(c, null, c.rep);
   closeModal();
-  showToast('Follow-up cleared');
+  saveToast(r, 'clinics', 'Follow-up cleared');
   renderAll();
 }
 
