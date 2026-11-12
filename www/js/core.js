@@ -5827,13 +5827,16 @@
     var items = (d.failed || []).filter(function(x){ return x && x.key && x.at > 0 && c.now - x.at <= ALERT_FAILED_DAYS * 86400000; })
       .sort(function(a, b){ return b.at - a.at; })
       .map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — not saved at ' + alertWhen(c, x.at) }; });
-    if(d.erpDirty) items.push({ key: 'erpSales', text: 'Sales files — changes not saved yet' });
+    // the sales files are the supervisor's: on a rep's phone the flag can only
+    // be a start-up trim of what she sees, nothing she changed
+    var erpDirty = !!d.erpDirty && c.sup;
+    if(erpDirty) items.push({ key: 'erpSales', text: 'Sales files — changes not saved yet' });
     if(items.length){
       var w2 = [];
-      if(items.length > (d.erpDirty ? 1 : 0)) w2.push("These changes are not in the cloud and are not waiting to upload: the next refresh shows the cloud's copy. Make them again once the connection is back.");
-      if(d.erpDirty) w2.push('The sales file changes are still on this phone: Retry the save sends them.');
+      if(items.length > (erpDirty ? 1 : 0)) w2.push("These changes are not in the cloud and are not waiting to upload: the next refresh shows the cloud's copy. Make them again once the connection is back.");
+      if(erpDirty) w2.push('The sales file changes are still on this phone: Retry the save sends them.');
       out.push({ id: 'sync-failed', type: 'sync', sev: 'high', rep: null, title: alertN(items.length, 'save', 'saves') + ' did not reach the cloud',
-        why: w2, items: items, open: { screen: 'sync' }, action: d.erpDirty ? 'retryErp' : null });
+        why: w2, items: items, open: { screen: 'sync' }, action: erpDirty ? 'retryErp' : null });
     }
     return out;
   }
