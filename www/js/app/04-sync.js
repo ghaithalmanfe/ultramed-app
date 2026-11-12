@@ -1517,7 +1517,7 @@ function saveToast(r, key, okMsg, ms){
   const landed = !!r && (r.ok === true || (!!key && sentSince(key, r)));
   const o = (r && r.outcome) || {};
   if(landed) showToast(okMsg, ms);
-  else if(o.queued && o.mirrored) showToast('📴 Saved on this device — it uploads automatically when back online', 4000);
+  else if(o.queued && o.mirrored) showToast('📴 Saved on this device — uploads automatically when back online', 4000); // the same words as persist's own offline notice
   else if(o.queued) showToast('⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000);
   else showToast('⚠️ Not saved — check the connection and try again', 4000);
   return landed;
