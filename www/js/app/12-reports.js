@@ -430,8 +430,12 @@ const _photoKept = new Map();  // id → { id, data, visitId, ts, on: 'idb' | 'l
 const _photoUp = {};           // id → its upload on the way (one at a time per photo)
 const _photoLanded = new Set();  // photos this phone saw land this session: their visits' marks are settled
 const _photoChecked = new Set(); // this phone's own waiting photos looked up in the cloud this session
+const _photoLost = new Set();    // …found in no store of this phone and not in the cloud: their visits say lost (asked again until that lands)
+const _photoGone = new Set();    // photos this phone let go of this session (landed, or removed): never read back from a store whose delete lags
 const _photoSession = new Set(); // photos taken on this phone this session (marked on a visit before they are kept)
 let _photoDbP = null, _photoRead = false, _photoRetrying = false, _photoSettling = null, _photoSettleAgain = false, _photoDev = null;
+const PHOTO_DB_MS = 5000;      // an IndexedDB open that has not answered by then is taken as "not read" (asked again later)
+const PHOTO_STALE_DAYS = 3;    // a photo waiting longer than this on another phone is said with its age (it may never arrive)
 // This phone's mark on the photos it takes: after a restart it knows which
 // waiting photos were its own, so one it no longer holds is looked up in the
 // cloud — uploaded (the mark goes) or lost (said). The id lives with this
@@ -442,17 +446,40 @@ function photoDevice(){
   if(!_photoDev){ _photoDev = 'd' + uid(); try{ localStorage.setItem('um_device', _photoDev); }catch(e){} }
   return _photoDev;
 }
-// The entry a new photo gets on its visit: thumbnail inline, "waiting to upload", this phone's mark.
-function photoMark(id, thumb){ _photoSession.add(id); return { id, thumb, pending: true, dev: photoDevice() }; }
+// The entry a new photo gets on its visit: thumbnail inline, "waiting to
+// upload", this phone's mark, and when it was taken (a photo that never
+// arrives is said with its age — the phone that took it may be gone).
+function photoMark(id, thumb){ _photoSession.add(id); return { id, thumb, pending: true, dev: photoDevice(), at: Date.now() }; }
+// This phone's photo store → the database; null: nothing can be kept there —
+// this phone has no IndexedDB, or it never opened here (some private modes:
+// the web storage keeps the photos); false: it opened on this phone before
+// (PHOTO_IDB_SEEN) but not now — an error (a full disk…), a missing store, or
+// no answer within PHOTO_DB_MS. False is "not read", never "nothing kept" (a
+// photo kept there was called lost on every phone), and it is asked again at
+// the next call.
+const PHOTO_IDB_SEEN = 'um_idbOk';
 function photoDb(){
-  if(!_photoDbP) _photoDbP = new Promise(res => {
-    try{
-      const rq = indexedDB.open('um_photos', 1);
+  if(!_photoDbP){
+    let done = false;
+    const open = new Promise(res => {
+      let rq;
+      try{
+        if(typeof indexedDB === 'undefined' || !indexedDB) return res(null);
+        rq = indexedDB.open('um_photos', 1);
+      }catch(e){ return res(null); } // refused outright (some private modes): no IndexedDB here
       rq.onupgradeneeded = () => { try{ rq.result.createObjectStore('up', { keyPath: 'id' }); }catch(e){} };
-      rq.onsuccess = () => { const db = rq.result; if(db.objectStoreNames.contains('up')) res(db); else { db.close(); res(null); } };
-      rq.onerror = () => res(null);
-    }catch(e){ res(null); } // no IndexedDB here (some private modes): the web storage keeps the photos
-  });
+      rq.onsuccess = () => { const db = rq.result; if(done){ try{ db.close(); }catch(e){} return; }
+        if(db.objectStoreNames.contains('up')){ try{ localStorage.setItem(PHOTO_IDB_SEEN, '1'); }catch(e){} res(db); } else { db.close(); res(false); } };
+      rq.onerror = () => res(false);
+    });
+    const p = _photoDbP = withTimeout(open, PHOTO_DB_MS).catch(() => false).then(db => {
+      done = true;
+      if(db !== false) return db;
+      if(_photoDbP === p) _photoDbP = null; // asked again next time
+      let seen = true; try{ seen = localStorage.getItem(PHOTO_IDB_SEEN) === '1'; }catch(e){}
+      return seen ? false : null; // never opened here: nothing was ever kept in it
+    });
+  }
   return _photoDbP;
 }
 function photoDbDo(mode, fn){
@@ -472,19 +499,38 @@ async function photoKeep(rec){
   return (rec.on = 'mem');
 }
 async function photoForget(id){
-  _photoKept.delete(id);
-  try{ await photoDbDo('readwrite', st => st.delete(id)); }catch(e){}
+  _photoKept.delete(id); _photoGone.add(id);
   try{ localStorage.removeItem(PHOTO_LS + id); }catch(e){}
+  try{ await photoDbDo('readwrite', st => st.delete(id)); }catch(e){}
 }
-// What earlier sessions left waiting on this phone (read again until IndexedDB
-// answers; a phone with no IndexedDB at all has nothing kept there).
+// What earlier sessions left waiting on this phone (read again until both
+// stores answer; a phone with no IndexedDB at all has nothing kept there, one
+// whose IndexedDB did not open is not read).
 async function photoReadKept(){
   if(_photoRead) return;
-  let idbOk = true;
-  const add = on => r => { if(r && r.id != null && r.data && !_photoKept.has(r.id)) _photoKept.set(r.id, Object.assign(r, { on })); };
-  if(await photoDb()){ try{ ((await photoDbDo('readonly', st => st.getAll())) || []).forEach(add('idb')); }catch(e){ idbOk = false; } }
-  try{ Object.keys(localStorage).forEach(k => { if(k.startsWith(PHOTO_LS)) add('ls')(UMCore.safeParse(localStorage.getItem(k), null)); }); }catch(e){}
-  _photoRead = idbOk;
+  let ok = true;
+  const add = on => r => { if(r && r.id != null && r.data && !_photoKept.has(r.id) && !_photoGone.has(r.id)) _photoKept.set(r.id, Object.assign(r, { on })); };
+  const db = await photoDb();
+  if(db === false) ok = false;
+  else if(db){ try{ ((await photoDbDo('readonly', st => st.getAll())) || []).forEach(add('idb')); }catch(e){ ok = false; } }
+  try{ Object.keys(localStorage).forEach(k => { if(k.startsWith(PHOTO_LS)) add('ls')(UMCore.safeParse(localStorage.getItem(k), null)); }); }catch(e){ ok = false; }
+  _photoRead = ok;
+}
+// One photo in this phone's stores, read now — another tab or window of the
+// app (the same stores) may have kept it after this one read them → its
+// record ({id, data, on}), null (in neither store), or undefined (a store did
+// not answer: nothing can be said this round).
+async function photoFindKept(id){
+  if(_photoGone.has(id)) return null;
+  const db = await photoDb();
+  if(db === false) return undefined;
+  if(db){
+    try{ const r = await photoDbDo('readonly', st => st.get(id)); if(r && r.data) return Object.assign(r, { on: 'idb' }); }
+    catch(e){ return undefined; }
+  }
+  try{ const r = UMCore.safeParse(localStorage.getItem(PHOTO_LS + id), null); if(r && r.data) return Object.assign(r, { on: 'ls' }); }
+  catch(e){ return undefined; }
+  return null;
 }
 // One upload of a full photo. The cloud's client keeps a write it was given
 // until it lands (the app open), so the same photo is never sent again while
@@ -514,6 +560,7 @@ async function photoLanded(id){
   rec.up = true; rec.settling = true; // in the cloud: never sent again
   try{
     _photoLanded.add(id);
+    if(rec.on === 'mem' && typeof memOnlyPhotoLanded === 'function') memOnlyPhotoLanded(); // the red bar may say "Saved" (04)
     await photoForget(id);
     await settlePhotos();
   } finally { rec.settling = false; }
@@ -536,10 +583,16 @@ async function retryPhotos(){
 // - this phone's own waiting photo that it no longer holds (an earlier
 //   session's, not on its way): looked up once — in the cloud, the mark goes
 //   (its save did not land, or an older app version put it back); not there,
-//   the photo was lost before it uploaded (the app closed while it was only
-//   in memory, or the phone's storage was cleared) and the visit says so,
-//   keeping its small preview. Never a photo still on its way from here.
-// Other phones' photos are theirs to settle.
+//   this phone's stores are read again for it (another tab of the app may
+//   keep it: then it is sent from here); in neither, the photo was lost
+//   before it uploaded (the app closed while it was only in memory) and the
+//   visit says so, keeping its small preview. Never a photo still on its way
+//   from here, and no verdict while a store does not answer;
+// - a verdict whose save did not land is sent again the next round;
+// - a month whose revision in the index still has to move (04).
+// Other phones' photos are theirs to settle. A phone whose storage was
+// cleared has a new mark and never settles its old ones: other phones say
+// such a photo's age (photoWaitHTML).
 function settlePhotos(){
   if(_photoSettling){ _photoSettleAgain = true; return _photoSettling; }
   _photoSettling = (async () => {
@@ -556,16 +609,24 @@ async function settlePhotosOnce(){
     if(_photoLanded.has(p.id)){ changes.push({ visitId: v.id, photoId: p.id, lost: false }); return; }
     if(!p.pending) return; // lost: only a landing changes it
     if(_photoKept.has(p.id) || _photoUp[p.id] || _photoSession.has(p.id)) return; // still on its way from this phone
+    if(_photoLost.has(p.id)){ changes.push({ visitId: v.id, photoId: p.id, lost: true }); return; } // its verdict, until that lands
     if(p.dev && p.dev === me && _photoRead && !_photoChecked.has(p.id) && lookups.length < 3) lookups.push({ visitId: v.id, photoId: p.id });
   }));
-  if(!changes.length && !lookups.length) return;
+  if(!changes.length && !lookups.length){
+    if(typeof visitsIndexOwed === 'function' && visitsIndexOwed() && navigator.onLine) await patchVisitPhotos([]); // a month's revision still to move (04)
+    return;
+  }
   if(!navigator.onLine) return; // asked again when the signal is back
   for(const c of lookups){
     let r;
     try{ r = await withTimeout(window.storage.get('photo:' + c.photoId, true), 15000); }catch(e){ continue; } // no answer: asked again next round
+    if(r && r.value){ _photoChecked.add(c.photoId); _photoLanded.add(c.photoId); changes.push({ visitId: c.visitId, photoId: c.photoId, lost: false }); continue; }
+    const held = await photoFindKept(c.photoId); // not in the cloud: is it on this phone after all (another tab)?
+    if(held === undefined) continue; // a store did not answer: no verdict this round
     _photoChecked.add(c.photoId);
-    if(r && r.value){ _photoLanded.add(c.photoId); changes.push({ visitId: c.visitId, photoId: c.photoId, lost: false }); }
-    else changes.push({ visitId: c.visitId, photoId: c.photoId, lost: true });
+    if(held){ if(!_photoKept.has(c.photoId)) _photoKept.set(c.photoId, held); photoUpload(c.photoId, held.data); continue; } // kept here: sent from here
+    _photoLost.add(c.photoId);
+    changes.push({ visitId: c.visitId, photoId: c.photoId, lost: true });
   }
   if(!changes.length) return;
   const res = await patchVisitPhotos(changes);
@@ -603,6 +664,9 @@ function visitPhotoEntry(id){
 function photosToUpload(memOnly){ let n = 0; _photoKept.forEach(r => { if(r && !r.up && (!memOnly || r.on === 'mem')) n++; }); return n; }
 function photosLeftText(n){ return n === 1 ? '1 photo still waiting to upload' : n + ' photos still waiting to upload'; }
 const PHOTO_LOST_1 = '⚠️ Photo lost before it uploaded — only this small preview is kept';
+// How many whole days a photo has waited (from its mark), 0 when not known.
+function photoWaitDays(p){ const at = p && Number(p.at); return at > 0 ? Math.max(0, Math.floor((Date.now() - at) / 86400000)) : 0; }
+function photoStaleText(days){ return days + ' days now — it can only come from the phone that took it, if that phone still has it'; }
 // Under a visit's thumbnails: what its photos still wait for, said per photo —
 // kept on this phone (IndexedDB or the web storage), only in the app's memory,
 // or neither (on the phone that took it, or not kept yet) — and the photos
@@ -612,11 +676,14 @@ function photoWaitHTML(v){
   const waiting = ps.filter(p => p.pending), lost = ps.filter(p => p.lost && !p.pending);
   let out = '';
   if(waiting.length){
-    let here = 0, mem = 0;
-    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r) return; if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    let here = 0, mem = 0, old = 0;
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r){ if(photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
     const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
     if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
     if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");
+    // not on this phone for days: it can only come from the phone that took
+    // it — which may no longer have it (its data cleared, the phone replaced)
+    if(old) parts.push(photoStaleText(old));
     out += `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(parts.join(' · '))}</div>`;
   }
   if(lost.length){
@@ -684,7 +751,10 @@ async function showLightbox(photoId, cap, direct){
     if(ph && ph.thumb && (ph.pending || ph.lost)){
       img.src = ph.thumb;
       img.style.cssText = 'width:min(100%, 520px); height:auto; object-fit:contain;';
-      lbNote(ph.pending ? '⏳ The full photo is still waiting to upload from the phone that took it — this is its small preview' : PHOTO_LOST_1);
+      const days = ph.pending ? photoWaitDays(ph) : 0;
+      lbNote(!ph.pending ? PHOTO_LOST_1 : days >= PHOTO_STALE_DAYS
+        ? '⏳ The full photo has not arrived in ' + days + ' days — it can only come from the phone that took it, if that phone still has it. This is its small preview'
+        : '⏳ The full photo is still waiting to upload from the phone that took it — this is its small preview');
     }
   }
 }

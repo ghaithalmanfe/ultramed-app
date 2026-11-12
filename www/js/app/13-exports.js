@@ -1555,8 +1555,9 @@ async function readCloudForBackup(take, onProgress){
 // (its newest copy is on this phone only — um_mirror:<key>, the delete log in
 // um_tombs), sales changes not saved, and (v122) the full visit photos this
 // phone keeps until the cloud holds them — unless the read found them in the
-// cloud (readKeys: the photo: keys the backup read). → [{key, from, value|null}]
-function bkPending(readKeys){
+// cloud (readKeys: the photo: keys the backup read; held: the photos this
+// phone kept when the backup began). → [{key, from, value|null}]
+function bkPending(readKeys, held){
   const out = [], seen = new Set();
   outboxList().forEach(k => {
     if(seen.has(k)) return;
@@ -1573,9 +1574,14 @@ function bkPending(readKeys){
     try{ v = JSON.stringify(erpSales); }catch(e){}
     out.push({ key: 'erpSales', from: 'memory: sales changes not saved', value: v });
   }
-  if(typeof _photoKept !== 'undefined') _photoKept.forEach(r => {
-    const k = r && r.data ? 'photo:' + r.id : null;
-    if(!k || seen.has(k) || (readKeys && readKeys.has(k))) return;
+  // the photos held when the backup began (held) and those held now: a photo
+  // that landed during the read and could not be read again is kept from here
+  const photos = new Map();
+  (held || []).forEach(r => { if(r && r.data) photos.set(r.id, r); });
+  if(typeof _photoKept !== 'undefined') _photoKept.forEach(r => { if(r && r.data && !photos.has(r.id)) photos.set(r.id, r); });
+  photos.forEach(r => {
+    const k = 'photo:' + r.id;
+    if(seen.has(k) || (readKeys && readKeys.has(k))) return;
     seen.add(k);
     out.push({ key: k, from: r.on === 'idb' ? 'IndexedDB um_photos' : r.on === 'ls' ? 'um_photo:' + r.id : 'memory: photo waiting to upload', value: String(r.data) });
   });
@@ -1659,6 +1665,12 @@ async function openFullBackup(){
   w.push(b.head());
   let res = null, err = null, stopped = false;
   const readPhotos = new Set(); // the photo: documents the read found (a photo still kept on this phone is in the file once)
+  // The photos this phone keeps as the read begins (v122): one that lands
+  // while the cloud is read may already be past the photos' part of the read,
+  // and gone from the phone by the end — it was in neither part of the file.
+  if(typeof photoReadKept === 'function') await photoReadKept().catch(() => {}); // photos an earlier session left waiting here
+  if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;
+  const heldAtStart = typeof _photoKept !== 'undefined' ? [..._photoKept.values()].filter(r => r && r.data && !r.up).map(r => ({ id: r.id, data: r.data, on: r.on })) : [];
   try{
     res = await readCloudForBackup(async d => {
       if(!bkAlive(run)){ stopped = true; throw new Error('the sheet was closed'); }
@@ -1670,10 +1682,22 @@ async function openFullBackup(){
   if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;   // closed, opened again, or someone else signed in
   const body = document.getElementById('fullBackupBody');
   if(err || res || !b.documents()){ body.innerHTML = bkFailedHTML(res, err, b.documents()); return; }
+  // A photo held at the start that the read did not find and this phone no
+  // longer waits on has landed meanwhile: read now, it is one of the cloud's
+  // documents (else it stays with this phone's copy, apart, below).
+  for(const r of heldAtStart){
+    const k = 'photo:' + r.id, now = typeof _photoKept !== 'undefined' ? _photoKept.get(r.id) : null;
+    if(readPhotos.has(k) || (now && !now.up)) continue;
+    let got = null;
+    try{ got = await withTimeout(window.storage.get(k, true, { server: true }), BK_GET_MS); }catch(e){}
+    if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;
+    if(!got || typeof got.value !== 'string') continue;
+    readPhotos.add(k);
+    const bytes = bkBytes(got.value);
+    w.push(b.addDoc(k, got.value, typeof got.updated === 'number' ? got.updated : null, await bkSha256(bytes), bytes.length));
+  }
   // this phone's changes the cloud does not have yet: kept apart, never mixed into the cloud copy
-  if(typeof photoReadKept === 'function') await photoReadKept().catch(() => {}); // photos an earlier session left waiting here
-  if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;
-  const pend = bkPending(readPhotos);
+  const pend = bkPending(readPhotos, heldAtStart);
   w.push(b.pendingStart());
   for(const p of pend){
     const bytes = p.value == null ? null : bkBytes(p.value);

@@ -1900,6 +1900,9 @@
     [/^(\d+) photos still waiting to upload$/, function (m) { return 'عدد الصور التي ما زالت بانتظار الرفع: ' + m[1]; }],
     [/^This phone's storage is full — (\d+) photos are only in the app's memory: keep the app open and connected until it says Saved$/, function (m) { return 'ذاكرة هذا الهاتف ممتلئة — عدد الصور الموجودة في ذاكرة التطبيق فقط: ' + m[1] + ' — أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»'; }],
     [/^(\d+) photos are only in the app's memory too$/, function (m) { return 'وعدد الصور الموجودة أيضًا في ذاكرة التطبيق فقط: ' + m[1]; }],
+    // a photo waiting for days on another phone (v122): it may never arrive (3 days or more: أيام up to 10, يومًا from 11)
+    [/^(\d+) days now — it can only come from the phone that took it, if that phone still has it$/, function (m) { return 'منذ ' + m[1] + ' ' + (+m[1] <= 10 ? 'أيام' : 'يومًا') + ' — لا يمكن أن تصل إلا من الهاتف الذي التقطها، إن كانت ما زالت عليه'; }],
+    [/^The full photo has not arrived in (\d+) days — it can only come from the phone that took it, if that phone still has it\. This is its small preview$/, function (m) { return 'لم تصل الصورة الكاملة منذ ' + m[1] + ' ' + (+m[1] <= 10 ? 'أيام' : 'يومًا') + ' — لا يمكن أن تصل إلا من الهاتف الذي التقطها، إن كانت ما زالت عليه. هذه معاينتها الصغيرة'; }],
     // the Visit photos gallery when some have no full photo in the cloud yet
     [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها.'; }],
     // whole-day Restore (v121): what it removes, asked first; what it restored

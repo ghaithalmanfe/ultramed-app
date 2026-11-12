@@ -572,16 +572,19 @@ async function persistVisitsInner(opts){
     const now = Date.now();
     const writtenMonths = Object.keys(written).filter(d => d !== 'live');
     if(writtenMonths.length || opts.authoritative){
+      const owed = Object.keys(_visitsIdxOwed).filter(m => !writtenMonths.includes(m)); // a photo mark patched there: the phones read it again (this one too)
       const res = await storageUpdate('visitsIndex', cloudStr => {
         const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
         idx.months = Object.assign({}, idx.months || {});
         writtenMonths.forEach(m => { idx.months[m] = { n: written[m].length, rev: now }; });
+        owed.forEach(m => { idx.months[m] = Object.assign({ n: _visitsIdxOwed[m] }, idx.months[m] || {}, { rev: now }); });
         Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
         idx.v = 1; idx.updated = now;
         return JSON.stringify(idx);
       }, 12000);
       if(res == null) throw new Error('visits index failed');
       writtenMonths.forEach(m => { _visitsArch[m] = { rev: now, arr: written[m], json: writtenStr[m] }; });
+      writtenMonths.concat(owed).forEach(m => { delete _visitsIdxOwed[m]; });
     }
     if(written.live){ _visitsLive = written.live; _visitsLoaded = writtenStr.live; }
     // Memory: this device's list in its own order, plus what other devices
@@ -621,12 +624,42 @@ function visitDocOf(id){
   const v = (visits || []).find(x => x && x.id === id);
   return v ? UMCore.visitHome(v, todayStr()) : 'live';
 }
+// Months whose archive this phone changed (a photo mark) while the revision in
+// the index that tells the phones to read it again has not moved yet: moved at
+// the next round (a failed index write was only logged — the other phones
+// kept "waiting to upload" until that month was written again).
+const _visitsIdxOwed = {};   // month → its visit count when patched
+function visitsIndexOwed(){ return Object.keys(_visitsIdxOwed).length; }
+async function bumpVisitsIndex(){
+  const months = Object.keys(_visitsIdxOwed);
+  if(!months.length) return true;
+  const now = Date.now();
+  try{
+    const res = await storageUpdate('visitsIndex', cloudStr => {
+      const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
+      idx.months = Object.assign({}, idx.months || {});
+      months.forEach(m => { idx.months[m] = Object.assign({ n: _visitsIdxOwed[m] }, idx.months[m] || {}, { rev: now }); });
+      Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
+      idx.v = 1; idx.updated = now;
+      return JSON.stringify(idx);
+    }, 12000);
+    if(res == null) throw new Error('visits index failed');
+    months.forEach(m => { delete _visitsIdxOwed[m]; });
+    return true;
+  }catch(e){ console.warn('visits index (photo mark)', e); return false; } // asked again next round
+}
 function patchVisitPhotos(changes){
   const out = {}, todo = [];
   // a month that could not be read is never written: those wait, untouched,
   // for a round where it loaded (and never hold up the refresh meanwhile)
   (changes || []).forEach(c => { const d = visitDocOf(c.visitId); if(d !== 'live' && _visitsBroken.includes(d)) out[c.photoId] = 'failed'; else todo.push(c); });
-  if(!todo.length) return Promise.resolve(out);
+  if(!todo.length){
+    if(!visitsIndexOwed()) return Promise.resolve(out);
+    const bump = () => bumpVisitsIndex().then(() => out); // the index only: no visit changes, the refresh is not held
+    const q = _visitsSaveChain.then(bump, bump);
+    _visitsSaveChain = q.catch(() => {});
+    return q;
+  }
   const run = () => patchVisitPhotosNow(todo).then(r => Object.assign(out, r));
   _localGen++; _localSaving++; // a refresh on its way keeps the lists (see persist)
   const p = _visitsSaveChain.then(run, run);
@@ -667,22 +700,13 @@ async function patchVisitPhotosNow(changes){
         }, 12000);
       }catch(e){ list.forEach(c => { out[c.photoId] = 'failed'; }); continue; }
       Object.assign(out, res);
-      // A month's archive is read again by the other phones only when its
-      // revision in the index moves (as Pass C does for a save).
-      if(wrote && doc !== 'live'){
-        const now = Date.now();
-        try{
-          await storageUpdate('visitsIndex', cloudStr => {
-            const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
-            idx.months = Object.assign({}, idx.months || {});
-            idx.months[doc] = { n, rev: now };
-            Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
-            idx.v = 1; idx.updated = now;
-            return JSON.stringify(idx);
-          }, 12000);
-          if(_visitsArch[doc]) _visitsArch[doc].rev = now;
-        }catch(e){ console.warn('visits index (photo mark)', e); } // the month holds the mark; the others see it when its revision next moves
-      }
+      // A month's archive is read again by the phones only when its revision
+      // in the index moves (as Pass C does for a save) — this phone too: it
+      // never takes the new revision as its own, its copy of the month is not
+      // what the cloud now holds (another phone's edit may be in it). Taken,
+      // the phone stopped reading the month: other phones' edits never showed
+      // and its next save of the month put its old copy back (v122 review).
+      if(wrote && doc !== 'live') _visitsIdxOwed[doc] = n;
       // What this phone knows the cloud holds gets the same marks settled, so
       // the next save of the list does not count them as a change of its own.
       const done = list.filter(c => res[c.photoId] === 'done');
@@ -691,6 +715,7 @@ async function patchVisitPhotosNow(changes){
       if(doc === 'live'){ if(_visitsLoaded != null) _visitsLoaded = restring(_visitsLoaded); }
       else if(_visitsArch[doc]) _visitsArch[doc].json = restring(_visitsArch[doc].json);
     }
+    await bumpVisitsIndex(); // every month patched (and any still owed) in one write of the index
   }finally{ _visitsSaving = false; }
   return out;
 }
@@ -1292,13 +1317,21 @@ function renderMemOnlyBar(){
 }
 // A save of its own decides while one is on its way (its outcome adds to the bar, or lands below).
 function memOnlyRecheck(){ if(_localSaving > 0) _memBarTimer = setTimeout(memOnlyRecheck, 1000); else memOnlyLanded(null); }
+// Photos kept only in memory that reached the cloud since the bar last said
+// so (photoLanded, 12): a photo removed from its visit leaves the bar too,
+// and that is never "Saved — it reached the cloud" (v122 review).
+let _memPhotoLanded = 0;
+function memOnlyPhotoLanded(){ _memPhotoLanded++; }
 // What was only in memory has landed (key: the list just saved; null: a photo,
-// rechecked): "Saved" once nothing is left only in the app's memory.
+// rechecked): "Saved" once nothing is left only in the app's memory — and only
+// when something did land.
 function memOnlyLanded(key){
   const had = key != null && _memOnly.delete(key);
-  if(!had && !document.getElementById('memOnlyBar')) return;
+  if(!had && !_memPhotoLanded && !document.getElementById('memOnlyBar')) return;
   renderMemOnlyBar();
   if(_memOnly.size || memOnlyPhotos()) return;
+  if(!had && !_memPhotoLanded) return; // gone from the bar without landing (removed): nothing to say
+  _memPhotoLanded = 0;
   const left = typeof photosToUpload === 'function' ? photosToUpload(false) : 0; // kept on the phone, still on their way
   showToast(left ? '✅ Saved — it reached the cloud · ⏳ ' + photosLeftText(left) : '✅ Saved — it reached the cloud', 5000);
 }
