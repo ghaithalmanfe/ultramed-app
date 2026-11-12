@@ -102,10 +102,10 @@ function returnPolicyChips(reopenId){
 // The official DSR "MTD Sales" per rep is exactly the ERP net (after
 // discount, returns deducted) of EVERY invoice line of that rep's salesman —
 // all customers, all classes, the online/channel accounts included. Proven
-// on the 23.08 DSR against the August export to the cent: Mariam 5,298.36
-// and Renova 7,501.41. Filtering those channels out (as the buyers list
-// rightly does — it is about clinic coverage) swallowed more than half of
-// Renova's sales and showed 52% where the DSR basis says 62%. Every achieved
+// on the August DSR against the August export, to the cent, for both reps.
+// Filtering those channels out (as the buyers list rightly does — it is
+// about clinic coverage) swallowed more than half of one rep's sales and
+// showed a percentage ten points under the DSR basis. Every achieved
 // / target figure below therefore counts every line; only the buyers and
 // reconciliation lists stay clinic-only.
 function erpRowCountsAsSales(r){ return true; }
@@ -183,8 +183,8 @@ function teamTargetRow(tt, opts){
   </div>`;
 }
 // Target % per rep exactly as the Today card shows it — captured before and
-// after every upload so the import can SAY what it changed ("Mariam 46% →
-// 52%"), and say why when nothing moved.
+// after every upload so the import can SAY what it changed ("Mariam 40% →
+// 45%"), and say why when nothing moved.
 function targetPctMap(){
   const out = {};
   REPS.forEach(r => {

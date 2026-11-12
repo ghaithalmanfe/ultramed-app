@@ -747,11 +747,11 @@
     }
     return prev[b.length];
   }
-  // ERP salesman names rarely equal app rep names ("Ranova Ayman Mohammed" vs
+  // ERP salesman names rarely equal app rep names ("Ranova Sample Person" vs
   // "Renova"). Guess by comparing each name token with edit distance ≤ 2.
-  // An ERP salesman name ("Ghaith Al Manfe", "Ranova Ayman Mohammed") is
+  // An ERP salesman name ("Ghaith Al Sample", "Ranova Sample Person") is
   // matched to an app rep by any name part: the rep's own name parts count
-  // too, so "Dr. Ghaith" in the app still finds "Ghaith Al Manfe" — titles
+  // too, so "Dr. Ghaith" in the app still finds "Ghaith Al Sample" — titles
   // (Dr, Mr, Mrs) and parts under 3 letters never match on their own.
   var NAME_TITLES = { dr: 1, mr: 1, mrs: 1, ms: 1, miss: 1, eng: 1, prof: 1 };
   function nameParts(s){
@@ -1236,7 +1236,7 @@
   // The team's own spreadsheets are messy by nature: a title row above the
   // header, several people columns ("Doctor", "Dentist", "Hygienist"), a
   // phone column called "Contact Number", a name cell that also carries the
-  // role and the clinic ("Maram Aline Hygenist"), abbreviations for clinics,
+  // role and the clinic ("Lina Aline Hygenist"), abbreviations for clinics,
   // and the same person repeated across sheets. Everything below exists to
   // turn that into clean, de-duplicated contacts attached to the right clinic.
   var PERSON_HDR = /hygien|dentist|doctor|dr\.?\s|contact\s*name|^name$|physician|staff|person|طبيب|دكتور|^اسم$|اسم (الطبيب|الدكتور|الشخص|جهة الاتصال|الممرض)/i;
@@ -1304,7 +1304,7 @@
     if(/^\d|\d{3,}/.test(t) || NOT_A_PERSON.test(t)) return false;   // "No Hygienist", "1 / Arab", "Floater", a phone number
     return /[A-Za-z؀-ۿ]{3}/.test(t);
   }
-  // "Ms. Bidya, Ms.Abby and Ms.Moly" → three people
+  // "Ms. Tala, Ms.Ruby and Ms.Mimi" → three people
   function splitPeople(cell){
     var t = String(cell || '').trim();
     if(!/(,|&|\band\b|\+)/i.test(t)) return [t];
@@ -1312,9 +1312,9 @@
     if(parts.length < 2 || !parts.every(looksLikeName)) return [t];
     return parts;
   }
-  // "Maram Aline Hygenist" → {name:'Maram', hint:'Aline', title:'Hygienist'}
-  // "Dr Aseel Yousfan Hygenist Nael Hazem" → name 'Dr Aseel Yousfan', hint 'Nael Hazem'
-  // "Dana El Shatty Kuwait Hospital Hyg" → name 'Dana El Shatty', hint 'Kuwait Hospital'
+  // "Lina Aline Hygenist" → {name:'Lina', hint:'Aline', title:'Hygienist'}
+  // "Dr Hala Example Hygenist Nael Hazem" → name 'Dr Hala Example', hint 'Nael Hazem'
+  // "Dana El Sample Kuwait Hospital Hyg" → name 'Dana El Sample', hint 'Kuwait Hospital'
   function splitPersonHint(raw, clinics){
     var s = String(raw || '').replace(/[“”"]/g, ' ').replace(/\s+/g, ' ').trim();
     var m = s.match(HYG_TOKEN);
@@ -1328,17 +1328,17 @@
     after = after.replace(fill, ' ').replace(/\s+/g, ' ').trim();
     var name = before.replace(/[.,]+$/, '').trim(), hint = after, area = '';
     if(hint && isAreaHint(hint)){ area = hint; hint = ''; }      // "iane Bayan Hygenist Jahra" → Jahra is where, not who
-    if(!name && after){                              // "Hygeinist Anwar New Care" → the name follows the role
+    if(!name && after){                              // "Hygeinist Rana Sample Care" → the name follows the role
       var w = after.split(' '); name = w[0]; hint = w.slice(1).join(' ');
     } else if(!hint){
       var words = name.split(/\s+/);
       var ci = -1;
       for(var i = 0; i < words.length; i++) if(CLINIC_WORD.test(words[i])){ ci = i; break; }
-      if(ci >= 0){                                   // "Marlyn. Gulf Clinic" / "Pia Asnan Tower"
+      if(ci >= 0){                                   // "Rina. Delta Clinic" / "Mia Asnan Tower"
         var cut = Math.max(1, ci - 1);
         hint = words.slice(cut).join(' '); name = words.slice(0, cut).join(' ');
       } else if(words.length >= 2){
-        // "Maram Aline" / "Dr Ghoson Al Ali Moh": the shortest tail that names a clinic we know, or an abbreviation we expand
+        // "Lina Aline" / "Dr Rana Al Demo Moh": the shortest tail that names a clinic we know, or an abbreviation we expand
         for(var k = words.length - 1; k >= 1; k--){
           var tail = words.slice(k).join(' ');
           var aliased = normClinicHint(tail) !== tail.toLowerCase().replace(/\s+/g, ' ').trim();
@@ -3755,12 +3755,12 @@
       // A group account ("Aline Dental Centers", "NHC - Dr. Nael Al Hazeem
       // Dental Centers") covers every branch whose name holds all its words;
       // any other account must carry exactly the same words as one clinic, so
-      // "Dr.Teeth … Shaab" never lands on the Mangaf branch.
+      // "Smile Hub … Shaab" never lands on the Mangaf branch.
       var group = /\b(centers|centres|clinics|branches)\b/i.test(r.account) || /^\s*[A-Z]{2,5}\s*-\s*/.test(r.account);
       var ht = toks(r.account.replace(/\b(centers|centres|clinics|branches)\b/ig, '').replace(/^\s*[A-Z]{2,5}\s*-\s*/, ''));
       var hits = free.filter(function(c){ var ct = toks(c.name); return group ? sub(ht, ct) : (sub(ht, ct) && sub(ct, ht)); });
       if(!hits.length){
-        // Only a near name ("Meena Dental" for "Meena Dental Speciality
+        // Only a near name ("Sample Dental" for "Sample Dental Speciality
         // Center"): never moved on a guess — fine if it is already right,
         // otherwise listed for a manual look.
         var GEN = ['hospital', 'moh', 'care', 'services', 'service', 'speciality', 'specialty', 'ph', 'health', 'centre', 'polyclinic'];
@@ -3862,7 +3862,7 @@
         });
         if(byArea.length) pool = byArea;
       }
-      if(pool.length > 1){                           // "Gulf Clinic" vs "Gulf Medical Service": count every word, not just the rare ones
+      if(pool.length > 1){                           // "Delta Clinic" vs "Delta Medical Service": count every word, not just the rare ones
         var ht = fullTokens(h), best = -1, bestIds = [];
         pool.forEach(function(id){ var c = clinics.find(function(x){ return x.id === id; }); var ct = fullTokens(c ? c.name : ''); var ov = ht.filter(function(t){ return ct.indexOf(t) >= 0; }).length; if(ov > best){ best = ov; bestIds = [id]; } else if(ov === best) bestIds.push(id); });
         if(bestIds.length === 1 && best > 0) pool = bestIds;
@@ -4428,7 +4428,7 @@
   }
   // ==== RETURNS OF EARLIER INVOICES ====
   // A return document names the invoice it reverses in its remarks
-  // ("Philip SINV0076017"). When that invoice belongs to an earlier month,
+  // ("Philip SINV1234"). When that invoice belongs to an earlier month,
   // the ERP still deducts the return in the month it was booked — so a rep's
   // new month opens with last month's goods coming back. The 'origin' policy
   // moves such returns to the month of the original invoice instead.
@@ -4941,11 +4941,19 @@
   // in the ERP files under a brand the catalog has nothing of (services,
   // delivery, packaging, marketing items and kits excluded). Each comes with
   // the usual invoiced unit price (gross ÷ qty, most frequent), how many were
-  // sold and the last invoice date. Nothing is added here — the supervisor
-  // ticks what to add. Pure.
+  // sold and the last invoice date. A list item that carries no price (the
+  // code ships none since v121 — it is public) takes the same usual invoiced
+  // price from the rows, or none when the files never sold it. Nothing is
+  // added here — the supervisor ticks what to add. Pure.
   var NON_PRODUCT_RE = /maintenance|delivery|packaging|service|marketing|inspection fee|freight|shipping/i;
+  function usualUnitPrice(prices){                  // {unit price: lines} → the most frequent, the higher on a tie
+    var best = null;
+    Object.keys(prices || {}).forEach(function(u){ if(best == null || prices[u] > prices[best] || (prices[u] === prices[best] && +u > +best)) best = u; });
+    return best == null ? null : +best;
+  }
   function catalogGaps(products, rows, builtIn){
     var key = function(n){ return String(n || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+    var unit = function(r){ return r.qty > 0 && r.gross > 0 ? Math.round(r.gross / r.qty * 1000) / 1000 : null; };
     var names = {}, ids = {}, brands = {};
     (products || []).forEach(function(p){ if(!p) return; names[key(p.name)] = 1; if(p.id != null) ids[key(p.id)] = 1; brands[normBrand(p.brand)] = 1; });
     var out = [], taken = {};
@@ -4955,20 +4963,23 @@
       var c = {}; for(var k in p) c[k] = p[k];
       out.push({ product: c, source: 'list', sold: 0, last: null });
     });
-    var agg = {}, listIdx = {};
+    var agg = {}, listIdx = {}, listPrices = {};
     out.forEach(function(x, i){ listIdx[key(x.product.name)] = i; });
     (rows || []).forEach(function(r){
-      var b = normBrand(r.brand), k = key(r.product);
-      if(listIdx[k] != null && r.type !== 'return'){ var li = out[listIdx[k]]; li.sold += Number(r.qty) || 0; if(!li.last || r.date > li.last) li.last = r.date; }
+      var b = normBrand(r.brand), k = key(r.product), u = unit(r);
+      if(listIdx[k] != null && r.type !== 'return'){
+        var li = out[listIdx[k]]; li.sold += Number(r.qty) || 0; if(!li.last || r.date > li.last) li.last = r.date;
+        if(u != null){ var lp = listPrices[k] || (listPrices[k] = {}); lp[u] = (lp[u] || 0) + 1; }
+      }
       if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(r.product || '') || b === 'bundles' || brands[b] || names[k] || taken[k]) return;
       var a = agg[k] || (agg[k] = { name: String(r.product).replace(/\s+/g, ' ').trim(), brand: String(r.brand || 'Other').trim(), prices: {}, sold: 0, last: '' });
-      if(r.qty > 0 && r.gross > 0){ var u = Math.round(r.gross / r.qty * 1000) / 1000; a.prices[u] = (a.prices[u] || 0) + 1; }
+      if(u != null) a.prices[u] = (a.prices[u] || 0) + 1;
       if(r.type !== 'return'){ a.sold += Number(r.qty) || 0; if(r.date > a.last) a.last = r.date; }
     });
+    out.forEach(function(x){ if(x.product.price == null) x.product.price = usualUnitPrice(listPrices[key(x.product.name)]); });
     Object.keys(agg).forEach(function(k){
-      var a = agg[k], best = null;
-      Object.keys(a.prices).forEach(function(u){ if(best == null || a.prices[u] > a.prices[best] || (a.prices[u] === a.prices[best] && +u > +best)) best = u; });
-      out.push({ product: { id: 'erp-' + slugify(a.name), name: a.name, brand: a.brand, cat: a.brand, price: best == null ? null : +best, stock: true },
+      var a = agg[k];
+      out.push({ product: { id: 'erp-' + slugify(a.name), name: a.name, brand: a.brand, cat: a.brand, price: usualUnitPrice(a.prices), stock: true },
         source: 'erp', sold: a.sold, last: a.last || null });
     });
     return out.sort(function(x, y){ return x.product.brand.localeCompare(y.product.brand) || (x.source === y.source ? 0 : x.source === 'list' ? -1 : 1) || x.product.name.localeCompare(y.product.name); });
