@@ -411,9 +411,127 @@ function compressImage(file, maxEdge, quality){
     fr.readAsDataURL(file);
   });
 }
-async function savePhotoBlob(id, dataUrl){
-  try{ await window.storage.set('photo:'+id, dataUrl, true); return true; }
-  catch(e){ console.error('photo save', e); showToast('Photo too large to save'); return false; }
+// ---- Photos waiting to upload (v122) ----
+// A full photo goes to its own cloud document (photo:<id>); the visit keeps
+// its thumbnail inline. Saving a visit used to wait for every upload: with no
+// signal it never finished, and the visit was in no list, on no phone and in
+// no queue. Now the visit is saved first, its photos marked "waiting to
+// upload" (pending), and each full photo is kept on this phone until the
+// cloud holds it — IndexedDB (room for photos, apart from the small web
+// storage the app's copies and queue share), else that web storage, else (a
+// full phone) the app's memory only, which the visit and the toast say. The
+// uploads run in the background; the queue's flush (so every 20-second
+// refresh) retries them; one that lands clears its mark, and only once that
+// is saved does the phone let go of its copy.
+let PHOTO_UP_MS = 20000;       // how long a screen waits for one upload before it says so (the write itself goes on)
+const PHOTO_LS = 'um_photo:';  // the web-storage fallback, one key per photo
+const _photoKept = new Map();  // id → { id, data, visitId, ts, on: 'idb' | 'ls' | 'mem' }: every photo this phone still holds for the cloud
+const _photoUp = {};           // id → its upload on the way (one at a time per photo)
+let _photoDbP = null, _photoRead = false, _photoRetrying = false;
+function photoDb(){
+  if(!_photoDbP) _photoDbP = new Promise(res => {
+    try{
+      const rq = indexedDB.open('um_photos', 1);
+      rq.onupgradeneeded = () => { try{ rq.result.createObjectStore('up', { keyPath: 'id' }); }catch(e){} };
+      rq.onsuccess = () => { const db = rq.result; if(db.objectStoreNames.contains('up')) res(db); else { db.close(); res(null); } };
+      rq.onerror = () => res(null);
+    }catch(e){ res(null); } // no IndexedDB here (some private modes): the web storage keeps the photos
+  });
+  return _photoDbP;
+}
+function photoDbDo(mode, fn){
+  return withTimeout(photoDb().then(db => new Promise((res, rej) => {
+    if(!db) return rej(new Error('no IndexedDB'));
+    const tx = db.transaction('up', mode), rq = fn(tx.objectStore('up'));
+    tx.oncomplete = () => res(rq.result);
+    tx.onerror = tx.onabort = () => rej(tx.error || new Error('IndexedDB'));
+  })), 5000);
+}
+// Keep one photo on this phone until the cloud holds it → where it is kept.
+async function photoKeep(rec){
+  _photoKept.set(rec.id, rec);
+  const row = { id: rec.id, data: rec.data, visitId: rec.visitId || null, ts: rec.ts || Date.now() };
+  try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }catch(e){}
+  if(deviceSet(PHOTO_LS + rec.id, JSON.stringify(row), true)) return (rec.on = 'ls');
+  return (rec.on = 'mem');
+}
+async function photoForget(id){
+  _photoKept.delete(id);
+  try{ await photoDbDo('readwrite', st => st.delete(id)); }catch(e){}
+  try{ localStorage.removeItem(PHOTO_LS + id); }catch(e){}
+}
+// What earlier sessions left waiting on this phone (read again until IndexedDB answers).
+async function photoReadKept(){
+  if(_photoRead) return;
+  let idbOk = true;
+  const add = on => r => { if(r && r.id != null && r.data && !_photoKept.has(r.id)) _photoKept.set(r.id, Object.assign(r, { on })); };
+  try{ ((await photoDbDo('readonly', st => st.getAll())) || []).forEach(add('idb')); }catch(e){ idbOk = false; }
+  try{ Object.keys(localStorage).forEach(k => { if(k.startsWith(PHOTO_LS)) add('ls')(UMCore.safeParse(localStorage.getItem(k), null)); }); }catch(e){}
+  _photoRead = idbOk;
+}
+// One upload of a full photo. The cloud's client keeps a write it was given
+// until it lands (the app open), so the same photo is never sent again while
+// one is on its way; when it lands, a photo this phone keeps is settled.
+function photoUpload(id, dataUrl){
+  if(!_photoUp[id]){
+    _photoUp[id] = Promise.resolve().then(() => window.storage.set('photo:'+id, dataUrl, true))
+      .then(r => r !== false, e => { console.warn('photo upload', id, (e && e.message) || e); return false; })
+      .then(ok => { delete _photoUp[id]; if(ok && _photoKept.has(id)) photoLanded(id).catch(e => console.warn('photo settle', e)); return ok; });
+  }
+  return _photoUp[id];
+}
+// An upload a screen waits for: true once the cloud holds it, false on a
+// refusal or when it is still on its way after `ms` — never a hang.
+async function savePhotoBlob(id, dataUrl, ms){
+  try{ return await withTimeout(photoUpload(id, dataUrl), ms || PHOTO_UP_MS); }
+  catch(e){ return false; }
+}
+// A kept photo is in the cloud: its visit stops saying "waiting", saved like
+// any visit edit; the phone lets go of its copy once that is saved or queued
+// on the phone (in memory only, the next round settles it again).
+async function photoLanded(id){
+  const rec = _photoKept.get(id);
+  if(!rec || rec.settling) return;
+  rec.up = true; rec.settling = true; // in the cloud: never sent again — a round that finds it unsettled settles it again
+  try{
+    let holder = false;
+    (visits || []).forEach(v => (v && Array.isArray(v.photos) ? v.photos : []).forEach(p => { if(p && p.id === id){ holder = true; delete p.pending; } }));
+    if(holder){
+      const r = await persistFor('visits');
+      if(!(r.ok || sentSince('visits', r) || (r.outcome && r.outcome.queued && r.outcome.mirrored))) return;
+      const row = document.getElementById('editPhotoRow');
+      if(row && row.dataset.visit) renderEditPhotos(row.dataset.visit);
+    } else if(_loadFailed.visits || (_visitsBroken || []).length) return; // its visit may be in what did not load
+    await photoForget(id);
+  } finally { rec.settling = false; }
+}
+// Retry every photo this phone keeps (from flushOutbox: the queue's flush and the 20-second refresh).
+async function retryPhotos(){
+  if(_photoRetrying) return;
+  _photoRetrying = true;
+  try{
+    await photoReadKept();
+    _photoKept.forEach(rec => { if(rec.up) photoLanded(rec.id).catch(e => console.warn('photo settle', e)); else if(rec.data && !_photoUp[rec.id]) photoUpload(rec.id, rec.data); });
+  }catch(e){ console.warn('photo retry', e); }
+  finally{ _photoRetrying = false; }
+}
+// The full photos of a visit just saved: kept on this phone, then uploaded in
+// the background → 'phone', or 'mem' when one could only be kept in memory.
+async function keepVisitPhotos(visitId, shots){
+  const where = await Promise.all(shots.map(ph => photoKeep({ id: ph.id, data: ph.full, visitId, ts: Date.now() })));
+  shots.forEach(ph => photoUpload(ph.id, ph.full));
+  return where.includes('mem') ? 'mem' : 'phone';
+}
+function photoPending(id){ return (visits || []).some(v => v && Array.isArray(v.photos) && v.photos.some(p => p && p.id === id && p.pending)); }
+// Under a visit's thumbnails: what its photos still wait for.
+function photoWaitHTML(v){
+  const waiting = ((v && v.photos) || []).filter(p => p && p.pending);
+  if(!waiting.length) return '';
+  const mem = waiting.some(p => (_photoKept.get(p.id) || {}).on === 'mem');
+  const here = waiting.some(p => _photoKept.has(p.id));
+  const what = waiting.length === 1 ? 'Photo waiting to upload' : waiting.length + ' photos waiting to upload';
+  const txt = mem ? '⚠️ ' + what + " · only in the app's memory — keep the app open" : '⏳ ' + what + (here ? ' · kept on this phone' : '');
+  return `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(txt)}</div>`;
 }
 async function loadPhotoBlob(id){
   try{ const r = await window.storage.get('photo:'+id, true); return r? r.value : null; }
@@ -446,7 +564,9 @@ async function showLightbox(photoId, cap, direct){
   lb.classList.add('show');
   if(!direct){
     const local = visitPhotos.find(p=>p.id===photoId);
-    const data = local ? local.full : await loadPhotoBlob(photoId);
+    if(!local && !_photoKept.has(photoId) && photoPending(photoId)) await photoReadKept().catch(()=>{}); // kept by an earlier session, not read yet
+    const kept = _photoKept.get(photoId); // still waiting to upload: this phone's copy
+    const data = local ? local.full : (kept && kept.data) ? kept.data : await loadPhotoBlob(photoId);
     if(data) document.getElementById('lbImg').src = data;
   }
 }

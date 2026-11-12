@@ -1001,6 +1001,15 @@
     'You can only edit your own visits': 'يمكنك تعديل زياراتك فقط',
     '♻️ Clinic re-created — all its history is attached': '♻️ أُعيد إنشاء العيادة — مع كل سجلها',
     '⚠️ Photo failed to upload — try again': '⚠️ فشل رفع الصورة — حاول مرة أخرى',
+    // photos waiting to upload (v122): the visit is saved first, each photo kept on the phone until the cloud holds it
+    '✅ Visit saved — its photos upload in the background and stay on this phone until they do': '✅ حُفظت الزيارة — صورها تُرفع في الخلفية وتبقى على هذا الهاتف حتى تصل',
+    '📴 Visit and its photos saved on this phone — they upload automatically when back online': '📴 الزيارة وصورها محفوظة على هذا الهاتف — تُرفع تلقائيًا عند عودة الاتصال',
+    "⚠️ This phone's storage is full — the photo is only in the app's memory: keep the app open until it uploads": '⚠️ ذاكرة هذا الهاتف ممتلئة — الصورة موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا حتى تُرفع',
+    '📸 Photo added — it uploads in the background and stays on this phone until it does': '📸 أُضيفت الصورة — تُرفع في الخلفية وتبقى على هذا الهاتف حتى تصل',
+    '📴 Photo added on this phone — it uploads automatically when back online': '📴 أُضيفت الصورة على هذا الهاتف — تُرفع تلقائيًا عند عودة الاتصال',
+    'Photo waiting to upload': 'صورة بانتظار الرفع',
+    'kept on this phone': 'محفوظة على هذا الهاتف',
+    "only in the app's memory — keep the app open": 'في ذاكرة التطبيق فقط — أبقِ التطبيق مفتوحًا',
     '✅ Changes saved': '✅ حُفظت التغييرات',
     '✅ Clinic updated': '✅ حُدّثت العيادة',
     '✅ Evaluation targets updated': '✅ حُدّثت أهداف التقييم',
@@ -1863,6 +1872,8 @@
 
   // Strings that carry a number or a name are matched by shape, not by text.
   var PATTERNS = [
+    // photos waiting to upload (v122): "⏳ 2 photos waiting to upload" (the sign is kept by the leading-symbol rule)
+    [/^(\d+) photos waiting to upload$/, function (m) { return 'عدد الصور بانتظار الرفع: ' + m[1]; }],
     // whole-day Restore (v121): what it removes, asked first; what it restored
     [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits and the sales files stay as they are\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات تبقى كما هي.'; }],
     [/^Restored (\S+) — (\d+) clinics, (\d+) visits$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — ' + m[2] + ' عيادة، ' + m[3] + ' زيارة'; }],

@@ -522,11 +522,12 @@ async function saveVisitNow(){
     noOrderReason: (savedOrders.length===0) ? (noOrderReason || document.getElementById('noOrderOther').value.trim() || null) : null};
   const metNames = visitDoctorNames(clinicId, visit.doctorIds); if(metNames) visit.doctorNames = metNames; // v119: a lost doctor record can come back from its visits
   if(visitMood) visit.mood = visitMood;                // the doctor's satisfaction, as the rep read it (optional)
-  if(visitPhotos.length){
-    const ids=[];
-    for(const ph of visitPhotos){ if(await savePhotoBlob(ph.id, ph.full)) ids.push({id:ph.id, thumb:ph.thumb}); }
-    visit.photos = ids;
-  }
+  // Photos (v122): the visit never waits for an upload. It carries each
+  // thumbnail inline, marked "waiting to upload" until the cloud holds the
+  // full photo; the full photos are kept on this phone right after the visit
+  // is saved, and uploaded in the background (keepVisitPhotos, 12).
+  const shots = visitPhotos.slice();
+  if(shots.length) visit.photos = shots.map(ph => ({id:ph.id, thumb:ph.thumb, pending:true}));
   // Prescription pads given: only what was typed for the people met (or the
   // clinic), whole pads, known types — cleaned by the one save path. "Yes"
   // with every count at 0 stores nothing, like an order with no items. An
@@ -543,14 +544,24 @@ async function saveVisitNow(){
   // offline queue may send visits again while the follow-up step runs, and
   // that later save is not this one (persistFor / sentSince, 04).
   const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
+  const kept = shots.length ? await keepVisitPhotos(visit.id, shots) : null;
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
   if(navigator.vibrate) navigator.vibrate(12); // a small physical "saved" cue in the field
-  const outcome = vs.outcome;
-  if(vs.ok || sentSince('visits', vs)) showToast(visitSavedMsg()); // queued here, sent by the queue meanwhile = saved
-  else if(outcome.queued && outcome.mirrored) showToast('📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال');
-  else showToast('⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال');
+  const msg = visitSaveMsg(vs, kept);
+  showToast(msg, kept ? 4500 : undefined);
   renderAll();
   switchView('today');
+}
+// What a visit save (or a photo added to a visit) did, in the toast. Without
+// photos: exactly the messages it always had.
+function visitSaveMsg(vs, kept, added){
+  const saved = vs.ok || sentSince('visits', vs); // queued here, sent by the queue meanwhile = saved
+  const onPhone = !saved && !!(vs.outcome && vs.outcome.queued && vs.outcome.mirrored);
+  if(!saved && !onPhone) return '⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال';
+  if(kept === 'mem') return "⚠️ This phone's storage is full — the photo is only in the app's memory: keep the app open until it uploads";
+  if(!kept) return saved ? visitSavedMsg() : '📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال';
+  if(added) return saved ? '📸 Photo added — it uploads in the background and stays on this phone until it does' : '📴 Photo added on this phone — it uploads automatically when back online';
+  return saved ? '✅ Visit saved — its photos upload in the background and stay on this phone until they do' : '📴 Visit and its photos saved on this phone — they upload automatically when back online';
 }
 
 // ---- FOLLOW-UP AUTOMATION: auto-task + auto-schedule ----
