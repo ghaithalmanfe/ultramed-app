@@ -15,7 +15,7 @@
 const http = require('http'), fs = require('fs'), path = require('path'), os = require('os');
 const { spawnSync } = require('child_process');
 const { chromium } = require('playwright');
-const { WWW, launchOpts, blockFirebase, twoRepStaff } = require('./_env.js');
+const { WWW, launchOpts, blockFirebase } = require('./_env.js');
 const core = require(path.resolve(WWW, 'js/core.js'));
 const ROOT = path.join(__dirname, '..', '..');
 const tryReq = p => { try{ return require(p); }catch(e){ return null; } };
@@ -29,7 +29,9 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const own = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith';
-const EMAIL = { [M]: 'mariam@ultramed-kw.com', [R]: 'r.ayman@ultramed-kw.com', [G]: 'drgaith@ultramed-kw.com' };
+// placeholder addresses only — the repository is public
+const EMAIL = { [M]: 'rep1@example.com', [R]: 'rep2@example.com', [G]: 'supervisor@example.com' };
+const STAFF = () => J([{ name: M, role: 'rep', email: EMAIL[M] }, { name: R, role: 'rep', email: EMAIL[R] }, { name: G, role: 'supervisor', email: EMAIL[G], sells: false }]);
 
 // ---------- the fake cloud: key → {value: stored string, updated: ms|null} ----------
 const cloud = {};
@@ -77,7 +79,7 @@ function smallAccount(){
     C('c2', 'Bayan Dental Center 🦷', R, [{ id: 'd3', name: 'Dr. Omar' }]), C('c3', 'Dental 8 Clinic', M)]
     .concat(Array.from({ length: 14 }, (_, i) => C('f' + i, 'Filler Clinic ' + i, i % 2 ? M : R)));
   put('clinics', clinics, 1762810000000);
-  put('staff', twoRepStaff());
+  put('staff', STAFF());
   put('products', [{ id: 'WP-450ME', name: 'Waterpik Cordless Plus', brand: 'Waterpik', price: 30, stock: true }, { id: 'TP-1', name: 'Tepe Interdental', brand: 'Tepe', price: 2 }]);
   const v = (id, date, cid, rep, extra) => Object.assign({ id, clinicId: cid, rep, date, type: 'visit', doctorIds: [], notes: 'ملاحظة — note ' + id }, extra || {});
   put('visits', [v('v1', '2026-11-02', 'c1', M, { doctorIds: ['d1'], photos: [{ id: 'ph1', thumb: dataUrl(1, 60) }] }), v('v2', '2026-11-03', 'c2', R), v('v3', '2026-11-04', 'c3', M), v('v4', '2026-11-05', 'c1', M)]);
@@ -120,10 +122,10 @@ function bigAccount(){
   const out = {}, put = (k, v) => { out[k] = { value: typeof v === 'string' ? v : J(v), updated: 1762800000000 }; };
   const reps = [M, R], sm = ['Mariam Zohair', 'Renova Ayman'];
   const clinics = Array.from({ length: 450 }, (_, i) => ({ id: 'bc' + i, name: (i % 3 ? 'Clinic ' : 'عيادة ') + i + ' Dental', rep: reps[i % 2], cls: 'ABC'[i % 3], area: 'Hawalli',
-    phone: '+965 5' + (1000000 + i), notes: 'Synthetic clinic ' + i,
+    phone: '000-' + (1000 + i), notes: 'Synthetic clinic ' + i,   // not a phone number
     doctors: [0, 1, 2].map(j => ({ id: 'bd' + i + '_' + j, name: (j ? 'Dr. ' : 'د. ') + 'Name ' + i + '-' + j, title: 'Dentist', phone: '', birthday: '', cadence: '', notes: '', handovers: [] })) }));
   put('clinics', clinics);
-  put('staff', twoRepStaff());
+  put('staff', STAFF());
   const products = Array.from({ length: 600 }, (_, i) => ({ id: 'P' + i, name: 'Product ' + i + ' — interdental brush size ' + (i % 8), brand: ['Tepe', 'Waterpik', 'Intensiv', 'Philips Sonicare'][i % 4], price: 1 + (i % 50), stock: true, cat: 'Category ' + (i % 12) }));
   put('products', products);
   const visit = (id, date, ci) => ({ id, clinicId: 'bc' + ci, rep: reps[ci % 2], date, ts: Date.parse(date + 'T09:00:00Z'), type: 'visit',
@@ -458,10 +460,10 @@ const latinLeft = page => page.evaluate(() => {
   mode.failQuery = null;
   check('Firestore: a failed range of single documents names the documents it holds (clinics, the team chat …)', r.failed && !r.ready && /clinics/.test(r.text) && /chat/.test(r.text), r.text.slice(0, 600));
   // a rep on the production adapter
-  await pageB.evaluate(() => firebase.auth().signInWithEmailAndPassword('r.ayman@ultramed-kw.com', 'pw'));
+  await pageB.evaluate(e => firebase.auth().signInWithEmailAndPassword(e, 'pw'), EMAIL[R]);
   await pageB.waitForFunction(() => currentUser && currentUser.name === 'Renova' && _bootLoaded, null, { timeout: 60000 }); await pageB.waitForTimeout(500);
   stats.queries = [];
-  const repB = await pageB.evaluate(async () => { try{ await openFullBackup(); }catch(e){} let read = null; try{ read = await readCloudForBackup(() => {}); }catch(e){ read = 'refused'; } return { sheet: !!document.getElementById('fullBackupBody'), read: read === 'refused' ? read : !!read }; });
+  const repB = await pageB.evaluate(async () => { closeModal(); document.getElementById('modalInner').innerHTML = ''; try{ await openFullBackup(); }catch(e){} let read = null; try{ read = await readCloudForBackup(() => {}); }catch(e){ read = 'refused'; } return { sheet: !!document.getElementById('fullBackupBody'), read: read === 'refused' ? read : !!read }; });
   check('Firestore: a rep can neither open nor run the full read', !repB.sheet && repB.read === 'refused' && !stats.queries.some(q => q.l != null && q.l <= 25 && !(q.f || []).length), { repB, q: stats.queries.length });
 
   // ===== 7) a large account inside a phone's budget, CPU 4× slower =====
