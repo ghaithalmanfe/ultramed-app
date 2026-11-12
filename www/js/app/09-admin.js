@@ -119,6 +119,7 @@ function adminTeamHTML(){
 }
 async function saveTargets(){
   const clamp = v => Math.max(0, parseFloat(v)||0);
+  const was = auditTargetFields(targets, REPS); // the change log
   REPS.forEach((r,i)=>{
     targets[r] = Object.assign({}, targets[r] || {}, {
       month: todayStr().slice(0, 7), // set by hand this month
@@ -126,20 +127,26 @@ async function saveTargets(){
       visits: Math.round(clamp(document.getElementById('tgVis'+i).value)),
     });
   });
-  await persist('targets');
-  showToast('🎯 Monthly targets saved');
+  const r = await persistTold('targets');
+  const now = auditTargetFields(targets, REPS);
+  auditPeopleChanged(was, now); // only the people whose figures changed
+  auditRecord({ action: 'target.set', key: 'targets', id: todayStr().slice(0, 7), label: todayStr().slice(0, 7), before: was, after: now, result: r });
+  saveToast(r, 'targets', '🎯 Monthly targets saved');
   renderTargetCard();
 }
 async function saveBenchmarks(){
   const clamp = v => Math.max(0, Math.min(100, parseInt(v)||0));
+  const pick = b => ({ coverage: b.coverage, priority: b.priority, conversion: b.conversion, taskRate: b.tasks });
+  const was = pick(BENCHMARKS);
   BENCHMARKS = Object.assign({}, BENCHMARKS, { // keep the KPI settings saved in the same document
     coverage: clamp(document.getElementById('bmCoverage').value),
     priority: clamp(document.getElementById('bmPriority').value),
     conversion: clamp(document.getElementById('bmConversion').value),
     tasks: clamp(document.getElementById('bmTasks').value),
   });
-  await persist('benchmarks');
-  showToast('✅ Evaluation targets updated');
+  const r = await persistTold('benchmarks');
+  auditRecord({ action: 'target.settings', key: 'benchmarks', id: 'benchmarks', before: was, after: pick(BENCHMARKS), result: r });
+  saveToast(r, 'benchmarks', '✅ Evaluation targets updated');
   if(document.getElementById('scorecards')) renderScorecards();
 }
 function renderAdminStaff(){
@@ -259,10 +266,12 @@ async function toggleSharedClinic(clinicId){
   if(!requireAdmin()) return;
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
+  const was = { shared: !!c.shared, sharedSince: c.sharedSince || null };
   if(c.shared){ c.shared = false; c.sharedSince = null; }
   else { c.shared = true; c.sharedSince = todayStr().slice(0, 7) + '-01'; }
-  await persist('clinics');
-  showToast(c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.shared', key: 'clinics', id: c.id, label: c.name, before: was, after: { shared: !!c.shared, sharedSince: c.sharedSince || null }, result: r });
+  saveToast(r, 'clinics', c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
   renderAdminTerritory();
   renderAll();
 }
@@ -306,7 +315,11 @@ async function applyDistributionUpload(){
   const plan = _distPlan; _distPlan = null;
   const before = JSON.stringify(clinics);
   const n = UMCore.applyDistributionPlan(plan, clinics, REPS);
-  if(!await persist('clinics')){
+  const r = await persistTold('clinics');
+  // the change log: one entry for the upload, each move as "clinic: from → to"
+  const moves = (plan.changes || []).map(x => `${x.clinic}: ${x.from || '—'}${x.wasShared ? ' (shared)' : ''} → ${x.to}${x.shared ? ' (shared)' : ''}`);
+  auditRecord({ action: 'clinic.distribution', key: 'clinics', id: plan.since, label: plan.since, after: { changes: moves, count: n, from: plan.since }, result: r.ok ? r : false });
+  if(!r.ok){
     clinics = JSON.parse(before);
     showModal(`<h3 style="margin-top:0;">❌ Not saved</h3><div style="font-size:13px;">The clinic list could not be saved to the cloud — nothing was changed. Check the connection and upload the file again.</div><button class="btn" style="margin-top:12px;" onclick="closeModal()">OK</button>`);
     return;
@@ -321,6 +334,7 @@ async function reassignClinic(clinicId, newRep){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || c.rep===newRep) return;
   const prev = c.rep;
+  const was = { rep: c.rep || null, prevRep: c.prevRep || null, repSince: c.repSince || null }; // the change log
   // A handover counts from the 1st of the current month: this month's sales
   // go to the new owner, earlier months stay with the previous one (ERP lines
   // are attributed by date, see UMCore.clinicRepOn).
@@ -331,8 +345,9 @@ async function reassignClinic(clinicId, newRep){
     else { c.prevRep = prev; c.repSince = since; }
   }
   c.rep = newRep;
-  await persist('clinics');
-  showToast(`${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.handover', key: 'clinics', id: c.id, label: c.name, before: was, after: { rep: c.rep || null, prevRep: c.prevRep || null, repSince: c.repSince || null }, result: r });
+  saveToast(r, 'clinics', `${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
   renderAdminTerritory();
   renderAll();
 }
@@ -425,9 +440,11 @@ async function updateProductPrice(key, val){
   if(!p) return;
   const n = parseFloat(val);
   if(isNaN(n) || n<0){ showToast('Enter a valid price'); return; }
+  const was = p.price == null ? null : p.price;
   p.price = Math.round(n*100)/100;
-  await persist('products');
-  showToast(`${p.name.slice(0,28)} → ${money(p.price)}`);
+  const r = await persistTold('products');
+  auditRecord({ action: 'product.price', key: 'products', id: p.id, label: p.name, before: { price: was }, after: { price: p.price }, result: r });
+  saveToast(r, 'products', `${p.name.slice(0,28)} → ${money(p.price)}`);
 }
 
 // ---- FULL VISIT LOG ----
@@ -585,15 +602,15 @@ function renderDoctorRows(c){
 // twin, and returns the ids involved so the caller can select them.
 function addDoctorsToClinic(c, input, title){
   const names = UMCore.splitDoctorNames(input);
-  const ids = []; let added = 0, reused = 0;
+  const ids = [], newIds = []; let added = 0, reused = 0;
   names.forEach(name => {
     const key = UMCore.normDoctorName(name);
     let d = (c.doctors || []).find(x => UMCore.normDoctorName(x.name) === key);
     if(d){ reused++; if(title && !d.title) d.title = title; }
-    else { d = { id: uid(), name, title: title || '', phone:'', birthday:'', cadence:'', notes:'', handovers:[] }; c.doctors.push(d); added++; }
+    else { d = { id: uid(), name, title: title || '', phone:'', birthday:'', cadence:'', notes:'', handovers:[] }; c.doctors.push(d); added++; newIds.push(d.id); }
     ids.push(d.id);
   });
-  return { ids, added, reused };
+  return { ids, added, reused, newIds };
 }
 async function addDoctor(clinicId){
   const name = document.getElementById('newDocName').value.trim();
@@ -604,32 +621,39 @@ async function addDoctor(clinicId){
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return null; }
   const r = addDoctorsToClinic(c, name, title);
   if(!r.ids.length){ showToast('Enter a doctor name'); return null; }
-  if(r.added) await persist('clinics');
+  const saved = r.added ? await persistTold('clinics') : null;
+  if(saved) auditDoctorsAdded(c, r, saved);
   // The clinic-detail sheet has this list; the quick-add sheet from Log visit doesn't
   const dl = document.getElementById('docListInModal');
   if(dl) dl.innerHTML = renderDoctorRows(c);
   document.getElementById('newDocName').value='';
   document.querySelectorAll('#newDocTitleChips .chip').forEach(c=>c.classList.remove('on'));
-  showToast(r.added === 0 ? `👤 ${r.reused === 1 ? 'This doctor is already on the list — selected' : r.reused + ' doctors already on the list — selected'}`
+  const msg = r.added === 0 ? `👤 ${r.reused === 1 ? 'This doctor is already on the list — selected' : r.reused + ' doctors already on the list — selected'}`
     : r.added > 1 ? `🤝 ${r.added} doctors added${r.reused ? ` · ${r.reused} already listed` : ''}`
     : title ? '🤝 Doctor added — relationships compound'
-    : '🤝 Added — tag their specialty in the Playbook so they count there');
+    : '🤝 Added — tag their specialty in the Playbook so they count there';
+  if(saved) saveToast(saved, 'clinics', msg); else showToast(msg); // "added" only when the save landed
   return r;
 }
 async function removeDoctor(clinicId, docId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
+  const gone = (c.doctors || []).find(d => d && d.id === docId);
   c.doctors = c.doctors.filter(d=>d.id!==docId);
   tomb('doctors', clinicId + '|' + docId); // a stale copy of the clinic (this device or another) must not bring the doctor back
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  // no recycle bin for a doctor: the change log keeps what the card held
+  if(gone) auditRecord({ action: 'doctor.delete', key: 'clinics', id: clinicId + '|' + docId, label: auditDoctorLabel(c, gone), before: auditDoctorFields(gone), result: r });
   const dl = document.getElementById('docListInModal'); if(dl) dl.innerHTML = renderDoctorRows(c);
 }
 async function saveProfileNotes(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
+  const was = c.profileNotes || null;
   c.profileNotes = document.getElementById('profileNotesEdit').value.trim();
-  await persist('clinics');
-  showToast('📝 Saved — future you will thank you');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { profileNotes: was }, after: { profileNotes: c.profileNotes || null }, result: r });
+  saveToast(r, 'clinics', '📝 Saved — future you will thank you');
 }
 async function addToPlan(clinicId){
   const today = todayStr();
@@ -666,34 +690,40 @@ async function deleteClinic(id){
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
     ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
+    <label>Reason (optional)</label>
+    <input type="text" id="dcReason" dir="auto" placeholder="Why? (kept in the change log)">
     <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${id}')">Yes, remove</button>
     <button class="btn secondary" onclick="openClinicDetail('${id}')">Cancel</button>
   `);
 }
 async function confirmDeleteClinic(id){
-  const r = await removeClinicToBin(id);
+  const r = await removeClinicToBin(id, { reason: auditReasonFrom('dcReason') });
   if(r.missing || r.bin === false) return; // no safety copy → no delete
   closeModal();
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
-  showToast('Moved to recycle bin');
+  saveToast(r.told, 'clinics', 'Moved to recycle bin');
 }
 // The one way a clinic leaves the list (the delete sheet, and Undo of an ERP
 // account move that made a branch): a safety copy in the recycle bin first —
 // none, no delete — its name stamped on its visits, the team's delete log,
 // then the merged save. Says what landed: { ok } | { queued } (on this device,
-// uploads by itself) | { bin: false } (nothing removed) | { missing }.
-async function removeClinicToBin(id){
+// uploads by itself) | { bin: false } (nothing removed) | { missing }; `told`
+// is that save's own outcome (persistTold). Every call is in the change log
+// (opts.reason: why, as the person typed it).
+async function removeClinicToBin(id, opts){
   const c = clinics.find(x=>x.id===id);
   if(!c) return { ok: false, missing: true };
-  if(!await moveToBin('clinics', c, c.name)) return { ok: false, bin: false };
+  const log = { action: 'clinic.delete', key: 'clinics', id, label: c.name, before: auditClinicFields(c), reason: (opts && opts.reason) || null };
+  if(!await moveToBin('clinics', c, c.name)){ auditRecord(Object.assign(log, { result: false })); return { ok: false, bin: false }; }
   await stampVisitClinicName(id, c.name);
   tomb('clinics', id);
   if(typeof forgetKeptClinic === 'function') forgetKeptClinic(id);
   clinics = clinics.filter(x=>x.id!==id);
   delete _persistInfo.clinics;
-  const ok = await persist('clinics');
-  return { ok, queued: !ok && persistOutcome('clinics').queued };
+  const told = await persistTold('clinics');
+  auditRecord(Object.assign(log, { result: told }));
+  return { ok: told.ok, queued: !told.ok && !!told.outcome.queued, told };
 }
 // ERP accounts linked by hand to any of these clinics: once a clinic is gone
 // their invoices count for the salesman who issued them — said before a delete.
@@ -875,21 +905,24 @@ async function bulkDeleteClinics(){
   const warn = links.length ? `⚠️ ${t('ERP accounts linked by hand to the selected clinics:')} ${links.length}\n` + links.slice(0, 8).map(n => '• ' + (n.trim() || '(no name)')).join('\n')
     + (links.length > 8 ? `\n• … +${links.length - 8}` : '') + `\n${t('Once they are removed their invoices count for the salesman who issued them — move them first from the clinic card.')}\n\n` : '';
   if(!confirm(warn + `Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
-  const removed = new Set();
+  const removed = new Set(), names = [];
   for(const id of _mgSelected){
     const c = clinics.find(x=>x.id===id);
     if(!c) continue;
     if(!await moveToBin('clinics', c, c.name)) break; // the bin is unreachable: stop here, nothing else is deleted
-    await stampVisitClinicName(id, c.name); tomb('clinics', id); removed.add(id);
+    await stampVisitClinicName(id, c.name); tomb('clinics', id); removed.add(id); names.push(c.name);
   }
-  if(removed.size < _mgSelected.size) showToast(`⚠️ ${removed.size} of ${_mgSelected.size} moved to the bin — retry the rest when the connection is back`);
+  const short = removed.size < _mgSelected.size, asked = _mgSelected.size;
+  if(short) showToast(`⚠️ ${removed.size} of ${_mgSelected.size} moved to the bin — retry the rest when the connection is back`);
   clinics = clinics.filter(c=>!removed.has(c.id));
   _mgSelected = new Set();
-  if(!removed.size){ renderMgList(); return; }
-  await persist('clinics', {allowShrink:true}); // explicit, confirmed bulk delete
+  if(!removed.size){ auditRecord({ action: 'clinic.delete', key: 'clinics', id: null, before: { count: asked }, result: false }); renderMgList(); return; }
+  const r = await persistTold('clinics', {allowShrink:true}); // explicit, confirmed bulk delete
+  // one entry for the whole delete: the clinics that went to the bin
+  auditRecord({ action: 'clinic.delete', key: 'clinics', id: [...removed].join(','), label: names.length === 1 ? names[0] : null, before: { clinics: names, count: names.length }, result: r });
   renderMgList(); renderAll();
   if(document.getElementById('clinicList')) renderClinics();
-  showToast('🗑️ Moved to recycle bin');
+  if(!short) saveToast(r, 'clinics', '🗑️ Moved to recycle bin');
 }
 async function handleClinicSheet(input){
   const f = input.files && input.files[0];
@@ -948,6 +981,7 @@ async function commitClinicImport(){
   const updateDups = !!document.getElementById('ciUpdateDups')?.checked;
   const repByLower = new Map(REPS.map(r=>[r.toLowerCase(), r]));
   let added = 0, updated = 0, skipped = 0;
+  const addedNames = [], updatedNames = [];
   _clinicImport.rows.forEach(x=>{
     if(!x.include){ skipped++; return; }
     const d = x.data;
@@ -955,19 +989,20 @@ async function commitClinicImport(){
       if(updateDups){
         if(d.phone) x.dup.phone = d.phone;
         if(d.contact) x.dup.contact = d.contact;
-        updated++;
+        updated++; updatedNames.push(x.dup.name);
       } else skipped++;
       return;
     }
     const rep = repByLower.get((d.rep||'').toLowerCase()) || defaultRep;
     clinics.push(normalizeClinic({id:uid(), name:d.name, rep, cls:d.cls, market:d.market,
       account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
-    added++;
+    added++; addedNames.push(d.name);
   });
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.import', key: 'clinics', id: todayStr(), after: { added: addedNames, updated: updatedNames, skipped: skipped || null }, result: r });
   closeModal();
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
-  showToast(`✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
+  saveToast(r, 'clinics', `✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
 }
 

@@ -2127,7 +2127,7 @@ async function elUndoBranch(u){
   if(!c) return { gone: true };                     // removed already: nothing to do
   const keep = elBranchKeeps(c, u.name);
   if(keep) return { kept: keep };
-  const r = await removeClinicToBin(c.id);
+  const r = await removeClinicToBin(c.id, { reason: '#undo-erp-link' }); // the change log says why it went
   if(r.bin === false) return { kept: { why: 'bin' } };
   return { removed: true, queued: !r.ok };
 }
