@@ -53,6 +53,7 @@ function prepLogView(qClinicId){
   document.getElementById('newClinicName').value='';
   document.getElementById('newClinicContact').value='';
   document.getElementById('newClinicPhone').value='';
+  { const a = document.getElementById('newClinicAsk'); if(a) a.innerHTML = ''; }
   renderClinicSelect(qClinicId||null);
 
   document.getElementById('prodSearchLog').value='';
@@ -195,6 +196,7 @@ function startNewClinic(){
 function cancelNewClinic(){
   newClinicMode = false;
   rxClearDraft('log');
+  { const a = document.getElementById('newClinicAsk'); if(a) a.innerHTML = ''; } // its sales question goes with it
   document.getElementById('newClinicFields').style.display='none';
   renderClinicSelect();
 }
@@ -482,15 +484,15 @@ function setLogFormBusy(on){
   }
   if(!on && note) note.remove();
 }
-async function saveVisit(){
+async function saveVisit(confirmed){
   const gen = _logFormGen;
   if(_visitSaveBusy.has(gen)){ showToast('Already saving…'); return; }
   _visitSaveBusy.add(gen);
   setLogFormBusy(true);
-  try{ await saveVisitNow(gen); }
+  try{ await saveVisitNow(gen, typeof confirmed === 'string' ? confirmed : ''); }
   finally{ _visitSaveBusy.delete(gen); if(gen === _logFormGen) setLogFormBusy(false); }
 }
-async function saveVisitNow(gen){
+async function saveVisitNow(gen, confirmed){
   let clinicId = selectedClinicId;
   // A rep files visits under their own name only — "logging as" is a
   // supervisor control, enforced here too so no stale screen can bypass it.
@@ -505,12 +507,23 @@ async function saveVisitNow(gen){
     if(dup){ showToast('A clinic with this name already exists'); return; }
     const clsEl = document.querySelector('#newClinicClsChips .chip.on');
     const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
-    clinicId = uid();
-    clinics.push(normalizeClinic({id:clinicId, name, rep,
+    const nc = normalizeClinic({id:uid(), name, rep,
       cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'',
       account: acctEl?acctEl.dataset.acct:null, isNew:true, addedOn:todayStr(),
       contact: document.getElementById('newClinicContact').value.trim(),
-      phone: document.getElementById('newClinicPhone').value.trim()}));
+      phone: document.getElementById('newClinicPhone').value.trim()});
+    // the same sales check as "+ Add clinic" (v123 review): nothing is saved
+    // until it passes, and the form keeps everything typed
+    const askBox = document.getElementById('newClinicAsk');
+    const chk = newClinicSalesCheck(nc, confirmed, 'saveVisit', "document.getElementById('newClinicAsk').innerHTML=''");
+    if(!chk.ok){
+      if(askBox){ askBox.innerHTML = newClinicAskCard(chk.html); try{ askBox.scrollIntoView({ block: 'center' }); }catch(e){} }
+      showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000);
+      return;
+    }
+    if(askBox) askBox.innerHTML = '';
+    clinicId = nc.id;
+    clinics.push(nc);
   }
   if(!clinicId){ showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be
@@ -560,6 +573,7 @@ async function saveVisitNow(gen){
   }
   const clinic = clinics.find(c=>c.id===clinicId);
   visits.push(visit);
+  const was = clinic ? { lastVisit: clinic.lastVisit, nextFollowUp: clinic.nextFollowUp } : null; // put back if the visit cannot be saved (v123)
   if(clinic){ clinic.lastVisit = todayStr(); clinic.nextFollowUp = followUp; }
   // The full photos go to the phone at the same time as the visit is saved
   // (they were only in this page's memory: a save that takes a while on a
@@ -569,7 +583,13 @@ async function saveVisitNow(gen){
   // This save's own outcome, read the moment its visits write settles: the
   // offline queue may send visits again while the follow-up step runs, and
   // that later save is not this one (persistFor / sentSince, 04).
-  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), persistTold('clinics')]);
+  // Refused by the security rules, or this month's visits too large for the
+  // cloud (v123): the visit is in no list and can never upload as it is. It
+  // comes off the screen's lists, the form keeps everything typed (nothing
+  // is lost), and the message says "not saved" — never "saved on this device".
+  const vo = vs.outcome || {};
+  if(!(vs.ok || sentSince('visits', vs)) && (vo.denied || vo.tooLarge)){ await visitNotSaved(vs, cs, { visit, keeping, shots, clinicId, clinic, was }); return; }
   const kept = keeping ? await keeping : null;
   shots.forEach(ph => photoUpload(ph.id, ph.full)); // in the background, once the visit is saved or queued
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
@@ -581,11 +601,38 @@ async function saveVisitNow(gen){
   // screen) is left where the person is.
   if(gen === undefined || (gen === _logFormGen && activeView === 'log')) switchView('today');
 }
+// A visit the cloud can never take as it is — refused by the security rules,
+// or this month's visits too large for the cloud (v123): it is in no list and
+// never uploads. It comes off the screen's lists, the form keeps everything
+// typed (nothing is lost), and the message says "not saved" — never "saved on
+// this device". cs: the clinic save that ran beside it.
+async function visitNotSaved(vs, cs, x){
+  visits = visits.filter(v => v && v.id !== x.visit.id);
+  if(x.keeping){ await x.keeping.catch(() => null); x.shots.forEach(ph => photoForget(ph.id)); } // its photos stay in the form, not on the phone for a visit that does not exist
+  let putBack = false;
+  if(newClinicMode && x.clinicId){
+    if(cs && cs.ok){ pickClinic(x.clinicId); } // the new clinic itself was saved: the form now points at it, so a retry never adds it twice
+    else { clinics = clinics.filter(c => c && c.id !== x.clinicId); }
+  } else if(x.clinic && x.was){
+    x.clinic.lastVisit = x.was.lastVisit; x.clinic.nextFollowUp = x.was.nextFollowUp;
+    putBack = !!(cs && cs.ok); // its "last visit" was saved with the visit that did not land
+  }
+  showToast(visitSaveMsg(vs, null), 9000);
+  renderAll();
+  if(putBack) persistTold('clinics'); // …put back, in the background (its own notices say if that fails)
+}
 // What a visit save (or a photo added to a visit) did, in the toast. Without
 // photos: exactly the messages it always had.
 function visitSaveMsg(vs, kept, added){
   const saved = vs.ok || sentSince('visits', vs); // queued here, sent by the queue meanwhile = saved
+  const o = vs.outcome || {};
+  // never "kept on this phone, uploads by itself" for a save that cannot land as it is (v123)
+  if(!saved && o.denied) return added ? '🔒 Photo not added — not allowed (ask the supervisor)' : '🔒 Visit not saved — not allowed (ask the supervisor). What you typed is still on this screen.';
+  if(!saved && o.tooLarge) return added ? "🛑 Photo not added — this month's visits are too large for the cloud (too many photos)"
+    : "🛑 Visit not saved — this month's visits are too large for the cloud (too many photos). What you typed is still on this screen: remove some photos from this month's visits, then save again.";
   const onPhone = !saved && !!(vs.outcome && vs.outcome.queued && vs.outcome.mirrored);
+  // no access to the team's data (signed out): kept on this phone, it uploads after the next sign-in (v123 review)
+  if(onPhone && o.noAccess && !added) return '🔒 Visit kept on this phone — no access to the team\'s data right now (signed out?). It uploads by itself after you sign in again';
   // A photo added to a visit already saved: only that change is in memory (the red bar says until when)
   if(!saved && !onPhone && added) return "⚠️ This phone's storage is full — the photo was added only in the app's memory: keep the app open and connected until it says Saved";
   if(!saved && !onPhone) return '⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال';
@@ -652,20 +699,20 @@ async function saveReschedule(clinicId){
   const val = document.getElementById('rfDate').value;
   if(!val){ showToast('Pick a date'); return; }
   c.nextFollowUp = val;
-  await persist('clinics');
+  const r = await persistTold('clinics');
   await scheduleFollowUp(c, val, c.rep);
   closeModal();
-  showToast('Follow-up rescheduled');
+  saveToast(r, 'clinics', 'Follow-up rescheduled');
   renderAll();
 }
 async function clearFollowUp(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
   c.nextFollowUp = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
   await scheduleFollowUp(c, null, c.rep);
   closeModal();
-  showToast('Follow-up cleared');
+  saveToast(r, 'clinics', 'Follow-up cleared');
   renderAll();
 }
 

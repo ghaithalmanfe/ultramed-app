@@ -6,3 +6,4 @@ secret  www/js/app/01-config.js  /^AIza[0-9A-Za-z_-]{35}$/       # the Firebase 
 mobile  tests/*             /^(\d)\1(\d)\2(\d)\3(\d)\4$/         # invented test numbers are four repeated digit pairs (99887766)
 email   tests/rules/*       /^test-[a-z0-9-]+@ultramed-kw\.com$/i   # invented emulator logins: the rules check the company domain, so test logins carry it; "test-" names reach no one
 email   tests/rules/*       SUPERVISOR_EMAIL@ultramed-kw.com      # the rules' placeholder, replaced in the Firebase console only
+email   tests/rules/*       JOB_LOGIN_EMAIL@ultramed-kw.com       # the rules' placeholder for the e-mail and backup jobs' read-only logins, replaced in the Firebase console only

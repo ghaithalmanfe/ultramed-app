@@ -164,17 +164,56 @@ function seed(){
     const oldIdx = JSON.parse(JSON.stringify(spR.index)); oldIdx.periods = [Object.assign({}, oldIdx.periods[0], { id: 'old', from: '2026-09-01', to: '2026-09-30' })];
     cloud['snap_2026-10-18'] = JSON.stringify({ clinics: [M1, G1, R1b].concat(FILL), products: [], visits: [], tasks: [], erpIndex: oldIdx });
   }
+  // v123: the catalog is left out of a whole-day restore — a product added since that day stays
+  cloud.products = JSON.stringify([{ id: 'P-NEW', name: 'Added after the backup', brand: 'Test', price: 3 }]);
+  const productsBefore = cloud.products, todayBackup = cloud['snap_2026-10-20'];
   await boot(G, 'supervisor');
   const octVisits = cloud.visits;
   await page.evaluate(async () => { await restoreSnapshot('2026-09-28'); await new Promise(r => setTimeout(r, 300)); });
   check('whole-day Restore: a backup from another month is refused — this month\'s visits stay', cloud.visits === octVisits && /another month/.test(await toast()), { toast: await toast(), visits: cloud.visits });
+  // v123: today already has its own backup, and keeping today's data first would replace it: a full backup first
+  dialogs.length = 0;
+  const clinicsBeforeR = cloud.clinics;
+  await page.evaluate(async () => { await restoreSnapshot('2026-10-18'); await new Promise(r => setTimeout(r, 300)); });
+  const gate = await modal();
+  check('whole-day Restore: when today already has its own backup, restoring an earlier day first asks for a full backup to this device — nothing changes, nothing asked',
+    /First, a full backup to this device/.test(gate) && !dialogs.length && cloud.clinics === clinicsBeforeR && cloud['snap_2026-10-20'] === todayBackup, { gate: gate.slice(0, 200), dialogs });
+  const fb = await page.evaluate(async () => {
+    const b = [...document.querySelectorAll('#modalInner button')].find(x => /Full backup first/.test(x.textContent));
+    if(!b) return { err: 'no full-backup button' };
+    b.click();
+    for(let i = 0; i < 100 && !document.querySelector('[data-backup-download]'); i++) await new Promise(r => setTimeout(r, 50));
+    const d = document.querySelector('[data-backup-download]'); if(!d) return { err: 'no download button', text: (document.getElementById('modalInner') || {}).innerText };
+    d.click(); return { ok: true };
+  });
   dialogs.length = 0;
   await page.evaluate(async () => { await restoreSnapshot('2026-10-18'); await new Promise(r => setTimeout(r, 500)); });
   const askR = dialogs.find(m => /^Restore data from 2026-10-18/.test(m)) || '';
   check('whole-day Restore: the question says what it removes before anything changes', /0 clinics, 0 tasks and 2 visits of this month/.test(askR), askR);
+  check('whole-day Restore: …and that the catalog stays and today\'s data is kept first', !fb.err && /the sales files and the product catalog stay as they are/.test(askR) && /First, the data as it is now is kept as today's backup/.test(askR), { fb, askR });
+  check('whole-day Restore: the product catalog is not touched (a product added since that day stays)', cloud.products === productsBefore, (cloud.products || '').slice(0, 120));
+  const kept = JSON.parse(cloud['snap_2026-10-20'] || '{}');
+  check('whole-day Restore: today\'s data as it was is kept first, as today\'s backup (clinics and this month\'s visits the restore removed)',
+    kept.keptBeforeRestore === '2026-10-18' && (kept.clinics || []).length === 16 && JSON.stringify((kept.visits || []).map(v => v.id).sort()) === '["v1","v2"]', { keptBeforeRestore: kept.keptBeforeRestore, clinics: (kept.clinics || []).length, visits: (kept.visits || []).map(v => v.id) });
   const esR = JSON.parse(cloud.erpSales || '{}');
   check('whole-day Restore: the sales files stay as they are (an older index never drops a file imported since)', (esR.periods || []).some(p => p.id === 'oc') && !(esR.periods || []).some(p => p.id === 'old'), (esR.periods || []).map(p => p.id));
   check('whole-day Restore: the same-month backup is applied', JSON.parse(cloud.clinics).some(c => c.id === 'r1') && /Restored 2026-10-18/.test(await toast()), { toast: await toast() });
+  // today's own backup (the copy kept before that restore) undoes the restore — and is never
+  // replaced by the restore of it (v123 review: the data as it was then was kept as today's
+  // backup first, the very backup being restored; the good copy was then nowhere): a full
+  // backup to this device first, and today's backup stays as it is
+  dialogs.length = 0;
+  const keptCopy = cloud['snap_2026-10-20'], clinicsBeforeT = cloud.clinics;
+  await page.evaluate(async () => { _fullBackupSavedAt = 0; await restoreSnapshot('2026-10-20'); await new Promise(r => setTimeout(r, 300)); });
+  const gateT = await modal();
+  check('whole-day Restore: restoring today\'s own backup first asks for a full backup to this device — nothing changes, nothing asked',
+    /First, a full backup to this device/.test(gateT) && /today's own backup/.test(gateT) && !dialogs.length && cloud.clinics === clinicsBeforeT && cloud['snap_2026-10-20'] === keptCopy, { gate: gateT.slice(0, 240), dialogs });
+  await page.evaluate(async () => { _fullBackupSavedAt = Date.now(); closeModal(); await restoreSnapshot('2026-10-20'); await new Promise(r => setTimeout(r, 500)); });
+  const askT = dialogs.find(m => /^Restore data from 2026-10-20/.test(m)) || '';
+  const undone = { clinics: JSON.parse(cloud.clinics).length, r1: JSON.parse(cloud.clinics).some(c => c.id === 'r1'), visits: JSON.parse(cloud.visits).map(v => v.id).sort(), kept: JSON.parse(cloud['snap_2026-10-20'] || '{}').keptBeforeRestore };
+  check('whole-day Restore: …with the full backup, today\'s own backup is restored — the copy kept before the earlier restore undoes it — and stays exactly as it was',
+    /1 clinics, 0 tasks and 0 visits of this month/.test(askT) && /Today's backup itself stays as it is/.test(askT) && undone.clinics === 16 && !undone.r1 && JSON.stringify(undone.visits) === '["v1","v2"]'
+      && cloud['snap_2026-10-20'] === keptCopy && undone.kept === '2026-10-18' && cloud.products === productsBefore, { askT, undone });
   // August and September visits sit in their month's archive document once saved
   const allV = () => Object.keys(cloud).filter(k => k === 'visits' || /^visitsArch:/.test(k)).reduce((a, k) => { const v = JSON.parse(cloud[k]); return a.concat(Array.isArray(v) ? v : ((v && v.visits) || [])); }, []);
   // ---- doctors without a name ----

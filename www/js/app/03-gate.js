@@ -11,16 +11,37 @@ async function selectUser(name, role){
   document.getElementById('app').style.display = 'block';
   document.getElementById('bottomNav').style.display = 'flex';
   welcomeDismissed = false;
+  // a new sign-in: what waited on this phone because the cloud refused it goes again (v123 review, 04-sync.js)
+  if(typeof unparkSaves === 'function') unparkSaves();
   await loadAll();
 }
 function switchUser(){
   if(typeof dropFullBackup === 'function') dropFullBackup();
-  if(FIREBASE_ENABLED && window.firebase){ firebase.auth().signOut().catch(()=>{}); }
+  // currentUser first: a queue upload on its way stops at the next list
+  // (flushOutbox), and what it had not sent stays on this phone, queued — it
+  // uploads after the next sign-in (v123 review: refused for want of a
+  // sign-in, it was taken off the queue).
   currentUser = null;
+  if(FIREBASE_ENABLED && window.firebase){ firebase.auth().signOut().catch(()=>{}); }
+  showGateScreen();
+}
+function showGateScreen(){
   renderGate();
   document.getElementById('gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('bottomNav').style.display = 'none';
+}
+// The sign-in ended while the app was open — a password changed on another
+// device, the login disabled or reset (a tap on Sign out is switchUser): the
+// sign-in screen, and what waits in the queue stays on this phone; it uploads
+// after the next sign-in (v123 review: this used to be ignored, and every save
+// the app went on making was refused).
+function signInEnded(){
+  if(typeof dropFullBackup === 'function') dropFullBackup();
+  currentUser = null;
+  showGateScreen();
+  const waiting = typeof outboxList === 'function' ? outboxList().length : 0;
+  showToast(waiting ? '🔒 Signed out — sign in again. Changes wait on this phone and upload after you sign in' : '🔒 Signed out — sign in again', 8000);
 }
 function openAccountMenu(){
   const email = (USERS[currentUser.name]||{}).email || '';
@@ -155,6 +176,7 @@ async function tryAutoLogin(){
   }
   if(FIREBASE_ENABLED){
     firebase.auth().onAuthStateChanged(async (user)=>{
+      if(!user && currentUser){ signInEnded(); return; } // the sign-in ended under the app (v123 review)
       if(!user || !user.email) return;
       const email = user.email.toLowerCase();
       let found = Object.entries(USERS).find(([n,u])=>(u.email||'').toLowerCase()===email);

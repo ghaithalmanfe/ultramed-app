@@ -210,9 +210,23 @@ function reseed(o = {}){
     reseed({ clinics: CLINICS().map(c => c.id !== 'm2' ? c : Object.assign({}, c, { doctors: [{ id: 'm2-d1', name: 'Dr. Sara Nasser' }, { id: 'm2-d2', name: 'dr sara nasser' }] })),
       oct: OCT().concat([V('vD', 'm2', M, '2026-10-12', ['m2-d2'], [line(T.ortho, 4, 'm2-d2')])]) });
     await boot(G, 'supervisor'); await sleep(300);
+    // v123: both records stay at boot (no automatic merge); the supervisor merges them by tap
+    const vD0 = copies('vD')[0];
+    check('R4 two records of one name both stay at boot: nothing written, the visit and its lines keep their doctor', vD0 && JSON.stringify(vD0.doctorIds) === '["m2-d2"]' && vD0.rx && vD0.rx[0].doctorId === 'm2-d2', vD0 && { doctorIds: vD0.doctorIds, rx: vD0.rx });
+    // the sheet "Possible duplicate doctors", its two taps as a person makes them
+    const tap4 = await ev(async () => {
+      openDupDoctors('');
+      const merge = [...document.querySelectorAll('#modalInner [data-dupdoc] button')].find(b => /The same person — merge/.test(b.textContent));
+      if(merge) await mergeDupDoctors(merge.dataset.c, merge.dataset.k, merge.dataset.scope);
+      const yes = [...document.querySelectorAll('#modalInner [data-ask]')].find(b => /Yes, merge/.test(b.textContent));
+      if(yes) await mergeDupDoctors(yes.dataset.c, yes.dataset.k, yes.dataset.scope, yes.dataset.ask);
+      closeModal();
+      return { merge: !!merge, yes: !!yes };
+    });
+    await sleep(200);
     const vD = copies('vD')[0], f4 = await figs();
-    check('R4 merged duplicate doctors: the cloud copy of the visit names the survivor in its lines too, and Sara counts 4',
-      vD && JSON.stringify(vD.doctorIds) === '["m2-d1"]' && vD.rx && vD.rx[0].doctorId === 'm2-d1' && f4.sara && f4.sara.total === 4, { vD: vD && { doctorIds: vD.doctorIds, rx: vD.rx }, sara: f4.sara });
+    check('R4 merged by the supervisor\'s tap: the cloud copy of the visit names the kept record in its lines too, and Sara counts 4',
+      tap4.merge && tap4.yes && vD && JSON.stringify(vD.doctorIds) === '["m2-d1"]' && vD.rx && vD.rx[0].doctorId === 'm2-d1' && f4.sara && f4.sara.total === 4, { tap4, vD: vD && { doctorIds: vD.doctorIds, rx: vD.rx }, sara: f4.sara });
     // R5 — an edit the cloud refuses must not end on "✅ Changes saved"
     reseed(); await boot(M, 'rep'); mode.failSet = /^visits/;
     await ev(() => { openEditVisit('vO1'); document.getElementById('evNotes').value = 'edited offline'; _lastOfflineToast = 0; window.__toasts.length = 0; });
