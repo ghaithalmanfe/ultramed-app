@@ -739,10 +739,16 @@ function msSalesHTML(v, m, P, tt){
   const why = P.length && P.every(p => p.bm.basis === 'none') ? 'No ERP sales file for this month yet'
     : team ? 'The sales files of this month hold no line of these people yet.' : 'The sales files of this month hold no line of this person yet.';
   const title = team ? 'Team sales this month' : own ? 'My sales this month' : 'Sales this month';
-  const ofT = team ? 'of the team target' : own ? 'of my target' : 'of the target';
+  // the target the percentage, the remaining and the forecast divide: the team's — unless someone with a target
+  // has no sales figure in the files; then the targets of the people measured (execDashboard's achievement.target),
+  // so the card adds up on its own, and the note below names who is left out
+  const A0 = D ? msOf(D.achievement) || {} : {};
+  const partial = team && amount != null && Array.isArray(A0.notMeasured) && A0.notMeasured.length > 0 && A0.target != null;
+  const ofT = partial ? 'of the target of the people with a sales figure' : team ? 'of the team target' : own ? 'of my target' : 'of the target';
+  const shownGoal = partial ? A0.target : goal;
   let html = `<div class="ms-ct"><span>${msT(title)}</span><span class="ms-act">${team ? '' : `<button class="chip small" onclick="event.stopPropagation(); openMonthReports()">${I('book')} Months</button>`}${msInfo('sales')}</span></div>
     <div class="ms-big${amount == null ? ' none' : ''}" data-ms="sales" data-value="${amount == null ? '' : amount}">${amount == null ? '—' : `${msN(amount.toFixed(2))} <small>KD</small>`}</div>
-    <div class="ms-of">${goal > 0 ? `${msT(ofT)} ${msKd(goal)}` : msT(team ? 'No sales target on file for this month' : 'No sales target on file for this month')}${!team && P[0] && P[0].t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${msFieldVisits(P[0].rep)}/${P[0].t.visits} (${Math.round(msFieldVisits(P[0].rep) / P[0].t.visits * 100)}%)</span>` : ''}</div>`;
+    <div class="ms-of" data-ms="of-target" data-value="${shownGoal > 0 ? shownGoal : ''}">${shownGoal > 0 ? `${msT(ofT)} ${msKd(shownGoal)}` : msT(team ? 'No sales target on file for this month' : 'No sales target on file for this month')}${!team && P[0] && P[0].t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${msFieldVisits(P[0].rep)}/${P[0].t.visits} (${Math.round(msFieldVisits(P[0].rep) / P[0].t.visits * 100)}%)</span>` : ''}</div>`;
   if(amount == null){
     html += `<div class="ms-note">${msT(why)}</div>`;
     return html + msSalesStats(null, goal);
@@ -836,12 +842,13 @@ function renderTargetCard(v, m, P, sig){
     ${msMemo(sig, 'cx', () => crossInvoiceNote())}
   </div>`;
 }
-// what the team's figures add for one person: field visits and orders logged in the app (and the same days, when the core says it)
+// what the team's figures add for one person: her growth on the same days of last month (execDashboard's
+// byPerson[i].sameDays — the growth her own screen shows), field visits and orders logged in the app
 function msPersonExtra(b){
   if(!b) return '';
   const parts = [];
-  const sd = msOf(b.sameDays), g = sd && (sd.growth != null || sd.fromZero) ? sd : null;
-  if(g) parts.push(g.fromZero ? msT('from zero against the same days last month') : `<span class="${g.growth >= 0 ? 'ms-up' : 'ms-down'}">${msN((g.growth >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(g.growth * 100)) + '%')}</span> ${msT('vs the same days last month')}`);
+  const sd = msOf(b.sameDays), g = sd ? msGrowthMark(sd.growth, sd.fromZero) : null;
+  if(g) parts.push(sd.fromZero ? msT('from zero against the same days last month') : `<span data-ms="person-growth" data-r="${esc(b.rep)}" data-value="${Math.round(sd.growth * 100)}">${g}</span> ${msT('vs the same days last month')}`);
   if(b.visits != null) parts.push(msT(msCount(b.visits, 'field visit', 'field visits')));
   if(b.orders != null) parts.push(msT(msCount(b.orders, 'order logged in the app', 'orders logged in the app')));
   return parts.length ? `<div class="ms-fine">${parts.join(' · ')}</div>` : '';
@@ -865,24 +872,17 @@ function msTeamWorkHTML(v, m, week){
     <div class="ms-note">${msT('Orders logged in the app are not invoiced sales: sales come from the ERP files only.')}</div>`;
   return html + week;
 }
-// A person: visits a day, doctors met and new accounts — the KPI scorecard's own figures.
+// A person: visits a day, doctors met and new accounts — the KPI scorecard's own figures: the numbers its
+// items carry behind their words (n), the same ones More → KPI scorecard writes out. No numbers: hidden.
 function msKpiNums(m){
   const K = m && msOf(m.K), W = m && msOf(m.W), S = (m && m.S) || {};
-  const item = (c, k) => c && Array.isArray(c.items) ? c.items.find(x => x && x.key === k) : null;
   const num = x => { const n = parseFloat(x); return isFinite(n) ? n : null; };
-  const visitsOf = c => {                       // "6.3 a day (38 in 6 working days)"
-    const it = item(c, 'visits'); if(!it) return null;
-    if(msOf(it.n) && it.n.perDay != null) return { perDay: it.n.perDay, count: it.n.count, days: it.n.workdays };
-    const x = String(it.value || '').match(/^([\d.]+) a day \((\d+) in (\d+) working days?\)$/);
-    return x ? { perDay: num(x[1]), count: +x[2], days: +x[3] } : null;
-  };
-  const doc = item(K, 'doctors'), nb = item(K, 'newbiz');
-  const docMet = doc ? (msOf(doc.n) && doc.n.met != null ? doc.n.met : (String(doc.value || '').match(/^(\d+) doctors met/) || [])[1]) : null;
-  const docExp = doc ? (msOf(doc.n) && doc.n.goal != null ? doc.n.goal : (String(doc.target || '').match(/^(\d+) doctors in the period/) || [])[1]) : null;
-  const acc = nb ? (msOf(nb.n) && nb.n.accounts != null ? nb.n.accounts : (String(nb.value || '').match(/(\d+) new accounts?$/) || [])[1]) : null;
+  const nOf = (c, k) => { const it = c && Array.isArray(c.items) ? c.items.find(x => x && x.key === k) : null; return it ? msOf(it.n) : null; };
+  const visitsOf = c => { const n = nOf(c, 'visits'); return n && n.perDay != null ? { perDay: n.perDay, count: n.count, days: n.workdays } : null; };
+  const doc = nOf(K, 'doctors'), nb = nOf(K, 'newbiz');
   return { month: visitsOf(K), week: visitsOf(W), goal: num(S.visitsPerDay), total: K ? K.total : null,
-    doctors: docMet != null ? +docMet : null, doctorsBy: docExp != null ? +docExp : null, doctorsGoal: num(S.doctorsPerMonth),
-    accounts: acc != null ? +acc : null, accountsGoal: num(S.newAccounts), card: K };
+    doctors: doc && doc.met != null ? doc.met : null, doctorsBy: doc && doc.goal != null ? doc.goal : null, doctorsGoal: num(S.doctorsPerMonth),
+    accounts: nb && nb.accounts != null ? nb.accounts : null, accountsGoal: num(S.newAccounts), card: K };
 }
 function msVisitsHTML(v, m, week){
   week = week == null ? msWeekLine(v) : week;
@@ -1000,9 +1000,9 @@ function msChartHTML(v, m){
   if(Dy && Dy.measured && Array.isArray(Dy.days) && Dy.days.length) html += msChartSVG(D, Dy, A, F, T);
   else html += `<div class="ms-note">${msT(Dy ? 'No sales figure for this month yet, so no day by day.' : 'The day-by-day figures are not available on this device yet.')}</div>`;
   // underneath: against earlier months (team), or what she logged in the app (a person)
-  const cells = [msCmpCell(msOf(D.sameDays), 'Same days last month', 'No sales file for the month before')];
+  const cells = [msCmpCell(msOf(D.sameDays), 'Same days last month', 'cmp', false)];
   if(team){
-    if(msOf(D.lastYear)) cells.push(msCmpCell(D.lastYear, 'Same month last year', 'No sales file for that month a year before'));
+    if(msOf(D.lastYear)) cells.push(msCmpCell(D.lastYear, 'Same month last year', 'cmp-year', true));
     const Y = msOf(D.ytd);
     if(Y){
       const L = msOf(Y.like) || {};
@@ -1015,18 +1015,22 @@ function msChartHTML(v, m){
   }
   return html + `<div class="ms-stats${cells.length === 2 ? ' two' : ''}">${cells.join('')}</div>`;
 }
-function msGrowth(g){
-  if(!g || !g.measured) return null;
-  if(g.fromZero) return msT('from zero');
-  if(g.growth == null) return null;
-  const p = Math.round(g.growth * 100);
+// A growth against an earlier figure as the core gives it: ▲ / ▼ and the percentage, "from zero", or nothing.
+function msGrowthMark(growth, fromZero){
+  if(fromZero) return msT('from zero');
+  if(growth == null) return null;
+  const p = Math.round(growth * 100);
   return `<span class="${p >= 0 ? 'ms-up' : 'ms-down'}">${msN((p > 0 ? '▲ ' : p < 0 ? '▼ ' : '') + Math.abs(p) + '%')}</span>`;
 }
-function msCmpCell(g, label, none){
+function msGrowth(g){ return g && g.measured ? msGrowthMark(g.growth, g.fromZero) : null; }
+// A month in a few words: "Sep" (the month before), "Oct 2025" (a year before) — Arabic month names in the Arabic screen.
+function msMon(m, year){ try{ return new Date(m + '-01T00:00:00').toLocaleDateString(uiLocale(), year ? { month: 'short', year: 'numeric' } : { month: 'short' }); }catch(e){ return m; } }
+// against an earlier month: the growth, and in the design's few words what it is compared with ("7247.31 KD · days 1–8 Sep")
+function msCmpCell(g, label, key, year){
   if(!g) return `<div><span class="ms-l">${msT(label)}</span><b>—</b></div>`;
-  const val = msGrowth(g);
-  const sub = g.measured ? `${msKd(g.previous)} · ${msT('days 1 to')} ${msN(parseInt(String(g.to || '').slice(8, 10), 10) || '')} ${esc(monthLabel(g.month))}` : msT(none);
-  return `<div><span class="ms-l">${msT(label)}</span><b data-ms="cmp" data-value="${g.measured && g.growth != null ? Math.round(g.growth * 100) : ''}">${val || '—'}</b><em>${sub}</em></div>`;
+  const val = msGrowth(g), day = parseInt(String(g.to || '').slice(8, 10), 10) || '';
+  const sub = g.measured ? `${msKd(g.previous)} · ${msT(`days 1–${day}`)} ${esc(msMon(g.month, year))}` : `${msT('No sales file for')} ${esc(monthLabel(g.month))}`;
+  return `<div><span class="ms-l">${msT(label)}</span><b data-ms="${key}" data-value="${g.measured && g.growth != null ? Math.round(g.growth * 100) : ''}">${val || '—'}</b><em>${sub}</em></div>`;
 }
 function msChartSVG(D, Dy, A, F, T){
   const rtl = uiLang === 'ar', W = 600, H = 220, L = 34, R = 566, top = 26, base = 182;
@@ -1071,8 +1075,14 @@ function msBrandsHTML(v, m, P){
   if(!rows.length) return html + `<div class="ms-note">${msT(B && B.total == null ? 'No sales figure for this month yet.' : 'No brand sold and no brand target this month.')}</div>`;
   const wd = msOf((msOf(D.perDay) || {}).workdays), exp = msExpected(wd);
   const name = k => (m.brands && m.brands[k]) || k;
-  html += rows.slice(0, 5).map(b => `<div class="ms-person"><div class="n">${msData(name(b.brand))}</div> ${b.pct != null ? msBar(b.pct, exp, true) : '<div></div>'} <div class="p${b.pct == null ? ' none' : ''}">${b.pct != null ? msPct(b.pct) : '—'}</div>
-      <div class="s">${b.net != null ? msKd(b.net) : '—'}${b.target != null ? ` ${msT('of')} ${msKd(b.target)}` : ` · ${msT('no brand target')}`}</div></div>`).join('');
+  // the percentage is what the people with this brand's target sold of it ÷ their targets (achieved ÷ goal);
+  // what others sold of it (no target of theirs) is said beside it, never put into the percentage
+  html += rows.slice(0, 5).map(b => {
+    const of = b.pct != null ? `${msKd(b.achieved)} ${msT('of')} ${msKd(b.goal)}${b.net != null && Math.round(b.net * 100) !== Math.round(b.achieved * 100) ? ` · ${msT('sold in all')} ${msKd(b.net)}` : ''}`
+      : `${b.net != null ? msKd(b.net) : '—'}${b.target != null ? ` · ${msT('target')} ${msKd(b.target)}` : ` · ${msT('no brand target')}`}`;
+    return `<div class="ms-person" data-brand="${esc(b.brand)}"><div class="n">${msData(name(b.brand))}</div> ${b.pct != null ? msBar(b.pct, exp, true) : '<div></div>'} <div class="p${b.pct == null ? ' none' : ''}" data-ms="brand-pct" data-value="${b.pct == null ? '' : b.pct}">${b.pct != null ? msPct(b.pct) : '—'}</div>
+      <div class="s">${of}</div></div>`;
+  }).join('');
   if(rows.length > 5) html += `<div class="ms-fine">${msT(msCount(rows.length - 5, 'more brand in the month report', 'more brands in the month report'))}</div>`;
   if(exp != null) html += `<div class="ms-fine">${msT('The dark line = expected by')} ${msDate(wd.asOf)} (${msPct(exp)}).${B.total != null ? ` ${msT('Total')} ${msKd(B.total)}.` : ''}</div>`;
   return html;
@@ -1214,7 +1224,12 @@ function msHow(id){
         (Y.sales != null ? kv(msT('Invoiced sales'), msKd(Y.sales)) : '') + (L.pct != null ? kv(msT('Where a month has both'), `${msKd(L.sales)} ${msT('of')} ${msKd(L.target)} = ${msPct(L.pct)}`) : ''));
     }
   } else if(id === 'brands'){
-    body += sec('Brands', 'The month\'s invoiced lines by brand (returns deducted), and the brand targets of the DSR.', 'Brand % = sold of the brand ÷ the brand\'s target × 100, for the people who have both.', '');
+    const B = D && msOf(D.byBrand), rows = B && Array.isArray(B.rows) ? B.rows.filter(b => b && (b.net || b.target)) : [];
+    const name = k => (m && m.brands && m.brands[k]) || k;
+    body += sec('Brands', 'The month\'s invoiced lines by brand (returns deducted), and the brand targets of the DSR.', 'Brand % = sold of the brand ÷ the brand\'s target × 100, for the people who have both.',
+      rows.map(b => kv(msData(name(b.brand)), b.pct != null ? `${msN(`${f2(b.achieved)} ÷ ${f2(b.goal)} × 100 = ${b.pct}%`)}${b.net != null && Math.round(b.net * 100) !== Math.round(b.achieved * 100) ? ` · ${msT('sold in all')} ${msKd(b.net)}` : ''}`
+        : `${b.net != null ? msKd(b.net) : '—'} · ${msT(b.target != null ? 'no sales figure for the people with its target' : 'no brand target')}`)).join('')
+        + (B && B.total != null ? kv(msT('Total'), msKd(B.total)) : ''));
   } else if(id === 'act'){
     body += sec('Under-performing', 'The ERP sales files of this month and the 3 months before.', 'Bought in at least 2 of the 3 months before, and this month less than half of their average on the same days.', '');
     body += sec('High potential', 'The clinic list (class) and the ERP sales files.', 'A clinic graded A or B with no paid invoice this month, and one in at most 1 of the 3 months before.', '');
