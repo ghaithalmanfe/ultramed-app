@@ -15,3 +15,10 @@ dist/
 # (scripts/backup) — the whole account: customers, sales, the team
 ultramed-full-backup-*.json
 *.test-cloud.json
+
+# the nightly encrypted backups (scripts/backup/nightly, docs/backup.md):
+# never commit one, even encrypted (the repository is public).
+# nightly/verify.js refuses to write a decrypted bundle inside this folder.
+/backups/
+*.umbackup
+*.umbackup.partial
