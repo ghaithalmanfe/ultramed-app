@@ -1,0 +1,5 @@
+# The app is hosted on GitHub Pages (see CLAUDE.md, "Hosting is GitHub only").
+# A leftover Netlify site is still linked to this repository and built every
+# push, which used up the team's Netlify credits. Skip every Netlify build.
+[build]
+  ignore = "exit 0"
