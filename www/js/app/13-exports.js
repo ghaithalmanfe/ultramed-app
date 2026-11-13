@@ -1399,7 +1399,8 @@ async function renderBackupsList(){
       try{
         const res = await window.storage.get('snap_'+d, true);
         const snap = res ? UMCore.safeParse(res.value, null) : null;
-        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} صورة بلا معاينة` : '');
+        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} صورة بلا معاينة` : '')
+          + (snap.keptBeforeRestore ? ` · البيانات كما كانت قبل استعادة نسخة ${esc(String(snap.keptBeforeRestore).slice(0, 10))}` : ''); // the copy a whole-day Restore kept first (v123 review)
       }catch(e){}
       html += `
       <div class="card row-between">
@@ -1851,8 +1852,15 @@ async function restoreMissingClinics(){
   await openClinicRecovery();
   const n2 = document.getElementById('recovNote'); if(n2) n2.innerHTML = msg; else if(note) note.innerHTML = msg;
 }
-// v121: a refresh on its way must not put the replaced lists back over a restore (holdRefresh, 04)
-async function restoreSnapshot(dateStr){ return holdRefresh(() => restoreSnapshotNow(dateStr)); }
+// v121: a refresh on its way must not put the replaced lists back over a restore (holdRefresh, 04).
+// v123 review: the lists are read again first — what the restore counts, keeps
+// and removes is the cloud's as it is now, never an older copy on this phone,
+// and a list that does not load stops it (restoreSnapshotNow).
+async function restoreSnapshot(dateStr){
+  if(!requireAdmin()) return;
+  try{ await loadAll(); }catch(e){ console.warn('restore: the read before it', e); }
+  return holdRefresh(() => restoreSnapshotNow(dateStr));
+}
 // v123: the product catalog is no longer part of a whole-day restore (it
 // replaced the catalog without saying so: prices, catalog additions and
 // materials since that day were undone), and today's data is kept before
@@ -1875,17 +1883,37 @@ async function restoreSnapshotNow(dateStr){
     snap = JSON.parse(res.value);
   }catch(e){ console.error(e); showToast('Restore failed — the backup could not be read'); return; }
   const today = todayStr(), todayKey = 'snap_' + today;
-  if(dateStr !== today){
-    let hasToday;
+  // The lists it counts, keeps and replaces must be the cloud's (v123 review):
+  // a read that failed, a list served from this phone's copy or a change still
+  // waiting in the queue would make its counts wrong and the copy it keeps
+  // empty — this month's visits were erased everywhere while the confirmation
+  // promised a copy.
+  const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k));
+  if(notRead.length || _seedClinics || _bootCrashed){
+    showToast('Restore stopped — the clinics, tasks or visits on this device did not all load from the cloud, or changes on this device have not reached it yet. Nothing was changed. Check the connection, then try again.', 8000);
+    return;
+  }
+  // Today's own backup is never replaced by the restore of it (v123 review: the
+  // damaged data was kept as today's backup first — the very backup being
+  // restored — so the good copy existed nowhere afterwards, and a second try
+  // after a failure restored the damaged data). Restoring today's, the data as
+  // it is now is kept in a full backup to this device instead.
+  const sameDay = dateStr === today;
+  let hasToday = sameDay;
+  if(!sameDay){
     try{ const r = await withTimeout(window.storage.get(todayKey, true, { server: true }), 8000); hasToday = !!(r && r.value != null); }
     catch(e){ showToast('Restore stopped — today\'s backup could not be checked. Nothing was changed.', 6000); return; }
-    if(hasToday && !(_fullBackupSavedAt && Date.now() - _fullBackupSavedAt < RESTORE_FULL_BACKUP_MS)){
-      showModal(`<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
+  }
+  if(hasToday && !(_fullBackupSavedAt && Date.now() - _fullBackupSavedAt < RESTORE_FULL_BACKUP_MS)){
+    showModal(sameDay ? `<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
+        <p style="font-size:13px; line-height:1.6;"><span>This restores today's own backup, so the data as it is now cannot be kept as today's backup — that would replace the very backup being restored. First save a full backup to this device: it keeps everything as it is now, today's backup too.</span></p>
+        <p style="color:var(--muted); font-size:12.5px;"><span>Then tap Restore again. Nothing was changed.</span></p>
+        <button class="btn" onclick="openFullBackup()">💾 <span>Full backup first</span></button>`
+      : `<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
         <p style="font-size:13px; line-height:1.6;"><span>Before a restore, the data as it is now is kept as today's backup. Today already has its own backup, which that would replace — so first save a full backup to this device: it keeps everything, today's backup too.</span></p>
         <p style="color:var(--muted); font-size:12.5px;"><span>Then tap Restore again. Nothing was changed.</span></p>
         <button class="btn" onclick="openFullBackup()">💾 <span>Full backup first</span></button>`);
-      return;
-    }
+    return;
   }
   // What the restore removes, said before anything changes.
   const held = list => new Set((Array.isArray(list) ? list : []).map(x => x && x.id));
@@ -1893,18 +1921,22 @@ async function restoreSnapshotNow(dateStr){
   const goneC = storedClinics().filter(c => c && !hc.has(c.id)).length;
   const goneT = (tasks || []).filter(t => t && !ht.has(t.id)).length;
   const goneV = (visits || []).filter(v => v && UMCore.visitHome(v, today) === 'live' && !hv.has(v.id)).length;
-  const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits, the sales files and the product catalog stay as they are. First, the data as it is now is kept as today's backup.`;
+  const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits, the sales files and the product catalog stay as they are. `
+    + (sameDay ? 'Today\'s backup itself stays as it is: the data as it is now is in the full backup you saved to this device.' : 'First, the data as it is now is kept as today\'s backup.');
   if(!confirm(trOf(ask) || ask)) return;
-  // Today's data first: if it cannot be kept, nothing changes. Measured like
-  // the daily backup (v123): above 900 KB the visits keep their photo ids
-  // without previews; still too large for the cloud, the restore stops here.
-  const keep = UMCore.snapshotPayload(snapshotDoc({ keptBeforeRestore: dateStr }), { slimAt: SNAP_SLIM_BYTES, max: DOC_MAX_BYTES });
-  if(keep.tooLarge){ showToast(`Restore stopped — today's data is too large for a backup in the cloud (${Math.round(keep.bytes / 1024)} KB). Nothing was changed.`, 7000); return; }
-  try{
-    const ok = await withTimeout(window.storage.set('snap_' + today, keep.str, true), 20000);
-    if(!ok) throw new Error('set failed');
-    snapDone(today); // today's backup exists now: a failure noted earlier today is over
-  }catch(e){ console.error('restore: keeping today\'s data', e); showToast('Restore stopped — today\'s data could not be kept first. Nothing was changed.', 6000); return; }
+  // Today's data first (an earlier day restored): if it cannot be kept,
+  // nothing changes. Measured like the daily backup (v123): above 900 KB the
+  // visits keep their photo ids without previews; still too large for the
+  // cloud, the restore stops here.
+  if(!sameDay){
+    const keep = UMCore.snapshotPayload(snapshotDoc({ keptBeforeRestore: dateStr }), { slimAt: SNAP_SLIM_BYTES, max: DOC_MAX_BYTES });
+    if(keep.tooLarge){ showToast(`Restore stopped — today's data is too large for a backup in the cloud (${Math.round(keep.bytes / 1024)} KB). Nothing was changed.`, 7000); return; }
+    try{
+      const ok = await withTimeout(window.storage.set('snap_' + today, keep.str, true), 20000);
+      if(!ok) throw new Error('set failed');
+      snapDone(today); // today's backup exists now: a failure noted earlier today is over
+    }catch(e){ console.error('restore: keeping today\'s data', e); showToast('Restore stopped — today\'s data could not be kept first. Nothing was changed.', 6000); return; }
+  }
   try{
     clinics = normalizeClinics(snap.clinics||[]); hidePlaceholderClinics();
     // The backup holds the visits of ITS month; older months live in their

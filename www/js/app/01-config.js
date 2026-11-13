@@ -16,6 +16,11 @@ const FIREBASE_CONFIG = {
   appId: "1:562076174140:web:c90047e64c220b83a38039"
 };
 const FIREBASE_ENABLED = !!(FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith('YOUR_'));
+// The app's revision, as a number (v123 → 123): written on every document
+// (`rev`, the adapter below) and on the delete log, so the security rules can
+// refuse a version older than the one the owner allows (MIN_APP_REV() in
+// firestore.rules; v123 review, audit item 15).
+const APP_REV_NUM = parseInt(String(APP_REV).replace(/\D/g, ''), 10) || 0;
 
 if(!window.storage){
   if(FIREBASE_ENABLED && window.firebase){
@@ -24,6 +29,25 @@ if(!window.storage){
     const authReady = new Promise((resolve) => {
       firebase.auth().onAuthStateChanged(user => { if(user) resolve(user); });
     });
+    // Every document carries the app's revision (APP_REV_NUM). Rules published
+    // before v123 accept only { value, updated }: a write they refuse is sent
+    // once more without it, and this phone leaves it out for the rest of the
+    // day (um_revOff) — refused without it too, the refusal is not the
+    // revision's doing, and the next write carries it again.
+    const REV_OFF = 'um_revOff', revDay = () => new Date().toISOString().slice(0, 10);
+    let revOff = (() => { try{ return localStorage.getItem(REV_OFF) === revDay(); }catch(e){ return false; } })();
+    const docOf = (value, updated) => revOff ? { value, updated } : { value, updated, rev: APP_REV_NUM };
+    const refused = e => /permission[-_]denied/i.test(String((e && e.code) || '') + ' ' + String((e && e.message) || ''));
+    const withRev = async write => {
+      if(revOff) return write();
+      try{ return await write(); }
+      catch(e){
+        if(!refused(e)) throw e;
+        revOff = true;
+        try{ const r = await write(); try{ localStorage.setItem(REV_OFF, revDay()); }catch(e2){} return r; }
+        catch(e2){ revOff = false; throw e2; }
+      }
+    };
     window.storage = {
       kind: 'firestore', // the team's cloud (the full backup names the project only for this one)
       // opts.server: answer from the server only — never from the SDK's
@@ -36,7 +60,7 @@ if(!window.storage){
       },
       async set(key, value){
         await authReady;
-        await db.collection('state').doc(key).set({ value, updated: Date.now() });
+        await withRev(() => db.collection('state').doc(key).set(docOf(value, Date.now())));
         return true;
       },
       // Several documents in ONE atomic commit: all land or none. A sales
@@ -47,12 +71,14 @@ if(!window.storage){
       async setMany(entries){
         await authReady;
         const now = Date.now();
-        let batch = db.batch(), n = 0, bytes = 0;
-        for(const [k, v] of entries){
-          if(n >= 400 || bytes + v.length > 8e6){ await batch.commit(); batch = db.batch(); n = 0; bytes = 0; }
-          batch.set(db.collection('state').doc(k), { value: v, updated: now }); n++; bytes += v.length;
-        }
-        if(n) await batch.commit();
+        await withRev(async () => {
+          let batch = db.batch(), n = 0, bytes = 0;
+          for(const [k, v] of entries){
+            if(n >= 400 || bytes + v.length > 8e6){ await batch.commit(); batch = db.batch(); n = 0; bytes = 0; }
+            batch.set(db.collection('state').doc(k), docOf(v, now)); n++; bytes += v.length;
+          }
+          if(n) await batch.commit();
+        });
         return true;
       },
       // Read-merge-write as ONE atomic step: the merge function sees the
@@ -63,13 +89,13 @@ if(!window.storage){
       async update(key, fn){
         await authReady;
         const ref = db.collection('state').doc(key);
-        return db.runTransaction(async tx => {
+        return withRev(() => db.runTransaction(async tx => {
           const doc = await tx.get(ref);
           const next = fn(doc.exists ? doc.data().value : null);
           if(next == null) return null;
-          tx.set(ref, { value: next, updated: Date.now() });
+          tx.set(ref, docOf(next, Date.now()));
           return next;
-        });
+        }));
       },
       async delete(key){
         await authReady;

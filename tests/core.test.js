@@ -3522,6 +3522,27 @@ describe('v86: whole-app audit fixes', () => {
     const tb = core.mergeDayPlans3({}, cloud, null, new Set(['2026-09-23|Renova']));
     assert.equal(tb.merged['2026-09-23'], undefined);
   });
+  test('day plans (v123 review): one day\'s list changed on BOTH devices merges entry by entry — her removal and his addition both stay', () => {
+    const at = 1700000000000;
+    const base  = { '2026-11-15': { Mariam: [{ id: 'c1', note: '', at }, { id: 'c2', note: '', at }, { id: 'c4', note: '', at }] } };
+    // she (offline) took c2 off and added c6; he took c4 off, added c3 and wrote a note on c1
+    const local = { '2026-11-15': { Mariam: [{ id: 'c6', note: '', at: at + 5 }, { id: 'c1', note: '', at }, { id: 'c4', note: '', at }] } };
+    const cloud = { '2026-11-15': { Mariam: [{ id: 'c1', note: 'call first', at }, { id: 'c2', note: '', at }, { id: 'c3', note: 'please visit', at: at + 9 }] } };
+    const r = core.mergeDayPlans3(local, cloud, base, new Set());
+    const list = r.merged['2026-11-15'].Mariam;
+    assert.deepEqual(list.map(e => e.id), ['c6', 'c1', 'c3']);           // her order first, then what he added
+    assert.equal(list.find(e => e.id === 'c1').note, 'call first');      // his note on an entry she did not touch
+    assert.ok(r.recovered >= 1);
+    // both took the same clinic off: it stays off; both added the same clinic: once
+    const both = core.mergeDayPlans3({ d: { M: [{ id: 'a' }, { id: 'z' }] } }, { d: { M: [{ id: 'a' }, { id: 'z' }, { id: 'y' }] } }, { d: { M: [{ id: 'a' }, { id: 'b' }] } }, new Set());
+    assert.deepEqual(both.merged.d.M.map(e => e.id), ['a', 'z', 'y']);
+    // older entries saved as bare clinic ids merge the same way
+    const bare = core.mergeDayPlans3({ d: { M: ['c1'] } }, { d: { M: ['c1', 'c2', 'c3'] } }, { d: { M: ['c1', 'c2'] } }, new Set());
+    assert.deepEqual(bare.merged.d.M, ['c1', 'c3']);
+    // only this device changed it: its list as before; only the cloud: the cloud's
+    assert.deepEqual(core.mergeDayPlans3(local, base, base, new Set()).merged['2026-11-15'].Mariam.map(e => e.id), ['c6', 'c1', 'c4']);
+    assert.deepEqual(core.mergeDayPlans3(base, cloud, base, new Set()).merged['2026-11-15'].Mariam.map(e => e.id), ['c1', 'c2', 'c3']);
+  });
   test('recycle bin union keeps every entry once, newest deletion wins', () => {
     const cloud = { clinics: [{ id: 'a', _deletedAt: 1 }], visits: [{ id: 'v1', _deletedAt: 5 }] };
     const local = { clinics: [{ id: 'a', _deletedAt: 9 }, { id: 'b', _deletedAt: 2 }], products: [{ id: 'p', _deletedAt: 3 }] };

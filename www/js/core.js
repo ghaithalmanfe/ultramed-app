@@ -1487,11 +1487,15 @@
   // after an offline boot) it degrades to the old union: local lists win,
   // cloud fills in what is missing. `tombs` = Set of 'date|rep' keys whose
   // list this device deleted.
+  // v123 review: a date|rep list changed on BOTH sides merges entry by entry
+  // (planEntries3) — the list this device changed used to win whole, so a
+  // clinic another phone added to the same day was lost.
   function mergeDayPlans3(local, cloud, base, tombs){
     var out = {}, recovered = 0;
     var tomb = tombs || { has: function(){ return false; } };
     var keysOf = function(o){ var ks = []; Object.keys(o || {}).forEach(function(d){ Object.keys(o[d] || {}).forEach(function(r){ ks.push(d + '|' + r); }); }); return ks; };
     var get = function(o, k){ var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1); return o && o[d] ? o[d][r] : undefined; };
+    var same = function(a, b){ return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); };
     var all = {};
     keysOf(local).concat(keysOf(cloud), keysOf(base)).forEach(function(k){ all[k] = 1; });
     Object.keys(all).forEach(function(k){
@@ -1500,8 +1504,10 @@
       if(!base){
         pick = (L && L.length) ? L : (tomb.has(k) ? undefined : C);
       } else {
-        var localChanged = JSON.stringify(L === undefined ? null : L) !== JSON.stringify(B === undefined ? null : B);
-        pick = localChanged ? L : (tomb.has(k) ? undefined : C);
+        var localChanged = !same(L, B);
+        if(!localChanged) pick = tomb.has(k) ? undefined : C;
+        else if(Array.isArray(L) && Array.isArray(C) && !same(C, B)){ pick = planEntries3(L, C, Array.isArray(B) ? B : []); if(!same(pick, L)) recovered++; }
+        else pick = L;
         if(!localChanged && JSON.stringify(pick === undefined ? null : pick) !== JSON.stringify(L === undefined ? null : L)) recovered++;
       }
       if(!pick || !pick.length) return;
@@ -1509,6 +1515,33 @@
       (out[d] = out[d] || {})[r] = pick;
     });
     return { merged: out, recovered: recovered };
+  }
+  // One day's plan changed on two devices, entry by entry against the base
+  // (entries are {id, note, at} or, older, a bare clinic id): an entry added on
+  // either side stays, one removed on either side goes, an entry changed on the
+  // other side only (its note) takes that change; this device's order first,
+  // then what the other side added, in its order.
+  function planEntries3(L, C, B){
+    var key = function(e){ return e && typeof e === 'object' ? e.id : e; };
+    var same = function(a, b){ return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b); };
+    var bm = {}, cm = {}, lm = {}, out = [], have = {};
+    B.forEach(function(e){ var id = key(e); if(id != null && !(id in bm)) bm[id] = e; });
+    C.forEach(function(e){ var id = key(e); if(id != null && !(id in cm)) cm[id] = e; });
+    L.forEach(function(e){ var id = key(e); if(id != null && !(id in lm)) lm[id] = e; });
+    L.forEach(function(e){
+      var id = key(e);
+      if(id == null || have[id]) return;
+      if((id in bm) && !(id in cm)) return;              // removed on the other device
+      var v = e;
+      if((id in bm) && (id in cm) && same(e, bm[id]) && !same(cm[id], bm[id])) v = cm[id]; // changed there only
+      out.push(v); have[id] = 1;
+    });
+    C.forEach(function(e){
+      var id = key(e);
+      if(id == null || have[id] || (id in bm)) return;   // already here, or removed on this device
+      out.push(e); have[id] = 1;                          // added on the other device
+    });
+    return out;
   }
   // Recycle bin: union by id per kind (newest deletion wins) — a bin this
   // device never managed to load must not be replaced by its own defaults.

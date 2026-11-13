@@ -849,9 +849,12 @@ async function persistTeamNow(key){
     return true;
   }
   catch(e){
-    // refused by the rules, or too large for the cloud: never queued as "offline" (v123)
+    // refused by the rules, or too large for the cloud: never queued as "offline" (v123) —
+    // but a refusal on a phone with no access to the team's data (signed out, a sign-in that
+    // ended) is kept and queued like a save with no connection (v123 review, accessLost)
     const kind = saveErrKind(e);
-    if(kind){ _teamLastFail[key] = saveBlocked(key, kind, e); return false; }
+    const lost = kind === 'refused' && await accessLost();
+    if(kind && !lost){ _teamLastFail[key] = saveBlocked(key, kind, e); return false; }
     // queued in memory always (it uploads while the app stays open); on the phone when both fit —
     // everything memory holds, with what this save had merged from the cloud
     let onPhone = false;
@@ -859,10 +862,12 @@ async function persistTeamNow(key){
       const mOk = mirrorSave(key, JSON.stringify(teamMerge(key, teamList(key), value)));
       onPhone = outboxAdd(key) && mOk;
     }catch(e2){}
+    if(lost) parkSave(key, 'noAccess');
     if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); }
     updateSyncBadge();
-    offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
-                         : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+    if(lost) noAccessToast(onPhone ? NO_ACCESS_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+    else offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
+                              : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     return false;
   }
 }
@@ -1040,7 +1045,8 @@ async function saveMemory(){
     // The real outcome (v122): "shared with the team" was said for a memory only kept on this phone.
     if(saved) showToast('\u{1F4F8} Memory shared with the team');
     else showToast(_memOnly.has('memories') ? "⚠️ This phone's storage is full — this memory is only in the app's memory: keep the app open until it uploads"
-                                            : '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online', 4000);
+                   : _saveParked.get('memories') === 'noAccess' ? NO_ACCESS_KEPT // signed out: kept, it uploads after the next sign-in (v123 review)
+                   : '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online', 4000);
   } finally { _memSharing.delete(pm.id); }
 }
 function renderMemories(){

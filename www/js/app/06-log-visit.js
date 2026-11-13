@@ -53,6 +53,7 @@ function prepLogView(qClinicId){
   document.getElementById('newClinicName').value='';
   document.getElementById('newClinicContact').value='';
   document.getElementById('newClinicPhone').value='';
+  { const a = document.getElementById('newClinicAsk'); if(a) a.innerHTML = ''; }
   renderClinicSelect(qClinicId||null);
 
   document.getElementById('prodSearchLog').value='';
@@ -195,6 +196,7 @@ function startNewClinic(){
 function cancelNewClinic(){
   newClinicMode = false;
   rxClearDraft('log');
+  { const a = document.getElementById('newClinicAsk'); if(a) a.innerHTML = ''; } // its sales question goes with it
   document.getElementById('newClinicFields').style.display='none';
   renderClinicSelect();
 }
@@ -482,15 +484,15 @@ function setLogFormBusy(on){
   }
   if(!on && note) note.remove();
 }
-async function saveVisit(){
+async function saveVisit(confirmed){
   const gen = _logFormGen;
   if(_visitSaveBusy.has(gen)){ showToast('Already saving…'); return; }
   _visitSaveBusy.add(gen);
   setLogFormBusy(true);
-  try{ await saveVisitNow(gen); }
+  try{ await saveVisitNow(gen, typeof confirmed === 'string' ? confirmed : ''); }
   finally{ _visitSaveBusy.delete(gen); if(gen === _logFormGen) setLogFormBusy(false); }
 }
-async function saveVisitNow(gen){
+async function saveVisitNow(gen, confirmed){
   let clinicId = selectedClinicId;
   // A rep files visits under their own name only — "logging as" is a
   // supervisor control, enforced here too so no stale screen can bypass it.
@@ -505,12 +507,23 @@ async function saveVisitNow(gen){
     if(dup){ showToast('A clinic with this name already exists'); return; }
     const clsEl = document.querySelector('#newClinicClsChips .chip.on');
     const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
-    clinicId = uid();
-    clinics.push(normalizeClinic({id:clinicId, name, rep,
+    const nc = normalizeClinic({id:uid(), name, rep,
       cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'',
       account: acctEl?acctEl.dataset.acct:null, isNew:true, addedOn:todayStr(),
       contact: document.getElementById('newClinicContact').value.trim(),
-      phone: document.getElementById('newClinicPhone').value.trim()}));
+      phone: document.getElementById('newClinicPhone').value.trim()});
+    // the same sales check as "+ Add clinic" (v123 review): nothing is saved
+    // until it passes, and the form keeps everything typed
+    const askBox = document.getElementById('newClinicAsk');
+    const chk = newClinicSalesCheck(nc, confirmed, 'saveVisit', "document.getElementById('newClinicAsk').innerHTML=''");
+    if(!chk.ok){
+      if(askBox){ askBox.innerHTML = newClinicAskCard(chk.html); try{ askBox.scrollIntoView({ block: 'center' }); }catch(e){} }
+      showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000);
+      return;
+    }
+    if(askBox) askBox.innerHTML = '';
+    clinicId = nc.id;
+    clinics.push(nc);
   }
   if(!clinicId){ showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be
@@ -618,6 +631,8 @@ function visitSaveMsg(vs, kept, added){
   if(!saved && o.tooLarge) return added ? "🛑 Photo not added — this month's visits are too large for the cloud (too many photos)"
     : "🛑 Visit not saved — this month's visits are too large for the cloud (too many photos). What you typed is still on this screen: remove some photos from this month's visits, then save again.";
   const onPhone = !saved && !!(vs.outcome && vs.outcome.queued && vs.outcome.mirrored);
+  // no access to the team's data (signed out): kept on this phone, it uploads after the next sign-in (v123 review)
+  if(onPhone && o.noAccess && !added) return '🔒 Visit kept on this phone — no access to the team\'s data right now (signed out?). It uploads by itself after you sign in again';
   // A photo added to a visit already saved: only that change is in memory (the red bar says until when)
   if(!saved && !onPhone && added) return "⚠️ This phone's storage is full — the photo was added only in the app's memory: keep the app open and connected until it says Saved";
   if(!saved && !onPhone) return '⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال';

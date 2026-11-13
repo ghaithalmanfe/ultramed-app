@@ -39,6 +39,7 @@ const PASSWORD = 'test-password-1';
 const J = JSON.stringify;
 const P = (s, d) => { try{ return s == null ? d : JSON.parse(s); }catch(e){ return d; } };
 const QUIET = { log(){}, info(){}, warn(){}, error(){}, debug(){} };
+let initializeTestEnvironment = null; // loaded with the emulator tests (the source scan runs without the packages)
 
 // ================= the source scan (no emulator needed) =================
 // Every write target, as the rules know it: who writes it today.
@@ -122,8 +123,13 @@ function adapterSource(){
   assert.ok(!/ultramed-field-ops|AIza/.test(code), 'the real project configuration is still in the code under test');
   for(const part of ['window.storage = {', 'async get(key, _shared, opts)', 'async set(key, value)', 'async setMany(entries)', 'async update(key, fn)', 'async delete(key)', 'async list(prefix)'])
     assert.ok(code.includes(part), '01-config.js: the adapter no longer has ' + part);
-  return code;
+  // the app's revision, defined at the top of the file (the adapter stamps it on every document, v123)
+  const rev = src.match(/^const APP_REV = '([^']+)';/m);
+  assert.ok(rev, '01-config.js: APP_REV not found');
+  APP_REV_NUM = parseInt(rev[1].replace(/\D/g, ''), 10);
+  return `const APP_REV = '${rev[1]}';\n` + code;
 }
+let APP_REV_NUM = 0;
 let firebase, ADAPTER;
 const phones = [];
 // One phone = one app instance with its own sign-in, running the adapter code.
@@ -442,7 +448,7 @@ describe('source scan: every write the app makes is replayed here', () => {
 describe('the app\'s own storage code on the emulator: no write it makes is refused', () => {
   let repA, repB, sup;
   before(async () => {
-    const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
+    ({ initializeTestEnvironment } = require('@firebase/rules-unit-testing'));
     const compat = require('firebase/compat/app'); firebase = compat.default || compat;
     require('firebase/compat/auth'); require('firebase/compat/firestore');
     firebase.firestore.setLogLevel('silent');
@@ -501,6 +507,37 @@ describe('the app\'s own storage code on the emulator: no write it makes is refu
     }
     assert.equal(await storedValue('staff'), J(SEED.staff));
     assert.equal(await storedValue('targets'), J(SEED.targets));
+  });
+  // v123 review (audit item 15): the revision on every document, whatever the rules published
+  test('every document the app\'s adapter writes carries the app\'s revision: a set, a transaction, a batch', async () => {
+    await reseed();
+    await repA.s.set('tombs', J({ visits: {} }), true);
+    await mergeList(repA.s, 'visits', { id: 'v-rev', clinicId: 'c-1', rep: 'Rep A', date: kuwaitDay(0), ts: Date.now() });
+    await sup.s.setMany([['erpSales', J(SEED.erpSales)]]);
+    const raw = key => asAdmin(async col => (await col.doc(key).get()).data());
+    for(const k of ['tombs', 'visits', 'erpSales']){ const d = await raw(k); assert.equal(d.rev, APP_REV_NUM, k + ' carries rev'); assert.ok(APP_REV_NUM >= 123); }
+  });
+  test('rules published before v123 (value and updated only): the adapter\'s saves still land — sent once more without the revision — and a refusal without it stays a refusal', async () => {
+    const oldShape = F.rulesFor(SUP).replace("d.keys().hasOnly(['value', 'updated', 'rev'])", "d.keys().hasOnly(['value', 'updated'])");
+    assert.notEqual(oldShape, F.rulesFor(SUP), 'the shape check was not found in the rules');
+    await env.cleanup();
+    env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: oldShape, host: HOST, port: Number(PORT) } });
+    try{
+      await reseed();
+      const p = makePhone('rules-before-v123');
+      await p.auth.signInWithEmailAndPassword(REP_B, PASSWORD);
+      await p.s.set('tombs', J({ visits: { 'v-x': Date.now() } }), true);
+      await mergeList(p.s, 'tasks', { id: 't-old-rules', rep: 'Rep B', text: 'saved under the old rules', done: false });
+      await p.s.setMany([['visitsIndex', J({ v: 1, months: {} })]]);
+      const raw = key => asAdmin(async col => (await col.doc(key).get()).data());
+      for(const k of ['tombs', 'tasks', 'visitsIndex']){ const d = await raw(k); assert.equal(d.rev, undefined, k); assert.ok(typeof d.value === 'string' && typeof d.updated === 'number', k); }
+      assert.match(await storedValue('tasks'), /t-old-rules/);
+      await assert.rejects(p.s.set('targets', J({}), true), e => e && e.code === 'permission-denied'); // a rep's save the rules refuse anyway
+      assert.equal(await storedValue('targets'), J(SEED.targets));
+    } finally {
+      await env.cleanup();
+      env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: F.rulesFor(SUP), host: HOST, port: Number(PORT) } });
+    }
   });
   test('signed out, the same phone reads and writes nothing', async () => {
     await reseed();

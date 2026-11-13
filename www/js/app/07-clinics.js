@@ -563,8 +563,8 @@ async function markDoctorGone(clinicId, docId, scope){
   tomb('doctors', clinicId + '|' + docId);
   const ok = await persistTombs();
   if(ok) showToast('✅ Taken off this list', 4000);
-  else if(outboxHas('tombs')) showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000);
-  else showToast(NOT_ALLOWED_MSG, 6000); // not queued: the rules refused it (persistTombs)
+  else if(_saveParked.get('tombs') === 'refused') showToast(NOT_ALLOWED_MSG, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
+  else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
   renderAll();
   openLostDoctors(scope);
 }
@@ -857,6 +857,57 @@ function dealTypeLabel(c, opts){
   return short ? '🛒 Direct' : '🛒 Direct sales';
 }
 function pickModalRep(el){ el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
+// One check for every way a new clinic is made (v123 review): "+ Add clinic",
+// the visit form's "New clinic" and the order form's "+ Add a new customer" —
+// the last two skipped it, and a rep's new clinic took another person's
+// invoices, closed months too. A name that starts matching an ERP account makes
+// its invoices count for the new clinic's owner (UMCore.erpAddClinicMoves). A
+// rep is stopped when another person's lines, or a closed month's, would move
+// (the supervisor adds that clinic); the supervisor is asked first — "Count
+// from this month" (prevRep = the person the earlier lines count for now,
+// repSince = the 1st) or all of them. `confirmed`: the answer of one of the
+// question's buttons (a signature of the lines it was asked about — asked
+// again if they changed meanwhile); `retry`: the function those buttons call
+// with it; `cancel`: what the Cancel button runs. → { ok: true } (nc then may
+// carry prevRep / repSince) | { ok: false, html } — what to show where the form asks.
+function newClinicSalesCheck(nc, confirmed, retry, cancel){
+  const sup = currentUser.role === 'supervisor', rep = nc.rep, name = nc.name;
+  const hasFiles = erpPeriods().some(p => p);
+  if(hasFiles && !salesCheckComplete()) return { ok: false, html: '⚠️ <span>Some sales files did not load on this device, so what this name would move cannot be checked. Nothing was saved — try again with a connection.</span>' };
+  const data = { erpSales, clinics: storedClinics(), erpMap };
+  const moves = hasFiles ? UMCore.erpAddClinicMoves(data, [nc]) : [];
+  if(!moves.length) return { ok: true };
+  const sig = list => list.map(m => [m.customer, m.date, m.from, m.to].join('|')).sort().join(';');
+  const month1 = todayStr().slice(0, 7) + '-01';
+  const earlier = moves.filter(m => (m.date || '') < month1);
+  const others = [...new Set(moves.map(m => m.from).filter(f => f && f !== rep))];
+  // a rep never takes another person's sales by adding a clinic: the supervisor decides
+  if(!sup && others.length) return { ok: false, html: `⚠️ <span>This name matches sales that count for another person now:</span> <b>${others.map(esc).join(', ')}</b>. <span>The supervisor adds this clinic. Nothing was saved.</span>` };
+  // …nor changes a closed month's figures (they never move)
+  if(!sup && earlier.length) return { ok: false, html: '⚠️ <span>This name matches sales of closed months. The supervisor adds this clinic. Nothing was saved.</span>' };
+  // "count from this month": earlier lines stay with the person they count for now (one person, or it cannot be kept)
+  const prev = [...new Set(earlier.map(m => m.from))];
+  const sinceOk = !earlier.length || (prev.length === 1 && !!prev[0] && prev[0] !== rep);
+  const ncSince = sinceOk && earlier.length ? Object.assign({}, nc, { prevRep: prev[0], repSince: month1 }) : nc;
+  const movesSince = sinceOk ? UMCore.erpAddClinicMoves(data, [ncSince]) : null;
+  const keepsClosed = !!movesSince && !movesSince.some(m => (m.date || '') < month1);
+  const want = typeof confirmed === 'string' ? confirmed : '';
+  const askedAll = 'all:' + sig(moves), askedSince = keepsClosed && earlier.length ? 'since:' + sig(movesSince) : null;
+  if(want && want === askedSince){ nc.prevRep = ncSince.prevRep; nc.repSince = ncSince.repSince; return { ok: true }; }
+  if(want && want === askedAll) return { ok: true };
+  if(want) showToast('This changed since you were asked — nothing was changed', 4000);
+  const net = list => Math.round(list.reduce((a, m) => a + (Number(m.net) || 0), 0) * 1000) / 1000;
+  const pairs = {}; moves.forEach(m => { const k = (m.from || '—') + ' → ' + (m.to || '—'); pairs[k] = (pairs[k] || 0) + 1; });
+  return { ok: false, html: `<div><b dir="auto">${esc(name)}</b>: ⚠️ ${moves.length} <span>sales lines would count for</span> <b>${esc(rep)}</b> (${money(net(moves))}): ${Object.keys(pairs).map(k => `<span dir="auto">${esc(k)}</span> ${pairs[k]}`).join(' · ')}</div>
+        ${earlier.length ? `<div style="margin-top:4px;">${earlier.length} <span>of them are in closed months.</span></div>` : ''}
+        <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+          ${askedSince ? `<button class="chip small" data-ask="${esc(askedSince)}" onclick="${retry}(this.dataset.ask)">✅ <span>Count from this month</span> (${movesSince.length})</button>` : ''}
+          <button class="chip small" data-ask="${esc(askedAll)}" onclick="${retry}(this.dataset.ask)">${askedSince ? '' : '✅ '}<span>${earlier.length ? 'Count all of them, closed months too' : 'Add the clinic'}</span></button>
+          <button class="chip small" onclick="${cancel}"><span>Cancel</span></button>
+        </div>
+        ${askedSince ? `<div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Count from this month: the earlier lines stay with</span> <b>${esc(prev[0])}</b>.</div>` : ''}` };
+}
+function newClinicAskCard(html){ return `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; }
 async function submitAddClinic(confirmed){
   const name = document.getElementById('mClinicName').value.trim();
   if(!name){ showToast('Enter a name'); return; }
@@ -873,46 +924,11 @@ async function submitAddClinic(confirmed){
     account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()});
   // A name that starts matching an ERP account makes those invoices count for
   // the new clinic's owner — closed months too (no handover date). Shown in
-  // the sheet before anything is saved (v123, UMCore.erpAddClinicMoves).
+  // the sheet before anything is saved (v123, newClinicSalesCheck).
   const ask = document.getElementById('mClinicAsk');
-  const say = html => { if(ask) ask.innerHTML = `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; };
-  const hasFiles = erpPeriods().some(p => p);
-  if(hasFiles && !salesCheckComplete()){ say('⚠️ <span>Some sales files did not load on this device, so what this name would move cannot be checked. Nothing was saved — try again with a connection.</span>'); return; }
-  const data = { erpSales, clinics: storedClinics(), erpMap };
-  const moves = hasFiles ? UMCore.erpAddClinicMoves(data, [nc]) : [];
-  const sig = list => list.map(m => [m.customer, m.date, m.from, m.to].join('|')).sort().join(';');
-  if(moves.length){
-    const month1 = todayStr().slice(0, 7) + '-01';
-    const earlier = moves.filter(m => (m.date || '') < month1);
-    const others = [...new Set(moves.map(m => m.from).filter(f => f && f !== rep))];
-    // a rep never takes another person's sales by adding a clinic: the supervisor decides
-    if(!sup && others.length){ say(`⚠️ <span>This name matches sales that count for another person now:</span> <b>${others.map(esc).join(', ')}</b>. <span>The supervisor adds this clinic. Nothing was saved.</span>`); return; }
-    // …nor changes a closed month's figures (they never move)
-    if(!sup && earlier.length){ say('⚠️ <span>This name matches sales of closed months. The supervisor adds this clinic. Nothing was saved.</span>'); return; }
-    // "count from this month": earlier lines stay with the person they count for now (one person, or it cannot be kept)
-    const prev = [...new Set(earlier.map(m => m.from))];
-    const sinceOk = !earlier.length || (prev.length === 1 && !!prev[0] && prev[0] !== rep);
-    const ncSince = sinceOk && earlier.length ? Object.assign({}, nc, { prevRep: prev[0], repSince: month1 }) : nc;
-    const movesSince = sinceOk ? UMCore.erpAddClinicMoves(data, [ncSince]) : null;
-    const keepsClosed = !!movesSince && !movesSince.some(m => (m.date || '') < month1);
-    const want = typeof confirmed === 'string' ? confirmed : '';
-    const askedAll = 'all:' + sig(moves), askedSince = keepsClosed && earlier.length ? 'since:' + sig(movesSince) : null;
-    if(want !== askedAll && want !== askedSince){
-      if(want){ showToast('This changed since you were asked — nothing was changed', 4000); }
-      const net = list => Math.round(list.reduce((a, m) => a + (Number(m.net) || 0), 0) * 1000) / 1000;
-      const pairs = {}; moves.forEach(m => { const k = (m.from || '—') + ' → ' + (m.to || '—'); pairs[k] = (pairs[k] || 0) + 1; });
-      say(`<div><b dir="auto">${esc(name)}</b>: ⚠️ ${moves.length} <span>sales lines would count for</span> <b>${esc(rep)}</b> (${money(net(moves))}): ${Object.keys(pairs).map(k => `<span dir="auto">${esc(k)}</span> ${pairs[k]}`).join(' · ')}</div>
-        ${earlier.length ? `<div style="margin-top:4px;">${earlier.length} <span>of them are in closed months.</span></div>` : ''}
-        <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
-          ${askedSince ? `<button class="chip small" data-ask="${esc(askedSince)}" onclick="submitAddClinic(this.dataset.ask)">✅ <span>Count from this month</span> (${movesSince.length})</button>` : ''}
-          <button class="chip small" data-ask="${esc(askedAll)}" onclick="submitAddClinic(this.dataset.ask)">${askedSince ? '' : '✅ '}<span>${earlier.length ? 'Count all of them, closed months too' : 'Add the clinic'}</span></button>
-          <button class="chip small" onclick="closeModal()"><span>Cancel</span></button>
-        </div>
-        ${askedSince ? `<div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Count from this month: the earlier lines stay with</span> <b>${esc(prev[0])}</b>.</div>` : ''}`);
-      return;
-    }
-    if(want === askedSince){ nc.prevRep = ncSince.prevRep; nc.repSince = ncSince.repSince; }
-  }
+  const say = html => { if(ask) ask.innerHTML = newClinicAskCard(html); };
+  const chk = newClinicSalesCheck(nc, confirmed, 'submitAddClinic', 'closeModal()');
+  if(!chk.ok){ say(chk.html); return; }
   clinics.push(nc);
   const r = await persistTold('clinics');
   const o = (r && r.outcome) || {};
@@ -1331,17 +1347,20 @@ async function saveEditProduct(key){
   const price = priceRaw==='' ? null : parseFloat(priceRaw);
   if(price!==null && (isNaN(price) || price<0)){ showToast('Enter a valid price'); return; }
   const oldKey = productKey(p), oldId = p.id;
-  p.name = name;
-  p.brand = document.getElementById('epBrand').value.trim() || 'Other';
-  p.id = code;
-  p.price = price===null ? null : Math.round(price*100)/100;
-  p.desc = document.getElementById('epDesc').value.trim();
-  p.specialties = Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec);
+  const was = { name: p.name, brand: p.brand, id: p.id, price: p.price, desc: p.desc, specialties: p.specialties };
+  const edit = { name, brand: document.getElementById('epBrand').value.trim() || 'Other', id: code, price: price===null ? null : Math.round(price*100)/100,
+    desc: document.getElementById('epDesc').value.trim(), specialties: Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec) };
+  Object.assign(p, edit);
   assignProductKeys();
-  const saves = [[persistTold('products'), 'products']];
-  if(code !== oldId){
+  // The catalog first; visits are re-pointed to a new code only once it has
+  // landed (v123 review): re-pointed alongside, a catalog refused ("Changed
+  // on another device") left orders on a code the catalog did not have.
+  // Refused: the screen keeps the product as the catalog has it. A save with
+  // no answer in time that lands later re-points them then (onLate).
+  const repoint = async (prod) => {
+    if(code === oldId || !prod) return [];
     // every visit, order line and bin entry that pointed at the old key now points at the new one
-    const newKey = productKey(p);
+    const newKey = productKey(prod);
     const remap = v => {
       let hit = false;
       if(Array.isArray(v.products) && v.products.includes(oldKey)){ v.products = v.products.map(x=>x===oldKey?newKey:x); hit = true; }
@@ -1351,12 +1370,25 @@ async function saveEditProduct(key){
     };
     const n = visits.filter(remap).length;
     const nb = (recycleBin.visits||[]).filter(remap).length;
+    const saves = [];
     if(n) saves.push([persistTold('visits'), 'visits']);
     if(nb) saves.push([persistTold('recycleBin'), 'recycleBin']);
+    const res = await Promise.all(saves.map(x => x[0]));
+    return res.map((r, i) => [r, saves[i][1]]);
+  };
+  const late = () => { const q = findProduct(oldKey) || findProduct(code); if(!q) return; Object.assign(q, edit); assignProductKeys(); repoint(q).then(pairs => { saveToastAll(pairs, '✅ Product updated'); renderAll(); }); };
+  const pr = await persistTold('products', code !== oldId ? { onLate: late } : undefined);
+  if(!pr.ok){
+    Object.assign(p, was); assignProductKeys(); // not saved: as the catalog has it
+    closeModal();
+    saveToast(pr, 'products', '');
+    if(document.getElementById('productListWrap')) renderProducts();
+    if(document.getElementById('apPriceBody')) renderAdminPrices();
+    return;
   }
-  const res = await Promise.all(saves.map(x => x[0]));
+  const pairs = await repoint(p);
   closeModal();
-  saveToastAll(res.map((r, i) => [r, saves[i][1]]), '✅ Product updated'); // "updated" only when every list it changed landed
+  saveToastAll([[pr, 'products']].concat(pairs), '✅ Product updated'); // "updated" only when every list it changed landed
   if(document.getElementById('productListWrap')) renderProducts();
   if(document.getElementById('apPriceBody')) renderAdminPrices();
 }

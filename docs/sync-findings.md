@@ -63,3 +63,12 @@ Each check failed on v122 (`8670308`) and passes here; A1 and A2 are the audit's
 | S4-device | "Restore from this phone's copy" put the old copy back whole. | Per-clinic differences; only ticked rows apply. | B7 |
 
 Still open: P5 (size guards on the merge lists), P6 (stale code after a release), P8 (the e-mail's no-overlap rule); the recycle bin is still not queued offline (a delete with no connection is refused, as before).
+
+### The adversarial review of v123 (13 Nov) — `tests/e2e/safety-review.e2e.js` (port 8288)
+
+| # | Scenario | Fix | Check |
+|---|----------|-----|-------|
+| R1 | A refused save took a queued list off the queue (set aside where nothing read it), and every save of a phone whose sign-in had ended was refused: signed out on a shared phone while the queue uploaded, a password changed on another device. The next refresh put the cloud's copy over the phone's. | Never off the queue: parked (`_saveParked`). A refusal is the rules' only when the phone still has access (`accessLost`: signed in, a fresh token, a server read answers); otherwise kept and queued like an offline save, sent once the cloud answers again. Sign out stops the flush at the next list; Firebase's "no user" shows the sign-in screen and keeps the queue (`signInEnded`). | R1a–d; save-truth A3 |
+| R2 | A refresh that kept the lists on screen (a save ran while it read) had already moved the visits' base: the next save took this phone's older copy of every visit for its own change. | The base moves only with the visits on screen (`run.visitsCommit`). | R2 |
+| R6 | An older app (v122) rewrites the delete log with its 7-day cutoff; v123 phones took the missing entries for revivals and forgot them. | The log carries `rev` and `revived`; a missing delete older than 7 days with no revival record is held and published again by the phone that has it, and let go when the list holds the record again (never deleted a second time). A phone that never knew the delete can still bring it back until a phone that has it writes the log — open every phone twice right after a deploy. | R6a–c |
+| R7 | Visits after a reopen with no signal merged on fingerprints only (the whole visit from this phone); a day's list changed on two phones went whole to the later upload. | The base record of each visit this phone changed is kept beside the fingerprints (`um_base:visitsRec`); a day's list merges entry by entry (`planEntries3`). | R7a–b; core test |

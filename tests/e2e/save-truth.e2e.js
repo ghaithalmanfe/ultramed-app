@@ -1,8 +1,9 @@
 // Saves told for what they did (v123, audit items 3, 4, 5, 8 and 10), each
 // reproduced on a fake cloud before its fix:
 //  A  a save the security rules refuse is never queued as "offline": it says
-//     "Not allowed, not saved (ask the supervisor)", a queued copy leaves the
-//     queue (kept aside on the phone), a refused read says "no access";
+//     "Not allowed, not saved (ask the supervisor)"; what already waits in the
+//     queue stays there and on the phone, not sent again by the round (v123
+//     review); a refused read says "no access";
 //  B  a document too large for the cloud is a distinct error, never queued:
 //     a lasting bar names the month and what to do, the visit form keeps what
 //     was typed, the phone keeps seeing the others' changes; memories stay
@@ -16,7 +17,8 @@
 //  E  "+ Add clinic": a rep's clinic is hers, the supervisor picks, sales that
 //     would move are asked first ("Count from this month"), a clinic the
 //     rules refuse stays in the sheet, not on the list; a rename carries
-//     the handover's previous owner;
+//     the handover's previous owner; the visit form's "New clinic" and the
+//     order form's "+ Add a new customer" run the same check (v123 review);
 //  F  the Assistant sends nothing anywhere;
 //  G  save actions never say "saved" for a save that did not land;
 //  H  both halves of v123 together: a whole document refused by its
@@ -162,7 +164,10 @@ function seedCloud(extra){
       !a2.inMem && !a2.queued && a2.view === 'log' && a2.notes === 'A2 refused visit' && a2.toasts.some(t => /Visit not saved — not allowed/.test(t)) && !a2.toasts.some(t => /محفوظة على هذا الجهاز|Saved on this device|on this phone/.test(t)) && !cloudVisits().some(v => v.notes === 'A2 refused visit'), a2);
     await A.ctx.close();
 
-    // A3 — a change queued with no connection, then refused at upload: dropped from the queue (kept aside), never retried every 20 s
+    // A3 — a change queued with no connection, then refused at upload (the login still reads the team's data:
+    // the rules' "no"): it stays queued and on the phone — never thrown away (v123 review: it left the queue,
+    // kept aside where nothing read it) — says "Not allowed", the 20-second round stops sending it, and
+    // the bar's "Try again" sends it once the rules let it through
     seedCloud();
     const B = await mkPhone('A3-A'); await B.boot('Mariam', 'rep');
     mode.offline.add('A3-A');
@@ -170,13 +175,17 @@ function seedCloud(extra){
     mode.offline.delete('A3-A'); mode.deny = { re: /^tasks$/, ops: 'w' };
     await B.ev(() => { window.__toasts = []; });
     await B.tick();
-    const a3 = await B.ev(() => ({ outbox: outboxList(), aside: localStorage.getItem('um_refused:tasks'), toasts: window.__toasts.slice() }));
+    const a3 = await B.ev(() => ({ outbox: outboxList(), kept: /A3 offline task/.test(localStorage.getItem('um_mirror:tasks') || ''), onScreen: tasks.some(t => t && t.id === 'tA3'),
+      bar: (document.getElementById('tooLargeBar') || {}).innerText || '', toasts: window.__toasts.slice() }));
     const t0 = tries('A3-A', 'tasks');
     await B.tick(); await B.tick();
     const t1 = tries('A3-A', 'tasks');
     mode.deny = null;
-    check('A3. a queued change the rules refuse at upload leaves the queue (its copy kept aside on the phone), says "Not allowed", and the 20-second round stops sending it',
-      q3.queued && a3.outbox.length === 0 && /A3 offline task/.test(a3.aside || '') && a3.toasts.includes(NOT_ALLOWED) && t1 === t0, { q3: q3.queued, a3, triesBefore: t0, triesAfter2Rounds: t1 });
+    await B.ev(async () => { await retryBlockedSaves(); });
+    const sent = (parse(cloud.tasks) || []).some(t => t.id === 'tA3');
+    check('A3. a queued change the rules refuse at upload stays queued and on the phone (never thrown away), says "Not allowed" and the bar says it waits; the 20-second round stops sending it; "Try again" sends it',
+      q3.queued && a3.outbox.includes('tasks') && a3.kept && a3.onScreen && /not allow this login/.test(a3.bar) && a3.toasts.includes(NOT_ALLOWED) && t1 === t0 && sent,
+      { q3: q3.queued, a3, triesBefore: t0, triesAfter2Rounds: t1, sentByTryAgain: sent });
     await B.ctx.close();
 
     // A4 — a read the rules refuse says "no access" (never only "no connection")
@@ -427,6 +436,61 @@ function seedCloud(extra){
     check('E5. renaming Mariam → "Mariam K" renames the previous owner of her handed-over clinic too (its earlier months keep counting for her)',
       e5.prevRep === 'Mariam K' && (parse(cloud.clinics).find(c => c.id === 'h1') || {}).prevRep === 'Mariam K' && e5.toasts.includes('✅ Team updated'), e5);
     await S.ctx.close();
+
+    // E7 / E8 (v123 review) — the two other ways to make a clinic run the same check: the visit
+    // form's "New clinic" and the order form's "+ Add a new customer" (they moved Renova's
+    // October invoice to Mariam). A rep is stopped, the form keeps what she typed; the supervisor is asked.
+    const whoGets = ph => ph.ev(() => { const p = erpPeriods()[0]; return unpackErpRows(p.rows).filter(r => r.customer === 'Bright Smile Dental').map(r => [r.date, UMCore.erpRowRep(r, clinics, erpMap, p.repMap)]); });
+    const RENOVAS = JSON.stringify([['2026-10-20', 'Renova'], ['2026-11-05', 'Renova']]);
+    seedCloud();
+    const M7 = await mkPhone('E7-M'); await M7.boot('Mariam', 'rep');
+    const e7 = await M7.ev(async () => {
+      closeModal(); switchView('log'); prepLogView(); startNewClinic();
+      document.getElementById('newClinicName').value = 'Bright Smile Dental';
+      document.getElementById('visitNotes').value = 'E7 first visit at a new clinic';
+      window.__toasts = []; await saveVisit();
+      return { clinic: clinics.some(c => c.name === 'Bright Smile Dental'), visit: visits.some(v => v && v.notes === 'E7 first visit at a new clinic'), typed: document.getElementById('newClinicName').value,
+        notes: document.getElementById('visitNotes').value, ask: (document.getElementById('newClinicAsk') || {}).innerText || '', toasts: window.__toasts.slice() };
+    });
+    const w7 = await whoGets(M7);
+    check('E7. the visit form\'s "New clinic" checks the sales first: a name that pulls Renova\'s sales (October too) is not saved for Mariam — no clinic, no visit, the form keeps what she typed, the supervisor adds it',
+      !e7.clinic && !e7.visit && e7.typed === 'Bright Smile Dental' && e7.notes === 'E7 first visit at a new clinic' && /count for another person now/.test(e7.ask) && /Renova/.test(e7.ask)
+        && JSON.stringify(w7) === RENOVAS && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental') && !cloudVisits().some(v => v.notes === 'E7 first visit at a new clinic'), { e7, who: w7 });
+    await M7.ctx.close();
+    seedCloud();
+    const S7 = await mkPhone('E7-S'); await S7.boot('Dr. Ghaith', 'supervisor');
+    const e7s = await S7.ev(async () => {
+      closeModal(); switchView('log'); prepLogView(); setLogAsRep('Mariam'); startNewClinic();
+      document.getElementById('newClinicName').value = 'Bright Smile Dental';
+      document.getElementById('visitNotes').value = 'E7 the supervisor logs it for Mariam';
+      await saveVisit();
+      const asked = (document.getElementById('newClinicAsk') || {}).innerText || '';
+      const savedBefore = clinics.some(c => c.name === 'Bright Smile Dental');
+      const btn = [...document.querySelectorAll('#newClinicAsk [data-ask]')].find(b => /Count from this month/.test(b.textContent));
+      if(btn) await saveVisit(btn.dataset.ask);
+      const c = clinics.find(x => x.name === 'Bright Smile Dental');
+      return { asked, savedBefore, hadButton: !!btn, rep: c && c.rep, prevRep: c && c.prevRep, repSince: c && c.repSince, visit: visits.some(v => v && v.notes === 'E7 the supervisor logs it for Mariam') };
+    });
+    const w7s = await whoGets(S7);
+    check('E7s. …the supervisor logging it is asked first; "Count from this month" keeps October with Renova, the clinic and the visit are saved',
+      /sales lines would count for/.test(e7s.asked) && !e7s.savedBefore && e7s.hadButton && e7s.rep === 'Mariam' && e7s.prevRep === 'Renova' && e7s.repSince === '2026-11-01' && e7s.visit
+        && JSON.stringify(w7s) === JSON.stringify([['2026-10-20', 'Renova'], ['2026-11-05', 'Mariam']]) && (parse(cloud.clinics).find(c => c.name === 'Bright Smile Dental') || {}).prevRep === 'Renova', { e7s, who: w7s });
+    await S7.ctx.close();
+    seedCloud();
+    const M8 = await mkPhone('E8-M'); await M8.boot('Mariam', 'rep');
+    const e8 = await M8.ev(async () => {
+      openStandaloneOrder(); startSoNewClinic();
+      document.getElementById('soNewClinicName').value = 'Bright Smile Dental';
+      soItems[productKey(products[0])] = 1;
+      window.__toasts = []; await saveStandaloneOrder();
+      return { clinic: clinics.some(c => c.name === 'Bright Smile Dental'), order: visits.some(v => v && v.orderOnly), open: document.getElementById('modalBack').classList.contains('show'),
+        typed: (document.getElementById('soNewClinicName') || {}).value, ask: (document.getElementById('soNewClinicAsk') || {}).innerText || '' };
+    });
+    const w8 = await whoGets(M8);
+    check('E8. the order form\'s "+ Add a new customer" checks the sales first: not saved for Mariam (no customer, no order), the form stays open with what she typed',
+      !e8.clinic && !e8.order && e8.open && e8.typed === 'Bright Smile Dental' && /count for another person now/.test(e8.ask) && JSON.stringify(w8) === RENOVAS
+        && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental'), { e8, who: w8 });
+    await M8.ctx.close();
   }
 
   // ===================== F. the Assistant =====================

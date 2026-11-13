@@ -35,48 +35,63 @@ async function saveStaff(idx){
   if(!email || !email.includes('@')){ showToast('Enter a valid email'); return; }
   const clash = staff.find((s,i)=>i!==idx && (s.name.toLowerCase()===name.toLowerCase() || s.email===email));
   if(clash){ showToast('That name or email is already used'); return; }
-  let renamed = []; // [[outcome, key]] of the lists a rename rewrote
-  if(idx>=0){
-    const prevName = staff[idx].name;
-    staff[idx] = {...staff[idx], name, email, role, sells};
-    if(prevName !== name){
-      // Keep existing records pointing at this person
-      // the owner, and the owner before a handover: the earlier months of a
-      // handed-over clinic count for prevRep — left on the old name, they
-      // counted for nobody on the team and closed months moved (v123)
-      clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; if(c.prevRep===prevName) c.prevRep = name; });
-      visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
-      tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
-      Object.keys(dayPlans).forEach(d=>{
-        if(dayPlans[d] && dayPlans[d][prevName]){
-          const moved = dayPlans[d][prevName], have = dayPlans[d][name] || [];
-          const ids = new Set(have.map(planEntryId));
-          dayPlans[d][name] = have.concat(moved.filter(e=>!ids.has(planEntryId(e)))); // never two copies of a plan
-          delete dayPlans[d][prevName];
-          tomb('dayPlans', d+'|'+prevName);
-        }
-      });
-      visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
-      events.forEach(e=>{ if(e.rep===prevName) e.rep = name; });
-      // the month target and its archived months
-      if(targets[prevName] && !targets[name]){ targets[name] = targets[prevName]; delete targets[prevName]; }
-      Object.keys(targets._history||{}).forEach(m=>{ const h = targets._history[m]; if(h && h[prevName] && !h[name]){ h[name] = h[prevName]; delete h[prevName]; } });
-      // ERP salesman → rep mappings
-      erpPeriods().forEach(pp=>{ Object.keys(pp.repMap||{}).forEach(k=>{ if(pp.repMap[k]===prevName) pp.repMap[k]=name; }); });
-      Object.keys(erpSales.repMapGlobal||{}).forEach(k=>{ if(erpSales.repMapGlobal[k]===prevName) erpSales.repMapGlobal[k]=name; });
-      if(logAsRep===prevName) logAsRep = name;
-      if(clinicRepFilter===prevName) clinicRepFilter = name;
-      if(reportRepFilter===prevName) reportRepFilter = name;
-      if(calRepFilter===prevName) calRepFilter = name;
-      const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
-      const got = await Promise.all([persistTold('clinics'), persistTold('visits'), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
-      renamed = got.map((r, i) => [r, keys[i]]);
-    }
-  } else {
-    staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
-  }
+  const was = staff.map(s => Object.assign({}, s)); // the team list as it is, put back if the save does not land
+  const prevName = idx >= 0 ? staff[idx].name : null;
+  const renaming = idx >= 0 && prevName !== name;
+  if(idx>=0) staff[idx] = {...staff[idx], name, email, role, sells};
+  else staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
   refreshStaff();
-  const r = await persistTold('staff');
+  const saved = staff.map(s => Object.assign({}, s));
+  // The team list first, by its compare-and-set; the other lists are renamed
+  // only once it has landed (v123 review): renamed first, a team list refused
+  // ("Changed on another device") left clinics, visits and targets on a name
+  // the team list did not have — the renamed rep saw none of her clinics and
+  // no target, and her sales counted for nobody. Refused: nothing changes.
+  // A save with no answer in time that lands later renames them then (onLate).
+  const renameLists = () => holdRefresh(async () => {
+    if(!renaming) return [];
+    // Keep existing records pointing at this person — the owner, and the owner
+    // before a handover: the earlier months of a handed-over clinic count for
+    // prevRep — left on the old name, they counted for nobody on the team and
+    // closed months moved (v123)
+    clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; if(c.prevRep===prevName) c.prevRep = name; });
+    visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
+    tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
+    Object.keys(dayPlans).forEach(d=>{
+      if(dayPlans[d] && dayPlans[d][prevName]){
+        const moved = dayPlans[d][prevName], have = dayPlans[d][name] || [];
+        const ids = new Set(have.map(planEntryId));
+        dayPlans[d][name] = have.concat(moved.filter(e=>!ids.has(planEntryId(e)))); // never two copies of a plan
+        delete dayPlans[d][prevName];
+        tomb('dayPlans', d+'|'+prevName);
+      }
+    });
+    visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
+    events.forEach(e=>{ if(e.rep===prevName) e.rep = name; });
+    // the month target and its archived months
+    if(targets[prevName] && !targets[name]){ targets[name] = targets[prevName]; delete targets[prevName]; }
+    Object.keys(targets._history||{}).forEach(m=>{ const h = targets._history[m]; if(h && h[prevName] && !h[name]){ h[name] = h[prevName]; delete h[prevName]; } });
+    // ERP salesman → rep mappings
+    erpPeriods().forEach(pp=>{ Object.keys(pp.repMap||{}).forEach(k=>{ if(pp.repMap[k]===prevName) pp.repMap[k]=name; }); });
+    Object.keys(erpSales.repMapGlobal||{}).forEach(k=>{ if(erpSales.repMapGlobal[k]===prevName) erpSales.repMapGlobal[k]=name; });
+    if(logAsRep===prevName) logAsRep = name;
+    if(clinicRepFilter===prevName) clinicRepFilter = name;
+    if(reportRepFilter===prevName) reportRepFilter = name;
+    if(calRepFilter===prevName) calRepFilter = name;
+    const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
+    const got = await Promise.all([persistTold('clinics'), persistTold('visits'), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
+    return got.map((r, i) => [r, keys[i]]);
+  });
+  const late = () => { staff = saved.map(s => Object.assign({}, s)); refreshStaff(); renameLists().then(pairs => { saveToastAll(pairs, '✅ Team updated'); renderAll(); }); };
+  const r = await persistTold('staff', renaming ? { onLate: late } : undefined);
+  if(!r.ok){
+    staff = was; refreshStaff(); // not saved: the screen shows the team list as the cloud has it
+    closeModal();
+    saveToast(r, 'staff', ''); // what that save did (refused on another device, no answer yet, no connection)
+    renderGate(); renderAll(); openAdminPanel(); setAdminTab('staff');
+    return;
+  }
+  const renamed = await renameLists();
   closeModal();
   saveToastAll([[r, 'staff']].concat(renamed), '✅ Team updated'); // "updated" only when the team list and every renamed list landed
   renderGate();
@@ -129,6 +144,7 @@ function openStandaloneOrder(prefillClinicId){
     <div id="soNewClinicFields" style="display:none; margin-top:10px;">
       <input type="text" id="soNewClinicName" placeholder="Clinic / customer name">
       <input type="tel" id="soNewClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+      <div id="soNewClinicAsk"></div>
       <label>Class</label>
       <div class="chip-row" id="soNewClinicClsChips"></div>
       <button class="btn ghost" onclick="cancelSoNewClinic()">Cancel</button>
@@ -248,7 +264,7 @@ function renderSoTotal(){
     ${soDiscount?`<div class="row-between" style="font-size:12.5px; color:var(--coral-ink); margin-top:4px;"><span>Discount (${soDiscount}%)</span><span>− ${money(t.disc)}</span></div>`:''}
     <div class="row-between" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-weight:700;"><span>Order total</span><span>${money(t.net)}</span></div>`;
 }
-async function saveStandaloneOrder(){
+async function saveStandaloneOrder(confirmed){
   let soNewCreated = false;
   if(soNewClinicMode){
     const name = document.getElementById('soNewClinicName').value.trim();
@@ -257,11 +273,17 @@ async function saveStandaloneOrder(){
     if(dup){ soClinicId = dup.id; showToast('Customer already exists — using it'); }
     else {
       const clsEl = document.querySelector('#soNewClinicClsChips .chip.on');
-      soClinicId = uid();
-      clinics.push(normalizeClinic({id:soClinicId, name, rep: currentUser.name,
+      const nc = normalizeClinic({id:uid(), name, rep: currentUser.name,
         cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'', account:null,
         isNew:true, addedOn:todayStr(), contact:'',
-        phone: document.getElementById('soNewClinicPhone').value.trim()}));
+        phone: document.getElementById('soNewClinicPhone').value.trim()});
+      // the same sales check as "+ Add clinic" (v123 review): nothing is saved until it passes
+      const askBox = document.getElementById('soNewClinicAsk');
+      const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'saveStandaloneOrder', "document.getElementById('soNewClinicAsk').innerHTML=''");
+      if(!chk.ok){ if(askBox) askBox.innerHTML = newClinicAskCard(chk.html); showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000); return; }
+      if(askBox) askBox.innerHTML = '';
+      soClinicId = nc.id;
+      clinics.push(nc);
       soNewCreated = true;
     }
   }

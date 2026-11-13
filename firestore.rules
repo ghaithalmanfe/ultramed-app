@@ -4,8 +4,8 @@ rules_version = '2';
 // UltraMed Field Ops — Firestore security rules (rules-v1)
 // =====================================================================
 // Everything the app stores is in the collection `state`, one document per
-// key: { value: <JSON string>, updated: <ms> } (www/js/app/01-config.js,
-// window.storage). These rules replace "any signed-in user may read and
+// key: { value: <JSON string>, updated: <ms>, rev: <app revision, v123+> }
+// (www/js/app/01-config.js, window.storage). These rules replace "any signed-in user may read and
 // write everything" (which, with anonymous sign-in on, meant anyone).
 // They let through every write the app (v120/v121) makes — proven against
 // the app's own storage code in tests/rules (Firestore + Auth emulators):
@@ -191,12 +191,30 @@ service cloud.firestore {
       return key in ['staff', 'benchmarks', 'categoryGuides'];
     }
 
-    // Exactly the shape window.storage writes: { value: string, updated: number }.
+    // Exactly the shape window.storage writes: { value: string, updated:
+    // number, rev: the app's revision } — rev since v123 (an older app writes
+    // the first two only).
     function wellFormed() {
       let d = request.resource.data;
-      return d.keys().hasOnly(['value', 'updated'])
+      return d.keys().hasOnly(['value', 'updated', 'rev'])
         && d.value is string
-        && d.updated is number;
+        && d.updated is number
+        && (!('rev' in d) || d.rev is int);
+    }
+
+    // The oldest app version that may write (v123 review, audit item 15). The
+    // app writes its revision on every document (APP_REV_NUM in
+    // www/js/app/01-config.js: v123 → 123). 0 = every version may write, as
+    // before. After a release that changes how data is saved, the owner may
+    // raise it here in the console (e.g. return 123;) once every phone has
+    // opened the new version: a phone still running an older version is then
+    // refused, and its changes stay queued on it until the new version uploads
+    // them. The jobs' mailLog is not held to it.
+    function MIN_APP_REV() {
+      return 0;
+    }
+    function fromCurrentApp(key) {
+      return isJobKey(key) || request.resource.data.get('rev', 0) >= MIN_APP_REV();
     }
 
     // A rep's save may not leave less than a tenth of the clinic list — an
@@ -249,11 +267,11 @@ service cloud.firestore {
       // get and list (snap_ / visitsArch: id-range queries, the e-mail job's batchGet)
       allow read: if isTeam();
 
-      allow create: if isTeam() && wellFormed()
+      allow create: if isTeam() && wellFormed() && fromCurrentApp(key)
         && (writable(key) || (isStartupSeedKey(key) && isMember())
             || (isMember() && snapIsToday(key)) || (isSupervisor() && snapIsCurrent(key)));
 
-      allow update: if isTeam() && wellFormed()
+      allow update: if isTeam() && wellFormed() && fromCurrentApp(key)
         && (writable(key) || (isSupervisor() && snapIsCurrent(key)));
 
       // Only what the app itself deletes; every other document is never deleted.

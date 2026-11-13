@@ -471,6 +471,48 @@ describe('the daily e-mail job (scripts/daily-report/report.js), same REST reque
 
 // Last: the file exactly as committed (placeholder untouched) — it must lock
 // the supervisor documents for everyone and still let the team work.
+// v123 review (audit item 15): every document carries the app's revision, so
+// the owner can stop an older app version from writing once every phone has
+// the new one (MIN_APP_REV() in the rules, raised in the console).
+describe('the app revision on every document (rev)', () => {
+  const withRev = (v, rev) => Object.assign(stored(v), { rev });
+  const minRev = n => F.rulesFor(SUP, SUP2).replace(/function MIN_APP_REV\(\) \{\s*return 0;/, `function MIN_APP_REV() {\n      return ${n};`);
+  test('the committed rules let every version write: MIN_APP_REV() is 0', () => {
+    assert.match(RAW_RULES, /function MIN_APP_REV\(\) \{\s*return 0;\s*\}/);
+    assert.notEqual(minRev(123), F.rulesFor(SUP, SUP2), 'the test can raise it');
+  });
+  test('a save carrying the app revision lands (the team\'s, the supervisor\'s, a new document); one without it too (an older app); a revision that is not a whole number, or any other field, is refused', async () => {
+    await assertSucceeds(setDoc(ref(login(REP_A), 'visits'), withRev(SEED.visits, 123)));
+    await assertSucceeds(setDoc(ref(login(SUP), 'targets'), withRev(SEED.targets, 123)));
+    await unseed('tasks'); await assertSucceeds(setDoc(ref(login(REP_B), 'tasks'), withRev([], 123)));
+    await assertSucceeds(save(login(REP_A), 'visits'));
+    await assertFails(setDoc(ref(login(REP_A), 'visits'), withRev(SEED.visits, 'v123')));
+    await assertFails(setDoc(ref(login(REP_A), 'visits'), withRev(SEED.visits, 123.5)));
+    await assertFails(setDoc(ref(login(REP_A), 'visits'), Object.assign(withRev(SEED.visits, 123), { by: 'Rep A' })));
+  });
+  describe('the oldest version allowed raised in the console (MIN_APP_REV() → 123)', () => {
+    before(async () => { await env.cleanup(); env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: minRev(123), host: HOST, port: Number(PORT) } }); });
+    after(async () => { await env.cleanup(); env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: F.rulesFor(SUP, SUP2), host: HOST, port: Number(PORT) } }); });
+    test('an older app is refused — no revision, or an older one — on the team\'s and the supervisor\'s documents, new or not; the current version lands', async () => {
+      await assertFails(save(login(REP_A), 'visits'));
+      await assertFails(setDoc(ref(login(REP_A), 'visits'), withRev(SEED.visits, 122)));
+      await assertSucceeds(setDoc(ref(login(REP_A), 'visits'), withRev(SEED.visits, 123)));
+      await assertFails(save(login(SUP), 'targets'));
+      await assertSucceeds(setDoc(ref(login(SUP), 'targets'), withRev(SEED.targets, 124)));
+      await unseed('snap_' + kuwaitDay(0));
+      await assertFails(save(login(REP_A), 'snap_' + kuwaitDay(0), { clinics: [] }));
+      await assertSucceeds(setDoc(ref(login(REP_A), 'snap_' + kuwaitDay(0)), withRev({ clinics: [] }, 123)));
+      assert.equal(await storedValue('targets'), asValue(SEED.targets));
+    });
+    test('the daily e-mail job\'s log is not held to it (the job writes no revision)', async () => {
+      await assertSucceeds(save(login(REPORTS), 'mailLog', { last: { at: new Date().toISOString() } }));
+    });
+    test('reads are never held to it', async () => {
+      for(const k of ['clinics', 'visits', 'staff', 'targets']) await assertSucceeds(read(login(REP_B), k));
+    });
+  });
+});
+
 describe('the rules exactly as committed (placeholder not yet replaced)', () => {
   before(async () => {
     await env.cleanup();
