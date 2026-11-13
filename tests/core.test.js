@@ -1378,6 +1378,24 @@ describe('rep and customer matching', () => {
     // A manual override always beats an otherwise-ambiguous name.
     assert.equal(core.matchCustomer('Orion Clinic', branches, { 'Orion Clinic': 'haw' }).clinicId, 'haw');
   });
+  test('matchCustomer with the list prepared once (the dashboard\'s pass) answers exactly as without it', () => {
+    const lists = [
+      [{ id: 'c1', name: 'Dr. Faris Al Sample Pharmacy ( Al Soor )' }, { id: 'c2', name: 'Hilal Dental Center' }],
+      [{ id: 'sal', name: 'Orion Clinic - Salmiya', rep: 'Renova' }, { id: 'haw', name: 'Orion Clinic - Hawally', rep: 'Renova' }, { id: 'noor', name: 'Al-Noor Dental Center', rep: 'Renova' }],
+      [{ id: 'a1', name: 'Shifa Clinic - Salmiya', rep: 'Mariam' }, { id: 'a2', name: 'Shifa Clinic - Hawally', rep: 'Renova' }, { id: 'a3', name: 'مركز الشفاء لطب الأسنان', rep: 'Mariam' }],
+      [{ id: 'f1', name: 'Fern Dental North', rep: 'Mariam' }, { id: 'f2', name: 'Fern Dental South', rep: 'Mariam' }, { id: 'f3', name: 'Fernhill Clinic', rep: 'Renova' }, { id: 'x', name: '' },
+        { id: 'bp', name: 'Blue Pearl Dental', rep: 'Renova' }],
+      [] ];
+    const names = ['My Fatoorah HX', 'Dr. Faris Al Sample Pharmacy ( Al Soor ) WF', 'Hilal Dental Center', 'Totally Unknown Co', 'X', 'Orion Clinic Salmiya', 'Orion Clinic',
+      'Shifa Clinic', 'Alnoor Medical Co', 'Fern Dental', 'Fern Dental North Branch', 'fernhill', 'Fern', 'Dental Clinic', '', '__proto__', 'constructor', 'مركز الشفاء', 'الشفاء', 'Hilal', 'Bluepearl Co', 'BluePearl'];
+    const maps = [{}, { X: 'c2', 'Orion Clinic': 'haw', Fern: '@channel', Hilal: '@ignore' }];
+    assert.equal(core.matchCustomer('Bluepearl Co', lists[3], {}, core.erpPrepClinics(lists[3])).method, 'fuzzy');   // the de-spaced pass is in the check
+    lists.forEach(cl => { const prep = core.erpPrepClinics(cl);
+      maps.forEach(map => names.forEach(n => assert.deepEqual(core.matchCustomer(n, cl, map, prep), core.matchCustomer(n, cl, map), n))); });
+    // a list the preparation was not made from is matched on its own
+    const other = lists[1].concat([{ id: 'o3', name: 'Orion Clinic - Jabriya', rep: 'Mariam' }]);
+    assert.deepEqual(core.matchCustomer('Orion Clinic Jabriya', other, {}, core.erpPrepClinics(lists[1])), core.matchCustomer('Orion Clinic Jabriya', other, {}));
+  });
   test('dedupeVisits collapses identical double-saves', () => {
     const v = { date: '2026-08-10', rep: 'Mariam', clinicId: 'c2', orderTotal: 0, notes: '' };
     const res = core.dedupeVisits([v, { ...v }, { ...v }, { ...v, clinicId: 'c1' }]);
@@ -4501,7 +4519,7 @@ describe('mergeDoctorLists3', () => {
   });
 });
 
-describe('management dashboard (v121)', () => {
+describe('management dashboard (v123)', () => {
   // Synthetic files Jul–Oct (no real sales data). Today 8 Oct 2026, the
   // October file runs to 8 Oct. Mariam and Renova carry DSR targets; the
   // supervisor sells and has none.
@@ -4593,7 +4611,16 @@ describe('management dashboard (v121)', () => {
     assert.deepEqual(D.byPerson.map(p => [p.amount, p.target, p.pct]), [[440, 900, 49], [70, 700, 10], [300, null, null]]);
     assert.deepEqual([D.sales.amount, D.target.amount, D.achievement.pct, D.remaining], [810, 1600, 32, 1090]);
     assert.deepEqual([D.perDay.closed, D.perDay.amount, D.perDay.workdays.left], [true, null, 0]);
-    assert.deepEqual([D.sameDays.to, D.sameDays.previous], ['2026-08-30', 370]);           // day 1–30 of August
+    // a closed month the files cover to its end is compared with ALL of the month before (31 Aug included)
+    assert.deepEqual([D.sameDays.to, D.sameDays.previous], ['2026-08-31', 370]);
+    const es = sales(); es.periods.find(p => p.id === 'aug').rows.push(row('2026-08-31', 'SINV7105', 'Amber Dental Clinic', 11, MS, 'i'));
+    const D2 = core.execDashboard(data({ erpSales: es }), { reps, month: '2026-09' });
+    assert.deepEqual([D2.sameDays.to, D2.sameDays.previous, D2.sameDays.byRep[M].previous, D2.sameDays.mixed], ['2026-08-31', 381, 281, false]);
+    // a closed month whose files stop early (20 Sep): August to the same day, never all of it
+    const es2 = sales(), sep = es2.periods.find(p => p.id === 'sep');
+    sep.to = '2026-09-20'; sep.rows = sep.rows.filter(r => r[0] <= '2026-09-20');
+    const D3 = core.execDashboard(data({ erpSales: es2 }), { reps, month: '2026-09' });
+    assert.deepEqual([D3.sales.asOf, D3.sameDays.to, D3.sameDays.previous], ['2026-09-20', '2026-08-20', 330]);
   });
 
   test('a month with no sales file: no sales figure (never 0), the targets still shown', () => {
@@ -4626,7 +4653,11 @@ describe('management dashboard (v121)', () => {
     assert.deepEqual([D.sales.amount, D.target.amount, D.achievement.pct, D.remaining], [265, 1100, 24, 835]);
     assert.equal(all.byBrand.rows.reduce((s, b) => s + b.net, 0), all.sales.amount);
     assert.deepEqual(all.byBrand.rows.map(b => [b.brand, b.net, b.target]), [['philips', 277, 400], ['intensiv', 265, 1100], ['tepe', 54, 300]]);
-    assert.deepEqual(D.byBrand.rows.find(b => b.selected), { brand: 'intensiv', net: 265, target: 1100, pct: 24, selected: true });
+    assert.deepEqual(D.byBrand.rows.find(b => b.selected), { brand: 'intensiv', net: 265, target: 1100, achieved: 265, goal: 1100, pct: 24, selected: true });
+    // a brand's percentage is of the people with that brand's target and a figure (the Today card's Team line):
+    // Dr. Ghaith's Philips (200, no target of his) is sold, never counted as achieved against Mariam's target
+    const ph = all.byBrand.rows.find(b => b.brand === 'philips');
+    assert.deepEqual([ph.net, ph.target, ph.achieved, ph.goal, ph.pct], [277, 400, 77, 400, 19]);
     assert.equal(Math.round(all.byProduct.rows.reduce((s, x) => s + x.net * 100, 0)) / 100, all.sales.amount);
     assert.deepEqual(D.byProduct.rows, [{ name: 'Intensiv Ortho-Strips', brand: 'intensiv', net: 265, qty: 4, invoices: 3 }]);
     assert.equal(D.customers.totals.total, D.sales.amount);
@@ -4654,12 +4685,19 @@ describe('management dashboard (v121)', () => {
 
   test('field work as logged: a joint visit counts for each person, once for the team; a phone order is an order, not a visit', () => {
     const d = data(), D = core.execDashboard(d, { reps }), by = Object.fromEntries(D.byPerson.map(p => [p.rep, p]));
-    assert.deepEqual(D.visits, { count: 5, joint: 1 });
+    assert.deepEqual(D.visits, { count: 5, led: 5, joint: 1 });
     assert.deepEqual([by[M].visits, by[R].visits, by[G].visits], [3, 2, 1]);
+    assert.deepEqual([by[M].led, by[R].led, by[G].led], [2, 2, 1]);
     assert.deepEqual(D.orders, { count: 3, value: 255, phone: 1 });          // logged in the app — never sales
     assert.deepEqual([by[M].orders, by[M].ordersValue, by[R].orders], [2, 210, 1]);
     assert.deepEqual(D.conversion, { visits: 5, withOrder: 2, pct: 40 });
-    assert.deepEqual([by[M].conversion, by[R].conversion, by[G].conversion], [67, 50, 0]);
+    // a joint visit's order is its leader's (the Report tab's rule): Mariam was on Renova's v3 —
+    // it is one of her visits, its order is Renova's, so Mariam's conversion is 1 of the 2 she led
+    assert.deepEqual([by[M].conversion, by[R].conversion, by[G].conversion], [50, 50, 0]);
+    const oct = d.visits.filter(v => v.date >= '2026-10-01' && v.date <= '2026-10-08');
+    reps.forEach(r => assert.equal(by[r].conversion, core.computeScoreForVisits(r, oct, d.clinics).conversion, r));
+    const me = core.execDashboard(d, { reps, rep: M });
+    assert.deepEqual([me.visits.count, me.visits.led, me.conversion.visits, me.conversion.withOrder, me.conversion.pct], [3, 2, 2, 1, 50]);
     const kpi = core.kpiScorecard(d, { rep: M, from: '2026-10-01', to: '2026-10-08' });
     assert.match(kpi.items.find(i => i.key === 'visits').value, /\(3 in 6 working days\)/);   // the KPI scorecard's count
   });
@@ -4692,6 +4730,289 @@ describe('management dashboard (v121)', () => {
     assert.ok(!two.accounts.some(a => a.name === 'Harbor Dental Center'));
     const b = core.monthCustomerSales(d, { month: '2026-10', brand: 'TePe' });
     assert.deepEqual(b.accounts.map(a => [a.name, a.net]), [['Dune Dental', 45], ['Unknown Trading Co', 9]]);
-    assert.deepEqual(core.execDashboard(d, { reps }).customers.accounts, all.accounts);   // the Clinics card's list
+    // the Clinics card's list, each account with its clinic's class (null: not a clinic)
+    const acc = core.execDashboard(d, { reps }).customers.accounts;
+    assert.deepEqual(acc.map(({ cls, ...a }) => a), all.accounts);
+    assert.deepEqual(acc.map(a => [a.name, a.cls]), [['Harbor Dental Center', 'A'], ['Amber Dental Clinic', 'A'], ['Ember Dental Center', 'A'],
+      ['Dune Dental', 'B'], ['Birch Dental Center', 'A'], ['My Fatoorah', null], ['Unknown Trading Co', null]]);
+    assert.ok(!('cls' in all.accounts[0]));                                     // the Clinics card's own list is unchanged
+  });
+
+  test('a month with no sales file has no customer totals, no forecast, no days, no activity verdict — never a 0', () => {
+    const D = core.execDashboard(data({ today: '2026-11-03' }), { reps });
+    assert.deepEqual(D.customers.totals, { total: null, clinics: null, channels: null, ignored: null, listed: null });
+    assert.deepEqual([D.customers.accounts, D.customers.files], [[], 0]);
+    assert.deepEqual([D.forecast.amount, D.forecast.people, D.forecast.pct], [null, [], null]);
+    assert.deepEqual(D.daily, { measured: false, to: null, days: [] });
+    assert.deepEqual([D.lastYear.measured, D.lastYear.current, D.lastYear.previous], [false, null, null]);
+    assert.deepEqual([D.activity.measurable, D.activity.invoiced, D.activity.both, D.activity.visitedNoInvoice, D.activity.invoicedNoVisit], [false, null, null, [], []]);
+    // a year with no month that has both a figure and a target: no percentage and no like-for-like sums
+    const t = { [M]: { revenue: 1000, month: '2026-10' }, [R]: { revenue: 800, month: '2026-10' } };
+    const Y = core.execDashboard(data({ today: '2026-11-03', targets: t }), { reps, month: '2026-07' });
+    assert.deepEqual(Y.ytd.like, { sales: null, target: null, pct: null, months: [] });
+  });
+
+  test('the month-end projection: the management report\'s formula per person, the team their sum, the running month only', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    // 8 Oct: 6 of October's 21 working days (Sun–Thu) — Mariam 231 ÷ 6 × 21
+    assert.deepEqual(D.forecast.byRep[M], { amount: 808.5, asOf: '2026-10-08', done: 6, total: 21 });
+    assert.deepEqual(reps.map(r => D.forecast.byRep[r].amount), [808.5, 577.5, 700]);
+    assert.deepEqual([D.forecast.amount, D.forecast.people, D.forecast.closed], [2086, reps, false]);
+    // against the target: the people with a target and a figure (the achievement's): (808.5 + 577.5) ÷ 1800
+    assert.deepEqual([D.forecast.target, D.forecast.pct, D.forecast.forTarget], [1800, 77, 1386]);
+    assert.deepEqual(D.byPerson.map(p => p.forecast), [808.5, 577.5, 700]);
+    // the management report (13-exports.js, tstats): amount ÷ max(1, working days to its as-of day) × the month's working days
+    const mr = a => Math.round(a.amount / Math.max(1, core.workingDaysBetween('2026-10-01', a.asOf)) * core.workingDaysBetween('2026-10-01', '2026-10-31') * 100) / 100;
+    reps.forEach(r => assert.equal(D.forecast.byRep[r].amount, mr(core.monthAchievement(r, d)), r));
+    // a lagging file (today 11 Oct, the file to 8 Oct): projected from the 8th, not from today
+    assert.deepEqual(core.execDashboard(data({ today: '2026-10-11' }), { reps }).forecast.byRep[M], { amount: 808.5, asOf: '2026-10-08', done: 6, total: 21 });
+    // one brand: its part, against its brand targets (Intensiv: Mariam 145, Renova 120)
+    const b = core.execDashboard(d, { reps, brand: 'Intensiv' });
+    assert.deepEqual([b.forecast.byRep[M].amount, b.forecast.byRep[R].amount, b.forecast.amount, b.forecast.target, b.forecast.pct], [507.5, 420, 927.5, 1100, 84]);
+    // a closed month has no projection
+    const sep = core.execDashboard(d, { reps, month: '2026-09' });
+    assert.deepEqual([sep.forecast.amount, sep.forecast.closed, sep.forecast.people, sep.forecast.target, sep.forecast.pct], [null, true, [], null, null]);
+    // nobody the files do not hold is projected
+    const es = sales(), oct = es.periods.find(p => p.id === 'oct');
+    oct.rows = oct.rows.filter(r => r[8] === MS); oct.repMap = { [MS]: M };
+    const one = core.execDashboard(data({ erpSales: es }), { reps });
+    assert.deepEqual([one.forecast.people, one.forecast.amount, one.forecast.target, one.forecast.pct, one.byPerson[1].forecast], [[M], 808.5, 1000, 81, null]);
+  });
+
+  test('the same month a year before: built as the same days of last month, only people measured in both', () => {
+    const withLastYear = () => { const es = sales();
+      es.periods.unshift({ id: 'oct25', from: '2025-10-01', to: '2025-10-31', repMap: { [MS]: M, [RS]: R }, rows: [row('2025-10-02', 'SINV6101', 'Amber Dental Clinic', 300, MS, 'i'),
+        row('2025-10-07', 'SINV6102', 'Dune Dental', 40, RS, 't'), row('2025-10-20', 'SINV6103', 'Birch Dental Center', 500, MS, 'p')] });
+      es.periods.unshift({ id: 'sep25', from: '2025-09-01', to: '2025-09-30', repMap: { [MS]: M, [RS]: R }, rows: [row('2025-09-03', 'SINV6001', 'Amber Dental Clinic', 100, MS, 'i'),
+        row('2025-09-30', 'SINV6002', 'Dune Dental', 25, RS, 't')] });
+      return es; };
+    const d = data({ erpSales: withLastYear() }), D = core.execDashboard(d, { reps });
+    assert.deepEqual(Object.keys(D.lastYear), Object.keys(D.sameDays));                    // the same shape
+    // the running month: 1–8 Oct 2025 against 1–8 Oct 2026; Dr. Ghaith is in no file of 2025
+    const { byRep, ...ly } = D.lastYear;
+    assert.deepEqual(ly, { month: '2025-10', measured: true, current: 396, previous: 340, growth: (396 - 340) / 340, fromZero: false, to: '2025-10-08', mixed: false, people: [M, R], left: [G] });
+    assert.deepEqual({ ...byRep }, { [M]: { to: '2025-10-08', current: 231, previous: 300 }, [R]: { to: '2025-10-08', current: 165, previous: 40 } });
+    assert.deepEqual(D.byPerson.map(p => p.lastYear && p.lastYear.previous), [300, 40, null]);
+    assert.equal(D.lastYear.byRep[M].previous, core.monthAchievement(M, at(d, '2025-10-08')).amount);   // the month figure of that day
+    // a closed month the files cover: all of September 2025
+    const S = core.execDashboard(d, { reps, month: '2026-09' });
+    assert.deepEqual([S.lastYear.month, S.lastYear.to, S.lastYear.current, S.lastYear.previous, S.lastYear.left], ['2025-09', '2025-09-30', 510, 125, [G]]);
+    // one brand: that brand's part on both sides (Renova sold no Intensiv in 1–8 Oct 2025: a measured 0)
+    const b = core.execDashboard(d, { reps, brand: 'intensiv' });
+    assert.deepEqual([b.lastYear.current, b.lastYear.previous, b.lastYear.byRep[R].previous], [265, 300, 0]);
+    // no sales file for that month: not measured, nothing else
+    const { byRep: noRep, ...none } = core.execDashboard(data(), { reps }).lastYear;
+    assert.deepEqual(none, { month: '2025-10', measured: false, current: null, previous: null, growth: null, fromZero: false, to: null, mixed: false, people: [], left: reps });
+    assert.deepEqual(Object.keys(noRep), []);
+  });
+
+  test('the month day by day: the month figure\'s own lines, day 1 to the day it runs to, adding up to it', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    assert.deepEqual([D.daily.measured, D.daily.to], [true, '2026-10-08']);
+    assert.deepEqual(D.daily.days.map(x => x.date), ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08']);
+    // 1: 150 · 4: 20 · 5: 60 + 45 · 6: 120 + 200 · 7: 12 + 5 (an ignored account counts in the month) + 9 · 8: the return −25; a day with nothing is 0
+    assert.deepEqual(D.daily.days.map(x => x.net), [150, 0, 0, 20, 105, 320, 26, -25]);
+    assert.equal(D.daily.days.reduce((s, x) => s + x.net, 0), D.sales.amount);
+    // one person, one brand: her Intensiv lines only
+    assert.deepEqual(core.execDashboard(d, { reps, rep: M, brand: 'Intensiv' }).daily.days.map(x => x.net), [150, 0, 0, 20, 0, 0, 0, -25]);
+    // a lagging file: the days stop where the figure stops (8 Oct), not at today
+    assert.equal(core.execDashboard(data({ today: '2026-10-11' }), { reps }).daily.to, '2026-10-08');
+    // a closed month: every day of it
+    const sep = core.execDashboard(d, { reps, month: '2026-09' });
+    assert.deepEqual([sep.daily.to, sep.daily.days.length, sep.daily.days.reduce((s, x) => s + x.net, 0)], ['2026-09-30', 30, sep.sales.amount]);
+  });
+
+  test('parts add up to the total shown, to the cent, with amounts in fils — and a person\'s part reads the same in every list', () => {
+    const es = sales();
+    es.periods.push({ id: 'nov', from: '2026-11-01', to: '2026-11-05', repMap, rows: [
+      row('2026-11-01', 'SINV7401', 'Amber Dental Clinic', 10.005, MS, 'i'), row('2026-11-01', 'SINV7402', 'Birch Dental Center', 20.005, MS, 'p'),
+      row('2026-11-02', 'SINV7403', 'Dune Dental', 30.005, RS, 't'), row('2026-11-03', 'SINV7404', 'Amber Dental Clinic', 0.005, MS, 'p'),
+      row('2026-11-04', 'SINV7405', 'My Fatoorah', 1.115, MS, 'p'), row('2026-11-04', 'SINV7406', 'Marketing Philips', 2.225, MS, 'i'),
+      row('2026-11-05', 'SINV7407', 'Ember Dental Center', 3.335, RS, 'i'), row('2026-11-05', 'SINV7408', 'Harbor Dental Center', 0.335, GS, 'p')] });
+    const d = data({ today: '2026-11-05', erpSales: es }), D = core.execDashboard(d, { reps });
+    const c = list => list.reduce((s, x) => s + Math.round(x.net * 100), 0), k = v => Math.round(v * 100);
+    assert.deepEqual(D.byPerson.map(p => p.amount), reps.map(r => core.monthAchievement(r, d).amount));
+    assert.equal(k(D.sales.amount), D.byPerson.reduce((s, p) => s + k(p.amount), 0));
+    // rounded day by day on their own the days would make 67.04; shown, they make the figure
+    const raw = {}; es.periods.find(p => p.id === 'nov').rows.forEach(r => { raw[r[0]] = (raw[r[0]] || 0) + r[6]; });
+    assert.notEqual(Object.values(raw).reduce((s, v) => s + k(v), 0), k(D.sales.amount));
+    assert.equal(c(D.daily.days), k(D.sales.amount));
+    assert.equal(c(D.byBrand.rows), k(D.sales.amount)); assert.equal(c(D.byProduct.rows), k(D.sales.amount));
+    D.byBrand.rows.forEach(b => assert.equal(c(D.byProduct.rows.filter(p => p.brand === b.brand)), k(b.net), b.brand));
+    // the customers: each person's accounts add up to her parts, the list to the clinics + online part
+    const T = D.customers.totals;
+    assert.equal(k(T.total), k(D.sales.amount)); assert.equal(k(T.listed), k(T.clinics) + k(T.channels)); assert.equal(c(D.customers.accounts), k(T.listed));
+    D.customers.people.forEach(p => {
+      assert.equal(k(p.total), k(D.byPerson.find(x => x.rep === p.rep).amount), p.rep);
+      assert.equal(c(D.customers.accounts.filter(a => a.reps.length === 1 && a.reps[0] === p.rep)), k(p.clinics) + k(p.channels), p.rep);
+    });
+    // Dr. Ghaith's only line (0.335) is his figure, his customer and his product part alike: 0.34 everywhere
+    const harbor = D.customers.accounts.find(a => a.name === 'Harbor Dental Center');
+    const son = core.execDrill(d, { reps, product: { name: 'Sonicare 4300', brand: 'philips' } });
+    assert.deepEqual([D.byPerson[2].amount, harbor.net, son.people.find(p => p.rep === G).net, son.accounts.find(a => a.name === 'Harbor Dental Center').net], [0.34, 0.34, 0.34, 0.34]);
+    // every drill-down adds up to its row
+    D.customers.accounts.forEach(a => { const X = core.execDrill(d, { reps, account: a.key });
+      assert.equal(X.total, a.net, a.name); [X.brands, X.products, X.invoices].forEach(l => assert.equal(c(l), k(a.net), a.name)); });
+    D.byProduct.rows.forEach(p => { const Y = core.execDrill(d, { reps, product: { name: p.name, brand: p.brand } });
+      assert.equal(Y.total, p.net, p.name); assert.equal(c(Y.accounts), k(p.net), p.name); assert.equal(c(Y.people), k(p.net), p.name);
+      Y.people.forEach(x => assert.equal(c(Y.accounts.filter(a => (a.key == null ? [M] : D.customers.accounts.find(z => z.key === a.key).reps).includes(x.rep))), k(x.net), x.rep)); });
+    // one person's view: her customers and products read as in the team's
+    const mine = core.execDashboard(d, { reps, rep: M });
+    mine.customers.accounts.forEach(a => assert.equal(a.net, D.customers.accounts.find(x => x.key === a.key).net, a.name));
+  });
+
+  test('customers\' activity: the open clinics of the people of the view, invoiced (the clinic or its branch family) and visited', () => {
+    const clinics = CLINICS.concat([{ id: 'm5', name: 'Orchid Dental North', rep: M, cls: 'B' }, { id: 'm6', name: 'Orchid Dental South', rep: M, cls: 'A' }]);
+    const es = sales(); es.periods.find(p => p.id === 'oct').rows.push(row('2026-10-06', 'SINV7311', 'Orchid Dental North', 70, MS, 'p'));
+    // Birch is not visited this month; Cobalt is visited (no invoice); Orchid South is visited, its family invoiced at North
+    const visits = VISITS.filter(v => v.id !== 'v2').concat([{ id: 'v10', clinicId: 'm3', rep: M, date: '2026-10-07' }, { id: 'v11', clinicId: 'm6', rep: M, date: '2026-10-04' }]);
+    const d = data({ clinics, erpSales: es, visits }), D = core.execDashboard(d, { reps });
+    const { visitedNoInvoice, invoicedNoVisit, ...counts } = D.activity;
+    assert.deepEqual(counts, { measurable: true, to: '2026-10-08', openClinics: 10, visited: 6, invoiced: 7, both: 5, notJudged: 0 });
+    assert.deepEqual(visitedNoInvoice, [{ id: 'm3', name: 'Cobalt Smile Clinic', rep: M, cls: 'B', lastVisit: '2026-10-07' }]);
+    assert.deepEqual(invoicedNoVisit, [{ id: 'm5', name: 'Orchid Dental North', rep: M, cls: 'B', net: 70, family: 'Orchid (2)' },
+      { id: 'm2', name: 'Birch Dental Center', rep: M, cls: 'A', net: 20, family: null }]);
+    // a branch family is one account, with its best branch's class
+    assert.deepEqual(D.customers.accounts.filter(a => a.family).map(a => [a.name, a.cls, a.net]), [['Orchid (2)', 'A', 70]]);
+    // one person: her open clinics; a visit she was on at Renova's clinic is not one of hers here
+    const me = core.execDashboard(d, { reps, rep: M }).activity;
+    assert.deepEqual([me.openClinics, me.visited, me.invoiced, me.both], [5, 3, 4, 2]);
+    // a visit after the files' last day is counted, never called "no invoice"
+    const lag = core.execDashboard(data({ today: '2026-10-11', clinics, erpSales: es, visits: visits.concat([{ id: 'v12', clinicId: 'r4', rep: R, date: '2026-10-11' }]) }), { reps }).activity;
+    assert.deepEqual([lag.visited, lag.notJudged, lag.visitedNoInvoice.map(x => x.id)], [7, 1, ['m3']]);
+    // no sales file for the month: visits are still counted, nothing about invoices
+    const nov = core.execDashboard(data({ today: '2026-11-03', visits: VISITS.concat([{ id: 'v13', clinicId: 'm1', rep: M, date: '2026-11-02' }]) }), { reps }).activity;
+    assert.deepEqual(nov, { measurable: false, to: null, openClinics: 8, visited: 1, invoiced: null, both: null, notJudged: null, visitedNoInvoice: [], invoicedNoVisit: [] });
+  });
+
+  test('drill-down, one customer: its brands, products and invoices, each adding up to its line in the customers list', () => {
+    const d = data(), D = core.execDashboard(d, { reps }), a = D.customers.accounts.find(x => x.name === 'Amber Dental Clinic');
+    const X = core.execDrill(d, { reps, account: a.key });
+    assert.deepEqual([X.kind, X.key, X.name, X.clinicId, X.cls, X.total], ['account', a.key, 'Amber Dental Clinic', 'm1', 'A', 185]);
+    assert.deepEqual(X.brands, [{ brand: 'intensiv', net: 125 }, { brand: 'philips', net: 60 }]);
+    assert.deepEqual(X.products, [{ name: 'Intensiv Ortho-Strips', brand: 'intensiv', net: 125, qty: 2, invoices: 1 }, { name: 'Sonicare 4300', brand: 'philips', net: 60, qty: 1, invoices: 1 }]);
+    assert.deepEqual(X.invoices, [{ doc: 'SINV7301', date: '2026-10-01', net: 150, rep: M, salesman: MS, ret: false },
+      { doc: 'SINV7303', date: '2026-10-05', net: 60, rep: M, salesman: MS, ret: false }, { doc: 'SRET7310', date: '2026-10-08', net: -25, rep: M, salesman: MS, ret: true }]);
+    D.customers.accounts.forEach(x => { const Y = core.execDrill(d, { reps, account: x.key });
+      assert.equal(Y.total, x.net, x.name); [Y.brands, Y.products, Y.invoices].forEach(l => assert.equal(l.reduce((s, z) => s + z.net, 0), x.net, x.name)); });
+    // one brand: the account's part of it; one person: her accounts only
+    assert.deepEqual(core.execDrill(d, { reps, brand: 'intensiv', account: a.key }).invoices.map(i => [i.doc, i.net]), [['SINV7301', 150], ['SRET7310', -25]]);
+    assert.equal(core.execDrill(d, { reps, rep: R, account: a.key }), null);
+    // a shared hospital account: each invoice for the salesman who issued it
+    const shared = CLINICS.map(c => c.id === 'g1' ? Object.assign({}, c, { shared: true }) : c);
+    const es = sales(); es.periods.find(p => p.id === 'oct').rows.push(row('2026-10-07', 'SINV7312', 'Harbor Dental Center', 30, MS, 't'));
+    const H = core.execDrill(data({ clinics: shared, erpSales: es }), { reps, account: 'Harbor Dental Center' });
+    assert.deepEqual(H.invoices.map(i => [i.doc, i.rep, i.net]), [['SINV7306', G, 200], ['SINV7312', M, 30]]);
+    assert.equal(H.total, 230);
+    // not in the month, or a month no file covers: nothing
+    assert.equal(core.execDrill(d, { reps, account: 'No Such Account' }), null);
+    assert.equal(core.execDrill(data({ today: '2026-11-03' }), { reps, account: a.key }), null);
+  });
+
+  test('drill-down, one product: who bought it and who sold it, both adding up to its row in the products table', () => {
+    const d = data(), D = core.execDashboard(d, { reps }), p = D.byProduct.rows.find(x => x.name === 'Sonicare 4300');
+    const Y = core.execDrill(d, { reps, product: { name: p.name, brand: p.brand } });
+    assert.deepEqual([Y.kind, Y.name, Y.brand, Y.total, Y.qty], ['product', 'Sonicare 4300', 'philips', 277, 4]);
+    assert.equal(Y.total, p.net);
+    // an ignored account counts in the month for the salesman who issued it: its own line, by its ERP name
+    assert.deepEqual(Y.accounts, [{ key: 'Harbor Dental Center', name: 'Harbor Dental Center', clinicId: 'g1', net: 200, qty: 1, invoices: 1, ignored: false },
+      { key: 'Amber Dental Clinic', name: 'Amber Dental Clinic', clinicId: 'm1', net: 60, qty: 1, invoices: 1, ignored: false },
+      { key: 'My Fatoorah', name: 'My Fatoorah', clinicId: null, net: 12, qty: 1, invoices: 1, ignored: false },
+      { key: null, name: 'Marketing Philips', clinicId: null, net: 5, qty: 1, invoices: 1, ignored: true }]);
+    assert.deepEqual(Y.people, [{ rep: G, net: 200 }, { rep: M, net: 77 }]);
+    // the brand's spelling as the screen holds it, or the DSR's: the same product
+    assert.deepEqual(core.execDrill(d, { reps, product: { name: 'sonicare 4300', brand: 'Philips Sonicare' } }), Y);
+    // one person: her part
+    const mine = core.execDrill(d, { reps, rep: M, product: { name: p.name, brand: p.brand } });
+    assert.deepEqual([mine.total, mine.people, mine.accounts.map(x => x.name)], [77, [{ rep: M, net: 77 }], ['Amber Dental Clinic', 'My Fatoorah', 'Marketing Philips']]);
+    // every product of the month
+    D.byProduct.rows.forEach(x => { const Z = core.execDrill(d, { reps, product: { name: x.name, brand: x.brand } });
+      assert.equal(Z.total, x.net, x.name); assert.equal(Z.accounts.reduce((s, z) => s + z.net, 0), x.net, x.name); assert.equal(Z.people.reduce((s, z) => s + z.net, 0), x.net, x.name); });
+    assert.equal(core.execDrill(d, { reps, product: { name: 'No Such Product', brand: 'philips' } }), null);
+    assert.equal(core.execDrill(d, { reps, brand: 'tepe', product: { name: p.name, brand: p.brand } }), null);   // not in that brand's view
+  });
+
+  test('a clinic handed over: its lines from repSince count for the new owner, the closed months never move', () => {
+    const moved = CLINICS.map(c => c.id === 'm2' ? Object.assign({}, c, { rep: R, prevRep: M, repSince: '2026-10-01' }) : c);
+    const d = data({ clinics: moved }), D = core.execDashboard(d, { reps });
+    assert.deepEqual(D.byPerson.map(p => p.amount), reps.map(r => core.monthAchievement(r, d).amount));
+    assert.deepEqual(D.byPerson.map(p => p.amount), [211, 185, 200]);                       // Birch's 20 on 4 Oct is Renova's now
+    assert.deepEqual([D.sameDays.byRep[M].previous, D.sameDays.byRep[R].previous], [330, 70]);   // 1–8 Sep stay as they were
+    assert.deepEqual(core.execDashboard(d, { reps, month: '2026-09' }).byPerson.map(p => p.amount), [440, 70, 300]);
+    assert.deepEqual(D.customers.accounts.find(a => a.name === 'Birch Dental Center').reps, [R]);
+    // its history is the customer's own: it bought under Mariam, it is Renova's to act on now
+    assert.deepEqual(core.execDashboard(d, { reps, rep: R }).act.under.map(x => [x.name, x.owner, x.average]), [['Birch Dental Center', R, 196.67]]);
+  });
+
+  test('a target the Today card shows from another month is used as it does, and named', () => {
+    const later = Object.assign({}, TARGETS, { [M]: Object.assign({}, TARGETS[M], { month: '2026-11' }) });
+    assert.deepEqual(core.execDashboard(data({ targets: later }), { reps }).target, { amount: 1800, people: [M, R], none: [G], stale: [{ rep: M, month: '2026-11' }] });
+  });
+
+  test('the dashboard and its drill-downs read the data and write nothing into it', () => {
+    const d = data(), before = JSON.stringify(d), keys = Object.keys(d).sort();
+    const D = core.execDashboard(d, { reps });
+    core.execDrill(d, { reps, account: D.customers.accounts[0].key });
+    core.execDrill(d, { reps, product: { name: D.byProduct.rows[0].name, brand: D.byProduct.rows[0].brand } });
+    core.execDashboard(d, { reps, rep: M, brand: 'TePe', month: '2026-08' });
+    assert.equal(JSON.stringify(d), before); assert.deepEqual(Object.keys(d).sort(), keys);
+  });
+
+  test('people off the team the files still credit are named with their own figure, never added to the team\'s', () => {
+    const es = sales(), oct = es.periods.find(p => p.id === 'oct');
+    oct.repMap = Object.assign({}, repMap, { 'Former Sample': 'Former Rep' });
+    oct.rows.push(row('2026-10-03', 'SINV7313', 'Walk-in Sample Co', 40, 'Former Sample', 'p'), row('2026-10-04', 'SINV7314', 'Walk-in Sample Co', 15, 'Former Sample', 'i'));
+    const d = data({ erpSales: es });
+    const D = core.execDashboard(d, { reps });
+    assert.deepEqual([D.sales.amount, D.sales.offTeam], [596, [{ rep: 'Former Rep', amount: 55 }]]);
+    assert.deepEqual(core.execDashboard(d, { reps, brand: 'Philips Sonicare' }).sales.offTeam, [{ rep: 'Former Rep', amount: 40 }]);
+    assert.deepEqual(core.execDashboard(d, { reps, brand: 'TePe' }).sales.offTeam, []);          // no line of that brand
+    assert.deepEqual(core.execDashboard(d, { reps, rep: M }).sales.offTeam, []);
+    assert.ok(!D.customers.accounts.some(a => a.name === 'Walk-in Sample Co'));
+  });
+
+  test('customers to act on: a Closed clinic is never one, a closed month whose files stop early is judged to that day', () => {
+    // Birch, under-performing in October, is now marked Closed: not one to act on
+    const closed = CLINICS.map(c => c.id === 'm2' ? Object.assign({}, c, { cls: 'Closed' }) : c);
+    assert.deepEqual(core.execDashboard(data({ clinics: closed }), { reps }).act.under, []);
+    // September, its file to the 20th only: Birch 1–20 Sep (210) against 1–20 of Jun–Aug the files hold (Jul 200, Aug 180)
+    const es = sales(), sep = es.periods.find(p => p.id === 'sep');
+    sep.to = '2026-09-20'; sep.rows = sep.rows.filter(r => r[0] <= '2026-09-20');
+    const S = core.execDashboard(data({ erpSales: es }), { reps, month: '2026-09' });
+    assert.deepEqual([S.act.day, S.act.prior.map(p => p.to)], [20, ['2026-08-20', '2026-07-20']]);
+    const full = core.execDashboard(data(), { reps, month: '2026-09' });
+    assert.deepEqual([full.act.day, full.act.prior.map(p => p.to)], [30, ['2026-08-31', '2026-07-31']]);
+  });
+
+  test('speed: a team of 3, 12 months of invented lines (30,000), one call well under a second', () => {
+    // invented names and numbers only (built here, never committed as data)
+    const W = ['Amber', 'Birch', 'Cobalt', 'Dune', 'Ember', 'Fern', 'Garnet', 'Harbor', 'Indigo', 'Jasper', 'Kestrel', 'Linden', 'Maple', 'Nectar', 'Onyx', 'Pebble', 'Quartz', 'Raven', 'Sable', 'Tulip'];
+    const P3 = ['Rep A', 'Rep B', 'Rep C'], SM = ['Seller A', 'Seller B', 'Seller C'], rm = { [SM[0]]: P3[0], [SM[1]]: P3[1], [SM[2]]: P3[2] };
+    const cl = Array.from({ length: 300 }, (_, i) => ({ id: 'c' + i, name: W[i % 20] + ' ' + W[Math.floor(i / 20) % 20] + ' Dental ' + i, rep: P3[i % 3], cls: ['A', 'B', 'C'][i % 3] }));
+    const BR = [['Intensiv', 'Strip'], ['Philips Sonicare', 'Brush'], ['TePe', 'Interdental'], ['Brand D', 'Composite'], ['Brand E', 'Bond']];
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    let doc = 1; const periods = [];
+    for(let k = 0; k < 12; k++){
+      const first = new Date(2025, 11 + k, 1), y = first.getFullYear(), mo = String(first.getMonth() + 1).padStart(2, '0');
+      const last = k === 11 ? 12 : new Date(y, first.getMonth() + 1, 0).getDate(), rows = [];
+      for(let n = 0; n < 2500; n++){
+        const day = y + '-' + mo + '-' + String(1 + Math.floor(rnd() * last)).padStart(2, '0'), ci = Math.floor(rnd() * 330);
+        const b = BR[Math.floor(rnd() * BR.length)], prod = b[1] + ' ' + (1 + Math.floor(rnd() * 12)), sm = SM[ci < 300 ? ci % 3 : Math.floor(rnd() * 3)];
+        const cust = ci < 300 ? cl[ci].name : 'Trader ' + ci, net = Math.round(rnd() * 200000) / 1000, back = rnd() < 0.03;
+        rows.push(back ? [day, 'R' + doc++, 1, prod, -1, 0, -net, net, sm, b[0], cust, 'Clinics', 0, ''] : [day, 'I' + doc++, 0, prod, 1 + Math.floor(rnd() * 5), net, net, 0, sm, b[0], cust, 'Clinics', 0, '']);
+      }
+      periods.push({ id: 'p' + k, from: y + '-' + mo + '-01', to: y + '-' + mo + '-' + String(last).padStart(2, '0'), repMap: rm, rows });
+    }
+    const big = { today: '2026-11-12', targets: { [P3[0]]: { revenue: 30000, month: '2026-11', brands: { Intensiv: 10000 } }, [P3[1]]: { revenue: 25000, month: '2026-11' } },
+      erpSales: { returnPolicy: 'origin', periods }, clinics: cl, erpMap: {}, visits: cl.map((c, i) => ({ id: 'v' + i, clinicId: c.id, rep: c.rep, date: '2026-11-0' + (1 + i % 9), orderTaken: i % 4 === 0, orderTotal: 50 })),
+      tasks: [], events: [], dayPlans: {} };
+    assert.equal(periods.reduce((s, p) => s + p.rows.length, 0), 30000);
+    const t0 = process.hrtime.bigint(), D = core.execDashboard(big, { reps: P3 }), ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(ms < 2000, 'execDashboard took ' + Math.round(ms) + ' ms');                    // measured here: 0.17–0.28 s (without the shared pass: 3.6 s)
+    assert.equal(D.sales.amount, Math.round(P3.reduce((s, r) => s + core.monthAchievement(r, big).amount, 0) * 100) / 100);
+    assert.equal(D.ytd.months.length, 11);
+    const t1 = process.hrtime.bigint(), X = core.execDrill(big, { reps: P3, account: D.customers.accounts[0].key }), ms2 = Number(process.hrtime.bigint() - t1) / 1e6;
+    assert.ok(ms2 < 1000, 'execDrill took ' + Math.round(ms2) + ' ms');                         // measured here: about 0.04 s
+    assert.equal(X.total, D.customers.accounts[0].net);
   });
 });
