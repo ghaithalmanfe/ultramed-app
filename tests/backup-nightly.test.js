@@ -122,7 +122,7 @@ function sortDeep(v){
   return v;
 }
 function startFake(){
-  const fake = { projects: {}, requests: [], tokens: new Map(), snapshots: new Map(), failPage: null, rejectReadTime: false, countSkew: 0, afterPage: null };
+  const fake = { projects: {}, requests: [], tokens: new Map(), snapshots: new Map(), failPage: null, rejectReadTime: false, countSkew: 0, afterPage: null, denyCommit: null };
   const send = (res, status, obj) => {
     const s = JSON.stringify(obj);
     res.writeHead(status, { 'content-type': 'application/json; charset=UTF-8', 'content-length': Buffer.byteLength(s) });
@@ -173,6 +173,8 @@ function startFake(){
   function commit(pid, b, res){
     const p = fake.projects[pid], prefix = 'projects/' + pid + '/databases/(default)/documents/state/';
     const writes = (b && b.writes) || [];
+    // the project's security rules refuse the write (the whole commit fails, as in Firestore)
+    if(fake.denyCommit === pid) return err(res, 403, 'PERMISSION_DENIED', 'Missing or insufficient permissions.');
     for(const w of writes){
       if(!w.update || typeof w.update.name !== 'string' || !w.update.name.startsWith(prefix)) return err(res, 400, 'INVALID_ARGUMENT', 'bad write');
       if(w.currentDocument && w.currentDocument.exists === false && p.docs.has(w.update.name.slice(prefix.length))) return err(res, 409, 'ALREADY_EXISTS', 'Document already exists');
@@ -616,6 +618,20 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
     assert.equal(fake.projects['demo-phone'].docs.size, 0);
     assert.ok(!fake.requests.slice(n0).some(q => q.path.includes('demo-phone')), 'the target was not contacted');
     assertCleanLog(v.all + r.all);
+  });
+  test('a write the target\'s security rules refuse is named as such, with what to do', async () => {
+    target('demo-rules');
+    const origCommit = fake.denyCommit;
+    fake.denyCommit = 'demo-rules';
+    try{
+      const r = await runNode('restore.js', [bundlePath], restoreEnv('demo-rules'));
+      assert.equal(r.code, 1, r.all);
+      assert.match(r.err, /HTTP 403 PERMISSION_DENIED/);
+      assert.match(r.err, /security rules refused/);
+      assert.match(r.err, /docs\/backup\.md/);
+      assert.equal(fake.projects['demo-rules'].docs.size, 0);
+      assertCleanLog(r.all);
+    }finally{ fake.denyCommit = origCommit; }
   });
 });
 

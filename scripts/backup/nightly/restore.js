@@ -144,8 +144,13 @@ async function restore(argv, env, log, io){
         label: 'batch ' + (i + 1) + ' of ' + batches.length, retry, log: log.info });
     }catch(e){
       const appeared = !a.force && (e.code === 'ALREADY_EXISTS' || e.code === 'FAILED_PRECONDITION') ? ' (a document appeared in the target meanwhile)' : '';
+      // A refused commit writes none of its documents. In production the
+      // published rules (firestore.rules) refuse an old daily backup (snap_), a
+      // key they do not list, and the supervisor's documents for another login.
+      const rules = e.status === 403;
       log.error('Restore stopped', e.message + appeared + '. ' + done + ' of ' + writes.length + ' documents had been written'
-        + (done ? '; the target now holds a partial copy: run again with --force to finish' : '') + '.');
+        + (done ? '; the target now holds a partial copy: ' + (rules ? 'once its rules allow the writes, ' : '') + 'run again with --force to finish' : '') + '.'
+        + (rules ? ' The target\'s security rules refused the write: the restore login must be allowed to write every document of "state" (docs/backup.md, "Restore into a separate project"; for production, "Restore into production").' : ''));
       return 1;
     }
     done += batches[i].length;
