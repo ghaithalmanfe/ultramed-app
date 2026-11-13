@@ -334,6 +334,7 @@ function renderMore(){
     ${tile(I('chat'),'Team chat & memories','Messages and shared photos',"switchView('team')")}
     ${tile(I('award'),'Achievements','Badges, streaks and milestones','openAchievements()')}
     <div class="section-title">Tools</div>
+    ${sup ? tile(I('chart'),'Management dashboard','Sales against target, people, customers, brands and products — every figure with how it is calculated (supervisor)','openExecDashboard()') : ''}
     ${tile(I('share'),'Export & share','CSV files and report sharing','openExport()')}
     ${sup ? tile(I('chart'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : ''}
     ${tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()')}
