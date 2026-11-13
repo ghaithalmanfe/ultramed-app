@@ -35,6 +35,36 @@ function prng(seed){
 const ABC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 function noise(rand, n){ const a = new Array(n); for(let i = 0; i < n; i++) a[i] = ABC[(rand() * 64) | 0]; return a.join(''); }
 
+// Every key and family of keys v122 keeps in "state": what the app's own full
+// backup claims (core.BACKUP_SETS — tests/core.test.js checks it claims every
+// key the app stores) and every key and pattern the security rules let anyone
+// write (firestore.rules — a new kind of document must be listed there before
+// production accepts it, so it lands here too).
+function storedKinds(){
+  const core = require('../www/js/core.js');
+  const rules = fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8');
+  const keys = new Set(), families = new Set();
+  core.BACKUP_SETS.forEach(s => { (s.keys || []).forEach(k => keys.add(k)); (s.prefixes || []).forEach(p => families.add(p)); });
+  for(const m of rules.matchAll(/key in \[([^\]]*)\]/g)) (m[1].match(/'[^']+'/g) || []).forEach(q => keys.add(q.slice(1, -1)));
+  for(const m of rules.matchAll(/key\.matches\('([A-Za-z]+[:_])/g)) families.add(m[1]);
+  return { keys: [...keys].sort(), families: [...families].sort() };
+}
+// a document of each kind as v122 stores it (the backup never parses one)
+const V122_VALUES = {
+  chat: [{ id: 'm1', who: 'مريم', text: AR + ' ' + MARKER, ts: 1762900000000, photoId: 'p3', thumb: 'data:image/jpeg;base64,AAAA' }],
+  memories: [{ id: 'mem1', who: 'رانوفا', text: 'ذكرى ' + MARKER, ts: 1762900000001 }],
+  tombs: { visits: { v9: 1762900000000 }, clinics: { c99: 1762900000000 }, doctors: { 'c1|d7': 1762900000000 } },
+  recycleBin: { clinics: [{ id: 'c98', name: 'عيادة محذوفة ' + MARKER, at: 1762900000000 }], visits: [] },
+  rxTypes: { rev: 2, types: [{ id: 'fast', name: 'Ultramed fast moving products', active: true }, { id: 'tepe', name: 'Tepe prescription', active: true }] },
+  erpMapLog: [{ at: 1762900000000, who: 'Dr. Ghaith', account: 'مستوصف الري', from: null, to: 'c3' }],
+  repairLog: [{ at: 1762900000000, what: 'doctors named again', n: 2 }],
+  products: [{ id: 'WP-450ME', name: '3-Pin Charger ' + MARKER, brand: 'Waterpik', price: 4 }],
+  categoryGuides: { Waterpik: { pitch: AR } },
+  benchmarks: { discount: { Tepe: 10 }, kpi: { visitsPerDay: 6 } },
+  erpNotes: { 'SINV1|Brush': { reason: 'عينات ' + MARKER } },
+};
+const FAMILY_IDS = { 'visitsArch:': '2026-10', 'auditLog:': '2026-11', 'photo:': 'mh2k3x9ab', 'erpRows:': 'oct26:1:0', 'snap_': '2026-11-12' };
+
 function sourceDocs(){
   const rand = prng(20261111);
   const docs = new Map();
@@ -75,6 +105,13 @@ function sourceDocs(){
   } });
   const e = at();
   docs.set('emptyDoc', { createTime: e, updateTime: e, fields: {} });
+  // the change log, one document a month (auditLog:YYYY-MM), and every other
+  // kind of document v122 keeps that is not above yet
+  put('auditLog:2026-10', [{ at: 1762000000000, who: 'Mariam', what: 'visit saved', detail: AR + ' ' + MARKER }]);
+  put('auditLog:2026-11', [{ at: 1762900000000, who: 'Dr. Ghaith', what: 'target saved', detail: MARKER }]);
+  const kinds = storedKinds();
+  kinds.keys.forEach(k => { if(!docs.has(k)) put(k, V122_VALUES[k] || { note: MARKER, ar: AR }); });
+  kinds.families.forEach(p => { if(!Array.from(docs.keys()).some(id => id.startsWith(p))) put(p + (FAMILY_IDS[p] || 'x1'), { note: MARKER, ar: AR }); });
   return docs;
 }
 
@@ -437,6 +474,32 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
       if(d.fields.value) assert.ok(Buffer.from(e.fields.value.stringValue, 'utf8').equals(Buffer.from(d.fields.value.stringValue, 'utf8')), 'value bytes of ' + id);
     }
     assert.ok(bundle.keys.unicode.fields.value.stringValue.includes('\u0000') && bundle.keys.unicode.fields.value.stringValue.includes('👩🏽‍⚕️'));
+  });
+  test('every kind of document v122 keeps is in it, whole — the past months, the photos, the sales lines, the change log, chat and memories', () => {
+    const kinds = storedKinds();
+    // the derivation sees the kinds that matter (a typo in it must not make this test pass on nothing)
+    for(const k of ['visits', 'visitsIndex', 'clinics', 'tasks', 'dayPlans', 'events', 'tombs', 'recycleBin', 'erpSales', 'erpMap', 'erpMapLog', 'erpNotes',
+      'targets', 'staff', 'products', 'rxTypes', 'benchmarks', 'categoryGuides', 'repairLog', 'mailLog', 'chat', 'memories']) assert.ok(kinds.keys.includes(k), 'v122 keeps ' + k);
+    for(const p of ['visitsArch:', 'erpRows:', 'photo:', 'snap_', 'auditLog:']) assert.ok(kinds.families.includes(p), 'v122 keeps ' + p + '…');
+    const bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf8'));
+    const ids = Object.keys(bundle.keys);
+    for(const k of kinds.keys){
+      assert.ok(ids.includes(k), 'in the backup: ' + k);
+      assert.deepStrictEqual(bundle.keys[k].fields, source.get(k).fields, 'whole: ' + k);
+    }
+    for(const p of kinds.families){
+      const mine = ids.filter(id => id.startsWith(p)), want = Array.from(source.keys()).filter(id => id.startsWith(p));
+      assert.ok(want.length > 0, 'the test data holds a ' + p + ' document');
+      assert.deepEqual(mine.sort(), want.sort(), 'every ' + p + ' document');
+      mine.forEach(id => assert.deepStrictEqual(bundle.keys[id].fields, source.get(id).fields, 'whole: ' + id));
+    }
+    // the value string is the app's own text, never parsed: a photo stays its data URL
+    assert.match(bundle.keys['photo:p0'].fields.value.stringValue, /^data:image\/jpeg;base64,/);
+    assert.equal(bundle.keys['auditLog:2026-11'].fields.updated.integerValue, source.get('auditLog:2026-11').fields.updated.integerValue);
+    // the run's table names each family by its prefix and count, never a value
+    for(const [p, n] of [['auditLog:', 2], ['photo:', 15], ['visitsArch:', 9], ['erpRows:', 8], ['snap_', 12], ['chat', 1], ['memories', 1], ['visitsIndex', 1]]){
+      assert.match(runLog, new RegExp('\\n  ' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' +' + n + ' '), p + ' in the run log');
+    }
   });
   test('verify.js refuses a wrong passphrase, a changed or cut file, and a bundle inside the repository', async () => {
     const wrong = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: PASS + '!' }));
