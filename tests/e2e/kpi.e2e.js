@@ -106,6 +106,21 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   check('a rep sees her own scorecard only (no Team chip, no settings)', /Mariam · This month/.test(txt) && !/Team/.test(txt) && !/KPI settings/.test(txt), txt.slice(0, 200));
   txt = await page.evaluate(() => { openMonthByMonth(); return document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '); });
   check('a rep\'s month by month is her own (no Team chip)', !/Team/.test(txt) && /Sep 26/.test(txt), txt.slice(0, 200));
+  // the clinic card's "Add to today's plan": one entry per clinic, in the shape the plan picker stores (`at` scores "plan before leaving")
+  const ap = await page.evaluate(async () => {
+    closeModal();
+    const t = todayStr(), me = currentUser.name;
+    dayPlans[t] = dayPlans[t] || {};
+    const mine = clinics.filter(c => c.rep === me && c.cls !== 'Closed').map(c => c.id);
+    const a = mine[0];
+    dayPlans[t][me] = (dayPlans[t][me] || []).filter(e => planEntryId(e) !== a).concat([{ id: a, note: 'planned in the picker', at: Date.now() - 3600000 }]);
+    const b = mine.find(id => id !== a && !dayPlans[t][me].some(e => planEntryId(e) === id));
+    await addToPlan(a); if(b) await addToPlan(b);
+    const list = dayPlans[t][me];
+    return { a, b, countA: list.filter(e => planEntryId(e) === a).length, keptA: list.find(e => planEntryId(e) === a), countB: list.filter(e => planEntryId(e) === b).length, entryB: list.find(e => planEntryId(e) === b) };
+  });
+  check('Add to today\'s plan from the clinic card: a clinic already planned is not listed twice and keeps its note and time; a new one is stored with the time it was planned (as the plan picker stores it)',
+    !!ap.b && ap.countA === 1 && !!ap.keptA && ap.keptA.note === 'planned in the picker' && ap.countB === 1 && !!ap.entryB && typeof ap.entryB === 'object' && typeof ap.entryB.at === 'number', ap);
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
