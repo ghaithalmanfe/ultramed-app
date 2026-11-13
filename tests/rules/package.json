@@ -2,10 +2,10 @@
   "name": "ultramed-firestore-rules-tests",
   "version": "1.0.0",
   "private": true,
-  "description": "Proves ../../firestore.rules on the local Firestore emulator (port 8295, demo project). Never contacts the real Firebase project.",
+  "description": "Proves ../../firestore.rules on the local Firestore emulator (port 8295, demo project), and the nightly backup (scripts/backup/nightly) under them. Never contacts the real Firebase project.",
   "license": "ISC",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore,auth --project demo-ultramed-rules --config firebase.json \"node --test --test-concurrency=1 --test-reporter=spec rules.test.js app-writes.test.js\"",
+    "test": "firebase emulators:exec --only firestore,auth --project demo-ultramed-rules --config firebase.json \"node --test --test-concurrency=1 --test-reporter=spec rules.test.js app-writes.test.js backup.test.js\"",
     "scan": "node --test --test-reporter=spec --test-name-pattern=\"source scan\" app-writes.test.js"
   },
   "devDependencies": {
