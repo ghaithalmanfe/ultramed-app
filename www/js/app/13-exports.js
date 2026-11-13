@@ -1553,8 +1553,11 @@ async function readCloudForBackup(take, onProgress){
 }
 // This phone's changes the cloud does not have yet: every key in the outbox
 // (its newest copy is on this phone only — um_mirror:<key>, the delete log in
-// um_tombs), and sales changes not saved. → [{key, from, value|null}]
-function bkPending(){
+// um_tombs), sales changes not saved, and (v122) the full visit photos this
+// phone keeps until the cloud holds them — unless the read found them in the
+// cloud (readKeys: the photo: keys the backup read; held: the photos this
+// phone kept when the backup began). → [{key, from, value|null}]
+function bkPending(readKeys, held, landedIds){
   const out = [], seen = new Set();
   outboxList().forEach(k => {
     if(seen.has(k)) return;
@@ -1571,6 +1574,28 @@ function bkPending(){
     try{ v = JSON.stringify(erpSales); }catch(e){}
     out.push({ key: 'erpSales', from: 'memory: sales changes not saved', value: v });
   }
+  // the photos held when the backup began (held) and those held now; one this
+  // phone no longer holds reached the cloud during the read and could not be
+  // read again (landed: said so — it is not a change the cloud lacks), kept
+  // from the copy taken at the start; one that landed during the read with no
+  // copy here is listed too (landedIds), so the file never just leaves it out
+  const photos = new Map();
+  (held || []).forEach(r => { if(r && r.data) photos.set(r.id, r); });
+  if(typeof _photoKept !== 'undefined') _photoKept.forEach(r => { if(r && r.data && !photos.has(r.id)) photos.set(r.id, r); });
+  const holdsNow = id => typeof _photoKept !== 'undefined' && _photoKept.has(id) && !_photoKept.get(id).up;
+  photos.forEach(r => {
+    const k = 'photo:' + r.id;
+    if(seen.has(k) || (readKeys && readKeys.has(k))) return;
+    seen.add(k);
+    if(!holdsNow(r.id)){ out.push({ key: k, from: "this phone's copy from when the backup began — it reached the cloud during the read and could not be read again", value: String(r.data), landed: true }); return; }
+    out.push({ key: k, from: r.on === 'idb' ? 'IndexedDB um_photos' : r.on === 'ls' ? 'um_photo:' + r.id : 'memory: photo waiting to upload', value: String(r.data) });
+  });
+  (landedIds || []).forEach(id => {
+    const k = 'photo:' + id;
+    if(seen.has(k) || (readKeys && readKeys.has(k))) return;
+    seen.add(k);
+    out.push({ key: k, from: null, value: null, landed: true });
+  });
   return out;
 }
 function bkWhy(w){ return w && BK_WHY[w] ? ` — <span>${esc(BK_WHY[w])}</span>` : ''; }
@@ -1605,13 +1630,27 @@ function bkFailedHTML(res, err, n){
     </div>
     <button class="btn" onclick="openFullBackup()"><span>Try again</span></button>`;
 }
-function bkPendingHTML(pend){
-  if(!pend.length) return '';
-  return `<div class="card" data-backup-pending style="margin-bottom:10px; border-inline-start:4px solid var(--amber);">
+function bkPendingHTML(pend, storeNotRead){
+  const item = p => `<span>${esc(UMCore.backupPartLabel(p.key) || 'Other document')}</span> <span data-notr dir="ltr">(${esc(p.key)})</span>${p.value == null ? ' <span>(no copy on this phone)</span>' : ''}`;
+  const waiting = pend.filter(p => !p.landed), landed = pend.filter(p => p.landed);
+  let out = '';
+  if(waiting.length) out += `<div class="card" data-backup-pending style="margin-bottom:10px; border-inline-start:4px solid var(--amber);">
       <div style="font-weight:700;">⚠️ <span>This phone has changes the cloud does not have yet:</span></div>
-      <div style="margin-top:4px;">${pend.map(p => `<span>${esc(UMCore.backupPartLabel(p.key) || 'Other document')}</span> <span data-notr dir="ltr">(${esc(p.key)})</span>${p.value == null ? ' <span>(no copy on this phone)</span>' : ''}`).join(' · ')}</div>
+      <div style="margin-top:4px;">${waiting.map(item).join(' · ')}</div>
       <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>They are not part of the cloud copy. The file keeps this phone's copy of them apart, and a restore never writes them. Stay connected until they upload, then take the backup again.</span></div>
     </div>`;
+  // a photo that reached the cloud while the backup read it (v122): not a change the cloud lacks
+  if(landed.length) out += `<div class="card" data-backup-landed style="margin-bottom:10px; border-inline-start:4px solid var(--amber);">
+      <div style="font-weight:700;">⚠️ <span>Reached the cloud while the backup was being read, and could not be read again:</span></div>
+      <div style="margin-top:4px;">${landed.map(item).join(' · ')}</div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>The file keeps this phone's copy apart where there is one. Take the backup again to have them among the cloud's documents.</span></div>
+    </div>`;
+  // this phone's photo store did not answer: a photo still waiting on it is in no part of the file
+  if(storeNotRead) out += `<div class="card" data-backup-store style="margin-bottom:10px; border-inline-start:4px solid var(--amber);">
+      <div style="font-weight:700;">⚠️ <span>This phone's photo store did not answer:</span></div>
+      <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>A photo still waiting on this phone may be missing from this file. Take the backup again later.</span></div>
+    </div>`;
+  return out;
 }
 function fullBackupLineHTML(s){
   const other = s.id === 'other', x = s.extra || {};
@@ -1650,9 +1689,19 @@ async function openFullBackup(){
   const w = bkWriter();
   w.push(b.head());
   let res = null, err = null, stopped = false;
+  const readPhotos = new Set(); // the photo: documents the read found (a photo still kept on this phone is in the file once)
+  // The photos this phone keeps as the read begins (v122): one that lands
+  // while the cloud is read may already be past the photos' part of the read,
+  // and gone from the phone by the end — it was in neither part of the file.
+  if(typeof photoReadKept === 'function') await photoReadKept().catch(() => {}); // photos an earlier session left waiting here
+  if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;
+  const heldAtStart = typeof _photoKept !== 'undefined' ? [..._photoKept.values()].filter(r => r && r.data && !r.up).map(r => ({ id: r.id, data: r.data, on: r.on })) : [];
+  const storeNotRead = typeof _photoRead !== 'undefined' && !_photoRead; // said on the screen: what it keeps may be in no part of the file
+  const landedAtStart = new Set(typeof _photoLanded !== 'undefined' ? _photoLanded : []);
   try{
     res = await readCloudForBackup(async d => {
       if(!bkAlive(run)){ stopped = true; throw new Error('the sheet was closed'); }
+      if(String(d.key).startsWith('photo:')) readPhotos.add(String(d.key));
       const bytes = bkBytes(d.value);
       w.push(b.addDoc(d.key, d.value, d.updated, await bkSha256(bytes), bytes.length));
     }, n => { const el = document.getElementById('fullBackupCount'); if(el && run === _fullBackupRun) el.textContent = bkNum(n); });
@@ -1660,8 +1709,25 @@ async function openFullBackup(){
   if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;   // closed, opened again, or someone else signed in
   const body = document.getElementById('fullBackupBody');
   if(err || res || !b.documents()){ body.innerHTML = bkFailedHTML(res, err, b.documents()); return; }
+  // A photo held at the start that the read did not find and this phone no
+  // longer waits on has landed meanwhile — as has any photo this phone saw land
+  // during the read (read from a store that answered late, or a second tab's):
+  // read now, it is one of the cloud's documents (else it is listed apart, below).
+  const landedDuring = typeof _photoLanded !== 'undefined' ? [..._photoLanded].filter(id => !landedAtStart.has(id)) : [];
+  const reread = heldAtStart.map(r => r.id).concat(landedDuring.filter(id => !heldAtStart.some(r => r.id === id)));
+  for(const id of reread){
+    const k = 'photo:' + id, now = typeof _photoKept !== 'undefined' ? _photoKept.get(id) : null;
+    if(readPhotos.has(k) || (now && !now.up)) continue;
+    let got = null;
+    try{ got = await withTimeout(window.storage.get(k, true, { server: true }), BK_GET_MS); }catch(e){}
+    if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;
+    if(!got || typeof got.value !== 'string') continue;
+    readPhotos.add(k);
+    const bytes = bkBytes(got.value);
+    w.push(b.addDoc(k, got.value, typeof got.updated === 'number' ? got.updated : null, await bkSha256(bytes), bytes.length));
+  }
   // this phone's changes the cloud does not have yet: kept apart, never mixed into the cloud copy
-  const pend = bkPending();
+  const pend = bkPending(readPhotos, heldAtStart, landedDuring);
   w.push(b.pendingStart());
   for(const p of pend){
     const bytes = p.value == null ? null : bkBytes(p.value);
@@ -1679,7 +1745,7 @@ async function openFullBackup(){
       <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Every document of the cloud, the daily backups too, exactly as stored.</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Integrity code (sha256):</span> <span data-notr dir="ltr" style="font-family:monospace;">${esc(sha.slice(0, 16))}…</span></div>
     </div>
-    ${bkPendingHTML(pend)}
+    ${bkPendingHTML(pend, storeNotRead)}
     <button class="btn" data-backup-download onclick="downloadFullBackup()">⬇️ <span>Download the backup file</span></button>
     <p style="color:var(--muted); font-size:12px; margin:4px 0 12px;"><span>Keep the file outside the app — Google Drive, e-mail or a computer. It holds customer, sales and team data: do not share it.</span></p>
     <div class="section-title" style="margin-top:4px;"><span>What the cloud holds</span></div>

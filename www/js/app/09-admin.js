@@ -523,7 +523,7 @@ function renderVisitLog(){
           ${rxLinesHTML(v,c)}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
-          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
         </div>
         ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
       </div>
@@ -535,16 +535,26 @@ function renderVisitLog(){
 function openPhotoGallery(){
   const withPhotos = visibleVisits().filter(v=>v.photos && v.photos.length).sort((a,b)=>b.date.localeCompare(a.date));
   const cname = id => clinicLabel(id);
+  // v122: a photo still waiting to upload, or lost before it did ({lost: true}),
+  // has no full photo in the cloud — marked, and the line does not promise "full size"
+  const all = withPhotos.flatMap(v => v.photos.filter(Boolean));
+  const nWait = all.filter(p => p.pending).length, nLost = all.filter(p => p.lost && !p.pending).length;
+  const stateOf = ph => ph.pending ? 'waiting' : ph.lost ? 'lost' : '';
+  const tile = (v, ph) => { const img = `<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${ph.id}', this.dataset.cap)">`, st = stateOf(ph);
+    return st ? `<div data-photo-state="${st}" style="position:relative;">${img}<span aria-hidden="true" style="position:absolute; top:4px; inset-inline-start:4px; font-size:13px; line-height:1; padding:3px; border-radius:8px; background:rgba(255,255,255,.88); pointer-events:none;">${st === 'waiting' ? '⏳' : '⚠️'}</span></div>` : img; };
   showModal(`
     <h3 style="margin-top:0;">${I('camera')} Visit photos</h3>
-    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${withPhotos.reduce((s,v)=>s+v.photos.length,0)} photo${withPhotos.reduce((s,v)=>s+v.photos.length,0)===1?'':'s'} across ${withPhotos.length} visit${withPhotos.length===1?'':'s'}. Tap any photo to view it full size.</p>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${all.length} photo${all.length===1?'':'s'} across ${withPhotos.length} visit${withPhotos.length===1?'':'s'}. ${(nWait || nLost) ? 'Tap any photo to view it.' : 'Tap any photo to view it full size.'}</p>
+    ${nWait ? '<p style="color:var(--amber-ink); font-size:12.5px; margin-top:-4px;">⏳ marks a photo still waiting to upload — until it arrives, other phones show only its small preview.</p>' : ''}
+    ${nLost ? '<p style="color:var(--coral-ink); font-size:12.5px; margin-top:-4px;">⚠️ marks a photo lost before it uploaded — only its small preview is kept.</p>' : ''}
     ${withPhotos.length===0 ? '<div class="empty">No photos yet — attach them when logging a visit.</div>' :
       withPhotos.map(v=>`
         <div style="margin-bottom:14px;">
           <div style="font-size:12.5px; font-weight:700; margin-bottom:6px;">${fmtDate(v.date)} · ${esc(cname(v.clinicId))}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
-            ${v.photos.map(ph=>`<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${ph.id}', this.dataset.cap)">`).join('')}
+            ${v.photos.filter(Boolean).map(ph=>tile(v, ph)).join('')}
           </div>
+          ${photoWaitHTML(v)}
         </div>`).join('')}
     <button class="btn" onclick="closeModal()">Done</button>
   `);
