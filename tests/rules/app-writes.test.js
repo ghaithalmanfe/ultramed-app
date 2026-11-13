@@ -59,7 +59,8 @@ const DYNAMIC = [
   { file: '04-sync.js', arg: 'entries', is: 'erpRows:<period>:<rev>:<n> chunks + erpSales (persistErpSalesInner)' },
   { file: '04-sync.js', arg: 'key, fn', is: 'storageUpdate → storage.update' },
   { file: '07-clinics.js', arg: 'kind', is: 'clinics | products | visits (restoreFromBin)' },
-  { file: '13-exports.js', arg: 'k', is: 'clinics | products | tasks (restoreSnapshot)' },
+  { file: '13-exports.js', arg: 'k', is: 'clinics | tasks (restoreSnapshot; the catalog is no longer restored, v123)' },
+  { file: '13-exports.js', arg: "'snap_'+", is: "snap_YYYY-MM-DD: today's backup, kept before a whole-day restore (restoreSnapshot, v123)" },
   { file: '04-sync.js', arg: "'snap_'+", is: 'snap_YYYY-MM-DD' },
   { file: '08-team-orders.js', arg: "'photo:'+", is: 'photo:<id>' },
   { file: '12-reports.js', arg: "'photo:'+", is: 'photo:<id>' },
@@ -245,16 +246,16 @@ const TEAM_SITES = [
     keys: ['recycleBin'], run: async (s) => {
       const bin = P((await s.get('recycleBin', true) || {}).value, {}) || {};
       bin.visits = (bin.visits || []).concat([{ id: 'v-old', clinicId: 'c-1', _deletedAt: Date.now(), _label: 'Test clinic 1 — visit' }]);
-      await s.set('recycleBin', J(bin), true);
+      await s.update('recycleBin', () => J(bin));
     } },
   { label: 'erpNotes: a reason on a return or a free line — saveErpNote 07-clinics.js:651, saveErpNoteKind :661, saveRetKind :687',
     keys: ['erpNotes'], run: async (s, me) => {
-      await s.set('erpNotes', J({ 'ret|INV-1|Test brush': { text: 'Damaged box', by: me, on: kuwaitDay(0), kind: 'exchange' } }), true);
+      await s.update('erpNotes', () => J({ 'ret|INV-1|Test brush': { text: 'Damaged box', by: me, on: kuwaitDay(0), kind: 'exchange' } }));
     } },
   { label: 'products: "+ Add product" — submitAddProduct 10-doctors-products.js:98 (no supervisor check today)',
     keys: ['products'], run: async (s, me) => {
       const list = P((await s.get('products', true) || {}).value, []) || [];
-      await s.set('products', J(list.concat([{ id: uid(), name: 'Product added by ' + me, brand: 'Other', price: 2.5 }])), true);
+      await s.update('products', () => J(list.concat([{ id: uid(), name: 'Product added by ' + me, brand: 'Other', price: 2.5 }])));
     } },
   { label: 'chat and memories: the team tab — persistTeam 12-reports.js:473/484 (sendChat :566, saveMemory :598)',
     keys: ['chat', 'memories'], run: async (s, me) => {
@@ -312,37 +313,37 @@ const BACKUP_SITES = [
       assert.equal((await s.list('snap_', true)).keys.length, 12);
     } },
 ];
-const SEEDING_SITE = { label: 'start-up seeding on an account with no documents yet (loadAll 04-sync.js:1035-1039)',
+const SEEDING_SITE = { label: 'start-up seeding on an account with no documents yet (loadAll 04-sync.js: the supervisor\'s phone only since v123, each a compare-and-set that finds no document)',
   keys: ['clinics', 'products', 'staff', 'benchmarks', 'categoryGuides'], run: async (s) => {
     await env.clearFirestore();
     for(const k of ['clinics', 'products', 'staff', 'benchmarks', 'categoryGuides']) assert.equal(await s.get(k, true), null);
     await s.update('clinics', cur => cur == null ? J(clinicList(30)) : cur); // persist('clinics', {allowSeed:true})
-    await s.set('products', J([{ id: 'p1', name: 'Test brush' }]), true);
-    await s.set('staff', J([{ name: 'Rep A', role: 'rep', email: REP_A }, { name: 'Supervisor', role: 'supervisor', email: SUP }]), true);
-    await s.set('benchmarks', J({ coverage: 80, priority: 90, conversion: 30, tasks: 85 }), true);
-    await s.set('categoryGuides', J({ 'Water Flosser': { sell: '', how: '', objections: '', links: [] } }), true);
+    await s.update('products', cur => cur == null ? J([{ id: 'p1', name: 'Test brush' }]) : null);
+    await s.update('staff', cur => cur == null ? J([{ name: 'Rep A', role: 'rep', email: REP_A }, { name: 'Supervisor', role: 'supervisor', email: SUP }]) : null);
+    await s.update('benchmarks', cur => cur == null ? J({ coverage: 80, priority: 90, conversion: 30, tasks: 85 }) : null);
+    await s.update('categoryGuides', cur => cur == null ? J({ 'Water Flosser': { sell: '', how: '', objections: '', links: [] } }) : null);
   } };
 const SUPERVISOR_SITES = [
   { label: 'staff: saveStaff 08-team-orders.js:73, confirmRemoveStaff 08-team-orders.js:102',
-    keys: ['staff'], run: async (s) => { await s.set('staff', J(SEED.staff.concat([{ name: 'New rep', role: 'rep', email: 'test-new-rep@ultramed-kw.com' }])), true); } },
+    keys: ['staff'], run: async (s) => { await s.update('staff', () => J(SEED.staff.concat([{ name: 'New rep', role: 'rep', email: 'test-new-rep@ultramed-kw.com' }]))); } },
   { label: 'a team member renamed: every list, the targets, the sales and the team list (saveStaff 08-team-orders.js:67/73)',
     keys: ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales', 'staff'], run: async (s) => {
       const ren = x => (x && x.rep === 'Rep A' ? Object.assign({}, x, { rep: 'Rep Alpha' }) : x);
       for(const k of ['clinics', 'visits', 'tasks', 'events']) await s.update(k, cur => J(P(cur, []).map(ren)));
       await s.update('dayPlans', cur => J(P(cur, {})));
-      await s.set('targets', J({ 'Rep Alpha': { revenue: 1000 } }), true);
+      await s.update('targets', () => J({ 'Rep Alpha': { revenue: 1000 } }));
       await s.get('erpSales', true, { server: true });
       await s.setMany([['erpSales', J(Object.assign({}, SEED.erpSales, { repMapGlobal: { 'MARIAM TEST': 'Rep Alpha' } }))]]);
-      await s.set('staff', J(SEED.staff.map(x => x.name === 'Rep A' ? Object.assign({}, x, { name: 'Rep Alpha' }) : x)), true);
+      await s.update('staff', () => J(SEED.staff.map(x => x.name === 'Rep A' ? Object.assign({}, x, { name: 'Rep Alpha' }) : x)));
     } },
   { label: 'targets: saveTargets 09-admin.js:129, the DSR upload applyTargetsFile 11-erp.js:736, archiveTargetsMonth 11-erp.js:725, applyDsrSeed 04-sync.js:375',
-    keys: ['targets'], run: async (s) => { await s.set('targets', J({ 'Rep A': { month: kuwaitDay(0).slice(0, 7), revenue: 12000, visits: 80 }, _history: {} }), true); } },
+    keys: ['targets'], run: async (s) => { await s.update('targets', () => J({ 'Rep A': { month: kuwaitDay(0).slice(0, 7), revenue: 12000, visits: 80 }, _history: {} })); } },
   { label: 'benchmarks: saveBenchmarks 09-admin.js:141, saveKpiSettings 16-kpi.js:86',
-    keys: ['benchmarks'], run: async (s) => { await s.set('benchmarks', J({ coverage: 85, priority: 90, conversion: 30, tasks: 85, kpi: {} }), true); } },
+    keys: ['benchmarks'], run: async (s) => { await s.update('benchmarks', () => J({ coverage: 85, priority: 90, conversion: 30, tasks: 85, kpi: {} })); } },
   { label: 'categoryGuides: saveCategoryGuide 10-doctors-products.js:1826',
-    keys: ['categoryGuides'], run: async (s) => { await s.set('categoryGuides', J({ 'Water Flosser': { sell: 'x', how: 'y', objections: 'z', links: [] } }), true); } },
+    keys: ['categoryGuides'], run: async (s) => { await s.update('categoryGuides', () => J({ 'Water Flosser': { sell: 'x', how: 'y', objections: 'z', links: [] } })); } },
   { label: 'products: prices, notes, materials, removals, catalog gaps, photos (09-admin.js:429, 10-doctors-products.js:157/1655/1688, 07-clinics.js:965/1023, 04-sync.js:81)',
-    keys: ['products'], run: async (s) => { await s.set('products', J([{ id: 'p1', name: 'Test brush', brand: 'Test', price: 4.5, salesNotes: 'n', materials: [] }]), true); } },
+    keys: ['products'], run: async (s) => { await s.update('products', () => J([{ id: 'p1', name: 'Test brush', brand: 'Test', price: 4.5, salesNotes: 'n', materials: [] }])); } },
   { label: 'erpSales: a sales file imported — server read, row chunks + index in one batch, an old chunk pruned (persistErpSalesInner 04-sync.js:787/833/849)',
     keys: ['erpSales', 'erpRows:<period>:<rev>:<n>'], run: async (s) => {
       await s.get('erpSales', true, { server: true });
@@ -359,27 +360,23 @@ const SUPERVISOR_SITES = [
     } },
   { label: 'rxTypes: the prescription types by compare-and-set — saveRxTypes 10-doctors-products.js:1196',
     keys: ['rxTypes'], run: async (s) => { await s.update('rxTypes', cur => { const d = P(cur, {}) || {}; return J({ v: 1, rev: (d.rev || 0) + 1, by: 'Supervisor', types: [{ id: 'rx1', name: 'Tepe prescription', active: true }] }); }); } },
-  { label: 'restore a whole day from a backup — restoreSnapshot 13-exports.js:1506-1541',
-    keys: ['clinics', 'products', 'tasks', 'visits', 'visitsArch:YYYY-MM', 'visitsIndex', 'erpSales', 'recycleBin', 'tombs'], run: async (s) => {
+  { label: 'restore a whole day from a backup — restoreSnapshot 13-exports.js (v123: today\'s data kept first as today\'s backup; the catalog is not restored)',
+    keys: ['snap_YYYY-MM-DD', 'clinics', 'tasks', 'visits', 'visitsArch:YYYY-MM', 'visitsIndex', 'erpSales', 'recycleBin', 'tombs'], run: async (s) => {
       const snapDoc = P((await s.get(snap(-5), true)).value, {});
+      await s.set('snap_' + kuwaitDay(0), J({ clinics: clinicList(30), products: SEED.products, visits: [], tasks: [], keptBeforeRestore: kuwaitDay(-5), ts: new Date().toISOString() }), true);
       const tombs = P((await s.get('tombs', true) || {}).value, {}) || {}; await s.set('tombs', J(tombs), true); // untombMany
-      for(const [k, val] of [['clinics', snapDoc.clinics || []], ['products', SEED.products], ['tasks', []]]) await s.set(k, J(val), true);
+      for(const [k, val] of [['clinics', snapDoc.clinics || []], ['tasks', []]]) await s.set(k, J(val), true);
       await s.update('visits', () => J([])); await s.update(ARCH, cur => cur); await s.update('visitsIndex', cur => cur); // persistVisits({authoritative:true})
       await s.set('erpSales', J({ periods: [] }), true);
-      await s.set('recycleBin', J({ clinics: [], products: [], visits: [] }), true);
+      await s.update('recycleBin', () => J({ clinics: [], products: [], visits: [] }));
     } },
-  { label: 'the one-time wipe recovery — autoRestoreWipe 04-sync.js:184/188',
-    keys: ['clinics', 'snap_YYYY-MM-DD'], run: async (s) => {
-      await s.set('clinics', J(clinicList(40)), true);
-      await s.set('snap_' + kuwaitDay(0), J({ clinics: clinicList(40), products: [], visits: [], tasks: [], ts: new Date().toISOString() }), true);
-    } },
-  { label: 'bulk delete of clinics / the device copy restored (allowShrink: bulkDeleteClinics 09-admin.js:889, restoreDeviceClinics 13-exports.js:1563)',
+  { label: 'bulk delete of clinics (allowShrink: bulkDeleteClinics 09-admin.js:889)',
     keys: ['clinics'], run: async (s) => { await s.update('clinics', () => J(clinicList(2))); } },
-  { label: 'missing clinics brought back from the backups — restoreMissingClinics 13-exports.js:1491/1492',
+  { label: 'missing clinics brought back from the backups or from this phone\'s copy — restoreMissingClinics, applyDeviceCopy 13-exports.js',
     keys: ['clinics', 'recycleBin', 'tombs'], run: async (s) => {
       await s.set('tombs', J(P((await s.get('tombs', true) || {}).value, {})), true);
       await mergeList(s, 'clinics', { id: 'c-back', name: 'Clinic back from a backup', rep: 'Rep B', cls: 'B', doctors: [] });
-      await s.set('recycleBin', J({ clinics: [], products: [], visits: [] }), true);
+      await s.update('recycleBin', () => J({ clinics: [], products: [], visits: [] }));
     } },
 ];
 const ALL_SITES = TEAM_SITES.concat(BACKUP_SITES, [SEEDING_SITE], SUPERVISOR_SITES);
@@ -453,12 +450,12 @@ describe('the app\'s own storage code on the emulator: no write it makes is refu
   });
 
   const who = () => [['rep A', () => repA, 'Rep A'], ['rep B', () => repB, 'Rep B'], ['the supervisor', () => sup, 'Supervisor']];
-  for(const site of TEAM_SITES.concat(BACKUP_SITES, [SEEDING_SITE])){
+  for(const site of TEAM_SITES.concat(BACKUP_SITES)){
     for(const [name, phone, me] of who()){
       test(`${name}: ${site.label}`, async () => { await reseed(); await site.run(phone().s, me); });
     }
   }
-  for(const site of SUPERVISOR_SITES){
+  for(const site of [SEEDING_SITE].concat(SUPERVISOR_SITES)){
     test(`the supervisor: ${site.label}`, async () => { await reseed(); await site.run(sup.s, 'Supervisor'); });
   }
   test('rep A, rep B and the supervisor saving the same visits within the same second all land (transactions)', async () => {
