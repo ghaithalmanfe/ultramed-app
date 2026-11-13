@@ -144,7 +144,14 @@ function seed(cloud, opts){
   const act = (fn, arg) => page.evaluate(fn, arg).catch(e => { errors.push('a tap or sheet threw: ' + String(e && e.message || e).split('\n')[0]); return null; });
   const ready = () => ev(() => msWhenReady().then(() => true));
   // the widths the screen must be sound at (phone … laptop), and the boxes whose content must stay inside them
-  const SIZES = [[360, 780], [390, 844], [768, 1024], [1024, 768], [1280, 800], [1440, 900]];
+  const SIZES = [[360, 780], [390, 844], [768, 1024], [1024, 768], [1280, 800], [1366, 768], [1440, 900]];
+  // the three figures under the sales card (label, amount, sub-line): the ones that take more than one line
+  const statsWrap = () => {
+    const lines = el => { const r = document.createRange(); r.selectNodeContents(el);
+      const tops = [...r.getClientRects()].filter(x => x.width > 0).map(x => x.top).sort((a, b) => a - b);
+      let n = 0, last = -1e9; tops.forEach(t => { if(t - last > 6){ n++; last = t; } }); return n; };
+    return [...document.querySelectorAll('#msSales .ms-stats > div > *, #targetCard .ms-stats > div > *')].filter(e => e.offsetParent !== null && lines(e) > 1).map(e => e.innerText.replace(/\s+/g, ' ').trim());
+  };
   const spilled = () => [...document.querySelectorAll('#view-today .ms-card, #view-today .ms-stats > div, #view-today .ms-person, #view-today .ms-item')]
     .filter(e => e.offsetParent !== null && e.scrollWidth > e.clientWidth + 1)
     .map(e => (e.id || e.className) + ': ' + e.scrollWidth + '>' + e.clientWidth + ' ' + e.innerText.replace(/\s+/g, ' ').slice(0, 40));
@@ -284,16 +291,19 @@ function seed(cloud, opts){
   check('Kept: See all opens the visit log; Plan today opens the day planner', seeAll === 'log' && /Plan today's visits/.test(planDay), { seeAll, planDay: planDay.slice(0, 60) });
 
   // ---------- no horizontal overflow; the phone arrangement ----------
-  const over = [], spill = []; let narrow = null;
+  const over = [], spill = [], wrap = [], rowsAt = {};
   for(const [w, h] of SIZES){
     await page.setViewportSize({ width: w, height: h }); await sleep(120);
     const m = await ev(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
     if(m.sw > m.cw) over.push({ w, m });
     const sp = await ev(spilled); if(sp.length) spill.push({ w, sp });
-    if(w === 1024) narrow = await ev(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
+    if(w >= 390){ const sw = await ev(statsWrap); if(sw.length) wrap.push({ w, sw }); }
+    if(w >= 1024) rowsAt[w] = await ev(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
       return { sales: r('msSales'), work: r('msWork'), next: r('msNext') }; });
   }
-  check('Narrow laptop (1024 px): two cards a row, each wide enough for its figures (≥ 360 px), the next card below', narrow && narrow.sales.y === narrow.work.y && narrow.sales.w >= 360 && narrow.work.w >= 360 && narrow.next.y > narrow.sales.y, narrow);
+  const two = x => x && x.sales.y === x.work.y && x.sales.w >= 360 && x.work.w >= 360 && x.next.y > x.sales.y, three = x => x && x.sales.y === x.work.y && x.work.y === x.next.y;
+  check('Narrow laptop (1024 and 1280 px): two cards a row, each wide enough for its figures (≥ 360 px), the next card below; three a row from 1366 px', two(rowsAt[1024]) && two(rowsAt[1280]) && three(rowsAt[1366]) && three(rowsAt[1440]), rowsAt);
+  check('Supervisor (team, English): the three figures under the sales card — label, amount, sub-line — each on one line from 390 px up (360 may wrap, never spill)', wrap.length === 0, wrap.slice(0, 3));
   check('Supervisor: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over.length === 0, over);
   check('Supervisor: no figure spills out of its box (cards, stats columns, rows) at any of those widths', spill.length === 0, spill.slice(0, 3));
 
@@ -334,15 +344,18 @@ function seed(cloud, opts){
   await sleep(150);
   check('Phone: logging a visit is one tap from her main screen', await ev(() => activeView === 'log' && document.getElementById('view-log').classList.contains('active')));
   await ev(() => switchView('today')); await ready();
-  const over2 = [], spill2 = [];
+  const over2 = [], spill2 = [], wrap2 = [];
   for(const [w, h] of SIZES){
     await page.setViewportSize({ width: w, height: h }); await sleep(120);
     const m = await ev(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
     if(m.sw > m.cw) over2.push({ w, m });
     const sp = await ev(spilled); if(sp.length) spill2.push({ w, sp });
+    if(w >= 390){ const sw = await ev(statsWrap); if(sw.length) wrap2.push({ w, sw }); }
   }
   check('Rep: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over2.length === 0, over2);
   check('Rep: no figure spills out of its box at any of those widths', spill2.length === 0, spill2.slice(0, 3));
+  check('Rep (English): the three figures under her sales card each on one line from 390 px up, in the design\'s short words (Per work day · N days left · Forecast · N% of target)',
+    wrap2.length === 0 && /Forecast \d+\.\d\d KD \d+% of target/.test(rep.view) && /Per work day \d+\.\d\d KD \d+ days? left/.test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0] });
 
   // ======================= Arabic: right to left, no English left =======================
   const english = () => ev(() => {
@@ -363,13 +376,21 @@ function seed(cloud, opts){
   const arRep = await shown();
   check('Arabic, rep (phone): right to left, and no English left on the main screen (names, clinics and acronyms aside)', ar.dir === 'rtl' && ar.left.length === 0, ar.left.slice(0, 20));
   check('Arabic, rep: still only her own — no other person in Arabic or Latin letters, no team total', leak(arRep.view).length === 0 && /مبيعاتي هذا الشهر/.test(arRep.view) && /د\.ك/.test(arRep.view), leak(arRep.view));
+  const arWrap = [];
+  const wrapAt = async (who, sizes) => { for(const [w, h] of sizes){ await page.setViewportSize({ width: w, height: h }); await sleep(120); const sw = await ev(statsWrap); if(sw.length) arWrap.push({ who, w, sw }); } };
+  const arWords = /التوقع للشهر/.test(arRep.view) && /\d+% من الهدف/.test(arRep.view) && /(?:يومًا|أيام) باقية|يوم واحد باقٍ|يومان باقيان/.test(arRep.view) && /لكل يوم عمل/.test(arRep.view);
+  await wrapAt('Mariam', [[390, 844], [1440, 900]]);
   await boot(G, 'supervisor', 1440, 900, { lang: 'ar' });
   ar = await english();
   const arSup = await shown();
   check('Arabic, supervisor (laptop): right to left, no English left, the people in Arabic (مريم، رانوفا، د. غيث)', ar.dir === 'rtl' && ar.left.length === 0 && /^الفريق مريم رانوفا د\. غيث$/.test(arSup.switch) && arSup.sales === sum, { left: ar.left.slice(0, 20), sw: arSup.switch });
+  await wrapAt('team', [[390, 844], [1024, 768], [1280, 800], [1366, 768], [1440, 900]]);
   await act(() => msOpenPerson('Renova')); await ready(); await sleep(150);
   ar = await english();
   check('Arabic, supervisor on Renova\'s screen: no English left there either', ar.left.length === 0, ar.left.slice(0, 20));
+  await wrapAt('Renova', [[390, 844], [1440, 900]]);
+  check('Arabic: the three figures under the sales card each on one line from 390 px up — her phone, the team (390 … 1440), another person\'s screen — in the design\'s words (التوقع للشهر · لكل يوم عمل · يومًا باقية · من الهدف)',
+    arWrap.length === 0 && arWords, { arWrap: arWrap.slice(0, 4), arWords });
 
   // ======================= a month with no sales file =======================
   seed(cloud, { noOctober: true });
