@@ -1914,7 +1914,7 @@
     'invoiced sales but no target, so not in the percentage.': 'له مبيعات مفوترة ولا مستهدف له، فلا يدخل في النسبة.',
     'Remaining': 'المتبقي',
     'Per working day': 'لكل يوم عمل',
-    'Month-end forecast': 'المتوقع بنهاية الشهر',
+    'Forecast for the month': 'التوقع للشهر',
     'Tap a name to open their screen': 'اضغط على اسم لفتح شاشته',
     'The dark line on each bar = expected by': 'الخط الداكن على كل شريط = المتوقع حتى',
     'target: DSR': 'المستهدف: DSR',
@@ -1973,7 +1973,7 @@
     'My sales day by day against my target': 'مبيعاتي يومًا بيوم مقابل مستهدفي',
     'Achieved so far': 'المحقق',
     'Line to the target': 'الخط إلى المستهدف',
-    'Forecast': 'التوقع',
+    'Forecast': 'التوقع للشهر',                 // the sales card's figure and the chart's dotted line (the design's word)
     'No sales figure for this month yet, so no day by day.': 'لا يوجد رقم مبيعات لهذا الشهر بعد، فلا تفصيل يومي.',
     'The day-by-day figures are not available on this device yet.': 'الأرقام اليومية غير متاحة على هذا الجهاز بعد.',
     'Cumulative invoiced sales against the straight line to the target': 'المبيعات المفوترة المتراكمة مقابل الخط المستقيم إلى المستهدف',
@@ -2341,7 +2341,9 @@
     [/^Visits (\d+) of (\d+) this month$/, function (m) { return 'الزيارات ' + m[1] + ' من ' + m[2] + ' هذا الشهر'; }],
     [/^(\d+) reps?$/, function (m) { return countAr(m[1], ['شخص واحد', 'شخصان', 'أشخاص', 'شخصًا']); }],
     [/^(\d+) working days? left$/, function (m) { return countAr(m[1], ['بقي يوم عمل واحد', 'بقي يوما عمل', 'أيام عمل متبقية', 'يوم عمل متبقٍ']); }],
-    [/^(\d+)% of the target$/, function (m) { return m[1] + '% من المستهدف'; }],
+    // the figures under the sales card, the design's short words: «102% من الهدف», «15 يومًا باقية» (the per-day figure exists only while a working day is left)
+    [/^(\d+)% of target$/, function (m) { return m[1] + '% من الهدف'; }],
+    [/^(\d+) days? left$/, function (m) { return countAr(m[1], ['يوم واحد باقٍ', 'يومان باقيان', 'أيام باقية', 'يومًا باقية']); }],
     [/^(\d+) field visits?$/, function (m) { return countAr(m[1], ['زيارة ميدانية واحدة', 'زيارتان ميدانيتان', 'زيارات ميدانية', 'زيارة ميدانية']); }],
     [/^(\d+) orders?$/, function (m) { return countAr(m[1], ['طلبية واحدة', 'طلبيتان', 'طلبيات', 'طلبية']); }],
     [/^(\d+) orders? logged in the app$/, function (m) { return countAr(m[1], ['طلبية واحدة', 'طلبيتان', 'طلبيات', 'طلبية']) + ' مسجّلة في التطبيق'; }],
