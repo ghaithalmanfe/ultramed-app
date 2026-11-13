@@ -1913,7 +1913,7 @@
     'a target but no sales figure in the files, so not in the percentage.': 'له مستهدف ولا رقم مبيعات له في الملفات، فلا يدخل في النسبة.',
     'invoiced sales but no target, so not in the percentage.': 'له مبيعات مفوترة ولا مستهدف له، فلا يدخل في النسبة.',
     'Remaining': 'المتبقي',
-    'Per working day': 'لكل يوم عمل',
+    'Per work day': 'لكل يوم عمل',
     'Forecast for the month': 'التوقع للشهر',
     'Tap a name to open their screen': 'اضغط على اسم لفتح شاشته',
     'The dark line on each bar = expected by': 'الخط الداكن على كل شريط = المتوقع حتى',

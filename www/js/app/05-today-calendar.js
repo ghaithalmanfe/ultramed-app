@@ -765,7 +765,7 @@ function msSalesHTML(v, m, P, tt){
 }
 function msSalesStats(D, goal){
   const dash = k => `<b data-ms="${k}" data-value="">—</b>`;
-  if(!D) return `<div class="ms-stats"><div><span class="ms-l">${msT('Remaining')}</span>${dash('remaining')}</div><div><span class="ms-l">${msT('Per working day')}</span>${dash('perday')}</div><div><span class="ms-l">${msT('Forecast')}</span>${dash('forecast')}</div></div>`;
+  if(!D) return `<div class="ms-stats"><div><span class="ms-l">${msT('Remaining')}</span>${dash('remaining')}</div><div><span class="ms-l">${msT('Per work day')}</span>${dash('perday')}</div><div><span class="ms-l">${msT('Forecast')}</span>${dash('forecast')}</div></div>`;
   const A = msOf(D.achievement) || {}, Pd = msOf(D.perDay) || {}, wd = msOf(Pd.workdays) || {}, F = msOf(D.forecast);
   const left = wd.left != null ? wd.left : null;
   const remaining = D.remaining != null ? `<b data-ms="remaining" data-value="${D.remaining}">${msKd(D.remaining)}</b>` : dash('remaining');
@@ -773,7 +773,7 @@ function msSalesStats(D, goal){
   // the design's short words: "15 days left" under "Per working day" — the working days (Sun–Thu), as the ⓘ says
   const perSub = Pd.amount != null && left != null ? `<em>${msT(msCount(left, 'day left', 'days left'))}</em>`
     : D.remaining === 0 && A.pct != null ? `<em>${msT('Target reached')}</em>` : '';
-  const cells = [`<div><span class="ms-l">${msT('Remaining')}</span>${remaining}</div>`, `<div><span class="ms-l">${msT('Per working day')}</span>${perDay}${perSub}</div>`];
+  const cells = [`<div><span class="ms-l">${msT('Remaining')}</span>${remaining}</div>`, `<div><span class="ms-l">${msT('Per work day')}</span>${perDay}${perSub}</div>`];
   if(F) cells.push(`<div><span class="ms-l">${msT('Forecast')}</span>${F.amount != null ? `<b data-ms="forecast" data-value="${F.amount}">${msKd(F.amount)}</b>${F.pct != null ? `<em>${msT(F.pct + '% of target')}</em>` : ''}` : dash('forecast')}</div>`);
   return `<div class="ms-stats${cells.length === 2 ? ' two' : ''}">${cells.join('')}</div>`;
 }
