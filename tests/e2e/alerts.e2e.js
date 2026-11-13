@@ -387,6 +387,16 @@ function seed(){
     JSON.stringify(ps.items) === JSON.stringify(['Emberly Clinic · Nov 11 ' + notes.v2[0]]) && /4 days now — it can only come from the phone that took it, if that phone still has it$/.test(notes.v2[0]) && ps.sev === 'al-low', { ps, notes });
   check('a photo lost before it uploaded: its note\'s line', JSON.stringify(pl.items) === JSON.stringify(['Cobaltia Clinic · Nov 8 ' + notes.v4[1]]) && notes.v4[1] === '⚠️ Photo lost before it uploaded — only this small preview is kept', { pl, notes });
   check('a rep: never another person\'s visit photo (Renova\'s 4-day photo is not on Mariam\'s bell); the bell counts the cards', !c.cards.some(x => x.clinics.includes('r2')) && counts(c), c.cards.map(x => x.clinics));
+  // a photo with this phone's mark that the phone no longer holds (an earlier session's; offline, so not settled yet):
+  // its note says only "waiting to upload" — never listed under a card whose reason is "kept on this phone"
+  const owed = await page.evaluate(() => {
+    Object.defineProperty(navigator, 'onLine', { get: () => false, configurable: true });   // no look-up while offline
+    const v = visits.find(x => x.id === 'v4'); v.photos.push({ id: 'phOwed', thumb: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', pending: true, dev: photoDevice(), at: Date.now() - 50 * 60000 });
+    refreshAlerts(); const a = _alerts.shown.find(x => x.id === 'photos-wait'), w = photoWaitInfo(v);
+    const r = { note: w.wait, listed: !!(a && a.items.some(i => i.visitId === 'v4')), title: a ? a.title : null };
+    v.photos.pop(); delete navigator.onLine; refreshAlerts(); return r; });
+  check('a photo with this phone\'s mark that it no longer holds: its note says only "waiting to upload", and it is not counted as kept on this phone',
+    owed.note === '⏳ Photo waiting to upload' && !owed.listed && owed.title === '1 visit photo waiting to upload from this phone', owed);
   const shown = await page.evaluate(async () => { closeModal(); openClinicDetail('m1'); await new Promise(r => setTimeout(r, 100)); const el = document.querySelector('#modalInner .photo-wait'); return el ? el.textContent : null; });
   check('the visit itself says the same line under its thumbnails', shown === notes.v1[0], shown);
   await center(); await act('photos-lost', 'open'); w = await where();

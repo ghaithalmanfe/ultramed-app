@@ -6586,8 +6586,8 @@
   // - device.outbox: the queue as the pill counts it ([{key, since}], memory
   //   included) — said once a change has waited longer than the minutes set;
   // - device.photos: per visit, its photo note's own lines (wait / lost) and
-  //   what they rest on — this phone's waiting photos (own: when each was
-  //   taken) after the same minutes, another phone's from the 3 days its note
+  //   what they rest on — the waiting photos this phone holds (own: when each
+  //   was taken) after the same minutes, another phone's from the 3 days its note
   //   gives their age (old), the lost ones; photos taken in the last 14 days;
   // - device.erpDirty: the sales files' red retry bar (the supervisor's).
   // A thing is listed once: a key or a visit on the red bar's card is not
@@ -6604,7 +6604,7 @@
     // a rep: her own visits (or one she was on) — the app gives those only; said again here
     var photos = (Array.isArray(d.photos) ? d.photos : []).filter(function(p){ return p && p.visitId != null && (c.sup || p.rep === c.user.name || p.withRep === c.user.name); });
     var listed = Object.create(null);
-    var sorted = function(list, key){ return list.slice().sort(function(a, b){ return alertByDate(a.date, b.date) || erpCmp(a.label, b.label) || alertByDate(String(a.visitId), String(b.visitId)); }); };
+    var sorted = function(list){ return list.slice().sort(function(a, b){ return alertByDate(a.date, b.date) || erpCmp(a.label, b.label) || alertByDate(String(a.visitId), String(b.visitId)); }); };
     if(bar.length){
       var mItems = memKeys.map(function(k){ return { key: k, text: alertKeyLabel(k) + " — only in the app's memory" }; });
       sorted(photos.filter(function(p){ return p.mem > 0 && p.wait; })).forEach(function(p){ listed[p.visitId] = 1; mItems.push(Object.assign(alertPhotoLine(c, p), { note: p.wait })); });
@@ -6619,7 +6619,7 @@
         items: waiting.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — waiting since ' + alertWhen(c, x.since) }; }),
         open: { screen: 'sync' }, action: 'flush' });
     }
-    // this phone's photos waiting to upload (kept here, or its own mark it is settling)
+    // this phone's photos waiting to upload: the ones it holds (kept here; those only in memory are on the red bar's card)
     var own = sorted(photos.filter(function(p){
       if(listed[p.visitId] || !p.wait || !Array.isArray(p.own) || !p.own.length) return false;
       var first = Math.min.apply(null, p.own.map(function(t){ return Number(t) > 0 ? Number(t) : 0; }));   // when unknown: waiting since before this rule
@@ -6637,7 +6637,7 @@
     var stale = sorted(photos.filter(function(p){ return !listed[p.visitId] && p.wait && p.old > 0 && p.old <= ALERT_PHOTO_DAYS; }));
     if(stale.length){
       out.push({ id: 'photos-stale', type: 'sync', sev: 'low', rep: null, title: alertN(stale.length, 'visit photo', 'visit photos') + ' not arrived from another phone',
-        why: ['Taken on another phone and not in the cloud for 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last ' + ALERT_PHOTO_DAYS + ' days.'],
+        why: ['Taken on another phone and still waiting to upload after 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last ' + ALERT_PHOTO_DAYS + ' days.'],
         items: stale.map(function(p){ return Object.assign(alertPhotoLine(c, p), { note: p.wait }); }), open: { screen: 'gallery' } });
     }
     // lost before they uploaded: only the small preview is kept
@@ -6648,7 +6648,7 @@
     }));
     if(lost.length){
       out.push({ id: 'photos-lost', type: 'sync', sev: 'medium', rep: null, title: alertN(lost.length, 'visit photo', 'visit photos') + ' lost before ' + (lost.length === 1 ? 'it' : 'they') + ' uploaded',
-        why: ['Each visit below keeps only the small preview: the full photo never reached the cloud and no phone holds it any more. Photos taken in the last ' + ALERT_PHOTO_DAYS + ' days.'],
+        why: ['Lost before they uploaded: the phone that took them no longer holds them, so each visit below keeps only the small preview. Photos taken in the last ' + ALERT_PHOTO_DAYS + ' days.'],
         items: lost.map(function(p){ return Object.assign(alertPhotoLine(c, p), { note: p.lost }); }), open: { screen: 'gallery' } });
     }
     // the sales files are the supervisor's: on a rep's phone the flag is nothing she changed

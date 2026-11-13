@@ -708,7 +708,8 @@ function photoStaleText(days){ return days + ' days now — it can only come fro
 // (photoWaitHTML) and the alerts center lists its very lines (19-alerts.js) —
 // { wait, lostTxt (the note's lines, null when none), mem, here, old (days, another
 // phone's photo past PHOTO_STALE_DAYS), own: [when each waiting photo this phone
-// holds or owes was taken], lostAt: [when each lost photo was taken] } or null.
+// holds was taken — kept here or only in memory; one with its mark that it no
+// longer holds is being settled, not kept], lostAt: [when each lost photo was taken] } or null.
 function photoWaitInfo(v){
   const ps = ((v && v.photos) || []).filter(p => p);
   // this phone knows before its mark's save lands: one it saw land is not
@@ -719,7 +720,7 @@ function photoWaitInfo(v){
   const me = photoDevice(), own = [];
   let here = 0, mem = 0, old = 0, wait = null;
   if(waiting.length){
-    waiting.forEach(p => { const r = _photoKept.get(p.id); if(r || p.dev === me) own.push(Number(p.at) || 0); if(!r){ if(p.dev !== me && photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(r) own.push(Number(p.at) || 0); if(!r){ if(p.dev !== me && photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
     const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
     if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
     if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");

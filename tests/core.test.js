@@ -4692,7 +4692,7 @@ describe('alerts center (v121)', () => {
     const s = one(list, 'photos-stale');
     assert.equal(s.title, '1 visit photo not arrived from another phone');
     assert.deepEqual(s.items.map(i => [i.text, i.note]), [['Cobaltia Clinic · Nov 6', stale.wait]]);   // Renova's is hers; 21 days is past the window
-    assert.deepEqual(s.why, ['Taken on another phone and not in the cloud for 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last 14 days.']);
+    assert.deepEqual(s.why, ['Taken on another phone and still waiting to upload after 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last 14 days.']);
     const l = one(list, 'photos-lost');
     assert.equal(l.title, '1 visit photo lost before it uploaded');
     assert.deepEqual(l.items.map(i => [i.text, i.note]), [['Birchwood Center · Nov 8', lost.lost]]);   // the one of 22 days ago is past the window

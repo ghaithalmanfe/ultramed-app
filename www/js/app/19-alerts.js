@@ -249,8 +249,8 @@ async function alertsUploadNow(btn){
   if(navigator.onLine === false){ showToast('📴 This phone is offline — the changes upload when the connection is back'); if(btn) btn.disabled = false; return; }
   if(_flushing){ showToast('⏳ Uploading…'); if(btn) btn.disabled = false; return; }
   await flushOutbox(); // the queue, and the photos this phone keeps (retryPhotos, in the background)
-  // what is left, in the words of the bars: only in the app's memory is never "stays on this phone"
-  if(outboxList().length) showToast(memOnlyLines().length ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
+  // what is left, in the words of the bars: a change only in the app's memory never "stays on this phone"
+  if(outboxList().length) showToast(_memOnly.size ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
     : '⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.');
   else { const left = photosToUpload(false); if(left) showToast('⏳ ' + photosLeftText(left)); }
   refreshAlerts(true);
