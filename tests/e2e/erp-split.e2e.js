@@ -117,14 +117,16 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
 
   // ---------- 4) SAVE FAILURE: cloud rejects the chunk write ----------
   const before = await state();
-  const cloudBefore = JSON.stringify(cloud);
+  // the change log (auditLog:YYYY-MM) records the failed attempt; everything else must stay exactly as it was
+  const cloudData = () => JSON.stringify(Object.keys(cloud).filter(k => !/^auditLog:/.test(k)).map(k => [k, cloud[k]]));
+  const cloudBefore = cloudData();
   mode.failSet = /^erpRows:/;
   await importFile();
   s = await state();
   mode.failSet = null;
   check('failed save is rolled back on screen (same periods as before)', JSON.stringify(s.periods)===JSON.stringify(before.periods), s.periods.map(p=>p.id));
   check('failed save shows ❌, not "✅ imported"', /❌/.test(s.status), s.status);
-  check('cloud untouched by the failed import', JSON.stringify(cloud)===cloudBefore);
+  check('cloud untouched by the failed import', cloudData()===cloudBefore);
   await importFile(); s = await state();
   check('retry after the failure succeeds', !/❌/.test(s.status) && s.periods.length===2 && s.periods[1].rows===146, s.status);
 
