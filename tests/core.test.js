@@ -4490,14 +4490,94 @@ describe('merge3Record', () => {
   });
 });
 describe('mergeDoctorLists3', () => {
-  test('each doctor merges field by field; a doctor added on either side is kept, once per person', () => {
+  // v123 (the owner's rule of 12 Nov: no automatic merges): until v122 the
+  // second "Lina" was collapsed into the first here, on every phone, by itself.
+  test('each doctor merges field by field; a doctor added on either side is kept — two records of one name both stay, never collapsed', () => {
     const base = [{ id: 'd1', name: 'Dr. Ahmed', phone: '' }];
     const local = [{ id: 'd1', name: 'Dr. Ahmed', phone: '', title: 'Endodontist' }, { id: 'd5', name: 'Dr. Lina' }];
-    const cloud = [{ id: 'd1', name: 'Dr. Ahmed', phone: '+965 2222' }, { id: 'd9', name: 'Dr. Zain' }, { id: 'd7', name: 'DR LINA' }];
+    const cloud = [{ id: 'd1', name: 'Dr. Ahmed', phone: '+965 2222' }, { id: 'd9', name: 'Dr. Zain' }, { id: 'd7', name: 'DR LINA', stage: 'warm' }];
     const m = core.mergeDoctorLists3(local, cloud, base);
-    assert.deepEqual(m.doctors.map(d => d.id), ['d1', 'd5', 'd9']);
+    assert.deepEqual(m.doctors.map(d => d.id), ['d1', 'd5', 'd9', 'd7']);
     assert.deepEqual(m.doctors[0], { id: 'd1', name: 'Dr. Ahmed', phone: '+965 2222', title: 'Endodontist' });
-    assert.deepEqual(m.remap, { d7: 'd5' });
+    assert.deepEqual(m.doctors[3], { id: 'd7', name: 'DR LINA', stage: 'warm' }, 'the second record keeps everything it held');
+    assert.deepEqual(m.remap, {});
+  });
+});
+describe('doctors: kept apart until the supervisor merges them by tap (v123)', () => {
+  test('unionDoctorsById: what either side added is kept, by id only — two of one name both stay', () => {
+    const m = core.unionDoctorsById([{ id: 'a', name: 'Dr. Ahmed', phone: '111' }], [{ id: 'a', name: 'Dr. Ahmed' }, { id: 'z', name: 'Dr. Zain' }, { id: 'q', name: 'DR AHMED', phone: '222' }]);
+    assert.deepEqual(m.doctors.map(d => d.id), ['a', 'z', 'q']);
+    assert.equal(m.doctors[0].phone, '111');
+    assert.deepEqual(m.remap, {});
+  });
+  test('possibleDuplicateDoctors: groups of one name per clinic; a group marked "different people" is not offered again', () => {
+    const clinics = [
+      { id: 'c1', doctors: [{ id: 'd1', name: 'Dr. Ahmad' }, { id: 'd2', name: 'ahmad' }, { id: 'd3', name: 'Dr. Sara' }, { id: 'd4', name: 'د. نور' }, { id: 'd5', name: 'نور' }] },
+      { id: 'c2', doctors: [{ id: 'e1', name: 'Dr. Ahmad' }] },                         // one record: nothing to offer
+      { id: 'c3', doctors: [{ id: 'f1', name: 'Dr. Ali' }, { id: 'f2', name: 'Ali' }], distinctDoctors: ['f1|f2'] },
+      { id: 'c4', doctors: [{ id: 'g1', name: 'Dr. Omar' }, { id: 'g2', name: 'omar' }, { id: 'g3', name: 'OMAR.' }], distinctDoctors: ['g1|g2'] },
+    ];
+    const g = core.possibleDuplicateDoctors(clinics);
+    assert.deepEqual(g.map(x => [x.clinicId, x.doctors.map(d => d.id)]), [['c1', ['d1', 'd2']], ['c1', ['d4', 'd5']], ['c4', ['g1', 'g2', 'g3']]]);
+    assert.equal(core.distinctPair('g2', 'g1'), 'g1|g2');
+  });
+  test('mergeDoctorPair: the kept record takes every field the other held; a different value goes into the notes; handovers join; nothing is mutated', () => {
+    const keep = { id: 'd1', name: 'Dr. Ahmad', phone: '111', title: '', notes: 'mornings', handovers: [{ id: 'h1', what: 'pad' }] };
+    const drop = { id: 'd2', name: 'Ahmad', phone: '222', title: 'Orthodontist', stage: 'warm', role: 'owner', notes: 'likes TePe', handovers: [{ id: 'h2', what: 'sample' }, { id: 'h1', what: 'pad' }] };
+    const k0 = JSON.stringify(keep), d0 = JSON.stringify(drop);
+    const r = core.mergeDoctorPair(keep, drop);
+    assert.equal(r.doctor.id, 'd1'); assert.equal(r.doctor.name, 'Dr. Ahmad');
+    assert.equal(r.doctor.phone, '111'); assert.equal(r.doctor.title, 'Orthodontist'); assert.equal(r.doctor.stage, 'warm'); assert.equal(r.doctor.role, 'owner');
+    assert.deepEqual(r.conflicts, ['phone']);
+    assert.match(r.doctor.notes, /mornings/); assert.match(r.doctor.notes, /likes TePe/); assert.match(r.doctor.notes, /Also recorded: phone 222/); assert.match(r.doctor.notes, /Also written as: Ahmad/);
+    assert.deepEqual(r.doctor.handovers.map(h => h.id), ['h1', 'h2']);
+    assert.equal(JSON.stringify(keep), k0); assert.equal(JSON.stringify(drop), d0);
+  });
+});
+describe('documents the cloud cannot store (v123)', () => {
+  test('fitsBytes counts UTF-8 bytes, not characters (Arabic is two bytes a letter)', () => {
+    assert.equal(core.fitsBytes('x'.repeat(1000), 1000), true);
+    assert.equal(core.fitsBytes('x'.repeat(1001), 1000), false);
+    assert.equal(core.fitsBytes('ع'.repeat(600), 1000), false, '600 Arabic letters are 1200 bytes');
+    assert.equal(core.fitsBytes('ع'.repeat(500), 1000), true);
+    assert.equal(core.fitsBytes('', 0), true);
+  });
+  test('snapshotPayload: under the line the backup is whole; above it the visits keep their photo ids and marks without the previews; still over the limit it says so', () => {
+    const v = (id, n) => ({ id, date: '2026-11-10', photos: [{ id: 'p' + id, thumb: 'data:image/jpeg;base64,' + 'A'.repeat(n), pending: true, dev: 'D1' }] });
+    const small = core.snapshotPayload({ clinics: [], visits: [v('1', 100)] }, { slimAt: 5000, max: 8000 });
+    assert.equal(small.slimmed, 0); assert.equal(small.tooLarge, false); assert.match(small.str, /base64/);
+    const big = core.snapshotPayload({ clinics: [{ id: 'c1' }], visits: [v('1', 3000), v('2', 3000), { id: '3', date: '2026-11-11' }] }, { slimAt: 5000, max: 8000 });
+    const doc = JSON.parse(big.str);
+    assert.equal(big.slimmed, 2); assert.equal(big.tooLarge, false);
+    assert.deepEqual(doc.visits.map(x => x.id), ['1', '2', '3']);
+    assert.deepEqual(doc.visits[0].photos, [{ id: 'p1', pending: true, dev: 'D1' }]);
+    assert.deepEqual(doc.slim, { photos: 2 }); assert.deepEqual(doc.clinics, [{ id: 'c1' }]);
+    assert.equal(big.bytes, Buffer.byteLength(big.str, 'utf8'));
+    const huge = core.snapshotPayload({ clinics: Array.from({ length: 50 }, (_, i) => ({ id: 'c' + i, notes: 'n'.repeat(500) })), visits: [] }, { slimAt: 5000, max: 8000 });
+    assert.equal(huge.tooLarge, true);
+  });
+  test('fillSnapThumbs: a restored visit\'s photo without a preview takes the one this phone holds under the same id; nothing else changes', () => {
+    const snap = [{ id: 'v1', photos: [{ id: 'p1' }, { id: 'p2', thumb: 'T2' }, { id: 'p9' }] }, { id: 'v2' }];
+    const now = [{ id: 'v1', photos: [{ id: 'p1', thumb: 'T1' }, { id: 'p2', thumb: 'NEW2' }] }, { id: 'v5', photos: [{ id: 'p9', thumb: 'T9' }] }];
+    const s0 = JSON.stringify(snap);
+    const r = core.fillSnapThumbs(snap, now);
+    assert.equal(r.filled, 2);
+    assert.deepEqual(r.visits[0].photos, [{ id: 'p1', thumb: 'T1' }, { id: 'p2', thumb: 'T2' }, { id: 'p9', thumb: 'T9' }]);
+    assert.equal(r.visits[1], snap[1]);
+    assert.equal(JSON.stringify(snap), s0);
+  });
+  test('trimTeamThumbs: the oldest photo previews are left out until the list fits — every entry stays, and its photo id', () => {
+    const list = [3, 1, 2].map(i => ({ id: 'm' + i, ts: i, who: 'Mariam', cap: 'c' + i, thumb: 'data:' + 'Z'.repeat(400) }));
+    list.push({ id: 't1', ts: 0, who: 'Renova', text: 'no photo' });
+    const fit = core.trimTeamThumbs(list, 100000);
+    assert.equal(fit.dropped, 0); assert.equal(fit.fits, true); assert.equal(fit.list.length, 4);
+    const r = core.trimTeamThumbs(list, JSON.stringify(list).length - 500);
+    assert.equal(r.fits, true); assert.equal(r.dropped, 2);
+    assert.deepEqual(r.list.map(x => x.id), ['m3', 'm1', 'm2', 't1']);
+    assert.deepEqual(r.list.map(x => !!x.thumb), [true, false, false, false]);
+    assert.ok(r.list[1].noThumb && r.list[2].noThumb && r.list[1].cap === 'c1');
+    assert.ok(list[1].thumb, 'the input is never changed');
+    assert.equal(core.trimTeamThumbs(list, 50).fits, false);
   });
 });
 

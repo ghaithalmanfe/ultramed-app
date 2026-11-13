@@ -32,7 +32,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const F = require('./fixtures');
-const { ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, SUP, REP_A, REP_B, REPORTS, kuwaitDay, localDay, utcDay, snap,
+const { ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, SUP, REP_A, REP_B, REPORTS, BACKUPS, kuwaitDay, localDay, utcDay, snap,
   PHOTO, CHUNK, ARCH, lastMonth, clinicList, stored } = F;
 
 const PASSWORD = 'test-password-1';
@@ -44,7 +44,8 @@ const QUIET = { log(){}, info(){}, warn(){}, error(){}, debug(){} };
 // Every write target, as the rules know it: who writes it today.
 const INVENTORY = {
   clinics: 'team', visits: 'team', visitsIndex: 'team', tasks: 'team', dayPlans: 'team', events: 'team', tombs: 'team',
-  recycleBin: 'team', erpNotes: 'team', products: 'team', repairLog: 'team', chat: 'team', memories: 'team', mailLog: 'team',
+  recycleBin: 'team', erpNotes: 'team', products: 'team', repairLog: 'team', chat: 'team', memories: 'team',
+  mailLog: 'job', // the e-mail job's log: the job logins and the supervisor (v123)
   staff: 'supervisor', targets: 'supervisor', benchmarks: 'supervisor', categoryGuides: 'supervisor', erpSales: 'supervisor',
   erpMap: 'supervisor', erpMapLog: 'supervisor', rxTypes: 'supervisor',
   'visitsArch:YYYY-MM': 'team', 'photo:<id>': 'team', 'snap_YYYY-MM-DD': 'team', 'erpRows:<period>:<rev>:<n>': 'supervisor',
@@ -300,9 +301,20 @@ const BACKUP_SITES = [
       for(let i = 13; i <= 19; i++) assert.equal(await storedValue('snap_' + kuwaitDay(-i)), null);
       await dailyBackup(s, 'Asia/Kuwait'); // the second save of the day finds it
     } },
-  { label: 'snap_: the same on phones at the far ends of the time zones (UTC+14, UTC−11)',
-    keys: ['snap_YYYY-MM-DD'], run: async (s) => {
-      for(const tz of ['Pacific/Kiritimati', 'Pacific/Pago_Pago']){ await unseed('snap_' + localDay(tz, 0)); await dailyBackup(s, tz); }
+  { label: 'snap_: a phone set to another time zone (UTC+14, UTC−11) names its backup by its own day — the team creates only Kuwait\'s today (v123), the supervisor a current one',
+    keys: ['snap_YYYY-MM-DD'], run: async (s, me) => {
+      for(const tz of ['Pacific/Kiritimati', 'Pacific/Pago_Pago']){
+        const day = localDay(tz, 0); await unseed('snap_' + day);
+        if(me === 'Supervisor' || day === kuwaitDay(0)) await dailyBackup(s, tz);
+        else await assert.rejects(dailyBackup(s, tz), e => e && e.code === 'permission-denied', tz);
+      }
+    } },
+  { label: 'snap_: two phones on the same day — the second finds today\'s backup and writes nothing; overwriting it is refused to the team',
+    keys: ['snap_YYYY-MM-DD'], run: async (s, me) => {
+      const key = 'snap_' + kuwaitDay(0); await unseed(key);
+      await dailyBackup(s, 'Asia/Kuwait'); await dailyBackup(s, 'Asia/Kuwait');
+      const again = s.set(key, J({ clinics: [], overwritten: true }), true);
+      if(me === 'Supervisor') await again; else await assert.rejects(again, e => e && e.code === 'permission-denied');
     } },
   { label: 'snap_: an app version from before v119 still on a phone — keeps the 12 newest backups, deletes the rest',
     keys: ['snap_YYYY-MM-DD'], run: async (s) => {
@@ -419,6 +431,7 @@ describe('source scan: every write the app makes is replayed here', () => {
     const sup = Object.keys(INVENTORY).filter(k => INVENTORY[k] === 'supervisor' && !/[<:_]/.test(k)).sort();
     assert.deepEqual(list('isTeamKey').sort(), team);
     assert.deepEqual(list('isSupervisorKey').sort(), sup);
+    assert.deepEqual(list('isJobKey').sort(), Object.keys(INVENTORY).filter(k => INVENTORY[k] === 'job').sort());
   });
   test('every key in the inventory is written by at least one replayed site (mailLog: the e-mail job below)', () => {
     const covered = new Set(ALL_SITES.flatMap(x => x.keys).concat(['mailLog']));
@@ -436,7 +449,7 @@ describe('the app\'s own storage code on the emulator: no write it makes is refu
     ADAPTER = adapterSource();
     env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules: F.rulesFor(SUP), host: HOST, port: Number(PORT) } });
     await realFetch(`http://${AUTH_HOST}/emulator/v1/projects/${PROJECT}/accounts`, { method: 'DELETE' });
-    for(const email of [REP_A, REP_B, SUP, REPORTS]) await createLogin(email);
+    for(const email of [REP_A, REP_B, SUP, REPORTS, BACKUPS]) await createLogin(email);
     repA = makePhone('rep-a'); repB = makePhone('rep-b'); sup = makePhone('supervisor');
     await repA.auth.signInWithEmailAndPassword(REP_A, PASSWORD); // exactly 03-gate.js:123/134
     await repB.auth.signInWithEmailAndPassword(REP_B, PASSWORD);
@@ -497,6 +510,19 @@ describe('the app\'s own storage code on the emulator: no write it makes is refu
     await assert.rejects(mergeList(p.s, 'visits', { id: 'x' }), e => e.code === 'permission-denied');
   });
 
+  test('a job login on the app\'s own adapter (the e-mail job, the nightly backup): reads every key, lists the backups and the whole collection, and every app write is refused', async () => {
+    await reseed();
+    for(const email of [REPORTS, BACKUPS]){
+      const p = makePhone('job-' + email);
+      await p.auth.signInWithEmailAndPassword(email, PASSWORD);
+      for(const k of ['clinics', 'visits', 'tasks', 'staff', 'targets', 'erpSales', 'mailLog', CHUNK, ARCH, PHOTO]) assert.ok(await p.s.get(k, true), k);
+      assert.ok((await p.s.list('snap_', true)).keys.length >= 1);
+      for(const [k, run] of [['visits', () => mergeList(p.s, 'visits', { id: 'x' })], ['clinics', () => mergeList(p.s, 'clinics', { id: 'x' })], ['tombs', () => p.s.set('tombs', '{}', true)],
+        ['snap', () => p.s.set('snap_' + kuwaitDay(0), '{}', true)], ['photo', () => p.s.delete(PHOTO, true)], ['targets', () => p.s.set('targets', '{}', true)]])
+        await assert.rejects(run(), e => e && e.code === 'permission-denied', email + ' ' + k);
+    }
+    assert.equal(await storedValue('visits'), J(SEED.visits));
+  });
   for(const [name, email] of [['a dedicated job login', REPORTS], ['the supervisor\'s login', SUP]]){
     test(`the daily e-mail job runs for real (report.js run(): sign-in, batch read, mailLog) — ${name}`, async () => {
       await reseed();

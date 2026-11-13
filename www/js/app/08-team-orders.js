@@ -35,12 +35,16 @@ async function saveStaff(idx){
   if(!email || !email.includes('@')){ showToast('Enter a valid email'); return; }
   const clash = staff.find((s,i)=>i!==idx && (s.name.toLowerCase()===name.toLowerCase() || s.email===email));
   if(clash){ showToast('That name or email is already used'); return; }
+  let renamed = []; // [[outcome, key]] of the lists a rename rewrote
   if(idx>=0){
     const prevName = staff[idx].name;
     staff[idx] = {...staff[idx], name, email, role, sells};
     if(prevName !== name){
       // Keep existing records pointing at this person
-      clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; });
+      // the owner, and the owner before a handover: the earlier months of a
+      // handed-over clinic count for prevRep — left on the old name, they
+      // counted for nobody on the team and closed months moved (v123)
+      clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; if(c.prevRep===prevName) c.prevRep = name; });
       visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
       tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
       Object.keys(dayPlans).forEach(d=>{
@@ -64,15 +68,17 @@ async function saveStaff(idx){
       if(clinicRepFilter===prevName) clinicRepFilter = name;
       if(reportRepFilter===prevName) reportRepFilter = name;
       if(calRepFilter===prevName) calRepFilter = name;
-      await Promise.all([persist('clinics'), persist('visits'), persist('tasks'), persist('dayPlans'), persist('events'), persist('targets'), persist('erpSales')]);
+      const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
+      const got = await Promise.all([persistTold('clinics'), persistTold('visits'), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
+      renamed = got.map((r, i) => [r, keys[i]]);
     }
   } else {
     staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
   }
   refreshStaff();
-  await persist('staff');
+  const r = await persistTold('staff');
   closeModal();
-  showToast('✅ Team updated');
+  saveToastAll([[r, 'staff']].concat(renamed), '✅ Team updated'); // "updated" only when the team list and every renamed list landed
   renderGate();
   renderAll();
   openAdminPanel(); setAdminTab('staff');
@@ -99,9 +105,9 @@ async function confirmRemoveStaff(idx){
   if(!s) return;
   staff.splice(idx,1);
   refreshStaff();
-  await persist('staff');
+  const r = await persistTold('staff');
   closeModal();
-  showToast(`${s.name} removed`);
+  saveToast(r, 'staff', `${s.name} removed`);
   renderGate();
   renderAll();
   openAdminPanel(); setAdminTab('staff');
@@ -279,10 +285,11 @@ async function saveStandaloneOrder(){
     orderGross:t.gross, orderDiscount:t.disc, orderTotal:t.net,
     nextFollowUp:null, notes
   });
-  await Promise.all([persist('visits'), soNewCreated ? persist('clinics') : Promise.resolve()]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), soNewCreated ? persistTold('clinics') : Promise.resolve(null)]);
   soNewClinicMode = false;
   closeModal();
-  showToast(soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
+  // what the save did — "saved" only when it landed
+  saveToastAll([[vs, 'visits'], [cs, 'clinics']], soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
   renderAll();
 }
 
@@ -417,11 +424,11 @@ async function saveCallLog(){
     contactName: contactName||null, contactRole: contactRole||null, contactPhone: contactPhone||null,
     notes, nextFollowUp:followUp});
   if(clinic && followUp) clinic.nextFollowUp = followUp;
-  await Promise.all([persist('visits'), (clinic || newClinicCreated) ? persist('clinics') : Promise.resolve()]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), (clinic || newClinicCreated) ? persistTold('clinics') : Promise.resolve(null)]);
   if(clinic && followUp) await scheduleFollowUp(clinic, followUp, rep);
   clNewClinicMode = false;
   closeModal();
-  showToast(newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
+  saveToastAll([[vs, 'visits'], [newClinicCreated ? cs : null, 'clinics']], newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
   renderAll();
 }
 
@@ -523,6 +530,16 @@ function addEditPhoto(visitId){
     // removed (×) while that save was on its way: never kept on the phone, never sent
     const onVisit = () => { const cur = visits.find(x=>x.id===visitId); return !!(cur && (cur.photos||[]).some(p => p && p.id === id)); };
     if(!onVisit()){ showToast('Photo removed'); return; }
+    // refused by the rules, or the month too large for the cloud (v123): the photo is in no
+    // list and can never upload as it is — taken back off the visit, said for what it is
+    const ro = r.outcome || {};
+    if(!(r.ok || sentSince('visits', r)) && (ro.denied || ro.tooLarge)){
+      const cur = visits.find(x=>x.id===visitId);
+      if(cur) cur.photos = (cur.photos||[]).filter(p => !(p && p.id === id));
+      if(editSheetShows(visitId)) renderEditPhotos(visitId);
+      showToast(visitSaveMsg(r, null, true), 7000);
+      return;
+    }
     const kept = await keepVisitPhotos(v.id, [{id, full}]);
     if(editSheetShows(visitId)) renderEditPhotos(visitId);
     showToast(onVisit() ? visitSaveMsg(r, kept, true) : 'Photo removed', 4500);
@@ -617,6 +634,7 @@ async function saveEditVisit(visitId){
   // Queued here and sent by the queue meanwhile = saved.
   const outcome = vs.outcome;
   if(vs.ok || sentSince('visits', vs)) showToast('✅ Changes saved');
+  else if(outcome.denied || outcome.tooLarge) saveToast(vs, 'visits', ''); // refused, or the month too large: never "kept, uploads by itself" (v123)
   else if(outcome.queued && outcome.mirrored) showToast('📴 Changes kept on this device — they upload automatically when back online');
   else showToast('⚠️ Changes not saved on this device (storage full) — keep the app open until they upload');
   renderAll();
@@ -674,9 +692,9 @@ async function deleteVisit(visitId){
     const cv = visits.filter(x=>x.clinicId===clinicId && isFieldVisit(x));
     clinic.lastVisit = cv.length ? cv.map(x=>x.date).sort().slice(-1)[0] : null;
   }
-  await Promise.all([persist('visits'), persist('clinics')]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), persistTold('clinics')]);
   closeModal();
-  showToast('Moved to recycle bin');
+  saveToastAll([[vs, 'visits'], [cs, 'clinics']], 'Moved to recycle bin');
   renderAll();
 }
 

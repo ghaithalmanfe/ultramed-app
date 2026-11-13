@@ -18,12 +18,19 @@ rules_version = '2';
 //     file: the repository is public. Left as it is, nobody is supervisor
 //     (the placeholder is upper case and can never match a login), so every
 //     supervisor-only save is refused — safe, but the supervisor cannot work.
-//  2. Check that every login the team uses (Admin → Team, and the daily
-//     e-mail job's login) ends with @ultramed-kw.com — any other is refused.
-//  3. Authentication → Settings → User actions: untick "Enable create
+//  2. Replace JOB_LOGIN_EMAIL@ultramed-kw.com below with the login e-mail of
+//     the daily e-mail job and of the nightly backup job (the logins in the
+//     repository's Actions secrets REPORT_LOGIN_EMAIL / BACKUP_LOGIN_EMAIL), in
+//     lowercase — dedicated logins, never a person's. They may read everything
+//     and write only mailLog. Left as it is, no login is a job login and
+//     nobody but the supervisor can write mailLog (the e-mail job then sends
+//     its e-mails but cannot log the run).
+//  3. Check that every login the team uses (Admin → Team, and the jobs'
+//     logins) ends with @ultramed-kw.com — any other is refused.
+//  4. Authentication → Settings → User actions: untick "Enable create
 //     (sign-up)". Otherwise anyone can create a password account with an
 //     unused @ultramed-kw.com address and pass the domain check below.
-//  4. Authentication → Sign-in method: disable Anonymous (the app never
+//  5. Authentication → Sign-in method: disable Anonymous (the app never
 //     uses it; these rules refuse it anyway).
 //
 // WHO WRITES WHAT (every key; file:line as of v120)
@@ -50,10 +57,10 @@ rules_version = '2';
 //   chat, memories     team tab, persistTeam 12-reports.js:484
 //   photo:<id>         savePhotoBlob 12-reports.js:415; deleted by
 //                      removeEditPhoto 08-team-orders.js:518
-//   snap_YYYY-MM-DD    today's backup, maybeSnapshot 04-sync.js:1520; old
-//                      backups deleted 04-sync.js:1526
-//   mailLog            the daily e-mail job's log (scripts/daily-report/
-//                      report.js:129); the app only reads it (09-admin.js:64)
+//   snap_YYYY-MM-DD    today's backup (Kuwait's date), CREATED once by the
+//                      first phone of the day (maybeSnapshot 04-sync.js); never
+//                      replaced by the team — only the supervisor replaces one;
+//                      backups 11+ days old deleted by name (the app's clean-up)
 //   staff, benchmarks, categoryGuides — only CREATED, when the account has
 //                      none yet (start-up seeding 04-sync.js:1037-1039)
 //  Supervisor only (every path is behind requireAdmin or a supervisor check):
@@ -67,6 +74,11 @@ rules_version = '2';
 //                      orphan chunks deleted 04-sync.js:849
 //   erpMap, erpMapLog  saveErpLink 11-erp.js:1996, erpLinkLog 11-erp.js:2202
 //   rxTypes            saveRxTypes 10-doctors-products.js:1196
+//  The job logins (JOB_EMAILS: the daily e-mail job, the nightly backup) and
+//  the supervisor:
+//   mailLog            the daily e-mail job's log (scripts/daily-report/
+//                      report.js); the app only reads it (09-admin.js)
+//  The job logins write nothing else: they read every document, as the team.
 //  Reads: the whole team reads every document (the app lists snap_ and
 //  visitsArch: by id range, the e-mail job batch-reads what it reports on).
 //  A key that is not listed here cannot be written by anyone: a new key in a
@@ -135,12 +147,26 @@ service cloud.firestore {
       return isTeam() && request.auth.token.email.lower() in SUPERVISOR_EMAILS();
     }
 
+    // The daily e-mail job's and the nightly backup's logins, lower case: they
+    // read everything and write only mailLog. Replace the placeholder in the
+    // Firebase console only (see the top of this file).
+    function JOB_EMAILS() {
+      return ['JOB_LOGIN_EMAIL@ultramed-kw.com'];
+    }
+    function isJob() {
+      return isTeam() && request.auth.token.email.lower() in JOB_EMAILS();
+    }
+    // A person of the team (a rep or a supervisor): a team login that is not a job's.
+    function isMember() {
+      return isTeam() && !isJob();
+    }
+
     // ---------- the documents ----------
     // Written by every team phone (see the inventory above).
     function isTeamKey(key) {
       return key in ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans',
                      'events', 'tombs', 'recycleBin', 'erpNotes', 'products',
-                     'repairLog', 'chat', 'memories', 'mailLog']
+                     'repairLog', 'chat', 'memories']
         || key.matches('visitsArch:[0-9]{4}-[0-9]{2}')
         || key.matches('auditLog:[0-9]{4}-[0-9]{2}')
         || key.matches('photo:.+');
@@ -151,6 +177,11 @@ service cloud.firestore {
       return key in ['staff', 'targets', 'benchmarks', 'categoryGuides',
                      'erpSales', 'erpMap', 'erpMapLog', 'rxTypes']
         || key.matches('erpRows:.+');
+    }
+
+    // Written by the job logins and the supervisor only.
+    function isJobKey(key) {
+      return key in ['mailLog'];
     }
 
     // Settings any phone creates at start-up when the account has none yet
@@ -178,16 +209,21 @@ service cloud.firestore {
     }
 
     function writable(key) {
-      return (isTeamKey(key) && (key != 'clinics' || isSupervisor() || clinicsNotWiped()))
-        || (isSupervisorKey(key) && isSupervisor());
+      return (isTeamKey(key) && isMember() && (key != 'clinics' || isSupervisor() || clinicsNotWiped()))
+        || (isSupervisorKey(key) && isSupervisor())
+        || (isJobKey(key) && (isJob() || isSupervisor()));
     }
 
-    // Daily backups snap_YYYY-MM-DD: only the current one is ever written
-    // (yesterday/today/tomorrow in UTC, to cover the phone's time zone), so
-    // nobody can overwrite an older backup; one is deleted only once its date
-    // is 11+ days back (the app removes those 13–19 days back; versions
-    // before v119 kept the 12 newest), so the backups of the last 10 days
-    // can never be removed.
+    // Daily backups snap_YYYY-MM-DD. The team only CREATES today's — Kuwait's
+    // date (UTC+3), the day the phones name it by — once: nobody on the team
+    // can overwrite a backup, or pre-fill a later day's (every phone would then
+    // find "today's backup" already there and skip it). Only the supervisor
+    // may write one, and only a current one (yesterday/today/tomorrow in UTC).
+    // A phone set to another time zone names its backup by its own day: near
+    // midnight that is refused, and the day's backup comes from another phone.
+    // One is deleted only once its date is 11+ days back (the app removes
+    // those 13–19 days back; versions before v119 kept the 12 newest), so the
+    // backups of the last 10 days can never be removed.
     function isSnapKey(key) {
       return key.matches('snap_[0-9]{4}-[0-9]{2}-[0-9]{2}');
     }
@@ -200,6 +236,10 @@ service cloud.firestore {
         && snapDay(key) > request.time - duration.value(2, 'd')
         && snapDay(key) < request.time + duration.value(1, 'd');
     }
+    function snapIsToday(key) {
+      let k = request.time + duration.value(3, 'h');
+      return isSnapKey(key) && snapDay(key) == timestamp.date(k.year(), k.month(), k.day());
+    }
     function snapAgedOut(key) {
       return isSnapKey(key)
         && snapDay(key) < request.time - duration.value(11, 'd');
@@ -210,13 +250,14 @@ service cloud.firestore {
       allow read: if isTeam();
 
       allow create: if isTeam() && wellFormed()
-        && (writable(key) || isStartupSeedKey(key) || snapIsCurrent(key));
+        && (writable(key) || (isStartupSeedKey(key) && isMember())
+            || (isMember() && snapIsToday(key)) || (isSupervisor() && snapIsCurrent(key)));
 
       allow update: if isTeam() && wellFormed()
-        && (writable(key) || snapIsCurrent(key));
+        && (writable(key) || (isSupervisor() && snapIsCurrent(key)));
 
       // Only what the app itself deletes; every other document is never deleted.
-      allow delete: if isTeam() && (
+      allow delete: if isMember() && (
            key.matches('photo:.+')
         || snapAgedOut(key)
         || (key.matches('erpRows:.+') && isSupervisor())

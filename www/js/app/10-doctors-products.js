@@ -95,10 +95,10 @@ async function submitAddProduct(){
   if(dupP){ showToast('That product already exists'); return; }
   const imgVal = document.getElementById('mProdImg').value.trim();
   products.push({id:uid(), name, brand: document.getElementById('mProdBrand').value.trim() || 'Other', price: isNaN(priceVal)?null:priceVal, img: imgVal||undefined});
-  await persist('products');
+  const r = await persistTold('products');
   closeModal();
   renderProducts();
-  showToast('Product added');
+  saveToast(r, 'products', 'Product added'); // "added" only when it landed
 }
 
 
@@ -154,12 +154,14 @@ async function addCatalogGaps(){
   const added = pick.map(x => { const p = Object.assign({}, x.product); if(p.id == null || ids.has(String(p.id))) p.id = uid(); ids.add(String(p.id)); return p; });
   products.push(...added);
   assignProductKeys();
-  const ok = await persist('products');
+  const told = await persistTold('products'), ok = told.ok;
   if(ok === false){
     const gone = new Set(added);
     products = products.filter(p => !gone.has(p)); assignProductKeys();
     if(btn){ btn.disabled = false; btn.textContent = 'Add selected'; }
-    showToast('⚠️ Not saved — nothing was added. Try again with a connection.');
+    const o = told.outcome || {};
+    if(o.denied || o.tooLarge) saveToast(told, 'products', ''); // refused or too large: a connection would not help
+    else showToast('⚠️ Not saved — nothing was added. Try again with a connection.');
     return;
   }
   _gapMemo = { k: null, v: [] };
@@ -508,11 +510,11 @@ async function commitContactImport(){
     if(action.type!=='update'){ clinic.doctors.push(doc); added++; } else updated++;
   });
   _contactImport = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
   closeModal();
   renderAll();
   if(document.getElementById('ddBody')) renderDoctorsDb();
-  showToast(`✅ ${added} جهة اتصال جديدة · ${updated} تحديث${clinicsMade?` · ${clinicsMade} عيادة جديدة`:''}${skippedN?` · ${skippedN} بلا عيادة (لم تُستورد)`:''}`);
+  saveToast(r, 'clinics', `✅ ${added} جهة اتصال جديدة · ${updated} تحديث${clinicsMade?` · ${clinicsMade} عيادة جديدة`:''}${skippedN?` · ${skippedN} بلا عيادة (لم تُستورد)`:''}`);
 }
 
 // ---- EASY DATA-ENTRY MODE: the girls complete missing data card by card ----
@@ -596,7 +598,7 @@ async function saveDataEntryStep(){
     if(chip('deInfl')){ it.d.influence = chip('deInfl'); changed=true; }
     if(chip('deStage')){ it.d.stage = chip('deStage'); changed=true; }
   }
-  if(changed) await persist('clinics');
+  if(changed){ const r = await persistTold('clinics'); saveToast(r, 'clinics', ''); } // said only when it did not land
   _dePos++;
   renderDataEntryStep();
 }
@@ -665,7 +667,7 @@ async function addDoctorFromRecords(clinicId){
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   const r = addDoctorsToClinic(c, name, '');
   if(!r.ids.length){ showToast('Enter a doctor name'); return; }
-  if(r.added) await persist('clinics');
+  if(r.added){ const saved = await persistTold('clinics'); saveToast(saved, 'clinics', ''); } // said only when it did not land
   if(r.reused && !r.added) showToast('👤 Already on the list — opening the existing record');
   _drBack = 'records';
   openDoctorRecord(clinicId, r.ids[0]);
@@ -723,9 +725,9 @@ async function saveDoctorRecord(clinicId, docId){
   Object.assign(d, { name, title: chip('drTitle'), role: chip('drRole'), influence: chip('drInfluence'), stage: chip('drStage'),
     phone: val('drPhone'), whatsapp: val('drWhatsapp'), email: val('drEmail'), birthday: val('drBirthday'), cadence: chip('drCadence'),
     bestTime: val('drBestTime'), interests: val('drInterests'), competitor: val('drCompetitor'), nextStep: val('drNextStep'), notes: val('drNotes') });
-  await persist('clinics');
+  const r = await persistTold('clinics');
   const comp = UMCore.doctorRecordCompleteness(d);
-  showToast(comp.pct===100 ? '✅ Card complete — the coach now knows who decides' : `💾 Saved · ${comp.pct}% complete`);
+  saveToast(r, 'clinics', comp.pct===100 ? '✅ Card complete — the coach now knows who decides' : `💾 Saved · ${comp.pct}% complete`);
   const back = _drBack; _drBack = null;
   if(back==='records') openDoctorRecords(clinicId);
   else { closeModal(); if(document.getElementById('ddBody')) renderDoctorsDb(); }
@@ -889,8 +891,8 @@ async function saveDoctorField(clinicId, docId, field, value){
     if(!value){ showToast('الاسم لا يمكن أن يكون فارغًا'); return; }
   }
   d[field] = value;
-  await persist('clinics');
-  showToast('✅ حُفظ');
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', '✅ حُفظ');
   if(document.getElementById('ddBody')) renderDoctorsDb();
 }
 async function addHandover(clinicId, docId){
@@ -907,10 +909,16 @@ async function addHandover(clinicId, docId){
   // The toast tells what the save did: in the cloud, kept on this phone (it
   // uploads by itself), or nothing — then the entry is taken back off the
   // screen, so nothing looks saved that is not.
-  if(await persist('clinics')) showToast('🎁 سُجِّل التسليم');
+  const told = await persistTold('clinics'); // this save's own outcome, never an earlier save's
+  if(told.ok) showToast('🎁 سُجِّل التسليم');
   else {
-    const out = persistOutcome('clinics');
-    if(out.queued && out.mirrored) showToast('📴 Handover kept on this device — it uploads automatically when back online');
+    const out = told.outcome || {};
+    if(out.denied || out.tooLarge){ // refused, or too large: never kept as "uploads by itself" — taken back off the screen
+      const cc = clinics.find(x=>x.id===clinicId), dd = cc && (cc.doctors||[]).find(x=>x.id===docId);
+      if(dd && Array.isArray(dd.handovers)) dd.handovers = dd.handovers.filter(h => h.id !== entry.id);
+      saveToast(told, 'clinics', '');
+    }
+    else if(out.queued && out.mirrored) showToast('📴 Handover kept on this device — it uploads automatically when back online');
     else if(out.queued) showToast('⚠️ Handover not saved on this device (storage full) — keep the app open until it uploads');
     else {
       const cc = clinics.find(x=>x.id===clinicId), dd = cc && (cc.doctors||[]).find(x=>x.id===docId);
@@ -924,7 +932,8 @@ async function removeHandover(clinicId, docId, hid){
   const { c, d } = _docRow(clinicId, docId);
   if(!c || !d || !canViewClinic(c)) return;
   d.handovers = (d.handovers||[]).filter(h=>h.id!==hid);
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', ''); // said only when it did not land
   openDoctorProfile(clinicId, docId);
 }
 // The detailed pull report: profile + numbers + every visit + every handover
@@ -1586,8 +1595,8 @@ async function tagDoctorSpecialty(clinicId, docId, title){
   const d = (c.doctors||[]).find(x=>x.id===docId);
   if(!d) return;
   d.title = title;
-  await persist('clinics');
-  showToast(`${SPECIALTY_PLAYBOOK[title].icon} ${d.name} → ${title}`);
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', `${SPECIALTY_PLAYBOOK[title].icon} ${d.name} → ${title}`);
   renderPlaybookGrid();
 }
 function openPlaybook(sp){
@@ -1702,8 +1711,8 @@ async function saveProductNotes(pid){
   if(currentUser.role!=='supervisor'){ showToast('Only a supervisor can edit sales materials'); return; }
   const p = findProduct(pid); if(!p) return;
   p.salesNotes = document.getElementById('pNotesEdit').value.trim();
-  await persist('products');
-  showToast('Saved');
+  const r = await persistTold('products');
+  saveToast(r, 'products', 'Saved');
 }
 // ---- PRODUCT MATERIALS (multiple links per product) ----
 // Legacy single-link docUrl entries are folded into the materials list on read.
@@ -1735,9 +1744,9 @@ async function addProductMaterial(pid){
   delete p.docUrl;
   document.getElementById('pMatTitle').value='';
   document.getElementById('pMatUrl').value='';
-  await persist('products');
+  const r = await persistTold('products');
   renderProductMaterials(pid);
-  showToast('📄 Material added');
+  saveToast(r, 'products', '📄 Material added');
 }
 async function removeProductMaterial(pid, idx){
   if(currentUser.role!=='supervisor') return;
@@ -1745,7 +1754,8 @@ async function removeProductMaterial(pid, idx){
   p.materials = productMaterials(p).map(m=>({title:m.title, url:m.url}));
   p.materials.splice(idx, 1);
   delete p.docUrl;
-  await persist('products');
+  const r = await persistTold('products');
+  saveToast(r, 'products', ''); // said only when it did not land
   renderProductMaterials(pid);
 }
 
@@ -1873,8 +1883,8 @@ async function saveCategoryGuide(cat){
     objections: document.getElementById('cgObj').value.trim(),
     links: (window._guideLinks||[]).map(l=>({title:l.title, url:l.url})),
   };
-  await persist('categoryGuides');
-  showToast('📚 Guide saved');
+  const r = await persistTold('categoryGuides');
+  saveToast(r, 'categoryGuides', '📚 Guide saved'); // "saved" only when it landed
   openCategoryGuide(cat);
 }
 

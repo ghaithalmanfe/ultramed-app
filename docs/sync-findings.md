@@ -47,7 +47,7 @@ Line numbers are as on this branch (as of 3014d6c; F4/F5 added since).
 | R7 | Two overlapping day-plan saves: the second merged against the base the first had moved (the R3 overlap, for day plans). | A day-plan save merges against the base its list was taken with (D1). |
 
 
-## v123 sync core (audit items 2 and 6) — fixed, harness `tests/e2e/sync-core.e2e.js` (port 8286)
+## v123 sync core (audit items 2 and 6) — fixed, harness `tests/e2e/sync-core.e2e.js` (port 8287)
 
 Each check failed on v122 (`8670308`) and passes here; A1 and A2 are the audit's probes `race-products.js` and `race-restore.js`.
 

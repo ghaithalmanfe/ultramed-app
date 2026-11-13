@@ -49,6 +49,18 @@ function salesDataFiles(dir, base){
   }
   return found;
 }
+// The js/app files share ONE global scope: a function declared twice is not
+// an error — the later file's silently wins (in v120 the Admin missing-clinics
+// button ran the backups sheet's function of the same name and did nothing).
+// Column-0 declarations, as the files are written. → ['name: a.js:1, b.js:9']
+function duplicateNames(files){
+  const seen = {};
+  files.forEach(([file, text]) => text.split('\n').forEach((l, i) => {
+    const m = l.match(/^(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/) || l.match(/^(?:let|const|var|class)\s+([A-Za-z_$][\w$]*)/);
+    if(m) (seen[m[1]] = seen[m[1]] || []).push(file + ':' + (i + 1));
+  }));
+  return Object.keys(seen).filter(k => seen[k].length > 1).map(k => k + ': ' + seen[k].join(', '));
+}
 function build(){
   const leaked = salesDataFiles(SRC);
   if(leaked.length) fail('sales data must not be published: ' + leaked.join(', ') + ' (the site is public — keep sales files out of www/)');
@@ -62,6 +74,8 @@ function build(){
   if(JSON.stringify(listed) !== JSON.stringify([...listed].sort())) fail('js/app script tags are not in file order: ' + listed.join(', '));
   if(JSON.stringify(listed) !== JSON.stringify(onDisk)) fail('index.html loads [' + listed.join(', ') + '] but js/app holds [' + onDisk.join(', ') + ']');
   let body = '';
+  const dups = duplicateNames(listed.map(name => [name + '.js', fs.readFileSync(path.join(appDir, name + '.js'), 'utf8')]));
+  if(dups.length) fail('a top-level name is declared twice across js/app (the later one silently replaces the first — v121 lost a button that way): ' + dups.join('; '));
   for(const name of listed){
     let t = fs.readFileSync(path.join(appDir, name + '.js'), 'utf8');
     if(!HEADER.test(t)) fail(name + '.js lost its two-line header comment');
@@ -80,4 +94,4 @@ function build(){
   return { files: listed.length, bytes: html.length };
 }
 if(require.main === module){ const r = build(); console.log(`built ${path.relative(ROOT, OUT) || OUT}: ${r.files} app files inlined, index.html ${Math.round(r.bytes / 1024)} KB`); }
-module.exports = { build, salesDataFiles, holdsSalesLines };
+module.exports = { build, salesDataFiles, holdsSalesLines, duplicateNames };

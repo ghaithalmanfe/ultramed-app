@@ -21,11 +21,11 @@
 //  B5  recycle bin: two deletes on two phones keep both entries; a restore stays
 //  B6  ERP notes: two phones' notes are both kept
 //  B7  "Restore from this phone's copy" changes only the ticked clinics
-// Port 8286. ONLY=A1,B3 runs a subset.
+// Port 8287. ONLY=A1,B3 runs a subset.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase, twoRepStaff } = require('./_env.js');
-const PORT = 8286;
+const PORT = 8287;
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 const want = id => !ONLY || ONLY.has(id);
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json','.png':'image/png'};

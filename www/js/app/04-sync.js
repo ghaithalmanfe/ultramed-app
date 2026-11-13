@@ -1,12 +1,24 @@
 // load / persist, ERP split storage, merge-on-save, offline layer, tombstones
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- LOAD / PERSIST (shared team data) ----
-let _docRemap = {}; // duplicate doctor id → surviving id, filled while clinics normalize
-// Visits that named a duplicate doctor record now name the surviving one, so
-// every doctor's history stays whole — the people met and the prescription
-// pads given to them (UMCore.remapVisitDoctors; lines that then name the same
-// type and person are added together). Returns how many visits changed.
+let _docRemap = {}; // merged doctor id → the record it was merged into (the supervisor's taps, clinic.doctorMerges)
+const _saveBlocked = new Set(); // lists too large for the cloud whose changes stay queued here, not sent by the round (saveBlocked)
+const _tooLarge = {};           // "key" or "visits:YYYY-MM" → { key, month, bytes, kept } — the lasting bar (renderTooLargeBar)
+// Two records of one doctor are merged only by the supervisor's tap (v123,
+// the owner's rule of 12 Nov: no automatic merges — until v122 every phone
+// collapsed same-name doctors at start, and the supervisor's phone wrote the
+// result back, dropping the second record's phone, role and stage). The merge
+// is kept on the clinic (doctorMerges: {mergedId: keptId}); a visit that still
+// names the merged record (logged on a phone that was offline then) shows the
+// kept one — in memory only, nothing is written at start (mergeDuplicateDoctors,
+// 07-clinics.js). Returns how many visits changed.
+function doctorMergesRemap(){
+  const out = {};
+  (clinics || []).forEach(c => { const m = c && c.doctorMerges; if(m && typeof m === 'object' && !Array.isArray(m)) Object.keys(m).forEach(k => { if(typeof m[k] === 'string' && m[k] && m[k] !== k) out[k] = m[k]; }); });
+  return out;
+}
 function applyDoctorRemap(){
+  _docRemap = doctorMergesRemap();
   const ids = Object.keys(_docRemap);
   if(!ids.length) return 0;
   let changed = 0;
@@ -38,10 +50,8 @@ function normalizeClinic(c){
     .filter(d => d && typeof d === 'object')
     .map(d => Object.assign({ title:'', phone:'', birthday:'', cadence:'', notes:'', handovers:[] }, d));
   c.doctors.forEach(d => { if(!Array.isArray(d.handovers)) d.handovers = []; });
-  // One person, one record: duplicates (same name, another "Dr." spelling)
-  // collapse into the first; visits that pointed at the duplicate follow it.
-  const dd = UMCore.dedupeDoctors(c.doctors);
-  if(Object.keys(dd.remap).length){ c.doctors = dd.doctors; Object.assign(_docRemap, dd.remap); }
+  // Two records with one name both stay (v123): the supervisor is offered them
+  // as a possible duplicate and merges by tap (openDupDoctors, 07-clinics.js).
   c.contact = c.contact || '';
   c.phone = c.phone || '';
   c.lastVisit = c.lastVisit || null;
@@ -72,8 +82,8 @@ async function applyProductImgSeed(){
     if(u){ pr.img = u; changed++; }
   });
   if(!changed) return;
-  await persist('products');
-  showToast(`🖼️ ${changed} product photos added`);
+  const r = await persistTold('products');
+  saveToast(r, 'products', `🖼️ ${changed} product photos added`); // "added" only when the save landed
 }
 // The one-time start-up repairs of Aug–Sep (v58 orphan sweep, v64 automatic
 // wipe restore, v65 deep restore) are retired (v123): their work was done, and
@@ -250,6 +260,7 @@ async function loadVisits(run){
       withTimeout(window.storage.get('visitsIndex', true), 8000).catch(() => null),
     ]);
   }catch(e){
+    noteNoAccess('visits', e); // the rules refused this read: said, never taken for "no connection" (v123)
     if(_deviceStale.visits){ F.mirror.visits = true; return visits; } // the device copy is older than memory (a full phone)
     const raw = mirrorGet('visits'), m = UMCore.safeParse(raw, null);
     if(Array.isArray(m)){
@@ -345,8 +356,8 @@ async function persistVisitsInner(opts){
     const written = {};
     // The cloud refuses a document above 1 MB. A month can only get there
     // with a great many photos; say so plainly instead of retrying a save
-    // that can never land.
-    const VISITS_DOC_MAX = 950000;
+    // that can never land (v123: measured in bytes, never queued — persistNow).
+    const monthOf = doc => doc === 'live' ? today.slice(0, 7) : doc;
     // What each transaction committed, as the exact string it wrote (v122).
     // `written` holds the merged objects, which ARE the visits on screen: an
     // edit made while the commit was on its way changed them too, and
@@ -372,20 +383,19 @@ async function persistVisitsInner(opts){
     };
     const patches = []; // what the merges took from the cloud, put on screen once everything has landed
     const writeUnion = async (doc, arr) => {
-      let merged = arr, tooBig = false, took = [];
+      let merged = arr, tooBig = 0, took = [];
       const res = await storageUpdate(keyOf(doc), cloudStr => {
+        tooBig = 0; // a transaction may run more than once
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
         took = [];
         merged = (!opts.authoritative && Array.isArray(cloud)) ? mergeById('visits', arr, cloud, baseOf(doc, cloudStr), took).merged : arr.filter(v => v && !ts.has(v.id));
         const str = JSON.stringify(merged);
-        if(str.length > VISITS_DOC_MAX){ tooBig = true; return null; }
+        if(!UMCore.fitsBytes(str, DOC_MAX_BYTES)){ tooBig = UMCore.utf8Len(str); return null; }
         return str;
       }, 12000);
-      if(tooBig){
-        showToast(doc === 'live' ? '🛑 زيارات هذا الشهر كبيرة جدًا (صور كثيرة) — احذف بعض الصور من الزيارات ثم أعد المحاولة' : `🛑 زيارات شهر ${doc} كبيرة جدًا — احذف بعض صورها ثم أعد المحاولة`);
-        throw new Error('visits document too large: ' + doc);
-      }
+      if(tooBig) throw tooLargeError('visits', monthOf(doc), tooBig); // said by persistNow (bar + toast), never queued
       if(res == null) throw new Error('visits update failed');
+      clearTooLarge('visits:' + monthOf(doc)); // that month's document took this write: it is no longer too large
       written[doc] = merged;
       writtenStr[doc] = committedStr(res, merged);
       note(doc, merged);
@@ -740,10 +750,15 @@ async function persistErpSalesNow(){
   try{ return await persistErpSalesInner(); }
   finally{ _erpSaving = false; }
 }
+// What the last sales save that did not land was (persistNow's outcome): the
+// rules refused it, its answer did not come back in time, or a guard stopped it.
+let _erpSaveFail = null;
 async function persistErpSalesInner(){
+  _erpSaveFail = null;
   if(_loadFailed.erpSales){
     // The index itself never loaded (cloud unreachable, no mirror): what is on
     // screen is empty, and writing it would erase every uploaded file.
+    _erpSaveFail = { refused: true, quiet: true };
     showToast('⚠️ بيانات المبيعات لم تُحمَّل — أعد فتح التطبيق على اتصال جيد ثم أعد المحاولة');
     _erpDirty = true; renderErpDirtyPill();
     return false;
@@ -820,7 +835,10 @@ async function persistErpSalesInner(){
   }catch(e){
     console.error('erpSales save failed', e);
     _erpDirty = true; renderErpDirtyPill();
-    offlineToast('📴 لم يُحفظ ملف المبيعات — تحقق من الاتصال وأعد المحاولة');
+    const kind = saveErrKind(e);
+    _erpSaveFail = kind === 'refused' ? { refused: true, denied: true } : kind === 'tooLarge' ? { tooLarge: true } : /timeout/.test(String(e && e.message)) ? { timeout: true } : null;
+    if(kind === 'refused') showToast(NOT_ALLOWED_MSG, 6000); // the rules said no: a retry cannot land until they change
+    else offlineToast('📴 لم يُحفظ ملف المبيعات — تحقق من الاتصال وأعد المحاولة');
     return false;
   }
 }
@@ -867,6 +885,19 @@ let _bootCrashed = false; // loadAll hit an error — state may be partial, neve
 // `src` (optional, v122): src.cloud is set true only when the cloud answered
 // THIS call. _mirrorUsed / _loadFailed are session-wide — another read of the
 // same key can set or clear them while this one is on its way (loadTeam).
+// A read the security rules refused (v123): this login may not read the
+// team's data (a login outside the rules' lists, rules not matching the
+// app). What this phone holds is still shown, as with no connection — but
+// it is said for what it is, once per session.
+const _noAccess = {};
+let _noAccessSaid = false;
+function noteNoAccess(key, e){
+  if(saveErrKind(e) !== 'refused') return false;
+  _noAccess[key] = true;
+  console.warn('read refused by the security rules: ' + key); // said on screen (noteNoAccess): a handled refusal, not a page error
+  if(!_noAccessSaid){ _noAccessSaid = true; showToast('🔒 No access to the team\'s data on this login — ask the supervisor', 8000); }
+  return true;
+}
 async function cloudGet(key, src, run){
   const F = readFlags(run); // the flags of the refresh that asked (v123), else those of the copy on screen
   if(outboxHas(key)){
@@ -900,6 +931,7 @@ async function cloudGet(key, src, run){
     return r;
   }catch(e){
     if(src) src.cloud = false;
+    noteNoAccess(key, e); // the rules refused this read: said, never taken for "no connection" (v123)
     if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ F.mirror[key] = true; return { value: mem }; } } // the device copy is older than memory (a full phone)
     const m = mirrorGet(key);
     if(m != null){ F.mirror[key] = true; return { value: m }; }
@@ -1069,14 +1101,11 @@ async function loadAllNow(){
     await loadTeam();
     // The flags of the copy on screen (this refresh's, for the lists it put there).
     const readOk = k => !_loadFailed[k] && !_mirrorUsed[k];
-    // Duplicate doctor records collapsed while normalizing: point the visits
-    // at the survivors, and (supervisor, real reads) write the clean lists back.
-    const remapped = applyDoctorRemap();
-    if(Object.keys(_docRemap).length && currentUser.role === 'supervisor' && readOk('clinics') && readOk('visits')){
-      console.log(`doctors: ${Object.keys(_docRemap).length} duplicate record(s) merged, ${remapped} visit(s) re-pointed`);
-      await persist('clinics');
-      if(remapped) await persist('visits');
-    }
+    // Doctors the supervisor merged by tap: a visit that still names the merged
+    // record shows the kept one. Memory only — nothing is written at start
+    // (v123; until v122 the supervisor's phone collapsed same-name doctors and
+    // wrote the clinic list back at every refresh).
+    applyDoctorRemap();
     archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
     // A missing settings document gets its factory default only from the
     // supervisor's phone, only when this refresh itself read the cloud and found
@@ -1383,7 +1412,11 @@ async function persistTombs(){
     Object.keys(_tombsUnpublished).forEach(k => [..._tombsUnpublished[k]].forEach(id => { if(pub[k] && pub[k][id] != null) _tombsUnpublished[k].delete(id); }));
     if(outboxHas('tombs')) outboxRemove('tombs');
     return true;
-  }catch(e){ outboxAdd('tombs'); return false; }
+  }catch(e){
+    // the rules refused it: never queued (it could never be sent — v123)
+    if(saveErrKind(e) === 'refused'){ saveBlocked('tombs', 'refused', e); return false; }
+    outboxAdd('tombs'); return false;
+  }
 }
 // The shared log is the team's truth about deletes. An id THIS device
 // tombstoned that is no longer in the log was brought back from the recycle
@@ -1450,6 +1483,10 @@ async function flushOutbox(){
   try{
     await refreshTombs(); // learn the team's deletes before pushing our queue
     for(const key of pending){
+      // a list too large for the cloud stays kept on this phone, but the round
+      // does not send it again by itself (v123): a tap does (saveBlocked)
+      if(_saveBlocked.has(key)){ allOk = false; continue; }
+      // (a list the security rules refuse leaves the queue in persist itself — saveBlocked)
       const ok = key==='tombs' ? await persistTombs()
         : (key==='chat'||key==='memories') ? await persistTeam(key) : await persist(key);
       if(!ok) allOk = false;
@@ -1465,7 +1502,7 @@ async function flushOutbox(){
 }
 function updateSyncBadge(){
   let el = document.getElementById('syncPill');
-  const n = outboxList().length;
+  const n = outboxList().filter(k => !_saveBlocked.has(k)).length; // a list too large for the cloud is not uploading: the red bar says so (v123)
   const show = (!navigator.onLine || n > 0) && !_memOnly.size; // the red bar (renderMemOnlyBar) says it all on a full phone
   if(!show){ if(el) el.style.display='none'; return; }
   if(!el){
@@ -1501,7 +1538,7 @@ function mergeById(key, local, cloud, base, patches){
   let recovered = 0;
   const cloudById = {};
   cloud.forEach(x => { if(x && x.id != null) cloudById[x.id] = x; });
-  const fieldMerge = key === 'clinics' ? { doctors: (L, C, B) => { const m = UMCore.mergeDoctorLists3(L, C, B); Object.assign(_docRemap, m.remap); return m.doctors; } }
+  const fieldMerge = key === 'clinics' ? { doctors: (L, C, B) => UMCore.mergeDoctorLists3(L, C, B).doctors } // by id: two records of one name both stay (v123)
     : (key === 'visits' && typeof UMCore.mergePhotos3 === 'function') ? { photos: (L, C, B) => UMCore.mergePhotos3(L, C, B) } : null;
   const merged = localKept.map(x => {
     const bx = base && x && x.id != null ? base.get(x.id) : null;
@@ -1536,16 +1573,16 @@ function mergeById(key, local, cloud, base, patches){
     if(x && x.id != null && !have.has(x.id) && !ts.has(x.id)){ merged.push(x); recovered++; }
   });
   // A clinic's doctors are a shared list: a doctor added on another device
-  // is kept (union by id, then by person) instead of being overwritten by
-  // this device's older copy of the clinic.
+  // is kept (union by id) instead of being overwritten by this device's older
+  // copy of the clinic. Two records of one name both stay (v123: the
+  // supervisor merges them by tap — never this union).
   if(key === 'clinics') merged.forEach(x => {
     const cx = x && cloudById[x.id];
     if(!cx || !Array.isArray(cx.doctors) || !cx.doctors.length) return;
     const before = (x.doctors || []).length;
     const dt = _tombstones.doctors || new Set();
-    const m = UMCore.mergeDoctorLists(x.doctors || [], cx.doctors.filter(d => d && !dt.has(x.id + '|' + d.id)));
+    const m = (typeof UMCore.unionDoctorsById === 'function' ? UMCore.unionDoctorsById : UMCore.mergeDoctorLists)(x.doctors || [], cx.doctors.filter(d => d && !dt.has(x.id + '|' + d.id)));
     x.doctors = m.doctors;
-    Object.assign(_docRemap, m.remap);
     if(x.doctors.length !== before) recovered++;
   });
   return { merged, recovered };
@@ -1673,6 +1710,10 @@ async function persist(key, opts){
 }
 async function persistNow(key, opts){
   opts = opts || {};
+  // What THIS call did — kept for persistOutcome, and told to its own caller
+  // (opts.told, see persistFor / persistTold): another save of the same key
+  // can start before that caller gets to read persistOutcome.
+  const tell = info => { _persistInfo[key] = info; if(typeof opts.told === 'function'){ try{ opts.told(info); }catch(e){} } };
   // Account links are saved one account at a time with a compare-and-set
   // (saveErpLink, 11-erp.js). A whole-map write here would silently undo a
   // link another device saved meanwhile — refused, and loudly, so a caller
@@ -1687,23 +1728,29 @@ async function persistNow(key, opts){
   // exactly how a whole team's list gets destroyed.
   if(key === 'clinics' && _seedClinics && !opts.allowSeed){
     showToast('⚠️ بيانات العيادات لم تُحمَّل بشكل صحيح — أعد فتح التطبيق قبل الحفظ');
+    tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: true }); // its own words above say why
     return false;
   }
-  if(key === 'erpSales') return persistErpSales(); // split storage: index + row chunks
+  if(key === 'erpSales'){ // split storage: index + row chunks; a failure keeps the red retry bar (never queued)
+    const ok = await persistErpSales();
+    tell(ok === true ? { ok: true } : Object.assign({ ok: false, queued: false, mirrored: false, erp: true }, _erpSaveFail || {}));
+    return ok;
+  }
   const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap, erpNotes};
+  // The recycle bin keeps 30 days: pruned on every write of it (v123), not
+  // only when its screen opens — an old bin grew towards the cloud's size
+  // limit, and past it every delete was refused.
+  if(key === 'recycleBin' && typeof pruneBin === 'function') pruneBin();
   let value = key === 'clinics' ? storedClinics() : map[key]; // hoisted: the catch mirrors the MERGED copy, not the pre-merge one
   const base0 = mergeBaseFor(key); // the base this list was taken with: an overlapping save of the same list may move it meanwhile
   const dpBase0 = _dpBase;          // likewise for the day plans
   _persistInfo[key] = null;
-  // What THIS call did — kept for persistOutcome, and told to its own caller
-  // (opts.told, see persistFor): another save of the same key can start before
-  // that caller gets to read persistOutcome.
-  const tell = info => { _persistInfo[key] = info; if(typeof opts.told === 'function'){ try{ opts.told(info); }catch(e){} } };
   try{
     if(key === 'visits'){
       await persistVisits(opts); // live + archives + index; throws when the cloud is unreachable
       if(outboxHas('visits')) outboxRemove('visits');
       dropMergeBaseOnPhone('visits'); // the documents just written are the base now
+      saveUnblocked('visits');
       tell({ ok: true });
       if(!Object.keys(_mirrorUsed).length && !_bootCrashed && !_seedClinics) maybeSnapshot();
       return true;
@@ -1718,8 +1765,9 @@ async function persistNow(key, opts){
       // additions. If the cloud is unreachable we never fall back to a blind
       // overwrite — the save queues in the offline outbox and uploads merged.
       const local = value;
-      let refused = false, applied = null;
+      let refused = false, applied = null, big = 0;
       const mergeFn = cloudStr => {
+        refused = false; big = 0; // a transaction may run more than once: each run starts clean
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
         let v = local;
         if(cloud){
@@ -1736,13 +1784,18 @@ async function persistNow(key, opts){
           }
           applied = { value: v, recovered: r.recovered };
         } else applied = { value: v, recovered: 0 };
-        return JSON.stringify(v);
+        const s = JSON.stringify(v);
+        // A list the cloud cannot store (v123): nothing is written, and it is said — never queued.
+        if(!UMCore.fitsBytes(s, DOC_MAX_BYTES)){ big = UMCore.utf8Len(s); return null; }
+        return s;
       };
       const written = await storageUpdate(key, mergeFn, 12000);
       if(refused){
         showToast('🛑 مُنع حفظٌ كان سيحذف معظم العيادات — افتح النسخ الاحتياطية إذا كانت القائمة ناقصة');
+        tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: true }); // its own words above say why
         return false;
       }
+      if(big) throw tooLargeError(key, null, big);
       if(written == null) throw new Error('update failed');
       value = applied ? applied.value : local;
       // Reflect the merge on screen when it changed anything: entries another
@@ -1760,6 +1813,7 @@ async function persistNow(key, opts){
       setMergeBase(key, written); dropMergeBaseOnPhone(key); // likewise for clinics, tasks, events
       mirrorSave(key, written);
       if(outboxHas(key)) outboxRemove(key);
+      saveUnblocked(key);
       tell({ ok: true });
       if(['clinics','visits','tasks'].includes(key) && !Object.keys(_mirrorUsed).length &&
          !_bootCrashed && !_seedClinics) maybeSnapshot(); // never snapshot stale or partial state
@@ -1775,16 +1829,20 @@ async function persistNow(key, opts){
     // when nothing changed. A copy that was never read (the read failed and the
     // phone holds none) expects no document at all. The recycle bin and the ERP
     // notes, which every phone writes, are merged three ways instead (an entry
-    // added or removed on another phone is kept so).
+    // added or removed on another phone is kept so). A document larger than the
+    // cloud stores is never sent: said, never queued (saveBlocked).
     const loaded = _loadFailed[key] ? undefined : _docLoaded[key];
     const merged3 = key === 'recycleBin' || key === 'erpNotes';
     const str = merged3 ? null : JSON.stringify(value);
-    let conflict = false;
+    if(!merged3 && !UMCore.fitsBytes(str, DOC_MAX_BYTES)) throw tooLargeError(key, null, UMCore.utf8Len(str));
+    let conflict = false, big = 0;
     const fn = cur => {
-      conflict = false;
+      conflict = false; big = 0; // a transaction may run more than once: each run starts clean
       if(merged3){
         const c = cur != null ? UMCore.safeParse(cur, null) : null;
-        return JSON.stringify(c && typeof c === 'object' ? mergeWholeDoc(key, key === 'recycleBin' ? recycleBin : erpNotes, c, loaded) : (key === 'recycleBin' ? recycleBin : erpNotes));
+        const s = JSON.stringify(c && typeof c === 'object' ? mergeWholeDoc(key, key === 'recycleBin' ? recycleBin : erpNotes, c, loaded) : (key === 'recycleBin' ? recycleBin : erpNotes));
+        if(!UMCore.fitsBytes(s, DOC_MAX_BYTES)){ big = UMCore.utf8Len(s); return null; }
+        return s;
       }
       if(cur === str) return str; // already there (a run of the transaction whose answer was lost)
       if(cur !== (loaded === undefined ? null : loaded)){ conflict = true; return null; }
@@ -1795,7 +1853,7 @@ async function persistNow(key, opts){
     try{ written = await withTimeout(op, 12000); }
     catch(e){
       // no answer in time: if the transaction does land after all, the phone follows it
-      if(/timeout/.test(String(e && e.message))) Promise.resolve(op).then(late => { if(late != null){ wholeDocLanded(key, late, loaded, true); showToast('✅ Saved — it reached the cloud late', 5000); } }, () => {});
+      if(/timeout/.test(String(e && e.message))) Promise.resolve(op).then(late => { if(late != null){ wholeDocLanded(key, late, loaded, true); saveUnblocked(key); showToast('✅ Saved — it reached the cloud late', 5000); } }, () => {});
       throw e; // → "No connection — retry" below (never queued)
     }
     if(conflict){
@@ -1804,15 +1862,21 @@ async function persistNow(key, opts){
         showToast(msg, 6000);
         refusedSave(key, loaded === undefined ? REFUSED_NOT_READ : REFUSED_ELSEWHERE); // stays said, whatever the screen that saved says next
       }
-      tell({ ok: false, queued: false, mirrored: false, refused: true });
+      tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: !opts.quietConflict }); // its own words above (and the bar) say why
       return false;
     }
+    if(big) throw tooLargeError(key, null, big);
     if(written == null) throw new Error('update failed');
     wholeDocLanded(key, written, loaded);
     if(outboxHas(key)) outboxRemove(key);
+    saveUnblocked(key);
     tell({ ok: true });
     return true;
   }catch(e){
+    // Refused by the security rules, or larger than the cloud can store: it
+    // can never land as it is — said at once, never queued (v123).
+    const kind = saveErrKind(e);
+    if(kind){ tell(saveBlocked(key, kind, e)); return false; }
     // Cloud unreachable. Merge-safe lists queue for an automatic, union-based
     // upload; whole-document supervisor files do NOT (a delayed overwrite
     // could erase a newer cloud version) — those ask for a manual retry.
@@ -1834,7 +1898,8 @@ async function persistNow(key, opts){
       offlineToast(mOk ? '📴 No connection — retry this save when back online'
                        : '⚠️ Device storage full — retry this save when back online');
     }
-    tell({ ok: false, queued: !!queueable, mirrored: onPhone });
+    // a whole document whose answer did not come in time may still land (followed above): said as "no answer yet", never as "not saved"
+    tell({ ok: false, queued: !!queueable, mirrored: onPhone, timeout: !queueable && /timeout/.test(String(e && e.message)) });
     return false;
   }
 }
@@ -1845,8 +1910,11 @@ function mergeWholeDoc(key, mine, cloud, loaded){
   const empty = key === 'recycleBin' ? { clinics: [], products: [], visits: [] } : {};
   const base = loaded === undefined ? null : (loaded === null ? empty : UMCore.safeParse(loaded, null));
   if(key === 'recycleBin'){
-    const m = typeof UMCore.mergeRecycleBin3 === 'function' ? UMCore.mergeRecycleBin3(mine, cloud, base) : UMCore.mergeRecycleBin(cloud, mine);
-    return Object.assign({ clinics: [], products: [], visits: [] }, m);
+    const m = Object.assign({ clinics: [], products: [], visits: [] }, typeof UMCore.mergeRecycleBin3 === 'function' ? UMCore.mergeRecycleBin3(mine, cloud, base) : UMCore.mergeRecycleBin(cloud, mine));
+    // the bin keeps 30 days on every write (v123), whatever another phone's copy still held
+    const cutoff = Date.now() - (typeof BIN_DAYS === 'number' ? BIN_DAYS : 30) * 86400000;
+    ['clinics', 'products', 'visits'].forEach(k => { m[k] = (Array.isArray(m[k]) ? m[k] : []).filter(x => x && (x._deletedAt || 0) > cutoff); });
+    return m;
   }
   return typeof UMCore.mergeKeyed3 === 'function' ? UMCore.mergeKeyed3(mine, cloud, base) : Object.assign({}, cloud, mine);
 }
@@ -1891,6 +1959,103 @@ function refusedSave(key, msg){
   const last = [..._refused.values()].pop();
   el.textContent = trOf(last) || last;
 }
+// ---- Saves that can never land as they are (v123) ----
+// Until v122 every failed save was "offline": a save the security rules
+// refuse, and a document larger than the cloud stores, were queued with
+// "Saved on this device — uploads automatically", retried every 20 seconds
+// for ever, and while a list waited in the queue this phone stopped showing
+// the others' changes to it. Now each is told for what it is.
+const DOC_MAX_BYTES = 1000000; // the cloud refuses a document above 1 MiB (1,048,576 bytes with its name and fields): a value above this never lands
+const NOT_ALLOWED_MSG = '🔒 Not allowed, not saved (ask the supervisor)';
+// 'refused' (the security rules said no) | 'tooLarge' (over the cloud's size
+// limit) | null (anything else: no connection, a timeout — the offline path)
+function saveErrKind(e){
+  if(!e) return null;
+  if(e.tooLarge) return 'tooLarge';
+  const code = String(e.code || ''), msg = String(e.message || e);
+  if(/permission[-_]denied/i.test(code) || /missing or insufficient permissions|permission[-_]denied/i.test(msg)) return 'refused';
+  if(/invalid[-_]argument/i.test(code) && /size|exceed|too (big|large)|maximum/i.test(msg)) return 'tooLarge';
+  if(/exceeds the maximum allowed size|cannot be written because its size|document too large/i.test(msg)) return 'tooLarge';
+  return null;
+}
+function tooLargeError(key, month, bytes){
+  const e = new Error('document too large: ' + key + (month ? ' ' + month : ''));
+  e.tooLarge = true; e.key = key; e.month = month || null; e.bytes = bytes || null;
+  return e;
+}
+// Lists this phone holds changes for that the cloud cannot take because the
+// document is too large: still queued (they are kept on this phone — never
+// thrown away), but never sent by the 20-second round; a save of the same
+// list from a tap tries again, and so does the bar's "Try again".
+// (_saveBlocked and _tooLarge are declared at the top of this file: the sync badge reads them)
+let _refusedToastAt = 0;
+// What to do, said with the month or the list (the bar and the toasts).
+function tooLargeMonthLabel(m){
+  if(!/^\d{4}-\d{2}$/.test(m || '')) return m || '';
+  const d = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1, 1);
+  try{ return d.toLocaleDateString(uiLang === 'ar' ? 'ar-KW-u-nu-latn' : 'en-US', { month: 'long', year: 'numeric' }); }catch(e){ return m; }
+}
+const TOO_LARGE_LIST = { erpSales: 'the sales file', clinics: 'the clinic list', tasks: 'the tasks', events: 'the events', dayPlans: 'the day plans', chat: 'the team chat', memories: 'the memories', recycleBin: 'the recycle bin', products: 'the product catalog', targets: 'the targets', erpNotes: 'the sales notes', staff: 'the team list', benchmarks: 'the settings', categoryGuides: 'the category guides', tombs: 'the delete log' };
+function tooLargeText(t){
+  if(t.key === 'visits') return `🛑 Not saved: the visits of ${tooLargeMonthLabel(t.month)} are too large for the cloud (too many photos). Remove some photos from that month's visits (Edit visit → ×), then save again.` + (t.kept ? ' What this phone holds for them stays on this phone.' : '');
+  return `🛑 Not saved: ${TOO_LARGE_LIST[t.key] || t.key} is too large for the cloud. Ask the supervisor — nothing else was changed.` + (t.kept ? ' What this phone holds stays on this phone.' : '');
+}
+function renderTooLargeBar(){
+  let el = document.getElementById('tooLargeBar');
+  const items = Object.keys(_tooLarge).map(k => _tooLarge[k]);
+  if(!items.length){ if(el) el.remove(); return; }
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'tooLargeBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
+    el.style.cssText = 'position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:start;';
+    document.body.appendChild(el);
+  }
+  const retry = items.some(t => t.kept) ? `<button class="chip small" style="margin-top:6px; background:#fff; color:#B3261E;" onclick="retryBlockedSaves()">${esc(trOf('Try again') || 'Try again')}</button>` : '';
+  const html = items.map(t => `<div>${esc(trOf(tooLargeText(t)) || tooLargeText(t))}</div>`).join('') + retry;
+  if(el.innerHTML !== html) el.innerHTML = html; // an alert: said again only when it changes
+}
+function noteTooLarge(id, info){ _tooLarge[id] = info; renderTooLargeBar(); }
+function clearTooLarge(id){ if(_tooLarge[id]){ delete _tooLarge[id]; renderTooLargeBar(); } }
+// A save of `key` landed: what the bar said about that list is over. (A
+// month of visits leaves the bar when ITS document is written — persistVisitsInner.)
+function saveUnblocked(key){
+  _saveBlocked.delete(key);
+  if(key !== 'visits') clearTooLarge(key);
+}
+// The bar's "Try again": a list kept on this phone is sent once more.
+async function retryBlockedSaves(){
+  const keys = [..._saveBlocked];
+  _saveBlocked.clear();
+  for(const k of keys){ if(k === 'chat' || k === 'memories') await persistTeam(k); else await persist(k); }
+}
+// What a save that cannot land does, and what it tells (persistNow's outcome).
+function saveBlocked(key, kind, e){
+  const queued = outboxHas(key);
+  if(kind === 'refused'){
+    console.warn('save refused by the security rules: ' + key, e && (e.code || e.message)); // said on screen
+    // A queued copy of a list the rules refuse can never be sent: off the
+    // queue (the 20-second round stops trying), and its device copy kept
+    // aside on this phone, never thrown away.
+    if(queued){
+      try{ const m = mirrorGet(key); if(m != null) localStorage.setItem('um_refused:' + key, m); }catch(e2){}
+      outboxRemove(key); dropMergeBaseOnPhone(key);
+      if(_memOnly.delete(key)) renderMemOnlyBar();
+      updateSyncBadge();
+    }
+    if(Date.now() - _refusedToastAt > 3000){ _refusedToastAt = Date.now(); showToast(NOT_ALLOWED_MSG, 6000); }
+    return { ok: false, refused: true, denied: true, queued: false, mirrored: false };
+  }
+  // too large: never queued; a list already queued on this phone stays there
+  // (its changes are kept) but is not sent again by itself
+  const month = (e && e.month) || null, bytes = (e && e.bytes) || null;
+  console.warn('document too large for the cloud: ' + key + (month ? ' ' + month : '') + (bytes ? ' (' + bytes + ' bytes)' : '')); // said on screen (the bar)
+  if(queued) _saveBlocked.add(key);
+  noteTooLarge(key === 'visits' && month ? 'visits:' + month : key, { key, month, bytes, kept: queued });
+  showToast(key === 'visits'
+    ? (month && month !== todayStr().slice(0, 7) ? `🛑 زيارات شهر ${month} كبيرة جدًا — لم تُحفظ: احذف بعض صورها ثم أعد المحاولة` : '🛑 زيارات هذا الشهر كبيرة جدًا (صور كثيرة) — لم تُحفظ: احذف بعض الصور من الزيارات ثم أعد المحاولة')
+    : tooLargeText({ key, month, kept: queued }), 7000);
+  return { ok: false, tooLarge: true, month, bytes, queued, mirrored: queued };
+}
 // What the last persist(key) actually did — so a screen can tell the user
 // the truth ("saved", "saved on this device only", "not saved") instead of
 // celebrating a save that never reached anywhere.
@@ -1911,6 +2076,51 @@ function persistFor(key, opts){
 // it (a later save of the same list carries it, since the list in memory
 // holds it): it is saved.
 function sentSince(key, r){ return !!r && !r.ok && !!(r.outcome && r.outcome.queued) && !outboxHas(key) && persistOutcome(key).ok === true; }
+// persist(key) with what THIS call did and nothing else: { ok, outcome }.
+// Unlike persistFor it never falls back on an earlier save's outcome — a
+// save refused before it tried (a guard; persist's own words say why) reads
+// as not saved, never as "kept on this device". (The same contract as the
+// change-log branch's persistTold.)
+function persistTold(key, opts){
+  let info = null;
+  const told = (ok, refused) => ({ ok: ok === true, outcome: info || { ok: ok === true, queued: false, mirrored: false, refused: !!refused && ok !== true } });
+  return persist(key, Object.assign({}, opts || {}, { told: x => { info = x; } }))
+    .then(ok => told(ok, true), e => { console.warn('save of ' + key + ' failed', e); return told(false, false); });
+}
+// The words for a save that did not land, from what it did (persistTold /
+// persistFor): refused by the rules, too large for the cloud, kept on this
+// phone (it uploads by itself), or not saved. null: it landed, or persist's
+// own words already say why (a guard). [text, ms]
+function saveFailText(r, key){
+  if(!r || r.ok === true || (!!key && sentSince(key, r))) return null;
+  const o = r.outcome || {};
+  if(o.denied) return [NOT_ALLOWED_MSG, 6000];
+  if(o.tooLarge) return [tooLargeText({ key, month: o.month || (key === 'visits' ? todayStr().slice(0, 7) : null), kept: !!o.queued }), 8000];
+  if(o.quiet) return null;
+  if(o.erp) return ['⚠️ Not saved yet — tap the red bar to try again', 5000];
+  if(o.queued && o.mirrored) return ['📴 Saved on this device — uploads automatically when back online', 4000]; // the same words as persist's own offline notice
+  if(o.queued) return ['⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000];
+  if(o.refused) return ['⚠️ Not saved — reopen the app, then try again', 5000];      // a guard refused it before any write
+  if(o.timeout) return ['⏳ No answer from the cloud yet — check the connection, then reopen this screen to see whether it was saved', 6000];
+  return ['⚠️ Not saved — check the connection and try again', 4000];
+}
+// The toast for one save: okMsg only when it landed, else what really
+// happened — "saved" never covers a failure. Returns whether it landed.
+function saveToast(r, key, okMsg, ms){
+  const landed = !!r && (r.ok === true || (!!key && sentSince(key, r)));
+  if(landed){ if(okMsg) showToast(okMsg, ms); return true; }
+  const t = saveFailText(r, key);
+  if(t) showToast(t[0], t[1]);
+  return false;
+}
+// One message for a change saved in several lists: okMsg only when every one
+// landed; else what the first that did not land did. pairs: [[result, key], …]
+function saveToastAll(pairs, okMsg, ms){
+  const miss = (pairs || []).find(([r, k]) => r && !(r.ok === true || sentSince(k, r)));
+  if(!miss){ if(okMsg) showToast(okMsg, ms); return true; }
+  saveToast(miss[0], miss[1], okMsg, ms);
+  return false;
+}
 // Atomic read-merge-write where the storage supports it; a plain (non-atomic)
 // read → fn → write otherwise, with the same contract.
 async function storageUpdate(key, fn, ms){
@@ -1936,20 +2146,53 @@ function snapshotDoc(extra){
   const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
   return Object.assign({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}, extra || {});
 }
+// The daily backup is ONE document, so the cloud's size limit is its limit
+// too (v123). Measured before it is written: above SNAP_SLIM_BYTES the
+// visits keep their photos' ids but not their small previews (the full
+// photos are their own documents; a whole-day Restore puts back the preview
+// this phone holds under the same id); still over the limit, it is not
+// written and that is said. After a failure this phone waits an hour before
+// it tries again — every try sends the whole backup.
+const SNAP_SLIM_BYTES = 900000;
+const SNAP_RETRY_MS = 3600000;
+const SNAP_FAIL = 'um_snapFail'; // { day, at, why: 'tooLarge' | 'refused' | 'failed', bytes } — this phone's last failed daily backup
+let _snapRunning = false;        // one at a time: saves call it in bursts
+function snapFailInfo(){ try{ const f = UMCore.safeParse(localStorage.getItem(SNAP_FAIL), null); return f && typeof f === 'object' ? f : null; }catch(e){ return null; } }
+function snapFailed(day, why, bytes){
+  console.warn('daily backup not saved: ' + why + (bytes ? ' (' + bytes + ' bytes)' : '')); // said on the backups screen
+  try{ localStorage.setItem(SNAP_FAIL, JSON.stringify({ day, at: Date.now(), why, bytes: bytes || null })); }catch(e){}
+}
+function snapDone(day){ try{ localStorage.setItem(SNAP_DAY, day); localStorage.removeItem(SNAP_FAIL); }catch(e){} }
 async function maybeSnapshot(){
+  if(_snapRunning) return;
+  const day = todayStr(), key = 'snap_' + day;
+  try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
+  const fail = snapFailInfo();
+  if(fail && fail.day === day && Date.now() - (fail.at || 0) < SNAP_RETRY_MS) return; // tried within the hour: not again yet
+  _snapRunning = true;
   try{
-    const day = todayStr(), key = 'snap_' + day;
-    try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
     const existing = await window.storage.get(key, true).catch(()=>null);
-    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} return; } // already snapshotted today
-    await window.storage.set(key, JSON.stringify(snapshotDoc()), true);
-    try{ localStorage.setItem(SNAP_DAY, day); }catch(e){}
+    if(existing){ snapDone(day); return; } // already snapshotted today
+    const out = UMCore.snapshotPayload(snapshotDoc(), { slimAt: SNAP_SLIM_BYTES, max: DOC_MAX_BYTES });
+    if(out.tooLarge){ snapFailed(day, 'tooLarge', out.bytes); return; }
+    if(out.slimmed) console.warn(`daily backup: ${out.slimmed} photo previews left out to stay under the size limit (${out.bytes} bytes)`);
+    try{ await window.storage.set(key, out.str, true); }
+    catch(e){
+      // another phone may have written today's backup meanwhile (the team only creates one; the supervisor may replace it)
+      const now = await window.storage.get(key, true).catch(()=>null);
+      if(now){ snapDone(day); return; }
+      const kind = saveErrKind(e);
+      snapFailed(day, kind === 'tooLarge' ? 'tooLarge' : kind === 'refused' ? 'refused' : 'failed', kind === 'tooLarge' ? out.bytes : null);
+      return;
+    }
+    snapDone(day);
     // Keep 12 days: the backups that aged out are deleted by name — listing
     // them would download every backup in full (the cloud has no light listing).
     for(let i = 13; i <= 19; i++){
       const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() - i);
       await window.storage.delete('snap_' + UMCore.localDateStr(d), true).catch(()=>null);
     }
-  }catch(e){ console.error('snapshot error', e); }
+  }catch(e){ console.error('snapshot error', e); snapFailed(day, 'failed', null); }
+  finally{ _snapRunning = false; }
 }
 

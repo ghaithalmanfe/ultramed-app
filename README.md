@@ -138,7 +138,7 @@ A run that fails is marked red on GitHub, which e-mails the repository owner.
 
 | Secret | Value |
 |---|---|
-| `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD` | an app login that may read the data: the supervisor's, or a dedicated Email/Password user created in Firebase Authentication — on `@ultramed-kw.com`, or the security rules refuse it (a dedicated login gets a rep's rights; the run also writes its own `mailLog`) |
+| `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD` | a **dedicated** Email/Password user created in Firebase Authentication for this job — never a person's login — on `@ultramed-kw.com`, and its address pasted into `JOB_EMAILS()` in the published security rules (Firebase console → Firestore → Rules). The rules give it read-only access: it reads everything the digest needs and writes only its own `mailLog`. Until it is listed there it cannot log its runs. |
 | `RESEND_API_KEY` | API key from [resend.com](https://resend.com) (free tier: 3,000 e-mails/month) |
 | `MAIL_FROM` | e.g. `UltraMed Field Ops <reports@ultramed-kw.com>` — the domain must be verified in Resend (add the SPF/DKIM DNS records Resend shows) |
 | `MAIL_ALL_DAYS` (a *variable*, not a secret) | optional `1` to also send on Fridays/Saturdays |

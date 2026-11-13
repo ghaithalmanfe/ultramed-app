@@ -53,3 +53,20 @@ test('the build refuses a sales file put in the published folder', () => {
   assert.equal(fs.existsSync(path.join(out, 'index.html')), false, 'nothing is built');
   fs.rmSync(src, { recursive: true, force: true }); fs.rmSync(out, { recursive: true, force: true });
 });
+test('the build refuses a top-level name declared twice across js/app (the later one would silently replace the first)', () => {
+  const { duplicateNames } = require('../scripts/build.js');
+  assert.deepEqual(duplicateNames([['07-x.js', 'async function restoreMissingClinics(){\n}\nfunction a(){}\n'], ['13-y.js', '// x\nasync function restoreMissingClinics(){\n}\nconst b = 1;\n']]), ['restoreMissingClinics: 07-x.js:1, 13-y.js:2']);
+  assert.deepEqual(duplicateNames([['a.js', 'function f(){\n  function inner(){}\n}\n'], ['b.js', 'function g(){\n  function inner(){}\n}\n']]), [], 'only top-level (column 0) names count');
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), 'um-src-'));
+  fs.cpSync(path.join(ROOT, 'www'), src, { recursive: true });
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'um-out-'));
+  const f = path.join(src, 'js', 'app', '16-kpi.js');
+  fs.appendFileSync(f, '\nfunction saveTargets(){ return 1; }\n'); // 09-admin.js has it already
+  let msg = '';
+  try{ execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'build.js'), src, out], { stdio: 'pipe' }); }
+  catch(e){ msg = String(e.stderr || ''); }
+  assert.match(msg, /build failed: a top-level name is declared twice across js\/app.*saveTargets: 09-admin\.js:\d+, 16-kpi\.js:\d+/);
+  assert.equal(fs.existsSync(path.join(out, 'index.html')), false, 'nothing is built');
+  fs.rmSync(src, { recursive: true, force: true }); fs.rmSync(out, { recursive: true, force: true });
+  assert.deepEqual(duplicateNames(fs.readdirSync(path.join(ROOT, 'www', 'js', 'app')).filter(x => x.endsWith('.js')).sort().map(x => [x, fs.readFileSync(path.join(ROOT, 'www', 'js', 'app', x), 'utf8')])), [], 'the app as it is has none');
+});

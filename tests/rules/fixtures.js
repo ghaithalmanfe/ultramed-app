@@ -15,9 +15,11 @@ const AUTH_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:8299';
 const RULES_FILE = process.env.RULES_FILE ? path.resolve(process.env.RULES_FILE) : path.join(ROOT, 'firestore.rules');
 const RAW_RULES = fs.readFileSync(RULES_FILE, 'utf8');
 const PLACEHOLDER = 'SUPERVISOR_EMAIL@ultramed-kw.com';
-// The committed placeholder replaced by a test login — what the owner does
-// with the real address in the console.
-const rulesFor = (...emails) => RAW_RULES.replace(`['${PLACEHOLDER}']`, '[' + emails.map(e => `'${e}'`).join(', ') + ']');
+const JOB_PLACEHOLDER = 'JOB_LOGIN_EMAIL@ultramed-kw.com'; // the e-mail and backup jobs' read-only logins (v123)
+// The committed placeholders replaced by test logins — what the owner does
+// with the real addresses in the console: the supervisor(s), and the two jobs.
+const list = emails => '[' + emails.map(e => `'${e}'`).join(', ') + ']';
+const rulesFor = (...emails) => RAW_RULES.replace(`['${PLACEHOLDER}']`, list(emails)).replace(`['${JOB_PLACEHOLDER}']`, list([REPORTS, BACKUPS]));
 
 // Fictional logins only — never a real address (the repository is public).
 const SUP = 'test-supervisor@ultramed-kw.com';
@@ -25,6 +27,7 @@ const SUP2 = 'test-supervisor-2@ultramed-kw.com';
 const REP_A = 'test-rep-a@ultramed-kw.com';
 const REP_B = 'test-rep-b@ultramed-kw.com';
 const REPORTS = 'test-reports@ultramed-kw.com'; // a dedicated login for the e-mail job
+const BACKUPS = 'test-backup@ultramed-kw.com';   // a dedicated login for the nightly backup job
 
 // Dates: the rules compare with request.time (UTC); the app names backups by
 // the phone's own calendar day (Kuwait, UTC+3).
@@ -41,11 +44,12 @@ const CHUNK = 'erpRows:mh1a2b3c4d:1762300000000:0';
 const ARCH = 'visitsArch:' + lastMonth();
 const AUDIT = 'auditLog:' + kuwaitDay(0).slice(0, 7); // the change log's month document (17-audit-log.js, audit-trail release)
 const TEAM_KEYS = ['clinics', 'visits', 'visitsIndex', 'tasks', 'dayPlans', 'events', 'tombs', 'recycleBin',
-  'erpNotes', 'products', 'repairLog', 'chat', 'memories', 'mailLog', ARCH, AUDIT, PHOTO];
+  'erpNotes', 'products', 'repairLog', 'chat', 'memories', ARCH, AUDIT, PHOTO];
+const JOB_KEYS = ['mailLog']; // the jobs' logins and the supervisor (v123: no longer a team document)
 const SUPERVISOR_KEYS = ['staff', 'targets', 'benchmarks', 'categoryGuides', 'erpSales', 'erpMap', 'erpMapLog', 'rxTypes', CHUNK];
 const STARTUP_SEED_KEYS = ['staff', 'benchmarks', 'categoryGuides']; // created by any phone when missing (04-sync.js:1037-1039)
 const SNAP_KEYS = [snap(0), snap(-5), snap(-14)];
-const ALL_KEYS = TEAM_KEYS.concat(SUPERVISOR_KEYS, SNAP_KEYS);
+const ALL_KEYS = TEAM_KEYS.concat(SUPERVISOR_KEYS, JOB_KEYS, SNAP_KEYS);
 
 const clinicList = (n) => Array.from({ length: n }, (_, i) => ({
   id: 'c-' + i, name: 'Test clinic ' + i, rep: i % 2 ? 'Rep A' : 'Rep B', cls: 'B', notes: '', doctors: [{ id: 'd' + i, name: 'Dr. Test ' + i }],
@@ -77,9 +81,9 @@ const asValue = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 const stored = (v) => ({ value: asValue(v), updated: Date.now() }); // exactly what window.storage writes
 
 module.exports = {
-  ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, RULES_FILE, RAW_RULES, PLACEHOLDER, rulesFor,
-  SUP, SUP2, REP_A, REP_B, REPORTS,
+  ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, RULES_FILE, RAW_RULES, PLACEHOLDER, JOB_PLACEHOLDER, rulesFor,
+  SUP, SUP2, REP_A, REP_B, REPORTS, BACKUPS,
   utcDay, kuwaitDay, localDay, snap, lastMonth,
-  PHOTO, CHUNK, ARCH, AUDIT, TEAM_KEYS, SUPERVISOR_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS,
+  PHOTO, CHUNK, ARCH, AUDIT, TEAM_KEYS, SUPERVISOR_KEYS, JOB_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS,
   clinicList, makeSeed, asValue, stored,
 };
