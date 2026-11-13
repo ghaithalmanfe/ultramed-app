@@ -841,6 +841,20 @@ describe('rep and customer matching', () => {
     assert.match(it.gov.value, /^50% of 1 government accounts visited per week/); // Ministry seen in week 2 only; the private hospital is not government
     assert.match(it.newbiz.value, /^1 new product placement · 2 new accounts/);
     assert.match(it.response.value, /^1 of 2 answered within 24h/);
+    // the numbers behind those words (the main screen shows them): the same figures, never a second count
+    assert.deepEqual(it.visits.n, { perDay: 0.7, count: 4, workdays: 6 });
+    assert.equal(String(it.visits.n.perDay), it.visits.value.split(' ')[0]);   // as shown: one decimal
+    assert.deepEqual(it.doctors.n, { met: 4, goal: 16, deciders: 1, keyAccounts: 2 });
+    assert.match(it.doctors.target, /^16 doctors in the period/);
+    assert.deepEqual(it.newbiz.n, { placements: 1, placementsGoal: 1, accounts: 2, accountsGoal: 1 });
+    assert.equal(it.newbiz.target, '1 placements · 1 new accounts');
+    assert.deepEqual(k.items.filter(x => x.n).map(x => x.key), ['visits', 'doctors', 'newbiz']);
+    assert.equal(it.sales.n, null);
+    // a second visit to a doctor already met: one more visit, the same doctors (different doctors, never visits)
+    const again = core.kpiScorecard(Object.assign({}, data, { visits: data.visits.concat([{ id: 'v5', date: '2026-10-08', ts: T('2026-10-08', '09:00'), rep: 'Mariam', clinicId: 'a', doctorIds: ['d1'], products: ['x'] }]) }),
+      { rep: 'Mariam', to: '2026-10-08', nowMs: T('2026-10-08', '12:00') }).items;
+    assert.deepEqual([again.find(x => x.key === 'visits').n.count, again.find(x => x.key === 'doctors').n.met], [5, 4]);
+    assert.match(again.find(x => x.key === 'doctors').value, /^4 doctors met/);
     assert.deepEqual(k.stands, { active: 1, checked: 1 });
     // doctors target scales with the period: 60 a month × 6 of 22 working days = 16. Plain-id plan entries (older data) have no time: a plan existed, not a miss
     assert.match(it.discipline.value, /^67%/);
@@ -4601,6 +4615,27 @@ describe('management dashboard (v123)', () => {
     assert.deepEqual([ph.sameDays.previous, ph.sameDays.current, ph.sameDays.growth, ph.sameDays.fromZero], [0, 77, null, true]);
   });
 
+  test('each person\'s growth on the same days (the team\'s rows) is the one her own view gives — from zero said, never a percentage', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    reps.forEach(r => {
+      const own = core.execDashboard(d, { reps, rep: r }).sameDays, p = D.byPerson.find(x => x.rep === r).sameDays;
+      assert.equal(p, D.sameDays.byRep[r], r);
+      assert.deepEqual([p.current, p.previous, p.growth, p.fromZero, p.to], [own.current, own.previous, own.growth, own.fromZero, own.to], r);
+    });
+    // Mariam 231 against 330 (1–8 Sep), Renova 165 against 70, Dr. Ghaith 200 against 300
+    assert.deepEqual(reps.map(r => Math.round(D.sameDays.byRep[r].growth * 1000)), [-300, 1357, -333]);
+    assert.equal(D.sameDays.growth, (596 - 700) / 700);                         // the team's own, unchanged
+    // a brand: Mariam's Philips from nothing — from zero, no percentage; her own view says the same
+    const b = core.execDashboard(d, { reps, brand: 'Philips Sonicare' });
+    assert.deepEqual([b.sameDays.byRep[M].previous, b.sameDays.byRep[M].current, b.sameDays.byRep[M].growth, b.sameDays.byRep[M].fromZero], [0, 77, null, true]);
+    assert.deepEqual([b.sameDays.byRep[G].growth, b.sameDays.byRep[G].fromZero], [(200 - 300) / 300, false]);
+    // TePe: Mariam's 9 (an account the files do not know, hers as its salesman) from nothing; Dr. Ghaith sold
+    // none before and none now — neither a percentage nor "from zero"
+    const t = core.execDashboard(d, { reps, brand: 'TePe' });
+    assert.deepEqual([t.sameDays.byRep[M].previous, t.sameDays.byRep[M].current, t.sameDays.byRep[M].growth, t.sameDays.byRep[M].fromZero], [0, 9, null, true]);
+    assert.deepEqual([t.sameDays.byRep[G].previous, t.sameDays.byRep[G].current, t.sameDays.byRep[G].growth, t.sameDays.byRep[G].fromZero], [0, 0, null, false]);
+  });
+
   test('a closed month: the Months report\'s figures and that month\'s own targets; every working day done', () => {
     const d = data(), D = core.execDashboard(d, { reps, month: '2026-09' });
     reps.forEach(r => {
@@ -4791,7 +4826,7 @@ describe('management dashboard (v123)', () => {
     // the running month: 1–8 Oct 2025 against 1–8 Oct 2026; Dr. Ghaith is in no file of 2025
     const { byRep, ...ly } = D.lastYear;
     assert.deepEqual(ly, { month: '2025-10', measured: true, current: 396, previous: 340, growth: (396 - 340) / 340, fromZero: false, to: '2025-10-08', mixed: false, people: [M, R], left: [G] });
-    assert.deepEqual({ ...byRep }, { [M]: { to: '2025-10-08', current: 231, previous: 300 }, [R]: { to: '2025-10-08', current: 165, previous: 40 } });
+    assert.deepEqual({ ...byRep }, { [M]: { to: '2025-10-08', current: 231, previous: 300, growth: (231 - 300) / 300, fromZero: false }, [R]: { to: '2025-10-08', current: 165, previous: 40, growth: (165 - 40) / 40, fromZero: false } });
     assert.deepEqual(D.byPerson.map(p => p.lastYear && p.lastYear.previous), [300, 40, null]);
     assert.equal(D.lastYear.byRep[M].previous, core.monthAchievement(M, at(d, '2025-10-08')).amount);   // the month figure of that day
     // a closed month the files cover: all of September 2025
