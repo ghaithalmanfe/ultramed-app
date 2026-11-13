@@ -340,8 +340,9 @@ function seed(){
   // a full phone: the save is only in the app's memory — the red bar, said by the bell at once, in the bar's words
   mode.failSet = /^tasks$/;
   await page.evaluate(() => { window.__lsSet = Storage.prototype.setItem; Storage.prototype.setItem = function(k, v){ if(/^um_(mirror:|outbox)/.test(k)) throw new DOMException('full', 'QuotaExceededError'); return window.__lsSet.call(this, k, v); }; });
-  await page.evaluate(async () => { document.getElementById('newTaskInput').value = 'Bring the new brochures'; await addTask(); await new Promise(r => setTimeout(r, 150)); });
-  const badgeBefore = await page.evaluate(() => document.getElementById('alertsBellN').textContent);   // read before the sheet is opened
+  await page.evaluate(async () => { document.getElementById('newTaskInput').value = 'Bring the new brochures'; await addTask(); });
+  // read before the sheet is opened, once the bell has had its chance to follow (it waits 60 ms for a burst of changes; up to 3 s on a busy machine)
+  const badgeBefore = await page.evaluate(async () => { const t0 = Date.now(); while(Date.now() - t0 < 3000 && document.getElementById('alertsBellN').textContent !== '4') await new Promise(r => setTimeout(r, 50)); return document.getElementById('alertsBellN').textContent; });
   c = await center();
   const bar = await page.evaluate(() => { const el = document.getElementById('memOnlyBar'); return el ? el.textContent.split('\n') : []; });
   const sm = byId(c, 'sync-mem');
@@ -412,7 +413,9 @@ function seed(){
     JSON.stringify(sm2.items) === JSON.stringify(['Amberline Clinic · Nov 9 ' + note2]) && note2 === "⚠️ Photo waiting to upload · only in the app's memory — keep the app open" && !byId(c, 'photos-wait').id && counts(c), { sm2, bar2, note2 });
   // it lands: the bar comes down, the card goes, the visit stops saying waiting
   mode.failSet = null;
-  await page.evaluate(async () => { for(let i = 0; i < 10; i++){ if(await photoUpload('phKept', 'data:image/gif;base64,R0lGODlhAQABAAAAACw=')) break; await new Promise(r => setTimeout(r, 200)); } await new Promise(r => setTimeout(r, 1500)); });
+  await page.evaluate(async () => { for(let i = 0; i < 10; i++){ if(await photoUpload('phKept', 'data:image/gif;base64,R0lGODlhAQABAAAAACw=')) break; await new Promise(r => setTimeout(r, 200)); }
+    const t0 = Date.now(); while(Date.now() - t0 < 6000 && (document.getElementById('memOnlyBar') || (photoWaitInfo(visits.find(v => v.id === 'v1')) || {}).wait)) await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 200)); });   // the bar comes down on its own 1-second look (04); the bell follows 60 ms later
   const badgeAfter = await page.evaluate(() => document.getElementById('alertsBellN').classList.contains('show') ? document.getElementById('alertsBellN').textContent : '');
   c = await center();
   const after = await page.evaluate(() => ({ bar: !!document.getElementById('memOnlyBar'), w: (photoWaitInfo(visits.find(v => v.id === 'v1')) || {}).wait || null }));
