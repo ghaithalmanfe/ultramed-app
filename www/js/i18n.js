@@ -1979,15 +1979,14 @@
     'The day-by-day figures are not available on this device yet.': 'الأرقام اليومية غير متاحة على هذا الجهاز بعد.',
     'Cumulative invoiced sales against the straight line to the target': 'المبيعات المفوترة المتراكمة مقابل الخط المستقيم إلى المستهدف',
     'Same days last month': 'نفس الأيام من الشهر الماضي',
-    'No sales file for the month before': 'لا يوجد ملف مبيعات للشهر السابق',
+    'No sales figure for the month before': 'لا يوجد رقم مبيعات للشهر السابق',
     'Same month last year': 'نفس الشهر من السنة الماضية',
-    'No sales file for that month a year before': 'لا يوجد ملف مبيعات لذلك الشهر من السنة الماضية',
     'Year to date': 'منذ بداية السنة',
     'no target saved for these months': 'لا يوجد مستهدف محفوظ لهذه الأشهر',
     'No sales file covers any month of this year': 'لا يوجد ملف مبيعات يغطي أي شهر من هذه السنة',
     'from zero against the same days last month': 'من الصفر مقارنة بنفس الأيام من الشهر الماضي',
     'vs the same days last month': 'عن نفس الأيام من الشهر الماضي',
-    'No sales file for': 'لا يوجد ملف مبيعات لشهر',            // + the month: «لا يوجد ملف مبيعات لشهر أكتوبر 2025»
+    'No sales figure for': 'لا يوجد رقم مبيعات لشهر',          // + the month: «لا يوجد رقم مبيعات لشهر أكتوبر 2025» (no file covers it, or none of these people in it)
     'sold in all': 'المباع كله',                               // a brand: what everyone sold of it, people with no target for it included
     'target': 'المستهدف',
     'no sales figure for the people with its target': 'لا يوجد رقم مبيعات لمن لديهم مستهدف لهذا البراند',
@@ -2058,7 +2057,7 @@
     'Against the same days of the month before': 'مقارنة بنفس الأيام من الشهر السابق',
     'The ERP sales files of both months, for the people measured in both.': 'ملفات مبيعات ERP للشهرين، للأشخاص الذين لهم رقم في الشهرين.',
     'Growth % = (this month − the earlier month on the same days) ÷ the earlier month × 100. From nothing to something is said as "from zero", never as a percentage.': 'نسبة النمو = (هذا الشهر − الشهر الأسبق في نفس الأيام) ÷ الشهر الأسبق × 100. الانتقال من لا شيء إلى مبيعات يُكتب «من الصفر» ولا يُكتب نسبة.',
-    'No sales file for the month before, so nothing to compare with': 'لا يوجد ملف مبيعات للشهر السابق، فلا شيء نقارن به',
+    'No sales figure for the month before (no sales file covers it, or the files hold none of these people), so nothing to compare with': 'لا يوجد رقم مبيعات للشهر السابق (لا يغطيه ملف مبيعات، أو لا تحمل الملفات أحدًا من هؤلاء)، فلا شيء نقارن به',
     'Visits as logged in the app — not calls and not phone orders. A joint visit counts once for the team.': 'الزيارات كما سُجّلت في التطبيق — لا المكالمات ولا طلبيات الهاتف. الزيارة المشتركة تُحسب مرة واحدة للفريق.',
     "The field visits a person led that took an order, against the field visits she led (a joint visit's order is its leader's).": 'الزيارات الميدانية التي قادها الشخص وانتهت بطلبية، مقابل كل الزيارات الميدانية التي قادها (طلبية الزيارة المشتركة لمن قادها).',
     'Conversion % = led visits with an order ÷ led visits × 100': 'نسبة التحويل = الزيارات المقودة التي فيها طلبية ÷ الزيارات المقودة × 100',
@@ -2082,7 +2081,7 @@
     "Year to date = the sum of the months' invoiced sales. The percentage counts only the months and people that have both a sales figure and a target.": 'منذ بداية السنة = مجموع المبيعات المفوترة للأشهر. النسبة تحسب فقط الأشهر والأشخاص الذين لهم رقم مبيعات ومستهدف معاً.',
     'Where a month has both': 'حيث للشهر رقم ومستهدف معاً',
     'Against the same month a year before': 'مقارنة بنفس الشهر من السنة السابقة',
-    'No sales file for that month a year before, so nothing to compare with': 'لا يوجد ملف مبيعات لذلك الشهر من السنة السابقة، فلا شيء نقارن به',
+    'No sales figure for that month a year before (no sales file covers it, or the files hold none of these people), so nothing to compare with': 'لا يوجد رقم مبيعات لذلك الشهر من السنة السابقة (لا يغطيه ملف مبيعات، أو لا تحمل الملفات أحدًا من هؤلاء)، فلا شيء نقارن به',
     'The clinic list (class) and the ERP sales files.': 'قائمة العيادات (الفئة) وملفات مبيعات ERP.'
   };
 
