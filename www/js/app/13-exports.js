@@ -1399,7 +1399,7 @@ async function renderBackupsList(){
       try{
         const res = await window.storage.get('snap_'+d, true);
         const snap = res ? UMCore.safeParse(res.value, null) : null;
-        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة`;
+        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} صورة بلا معاينة` : '');
       }catch(e){}
       html += `
       <div class="card row-between">
@@ -1408,6 +1408,14 @@ async function renderBackupsList(){
       </div>`;
     }
     if(!html) html = `<div style="color:var(--muted); font-size:13px;">No backups yet — one will be created automatically today.</div>`;
+    // This phone's last daily backup that did not save (v123): said here, never only in the console.
+    const sf = typeof snapFailInfo === 'function' ? snapFailInfo() : null;
+    if(sf && sf.day === todayStr()){
+      const why = sf.why === 'tooLarge' ? `Today's backup was not saved from this phone: it is too large for the cloud (${Math.round((sf.bytes || 0) / 1024)} KB, even without the photo previews). Take a Full backup above.`
+        : sf.why === 'refused' ? "Today's backup was not saved from this phone: not allowed (ask the supervisor)."
+        : "Today's backup was not saved from this phone yet — it tries again within the hour.";
+      html = `<div class="card" style="border-inline-start:4px solid var(--coral); font-size:13px; margin-bottom:8px;">⚠️ ${esc(trOf(why) || why)}</div>` + html;
+    }
     // Copies kept on THIS device — the last resort if every cloud backup is bad.
     const devRows = [['um_mirror_prev:clinics','نسخة محفوظة قبل آخر تغيّر كبير','prev'],
                      ['um_mirror:clinics','آخر نسخة شاهدها هذا الجهاز','cur']]
@@ -1826,12 +1834,17 @@ async function restoreMissingClinics(){
   const idSet = new Set(ids), before = ((recycleBin && recycleBin.clinics) || []).length;
   if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(x => !(x && idSet.has(x.id)));
   const r = await persistFor('clinics');
-  if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+  const rb = (recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) ? await persistTold('recycleBin') : null;
   renderAll();
   const note = document.getElementById('recovNote');
   const ok = r.ok || sentSince('clinics', r);
-  const msg = ok ? `✅ ${ids.length} <span>clinics are back in the list and saved.</span>` : `⚠️ ${ids.length} <span>clinics are back on this device; the save has not reached the cloud yet — it uploads when the connection is back.</span>`;
-  showToast(ok ? `✅ ${ids.length} clinics brought back` : '⚠️ Brought back on this device — not saved to the cloud yet', 4000);
+  const onPhone = !ok && !!(r.outcome && r.outcome.queued && r.outcome.mirrored && !r.outcome.tooLarge);
+  const fail = ok || onPhone ? null : saveFailText(r, 'clinics'); // refused, too large, not saved: never "uploads when the connection is back"
+  const msg = ok ? `✅ ${ids.length} <span>clinics are back in the list and saved.</span>` : onPhone ? `⚠️ ${ids.length} <span>clinics are back on this device; the save has not reached the cloud yet — it uploads when the connection is back.</span>`
+    : `⚠️ <span>${esc(trOf((fail && fail[0]) || '') || (fail && fail[0]) || 'Not saved')}</span>`;
+  if(ok && rb && !rb.ok) showToast(`✅ ${ids.length} clinics brought back — but the recycle bin was not updated: they may still show there. Do not restore them from the bin.`, 6000);
+  else if(ok || onPhone) showToast(ok ? `✅ ${ids.length} clinics brought back` : '⚠️ Brought back on this device — not saved to the cloud yet', 4000);
+  else saveToast(r, 'clinics', '');
   // the sheet as it is now: what is still missing, if anything
   await openClinicRecovery();
   const n2 = document.getElementById('recovNote'); if(n2) n2.innerHTML = msg; else if(note) note.innerHTML = msg;
@@ -1864,8 +1877,11 @@ async function restoreSnapshotNow(dateStr){
     clinics = normalizeClinics(snap.clinics||[]); hidePlaceholderClinics();
     products = snap.products || products;
     // The backup holds the visits of ITS month; older months live in their
-    // own archive documents and are kept as they are.
-    visits = UMCore.visitsAssemble(Array.isArray(snap.visits) ? snap.visits : [], visitsArchivesObj(), todayStr());
+    // own archive documents and are kept as they are. A backup saved without
+    // the photo previews (too large, v123) takes the preview this phone holds
+    // under the same photo id.
+    const snapVisits = typeof UMCore.fillSnapThumbs === 'function' ? UMCore.fillSnapThumbs(snap.visits, visits).visits : snap.visits;
+    visits = UMCore.visitsAssemble(Array.isArray(snapVisits) ? snapVisits : [], visitsArchivesObj(), todayStr());
     tasks = Array.isArray(snap.tasks) ? snap.tasks : [];
     _seedClinics = false; _bootCrashed = false;
     // Clear the delete log for every restored record FIRST — otherwise the
@@ -1898,11 +1914,13 @@ async function restoreSnapshotNow(dateStr){
       recycleBin[k] = (recycleBin[k]||[]).filter(x=>!(x && live.has(x.id)));
       if(recycleBin[k].length !== before) binChanged = true;
     });
-    if(binChanged) await persist('recycleBin');
+    const rb = binChanged ? await persistTold('recycleBin') : null;
     const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
     closeModal();
     renderAll();
-    showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
+    // the restore's own writes threw if they failed; the bin's save says what it did
+    if(!rb || rb.ok) showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
+    else showToast(`⚠️ Restored ${dateStr} — but the recycle bin was not updated: some restored records may still show there. Do not restore them from the bin.`, 8000);
   }catch(e){
     console.error(e);
     showToast('Restore failed');
@@ -1921,11 +1939,13 @@ async function restoreDeviceClinicsNow(which){
   clinics = list; hidePlaceholderClinics();
   _seedClinics = false;
   await untombMany({ clinics: list.map(c=>c.id) });
-  const ok = await persist('clinics', {allowShrink:true});
+  const r = await persistTold('clinics', {allowShrink:true});
   const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
   closeModal();
   renderAll();
-  showToast(ok ? `✅ أُعيدت ${clinics.length} عيادة من نسخة الجهاز` : '⚠️ الاسترجاع محلي فقط — أعد المحاولة عند توفر الاتصال');
+  if(r.ok) showToast(`✅ أُعيدت ${clinics.length} عيادة من نسخة الجهاز`);
+  else if(r.outcome && r.outcome.queued && r.outcome.mirrored && !r.outcome.tooLarge) showToast('⚠️ الاسترجاع محلي فقط — أعد المحاولة عند توفر الاتصال');
+  else saveToast(r, 'clinics', ''); // refused, too large, not saved: said for what it is
 }
 // Boot-time wipe detector (supervisor): if today's clinic list is far smaller
 // than a recent automatic backup, say so loudly and point at the restore.

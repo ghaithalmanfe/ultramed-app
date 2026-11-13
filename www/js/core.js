@@ -4779,6 +4779,10 @@
   // A clinic's doctors when both phones changed the list: one record per
   // person, each doctor merged field by field against the base (a doctor
   // added on either side is kept, as before; deletions are the delete log's).
+  // v123 (the owner's rule of 12 Nov: no automatic merges): two records of the
+  // same name are both kept — by id only, never collapsed by person. The
+  // supervisor merges possible duplicates by tap (possibleDuplicateDoctors,
+  // mergeDoctorPair). `remap` stays in the result for the callers, always empty.
   function mergeDoctorLists3(local, cloud, base){
     var b = {}, c = {}, have = {};
     (base || []).forEach(function(d){ if(d && d.id != null) b[d.id] = d; });
@@ -4788,7 +4792,146 @@
       return (c[d.id] && b[d.id]) ? merge3Record(d, c[d.id], b[d.id]).value : d;
     });
     (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
-    return dedupeDoctors(merged);
+    return { doctors: merged, remap: {} };
+  }
+  // Two devices' doctor lists for the same clinic, when there is no base to
+  // merge against: by id only — what either side added is kept, and two
+  // records of one name both stay (offered to the supervisor as a possible
+  // duplicate, never merged by themselves).
+  function unionDoctorsById(local, cloud){
+    var have = {};
+    var merged = (local || []).filter(Boolean).slice();
+    merged.forEach(function(d){ if(d.id != null) have[d.id] = 1; });
+    (cloud || []).forEach(function(d){ if(d && d.id != null && !have[d.id]){ merged.push(d); have[d.id] = 1; } });
+    return { doctors: merged, remap: {} };
+  }
+  // Doctors of one clinic who may be one person: the same name once "Dr.",
+  // titles and punctuation are dropped (normDoctorName). Groups the supervisor
+  // marked "different people" (clinic.distinctDoctors: ['idA|idB', …], each pair
+  // in sorted order) are left out. → [{ clinicId, key, doctors: [record, …] }]
+  function distinctPair(a, b){ return [String(a), String(b)].sort().join('|'); }
+  function possibleDuplicateDoctors(clinics){
+    var out = [];
+    (clinics || []).forEach(function(c){
+      if(!c || c.id == null || !Array.isArray(c.doctors) || c.doctors.length < 2) return;
+      var marked = Object.create(null);
+      (Array.isArray(c.distinctDoctors) ? c.distinctDoctors : []).forEach(function(p){ if(typeof p === 'string') marked[p] = 1; });
+      var by = Object.create(null), order = [];
+      c.doctors.forEach(function(d){
+        if(!d || d.id == null) return;
+        var k = normDoctorName(d.name);
+        if(!k) return;
+        if(!by[k]){ by[k] = []; order.push(k); }
+        by[k].push(d);
+      });
+      order.forEach(function(k){
+        var g = by[k];
+        if(g.length < 2) return;
+        // a group is offered while any two of it are not marked different
+        var open = false;
+        for(var i = 0; i < g.length && !open; i++) for(var j = i + 1; j < g.length; j++) if(!marked[distinctPair(g[i].id, g[j].id)]){ open = true; break; }
+        if(open) out.push({ clinicId: c.id, key: k, doctors: g.slice() });
+      });
+    });
+    return out;
+  }
+  // The record a tap-made merge keeps: `keep` with every field `drop` holds
+  // that `keep` lacks; a field both filled differently stays `keep`'s, and
+  // the other value is written into the notes ("Also recorded: phone 222") —
+  // nothing either record held is lost. Handovers join. Never mutates its
+  // inputs. → { doctor, conflicts: [field, …] }
+  function mergeDoctorPair(keep, drop){
+    var out = JSON.parse(JSON.stringify(keep || {})), d = drop || {}, conflicts = [], notes = [];
+    var empty = function(v){ return v == null || v === '' || (Array.isArray(v) && !v.length); };
+    Object.keys(d).forEach(function(f){
+      if(f === 'id' || f === 'name' || f === 'notes' || f === 'handovers') return;
+      var a = out[f], b = d[f];
+      if(empty(b)) return;
+      if(empty(a)){ out[f] = JSON.parse(JSON.stringify(b)); return; }
+      if(JSON.stringify(a) !== JSON.stringify(b)){ conflicts.push(f); notes.push(f + ' ' + (typeof b === 'object' ? JSON.stringify(b) : String(b))); }
+    });
+    var n0 = String(out.notes || '').trim(), n1 = String(d.notes || '').trim();
+    var parts = n0 ? [n0] : [];
+    if(n1 && n0.indexOf(n1) < 0) parts.push(n1);
+    if(notes.length) parts.push('Also recorded: ' + notes.join(' · '));
+    if(String(d.name || '').trim() && normDoctorName(d.name) === normDoctorName(out.name) && String(d.name).trim() !== String(out.name || '').trim() && parts.join(' · ').indexOf(String(d.name).trim()) < 0) parts.push('Also written as: ' + String(d.name).trim());
+    out.notes = parts.join(' · ');
+    if(Array.isArray(d.handovers) && d.handovers.length){
+      var have = Object.create(null);
+      out.handovers = (Array.isArray(out.handovers) ? out.handovers : []).slice();
+      out.handovers.forEach(function(h){ if(h && h.id != null) have[h.id] = 1; });
+      d.handovers.forEach(function(h){ if(!(h && h.id != null && have[h.id])) out.handovers.push(JSON.parse(JSON.stringify(h))); });
+    }
+    return { doctor: out, conflicts: conflicts };
+  }
+
+  // ---- Documents the cloud cannot store (v123) ----
+  // The cloud refuses a document above 1 MiB (its name and field names count
+  // too). Whether `str` fits in `max` UTF-8 bytes, without encoding a string
+  // that is surely below or surely above it.
+  function fitsBytes(str, max){
+    var s = String(str == null ? '' : str);
+    if(s.length > max) return false;          // every character is at least one byte
+    if(s.length * 3 <= max) return true;       // and at most three per UTF-16 unit
+    return utf8Len(s) <= max;
+  }
+  // The daily backup as stored: the whole snapshot when it is at most
+  // `slimAt` bytes; above it, this month's visits keep their photos' ids and
+  // marks but not their small previews (the full photos are their own
+  // documents) — so the backup still fits. `tooLarge` when even that is over
+  // `max`. → { str, bytes, slimmed: photos left without a preview, tooLarge }
+  function snapshotPayload(doc, opts){
+    opts = opts || {};
+    var slimAt = opts.slimAt || 900000, max = opts.max || 1000000;
+    var str = JSON.stringify(doc), bytes = utf8Len(str), slimmed = 0;
+    if(bytes > slimAt){
+      var visits = (Array.isArray(doc && doc.visits) ? doc.visits : []).map(function(v){
+        if(!v || !Array.isArray(v.photos) || !v.photos.some(function(p){ return p && p.thumb; })) return v;
+        var c = Object.assign({}, v);
+        c.photos = v.photos.map(function(p){ if(!p || !p.thumb) return p; slimmed++; var q = Object.assign({}, p); delete q.thumb; return q; });
+        return c;
+      });
+      if(slimmed){
+        str = JSON.stringify(Object.assign({}, doc, { visits: visits, slim: { photos: slimmed } }));
+        bytes = utf8Len(str);
+      }
+    }
+    return { str: str, bytes: bytes, slimmed: slimmed, tooLarge: bytes > max };
+  }
+  // A whole-day Restore of a backup that left the photo previews out: each
+  // photo without one takes the preview this phone holds under the same photo
+  // id now (the visits on screen). Never mutates its inputs. → { visits, filled }
+  function fillSnapThumbs(snapVisits, currentVisits){
+    var thumbs = Object.create(null), filled = 0;
+    (currentVisits || []).forEach(function(v){ (v && Array.isArray(v.photos) ? v.photos : []).forEach(function(p){ if(p && p.id != null && p.thumb && !thumbs[p.id]) thumbs[p.id] = p.thumb; }); });
+    var out = (Array.isArray(snapVisits) ? snapVisits : []).map(function(v){
+      if(!v || !Array.isArray(v.photos) || !v.photos.some(function(p){ return p && p.id != null && !p.thumb && thumbs[p.id]; })) return v;
+      var c = Object.assign({}, v);
+      c.photos = v.photos.map(function(p){ if(!p || p.id == null || p.thumb || !thumbs[p.id]) return p; filled++; return Object.assign({}, p, { thumb: thumbs[p.id] }); });
+      return c;
+    });
+    return { visits: out, filled: filled };
+  }
+  // Chat messages and memories carry a small photo preview each, all in one
+  // document. When the list would pass `max` bytes, the previews of the oldest
+  // entries are left out until it fits — the entry (its words, who, when) and
+  // its full photo (its own document, photo:<id>) stay. Entries without a
+  // photo id never lose anything. Never mutates its input.
+  // → { list, dropped: previews left out, fits }
+  function trimTeamThumbs(list, max){
+    var arr = Array.isArray(list) ? list.slice() : [];
+    var str = JSON.stringify(arr);
+    if(fitsBytes(str, max)) return { list: arr, dropped: 0, fits: true };
+    var bytes = utf8Len(str), dropped = 0;
+    var idx = arr.map(function(x, i){ return [x, i]; }).filter(function(p){ return p[0] && p[0].thumb && (p[0].photoId != null || p[0].id != null); })
+      .sort(function(a, b){ return ((a[0].ts || 0) - (b[0].ts || 0)) || (a[1] - b[1]); });
+    for(var k = 0; k < idx.length && bytes > max; k++){
+      var x = idx[k][0], i = idx[k][1];
+      var q = Object.assign({}, x); delete q.thumb; q.noThumb = true;
+      bytes -= utf8Len(JSON.stringify(x)) - utf8Len(JSON.stringify(q));
+      arr[i] = q; dropped++;
+    }
+    return { list: arr, dropped: dropped, fits: bytes <= max };
   }
 
   // ---- ERP sales storage split ----
@@ -6347,6 +6490,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
+    unionDoctorsById, possibleDuplicateDoctors, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,

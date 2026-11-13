@@ -17,8 +17,8 @@ const {
   documentId, runTransaction, writeBatch, setLogLevel,
 } = require('firebase/firestore');
 const F = require('./fixtures');
-const { PROJECT, HOST, PORT, RAW_RULES, PLACEHOLDER, SUP, SUP2, REP_A, REP_B, REPORTS, snap, utcDay, kuwaitDay,
-  PHOTO, CHUNK, TEAM_KEYS, SUPERVISOR_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS, clinicList, asValue, stored } = F;
+const { PROJECT, HOST, PORT, RAW_RULES, PLACEHOLDER, JOB_PLACEHOLDER, SUP, SUP2, REP_A, REP_B, REPORTS, BACKUPS, snap, utcDay, kuwaitDay,
+  PHOTO, CHUNK, TEAM_KEYS, SUPERVISOR_KEYS, JOB_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS, clinicList, asValue, stored } = F;
 setLogLevel('silent'); // the refusals below are expected; the SDK would log each one
 
 let env, SEED;
@@ -53,14 +53,16 @@ after(async () => { if(env) await env.cleanup(); });
 beforeEach(seed);
 
 describe('the rules file as committed', () => {
-  test('names the supervisor only by the placeholder — no real e-mail address in the file', () => {
+  test('names the supervisor and the job logins only by their placeholders — no real e-mail address in the file', () => {
     assert.equal(RAW_RULES.split(`['${PLACEHOLDER}']`).length, 2, 'the SUPERVISOR_EMAILS() list holds the placeholder exactly once');
+    assert.equal(RAW_RULES.split(`['${JOB_PLACEHOLDER}']`).length, 2, 'the JOB_EMAILS() list holds its placeholder exactly once');
     const emails = RAW_RULES.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
     assert.ok(emails.length > 0);
-    emails.forEach(e => assert.equal(e, PLACEHOLDER, 'an e-mail address other than the placeholder: ' + e));
+    emails.forEach(e => assert.ok(e === PLACEHOLDER || e === JOB_PLACEHOLDER, 'an e-mail address other than the placeholders: ' + e));
   });
-  test('the placeholder is upper case, so it can never match a login (Firebase e-mails are lower case)', () => {
+  test('the placeholders are upper case, so they can never match a login (Firebase e-mails are lower case)', () => {
     assert.notEqual(PLACEHOLDER, PLACEHOLDER.toLowerCase());
+    assert.notEqual(JOB_PLACEHOLDER, JOB_PLACEHOLDER.toLowerCase());
   });
 });
 
@@ -173,6 +175,12 @@ describe('a rep (a password login on the company domain)', () => {
       await assertFails(save(db, key, { changed: true }));
     });
   }
+  test('cannot write mailLog — the e-mail job\'s log is the job logins\' and the supervisor\'s (v123)', async () => {
+    await assertFails(save(login(REP_A), 'mailLog'));
+    await unseed('mailLog');
+    await assertFails(save(login(REP_B), 'mailLog'));
+    assert.equal(await exists('mailLog'), false);
+  });
   test('cannot save the sales file: the batch of row chunks + index lands all or nothing (setMany)', async () => {
     const db = login(REP_A), b = writeBatch(db);
     b.set(ref(db, 'erpRows:mhNEW:1762400000000:0'), stored([[1, 2, 3]]));
@@ -246,15 +254,35 @@ describe('a rep (a password login on the company domain)', () => {
 });
 
 describe('daily backups (snap_YYYY-MM-DD)', () => {
-  test('any team phone writes today\'s backup, and again later the same day (maybeSnapshot)', async () => {
-    await unseed(snap(0));
-    await assertSucceeds(save(login(REP_A), snap(0)));
-    await assertSucceeds(save(login(REP_B), snap(0)));
-    await assertSucceeds(save(login(SUP), snap(0)));
+  const today = 'snap_' + kuwaitDay(0); // the day the phones name it by (Kuwait, UTC+3)
+  test('any team phone creates today\'s backup once (maybeSnapshot) — and nobody on the team can overwrite it then; only the supervisor may replace it', async () => {
+    await unseed(today);
+    await assertSucceeds(save(login(REP_A), today));
+    await assertFails(save(login(REP_B), today, { clinics: [], visits: [], tasks: [], poisoned: true }));
+    await assertFails(save(login(REP_A), today, { clinics: [] }));
+    assert.equal(await storedValue(today), asValue(SEED[today] !== undefined ? SEED[today] : []), 'still the backup rep A created');
+    await assertSucceeds(save(login(SUP), today));
   });
-  test(`Kuwait's date (${kuwaitDay(0)}) and the UTC days either side are accepted (a phone's time zone)`, async () => {
+  test(`the team creates only Kuwait's date (${kuwaitDay(0)}): not yesterday's, not tomorrow's (a pre-filled later day would make every phone skip it)`, async () => {
     const db = login(REP_A);
-    for(const k of ['snap_' + kuwaitDay(0), snap(-1), snap(1)]) await assertSucceeds(save(db, k));
+    for(const k of ['snap_' + kuwaitDay(-1), 'snap_' + kuwaitDay(1), 'snap_' + kuwaitDay(2)]){ await unseed(k); await assertFails(save(db, k)); assert.equal(await exists(k), false, k); }
+    await unseed(today);
+    await assertSucceeds(save(db, today));
+  });
+  test('the supervisor writes a current backup (yesterday, today or tomorrow in UTC — a phone\'s time zone), created or replaced', async () => {
+    const db = login(SUP);
+    for(const k of [today, snap(-1), snap(1)]) await assertSucceeds(save(db, k));
+    for(const k of [today, snap(-1), snap(1)]) await assertSucceeds(save(db, k, { clinics: [], replaced: true }));
+  });
+  test('the job logins (e-mail, backup) read the backups but cannot create, change or delete one', async () => {
+    for(const email of [REPORTS, BACKUPS]){
+      const db = login(email);
+      await assertSucceeds(listPrefix(db, 'snap_'));
+      await unseed(today);
+      await assertFails(save(db, today));
+      await assertFails(remove(db, snap(-14)));
+    }
+    assert.ok(await exists(snap(-14)));
   });
   test('nobody can overwrite an older backup or write one ahead — not even the supervisor', async () => {
     for(const email of [REP_A, SUP]){
@@ -402,12 +430,19 @@ describe('the daily e-mail job (scripts/daily-report/report.js), same REST reque
       const arr = await r.json();
       assert.equal(arr.filter(x => x.found).length, JOB_KEYS.length);
     });
+  }
+  for(const [name, email] of [['a dedicated job login', REPORTS], ['the supervisor\'s login', SUP]]){
     test(`${name}: logs the run to mailLog (PATCH with an update mask)`, async () => {
       const r = await writeMailLog(token(email));
       assert.equal(r.status, 200, await r.clone().text());
       assert.match(await storedValue('mailLog'), /morning/);
     });
   }
+  test('a rep\'s login cannot write mailLog (v123: it keeps the recipients and outcomes of the job)', async () => {
+    const r = await writeMailLog(token(REP_A));
+    assert.equal(r.status, 403);
+    assert.equal(await storedValue('mailLog'), asValue(SEED.mailLog));
+  });
   test('an anonymous or off-domain login gets nothing and logs nothing', async () => {
     for(const tk of [token(null, 'anonymous'), token('reports@gmail.com'), token(REPORTS, 'custom')]){
       assert.equal((await batchGet(tk, JOB_KEYS)).status, 403);
@@ -418,6 +453,19 @@ describe('the daily e-mail job (scripts/daily-report/report.js), same REST reque
   test('the job\'s login cannot change the sales or the team list', async () => {
     await assertFails(save(login(REPORTS), 'erpSales'));
     await assertFails(save(login(REPORTS), 'staff'));
+  });
+  test('the job logins (the e-mail job, the nightly backup) read every document and write nothing but mailLog', async () => {
+    for(const email of [REPORTS, BACKUPS]){
+      const db = login(email);
+      for(const k of ALL_KEYS) await assertSucceeds(read(db, k));
+      await assertSucceeds(getDocs(collection(db, 'state')));          // the nightly backup reads the whole collection
+      for(const k of TEAM_KEYS.concat(SUPERVISOR_KEYS)) await assertFails(save(db, k));
+      await assertFails(remove(db, PHOTO));
+      await unseed('benchmarks');
+      await assertFails(save(db, 'benchmarks'));                       // not even the start-up seeding
+      await assertSucceeds(save(db, 'mailLog', { last: { kind: 'evening' }, history: [] }));
+    }
+    for(const k of TEAM_KEYS) assert.equal(await storedValue(k), asValue(SEED[k]), k + ' unchanged');
   });
 });
 
@@ -441,5 +489,9 @@ describe('the rules exactly as committed (placeholder not yet replaced)', () => 
     await assertSucceeds(save(db, 'visits'));
     await assertSucceeds(save(db, 'clinics'));
     await assertSucceeds(save(db, 'products'));
+  });
+  test('no login is a job login until its placeholder is replaced: the job\'s login is an ordinary team login, and nobody writes mailLog', async () => {
+    for(const email of [REPORTS, JOB_PLACEHOLDER, JOB_PLACEHOLDER.toLowerCase(), REP_A]) await assertFails(save(login(email), 'mailLog'));
+    await assertSucceeds(read(login(REPORTS), 'clinics'));
   });
 });

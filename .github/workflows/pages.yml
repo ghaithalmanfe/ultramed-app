@@ -1,7 +1,22 @@
 name: Deploy to GitHub Pages
 
+# Publishes main only once the Tests run of THAT commit passed — the unit
+# tests and the browser harnesses on the source and on the built site
+# (tests.yml). Until v122 the deploy needed only the unit tests: v122 went
+# live at 00:07 UTC on 13 Nov, and the browser tests of the same commit
+# failed twenty minutes later.
+#  - A green Tests run of a push to main starts this workflow (workflow_run),
+#    which publishes exactly the commit that run tested (its head_sha), and
+#    only while it is still main's tip: an older commit whose tests finish
+#    late never goes over a newer one (the newer one's own run publishes it).
+#  - A red Tests run publishes nothing; re-running its failed jobs to green
+#    publishes then.
+#  - "Run workflow" by hand publishes main's tip only if a Tests run of that
+#    commit passed.
 on:
-  push:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -10,24 +25,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  gate:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
+    outputs:
+      go: ${{ steps.pick.outputs.go }}
+      sha: ${{ steps.pick.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm test
+      - id: pick
+        name: Which commit passed its tests (and is still main's tip)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          go=false
+          if [ "$EVENT" = "workflow_run" ]; then
+            sha="$RUN_SHA"
+            if [ "$RUN_CONCLUSION" != "success" ] || [ "$RUN_EVENT" != "push" ]; then
+              echo "::notice::The Tests run of ${sha::7} did not pass (${RUN_CONCLUSION}, ${RUN_EVENT}) — nothing is published."
+            elif [ "$sha" != "$tip" ]; then
+              echo "::notice::${sha::7} passed, but main is at ${tip::7} now — that commit's own Tests run publishes it."
+            else go=true; fi
+          else
+            sha="$tip"
+            passed=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/tests.yml/runs?head_sha=${sha}&status=success&per_page=1" --jq '.total_count')
+            if [ "${passed:-0}" -ge 1 ]; then go=true
+            else echo "::notice::No passing Tests run of ${sha::7} (main's tip) — nothing is published. Run or re-run Tests first."; fi
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs: test
+    needs: gate
+    if: needs.gate.outputs.go == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -42,7 +86,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Deploy ${GITHUB_SHA::7}"
+          git commit -m "Deploy ${SHA::7}"
           git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ needs.gate.outputs.sha }}

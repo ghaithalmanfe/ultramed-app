@@ -262,9 +262,9 @@ async function saveEventForm(id){
   } else {
     events.push(Object.assign({id:uid(), createdBy: currentUser.name, created: todayStr()}, data));
   }
-  await persist('events');
+  const r = await persistTold('events');
   closeModal();
-  showToast(id?'Event updated':'Event added 📅');
+  saveToast(r, 'events', id?'Event updated':'Event added 📅'); // "added" only when it landed
   calSelected = date;
   renderCalendar();
 }
@@ -339,7 +339,6 @@ function renderMore(){
     ${tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()')}
     ${tile(I('chart'),'Month by month','Sales, field work and KPI against earlier months','openMonthByMonth()')}
     ${tile(I('clipboard'),'Requests, escalations & stands','Log client requests, escalations and stands','openClientLog()')}
-    ${tile(I('bot'),'Assistant','Ask anything about your data','openAssistant()')}
     ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
     ${sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}
     <div style="text-align:center; color:rgba(255,255,255,.5); font-size:11px; margin-top:14px;">UltraMed Clinical Sales Team · ${APP_REV}</div>`;
@@ -373,8 +372,6 @@ function renderAll(){
   if(erpBtn) erpBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
   const mgBtn = document.getElementById('manageClinicsBtn');
   if(mgBtn) mgBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
-  const fab = document.getElementById('aiFab');
-  if(fab) fab.style.display = 'flex';
 
   const chipsFor = (containerId, current, setter) => {
     const el = document.getElementById(containerId);
@@ -587,9 +584,9 @@ async function saveReschedulePlan(oldDate, rep, clinicId){
   if(!dayPlans[newDate][rep].some(e=>planEntryId(e)===clinicId)){
     dayPlans[newDate][rep].push(typeof entry==='string' ? {id:clinicId, note:''} : (entry || {id:clinicId, note:''}));
   }
-  await persist('dayPlans');
+  const r = await persistTold('dayPlans');
   closeModal();
-  showToast(`📅 Moved to ${fmtDate(newDate)}`);
+  saveToast(r, 'dayPlans', `📅 Moved to ${fmtDate(newDate)}`);
   renderMissedPlans();
   renderPlanList();
   renderCalendar();
