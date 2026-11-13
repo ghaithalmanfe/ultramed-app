@@ -9,6 +9,10 @@
 // whole database in clear text: it is refused inside this repository (which
 // is public) and is created readable by you only. See docs/backup.md.
 //
+// A full backup taken on the phone (Export → Full backup) is another kind of
+// file with its own tool (scripts/backup/verify.js): it is named as such, with
+// that command (exit 2), never called damaged.
+//
 // Exit code: 0 the backup is sound, 1 it is not (wrong passphrase, damaged,
 // inconsistent), 2 bad arguments or refused.
 'use strict';
@@ -79,6 +83,10 @@ async function verify(argv, env, log, io){
   }
   let buf;
   try{ buf = fs.readFileSync(file); }catch(e){ log.error('Verify', 'cannot read ' + file + ' (' + (e.code || 'error') + ')'); return 2; }
+  if(B.isPhoneBackup(buf)){
+    log.error('Verify', path.basename(file) + ' is a full backup taken on the phone (Export → Full backup), not a nightly backup: check it with node scripts/backup/verify.js <file> (docs/backup.md)');
+    return 2;
+  }
   let head;
   try{ head = B.readHeader(buf).header; }
   catch(e){ log.error('Backup NOT sound', path.basename(file) + ': ' + e.message); return 1; }

@@ -599,6 +599,24 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
     const z = await runNode('restore.js', [path.join(tmp, 'artifact.zip')], restoreEnv('demo-only2'));
     assert.equal(z.code, 2); assert.match(z.err, /unzip the downloaded artifact first/);
   });
+  test('given a full backup taken on the phone, verify.js and restore.js name the tools that read it, and write nothing', async () => {
+    const core = require('../www/js/core.js');
+    const phone = path.join(freshDir('phone'), 'ultramed-full-backup-2026-11-12-0900.json');
+    fs.writeFileSync(phone, JSON.stringify(core.fullBackupFile({ clinics: { value: JSON.stringify([{ id: 'c1', name: AR, note: MARKER }]), updated: 1762900000000 } },
+      { app: 'v122', project: PROD, takenAt: '2026-11-12T06:00:00.000Z', takenBy: 'Dr. Ghaith' })));
+    const v = await runNode('verify.js', [phone], env({ BACKUP_PASSPHRASE: PASS }));
+    assert.equal(v.code, 2, v.all);
+    assert.match(v.err, /a full backup taken on the phone/); assert.match(v.err, /node scripts\/backup\/verify\.js/);
+    assert.doesNotMatch(v.all, /NOT sound/, 'the file is not called damaged: it is another kind of backup');
+    target('demo-phone');
+    const n0 = fake.requests.length;
+    const r = await runNode('restore.js', [phone], restoreEnv('demo-phone'));
+    assert.equal(r.code, 2, r.all);
+    assert.match(r.err, /a full backup taken on the phone/); assert.match(r.err, /node scripts\/backup\/restore\.js .*--into <name>\.test-cloud\.json/);
+    assert.equal(fake.projects['demo-phone'].docs.size, 0);
+    assert.ok(!fake.requests.slice(n0).some(q => q.path.includes('demo-phone')), 'the target was not contacted');
+    assertCleanLog(v.all + r.all);
+  });
 });
 
 describe('run.js refuses to write a backup it cannot vouch for', () => {

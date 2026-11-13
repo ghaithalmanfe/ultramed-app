@@ -20,11 +20,13 @@
 //               project the backup came from); with --force, since it is not empty
 //
 // Refuses (exit 2) production without that flag, a non-empty target without
-// --force, missing configuration. Exit 1: the backup does not check out, or
+// --force, missing configuration, and a full backup taken on the phone (it
+// goes into a test cloud only: scripts/backup/restore.js). Exit 1: the backup does not check out, or
 // the restore failed or did not read back identical. Exit 0: restored and
 // every document read back identical. See docs/backup.md.
 'use strict';
 const fs = require('node:fs');
+const path = require('node:path');
 const B = require('./bundle.js');
 const F = require('./firestore.js');
 const { getPassphrase } = require('./verify.js');
@@ -84,6 +86,10 @@ async function restore(argv, env, log, io){
   try{ buf = fs.readFileSync(a.file); }catch(e){ log.error('Restore', 'cannot read ' + a.file + ' (' + (e.code || 'error') + ')'); return 2; }
   let plaintext = buf;
   if(B.isZip(buf)){ log.error('Restore', B.ZIP_HINT); return 2; }
+  if(B.isPhoneBackup(buf)){
+    log.error('Restore', path.basename(a.file) + ' is a full backup taken on the phone (Export → Full backup), not a nightly backup: it is restored into a test cloud only, with node scripts/backup/restore.js <file> --into <name>.test-cloud.json (docs/backup.md)');
+    return 2;
+  }
   if(B.isBackupFile(buf)){
     const passphrase = await getPassphrase(env, io);
     if(!passphrase){ log.error('Restore', 'the input is encrypted: set BACKUP_PASSPHRASE or run this in a terminal to type it'); return 2; }

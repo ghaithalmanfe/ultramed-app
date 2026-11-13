@@ -162,6 +162,16 @@ function isBackupFile(buf){ return Buffer.isBuffer(buf) && buf.length >= MAGIC.l
 // GitHub hands an artifact over as a .zip holding the .umbackup file.
 function isZip(buf){ return Buffer.isBuffer(buf) && buf.length >= 4 && buf.readUInt32BE(0) === 0x504B0304; }
 const ZIP_HINT = 'this is a .zip file: unzip the downloaded artifact first (it holds one .umbackup file)';
+// A full backup taken on the phone (Export → Full backup, core.fullBackupFile)
+// is another kind of backup — a JSON file of kind 'ultramed-full-backup' — with
+// its own tools: scripts/backup/verify.js, and restore.js into a test cloud only.
+const PHONE_KIND = 'ultramed-full-backup';
+function isPhoneBackup(buf){
+  if(!Buffer.isBuffer(buf) || buf.subarray(0, 64).toString('utf8').replace(/^\uFEFF/, '').trimStart().charAt(0) !== '{') return false;
+  let v;
+  try{ v = JSON.parse(buf.toString('utf8').replace(/^\uFEFF/, '')); }catch(e){ return false; }
+  return isPlainObject(v) && v.kind === PHONE_KIND;
+}
 
 // The clear header, without the passphrase (what the file says it is).
 function readHeader(buf){
@@ -252,5 +262,5 @@ function prefixTable(manifest, indent){
 module.exports = {
   MAGIC, FORMAT, VERSION, DEFAULT_KDF, BackupError,
   sha256hex, parseJSON, canonicalJSON, compareIds, keyPrefix, buildManifest, buildBundle,
-  encryptBundle, decryptBackup, readHeader, isBackupFile, isZip, ZIP_HINT, checkBundle, formatBytes, prefixTable, setOwn, hasOwn,
+  encryptBundle, decryptBackup, readHeader, isBackupFile, isZip, ZIP_HINT, isPhoneBackup, checkBundle, formatBytes, prefixTable, setOwn, hasOwn,
 };
