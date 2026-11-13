@@ -1029,7 +1029,8 @@ function msMon(m, year){ try{ return new Date(m + '-01T00:00:00').toLocaleDateSt
 function msCmpCell(g, label, key, year){
   if(!g) return `<div><span class="ms-l">${msT(label)}</span><b>—</b></div>`;
   const val = msGrowth(g), day = parseInt(String(g.to || '').slice(8, 10), 10) || '';
-  const sub = g.measured ? `${msKd(g.previous)} · ${msT(`days 1–${day}`)} ${esc(msMon(g.month, year))}` : `${msT('No sales file for')} ${esc(monthLabel(g.month))}`;
+  // not measured: no sales figure of these people for that month — no file covers it, or the files hold none of them (her first month)
+  const sub = g.measured ? `${msKd(g.previous)} · ${msT(`days 1–${day}`)} ${esc(msMon(g.month, year))}` : `${msT('No sales figure for')} ${esc(monthLabel(g.month))}`;
   return `<div><span class="ms-l">${msT(label)}</span><b data-ms="${key}" data-value="${g.measured && g.growth != null ? Math.round(g.growth * 100) : ''}">${val || '—'}</b><em>${sub}</em></div>`;
 }
 function msChartSVG(D, Dy, A, F, T){
@@ -1123,7 +1124,7 @@ function msRowsHTML(v, m){
     rows.push(row('Performance score (KPI)', k && k.total != null ? msT(`${k.total} of 100`) : m ? '—' : wait, 'msKpi()', ' data-row="kpi"'));
   }
   const sd = D && msOf(D.sameDays), g = msGrowth(sd);
-  rows.push(row(own ? 'My sales day by day' : 'Sales day by day', D ? (g ? `${g} ${msT('vs the same days last month')}` : msT(sd && !sd.measured ? 'No sales file for the month before' : 'In the Report tab')) : wait, `msGoReports(this.dataset.r)`, dr));
+  rows.push(row(own ? 'My sales day by day' : 'Sales day by day', D ? (g ? `${g} ${msT('vs the same days last month')}` : msT(sd && !sd.measured ? 'No sales figure for the month before' : 'In the Report tab')) : wait, `msGoReports(this.dataset.r)`, dr));
   const B = D && msOf(D.byBrand), bp = B && Array.isArray(B.rows) ? B.rows.filter(b => b && b.pct != null).map(b => b.pct) : [];
   rows.push(row(own ? 'My brands' : 'Brands', D ? (bp.length ? msT(bp.length === 1 ? `${bp[0]}% of the brand target` : `between ${Math.min.apply(null, bp)}% and ${Math.max.apply(null, bp)}% of the brand targets`) : msT('In the month report')) : wait, `renderMonthClose('${msMonth()}')`));
   const C = D && msOf(D.customers), act = D && msOf(D.act);
@@ -1187,7 +1188,7 @@ function msHow(id){
       const sd = msOf(D.sameDays);
       if(sd) body += sec('Against the same days of the month before', 'The ERP sales files of both months, for the people measured in both.',
         'Growth % = (this month − the earlier month on the same days) ÷ the earlier month × 100. From nothing to something is said as "from zero", never as a percentage.',
-        sd.measured ? kv(msT('This month'), msKd(sd.current)) + kv(`${msT('days 1 to')} ${msN(parseInt(String(sd.to || '').slice(8, 10), 10) || '')} ${esc(monthLabel(sd.month))}`, msKd(sd.previous)) : `<div>${msT('No sales file for the month before, so nothing to compare with')}</div>`);
+        sd.measured ? kv(msT('This month'), msKd(sd.current)) + kv(`${msT('days 1 to')} ${msN(parseInt(String(sd.to || '').slice(8, 10), 10) || '')} ${esc(monthLabel(sd.month))}`, msKd(sd.previous)) : `<div>${msT('No sales figure for the month before (no sales file covers it, or the files hold none of these people), so nothing to compare with')}</div>`);
     }
   } else if(id === 'work'){
     const Vi = D && msOf(D.visits), O = D && msOf(D.orders), C = D && msOf(D.conversion), N = D && msOf(D.newCustomers);
@@ -1215,8 +1216,8 @@ function msHow(id){
     const cmp = (t, g, none) => sec(t, 'The ERP sales files of both months, for the people measured in both.',
       'Growth % = (this month − the earlier month on the same days) ÷ the earlier month × 100. From nothing to something is said as "from zero", never as a percentage.',
       g ? (g.measured ? kv(msT('This month'), msKd(g.current)) + kv(`${msT('days 1 to')} ${msN(parseInt(String(g.to || '').slice(8, 10), 10) || '')} ${esc(monthLabel(g.month))}`, msKd(g.previous)) : `<div>${msT(none)}</div>`) : '');
-    body += cmp('Against the same days of the month before', sd, 'No sales file for the month before, so nothing to compare with');
-    if(ly) body += cmp('Against the same month a year before', ly, 'No sales file for that month a year before, so nothing to compare with');
+    body += cmp('Against the same days of the month before', sd, 'No sales figure for the month before (no sales file covers it, or the files hold none of these people), so nothing to compare with');
+    if(ly) body += cmp('Against the same month a year before', ly, 'No sales figure for that month a year before (no sales file covers it, or the files hold none of these people), so nothing to compare with');
     if(Y){
       const L = msOf(Y.like) || {};
       body += sec('Year to date', "The ERP sales files of each month and that month's own DSR target, from January to this month.",

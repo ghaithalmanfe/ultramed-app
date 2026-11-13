@@ -58,9 +58,10 @@ const brands = t => ({ Intensiv: Math.round(t * 0.42), TePe: Math.round(t * 0.14
 const tg = (rev, month) => ({ revenue: rev, month, brands: brands(rev) });
 function seed(cloud, opts){
   opts = opts || {};
-  // renovaNotInFiles: the October file holds no line of hers and does not know her salesman — a person the files do not hold
-  const use = files.filter(f => !opts.noOctober || f.m !== '2026-10').map(f => opts.renovaNotInFiles && f.m === '2026-10'
-    ? Object.assign({}, f, { rows: f.rows.filter(r => r[8] !== SM[R]), repMap: { [SM[M]]: M, [SM[G]]: G } }) : f);
+  // renovaNotInFiles: the October file holds no line of hers and does not know her salesman — a person the files do not hold;
+  // renovaNew: her first month — the files before October hold no line of hers and do not know her salesman
+  const notHers = f => Object.assign({}, f, { rows: f.rows.filter(r => r[8] !== SM[R]), repMap: { [SM[M]]: M, [SM[G]]: G } });
+  const use = files.filter(f => !opts.noOctober || f.m !== '2026-10').map(f => (opts.renovaNotInFiles && f.m === '2026-10') || (opts.renovaNew && f.m < '2026-10') ? notHers(f) : f);
   const split = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: opts.renovaNotInFiles ? { [SM[M]]: M, [SM[G]]: G } : repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true },
     periods: use.map(f => ({ id: 'f' + f.m, from: f.m + '-01', to: f.m + '-' + String(f.last).padStart(2, '0'), net: Math.round(f.rows.reduce((s, r) => s + r[6], 0) * 100) / 100, rowCount: f.rows.length,
       importedAt: f.m + '-' + String(Math.min(f.last, 28)).padStart(2, '0') + 'T08:00:00.000Z', repMap: f.repMap || repMap, rev: 1, rows: f.rows })) });
@@ -225,9 +226,9 @@ function seed(cloud, opts){
   check('Team: the brand rows = execDashboard.byBrand — the percentage over what the people with that brand\'s target sold of it ÷ their targets (achieved of goal)',
     truth.brands.length >= 3 && s.brands.length === truth.brands.length && truth.brands.every((b, i) => s.brands[i].brand === b.brand && s.brands[i].pct === b.pct && s.brands[i].s === bTxt(b)),
     { shown: s.brands, dashboard: truth.brands });
-  check('Team: the chart\'s comparisons = execDashboard — the same days of September (growth, amount, days 1–8), no file a year before (said with the month), year to date like for like',
+  check('Team: the chart\'s comparisons = execDashboard — the same days of September (growth, amount, days 1–8), no figure a year before (said with the month), year to date like for like',
     s.cmp === truth.cmp.sd && truth.cmp.sd != null && new RegExp(truth.cmp.sdPrev.toFixed(2).replace('.', '\\.') + ' KD · days 1–' + +truth.cmp.sdTo.slice(8) + ' Sep').test(s.chart)
-      && !truth.cmp.ly && s.cmpYear === null && /Same month last year — No sales file for October 2025/.test(s.chart)
+      && !truth.cmp.ly && s.cmpYear === null && /Same month last year — No sales figure for October 2025/.test(s.chart)
       && s.ytd === truth.cmp.ytd && new RegExp(truth.cmp.ytdSales.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.cmp.ytdTarget.toFixed(2).replace('.', '\\.') + ' KD').test(s.chart),
     { shown: [s.cmp, s.cmpYear, s.ytd], dashboard: truth.cmp, chart: s.chart.slice(-260) });
   check('Team: the day-by-day line is the month figure\'s own lines — its days add up to the team figure and it ends on it, on the day the files reach',
@@ -493,6 +494,17 @@ function seed(cloud, opts){
   const nmR = await shown();
   check('… and her own screen shows a dash with the words, never a made-up 0', nmR.sales === null && /The sales files of this month hold no line of this person yet/.test(nmR.view) && nmR.remaining === null && nmR.perday === null && nmR.forecast === null,
     { sales: nmR.sales, rest: [nmR.remaining, nmR.perday, nmR.forecast] });
+
+  // ======================= a person's first month: the month before has a sales file, but no figure of hers =======================
+  seed(cloud, { renovaNew: true });
+  await boot(G, 'supervisor', 1440, 900);
+  await act(() => msOpenPerson('Renova')); await ready();
+  const nw = await shown();
+  const nwT = await ev(() => { const d = digestData(), D = UMCore.execDashboard(d, { rep: 'Renova', reps: ['Renova'] });
+    return { now: bestMonthRevenue('Renova').amount, sd: D.sameDays.measured, sepFile: erpPeriods().some(p => p.from <= '2026-09-30' && p.to >= '2026-09-01') }; });
+  check('Her first month (a September file is loaded, but no line of hers in it): her screen says there is no sales figure of September to compare with — never "no sales file"',
+    nwT.sepFile && nwT.sd === false && nw.sales === nwT.now && nw.cmp === null && /Same days last month — No sales figure for September 2026/.test(nw.chart) && !/No sales file for/.test(nw.view),
+    { truth: nwT, chart: nw.chart.slice(-200) });
 
   check('no page errors', errors.length === 0, errors.slice(0, 6));
   console.log(results.join('\n'));
