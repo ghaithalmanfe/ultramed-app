@@ -656,7 +656,7 @@ async function addToPlan(clinicId){
   dayPlans[today][me] = list;
   const r = await persistTold('dayPlans');
   closeModal();
-  renderPlanList();
+  msPlanChanged();
   saveToast(r, 'dayPlans', 'Added to today\'s plan');
 }
 // Resolve a clinic name for display even after the clinic was deleted: the

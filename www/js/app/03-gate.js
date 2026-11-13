@@ -26,6 +26,7 @@ function switchUser(){
   showGateScreen();
 }
 function showGateScreen(){
+  document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
   renderGate();
   document.getElementById('gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
