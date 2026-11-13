@@ -2082,7 +2082,44 @@
     'Where a month has both': 'حيث للشهر رقم ومستهدف معاً',
     'Against the same month a year before': 'مقارنة بنفس الشهر من السنة السابقة',
     'No sales figure for that month a year before (no sales file covers it, or the files hold none of these people), so nothing to compare with': 'لا يوجد رقم مبيعات لذلك الشهر من السنة السابقة (لا يغطيه ملف مبيعات، أو لا تحمل الملفات أحدًا من هؤلاء)، فلا شيء نقارن به',
-    'The clinic list (class) and the ERP sales files.': 'قائمة العيادات (الفئة) وملفات مبيعات ERP.'
+    'The clinic list (class) and the ERP sales files.': 'قائمة العيادات (الفئة) وملفات مبيعات ERP.',
+    // the review of the main screen (13 Nov): every figure true in every case
+    "The month's figures could not be worked out on this device.": 'تعذّر حساب أرقام الشهر على هذا الجهاز.',
+    'Not worked out on this device': 'تعذّر حسابه على هذا الجهاز',
+    'No sales target for the people with a sales figure': 'لا يوجد مستهدف مبيعات لمن لديهم رقم مبيعات',
+    'invoiced, no target, so not in these figures.': 'مبيعات مفوترة بلا مستهدف، فلا تدخل في هذه الأرقام.',
+    'All invoiced sales of the team:': 'كل المبيعات المفوترة للفريق:',
+    'no working day left': 'لم يبقَ يوم عمل',
+    'each person to the day her file reaches': 'كلٌّ حتى آخر يوم يصله ملفه',
+    'without': 'بدون',
+    'No sales figure for this month yet, so nothing to compare': 'لا يوجد رقم مبيعات لهذا الشهر بعد، فلا شيء نقارنه',
+    'No sales figure for this month yet, so nothing to compare with': 'لا يوجد رقم مبيعات لهذا الشهر بعد، فلا شيء نقارن به',
+    'Drawn for the people with a target and a sales figure:': 'مرسوم لمن لديهم مستهدف ورقم مبيعات:',
+    'counted as 0 (no figure in the files)': 'محسوب صفرًا (لا رقم له في الملفات)',
+    'Add a quick task for the whole team...': 'أضف مهمة سريعة للفريق كله...',
+    'no invoiced sales figure (no sales file for this month yet)': 'لا رقم مبيعات مفوترة (لا يوجد ملف مبيعات لهذا الشهر بعد)',
+    'no invoiced sales figure (the sales files do not reach the start of the week)': 'لا رقم مبيعات مفوترة (ملفات المبيعات لا تصل إلى بداية الأسبوع)',
+    'no invoiced sales figure (the sales files hold none of these people)': 'لا رقم مبيعات مفوترة (ملفات المبيعات لا تحمل أحدًا من هؤلاء)',
+    'no invoiced sales figure (the sales files hold no line of this person)': 'لا رقم مبيعات مفوترة (ملفات المبيعات لا تحتوي أي سطر لهذا الشخص)',
+    'no sales figure for': 'لا يوجد رقم مبيعات لشهر',                     // + the month (an ⓘ: who is not in a comparison)
+    ', so not in this comparison': '، فلا يدخل في هذه المقارنة',
+    'no sales file for': 'لا يوجد ملف مبيعات لشهر',
+    'the sales files do not reach the start of the week': 'ملفات المبيعات لا تصل إلى بداية الأسبوع',
+    'not in the sales files of': 'غير موجود في ملفات مبيعات شهر',
+    'This week (Sunday to today)': 'هذا الأسبوع (من الأحد إلى اليوم)',
+    'Field visits and orders as logged in the app, by the rules of the month above; invoiced sales from the ERP files, for the people the files hold this month.': 'الزيارات الميدانية والطلبيات كما سُجّلت في التطبيق، بقواعد أرقام الشهر أعلاه؛ والمبيعات المفوترة من ملفات ERP، لمن تحمل الملفات شهرهم.',
+    'No sales file reaches into this week.': 'لا يصل أي ملف مبيعات إلى هذا الأسبوع.',
+    'The ERP sales files of this month — the same lines as the month figure — by customer account, as the Clinics screen lists them. Online and channel accounts are not in this list.': 'ملفات مبيعات ERP لهذا الشهر — نفس أسطر رقم الشهر — حسب حساب العميل، كما تعرضها شاشة العيادات. حسابات الأونلاين والقنوات ليست في هذه القائمة.',
+    'The accounts shown': 'الحسابات المعروضة',
+    'All clinic accounts this month': 'كل حسابات العيادات هذا الشهر',
+    'Online and channel accounts': 'حسابات الأونلاين والقنوات',
+    'Accounts kept out of the list': 'حسابات مستبعدة من القائمة',
+    'Total invoiced this month': 'إجمالي المفوتر هذا الشهر',
+    'People counted': 'من يدخلون في الحساب',
+    '% of target': 'النسبة من المستهدف',
+    'not counted — the sales files do not hold the month before, so every account would look new': 'لا يُحسب — ملفات المبيعات لا تحمل الشهر السابق، فيظهر كل حساب جديدًا',
+    'New accounts: not measured yet — they are counted only when the sales files hold the month before for this person; otherwise every account would look new.': 'الحسابات الجديدة: لم تُحسب بعد — تُحسب فقط حين تحمل ملفات المبيعات الشهر السابق لهذا الشخص، وإلا ظهر كل حساب جديدًا.',
+    'Compared with the same days of': 'مقارنة بنفس الأيام من'
   };
 
   // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
@@ -2107,6 +2144,9 @@
     if (r >= 11) return n + ' دفتراً';
     return n + ' دفتر';
   }
+  // A percentage in an Arabic sentence: a negative keeps its minus before its digits (a left-to-right isolate —
+  // right to left, a bare "-14%" reads "14%-"); the team writes a negative as an operator, never moved after it.
+  function pctAr(n) { return /^-/.test(String(n)) ? '\u2066' + n + '%\u2069' : n + '%'; }
   // ---- counted nouns on the main screen (v123): the Arabic form agrees with the number ----
   // forms = [one, two, few (3–10), many (11+)]; beyond 99 by the last two digits, as for pads.
   function countAr(n, forms) {
@@ -2369,9 +2409,15 @@
     [/^(\d+) due$/, function (m) { return m[1] + ' مستحقة'; }],
     [/^(\d+) overdue$/, function (m) { return m[1] + ' متأخرة'; }],
     [/^(\d+) open tasks?$/, function (m) { return countAr(m[1], ['مهمة مفتوحة واحدة', 'مهمتان مفتوحتان', 'مهام مفتوحة', 'مهمة مفتوحة']); }],
+    // what a folded card holds, said in its one line: the planned visits missed lately, a birthday today, the doctor cards to complete
+    [/^(\d+) missed$/, function (m) { return countAr(m[1], ['زيارة مخططة واحدة لم تتم', 'زيارتان مخططتان لم تتما', 'زيارات مخططة لم تتم', 'زيارة مخططة لم تتم']); }],
+    [/^(\d+) birthdays? today$/, function (m) { return countAr(m[1], ['عيد ميلاد واحد اليوم', 'عيدا ميلاد اليوم', 'أعياد ميلاد اليوم', 'عيد ميلاد اليوم']); }],
+    [/^(\d+) doctor cards? to complete$/, function (m) { return countAr(m[1], ['كرت طبيب واحد للإكمال', 'كرتا طبيب للإكمال', 'كروت أطباء للإكمال', 'كرت طبيب للإكمال']); }],
+    // the quick task on a person's screen is hers (the name is already Arabic: msName)
+    [/^Add a quick task for (.+)\.\.\.$/, function (m) { return 'أضف مهمة سريعة باسم ' + m[1] + '...'; }],
     [/^(\d+) to act on$/, function (m) { return countAr(m[1], ['عميل واحد يحتاج تحركًا', 'عميلان يحتاجان تحركًا', 'عملاء يحتاجون تحركًا', 'عميلًا يحتاجون تحركًا']); }],
-    [/^(\d+)% of the brand target$/, function (m) { return m[1] + '% من مستهدف البراند'; }],
-    [/^between (\d+)% and (\d+)% of the brand targets$/, function (m) { return 'بين ' + m[1] + '% و' + m[2] + '% من مستهدفات البراندات'; }],
+    [/^(-?\d+)% of the brand target$/, function (m) { return pctAr(m[1]) + ' من مستهدف البراند'; }],
+    [/^between (-?\d+)% and (-?\d+)% of the brand targets$/, function (m) { return 'بين ' + pctAr(m[1]) + ' و' + pctAr(m[2]) + ' من مستهدفات البراندات'; }],
     [/^(\d+) more brands? in the month report$/, function (m) { return '+' + countAr(m[1], ['براند آخر', 'براندان آخران', 'براندات أخرى', 'براندًا آخر']) + ' في تقرير الشهر'; }],
     [/^Working days of the month: (\d+) · done: (\d+) · left: (\d+)$/, function (m) { return 'أيام العمل في الشهر: ' + m[1] + ' · انقضى منها: ' + m[2] + ' · بقي منها: ' + m[3]; }],
     // the lists the main screen keeps (the dates are already Arabic: the app writes them in the screen's language)

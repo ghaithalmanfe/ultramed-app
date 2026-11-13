@@ -4778,7 +4778,7 @@ describe('management dashboard (v123)', () => {
     assert.deepEqual(D.customers.totals, { total: null, clinics: null, channels: null, ignored: null, listed: null });
     assert.deepEqual([D.customers.accounts, D.customers.files], [[], 0]);
     assert.deepEqual([D.forecast.amount, D.forecast.people, D.forecast.pct], [null, [], null]);
-    assert.deepEqual(D.daily, { measured: false, to: null, days: [] });
+    assert.deepEqual(D.daily, { measured: false, to: null, days: [], pair: null });
     assert.deepEqual([D.lastYear.measured, D.lastYear.current, D.lastYear.previous], [false, null, null]);
     assert.deepEqual([D.activity.measurable, D.activity.invoiced, D.activity.both, D.activity.visitedNoInvoice, D.activity.invoicedNoVisit], [false, null, null, [], []]);
     // a year with no month that has both a figure and a target: no percentage and no like-for-like sums
@@ -4825,7 +4825,7 @@ describe('management dashboard (v123)', () => {
     assert.deepEqual(Object.keys(D.lastYear), Object.keys(D.sameDays));                    // the same shape
     // the running month: 1–8 Oct 2025 against 1–8 Oct 2026; Dr. Ghaith is in no file of 2025
     const { byRep, ...ly } = D.lastYear;
-    assert.deepEqual(ly, { month: '2025-10', measured: true, current: 396, previous: 340, growth: (396 - 340) / 340, fromZero: false, to: '2025-10-08', mixed: false, people: [M, R], left: [G] });
+    assert.deepEqual(ly, { month: '2025-10', measured: true, why: null, current: 396, previous: 340, growth: (396 - 340) / 340, fromZero: false, to: '2025-10-08', mixed: false, people: [M, R], left: [G] });
     assert.deepEqual({ ...byRep }, { [M]: { to: '2025-10-08', current: 231, previous: 300, growth: (231 - 300) / 300, fromZero: false }, [R]: { to: '2025-10-08', current: 165, previous: 40, growth: (165 - 40) / 40, fromZero: false } });
     assert.deepEqual(D.byPerson.map(p => p.lastYear && p.lastYear.previous), [300, 40, null]);
     assert.equal(D.lastYear.byRep[M].previous, core.monthAchievement(M, at(d, '2025-10-08')).amount);   // the month figure of that day
@@ -4837,7 +4837,7 @@ describe('management dashboard (v123)', () => {
     assert.deepEqual([b.lastYear.current, b.lastYear.previous, b.lastYear.byRep[R].previous], [265, 300, 0]);
     // no sales file for that month: not measured, nothing else
     const { byRep: noRep, ...none } = core.execDashboard(data(), { reps }).lastYear;
-    assert.deepEqual(none, { month: '2025-10', measured: false, current: null, previous: null, growth: null, fromZero: false, to: null, mixed: false, people: [], left: reps });
+    assert.deepEqual(none, { month: '2025-10', measured: false, why: 'noprevious', current: null, previous: null, growth: null, fromZero: false, to: null, mixed: false, people: [], left: reps });
     assert.deepEqual(Object.keys(noRep), []);
   });
 
@@ -5049,5 +5049,71 @@ describe('management dashboard (v123)', () => {
     const t1 = process.hrtime.bigint(), X = core.execDrill(big, { reps: P3, account: D.customers.accounts[0].key }), ms2 = Number(process.hrtime.bigint() - t1) / 1e6;
     assert.ok(ms2 < 1000, 'execDrill took ' + Math.round(ms2) + ' ms');                         // measured here: about 0.04 s
     assert.equal(X.total, D.customers.accounts[0].net);
+  });
+
+  // ---- the review of the main screen (13 Nov) ----
+  test('nothing to compare, and why: this month has no figure yet (the month before may be held), or the month before has none of the people measured now', () => {
+    // 3 November, no November file: October is in the files for everyone, yet there is nothing to compare — this month has no figure
+    const nov = core.execDashboard(data({ today: '2026-11-03' }), { reps });
+    assert.deepEqual([nov.sameDays.measured, nov.sameDays.why, nov.sameDays.people, nov.sameDays.left], [false, 'nocurrent', [], []]);
+    assert.ok(reps.every(r => core.monthAchievement(r, at(data(), '2026-10-31')).basis === 'erp'));
+    // Dr. Ghaith is in no file of 2025: a year before has none of him; Mariam and Renova are compared
+    const D = core.execDashboard(data(), { reps });
+    assert.deepEqual([D.lastYear.measured, D.lastYear.why, D.lastYear.left], [false, 'noprevious', reps]);
+    assert.deepEqual([D.sameDays.measured, D.sameDays.why], [true, null]);
+    // one person whose month the files do not hold: this month, not the one before
+    const es = sales(), oct = es.periods.find(p => p.id === 'oct');
+    oct.rows = oct.rows.filter(r => r[8] === MS); oct.repMap = { [MS]: M };
+    assert.equal(core.execDashboard(data({ erpSales: es }), { reps, rep: R }).sameDays.why, 'nocurrent');
+  });
+
+  test('the month day by day for the people with a target and a figure (pair): their days add up to the achievement, everyone\'s to the month figure', () => {
+    const D = core.execDashboard(data(), { reps });
+    const tot = days => Math.round(days.reduce((s, x) => s + x.net * 100, 0)) / 100;
+    assert.deepEqual(D.daily.pair.people, [M, R]);                                          // Dr. Ghaith has no target
+    assert.equal(tot(D.daily.pair.days), D.achievement.achieved); assert.equal(D.achievement.achieved, 396);
+    assert.equal(tot(D.daily.days), D.sales.amount); assert.equal(D.sales.amount, 596);
+    assert.deepEqual(D.daily.pair.days.map(x => x.date), D.daily.days.map(x => x.date));
+    assert.equal(D.daily.pair.days.find(x => x.date === '2026-10-06').net, 120);            // Renova's 120 that day; Dr. Ghaith's 200 is not in it
+    assert.equal(core.execDashboard(data({ targets: {} }), { reps }).daily.pair, null);     // nobody with a target: no pair
+  });
+
+  test('the week so far by the month card\'s rules: field visits once, the orders each person logged, the week\'s lines of the people the files hold', () => {
+    const d = data(), W = core.execWeek(d, { reps });
+    // 8 Oct (Thu): the week from Sun 4 Oct. Field visits v2, v3 (joint), v4, v7; orders v3 (Renova's), v6 (Mariam's phone order)
+    assert.deepEqual([W.from, W.to, W.visits, W.orders, W.value], ['2026-10-04', '2026-10-08', 4, 2, 105]);
+    assert.deepEqual([W.sales.measured, W.sales.amount, W.sales.to, W.sales.people, W.sales.missing], [true, 446, '2026-10-08', reps, []]);
+    // Mariam: her field visits (v2, and v3 she joined), only the order she logged (v6) — never Renova's v3
+    const m = core.execWeek(d, { reps, rep: M });
+    assert.deepEqual([m.visits, m.orders, m.value, m.sales.amount], [2, 1, 60, 81]);       // 20 + 60 + 12 + 5 + 9 − 25
+    const D = core.execDashboard(d, { reps, rep: M });
+    assert.ok(m.orders <= D.orders.count && m.sales.amount <= D.sales.amount);
+    // a person the files do not hold this month: named, never a 0
+    const es = sales(), oct = es.periods.find(p => p.id === 'oct');
+    oct.rows = oct.rows.filter(r => r[8] !== RS); oct.repMap = { [MS]: M, [GS]: G };
+    const r = core.execWeek(data({ erpSales: es }), { reps, rep: R });
+    assert.deepEqual([r.sales.measured, r.sales.amount, r.sales.missing], [false, null, [{ rep: R, why: 'notinfiles', month: '2026-10' }]]);
+    const t = core.execWeek(data({ erpSales: es }), { reps });
+    assert.deepEqual([t.sales.people, t.sales.amount, t.sales.missing.map(x => x.rep)], [[M, G], 281, [R]]);
+    // no file reaches into the week: no sales figure at all
+    assert.equal(core.execWeek(data({ today: '2026-10-13' }), { reps }).sales, null);
+    // a week that began in the month before: that month must be in the files to its end (1 Oct: the week from Sun 27 Sep)
+    const w1 = core.execWeek(data({ today: '2026-10-01' }), { reps, rep: M });
+    assert.deepEqual([w1.from, w1.sales.measured, w1.sales.amount], ['2026-09-27', true, 150]);
+    const es2 = sales(), sep = es2.periods.find(p => p.id === 'sep'); sep.to = '2026-09-22'; sep.rows = sep.rows.filter(x => x[0] <= '2026-09-22');
+    assert.deepEqual(core.execWeek(data({ today: '2026-10-01', erpSales: es2 }), { reps, rep: M }).sales.missing, [{ rep: M, why: 'short', month: '2026-09' }]);
+  });
+
+  test('a planned clinic is visited by a field visit she was on — the Today plan, the missed plans and the e-mail say the same', () => {
+    const plans = { '2026-10-06': { [M]: [{ id: 'm1', note: '' }, { id: 'm2', note: '' }], [R]: [{ id: 'r1', note: '' }] } };
+    const visits = [{ date: '2026-10-06', rep: M, clinicId: 'm1', callOnly: true },               // a call is not a visit
+      { date: '2026-10-06', rep: M, clinicId: 'm2', orderOnly: true, orderTaken: true },           // nor is a phone order
+      { date: '2026-10-06', rep: M, withRep: R, clinicId: 'r1' }];                                 // a joint field visit fulfils both
+    const keys = core.planVisitKeys(visits);
+    assert.deepEqual([...keys].sort(), ['2026-10-06|Mariam|r1', '2026-10-06|Renova|r1']);
+    assert.deepEqual(core.missedPlans(plans, visits, '2026-10-08').map(m => m.rep + ':' + m.clinicId), ['Mariam:m1', 'Mariam:m2']);
+    const ev = core.dailyDigest({ kind: 'evening', data: Object.assign(data({ today: '2026-10-06', visits }), { dayPlans: plans }), reps: [M, R] });
+    assert.match(ev.text, /مخطط: 2 · تمت: 0 · لم تتم: Amber Dental Clinic، Birch Dental Center/);
+    assert.match(ev.text, /مخطط: 1 · تمت: 1/);
   });
 });
