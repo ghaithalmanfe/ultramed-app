@@ -4500,3 +4500,198 @@ describe('mergeDoctorLists3', () => {
     assert.deepEqual(m.remap, { d7: 'd5' });
   });
 });
+
+describe('management dashboard (v121)', () => {
+  // Synthetic files Jul–Oct (no real sales data). Today 8 Oct 2026, the
+  // October file runs to 8 Oct. Mariam and Renova carry DSR targets; the
+  // supervisor sells and has none.
+  const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith', MS = 'Mariam Zohair', RS = 'Renova Ayman', GS = 'Ghaith Al Manfe';
+  const reps = [M, R, G];
+  const P = { i: ['Intensiv Ortho-Strips', 'Intensiv'], p: ['Sonicare 4300', 'Philips Sonicare'], t: ['TePe Interdental Brush', 'TePe'] };
+  const row = (d, doc, cust, net, sm, k, qty) => [d, doc, 0, P[k][0], qty || 1, net, net, 0, sm, P[k][1], cust, 'Clinics', 0, ''];
+  const ret = (d, doc, cust, net, sm, k, ref) => [d, doc, 1, P[k][0], -1, 0, net, -net, sm, P[k][1], cust, 'Clinics', 0, ref];
+  const repMap = { [MS]: M, [RS]: R, [GS]: G };
+  const FILES = {
+    jul: ['2026-07-01', '2026-07-31', [row('2026-07-02', 'SINV7001', 'Dental 8 Clinic', 100, MS, 'i'), row('2026-07-05', 'SINV7002', 'Smart Dental Center', 200, MS, 'i'),
+      row('2026-07-06', 'SINV7003', 'Meena Dental', 50, RS, 't'), row('2026-07-20', 'SINV7004', 'Smart Dental Center', 150, MS, 'p')]],
+    aug: ['2026-08-01', '2026-08-31', [row('2026-08-03', 'SINV7101', 'Smart Dental Center', 180, MS, 'i'), row('2026-08-04', 'SINV7102', 'Dental 8 Clinic', 90, MS, 'p'),
+      row('2026-08-06', 'SINV7103', 'Apex Dental Center', 60, RS, 't'), row('2026-08-25', 'SINV7104', 'Meena Dental', 40, RS, 'i')]],
+    sep: ['2026-09-01', '2026-09-30', [row('2026-09-01', 'SINV7201', 'Smart Dental Center', 210, MS, 'i'), row('2026-09-03', 'SINV7202', 'Dental 8 Clinic', 120, MS, 'i', 2),
+      row('2026-09-07', 'SINV7203', 'Meena Dental', 70, RS, 't'), row('2026-09-08', 'SINV7204', 'Bayan Dental Center', 300, GS, 'p'),
+      row('2026-09-21', 'SINV7205', 'Dental 8 Clinic', 80, MS, 'p'), row('2026-09-22', 'SINV7206', 'My Fatoorah', 30, MS, 'p')]],
+    oct: ['2026-10-01', '2026-10-08', [row('2026-10-01', 'SINV7301', 'Dental 8 Clinic', 150, MS, 'i', 3), row('2026-10-04', 'SINV7302', 'Smart Dental Center', 20, MS, 'i'),
+      row('2026-10-05', 'SINV7303', 'Dental 8 Clinic', 60, MS, 'p'), row('2026-10-05', 'SINV7304', 'Meena Dental', 45, RS, 't'),
+      row('2026-10-06', 'SINV7305', 'Jibla Dental Center', 120, RS, 'i'), row('2026-10-06', 'SINV7306', 'Bayan Dental Center', 200, GS, 'p'),
+      row('2026-10-07', 'SINV7307', 'My Fatoorah', 12, MS, 'p'), row('2026-10-07', 'SINV7308', 'Marketing Philips', 5, MS, 'p'),
+      row('2026-10-07', 'SINV7309', 'Unknown Trading Co', 9, MS, 't'), ret('2026-10-08', 'SRET7310', 'Dental 8 Clinic', -25, MS, 'i', 'SINV7301')]] };
+  const sales = () => ({ returnPolicy: 'origin', periods: Object.keys(FILES).map(id => ({ id, from: FILES[id][0], to: FILES[id][1], repMap, rows: FILES[id][2].map(r => r.slice()) })) });
+  const CLINICS = [
+    { id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A', nextFollowUp: '2026-10-05' }, { id: 'm2', name: 'Smart Dental Center', rep: M, cls: 'A' },
+    { id: 'm3', name: 'Bright Smile Clinic', rep: M, cls: 'B', nextFollowUp: '2026-10-08' }, { id: 'm9', name: 'Closed Clinic', rep: M, cls: 'Closed', nextFollowUp: '2026-10-01' },
+    { id: 'r1', name: 'Meena Dental', rep: R, cls: 'B' }, { id: 'r2', name: 'Jibla Dental Center', rep: R, cls: 'A' },
+    { id: 'r3', name: 'Apex Dental Center', rep: R, cls: 'A', nextFollowUp: '2026-10-02' }, { id: 'r4', name: 'Crown Dental Center', rep: R, cls: 'C', nextFollowUp: '2026-10-20' },
+    { id: 'g1', name: 'Bayan Dental Center', rep: G, cls: 'A' }];
+  const TARGETS = { [M]: { revenue: 1000, month: '2026-10', brands: { Intensiv: 600, 'Philips Sonicare': 400 } }, [R]: { revenue: 800, month: '2026-10', brands: { Intensiv: 500, TePe: 300 } },
+    _history: { '2026-09': { [M]: { revenue: 900, brands: { Intensiv: 500, 'Philips Sonicare': 400 } }, [R]: { revenue: 700 } }, '2026-08': { [M]: { revenue: 850 } } } };
+  const VISITS = [
+    { id: 'v1', clinicId: 'm1', rep: M, date: '2026-10-01', orderTaken: true, orderTotal: 150 }, { id: 'v2', clinicId: 'm2', rep: M, date: '2026-10-04' },
+    { id: 'v3', clinicId: 'r1', rep: R, withRep: M, date: '2026-10-05', orderTaken: true, orderTotal: 45 }, { id: 'v4', clinicId: 'r2', rep: R, date: '2026-10-06' },
+    { id: 'v5', clinicId: 'm1', rep: M, date: '2026-10-06', callOnly: true }, { id: 'v6', clinicId: 'm1', rep: M, date: '2026-10-07', orderOnly: true, orderTaken: true, orderTotal: 60 },
+    { id: 'v7', clinicId: 'g1', rep: G, date: '2026-10-06' }, { id: 'v8', clinicId: 'r3', rep: R, date: '2026-09-15' }, { id: 'v9', clinicId: 'm3', rep: M, date: '2026-09-10', orderTaken: true, orderTotal: 33 }];
+  const data = (o = {}) => ({ today: o.today || '2026-10-08', targets: o.targets || TARGETS, erpSales: o.erpSales || sales(), clinics: o.clinics || CLINICS,
+    erpMap: { 'Marketing Philips': '@ignore' }, visits: o.visits || VISITS, tasks: [], events: [], dayPlans: {} });
+  const at = (d, today) => Object.assign({}, d, { today });
+
+  test('working days (Sun–Thu) of a month, counted to the ERP cut-off', () => {
+    assert.deepEqual(core.monthWorkdays('2026-10', '2026-10-08'), { total: 21, done: 6, left: 15, asOf: '2026-10-08' });
+    assert.deepEqual(core.monthWorkdays('2026-10', null), { total: 21, done: 0, left: 21, asOf: null });
+    assert.deepEqual(core.monthWorkdays('2026-10', '2026-11-04'), { total: 21, done: 21, left: 0, asOf: '2026-10-31' });
+    assert.deepEqual(core.monthWorkdays('2026-02', '2026-02-10'), { total: 20, done: 8, left: 12, asOf: '2026-02-10' });
+    assert.equal(core.monthWorkdays('2026-10', '2026-10-08').total, core.workingDaysBetween('2026-10-01', '2026-10-31'));
+  });
+
+  test('invoiced sales: each person\'s month figure is monthAchievement\'s, the team their sum; achievement and remaining as the Today card', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    assert.deepEqual(D.byPerson.map(p => [p.rep, p.amount]), reps.map(r => [r, core.monthAchievement(r, d).amount]));
+    assert.deepEqual(D.byPerson.map(p => p.amount), [231, 165, 200]);        // the return of an October invoice stays in October
+    assert.equal(D.sales.amount, 596); assert.equal(D.sales.asOf, '2026-10-08'); assert.equal(D.sales.measured, true);
+    assert.deepEqual(D.target, { amount: 1800, people: [M, R], none: [G], stale: [] });
+    const tA = core.teamAchievement(reps, d);                                  // the Today card's Team line
+    assert.equal(D.achievement.pct, tA.pct); assert.equal(D.achievement.achieved, tA.ach); assert.equal(D.achievement.target, tA.goal);
+    assert.deepEqual(D.achievement.noTarget, [G]);                             // his sales are invoiced, not in the percentage
+    assert.deepEqual(D.byPerson.map(p => p.pct), [Math.round(231 / 1000 * 100), Math.round(165 / 800 * 100), null]);
+    assert.equal(D.remaining, 1404);
+    assert.deepEqual(D.perDay.workdays, { total: 21, done: 6, left: 15, asOf: '2026-10-08' });
+    assert.equal(D.perDay.amount, 93.6); assert.equal(D.perDay.soFar, 66);
+    const one = core.execDashboard(d, { reps, rep: M });
+    assert.deepEqual([one.sales.amount, one.target.amount, one.achievement.pct, one.remaining, one.perDay.amount], [231, 1000, 23, 769, Math.round(769 / 15 * 100) / 100]);
+    assert.equal(core.execDashboard(d, { reps, month: '2026-12' }).month, '2026-10');   // never a month after today's
+  });
+
+  test('the same days of last month: day 1 to the cut-off, as Month by month counts them', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    const tr = core.monthlyTrend(d, { reps, end: '2026-10-08', months: 2 }), sep = tr.months.find(m => m.month === '2026-09');
+    reps.forEach(r => assert.equal(D.sameDays.byRep[r].previous, sep.byRep[r].sameDays, r));
+    assert.deepEqual([D.sameDays.month, D.sameDays.to, D.sameDays.previous, D.sameDays.current], ['2026-09', '2026-09-08', 700, 596]);
+    assert.equal(Math.round(D.sameDays.growth * 1000), -149);
+    // a lagging file: today 11 Oct, the file still ends 8 Oct — September counts to the 8th too
+    const lag = core.execDashboard(data({ today: '2026-10-11' }), { reps });
+    assert.equal(lag.sameDays.to, '2026-09-08'); assert.equal(lag.sameDays.previous, 700);
+    assert.deepEqual(lag.perDay.workdays, { total: 21, done: 6, left: 15, asOf: '2026-10-08' });
+    // growth from zero is said, never a percentage
+    const ph = core.execDashboard(d, { reps, rep: M, brand: 'Philips Sonicare' });
+    assert.deepEqual([ph.sameDays.previous, ph.sameDays.current, ph.sameDays.growth, ph.sameDays.fromZero], [0, 77, null, true]);
+  });
+
+  test('a closed month: the Months report\'s figures and that month\'s own targets; every working day done', () => {
+    const d = data(), D = core.execDashboard(d, { reps, month: '2026-09' });
+    reps.forEach(r => {
+      const p = D.byPerson.find(x => x.rep === r);
+      assert.equal(p.amount, core.monthAchievement(r, at(d, '2026-09-30')).amount, r);
+      assert.equal(p.amount, core.erpRevenueRange(d, '2026-09-01', '2026-09-30', r), r);   // the Months report sums the month this way
+    });
+    assert.deepEqual(D.byPerson.map(p => [p.amount, p.target, p.pct]), [[440, 900, 49], [70, 700, 10], [300, null, null]]);
+    assert.deepEqual([D.sales.amount, D.target.amount, D.achievement.pct, D.remaining], [810, 1600, 32, 1090]);
+    assert.deepEqual([D.perDay.closed, D.perDay.amount, D.perDay.workdays.left], [true, null, 0]);
+    assert.deepEqual([D.sameDays.to, D.sameDays.previous], ['2026-08-30', 370]);           // day 1–30 of August
+  });
+
+  test('a month with no sales file: no sales figure (never 0), the targets still shown', () => {
+    const D = core.execDashboard(data({ today: '2026-11-03' }), { reps });
+    assert.equal(D.month, '2026-11'); assert.equal(D.sales.measured, false); assert.equal(D.sales.amount, null);
+    assert.deepEqual(D.sales.missing.map(x => x.why), ['nofile', 'nofile', 'nofile']);
+    assert.ok(D.byPerson.every(p => p.amount === null && p.pct === null && p.remaining === null));
+    assert.deepEqual([D.achievement.pct, D.remaining, D.perDay.amount, D.sameDays.measured, D.newCustomers.measurable, D.act.measurable], [null, null, null, false, false, false]);
+    // the Today card still shows October's target, named; the year keeps it in October only
+    assert.equal(D.target.amount, 1800); assert.deepEqual(D.target.stale, [{ rep: M, month: '2026-10' }, { rep: R, month: '2026-10' }]);
+    assert.equal(D.ytd.months.find(m => m.month === '2026-11').target, null);
+    assert.ok(D.ytd.noFile.includes('2026-11') && D.ytd.noTarget.includes('2026-11'));
+    assert.ok(D.byBrand.rows.every(b => b.net === null) && D.byBrand.total === null && D.byProduct.rows.length === 0);
+    assert.deepEqual(core.execDashboard(data(), { reps, month: '2026-06' }).sales.missing.map(x => x.why), ['nofile', 'nofile', 'nofile']);
+  });
+
+  test('a file without someone\'s salesman says nothing about her: no figure, not in the percentage, nobody of hers judged', () => {
+    const es = sales(), oct = es.periods.find(p => p.id === 'oct');
+    oct.rows = oct.rows.filter(r => r[8] === MS); oct.repMap = { [MS]: M };
+    const D = core.execDashboard(data({ erpSales: es }), { reps });
+    assert.deepEqual(D.sales.missing, [{ rep: R, why: 'notinfiles' }, { rep: G, why: 'notinfiles' }]);
+    assert.equal(D.sales.amount, 231);
+    assert.deepEqual([D.achievement.pct, D.achievement.target, D.achievement.notMeasured], [23, 1000, [R]]);
+    assert.deepEqual(D.act.potential.map(x => x.name), ['Bright Smile Clinic']);             // Apex (Renova's) is not judged
+  });
+
+  test('one brand: its part of the same lines, its DSR brand target; brands and products add up to the month', () => {
+    const d = data(), D = core.execDashboard(d, { reps, brand: 'intensiv' }), all = core.execDashboard(d, { reps });
+    assert.deepEqual(D.byPerson.map(p => p.amount), [145, 120, 0]);            // 150 + 20 − 25 · 120 · none of it (a true 0: his month is in the files)
+    assert.deepEqual([D.sales.amount, D.target.amount, D.achievement.pct, D.remaining], [265, 1100, 24, 835]);
+    assert.equal(all.byBrand.rows.reduce((s, b) => s + b.net, 0), all.sales.amount);
+    assert.deepEqual(all.byBrand.rows.map(b => [b.brand, b.net, b.target]), [['philips', 277, 400], ['intensiv', 265, 1100], ['tepe', 54, 300]]);
+    assert.deepEqual(D.byBrand.rows.find(b => b.selected), { brand: 'intensiv', net: 265, target: 1100, pct: 24, selected: true });
+    assert.equal(Math.round(all.byProduct.rows.reduce((s, x) => s + x.net * 100, 0)) / 100, all.sales.amount);
+    assert.deepEqual(D.byProduct.rows, [{ name: 'Intensiv Ortho-Strips', brand: 'intensiv', net: 265, qty: 4, invoices: 3 }]);
+    assert.equal(D.customers.totals.total, D.sales.amount);
+    assert.deepEqual([D.sameDays.previous, D.ytd.months.find(m => m.month === '2026-09').target], [330, 500]);
+  });
+
+  test('the year so far: each month\'s own figure and target; the percentage only where a month has both', () => {
+    const D = core.execDashboard(data(), { reps });
+    assert.deepEqual(D.ytd.months.slice(6).map(m => [m.month, m.sales, m.target]), [['2026-07', 500, null], ['2026-08', 370, 850], ['2026-09', 810, 1600], ['2026-10', 596, 1800]]);
+    assert.deepEqual([D.ytd.sales, D.ytd.target], [2276, 4250]);
+    assert.deepEqual(D.ytd.noFile, ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']);
+    assert.deepEqual(D.ytd.noTarget, ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07']);
+    assert.deepEqual(D.ytd.like, { sales: 270 + 510 + 396, target: 4250, pct: 28, months: ['2026-08', '2026-09', '2026-10'] });
+  });
+
+  test('new customers: first invoice ever in the files, as Month by month counts them; not measurable in the files\' first month', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    assert.deepEqual(D.newCustomers.list.map(x => [x.name, x.rep, x.date, x.net]), [['Jibla Dental Center', R, '2026-10-06', 120], ['Unknown Trading Co', M, '2026-10-07', 9]]);
+    const oct = core.monthlyTrend(d, { reps, end: '2026-10-08', months: 1 }).months[0];
+    assert.equal(D.newCustomers.count, reps.reduce((s, r) => s + oct.byRep[r].newAccounts, 0));
+    assert.equal(core.execDashboard(d, { reps, rep: R }).newCustomers.count, oct.byRep[R].newAccounts);
+    const jul = core.execDashboard(d, { reps, month: '2026-07' });
+    assert.deepEqual([jul.newCustomers.measurable, jul.newCustomers.count], [false, null]);
+  });
+
+  test('field work as logged: a joint visit counts for each person, once for the team; a phone order is an order, not a visit', () => {
+    const d = data(), D = core.execDashboard(d, { reps }), by = Object.fromEntries(D.byPerson.map(p => [p.rep, p]));
+    assert.deepEqual(D.visits, { count: 5, joint: 1 });
+    assert.deepEqual([by[M].visits, by[R].visits, by[G].visits], [3, 2, 1]);
+    assert.deepEqual(D.orders, { count: 3, value: 255, phone: 1 });          // logged in the app — never sales
+    assert.deepEqual([by[M].orders, by[M].ordersValue, by[R].orders], [2, 210, 1]);
+    assert.deepEqual(D.conversion, { visits: 5, withOrder: 2, pct: 40 });
+    assert.deepEqual([by[M].conversion, by[R].conversion, by[G].conversion], [67, 50, 0]);
+    const kpi = core.kpiScorecard(d, { rep: M, from: '2026-10-01', to: '2026-10-08' });
+    assert.match(kpi.items.find(i => i.key === 'visits').value, /\(3 in 6 working days\)/);   // the KPI scorecard's count
+  });
+
+  test('follow-ups outstanding: the Today screen\'s Due list (open clinics, due today or overdue)', () => {
+    const D = core.execDashboard(data(), { reps });
+    assert.deepEqual([D.followUps.count, D.followUps.overdue, D.followUps.today, D.followUps.offTeam], [3, 2, 1, 0]);
+    assert.deepEqual(D.followUps.list.map(c => c.id), ['r3', 'm1', 'm3']);
+    assert.equal(core.execDashboard(data(), { reps, rep: M }).followUps.count, 2);
+  });
+
+  test('customers to act on: under-performing against the same days of 3 months; high potential = A/B with no invoice', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    assert.deepEqual(D.act.prior.map(p => p.to), ['2026-09-08', '2026-08-08', '2026-07-08']);
+    assert.deepEqual(D.act.under.map(x => [x.name, x.owner, x.current, x.average, x.bought]), [['Smart Dental Center', M, 20, 196.67, 3]]);
+    assert.deepEqual(D.act.potential.map(x => [x.name, x.cls, x.bought, x.lastVisit]), [['Apex Dental Center', 'A', 1, '2026-09-15'], ['Bright Smile Clinic', 'B', 0, '2026-09-10']]);
+    // handed over this month: not hers to lose
+    const moved = CLINICS.map(c => c.id === 'm2' ? Object.assign({}, c, { rep: R, prevRep: M, repSince: '2026-10-01' }) : c);
+    assert.deepEqual(core.execDashboard(data({ clinics: moved }), { reps, rep: M }).act.under, []);
+    // one earlier month in the files: no verdict on under-performing
+    const es = sales(); es.periods = es.periods.filter(p => p.id === 'sep' || p.id === 'oct');
+    assert.deepEqual(core.execDashboard(data({ erpSales: es }), { reps }).act.under, []);
+  });
+
+  test('monthCustomerSales: the team and brand options keep to the same lines; without them nothing changes', () => {
+    const d = data(), all = core.monthCustomerSales(d, { month: '2026-10' });
+    assert.deepEqual(core.monthCustomerSales(d, { month: '2026-10', reps }).totals, all.totals);
+    const two = core.monthCustomerSales(d, { month: '2026-10', reps: [M, R] });
+    assert.deepEqual([two.totals.total, two.people.map(p => p.rep).sort()], [396, [M, R]]);
+    assert.ok(!two.accounts.some(a => a.name === 'Bayan Dental Center'));
+    const b = core.monthCustomerSales(d, { month: '2026-10', brand: 'TePe' });
+    assert.deepEqual(b.accounts.map(a => [a.name, a.net]), [['Meena Dental', 45], ['Unknown Trading Co', 9]]);
+    assert.deepEqual(core.execDashboard(d, { reps }).customers.accounts, all.accounts);   // the Clinics card's list
+  });
+});
