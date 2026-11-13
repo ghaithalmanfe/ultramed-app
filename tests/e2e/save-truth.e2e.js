@@ -18,7 +18,12 @@
 //     rules refuse stays in the sheet, not on the list; a rename carries
 //     the handover's previous owner;
 //  F  the Assistant sends nothing anywhere;
-//  G  save actions never say "saved" for a save that did not land.
+//  G  save actions never say "saved" for a save that did not land;
+//  H  both halves of v123 together: a whole document refused by its
+//     compare-and-set keeps the specific words, a save with no answer yet is
+//     said as that, a catalog over the limit is never sent, the whole-day
+//     Restore keeps today's data measured like the daily backup, the bin keeps
+//     30 days in its three-way merge, the phone-copy restore says a refusal.
 // Several phones share one cloud; the 20-second refresh is driven by hand.
 // Clock pinned to Fri 13 Nov 2026, 10:00.
 const { chromium } = require('playwright');
@@ -468,6 +473,101 @@ function seedCloud(extra){
     mode.deny = null;
     check('G3. a rename whose target save is refused never says "✅ Team updated"', !g3.includes('✅ Team updated') && g3.includes(NOT_ALLOWED), g3);
     await S.ctx.close();
+  }
+
+  // ===================== H. both halves of v123 together =====================
+  // The sync core (whole documents by one compare-and-set, the restore that
+  // keeps today's data first) and the truthful saves (sizes, refusals, the
+  // words a screen says) meet here; each check failed on their first merge.
+  {
+    // H1 — another device saved the targets first: the screen's last word is "Changed on another device", never a vaguer one
+    seedCloud();
+    const S1 = await mkPhone('H1-S1'), S2 = await mkPhone('H1-S2');
+    await S1.boot('Dr. Ghaith', 'supervisor'); await S2.boot('Dr. Ghaith', 'supervisor');
+    await S2.ev(async () => { targets.Mariam.revenue = 7777; await persist('targets'); });
+    const h1 = await S1.ev(async () => {
+      openAdminPanel(); setAdminTab('team'); await new Promise(r => setTimeout(r, 60));
+      const el = document.getElementById('tgRev0'); if(!el) return { err: 'no target input' };
+      el.value = '5555'; window.__toasts = [];
+      await saveTargets(); await new Promise(r => setTimeout(r, 60));
+      return { toasts: window.__toasts.slice(), pill: (document.getElementById('refusedPill') || {}).textContent || '' };
+    });
+    check('H1. a targets save refused because another device saved first: the last word on screen is "Changed on another device — reopen the app, then save again" (not replaced by a vaguer "Not saved"), the bar stays, never "saved", the other device\'s figure kept',
+      !!h1.toasts && /^⚠️ Changed on another device/.test(h1.toasts[h1.toasts.length - 1] || '') && !h1.toasts.some(t => /targets saved|reopen the app, then try again/.test(t)) && /changed on another device/.test(h1.pill) && parse(cloud.targets).Mariam.revenue === 7777, h1);
+    await S1.ctx.close(); await S2.ctx.close();
+
+    // H2 — no answer from the cloud in time (the transaction may still land): said as that, never as "not saved"
+    seedCloud();
+    const S = await mkPhone('H2-S'); await S.boot('Dr. Ghaith', 'supervisor');
+    const h2 = await S.ev(async () => {
+      const real = window.storage.update;
+      window.storage.update = (k, fn) => k === 'targets' ? Promise.reject(new Error('timeout')) : real(k, fn); // what withTimeout throws after 12 s
+      openAdminPanel(); setAdminTab('team'); await new Promise(r => setTimeout(r, 60));
+      document.getElementById('tgRev0').value = '6666'; window.__toasts = []; _lastOfflineToast = 0;
+      await saveTargets(); await new Promise(r => setTimeout(r, 60));
+      window.storage.update = real;
+      return { toasts: window.__toasts.slice(), out: persistOutcome('targets') };
+    });
+    check('H2. a targets save with no answer from the cloud in time: "No answer from the cloud yet — … to see whether it was saved", never "Not saved — check the connection" nor "saved"',
+      h2.toasts.some(t => /No answer from the cloud yet/.test(t)) && !h2.toasts.some(t => /Not saved — check the connection|targets saved/.test(t)) && !!h2.out && h2.out.timeout === true, h2);
+
+    // H3 — a catalog over the cloud's limit: never sent (not even inside the transaction), said by the bar, nothing queued
+    const t3 = tries('H2-S', 'products') + writes('H2-S', 'products');
+    const h3 = await S.ev(async () => {
+      products.push({ id: 'H3-BIG', name: 'H3 big product', brand: 'TEPE', price: 1, notes: 'q'.repeat(1100000) });
+      window.__toasts = [];
+      const r = await persistTold('products');
+      products = products.filter(p => p.id !== 'H3-BIG');
+      return { ok: r.ok, tooLarge: !!(r.outcome && r.outcome.tooLarge), queued: outboxHas('products'), toasts: window.__toasts.slice(), bar: (document.getElementById('tooLargeBar') || {}).textContent || '' };
+    });
+    const t3b = tries('H2-S', 'products') + writes('H2-S', 'products');
+    check('H3. a product catalog over the cloud\'s limit is never sent (no 1 MB upload that the cloud refuses), the bar names the catalog, nothing queued',
+      h3.ok === false && h3.tooLarge && !h3.queued && t3b === t3 && /the product catalog is too large for the cloud/.test(h3.bar) && !/H3-BIG/.test(cloud.products), { ...h3, sent: t3b - t3 });
+    await S.ctx.close();
+
+    // H4 — the whole-day Restore keeps today's data first: measured like the daily backup (above 900 KB without the previews), so a big month can still be restored
+    const liveV = ['1', '2'].map(i => visit('vH4-' + i, 'c1', 'Mariam', { notes: 'H4 visit ' + i, photos: [{ id: 'pH4-' + i, thumb: thumb('H', 440000) }] }));
+    const extraV = visit('vH4-new', 'c2', 'Renova', { notes: 'H4 visit after the backup' });
+    const manyProducts = Array.from({ length: 700 }, (_, i) => ({ id: 'P' + i, name: 'Product ' + i + ' ' + 'z'.repeat(200), brand: 'TEPE', price: 1 }));
+    seedCloud({ visits: JSON.stringify(liveV.concat([extraV])), products: JSON.stringify(manyProducts) });
+    cloud['snap_2026-11-12'] = JSON.stringify({ clinics: parse(cloud.clinics), products: manyProducts, visits: liveV.map(v => Object.assign({}, v, { photos: v.photos.map(p => ({ id: p.id })) })), tasks: [], slim: { photos: 2 }, ts: '2026-11-12T20:00:00.000Z' });
+    const T = await mkPhone('H4-S'); await T.boot('Dr. Ghaith', 'supervisor');
+    const h4 = await T.ev(async () => { window.__toasts = []; await restoreSnapshot('2026-11-12'); return { toasts: window.__toasts.slice(), mem: visits.map(v => v.id) }; });
+    const kept = parse(cloud[SNAP]) || {};
+    const keptBytes = Buffer.byteLength(cloud[SNAP] || '', 'utf8');
+    const restored = cloudVisits();
+    check('H4. a whole-day Restore while today\'s data is above 900 KB: today\'s data is kept first as today\'s backup without the photo previews (every visit and photo id kept), then the restore goes ahead and the restored visits keep their previews',
+      kept.keptBeforeRestore === '2026-11-12' && kept.slim && kept.slim.photos === 2 && keptBytes < 1000000 && (kept.visits || []).map(v => v.id).sort().join() === 'vH4-1,vH4-2,vH4-new'
+        && h4.toasts.some(t => /^✅ Restored 2026-11-12/.test(t)) && !restored.some(v => v.id === 'vH4-new') && restored.filter(v => /^vH4-\d$/.test(v.id)).every(v => v.photos[0].thumb && v.photos[0].thumb.length > 400000),
+      { toasts: h4.toasts, kept: { by: kept.keptBeforeRestore, slim: kept.slim, bytes: keptBytes, visits: (kept.visits || []).map(v => v.id) }, restored: restored.map(v => [v.id, ((v.photos || [])[0] || {}).thumb ? 'thumb' : 'none']) });
+    await T.ctx.close();
+
+    // H5 — the recycle bin keeps 30 days in its three-way merge too: a 40-day-old entry another phone (an older app) wrote meanwhile goes, a recent one stays
+    seedCloud({ visits: JSON.stringify([visit('vH5', 'c1', 'Mariam', { notes: 'H5 delete' })]) });
+    const P = await mkPhone('H5-A'); await P.boot('Mariam', 'rep');
+    cloud.recycleBin = JSON.stringify({ clinics: [], products: [], visits: [{ id: 'old-h5', clinicId: 'c1', _deletedAt: CLOCK - 40 * DAY, _label: 'old' }, { id: 'new-h5', clinicId: 'c1', _deletedAt: CLOCK - DAY, _label: 'recent' }] });
+    await P.ev(async () => { await deleteVisit('vH5'); });
+    const bin5 = ((parse(cloud.recycleBin) || {}).visits || []).map(x => x.id).sort();
+    check('H5. a delete merges the bin with the cloud\'s and keeps 30 days: the entry another phone wrote yesterday stays, its 40-day-old one goes, the visit just deleted is there',
+      JSON.stringify(bin5) === JSON.stringify(['new-h5', 'vH5']), bin5);
+    await P.ctx.close();
+
+    // H6 — "Restore from this phone's copy" refused by the rules: said for what it is, never "uploads when the connection is back"
+    seedCloud();
+    const S6 = await mkPhone('H6-S'); await S6.boot('Dr. Ghaith', 'supervisor');
+    const oldCopy = JSON.stringify(parse(cloud.clinics).concat([{ id: 'cH6', name: 'H6 Lost Clinic', rep: 'Renova', cls: 'B', doctors: [] }]));
+    await S6.ev(c => { localStorage.setItem('um_mirror_prev:clinics', c); }, oldCopy);
+    mode.deny = { re: /^clinics$/, ops: 'w' };
+    const h6 = await S6.ev(async () => {
+      await restoreDeviceClinics('prev'); await new Promise(r => setTimeout(r, 100));
+      devCopyToggle('cH6', true); window.__toasts = [];
+      await applyDeviceCopy(); await new Promise(r => setTimeout(r, 200));
+      return { toasts: window.__toasts.slice(), note: (document.getElementById('devCopyNote') || {}).innerText || '', queued: outboxHas('clinics') };
+    });
+    mode.deny = null;
+    check('H6. the phone-copy restore refused by the rules: "Not allowed, not saved", never "not saved to the cloud yet" or "uploads when the connection is back", nothing queued',
+      h6.toasts.includes(NOT_ALLOWED) && !h6.toasts.some(t => /not saved to the cloud yet|updated from this phone's copy/.test(t)) && /Not allowed, not saved/.test(h6.note) && !/uploads when the connection is back/.test(h6.note) && !h6.queued && !parse(cloud.clinics).some(c => c.id === 'cH6'), h6);
+    await S6.ctx.close();
   }
 
   const pe = Object.keys(errors).filter(k => errors[k].length).map(k => k + ': ' + errors[k].slice(0, 3).join(' | '));
