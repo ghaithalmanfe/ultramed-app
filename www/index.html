@@ -487,10 +487,11 @@
   .ms-pill.warn{background:var(--amber-dim); color:var(--amber-ink);}
   .ms-pill.bad{background:var(--coral-dim); color:var(--coral-ink);}
   .ms-pill.none{background:#EEF1EF; color:var(--muted);}
-  .ms-stats{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:16px; border-top:1px solid var(--hair); padding-top:14px;}
-  .ms-stats.two{grid-template-columns:repeat(2,minmax(0,1fr));}
+  /* the columns take the width their words need (the spare width shared out), so a long amount is not squeezed by a short label beside it */
+  .ms-stats{display:grid; grid-template-columns:repeat(3,auto); margin-top:16px; border-top:1px solid var(--hair); padding-top:14px;}
+  .ms-stats.two{grid-template-columns:repeat(2,auto);}
   .ms-stats > div{padding-inline-end:10px; min-width:0;}
-  .ms-stats > div + div{border-inline-start:1px solid var(--hair); padding-inline-start:12px;}
+  .ms-stats > div + div{border-inline-start:1px solid var(--hair); padding-inline-start:10px;}
   .ms-stats > div:last-child{padding-inline-end:0;}
   .ms-stats .ms-l{display:block; font-size:13px; color:var(--muted); line-height:1.4;}
   .ms-stats b{display:block; font-size:15px; font-weight:600; margin-top:2px; color:var(--ink);}
@@ -645,8 +646,8 @@
     .ms-fold > .ms-ct .ms-t > span:first-child{color:var(--muted); font-size:14.5px;}
     .ms-fold > .ms-body{display:block !important;}
   }
-  /* a narrow laptop: two cards a row (three would be too narrow for the figures), the chart across */
-  @media (min-width:1024px) and (max-width:1279px){
+  /* a narrow laptop (up to 1365 px): two cards a row — three would squeeze the team's amounts — the chart across */
+  @media (min-width:1024px) and (max-width:1365px){
     #app > #view-today{padding:12px 24px 24px;}
     .ms-grid{gap:20px;}
     .ms-grid > *{grid-column:span 6;}

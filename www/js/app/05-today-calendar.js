@@ -765,15 +765,16 @@ function msSalesHTML(v, m, P, tt){
 }
 function msSalesStats(D, goal){
   const dash = k => `<b data-ms="${k}" data-value="">—</b>`;
-  if(!D) return `<div class="ms-stats"><div><span class="ms-l">${msT('Remaining')}</span>${dash('remaining')}</div><div><span class="ms-l">${msT('Per working day')}</span>${dash('perday')}</div><div><span class="ms-l">${msT('Month-end forecast')}</span>${dash('forecast')}</div></div>`;
+  if(!D) return `<div class="ms-stats"><div><span class="ms-l">${msT('Remaining')}</span>${dash('remaining')}</div><div><span class="ms-l">${msT('Per working day')}</span>${dash('perday')}</div><div><span class="ms-l">${msT('Forecast')}</span>${dash('forecast')}</div></div>`;
   const A = msOf(D.achievement) || {}, Pd = msOf(D.perDay) || {}, wd = msOf(Pd.workdays) || {}, F = msOf(D.forecast);
   const left = wd.left != null ? wd.left : null;
   const remaining = D.remaining != null ? `<b data-ms="remaining" data-value="${D.remaining}">${msKd(D.remaining)}</b>` : dash('remaining');
   const perDay = Pd.amount != null ? `<b data-ms="perday" data-value="${Pd.amount}">${msKd(Pd.amount)}</b>` : dash('perday');
-  const perSub = Pd.amount != null && left != null ? `<em>${msT(msCount(left, 'working day left', 'working days left'))}</em>`
+  // the design's short words: "15 days left" under "Per working day" — the working days (Sun–Thu), as the ⓘ says
+  const perSub = Pd.amount != null && left != null ? `<em>${msT(msCount(left, 'day left', 'days left'))}</em>`
     : D.remaining === 0 && A.pct != null ? `<em>${msT('Target reached')}</em>` : '';
   const cells = [`<div><span class="ms-l">${msT('Remaining')}</span>${remaining}</div>`, `<div><span class="ms-l">${msT('Per working day')}</span>${perDay}${perSub}</div>`];
-  if(F) cells.push(`<div><span class="ms-l">${msT('Month-end forecast')}</span>${F.amount != null ? `<b data-ms="forecast" data-value="${F.amount}">${msKd(F.amount)}</b>${F.pct != null ? `<em>${msT(F.pct + '% of the target')}</em>` : ''}` : dash('forecast')}</div>`);
+  if(F) cells.push(`<div><span class="ms-l">${msT('Forecast')}</span>${F.amount != null ? `<b data-ms="forecast" data-value="${F.amount}">${msKd(F.amount)}</b>${F.pct != null ? `<em>${msT(F.pct + '% of target')}</em>` : ''}` : dash('forecast')}</div>`);
   return `<div class="ms-stats${cells.length === 2 ? ' two' : ''}">${cells.join('')}</div>`;
 }
 
@@ -1170,7 +1171,7 @@ function msHow(id){
       const exp = msExpected(wd);
       if(exp != null) body += sec('Expected by now (the dark line)', 'The working days (Sunday to Thursday) from day 1 to the last day the sales files cover, against the working days of the month.',
         'Expected % = working days done ÷ working days of the month × 100. On pace from 90% of the expected figure, ahead from 100% (the rule of the management report).', `<div>${msN(`${wd.done} ÷ ${wd.total} × 100 = ${exp}%`)}</div>`);
-      if(F) body += sec('Month-end forecast', 'The pace of invoiced sales so far in the ERP files, person by person — the formula of the management report.',
+      if(F) body += sec('Forecast for the month', 'The pace of invoiced sales so far in the ERP files, person by person — the formula of the management report.',
         'Forecast = invoiced so far ÷ working days done × working days of the month, for each person, then added up. A projection, not a sale.',
         F.amount != null ? Object.keys(F.byRep || {}).map(r => { const x = F.byRep[r]; return kv(msWho(r), `${msN(`÷ ${Math.max(1, x.done)} × ${x.total}`)} = ${msKd(x.amount)}`); }).join('') + kv(msT('Total'), msKd(F.amount)) : '');
       const sd = msOf(D.sameDays);
