@@ -23,6 +23,9 @@
 //   BACKUP_OUT_DIR     where the file goes (default ./backups; --out wins)
 //   BACKUP_PAGE_SIZE   documents per page (default 10: a document can be up to
 //                      1 MiB, so one answer stays around 10 MB at most)
+//   BACKUP_WARN_MB     data size from which the run warns (default 300): the whole
+//                      file is built in memory and one JavaScript string holds
+//                      about 512 MB, so the build stops at about 500 MB of data
 //   FIRESTORE_EMULATOR_HOST + FIREBASE_AUTH_EMULATOR_HOST   a local emulator (tests)
 // Exit code: 0 written (or not configured), 1 failed (nothing written), 2 bad arguments.
 'use strict';
@@ -33,8 +36,18 @@ const F = require('./firestore.js');
 
 const TIERS = ['daily', 'weekly', 'monthly', 'manual'];
 const MIN_PASSPHRASE_CHARS = 20;
+const SIZE_LIMIT = 'about 500 MB';
+const TOO_BIG = ' — the database is too large for this backup to build in memory (' + SIZE_LIMIT + ' at most; docs/backup.md, "Limits")';
 
 class Refusal extends Error {}
+
+// What Node and V8 throw when a string or a buffer cannot be made that large
+// (one string holds about 512 MB): the whole file is built in memory.
+function outOfRoom(e){
+  if(!e) return false;
+  if(e.tooBig || ['ERR_STRING_TOO_LONG', 'ERR_BUFFER_TOO_LARGE', 'ERR_MEMORY_ALLOCATION_FAILED'].includes(e.code)) return true;
+  return e instanceof RangeError && /Invalid string length|Array buffer allocation failed|Invalid typed array length|Invalid array buffer length/i.test(String(e.message));
+}
 
 const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
 // 2026-11-11T23:15:02.123Z → 20261111-231502Z
@@ -135,6 +148,15 @@ async function backup(env, argv, log, now){
     log.warn('Backup count check skipped', 'Could not cross-check the number of documents (' + e.message + '); this backup relies on the listing alone.');
   }
 
+  // ---- the size: everything below is built in memory (one string holds
+  // about 512 MB), so say so long before it stops working ----
+  const dataBytes = Array.from(docs.values()).reduce((n, d) => n + B.fieldsBytes(d.fields), 0);
+  let sizeNote = '';
+  if(dataBytes >= intIn(env.BACKUP_WARN_MB, 1, 1e6, 300) * 1048576){
+    sizeNote = 'The database holds ' + B.formatBytes(dataBytes) + ' of data. This backup builds the whole file in memory and stops working at ' + SIZE_LIMIT + ' of data: before then, have it changed to write the file piece by piece (docs/backup.md, "Limits").';
+    log.warn('Database backup nearing its size limit', sizeNote);
+  }
+
   // ---- bundle → gzip → AES-256-GCM, in memory ----
   const createdAt = now.toISOString();
   const built = B.buildBundle({ docs, project, createdAt, readTime, tier });
@@ -155,7 +177,7 @@ async function backup(env, argv, log, now){
     fs.renameSync(tmp, file);
   }catch(e){
     try{ fs.unlinkSync(tmp); }catch(_){}
-    throw new Error('self-check failed: ' + e.message);
+    throw Object.assign(new Error('self-check failed: ' + e.message), { tooBig: outOfRoom(e) });
   }
   const fileSha = B.sha256hex(fileBuf);
   log.info('Checked: the file decrypts again with the passphrase and holds the same ' + plural(built.count, 'document') + '.');
@@ -171,7 +193,7 @@ async function backup(env, argv, log, now){
     '| Data sha256 | `' + built.sha256 + '` |',
     '| File sha256 | `' + fileSha + '` |', '',
     '| prefix | documents | size |', '|---|---:|---:|',
-  ].concat(rows).join('\n'), log);
+  ].concat(rows, sizeNote ? ['', '> **Nearing the size limit.** ' + sizeNote] : []).join('\n'), log);
   return 0;
 }
 
@@ -182,7 +204,7 @@ async function main(o){
   try{
     return await backup(env, o.argv || process.argv.slice(2), log, o.now ? o.now() : new Date());
   }catch(e){
-    log.error('Backup failed', ((e && e.message) || String(e)) + '. No backup file was written.');
+    log.error('Backup failed', ((e && e.message) || String(e)) + (outOfRoom(e) ? TOO_BIG : '') + '. No backup file was written.');
     return 1;
   }
 }

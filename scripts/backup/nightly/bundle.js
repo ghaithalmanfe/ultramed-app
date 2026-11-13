@@ -261,6 +261,6 @@ function prefixTable(manifest, indent){
 
 module.exports = {
   MAGIC, FORMAT, VERSION, DEFAULT_KDF, BackupError,
-  sha256hex, parseJSON, canonicalJSON, compareIds, keyPrefix, buildManifest, buildBundle,
+  sha256hex, parseJSON, canonicalJSON, compareIds, keyPrefix, fieldsBytes, buildManifest, buildBundle,
   encryptBundle, decryptBackup, readHeader, isBackupFile, isZip, ZIP_HINT, isPhoneBackup, checkBundle, formatBytes, prefixTable, setOwn, hasOwn,
 };

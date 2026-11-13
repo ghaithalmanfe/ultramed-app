@@ -685,6 +685,94 @@ describe('run.js refuses to write a backup it cannot vouch for', () => {
   });
 });
 
+// The whole file is built in memory, and one JavaScript string holds about
+// 512 MB: past about 500 MB of data the build stops ("Invalid string length",
+// measured: 480 MB of photos back up in 33 s at 3.8 GB, 560 MB do not). Photos
+// (photo:<id>, ~250 KB each) are what grows. The run must say so long before,
+// and say why when it happens.
+describe('run.js and the size of the database', () => {
+  test('from the warning size on (300 MB; BACKUP_WARN_MB here), the run warns — and still backs up', async () => {
+    resetSource();
+    const dir = freshDir('big'), summary = path.join(dir, 'gh-summary');
+    const r = await runNode('run.js', [], backupEnv(path.join(dir, 'out'), { BACKUP_WARN_MB: '1', GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary }));
+    assert.equal(r.code, 0, r.all);
+    assert.match(r.out, /::warning title=Database backup nearing its size limit::The database holds \d+(\.\d)? MB of data/);
+    assert.match(r.out, /about 500 MB/); assert.match(r.out, /docs\/backup\.md, "Limits"/);
+    assert.equal(filesIn(path.join(dir, 'out')).length, 1);
+    // a green run is rarely opened line by line: the run's summary says it too
+    assert.match(fs.readFileSync(summary, 'utf8'), /\*\*Nearing the size limit\.\*\* The database holds \d+(\.\d)? MB of data/);
+    assertCleanLog(r.all);
+    const small = freshDir('small'), quietSummary = path.join(small, 'gh-summary');
+    const quiet = await runNode('run.js', [], backupEnv(path.join(small, 'out'), { GITHUB_STEP_SUMMARY: quietSummary }));
+    assert.equal(quiet.code, 0, quiet.all);
+    assert.doesNotMatch(quiet.all + fs.readFileSync(quietSummary, 'utf8'), /size limit/i, 'no warning below the warning size');
+  });
+  test('a build that runs out of room says the database is too large for this backup, and keeps nothing', async () => {
+    resetSource();
+    const dir = freshDir('too-big');
+    const real = B.buildBundle;
+    B.buildBundle = () => { throw new RangeError('Invalid string length'); };   // what V8 throws past ~512 MB
+    let out = '', err = '';
+    try{
+      const run = require('../scripts/backup/nightly/run.js');
+      const code = await run.main({ env: backupEnv(dir), argv: [], out: { write: s => { out += s; } }, err: { write: s => { err += s; } } });
+      assert.equal(code, 1, out + err);
+    }finally{ B.buildBundle = real; }
+    assert.match(err, /Invalid string length — the database is too large for this backup to build in memory \(about 500 MB at most; docs\/backup\.md, "Limits"\)\. No backup file was written\./);
+    assert.deepEqual(filesIn(dir), []);
+    assertCleanLog(out + err);
+  });
+  test('the same is said when the written file is too large to read back, or a buffer cannot be made', async () => {
+    resetSource();
+    const run = require('../scripts/backup/nightly/run.js');
+    const cases = [
+      ['checkBundle', () => { throw Object.assign(new Error('Cannot create a string longer than 0x1fffffe8 characters'), { code: 'ERR_STRING_TOO_LONG' }); }],   // Buffer.toString past ~512 MB
+      ['encryptBundle', () => { throw new RangeError('Array buffer allocation failed'); }],
+    ];
+    for(const [fn, thrower] of cases){
+      const dir = freshDir('too-big-' + fn), real = B[fn];
+      let out = '', err = '', code;
+      B[fn] = thrower;
+      try{ code = await run.main({ env: backupEnv(dir), argv: [], out: { write: s => { out += s; } }, err: { write: s => { err += s; } } }); }
+      finally{ B[fn] = real; }
+      assert.equal(code, 1, fn + ': ' + out + err);
+      assert.match(err, /the database is too large for this backup to build in memory \(about 500 MB at most; docs\/backup\.md, "Limits"\)\. No backup file was written\./, fn);
+      assert.deepEqual(filesIn(dir), [], fn + ': nothing kept, not even the file being written');
+    }
+    // any other failure is not called a size problem
+    const dir = freshDir('not-size'), real = B.buildBundle;
+    let err = '';
+    B.buildBundle = () => { throw new RangeError('Maximum call stack size exceeded'); };
+    try{ assert.equal(await run.main({ env: backupEnv(dir), argv: [], out: { write(){} }, err: { write: s => { err += s; } } }), 1); }
+    finally{ B.buildBundle = real; }
+    assert.doesNotMatch(err, /too large/);
+  });
+});
+
+// A message that sends the reader to a section of the guide must name one
+// that is there (the size messages said "Limits" before the guide had it).
+describe('the guide (docs/backup.md)', () => {
+  const guide = fs.readFileSync(path.join(ROOT, 'docs', 'backup.md'), 'utf8');
+  const headings = guide.split('\n').filter(l => /^#{1,3} /.test(l)).map(l => l.replace(/^#+ /, '').trim());
+  test('every section a tool\'s message points to is in the guide', () => {
+    const named = new Set();
+    for(const f of ['run.js', 'verify.js', 'restore.js', 'bundle.js', 'firestore.js']){
+      const src = fs.readFileSync(path.join(SCRIPTS, f), 'utf8');
+      for(const m of src.matchAll(/docs\/backup\.md, "([^"]+)"(?:; for production, "([^"]+)")?/g)){ named.add(m[1]); if(m[2]) named.add(m[2]); }
+    }
+    assert.ok(named.has('Limits') && named.has('Restore into a separate project') && named.has('Restore into production'), 'the scan finds the sections the messages name: ' + [...named].join(' | '));
+    for(const n of named) assert.ok(headings.some(h => h === n || h.startsWith(n + ' (')), 'docs/backup.md has no section "' + n + '" (it has: ' + headings.join(' | ') + ')');
+  });
+  test('the "Limits" section says the size the backup stops at, the warning before it, and what to do', () => {
+    const at = guide.indexOf('\n## Limits\n');
+    assert.ok(at > 0);
+    const section = guide.slice(at, guide.indexOf('\n## ', at + 5));
+    assert.match(section, /about 500 MB/); assert.match(section, /300 MB/); assert.match(section, /BACKUP_WARN_MB/);
+    assert.match(section, /Database backup nearing its size limit/);
+    assert.match(section, /the database is too large for this backup to build in\s+memory/);
+  });
+});
+
 describe('run.js reads every page at one instant', () => {
   test('a save landing during the backup does not tear it', async () => {
     resetSource();
