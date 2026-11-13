@@ -775,3 +775,17 @@ describe('the workflow (.github/workflows/backup.yml)', () => {
     assert.equal(groupOf(undefined, ''), names.daily);
   });
 });
+
+describe('a nightly backup never reaches the published site', () => {
+  test('the build refuses an encrypted backup, one being written, or a decrypted bundle put in the published folder', () => {
+    const { salesDataFiles } = require('../scripts/build.js');
+    const src = freshDir('www');
+    const plain = B.buildBundle({ docs: new Map([['clinics', { fields: { value: { stringValue: '[]' } } }]]), project: 'demo', createdAt: 'x' }).plaintext;
+    fs.writeFileSync(path.join(src, 'ultramed-state-daily-20261112-231502Z.umbackup'), B.encryptBundle(plain, PASS, { project: 'demo' }, FAST_KDF));
+    fs.writeFileSync(path.join(src, 'ultramed-state-daily-20261112-231502Z.umbackup.partial'), 'x');
+    fs.mkdirSync(path.join(src, 'old'));
+    fs.writeFileSync(path.join(src, 'old', 'bundle.json'), plain);
+    fs.writeFileSync(path.join(src, 'manifest.json'), JSON.stringify({ name: 'app' }));
+    assert.deepEqual(salesDataFiles(src).sort(), ['old/bundle.json', 'ultramed-state-daily-20261112-231502Z.umbackup', 'ultramed-state-daily-20261112-231502Z.umbackup.partial']);
+  });
+});

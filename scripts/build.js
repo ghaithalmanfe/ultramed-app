@@ -26,10 +26,14 @@ function copyDir(from, to, skip){
 // spreadsheet or CSV, or a JSON file holding ERP lines (the app's packed
 // [date, invoice, …] arrays, or objects naming a customer), stops the build.
 const SHEET = /\.(xlsx|xlsm|xls|csv)$/i;
+// a nightly backup (scripts/backup/nightly), or one cut short while it was
+// written: encrypted, but a backup of the whole account is never published
+const BACKUP_FILE = /\.umbackup(\.partial)?$/i;
 function holdsSalesLines(v){
-  // a full backup taken on the phone (Export → Full backup) or a test cloud
-  // restored from one (scripts/backup/restore.js) holds the whole account
-  if(v && typeof v === 'object' && (v.kind === 'ultramed-full-backup' || v.kind === 'ultramed-test-cloud')) return true;
+  // a full backup taken on the phone (Export → Full backup), a test cloud
+  // restored from one (scripts/backup/restore.js), or a nightly backup's
+  // decrypted bundle (scripts/backup/nightly/verify.js --out) holds the whole account
+  if(v && typeof v === 'object' && (v.kind === 'ultramed-full-backup' || v.kind === 'ultramed-test-cloud' || v.format === 'ultramed-state-backup')) return true;
   const lines = Array.isArray(v) ? v : (v && typeof v === 'object' && Array.isArray(v.rows) ? v.rows : null);
   return !!lines && lines.some(r => Array.isArray(r)
     ? r.length >= 11 && typeof r[0] === 'string' && /^\d{4}-\d{2}-\d{2}/.test(r[0])
@@ -42,7 +46,7 @@ function salesDataFiles(dir, base){
     const p = path.join(dir, e.name);
     if(e.isDirectory()){ if(e.name !== 'node_modules') found.push(...salesDataFiles(p, base)); continue; }
     const rel = path.relative(base, p).split(path.sep).join('/');
-    if(SHEET.test(e.name)){ found.push(rel); continue; }
+    if(SHEET.test(e.name) || BACKUP_FILE.test(e.name)){ found.push(rel); continue; }
     if(!/\.json$/i.test(e.name)) continue;
     let v; try{ v = JSON.parse(fs.readFileSync(p, 'utf8')); }catch(err){ continue; }
     if(holdsSalesLines(v)) found.push(rel);
