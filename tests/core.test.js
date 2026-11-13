@@ -4505,32 +4505,32 @@ describe('management dashboard (v121)', () => {
   // Synthetic files Jul–Oct (no real sales data). Today 8 Oct 2026, the
   // October file runs to 8 Oct. Mariam and Renova carry DSR targets; the
   // supervisor sells and has none.
-  const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith', MS = 'Mariam Zohair', RS = 'Renova Ayman', GS = 'Ghaith Al Manfe';
+  const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith', MS = 'Mariam Sample', RS = 'Ranova Sample', GS = 'Ghaith Al Sample';
   const reps = [M, R, G];
   const P = { i: ['Intensiv Ortho-Strips', 'Intensiv'], p: ['Sonicare 4300', 'Philips Sonicare'], t: ['TePe Interdental Brush', 'TePe'] };
   const row = (d, doc, cust, net, sm, k, qty) => [d, doc, 0, P[k][0], qty || 1, net, net, 0, sm, P[k][1], cust, 'Clinics', 0, ''];
   const ret = (d, doc, cust, net, sm, k, ref) => [d, doc, 1, P[k][0], -1, 0, net, -net, sm, P[k][1], cust, 'Clinics', 0, ref];
   const repMap = { [MS]: M, [RS]: R, [GS]: G };
   const FILES = {
-    jul: ['2026-07-01', '2026-07-31', [row('2026-07-02', 'SINV7001', 'Dental 8 Clinic', 100, MS, 'i'), row('2026-07-05', 'SINV7002', 'Smart Dental Center', 200, MS, 'i'),
-      row('2026-07-06', 'SINV7003', 'Meena Dental', 50, RS, 't'), row('2026-07-20', 'SINV7004', 'Smart Dental Center', 150, MS, 'p')]],
-    aug: ['2026-08-01', '2026-08-31', [row('2026-08-03', 'SINV7101', 'Smart Dental Center', 180, MS, 'i'), row('2026-08-04', 'SINV7102', 'Dental 8 Clinic', 90, MS, 'p'),
-      row('2026-08-06', 'SINV7103', 'Apex Dental Center', 60, RS, 't'), row('2026-08-25', 'SINV7104', 'Meena Dental', 40, RS, 'i')]],
-    sep: ['2026-09-01', '2026-09-30', [row('2026-09-01', 'SINV7201', 'Smart Dental Center', 210, MS, 'i'), row('2026-09-03', 'SINV7202', 'Dental 8 Clinic', 120, MS, 'i', 2),
-      row('2026-09-07', 'SINV7203', 'Meena Dental', 70, RS, 't'), row('2026-09-08', 'SINV7204', 'Bayan Dental Center', 300, GS, 'p'),
-      row('2026-09-21', 'SINV7205', 'Dental 8 Clinic', 80, MS, 'p'), row('2026-09-22', 'SINV7206', 'My Fatoorah', 30, MS, 'p')]],
-    oct: ['2026-10-01', '2026-10-08', [row('2026-10-01', 'SINV7301', 'Dental 8 Clinic', 150, MS, 'i', 3), row('2026-10-04', 'SINV7302', 'Smart Dental Center', 20, MS, 'i'),
-      row('2026-10-05', 'SINV7303', 'Dental 8 Clinic', 60, MS, 'p'), row('2026-10-05', 'SINV7304', 'Meena Dental', 45, RS, 't'),
-      row('2026-10-06', 'SINV7305', 'Jibla Dental Center', 120, RS, 'i'), row('2026-10-06', 'SINV7306', 'Bayan Dental Center', 200, GS, 'p'),
+    jul: ['2026-07-01', '2026-07-31', [row('2026-07-02', 'SINV7001', 'Amber Dental Clinic', 100, MS, 'i'), row('2026-07-05', 'SINV7002', 'Birch Dental Center', 200, MS, 'i'),
+      row('2026-07-06', 'SINV7003', 'Dune Dental', 50, RS, 't'), row('2026-07-20', 'SINV7004', 'Birch Dental Center', 150, MS, 'p')]],
+    aug: ['2026-08-01', '2026-08-31', [row('2026-08-03', 'SINV7101', 'Birch Dental Center', 180, MS, 'i'), row('2026-08-04', 'SINV7102', 'Amber Dental Clinic', 90, MS, 'p'),
+      row('2026-08-06', 'SINV7103', 'Fern Dental Center', 60, RS, 't'), row('2026-08-25', 'SINV7104', 'Dune Dental', 40, RS, 'i')]],
+    sep: ['2026-09-01', '2026-09-30', [row('2026-09-01', 'SINV7201', 'Birch Dental Center', 210, MS, 'i'), row('2026-09-03', 'SINV7202', 'Amber Dental Clinic', 120, MS, 'i', 2),
+      row('2026-09-07', 'SINV7203', 'Dune Dental', 70, RS, 't'), row('2026-09-08', 'SINV7204', 'Harbor Dental Center', 300, GS, 'p'),
+      row('2026-09-21', 'SINV7205', 'Amber Dental Clinic', 80, MS, 'p'), row('2026-09-22', 'SINV7206', 'My Fatoorah', 30, MS, 'p')]],
+    oct: ['2026-10-01', '2026-10-08', [row('2026-10-01', 'SINV7301', 'Amber Dental Clinic', 150, MS, 'i', 3), row('2026-10-04', 'SINV7302', 'Birch Dental Center', 20, MS, 'i'),
+      row('2026-10-05', 'SINV7303', 'Amber Dental Clinic', 60, MS, 'p'), row('2026-10-05', 'SINV7304', 'Dune Dental', 45, RS, 't'),
+      row('2026-10-06', 'SINV7305', 'Ember Dental Center', 120, RS, 'i'), row('2026-10-06', 'SINV7306', 'Harbor Dental Center', 200, GS, 'p'),
       row('2026-10-07', 'SINV7307', 'My Fatoorah', 12, MS, 'p'), row('2026-10-07', 'SINV7308', 'Marketing Philips', 5, MS, 'p'),
-      row('2026-10-07', 'SINV7309', 'Unknown Trading Co', 9, MS, 't'), ret('2026-10-08', 'SRET7310', 'Dental 8 Clinic', -25, MS, 'i', 'SINV7301')]] };
+      row('2026-10-07', 'SINV7309', 'Unknown Trading Co', 9, MS, 't'), ret('2026-10-08', 'SRET7310', 'Amber Dental Clinic', -25, MS, 'i', 'SINV7301')]] };
   const sales = () => ({ returnPolicy: 'origin', periods: Object.keys(FILES).map(id => ({ id, from: FILES[id][0], to: FILES[id][1], repMap, rows: FILES[id][2].map(r => r.slice()) })) });
   const CLINICS = [
-    { id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A', nextFollowUp: '2026-10-05' }, { id: 'm2', name: 'Smart Dental Center', rep: M, cls: 'A' },
-    { id: 'm3', name: 'Bright Smile Clinic', rep: M, cls: 'B', nextFollowUp: '2026-10-08' }, { id: 'm9', name: 'Closed Clinic', rep: M, cls: 'Closed', nextFollowUp: '2026-10-01' },
-    { id: 'r1', name: 'Meena Dental', rep: R, cls: 'B' }, { id: 'r2', name: 'Jibla Dental Center', rep: R, cls: 'A' },
-    { id: 'r3', name: 'Apex Dental Center', rep: R, cls: 'A', nextFollowUp: '2026-10-02' }, { id: 'r4', name: 'Crown Dental Center', rep: R, cls: 'C', nextFollowUp: '2026-10-20' },
-    { id: 'g1', name: 'Bayan Dental Center', rep: G, cls: 'A' }];
+    { id: 'm1', name: 'Amber Dental Clinic', rep: M, cls: 'A', nextFollowUp: '2026-10-05' }, { id: 'm2', name: 'Birch Dental Center', rep: M, cls: 'A' },
+    { id: 'm3', name: 'Cobalt Smile Clinic', rep: M, cls: 'B', nextFollowUp: '2026-10-08' }, { id: 'm9', name: 'Closed Clinic', rep: M, cls: 'Closed', nextFollowUp: '2026-10-01' },
+    { id: 'r1', name: 'Dune Dental', rep: R, cls: 'B' }, { id: 'r2', name: 'Ember Dental Center', rep: R, cls: 'A' },
+    { id: 'r3', name: 'Fern Dental Center', rep: R, cls: 'A', nextFollowUp: '2026-10-02' }, { id: 'r4', name: 'Garnet Dental Center', rep: R, cls: 'C', nextFollowUp: '2026-10-20' },
+    { id: 'g1', name: 'Harbor Dental Center', rep: G, cls: 'A' }];
   const TARGETS = { [M]: { revenue: 1000, month: '2026-10', brands: { Intensiv: 600, 'Philips Sonicare': 400 } }, [R]: { revenue: 800, month: '2026-10', brands: { Intensiv: 500, TePe: 300 } },
     _history: { '2026-09': { [M]: { revenue: 900, brands: { Intensiv: 500, 'Philips Sonicare': 400 } }, [R]: { revenue: 700 } }, '2026-08': { [M]: { revenue: 850 } } } };
   const VISITS = [
@@ -4617,7 +4617,7 @@ describe('management dashboard (v121)', () => {
     assert.deepEqual(D.sales.missing, [{ rep: R, why: 'notinfiles' }, { rep: G, why: 'notinfiles' }]);
     assert.equal(D.sales.amount, 231);
     assert.deepEqual([D.achievement.pct, D.achievement.target, D.achievement.notMeasured], [23, 1000, [R]]);
-    assert.deepEqual(D.act.potential.map(x => x.name), ['Bright Smile Clinic']);             // Apex (Renova's) is not judged
+    assert.deepEqual(D.act.potential.map(x => x.name), ['Cobalt Smile Clinic']);             // Fern (Renova's) is not judged
   });
 
   test('one brand: its part of the same lines, its DSR brand target; brands and products add up to the month', () => {
@@ -4644,7 +4644,7 @@ describe('management dashboard (v121)', () => {
 
   test('new customers: first invoice ever in the files, as Month by month counts them; not measurable in the files\' first month', () => {
     const d = data(), D = core.execDashboard(d, { reps });
-    assert.deepEqual(D.newCustomers.list.map(x => [x.name, x.rep, x.date, x.net]), [['Jibla Dental Center', R, '2026-10-06', 120], ['Unknown Trading Co', M, '2026-10-07', 9]]);
+    assert.deepEqual(D.newCustomers.list.map(x => [x.name, x.rep, x.date, x.net]), [['Ember Dental Center', R, '2026-10-06', 120], ['Unknown Trading Co', M, '2026-10-07', 9]]);
     const oct = core.monthlyTrend(d, { reps, end: '2026-10-08', months: 1 }).months[0];
     assert.equal(D.newCustomers.count, reps.reduce((s, r) => s + oct.byRep[r].newAccounts, 0));
     assert.equal(core.execDashboard(d, { reps, rep: R }).newCustomers.count, oct.byRep[R].newAccounts);
@@ -4674,8 +4674,8 @@ describe('management dashboard (v121)', () => {
   test('customers to act on: under-performing against the same days of 3 months; high potential = A/B with no invoice', () => {
     const d = data(), D = core.execDashboard(d, { reps });
     assert.deepEqual(D.act.prior.map(p => p.to), ['2026-09-08', '2026-08-08', '2026-07-08']);
-    assert.deepEqual(D.act.under.map(x => [x.name, x.owner, x.current, x.average, x.bought]), [['Smart Dental Center', M, 20, 196.67, 3]]);
-    assert.deepEqual(D.act.potential.map(x => [x.name, x.cls, x.bought, x.lastVisit]), [['Apex Dental Center', 'A', 1, '2026-09-15'], ['Bright Smile Clinic', 'B', 0, '2026-09-10']]);
+    assert.deepEqual(D.act.under.map(x => [x.name, x.owner, x.current, x.average, x.bought]), [['Birch Dental Center', M, 20, 196.67, 3]]);
+    assert.deepEqual(D.act.potential.map(x => [x.name, x.cls, x.bought, x.lastVisit]), [['Fern Dental Center', 'A', 1, '2026-09-15'], ['Cobalt Smile Clinic', 'B', 0, '2026-09-10']]);
     // handed over this month: not hers to lose
     const moved = CLINICS.map(c => c.id === 'm2' ? Object.assign({}, c, { rep: R, prevRep: M, repSince: '2026-10-01' }) : c);
     assert.deepEqual(core.execDashboard(data({ clinics: moved }), { reps, rep: M }).act.under, []);
@@ -4689,9 +4689,9 @@ describe('management dashboard (v121)', () => {
     assert.deepEqual(core.monthCustomerSales(d, { month: '2026-10', reps }).totals, all.totals);
     const two = core.monthCustomerSales(d, { month: '2026-10', reps: [M, R] });
     assert.deepEqual([two.totals.total, two.people.map(p => p.rep).sort()], [396, [M, R]]);
-    assert.ok(!two.accounts.some(a => a.name === 'Bayan Dental Center'));
+    assert.ok(!two.accounts.some(a => a.name === 'Harbor Dental Center'));
     const b = core.monthCustomerSales(d, { month: '2026-10', brand: 'TePe' });
-    assert.deepEqual(b.accounts.map(a => [a.name, a.net]), [['Meena Dental', 45], ['Unknown Trading Co', 9]]);
+    assert.deepEqual(b.accounts.map(a => [a.name, a.net]), [['Dune Dental', 45], ['Unknown Trading Co', 9]]);
     assert.deepEqual(core.execDashboard(d, { reps }).customers.accounts, all.accounts);   // the Clinics card's list
   });
 });
