@@ -340,6 +340,22 @@
   // and what is working and should be repeated ('good').
   // opts: {from, to, today, repFilter, visits, clinics, targets, dayPlans}
   // Returns [{level, icon, key, title, detail}], 'act' first.
+  // A month target's pace — the sales coach's rule (coachInsights), and the
+  // one the alerts center judges by: the working days (Sun–Thu) from the 1st to
+  // the ERP cut-off (at least one) against those of the whole month; "behind"
+  // below 90% of that even share, "hit" at the target. perDay: what is left,
+  // spread over the working days left, rounded up (all of it when none is left).
+  var TARGET_BEHIND = 0.9;
+  function targetPace(goal, mtd, today, asOf){
+    var mStart = today.slice(0, 7) + '-01';
+    var daysInMonth = new Date(+today.slice(0, 4), +today.slice(5, 7), 0).getDate();
+    var monthEnd = today.slice(0, 7) + '-' + ('0' + daysInMonth).slice(-2);
+    var totalWork = workingDaysBetween(mStart, monthEnd);
+    var workedSoFar = Math.max(1, workingDaysBetween(mStart, asOf || today));
+    var expected = goal * workedSoFar / totalWork, daysLeft = totalWork - workedSoFar;
+    return { state: mtd >= goal ? 'hit' : mtd < expected * TARGET_BEHIND ? 'behind' : 'pace', expected: expected, behindBelow: TARGET_BEHIND,
+      totalWork: totalWork, workedSoFar: workedSoFar, daysLeft: daysLeft, perDay: daysLeft > 0 ? Math.ceil((goal - mtd) / daysLeft) : Math.ceil(goal - mtd) };
+  }
   function coachInsights(opts){
     const from = opts.from || null, to = opts.to || null;
     const today = opts.today, repFilter = opts.repFilter || 'all';
@@ -396,19 +412,16 @@
       const mtd = e.amount;
       const src = ' (ERP sales files)';
       // Pace runs on WORKING days only (Sun–Thu; Fri/Sat weekend) so the
-      // required daily amount is realistic for days actually worked.
-      const asOfDate = e.covered || e.asOf || today;
-      const monthEnd = today.slice(0, 7) + '-' + ('0' + daysInMonth).slice(-2);
-      const totalWork = workingDaysBetween(mStart, monthEnd);
-      const workedSoFar = Math.max(1, workingDaysBetween(mStart, asOfDate));
-      const expected = goal * workedSoFar / totalWork;
-      const daysLeft = totalWork - workedSoFar;
-      if(mtd >= goal){
+      // required daily amount is realistic for days actually worked —
+      // targetPace, the one rule the alerts center uses too.
+      const P = targetPace(goal, mtd, today, e.covered || e.asOf || today);
+      const daysLeft = P.daysLeft;
+      if(P.state === 'hit'){
         out.push({ level: 'good', icon: '🏆', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, state: 'hit', official: official },
           title: rep + ' already hit the monthly target',
           detail: money(mtd) + src + ' against a ' + money(goal) + ' goal. Everything from here is upside — a great week to push new products.' });
-      } else if(mtd < expected * 0.9){
-        const perDay = daysLeft > 0 ? Math.ceil((goal - mtd) / daysLeft) : Math.ceil(goal - mtd);
+      } else if(P.state === 'behind'){
+        const perDay = P.perDay;
         out.push({ level: 'act', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, perDay: perDay, daysLeft: daysLeft, state: 'behind', official: official },
           title: rep + ' is behind the monthly target',
           detail: money(mtd) + src + ' of ' + money(goal) + ' so far. Needs about ' + perDay + ' KD/day for the remaining ' + daysLeft +
@@ -6345,13 +6358,12 @@
   // Arabic is in i18n.js (PATTERNS). Pure.
   var ALERT_TYPES = ['overdue', 'missed', 'noActivity', 'target', 'drop', 'sync', 'erpImport', 'backup'];
   var ALERT_SUP_ONLY = { noActivity: true, erpImport: true, backup: true };
-  var ALERT_DEFAULTS = { noActivityHour: 12, targetPacePct: 90, targetMinDays: 3, dropPct: 30, dropMinKD: 100, outboxMinutes: 30, backupHour: 16 };
-  var ALERT_LIMITS = { noActivityHour: [0, 23], targetPacePct: [10, 100], targetMinDays: [1, 15], dropPct: [5, 100], dropMinKD: [0, 100000], outboxMinutes: [5, 1440], backupHour: [0, 23] };
+  var ALERT_DEFAULTS = { noActivityHour: 12, targetMinDays: 3, dropPct: 30, dropMinKD: 100, outboxMinutes: 30, backupHour: 16 };
+  var ALERT_LIMITS = { noActivityHour: [0, 23], targetMinDays: [1, 15], dropPct: [5, 100], dropMinKD: [0, 100000], outboxMinutes: [5, 1440], backupHour: [0, 23] };
   var ALERT_KEY_LABEL = { visits: 'Visits', tasks: 'Tasks', clinics: 'Clinics', events: 'Calendar events', dayPlans: 'Day plans', targets: 'Monthly targets',
     benchmarks: 'Settings (targets, KPI, alerts)', products: 'Product catalog', staff: 'Team list', recycleBin: 'Recycle bin', categoryGuides: 'Selling guides',
     erpNotes: 'Notes on sales lines', erpSales: 'Sales files', tombs: 'Delete log', chat: 'Team chat', memories: 'Memories' };
   var ALERT_PLAN_DAYS = 14;   // missed plans: the Today screen's own window
-  var ALERT_FAILED_DAYS = 3;  // a save that failed is shown for three days
   var ALERT_SNOOZE_DAYS = 3;
   var ALERT_SEV = { high: 0, medium: 1, low: 2 };
   // The supervisor's choices (BENCHMARKS.alerts) over the defaults: every type
@@ -6382,6 +6394,7 @@
     if(!who) return 'No owner: ';
     return who + (c.team && c.team.indexOf(who) < 0 ? ' (not on the team list)' : '') + ': ';
   }
+  function alertMonth(c, m){ try{ return c.ml ? c.ml(m) : new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }catch(e){ return m; } }
   function alertKeyLabel(k){ return erpOwn(ALERT_KEY_LABEL, k) ? ALERT_KEY_LABEL[k] : String(k); }
   // ERP: the saved files (rows loaded) that carry a person's salesman cover
   // every day of [from, to] — a gap of a weekend and a holiday allowed.
@@ -6473,34 +6486,45 @@
     return out;
   }
   // Month target at risk: the month figure (monthAchievement — the ERP files
-  // only) against an even pace over the working days (Sun–Thu) to the ERP
-  // cut-off — the rule of the sales coach and the management report. Not
-  // judged before the set number of working days, nor against a target of
-  // another month, nor when no file covers the month for that person.
+  // only, the Today card's) against the target, judged by targetPace — the
+  // sales coach's rule, the one both use: below 90% of an even share of the
+  // working days (Sun–Thu) to the ERP cut-off. Not judged before the set
+  // number of working days, nor when no file covers the month for that person.
+  // A target from an earlier month (its month, or the month of its achieved
+  // date — the Today card's own test) is never judged and never silent: it is
+  // named, as the Today card names it, until this month's DSR is uploaded.
+  // A target of a later month (a DSR uploaded early) is not this month's.
   function alertTarget(c){
-    var m = c.today.slice(0, 7), mStart = m + '-01', dates = getMonthDates(c.today), mEnd = dates[dates.length - 1];
-    var W = workingDaysBetween(mStart, mEnd), out = [], mtd = null;
+    var m = c.today.slice(0, 7), out = [], mtd = null;
     (c.sup ? c.reps : [c.user.name]).forEach(function(rep){
       var t = c.targets[rep];
       if(!t || !(t.revenue > 0)) return;
       var tm = t.month || (t.achievedAsOf ? String(t.achievedAsOf).slice(0, 7) : null);
+      if(tm && tm < m){
+        var ml = alertMonth(c, tm);
+        out.push({ id: 'target-stale:' + rep + ':' + m, type: 'target', sev: 'low', rep: rep,
+          title: c.sup ? rep + ': target is from ' + ml : 'Target is from ' + ml,
+          why: ["Upload this month's DSR: until then the Today card shows this target with the same note, and the month's pace is not judged against it."],
+          items: [], open: c.sup ? { screen: 'erpImport' } : { screen: 'targetCard' } });
+        return;
+      }
       if(tm && tm !== m) return;
       mtd = mtd || erpMtd(c.data);
       var a = monthAchievement(rep, c.data, mtd);
       if(a.basis !== 'erp' || !a.asOf || a.asOf.slice(0, 7) !== m) return;
-      var E = workingDaysBetween(mStart, a.asOf), goal = t.revenue, amt = a.amount;
-      if(E < c.S.targetMinDays || !(W > 0) || amt >= goal) return;
-      var expected = goal * E / W, pace = Math.round(amt / expected * 100);
-      if(pace >= c.S.targetPacePct) return;
-      var proj = Math.round(amt / E * W * 100) / 100, left = W - E;
+      var goal = t.revenue, amt = a.amount, P = targetPace(goal, amt, c.today, a.asOf);
+      if(P.workedSoFar < c.S.targetMinDays || P.state !== 'behind') return;
+      var E = P.workedSoFar, W = P.totalWork, proj = Math.round(amt / E * W * 100) / 100;
+      // "below 90%": the share is cut, never rounded up to the limit it is below
+      var pace = Math.floor(amt / P.expected * 100), limit = Math.round(P.behindBelow * 100);
       var why = [
         'Achieved ' + money(amt) + ' of the ' + money(goal) + ' target (' + Math.round(amt / goal * 100) + '%) — ERP sales files to ' + c.fd(a.asOf) + '.',
-        'Working days (Sun–Thu) to the ERP cut-off: ' + E + ' of ' + W + '. An even pace would be ' + money(expected) + ' (' + Math.round(E / W * 100) + '%) by then.',
-        'Pace: ' + pace + '% of an even pace (the alert shows below ' + c.S.targetPacePct + '%). At this pace the month ends near ' + money(proj) + ' (' + Math.round(proj / goal * 100) + '%).'];
-      why.push(left > 0 ? 'To reach the target: ' + money((goal - amt) / left) + ' a working day over the ' + alertN(left, 'working day', 'working days') + ' left.'
+        'Working days (Sun–Thu) to the ERP cut-off: ' + E + ' of ' + W + '. An even pace would be ' + money(P.expected) + ' (' + Math.round(E / W * 100) + '%) by then.',
+        'Pace: ' + pace + '% of an even pace — below ' + limit + "%, the sales coach's rule (Reports). At this pace the month ends near " + money(proj) + ' (' + Math.round(proj / goal * 100) + '%).'];
+      why.push(P.daysLeft > 0 ? 'To reach the target: ' + money(P.perDay) + ' a working day over the ' + alertN(P.daysLeft, 'working day', 'working days') + ' left.'
         : 'No working day is left after the ERP cut-off.');
       out.push({ id: 'target:' + rep + ':' + m, type: 'target', sev: 'high', rep: rep,
-        title: c.sup ? rep + ': month target at risk' : 'Month target at risk', why: why, items: [], open: { screen: 'target' } });
+        title: c.sup ? rep + ': month target at risk' : 'Month target at risk', why: why, items: [], open: { screen: 'coach', rep: rep } });
     });
     return out;
   }
@@ -6553,33 +6577,85 @@
         open: { screen: 'clinics' } };
     });
   }
-  // This phone: changes queued in the outbox for long, saves that reached
-  // neither the cloud nor the outbox (the last three days), sales file
-  // changes the cloud has not confirmed.
+  // Sync (v122): exactly what the app's own bars and visit photo notes say,
+  // from the facts the app reads with its own functions (19-alerts.js) — never
+  // a rule of its own about what is queued, kept or lost:
+  // - device.memBar: the red bar's lines as it shows them (a full phone: a
+  //   queued key the phone could not keep, device.memOnly, or a visit photo
+  //   only in the app's memory) — said at once, in its own words;
+  // - device.outbox: the queue as the pill counts it ([{key, since}], memory
+  //   included) — said once a change has waited longer than the minutes set;
+  // - device.photos: per visit, its photo note's own lines (wait / lost) and
+  //   what they rest on — this phone's waiting photos (own: when each was
+  //   taken) after the same minutes, another phone's from the 3 days its note
+  //   gives their age (old), the lost ones; photos taken in the last 14 days;
+  // - device.erpDirty: the sales files' red retry bar (the supervisor's).
+  // A thing is listed once: a key or a visit on the red bar's card is not
+  // listed again under waiting.
+  var ALERT_PHOTO_DAYS = 14;
+  function alertPhotoLine(c, p){
+    return { visitId: p.visitId, clinicId: p.clinicId != null ? p.clinicId : null,
+      text: (p.label || '—') + ' · ' + c.fd(p.date) + (c.sup && p.rep ? ' · ' + p.rep + (p.withRep ? ' & ' + p.withRep : '') : '') };
+  }
   function alertSync(c){
-    var d = c.device, out = [];
-    var waiting = (d.outbox || []).filter(function(x){ return x && x.key && x.since > 0; }).sort(function(a, b){ return a.since - b.since; });
-    if(waiting.length && c.now - waiting[0].since >= c.S.outboxMinutes * 60000){
-      var why = ['Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.'];
+    var d = c.device, out = [], mins = c.S.outboxMinutes * 60000, horizon = c.now - ALERT_PHOTO_DAYS * 86400000;
+    var memKeys = (Array.isArray(d.memOnly) ? d.memOnly : []).filter(function(k){ return typeof k === 'string' && k; });
+    var bar = (Array.isArray(d.memBar) ? d.memBar : []).filter(function(l){ return typeof l === 'string' && l; });
+    // a rep: her own visits (or one she was on) — the app gives those only; said again here
+    var photos = (Array.isArray(d.photos) ? d.photos : []).filter(function(p){ return p && p.visitId != null && (c.sup || p.rep === c.user.name || p.withRep === c.user.name); });
+    var listed = Object.create(null);
+    var sorted = function(list, key){ return list.slice().sort(function(a, b){ return alertByDate(a.date, b.date) || erpCmp(a.label, b.label) || alertByDate(String(a.visitId), String(b.visitId)); }); };
+    if(bar.length){
+      var mItems = memKeys.map(function(k){ return { key: k, text: alertKeyLabel(k) + " — only in the app's memory" }; });
+      sorted(photos.filter(function(p){ return p.mem > 0 && p.wait; })).forEach(function(p){ listed[p.visitId] = 1; mItems.push(Object.assign(alertPhotoLine(c, p), { note: p.wait })); });
+      out.push({ id: 'sync-mem', type: 'sync', sev: 'high', rep: null, title: "Only in the app's memory — keep the app open", why: bar, items: mItems, open: { screen: 'sync' }, action: 'flush' });
+    }
+    var waiting = (d.outbox || []).filter(function(x){ return x && x.key && x.since > 0 && (!bar.length || memKeys.indexOf(x.key) < 0); }).sort(function(a, b){ return a.since - b.since; });
+    if(waiting.length && c.now - waiting[0].since >= mins){
+      var why = ['Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.',
+        'Shown when a change has waited longer than ' + alertN(c.S.outboxMinutes, 'minute', 'minutes') + ' (alert settings).'];
       if(d.online === false) why.push('This phone is offline right now.');
       out.push({ id: 'sync-wait', type: 'sync', sev: 'medium', rep: null, title: 'Changes on this phone waiting to upload', why: why,
         items: waiting.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — waiting since ' + alertWhen(c, x.since) }; }),
         open: { screen: 'sync' }, action: 'flush' });
     }
-    var items = (d.failed || []).filter(function(x){ return x && x.key && x.at > 0 && c.now - x.at <= ALERT_FAILED_DAYS * 86400000; })
-      .sort(function(a, b){ return b.at - a.at; })
-      .map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — not saved at ' + alertWhen(c, x.at) }; });
-    // the sales files are the supervisor's: on a rep's phone the flag can only
-    // be a start-up trim of what she sees, nothing she changed
-    var erpDirty = !!d.erpDirty && c.sup;
-    if(erpDirty) items.push({ key: 'erpSales', text: 'Sales files — changes not saved yet' });
-    if(items.length){
-      var w2 = [];
-      if(items.length > (erpDirty ? 1 : 0)) w2.push("These changes are not in the cloud and are not waiting to upload: the next refresh shows the cloud's copy. Make them again once the connection is back.");
-      if(erpDirty) w2.push('The sales file changes are still on this phone: Retry the save sends them.');
-      out.push({ id: 'sync-failed', type: 'sync', sev: 'high', rep: null, title: alertN(items.length, 'save', 'saves') + ' did not reach the cloud',
-        why: w2, items: items, open: { screen: 'sync' }, action: erpDirty ? 'retryErp' : null });
+    // this phone's photos waiting to upload (kept here, or its own mark it is settling)
+    var own = sorted(photos.filter(function(p){
+      if(listed[p.visitId] || !p.wait || !Array.isArray(p.own) || !p.own.length) return false;
+      var first = Math.min.apply(null, p.own.map(function(t){ return Number(t) > 0 ? Number(t) : 0; }));   // when unknown: waiting since before this rule
+      return c.now - first >= mins;   // this phone's own: said however long it has waited (it uploads from here)
+    }));
+    if(own.length){
+      var nOwn = own.reduce(function(s, p){ return s + p.own.length; }, 0);
+      own.forEach(function(p){ listed[p.visitId] = 1; });
+      out.push({ id: 'photos-wait', type: 'sync', sev: 'medium', rep: null, title: alertN(nOwn, 'visit photo', 'visit photos') + ' waiting to upload from this phone',
+        why: ['Kept on this phone until the cloud holds them: they upload by themselves when the connection is back — keep the app open until then.',
+          'Shown when a photo has waited longer than ' + alertN(c.S.outboxMinutes, 'minute', 'minutes') + ' (alert settings).'],
+        items: own.map(function(p){ return Object.assign(alertPhotoLine(c, p), { note: p.wait }); }), open: { screen: 'gallery' }, action: 'flush' });
     }
+    // another phone's photo whose note gives its age (3 days or more)
+    var stale = sorted(photos.filter(function(p){ return !listed[p.visitId] && p.wait && p.old > 0 && p.old <= ALERT_PHOTO_DAYS; }));
+    if(stale.length){
+      out.push({ id: 'photos-stale', type: 'sync', sev: 'low', rep: null, title: alertN(stale.length, 'visit photo', 'visit photos') + ' not arrived from another phone',
+        why: ['Taken on another phone and not in the cloud for 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last ' + ALERT_PHOTO_DAYS + ' days.'],
+        items: stale.map(function(p){ return Object.assign(alertPhotoLine(c, p), { note: p.wait }); }), open: { screen: 'gallery' } });
+    }
+    // lost before they uploaded: only the small preview is kept
+    var lost = sorted(photos.filter(function(p){
+      if(!p.lost) return false;
+      var ats = (Array.isArray(p.lostAt) ? p.lostAt : []).map(Number).filter(function(t){ return t > 0; });
+      return ats.length ? Math.max.apply(null, ats) >= horizon : !!p.date && p.date >= localDateStr(new Date(horizon));
+    }));
+    if(lost.length){
+      out.push({ id: 'photos-lost', type: 'sync', sev: 'medium', rep: null, title: alertN(lost.length, 'visit photo', 'visit photos') + ' lost before ' + (lost.length === 1 ? 'it' : 'they') + ' uploaded',
+        why: ['Each visit below keeps only the small preview: the full photo never reached the cloud and no phone holds it any more. Photos taken in the last ' + ALERT_PHOTO_DAYS + ' days.'],
+        items: lost.map(function(p){ return Object.assign(alertPhotoLine(c, p), { note: p.lost }); }), open: { screen: 'gallery' } });
+    }
+    // the sales files are the supervisor's: on a rep's phone the flag is nothing she changed
+    if(d.erpDirty && c.sup)
+      out.push({ id: 'sync-erp', type: 'sync', sev: 'high', rep: null, title: 'Sales file changes not saved',
+        why: ['The red bar at the top says the same: sales file changes on this phone are not in the cloud yet, so the other phones do not have them. Retry the save sends them.'],
+        items: [], open: { screen: 'erpImport' }, action: 'retryErp' });
     return out;
   }
   // The supervisor: the last sales or targets file import on this phone
@@ -6613,11 +6689,13 @@
   // input = { today, now (ms), hour (local; default from now), user: { name, role },
   //   reps (REPS), team (every name on the team list), data: { clinics, visits,
   //   dayPlans, events, targets, erpSales, erpMap }, settings (BENCHMARKS.alerts),
-  //   device: { online, outbox: [{ key, since }], failed: [{ key, at }], erpDirty,
-  //   erpImport: { at, ok, msg, who }, snapDay, snapLast: { day, at, result, msg } },
-  //   fmtDate (the screen's date format) }.
+  //   device: { online, outbox: [{ key, since }], memOnly: [key], memBar: [line],
+  //   photos: [{ visitId, clinicId, label, date, rep, withRep, wait, lost, mem, here,
+  //   own: [ms], old: days, lostAt: [ms] }], erpDirty, erpImport: { at, ok, msg, who },
+  //   snapDay, snapLast: { day, at, result, msg } } (alertSync says what each is),
+  //   fmtDate (the screen's date format), monthLabel (its month names) }.
   // Returns the alerts, most urgent first, each id once: [{ id, type, sev, rep,
-  //   title, why: [...], msg?, items: [{ text, clinicId?, date?, key? }],
+  //   title, why: [...], msg?, items: [{ text, note?, clinicId?, visitId?, date?, key? }],
   //   open: { screen, rep? }, action? }]. A rep never gets a supervisor-only type.
   function alertsFor(input){
     input = input || {};
@@ -6631,7 +6709,8 @@
       clinics: clinics, byId: byId, visits: visits, dayPlans: data.dayPlans && typeof data.dayPlans === 'object' ? data.dayPlans : {},
       events: Array.isArray(data.events) ? data.events : [], targets: data.targets || {},
       data: { today: today, clinics: clinics, visits: visits, targets: data.targets || {}, erpSales: data.erpSales || { periods: [] }, erpMap: data.erpMap || {} },
-      S: S, device: input.device || {}, fd: typeof input.fmtDate === 'function' ? input.fmtDate : fmtDate };
+      S: S, device: input.device || {}, fd: typeof input.fmtDate === 'function' ? input.fmtDate : fmtDate,
+      ml: typeof input.monthLabel === 'function' ? input.monthLabel : null };
     // input.cache (an object the caller keeps): the two rules that read the
     // sales lines run again only when what they read changed
     var cache = input.cache && typeof input.cache === 'object' ? input.cache : null, erpKey = null;
@@ -6656,7 +6735,7 @@
   // shared flags / class, the targets, the team and the screen's date format.
   function alertErpKey(c){
     var es = c.data.erpSales || {}, ps = Array.isArray(es.periods) ? es.periods : [];
-    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), c.S.targetPacePct, c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD, es.returnPolicy || '',
+    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), alertMonth(c, '2026-01'), c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD, es.returnPolicy || '',
       ps.map(function(p){ return p ? [p.id, p.rev || 0, p.from, p.to, p.rowsMissing ? 1 : 0, Array.isArray(p.rows) ? p.rows.length : -1, p.repMap || null] : null; }),
       c.data.erpMap, c.targets,
       c.clinics.map(function(x){ return x ? [x.id, x.name, x.rep || '', x.cls || '', x.prevRep || '', x.repSince || '', x.shared ? 1 : 0, x.sharedSince || ''] : null; })]);
@@ -6710,6 +6789,6 @@
     productMovement, pmNormName,
     cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
     backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder,
-    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, alertSettings, alertsFor, alertsVisible, alertStateNext, erpSpanCovered
+    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, alertSettings, alertsFor, alertsVisible, alertStateNext, erpSpanCovered, targetPace
   };
 });

@@ -591,7 +591,7 @@ async function photoLanded(id){
     if(rec.on === 'mem' && typeof memOnlyPhotoLanded === 'function') memOnlyPhotoLanded(); // the red bar may say "Saved" (04)
     await photoForget(id);
     await settlePhotos();
-  } finally { rec.settling = false; }
+  } finally { rec.settling = false; if(typeof alertsSoon === 'function') alertsSoon(); } // the bell says what the notes say (19-alerts.js)
 }
 // Retry every photo this phone keeps (from flushOutbox: the queue's flush and
 // the 20-second refresh), then settle the marks this phone still owes.
@@ -625,7 +625,7 @@ function settlePhotos(){
   if(_photoSettling){ _photoSettleAgain = true; return _photoSettling; }
   _photoSettling = (async () => {
     do { _photoSettleAgain = false; await settlePhotosOnce(); } while(_photoSettleAgain);
-  })().finally(() => { _photoSettling = null; });
+  })().finally(() => { _photoSettling = null; if(typeof alertsSoon === 'function') alertsSoon(); }); // a verdict (lost, landed) reaches the bell even when its save did not land
   return _photoSettling;
 }
 async function settlePhotosOnce(){
@@ -704,17 +704,22 @@ function photoStaleText(days){ return days + ' days now — it can only come fro
 // kept on this phone (IndexedDB or the web storage), only in the app's memory,
 // or neither (on the phone that took it, or not kept yet) — and the photos
 // lost before they uploaded ({lost: true}: only the thumbnail exists).
-function photoWaitHTML(v){
+// photoWaitInfo is that reading, once: the note under the thumbnails draws it
+// (photoWaitHTML) and the alerts center lists its very lines (19-alerts.js) —
+// { wait, lostTxt (the note's lines, null when none), mem, here, old (days, another
+// phone's photo past PHOTO_STALE_DAYS), own: [when each waiting photo this phone
+// holds or owes was taken], lostAt: [when each lost photo was taken] } or null.
+function photoWaitInfo(v){
   const ps = ((v && v.photos) || []).filter(p => p);
   // this phone knows before its mark's save lands: one it saw land is not
   // waiting, one it found in no store and not in the cloud is lost
   const waiting = ps.filter(p => p.pending && !_photoLanded.has(p.id) && !_photoLost.has(p.id));
   const lost = ps.filter(p => !_photoLanded.has(p.id) && ((p.lost && !p.pending) || (p.pending && _photoLost.has(p.id))));
-  const me = photoDevice();
-  let out = '';
+  if(!waiting.length && !lost.length) return null;
+  const me = photoDevice(), own = [];
+  let here = 0, mem = 0, old = 0, wait = null;
   if(waiting.length){
-    let here = 0, mem = 0, old = 0;
-    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r){ if(p.dev !== me && photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(r || p.dev === me) own.push(Number(p.at) || 0); if(!r){ if(p.dev !== me && photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
     const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
     if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
     if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");
@@ -722,12 +727,17 @@ function photoWaitHTML(v){
     // phone that took it — which may no longer have it (its data cleared, the
     // phone replaced). Never said of this phone's own: it holds it, sends it or settles it.
     if(old) parts.push(photoStaleText(old));
-    out += `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(parts.join(' · '))}</div>`;
+    wait = parts.join(' · ');
   }
-  if(lost.length){
-    const txt = lost.length === 1 ? PHOTO_LOST_1 : '⚠️ ' + lost.length + ' photos lost before they uploaded — only their small previews are kept';
-    out += `<div class="photo-lost" style="font-size:12px; color:var(--coral-ink); margin-top:4px;">${esc(txt)}</div>`;
-  }
+  const lostTxt = !lost.length ? null : lost.length === 1 ? PHOTO_LOST_1 : '⚠️ ' + lost.length + ' photos lost before they uploaded — only their small previews are kept';
+  return { wait, lostTxt, mem, here, old, own, lostAt: lost.map(p => Number(p.at) || 0) };
+}
+function photoWaitHTML(v){
+  const w = photoWaitInfo(v);
+  if(!w) return '';
+  let out = '';
+  if(w.wait) out += `<div class="photo-wait" style="font-size:12px; color:var(${w.mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(w.wait)}</div>`;
+  if(w.lostTxt) out += `<div class="photo-lost" style="font-size:12px; color:var(--coral-ink); margin-top:4px;">${esc(w.lostTxt)}</div>`;
   return out;
 }
 async function loadPhotoBlob(id){

@@ -1,12 +1,16 @@
-// Alerts center (v121): the bell in the header and its sheet. Each alert shows
-// when it should and not when it should not — overdue follow-ups, missed
-// planned visits, someone with no field visit by the set hour (supervisor),
-// the month target at risk, customers buying less than on the same days of
-// last month, changes waiting in the outbox, a save that did not land, a
-// failed import and today's backup (supervisor) — says why and opens the
-// right screen; dismiss / snooze per person, not back the same day; the
-// bell's count is the number of cards; a rep never sees a supervisor-only
-// alert nor changes the settings; Arabic; 390 px without sideways scroll.
+// Alerts center (v121, on v122): the bell in the header and its sheet. Each
+// alert shows when it should and not when it should not — overdue follow-ups
+// (the Today list's own), missed planned visits, someone with no field visit by
+// the set hour (supervisor), the month target at risk (the sales coach's rule,
+// and the coach says the same) or a target from an earlier month (named as the
+// Today card names it), customers buying less than on the same days of last
+// month, what v122's own sync bars and photo notes say (the queue the pill
+// counts, the red bar of a full phone, visit photos waiting / only in the app's
+// memory / lost / not arrived from another phone, the sales files' retry bar),
+// a failed import and today's backup (supervisor) — says why and opens the
+// right screen; dismiss / snooze per person, not back the same day; the bell's
+// count is the number of cards; a rep never sees a supervisor-only alert, nor
+// anyone else's, nor changes the settings; Arabic; 390 px without sideways scroll.
 // The clock is fixed (Wed 11 Nov 2026, 13:30) and moves between reopenings.
 // Port 8243.
 const http = require('http'); const fs = require('fs'); const path = require('path');
@@ -166,7 +170,7 @@ function seed(){
   check('target: says how it is computed — the month figure of the Today card, working days to the ERP cut-off, the pace, what is needed',
     JSON.stringify(tgt.why) === JSON.stringify(['Achieved 1000.00 KD of the 10000.00 KD target (10%) — ERP sales files to Nov 9.',
       'Working days (Sun–Thu) to the ERP cut-off: 7 of 22. An even pace would be 3181.82 KD (32%) by then.',
-      'Pace: 31% of an even pace (the alert shows below 90%). At this pace the month ends near 3142.86 KD (31%).',
+      'Pace: 31% of an even pace — below 90%, the sales coach\'s rule (Reports). At this pace the month ends near 3142.86 KD (31%).',
       'To reach the target: 600.00 KD a working day over the 15 working days left.']) && todayFig.amount === 1000 && /1000\.00 KD of 10000\.00 KD/.test(todayFig.card), { why: tgt.why, todayFig });
   check('customers: invoiced sales on the same days of last month (ERP only) — a channel, an internal account, a small buyer and a −4% are not listed',
     JSON.stringify(byId(c, 'drop:Mariam:2026-11').items) === JSON.stringify(['Amberline Clinic — 100.00 KD vs 800.00 KD (−88%)']) &&
@@ -181,7 +185,13 @@ function seed(){
   const missedShown = await page.evaluate(() => getComputedStyle(document.getElementById('missedTitle')).display !== 'none' && /Cobaltia Clinic/.test(document.getElementById('missedList').innerText));
   check('Open on missed plans: the Today screen\'s missed list, which shows the clinic', w.view === 'today' && !w.modal && missedShown, w);
   await center(); await act('target:Mariam:2026-11', 'open'); w = await where();
-  check('Open on the target: the Today screen (its target card)', w.view === 'today' && !w.modal, w);
+  const coach = await page.evaluate(() => (document.getElementById('coachCard') || {}).innerText || '');
+  check('Open on the target: the sales coach on Reports, which says the same by the same rule (UMCore.targetPace)',
+    w.view === 'reports' && !w.modal && /Mariam is behind the monthly target/.test(coach) && /Needs about 600 KD\/day for the remaining 15 working days/.test(coach), { w, coach });
+  // the follow-ups are the Today screen's own list (visibleDueClinics), its overdue part
+  const dueSame = await page.evaluate(() => { const a = _alerts.shown.find(x => x.type === 'overdue');
+    return JSON.stringify(((a && a.items) || []).map(i => i.clinicId)) === JSON.stringify(visibleDueClinics().filter(c => followStatus(c.nextFollowUp) === 'overdue').map(c => c.id)); });
+  check('overdue follow-ups: exactly the overdue part of the Today screen\'s due list (visibleDueClinics)', dueSame);
   await center(); await act('drop:Mariam:2026-11', 'open'); w = await where();
   check('Open on customers buying less: the Clinics screen', w.view === 'clinics' && !w.modal, w);
   await center(); it = await item('drop:Mariam:2026-11', 'm1');
@@ -239,6 +249,14 @@ function seed(){
   c.cards.filter(x => x.type === 'overdue' || x.type === 'missed').forEach(x => x.clinics.forEach(id => { if(pairs[id]) dup++; pairs[id] = 1; }));
   check('no duplicates: every card once, no clinic both overdue and missed', new Set(c.cards.map(x => x.id)).size === c.cards.length && !dup, pairs);
   check('no backup alert at 13:30 (not checked yet, before 16:00, nothing failed)', !c.cards.some(x => x.type === 'backup'), ids(c));
+  const dueSup = await page.evaluate(() => { const got = _alerts.shown.filter(x => x.type === 'overdue').flatMap(a => a.items.map(i => i.clinicId)).sort();
+    const want = visibleDueClinics().filter(c => followStatus(c.nextFollowUp) === 'overdue').map(c => c.id).sort(); return { same: JSON.stringify(got) === JSON.stringify(want), got, want }; });
+  check('the supervisor\'s overdue follow-ups: exactly the Today screen\'s, one card per owner', dueSup.same, dueSup);
+  const coachAll = await page.evaluate(() => { switchView('reports'); setReportRepFilter('all'); return document.getElementById('coachCard').innerText; });
+  check('target at risk for the supervisor: whoever the coach calls behind, and no one else (Mariam yes, Renova on pace)',
+    /Mariam is behind the monthly target/.test(coachAll) && /Renova is on pace for the monthly target/.test(coachAll) && !!byId(c, 'target:Mariam:2026-11').id && !c.cards.some(x => x.id === 'target:Renova:2026-11'), coachAll);
+  await page.evaluate(() => switchView('today'));
+  await center();
   await act('noActivity:Renova:2026-11-11', 'open'); w = await where();
   check('Open on no field visit: the calendar, today, Renova\'s', w.view === 'calendar' && w.rep === R && w.sel === '2026-11-11' && !w.modal, w);
   await reopen(G, 'supervisor', T(11, 11, 0));
@@ -269,7 +287,27 @@ function seed(){
     const r = await saveAlertSettings(); return { opened, r, toast1 }; });
   check('a rep can neither open nor save the alert settings — the cloud copy is untouched', !repTry.opened && repTry.r === false && /Supervisor only/.test(repTry.toast1) && cloud.benchmarks === bmBefore, repTry);
 
-  // ---- this phone: changes waiting, a save that failed ----
+  // ---- a target from an earlier month (v122: never judged, never silent) ----
+  seed();
+  cloud.targets = JSON.stringify({ [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-10' } });
+  await boot(G, 'supervisor');
+  c = await center();
+  const staleNote = await page.evaluate(() => { const m = (document.getElementById('targetCard').innerText.match(/Target is from ([^—\n]+?) — upload this month's DSR/) || [])[1]; return m || null; });
+  const ts = byId(c, 'target-stale:Renova:2026-11');
+  check('a target from an earlier month: named as the Today card names it ("Target is from October 2026"), never judged against',
+    ts.title === 'Renova: target is from ' + staleNote && staleNote === 'October 2026' && !c.cards.some(x => x.id === 'target:Renova:2026-11') && ts.sev === 'al-low' && counts(c), { ts, staleNote });
+  await act('target-stale:Renova:2026-11', 'open'); w = await where();
+  check('Open on it (the supervisor): the import screen, where this month\'s DSR is uploaded', w.modal && /Import — fully automatic/.test(w.title), w);
+  await boot(R, 'rep');
+  c = await center();
+  check('Renova sees her own target named too, and Open takes her to her target card', !!byId(c, 'target-stale:Renova:2026-11').id && byId(c, 'target-stale:Renova:2026-11').title === 'Target is from October 2026' && counts(c), ids(c));
+  await act('target-stale:Renova:2026-11', 'open'); w = await where();
+  check('…the Today screen with her target card', w.view === 'today' && !w.modal, w);
+  await boot(M, 'rep');
+  c = await center();
+  check('Mariam never sees Renova\'s target', !c.cards.some(x => /Renova/.test(x.id)), ids(c));
+
+  // ---- this phone: what v122's own bars say (the queue the pill counts, the red bar of a full phone) ----
   seed();
   await boot(R, 'rep');
   mode.failSet = /^tasks$/;
@@ -277,33 +315,132 @@ function seed(){
   c = await center();
   const queued = await page.evaluate(() => outboxList());
   check('a change queued a minute ago: waiting, but not "for long" yet — no alert', queued.includes('tasks') && !byId(c, 'sync-wait').id && c.count === 3, { queued, ids: ids(c) });
-  await page.evaluate(() => { const m = JSON.parse(localStorage.getItem('um_outboxSince') || '{}'); m.tasks = Date.now() - 45 * 60000; localStorage.setItem('um_outboxSince', JSON.stringify(m)); refreshAlerts(); });
+  // 45 minutes later: the time the queue keeps (in memory, and on the phone)
+  await page.evaluate(() => { _outboxSince.tasks = Date.now() - 45 * 60000; const m = JSON.parse(localStorage.getItem('um_outboxSince') || '{}'); m.tasks = _outboxSince.tasks; localStorage.setItem('um_outboxSince', JSON.stringify(m)); refreshAlerts(); });
   c = await center();
-  const sw = byId(c, 'sync-wait');
-  check('waiting 45 minutes: "Changes on this phone waiting to upload", since when, with Upload now (a rep sees it too)',
-    !!sw.id && /^Tasks — waiting since 12:4\d$/.test(sw.items[0] || '') && sw.acts.includes('flush') && c.count === 4 && counts(c), sw);
+  let sw = byId(c, 'sync-wait');
+  const pill = await page.evaluate(() => { const el = document.getElementById('syncPill'); return el && el.style.display !== 'none' ? el.textContent : ''; });
+  check('waiting 45 minutes: "Changes on this phone waiting to upload", since when, with Upload now — the very keys the pill counts (a rep sees it too)',
+    !!sw.id && sw.items.length === 1 && /^Tasks — waiting since 12:4\d$/.test(sw.items[0] || '') && pill === '⏳ Uploading offline changes (1)…' && sw.acts.includes('flush') && c.count === 4 && counts(c), { sw, pill });
   await act('sync-wait', 'flush');
   const t1 = await page.evaluate(() => document.getElementById('toast').textContent);
   c = await center();
   check('Upload now while the cloud still does not answer: said so, the alert stays', /Not uploaded yet/.test(t1) && !!byId(c, 'sync-wait').id, t1);
+  // the phone's queue copy could not be rewritten (v122: memory is the queue this session) — a key the
+  // phone's copy still lists but memory has sent is not waiting: the pill does not count it, nor does the bell
+  const ghost = await page.evaluate(() => { const was = _outboxMem.has('tasks'); _outboxMem.delete('tasks'); _outboxDeviceBad = true; refreshAlerts();
+    const r = { device: JSON.parse(localStorage.getItem('um_outbox') || '[]'), queue: outboxList(), alert: !!_alerts.shown.find(a => a.id === 'sync-wait') };
+    _outboxDeviceBad = false; if(was) _outboxMem.add('tasks'); refreshAlerts(); return r; });
+  check('the queue as the pill counts it — memory, not an older copy on the phone: a key memory has sent is not "waiting"',
+    ghost.device.includes('tasks') && !ghost.queue.includes('tasks') && !ghost.alert, ghost);
   mode.failSet = null;
   await act('sync-wait', 'flush');
   c = await center();
   check('Upload now with the cloud back: uploaded, the alert goes', !byId(c, 'sync-wait').id && c.count === 3 && /Call Fernhill about the order/.test(cloud.tasks || ''), ids(c));
-  seed();
-  await boot(G, 'supervisor');
+  // a full phone: the save is only in the app's memory — the red bar, said by the bell at once, in the bar's words
+  mode.failSet = /^tasks$/;
+  await page.evaluate(() => { window.__lsSet = Storage.prototype.setItem; Storage.prototype.setItem = function(k, v){ if(/^um_(mirror:|outbox)/.test(k)) throw new DOMException('full', 'QuotaExceededError'); return window.__lsSet.call(this, k, v); }; });
+  await page.evaluate(async () => { document.getElementById('newTaskInput').value = 'Bring the new brochures'; await addTask(); await new Promise(r => setTimeout(r, 150)); });
+  const badgeBefore = await page.evaluate(() => document.getElementById('alertsBellN').textContent);   // read before the sheet is opened
+  c = await center();
+  const bar = await page.evaluate(() => { const el = document.getElementById('memOnlyBar'); return el ? el.textContent.split('\n') : []; });
+  const sm = byId(c, 'sync-mem');
+  check('a full phone: the red bar\'s own lines are the alert\'s reason, said at once (no wait), the key named, urgent, Upload now',
+    bar.length === 1 && JSON.stringify(sm.why) === JSON.stringify(bar) && JSON.stringify(sm.items) === JSON.stringify(["Tasks — only in the app's memory"]) && sm.sev === 'al-high' && sm.acts.includes('flush') && counts(c), { bar, sm });
+  check('…and the same key is not listed again under waiting', !(byId(c, 'sync-wait').items || []).some(t => /^Tasks/.test(t)), byId(c, 'sync-wait'));
+  check('the bell\'s number follows the red bar by itself, before the sheet is opened (the save repainted only the Today screen)', badgeBefore === String(c.count) && c.count === 4, { badgeBefore, count: c.count });
+  await act('sync-mem', 'flush');
+  const t2m = await page.evaluate(() => document.getElementById('toast').textContent);
+  check('Upload now while the cloud does not answer: never "stays on this phone" for what is only in memory', /only in the app's memory/.test(t2m) && !/stay on this phone/.test(t2m), t2m);
+  mode.failSet = null;
+  await act('sync-mem', 'flush');
+  await page.evaluate(() => new Promise(r => setTimeout(r, 200)));
+  c = await center();
+  const barGone = await page.evaluate(() => !document.getElementById('memOnlyBar'));
+  check('the cloud back: uploaded, the red bar down and its alert with it', barGone && !byId(c, 'sync-mem').id && /Bring the new brochures/.test(cloud.tasks || '') && counts(c), { barGone, ids: ids(c) });
+  await page.evaluate(() => { Storage.prototype.setItem = window.__lsSet; });
+  // a whole-document save that fails (no queue for it): v122's own toast says so — no bar, so no sync card
   mode.failSet = /^targets$/;
-  const tr = await page.evaluate(async () => { targets.Mariam = Object.assign({}, targets.Mariam, { revenue: 12000 }); return persist('targets'); });
+  const tr = await page.evaluate(async () => persist('targets'));
   mode.failSet = null;
   c = await center();
-  const sf = byId(c, 'sync-failed');
-  check('a save that reached neither the cloud nor the outbox: "1 save did not reach the cloud — Monthly targets", urgent',
-    tr === false && sf.title === '1 save did not reach the cloud' && /^Monthly targets — not saved at 13:3\d$/.test(sf.items[0] || '') && sf.sev === 'al-high' && counts(c), sf);
-  it = await item('sync-failed');
-  check('its line opens the screen where the change is made again (the admin panel)', it.modal && /Admin panel/.test(it.title), it);
-  await page.evaluate(() => persist('targets'));
+  check('a failed save of a document that is never queued: v122 says it in its toast and puts up no bar — the bell adds no card of its own', tr === false && !c.cards.some(x => x.type === 'sync') && counts(c), ids(c));
+
+  // ---- visit photos, as their notes under the visit say them ----
+  seed();
+  const day = 86400000, NOW0 = new Date(2026, 10, 11, 13, 30).getTime(), THUMB = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+  const vs = JSON.parse(cloud.visits);
+  vs[0].photos = [{ id: 'phKept', thumb: THUMB, pending: true, dev: 'dHarness', at: NOW0 - 45 * 60000 }];   // this phone's, kept here, 45 minutes
+  vs[1].photos = [{ id: 'phOther', thumb: THUMB, pending: true, dev: 'dOther', at: NOW0 - 4 * day - 3600000 }];   // another phone's, 4 days
+  vs.push({ id: 'v4', clinicId: 'm3', rep: M, date: '2026-11-08', photos: [{ id: 'phLost', thumb: THUMB, lost: true, dev: 'dOther', at: NOW0 - 3 * day }] });
+  vs.push({ id: 'v5', clinicId: 'r2', rep: R, date: '2026-11-07', photos: [{ id: 'phHers', thumb: THUMB, pending: true, dev: 'dRenova', at: NOW0 - 4 * day }] });
+  cloud.visits = JSON.stringify(vs);
+  mode.failSet = /^photo:/;   // the uploads do not land
+  await boot(M, 'rep', { um_device: 'dHarness', 'um_photo:phKept': JSON.stringify({ id: 'phKept', data: THUMB, visitId: 'v1', ts: NOW0 - 45 * 60000 }) });
+  await page.evaluate(() => new Promise(r => setTimeout(r, 300)));
   c = await center();
-  check('the same data saved later: the alert goes', !byId(c, 'sync-failed').id && counts(c), ids(c));
+  const notes = await page.evaluate(() => { const o = {}; visits.forEach(v => { const w = photoWaitInfo(v); if(w) o[v.id] = [w.wait, w.lostTxt]; }); return o; });
+  const pw = byId(c, 'photos-wait'), ps = byId(c, 'photos-stale'), pl = byId(c, 'photos-lost');
+  check('this phone\'s photo waiting 45 minutes: listed with the very line its visit shows ("kept on this phone"), Upload now',
+    pw.title === '1 visit photo waiting to upload from this phone' && JSON.stringify(pw.items) === JSON.stringify(['Amberline Clinic · Nov 9 ' + notes.v1[0]]) && notes.v1[0] === '⏳ Photo waiting to upload · kept on this phone' && pw.acts.includes('flush'), { pw, notes });
+  check('another phone\'s photo: from 3 days its note gives its age — and so does the bell, in the note\'s words',
+    JSON.stringify(ps.items) === JSON.stringify(['Emberly Clinic · Nov 11 ' + notes.v2[0]]) && /4 days now — it can only come from the phone that took it, if that phone still has it$/.test(notes.v2[0]) && ps.sev === 'al-low', { ps, notes });
+  check('a photo lost before it uploaded: its note\'s line', JSON.stringify(pl.items) === JSON.stringify(['Cobaltia Clinic · Nov 8 ' + notes.v4[1]]) && notes.v4[1] === '⚠️ Photo lost before it uploaded — only this small preview is kept', { pl, notes });
+  check('a rep: never another person\'s visit photo (Renova\'s 4-day photo is not on Mariam\'s bell); the bell counts the cards', !c.cards.some(x => x.clinics.includes('r2')) && counts(c), c.cards.map(x => x.clinics));
+  const shown = await page.evaluate(async () => { closeModal(); openClinicDetail('m1'); await new Promise(r => setTimeout(r, 100)); const el = document.querySelector('#modalInner .photo-wait'); return el ? el.textContent : null; });
+  check('the visit itself says the same line under its thumbnails', shown === notes.v1[0], shown);
+  await center(); await act('photos-lost', 'open'); w = await where();
+  check('Open on a photo card: the visit photos gallery', w.modal && /Visit photos/.test(w.title), w);
+  // the same photo only in the app's memory (a full phone): the red bar, and the bell says it at once
+  await page.evaluate(() => { const r = _photoKept.get('phKept'); r.on = 'mem'; localStorage.removeItem('um_photo:phKept'); renderMemOnlyBar(); });
+  await page.evaluate(() => new Promise(r => setTimeout(r, 150)));
+  c = await center();
+  const bar2 = await page.evaluate(() => { const el = document.getElementById('memOnlyBar'); return el ? el.textContent.split('\n') : []; });
+  const sm2 = byId(c, 'sync-mem'), note2 = await page.evaluate(() => photoWaitInfo(visits.find(v => v.id === 'v1')).wait);
+  check('a photo only in the app\'s memory: the red bar\'s words, at once, with the visit\'s own line — and not listed again under waiting photos',
+    JSON.stringify(sm2.why) === JSON.stringify(bar2) && bar2[0] === "This phone's storage is full — a photo is only in the app's memory: keep the app open and connected until it says Saved" &&
+    JSON.stringify(sm2.items) === JSON.stringify(['Amberline Clinic · Nov 9 ' + note2]) && note2 === "⚠️ Photo waiting to upload · only in the app's memory — keep the app open" && !byId(c, 'photos-wait').id && counts(c), { sm2, bar2, note2 });
+  // it lands: the bar comes down, the card goes, the visit stops saying waiting
+  mode.failSet = null;
+  await page.evaluate(async () => { for(let i = 0; i < 10; i++){ if(await photoUpload('phKept', 'data:image/gif;base64,R0lGODlhAQABAAAAACw=')) break; await new Promise(r => setTimeout(r, 200)); } await new Promise(r => setTimeout(r, 1500)); });
+  const badgeAfter = await page.evaluate(() => document.getElementById('alertsBellN').classList.contains('show') ? document.getElementById('alertsBellN').textContent : '');
+  c = await center();
+  const after = await page.evaluate(() => ({ bar: !!document.getElementById('memOnlyBar'), w: (photoWaitInfo(visits.find(v => v.id === 'v1')) || {}).wait || null }));
+  check('the photo landed: the red bar down, its card gone, nothing waiting on the visit — the bell follows by itself', !after.bar && !after.w && !byId(c, 'sync-mem').id && !byId(c, 'photos-wait').id && counts(c) && badgeAfter === (c.count ? String(c.count) : ''), { after, badgeAfter, ids: ids(c) });
+  seed(); cloud.visits = JSON.stringify(vs);
+  await boot(G, 'supervisor', { um_device: 'dBoss' });
+  c = await center();
+  check('the supervisor: every person\'s photos not arrived, each line naming whose visit it is',
+    JSON.stringify(byId(c, 'photos-stale').items) === JSON.stringify(['Garnetta Center · Nov 7 · Renova ' + notes.v2[0], 'Emberly Clinic · Nov 11 · Mariam ' + notes.v2[0]]) &&
+    JSON.stringify(byId(c, 'photos-lost').items) === JSON.stringify(['Cobaltia Clinic · Nov 8 · Mariam ' + notes.v4[1]]) && !byId(c, 'photos-wait').id && counts(c), { stale: byId(c, 'photos-stale'), lost: byId(c, 'photos-lost') });
+
+  // the same cards in Arabic at 390 px: the notes' own Arabic, the names and dates kept
+  seed(); cloud.visits = JSON.stringify(vs);
+  mode.failSet = /^photo:/;
+  await boot(M, 'rep', { ultramed_lang: 'ar', um_device: 'dHarness', 'um_photo:phKept': JSON.stringify({ id: 'phKept', data: THUMB, visitId: 'v1', ts: NOW0 - 45 * 60000 }) });
+  await page.evaluate(() => new Promise(r => setTimeout(r, 300)));
+  await page.evaluate(() => { _memOnly.add('visits'); renderMemOnlyBar(); });   // and the red bar of a full phone
+  await page.evaluate(() => new Promise(r => setTimeout(r, 120)));
+  c = await center();
+  const arSync = c.cards.filter(x => x.type === 'sync').flatMap(x => [x.title].concat(x.why, x.items)).filter(l => !/[؀-ۿ]/.test(l));
+  let fa = await fits();
+  check('Arabic: the red bar\'s card and the photo cards — every title, reason, line and note in Arabic, no sideways scroll',
+    ['sync-mem', 'photos-wait', 'photos-stale', 'photos-lost'].every(id => !!byId(c, id).id) && !arSync.length && c.dir === 'rtl' && fa.page && fa.sheet && counts(c), { arSync, ids: ids(c), fa });
+  await page.evaluate(() => { _memOnly.delete('visits'); renderMemOnlyBar(); closeModal(); });
+  mode.failSet = null;
+
+  // ---- the sales files' red retry bar (supervisor) ----
+  seed();
+  await boot(G, 'supervisor');
+  mode.failSet = /^erpSales$|^erpRows/;
+  await page.evaluate(async () => { await persist('erpSales'); });
+  mode.failSet = null;
+  c = await center();
+  const se = byId(c, 'sync-erp'), erpPill = await page.evaluate(() => !!document.getElementById('erpDirtyPill'));
+  check('sales file changes the cloud has not confirmed: the red retry bar, and the bell says the same with Retry the save', erpPill && se.title === 'Sales file changes not saved' && se.acts.includes('retryErp') && se.sev === 'al-high' && counts(c), { se, erpPill });
+  await act('sync-erp', 'retryErp');
+  c = await center();
+  check('Retry the save with the cloud back: saved, the bar and the card gone', !byId(c, 'sync-erp').id && !(await page.evaluate(() => !!document.getElementById('erpDirtyPill'))) && counts(c), ids(c));
 
   // ---- a failed import (supervisor) ----
   await page.evaluate(async () => { closeModal(); openErpImport(); await new Promise(r => setTimeout(r, 60)); await erpAutoImport('this is not a sales file'); });

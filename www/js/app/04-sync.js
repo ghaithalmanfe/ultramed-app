@@ -957,6 +957,7 @@ async function persistErpSalesInner(){
 // erpSaveFailed — the pill is for the small edits: who-is-who, return policy,
 // the boot-time purge of ignored salesmen).
 function renderErpDirtyPill(){
+  if(typeof alertsSoon === 'function') alertsSoon(); // the header bell says what the bars say (19-alerts.js)
   let el = document.getElementById('erpDirtyPill');
   if(!_erpDirty){ if(el) el.remove(); return; }
   if(!el){
@@ -1335,6 +1336,15 @@ const MEMONLY_OTHER = "This phone's storage is full — these changes are only i
 const MEMONLY_PHOTO = "This phone's storage is full — a photo is only in the app's memory: keep the app open and connected until it says Saved";
 let _memBarTimer = 0; // while such a photo is on the bar: looked at again every second (it lands in the background)
 function memOnlyPhotos(){ return typeof photosToUpload === 'function' ? photosToUpload(true) : 0; }
+// The red bar's lines (English; [] while it is down) — the bar shows them,
+// and the alerts center says them as they are (19-alerts.js).
+function memOnlyLines(){
+  const nPh = memOnlyPhotos();
+  if(!_memOnly.size && !nPh) return [];
+  return _memOnly.size
+    ? [_memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER].concat(nPh ? [nPh === 1 ? "A photo is only in the app's memory too" : nPh + " photos are only in the app's memory too"] : [])
+    : [nPh === 1 ? MEMONLY_PHOTO : "This phone's storage is full — " + nPh + " photos are only in the app's memory: keep the app open and connected until it says Saved"];
+}
 function renderMemOnlyBar(){
   let el = document.getElementById('memOnlyBar');
   const nPh = memOnlyPhotos();
@@ -1346,9 +1356,7 @@ function renderMemOnlyBar(){
     el.style.cssText = 'position:fixed; top:10px; left:12px; right:12px; z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:center; pointer-events:none; white-space:pre-line;';
     document.body.appendChild(el);
   }
-  const lines = _memOnly.size
-    ? [_memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER].concat(nPh ? [nPh === 1 ? "A photo is only in the app's memory too" : nPh + " photos are only in the app's memory too"] : [])
-    : [nPh === 1 ? MEMONLY_PHOTO : "This phone's storage is full — " + nPh + " photos are only in the app's memory: keep the app open and connected until it says Saved"];
+  const lines = memOnlyLines();
   const txt = lines.map(t => trOf(t) || t).join('\n');
   if(el.textContent !== txt) el.textContent = txt; // an alert: said again only when it changes
   if(nPh) _memBarTimer = setTimeout(memOnlyRecheck, 1000);
@@ -1577,6 +1585,7 @@ async function flushOutbox(){
   }
 }
 function updateSyncBadge(){
+  if(typeof alertsSoon === 'function') alertsSoon(); // the header bell says what the bars say (19-alerts.js)
   let el = document.getElementById('syncPill');
   const n = outboxList().length;
   const show = (!navigator.onLine || n > 0) && !_memOnly.size; // the red bar (renderMemOnlyBar) says it all on a full phone

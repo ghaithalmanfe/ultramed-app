@@ -2,9 +2,13 @@
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 
 // The rules are UMCore.alertsFor (pure, unit-tested in tests/core.test.js).
-// This file gathers what only this phone knows — the outbox (outboxWaiting),
-// saves that did not land (saveFailures), sales changes behind the red retry
-// bar (_erpDirty), the last sales import (lastErpImport, 11-erp.js), today's
+// This file gathers what only this phone knows, read with the very functions
+// v122's own bars and notes use — never a rule of its own: the queue as the
+// pill counts it (outboxWaiting → outboxList, memory included), what the red
+// bar of a full phone says (memOnlyLines, _memOnly), each visible visit's
+// photo note (photoWaitInfo, 12-reports.js: waiting, only in the app's memory,
+// lost, another phone's photo with its age), the sales files' retry bar
+// (_erpDirty), the last sales import (lastErpImport, 11-erp.js), today's
 // backup check (um_snapDay / um_snapLast, maybeSnapshot) — keeps each
 // person's dismiss / snooze on this device, and draws the bell and the sheet.
 // The supervisor's on/off per type and the hours / limits live in
@@ -18,19 +22,18 @@ const ALERT_TYPE_INFO = {
   overdue: ['Overdue follow-ups', 'Clinics whose follow-up date has passed: each person her own, the supervisor everyone\'s.'],
   missed: ['Missed planned visits', 'Planned in the last 14 days, not visited on the day nor since.'],
   noActivity: ['No field visit by a set hour', 'Supervisor only: a person with no field visit logged today by the hour below, on working days.'],
-  target: ['Month target at risk', 'The month figure (ERP files) below the pace set below, counted in working days to the ERP cut-off.'],
+  target: ['Month target at risk', "The month figure (ERP files) below 90% of an even pace in working days to the ERP cut-off — the sales coach's rule; a target from an earlier month is named."],
   drop: ['Customers buying less than last month', 'Invoiced sales in the ERP files from day 1 to the cut-off, against the same days of last month.'],
-  sync: ['Sync problems', 'Changes waiting on the phone for long, and saves that did not reach the cloud.'],
+  sync: ['Sync problems', "What the sync bars and the visit photo notes say: changes waiting to upload, anything only in the app's memory, visit photos waiting or lost, sales file changes not saved."],
   erpImport: ['Failed sales file import', 'Supervisor only: the last import on this phone failed.'],
   backup: ['Daily backup', 'Supervisor only: today\'s backup could not be saved, or is not confirmed after the hour below.'],
 };
 const ALERT_NUMBERS = [
   ['noActivityHour', 'No field visit by (hour, 0–23)', 1],
-  ['targetPacePct', 'Target at risk below (% of an even pace)', 1],
   ['targetMinDays', 'Judge the target pace from working day', 1],
   ['dropPct', 'Customer down by at least (%)', 1],
   ['dropMinKD', 'Customer bought at least (KD, same days last month)', 0.01],
-  ['outboxMinutes', 'Changes waiting longer than (minutes)', 1],
+  ['outboxMinutes', 'Changes and photos waiting longer than (minutes)', 1],
   ['backupHour', 'Ask about today\'s backup after (hour, 0–23)', 1],
 ];
 let _alerts = { shown: [], hidden: [] };   // the last computed lists: the bell and the sheet show the same
@@ -42,13 +45,31 @@ function alertsStateKey(){ return ALERT_STATE + (currentUser ? currentUser.name 
 function alertsJSON(key){ try{ const v = JSON.parse(localStorage.getItem(key) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }catch(e){ return null; } }
 function alertsState(){ return alertsJSON(alertsStateKey()) || {}; }
 function alertsStateSave(st){ try{ localStorage.setItem(alertsStateKey(), JSON.stringify(st)); return true; }catch(e){ return false; } }
+// Each visible visit's photo note (photoWaitInfo — the note's own reading and
+// lines), for the visits this person sees (visibleVisits: a rep's own and the
+// ones she was on; the supervisor's, everyone's).
+function alertsPhotoFacts(){
+  if(typeof photoWaitInfo !== 'function') return [];
+  const out = [], onList = new Set(clinics.map(c => c && c.id));
+  visibleVisits().forEach(v => {
+    if(!v || !Array.isArray(v.photos) || !v.photos.length) return;
+    const w = photoWaitInfo(v);
+    if(!w) return;
+    out.push({ visitId: v.id, clinicId: onList.has(v.clinicId) ? v.clinicId : null, // its line opens the clinic only when it is on the list
+      label: clinicLabel(v.clinicId, v), date: v.date, rep: v.rep || null, withRep: v.withRep || null,
+      wait: w.wait, lost: w.lostTxt, mem: w.mem, here: w.here, own: w.own, old: w.old, lostAt: w.lostAt });
+  });
+  return out;
+}
 // What this phone knows — read from the device only, never from the cloud.
 function alertsDevice(){
   let snapDay = null; try{ snapDay = localStorage.getItem(SNAP_DAY); }catch(e){}
   return {
     online: navigator.onLine !== false,
-    outbox: outboxWaiting(),
-    failed: [], // v122: the save-outcome record was a second rule beside the queue — dropped in the merge (see 04-sync.js)
+    outbox: outboxWaiting(),            // the queue the pill counts (memory included)
+    memOnly: [..._memOnly],             // queued keys the phone could not keep
+    memBar: memOnlyLines(),             // the red bar's lines, as it shows them
+    photos: alertsPhotoFacts(),
     erpDirty: !!_erpDirty,
     erpImport: lastErpImport(),
     snapDay,
@@ -61,7 +82,7 @@ function alertsCompute(){
   const now = Date.now(), today = todayStr();
   const list = UMCore.alertsFor({ today, now, user: { name: currentUser.name, role: currentUser.role }, reps: REPS.slice(),
     team: staff.map(s => s && s.name).filter(Boolean), data: { clinics, visits, dayPlans, events, targets, erpSales, erpMap },
-    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, cache: _alertsCache });
+    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, monthLabel, cache: _alertsCache });
   return UMCore.alertsVisible(list, alertsState(), today, now);
 }
 function alertsSheetOpen(){
@@ -74,7 +95,7 @@ function refreshAlerts(forceSheet){
   if(!bell || !badge || !currentUser) return;
   let r;
   try{ r = alertsCompute(); }catch(e){ console.error('alerts center', e); return; }
-  const sig = JSON.stringify([r.shown.map(a => [a.id, a.title, a.why, a.msg || '', (a.items || []).map(i => i.text)]), r.hidden.map(a => [a.id, a.hidden, a.until])]);
+  const sig = JSON.stringify([r.shown.map(a => [a.id, a.title, a.why, a.msg || '', (a.items || []).map(i => [i.text, i.note || ''])]), r.hidden.map(a => [a.id, a.hidden, a.until])]);
   const changed = sig !== _alertsSig;
   _alerts = r; _alertsSig = sig;
   const n = r.shown.length;
@@ -87,6 +108,12 @@ function refreshAlerts(forceSheet){
   if((changed || forceSheet) && alertsSheetOpen()) renderAlertsSheet();
 }
 function renderAlertsBell(){ refreshAlerts(false); }
+// A bar or a photo note changed (04, 12): the bell follows, once per burst of changes.
+let _alertsSoonT = 0;
+function alertsSoon(){
+  if(_alertsSoonT || !currentUser) return;
+  _alertsSoonT = setTimeout(() => { _alertsSoonT = 0; refreshAlerts(false); }, 60);
+}
 
 // ---- the sheet ----
 function openAlerts(){
@@ -120,7 +147,9 @@ function alertCardHTML(a, hidden){
   const item = it => {
     const cid = it.clinicId != null ? String(it.clinicId) : '';
     const go = cid || (it.key && alertKeyOpener(it.key));
-    return `<div class="al-item${go ? ' clickable' : ''}"${cid ? ` data-clinic="${esc(cid)}"` : ''}${it.key ? ` data-key="${esc(it.key)}"` : ''}${go ? ' onclick="alertsOpenItem(this)"' : ''}>${esc(it.text)}</div>`;
+    // a visit's photo line: its note's own words under it, as under the visit's thumbnails
+    const note = it.note ? `<div class="al-note">${esc(it.note)}</div>` : '';
+    return `<div class="al-item${go ? ' clickable' : ''}"${cid ? ` data-clinic="${esc(cid)}"` : ''}${it.key ? ` data-key="${esc(it.key)}"` : ''}${go ? ' onclick="alertsOpenItem(this)"' : ''}><div>${esc(it.text)}</div>${note}</div>`;
   };
   const acts = [];
   if(a.open && ALERT_OPEN[a.open.screen]) acts.push(`<button class="chip small on" data-act="open" onclick="alertsOpen(this)">Open</button>`);
@@ -165,7 +194,15 @@ function alertsGoToday(anchorId){
 const ALERT_OPEN = {
   followups: () => alertsGoToday('dueList'),
   missed: () => alertsGoToday('missedTitle'),
-  target: () => alertsGoToday('targetCard'),
+  targetCard: () => alertsGoToday('targetCard'),
+  // the sales coach on Reports judges the pace by the same rule (UMCore.targetPace), for the same person
+  coach: a => {
+    closeModal(); switchView('reports');
+    if(a.open && a.open.rep) setReportRepFilter(a.open.rep);
+    const el = document.getElementById('coachCard');
+    if(el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+  },
+  gallery: () => { closeModal(); openPhotoGallery(); },
   calendar: a => { closeModal(); const t = todayStr(); calAnchor = t; calSelected = t; calRepFilter = ownRepOnly((a.open && a.open.rep) || 'all'); switchView('calendar'); },
   clinics: () => { closeModal(); switchView('clinics'); setClinicMode('dash'); },
   erpImport: () => openErpImport(),
@@ -211,8 +248,11 @@ async function alertsUploadNow(btn){
   if(btn) btn.disabled = true;
   if(navigator.onLine === false){ showToast('📴 This phone is offline — the changes upload when the connection is back'); if(btn) btn.disabled = false; return; }
   if(_flushing){ showToast('⏳ Uploading…'); if(btn) btn.disabled = false; return; }
-  await flushOutbox();
-  if(outboxList().length) showToast('⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.');
+  await flushOutbox(); // the queue, and the photos this phone keeps (retryPhotos, in the background)
+  // what is left, in the words of the bars: only in the app's memory is never "stays on this phone"
+  if(outboxList().length) showToast(memOnlyLines().length ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
+    : '⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.');
+  else { const left = photosToUpload(false); if(left) showToast('⏳ ' + photosLeftText(left)); }
   refreshAlerts(true);
 }
 async function alertsRetryErp(btn){
