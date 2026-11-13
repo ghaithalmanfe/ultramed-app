@@ -6041,6 +6041,12 @@
         if(k === 'mailLog') return _isObj(v) ? { counts: { entries: _isArr(v.history) ? _len(v.history) : 0 } } : null;
         return _isArr(v) ? { counts: { entries: _len(v) } } : null;
       } },
+    // the change log (17-audit-log.js): one document a month, auditLog:YYYY-MM = { v, month, entries, dropped, trimmed }
+    { id: 'auditLog', label: 'Change log', unit: 'entries', daily: 'no', prefixes: ['auditLog:'],
+      doc: function(k, v){
+        if(_isArr(v)) return { counts: { entries: v.length } };   // the plain list an early copy wrote
+        return _isObj(v) && _isArr(v.entries) ? { counts: { entries: v.entries.length } } : null;
+      } },
     { id: 'snapshots', label: 'Daily backups (inside the database)', unit: 'days', daily: 'self', prefixes: ['snap_'],
       doc: function(k, s){
         if(!_isObj(s)) return null;
@@ -6352,7 +6358,7 @@
   var AUDIT_LIMITS = { str: 120, items: 8, keys: 14, depth: 3, label: 120, reason: 300, entry: 2400, monthEntries: 4000, monthChars: 400000 };
   // Never recorded, whatever record they sit in: passwords, PINs, tokens, keys, sessions.
   var AUDIT_SECRET = /pass(word|wd|code)?$|^pwd$|^pin$|secret|token|api.?key|credential|^auth|session|cookie|private/i;
-  var AUDIT_RES = { saved: 1, queued: 1, failed: 1, refused: 1, timeout: 1, conflict: 1 };
+  var AUDIT_RES = { saved: 1, queued: 1, memory: 1, failed: 1, refused: 1, timeout: 1, conflict: 1 };
   // English labels (Arabic in i18n.js): what each action is called on screen.
   var AUDIT_ACTIONS = {
     'visit.add': 'Visit logged', 'visit.edit': 'Visit edited', 'visit.delete': 'Visit deleted', 'call.add': 'Call logged',
@@ -6370,14 +6376,20 @@
     'product.add': 'Product added', 'product.edit': 'Product edited', 'product.price': 'Price changed', 'product.delete': 'Product deleted',
     'restore.bin': 'Restored from the recycle bin', 'restore.backup': 'Backup day restored', 'restore.clinics': 'Missing clinics brought back',
     'restore.device': 'Clinics restored from this device', 'restore.nameless': 'Clinic without a name named',
-    'restore.recreate': 'Deleted clinic re-created', 'restore.doctors': 'Lost doctors brought back',
-    'bin.purge': 'Deleted for good from the recycle bin', 'sync.upload': 'Offline changes uploaded'
+    'restore.namelessMove': 'Clinic without a name joined a listed clinic',
+    'restore.recreate': 'Deleted clinic re-created', 'restore.doctor': 'Doctor without a name named',
+    'restore.doctorMove': 'Visits moved to a listed doctor', 'doctor.gone': 'Doctor without a name marked as left',
+    'doctor.rxTypes': 'Prescription types changed', 'sales.note': 'Reason written on a sales line',
+    'sales.lineKind': 'Sales line marked', 'sales.retry': 'Unsaved sales changes saved', 'product.guide': 'Selling guide changed',
+    'bin.purge': 'Deleted for good from the recycle bin', 'sync.upload': 'Offline changes uploaded',
+    'sync.late': 'A save with no confirmation reached the cloud'
   };
   var AUDIT_GROUPS = { visit: 'visits', call: 'visits', order: 'visits', clinic: 'clinics', doctor: 'doctors', staff: 'team',
     target: 'targets', erpLink: 'sales', sales: 'sales', product: 'products', restore: 'restore', bin: 'restore', sync: 'sync' };
   var AUDIT_GROUP_LABELS = { visits: 'Visits & orders', clinics: 'Clinics', doctors: 'Doctors', team: 'Team & permissions', targets: 'Targets',
     sales: 'Sales & ERP links', products: 'Products', restore: 'Restores & recycle bin', sync: 'Uploads', other: 'Other changes' };
-  var AUDIT_RESULTS = { saved: 'Saved', queued: 'Kept on this device — uploads automatically', failed: 'Not saved',
+  var AUDIT_RESULTS = { saved: 'Saved', queued: 'Kept on this device — uploads automatically',
+    memory: "Only in the app's memory (this phone's storage is full) — keep the app open until it uploads", failed: 'Not saved',
     refused: 'Not saved — refused', timeout: 'No confirmation from the cloud', conflict: 'Not saved — changed on another device first' };
   var AUDIT_FIELDS = {
     date: 'Date', rep: 'Rep', withRep: 'Joint visit with', met: 'Who was met', orderTotal: 'Order total', items: 'Order lines',
@@ -6399,7 +6411,11 @@
     visitsPerDay: 'Field visits a day', doctorsPerMonth: 'Different doctors met a month', discountA: 'Max discount % – A clinics',
     discountOther: 'Max discount % – other clinics', discountOpenDay: 'Max discount % – open days', openDays: 'Open days',
     rxGrowth: 'Prescription growth a month', newProducts: 'New product placements a month', newAccounts: 'New accounts a month',
-    returnsMax: 'Max returns (share of sales)', responseHours: 'Answer a client request within (hours)', workdaysPerMonth: 'Working days a month', '…': 'More fields'
+    returnsMax: 'Max returns (share of sales)', responseHours: 'Answer a client request within (hours)', workdaysPerMonth: 'Working days a month',
+    source: 'Taken from', salesMoved: 'Sales lines now counted for another person', removedClinics: 'Clinics removed', removedTasks: 'Tasks removed',
+    removedVisits: "This month's visits removed", written: 'Written before it stopped', types: 'Prescription types', retired: 'Retired types',
+    note: 'Reason written', lineKind: 'Marked as', sell: 'Why it sells', how: 'How to sell it', objections: 'Objections & answers', links: 'Links',
+    '…': 'More fields'
   };
   function auditStr(v, n){
     if(v === undefined || v === null) return null;
@@ -6502,6 +6518,12 @@
       ok: res === 'saved',
       res: res
     };
+    // an upload entry names the entries it settles; a change kept on the phone
+    // across several lists names the lists it waits for (auditSettled)
+    var ids = function(a, n){ return Array.isArray(a) ? a.filter(function(x){ return typeof x === 'string' && x; }).slice(0, n).map(function(x){ return auditStr(x, 40); }) : []; };
+    var st = ids(o.settles, 50), wt = ids(o.waits, 8);
+    if(st.length) e.settles = st;
+    if(wt.length) e.waits = wt;
     if(JSON.stringify(e).length > L.entry){
       var tight = { str: 40, items: 3, keys: 6, depth: 2 };
       e.before = o.before == null ? null : auditSummarize(o.before, tight);
@@ -6584,7 +6606,9 @@
       return !opts.by || opts.by === 'all' || e.by === opts.by;
     });
     if(opts.group && opts.group !== 'all') list = list.filter(function(e){ return auditGroupOf(e.action) === opts.group; });
-    if(opts.failed) list = list.filter(function(e){ return e.ok !== true; });
+    // opts.settled (auditSettled): a change kept on a phone that went up since is no longer "not saved"
+    var up = opts.settled && typeof opts.settled === 'object' ? opts.settled : null;
+    if(opts.failed) list = list.filter(function(e){ return e.ok !== true && !(up && e.eid && Object.prototype.hasOwnProperty.call(up, e.eid)); });
     return list.map(function(e, i){ return [e, i]; }).sort(function(x, y){
       var a = String(x[0].at || ''), b = String(y[0].at || '');
       return a < b ? 1 : a > b ? -1 : y[1] - x[1];
@@ -6610,6 +6634,30 @@
     if(Array.isArray(v)) return v.length ? v.map(auditText).join(', ') : '—';
     if(typeof v === 'object'){ var ks = Object.keys(v); return ks.length ? ks.map(function(k){ return k + ': ' + auditText(v[k]); }).join('; ') : '—'; }
     return String(v);
+  }
+  // When each change that was kept on a phone (res queued / memory) went up:
+  // { eid: ISO time } from the 'sync.upload' entries naming it (settles), once
+  // every list it waits for (waits, else its own key) has gone up — the latest
+  // of those times. Entries not settled (yet, or in another month) are absent.
+  function auditSettled(entries){
+    var list = Array.isArray(entries) ? entries.filter(function(e){ return e && typeof e === 'object'; }) : [];
+    var by = Object.create(null);   // eid → { key → latest at }
+    list.forEach(function(u){
+      if(u.action !== 'sync.upload' || !Array.isArray(u.settles) || typeof u.key !== 'string') return;
+      u.settles.forEach(function(id){
+        if(typeof id !== 'string') return;
+        var m = by[id] = by[id] || Object.create(null), at = String(u.at || '');
+        if(!m[u.key] || m[u.key] < at) m[u.key] = at;
+      });
+    });
+    var out = {};
+    list.forEach(function(e){
+      if(!e.eid || (e.res !== 'queued' && e.res !== 'memory') || !by[e.eid]) return;
+      var keys = Array.isArray(e.waits) && e.waits.length ? e.waits : [e.key], m = by[e.eid], last = '';
+      for(var i = 0; i < keys.length; i++){ if(!m[keys[i]]) return; if(m[keys[i]] > last) last = m[keys[i]]; }
+      out[e.eid] = last;
+    });
+    return out;
   }
   // The ERP account-link log (erpMapLog, newest first: { n, f, t, fc, tc, by,
   // at (ms) }) read as change-log entries of one local month — bridged, so a
@@ -6652,6 +6700,6 @@
     cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
     backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder,
     AUDIT_PREFIX, AUDIT_LIMITS, AUDIT_ACTIONS, AUDIT_GROUP_LABELS, AUDIT_RESULTS, AUDIT_FIELDS,
-    auditSummarize, auditDiff, auditEntry, auditDocOf, auditAppend, auditGroupOf, auditView, auditChanges, auditText, auditFromErpMapLog
+    auditSummarize, auditDiff, auditEntry, auditDocOf, auditAppend, auditGroupOf, auditView, auditChanges, auditText, auditFromErpMapLog, auditSettled
   };
 });

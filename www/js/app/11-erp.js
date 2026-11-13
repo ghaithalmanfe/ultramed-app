@@ -64,7 +64,7 @@ async function setSalesmanMap(name, value){
   const ok = await persist('erpSales');
   // the change log: who a salesman's lines count for ('ignored' = not read at all)
   auditRecord({ action: 'sales.salesman', key: 'erpSales', id: name, label: name, before: { salesman: had === undefined ? null : had === null ? 'ignored' : had },
-    after: { salesman: value || 'ignored' }, result: ok, diff: false });
+    after: { salesman: value || 'ignored' }, result: erpSaveResult(ok), diff: false });
   const removed = value ? 0 : await purgeIgnoredSalesmen();
   renderAll();
   showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : value ? `${name} → ${value}` : `${name} ignored${removed ? ` — ${removed} stored lines removed` : ''}`);
@@ -90,7 +90,7 @@ async function setReturnPolicy(v, reopenId){
   const was = erpReturnPolicy();
   erpSales.returnPolicy = v === 'erp' ? 'erp' : 'origin';
   const ok = await persist('erpSales');
-  auditRecord({ action: 'sales.returns', key: 'erpSales', id: 'returnPolicy', before: { policy: was }, after: { policy: erpSales.returnPolicy }, result: ok });
+  auditRecord({ action: 'sales.returns', key: 'erpSales', id: 'returnPolicy', before: { policy: was }, after: { policy: erpSales.returnPolicy }, result: erpSaveResult(ok) });
   renderAll();
   showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : v === 'erp' ? 'Returns now count in the month they were booked' : "Returns now count in the original invoice's month");
   if(reopenId) openErpRecon(reopenId);
@@ -693,7 +693,7 @@ async function erpAutoSave(repMap){
   erpSales.periods.push(period);
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   const saved = await persist('erpSales');
-  auditSalesImport(period, replaced, saved);
+  auditSalesImport(period, replaced, erpSaveResult(saved));
   if(!saved){ erpSaveFailed(before); return; }
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
@@ -833,7 +833,7 @@ async function erpSavePeriod(){
   // Remember who-is-who forever, so every later import is zero-touch.
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   const saved = await persist('erpSales');
-  auditSalesImport(period, replaced, saved);
+  auditSalesImport(period, replaced, erpSaveResult(saved));
   if(!saved){ erpStateRestore(before); closeModal(); openErpImport(); erpSaveFailed(before); return; } // roll back BEFORE the list renders
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
@@ -854,7 +854,7 @@ async function deleteErpPeriod(id){
   // any action) carries it — so a delete whose write landed late can never
   // "come back" and then vanish again.
   const ok = await persist('erpSales');
-  if(p0) auditRecord({ action: 'sales.delete', key: 'erpSales', id, label: p0.from + ' – ' + p0.to, before: { from: p0.from, to: p0.to, net: p0.net, lines: p0.rowCount || null }, result: ok });
+  if(p0) auditRecord({ action: 'sales.delete', key: 'erpSales', id, label: p0.from + ' – ' + p0.to, before: { from: p0.from, to: p0.to, net: p0.net, lines: p0.rowCount || null }, result: erpSaveResult(ok) });
   renderView(activeView); // repaint the live tab so figures drop the deleted file
   showToast(ok ? 'Deleted' : '⚠️ الحذف لم يُحفظ بعد — اضغط شريط إعادة المحاولة');
   openErpImport();

@@ -63,7 +63,7 @@ const DYNAMIC = [
   { file: '04-sync.js', arg: "'snap_'+", is: 'snap_YYYY-MM-DD' },
   { file: '08-team-orders.js', arg: "'photo:'+", is: 'photo:<id>' },
   { file: '12-reports.js', arg: "'photo:'+", is: 'photo:<id>' },
-  { file: '17-audit-log.js', arg: 'UMCore.AUDIT_PREFIX + m', is: 'auditLog:YYYY-MM (auditFlush 17-audit-log.js:129, audit-trail release)' },
+  { file: '17-audit-log.js', arg: 'UMCore.AUDIT_PREFIX + m', is: 'auditLog:YYYY-MM (auditFlush 17-audit-log.js:219, audit-trail release)' },
 ];
 const LOCAL_ONLY = { currentUser: '03-gate.js:7 — only when Firebase is off (localStorage); never in the cloud' };
 // The first argument of a call: up to the first comma or closing parenthesis
@@ -181,7 +181,7 @@ function auditAppend(cur, list, month){
   }
   return _auditAppend(cur, list, month);
 }
-// auditFlush (17-audit-log.js:116-136): each month this phone holds entries for, one transaction
+// auditFlush (17-audit-log.js:207-229): each month this phone holds entries for, one transaction
 const auditFlush = async (s, entries) => {
   const byMonth = {};
   entries.forEach(e => { const m = e.at.slice(0, 7); (byMonth[m] = byMonth[m] || []).push(e); });
@@ -271,7 +271,7 @@ const TEAM_SITES = [
       await s.delete('photo:' + id, true);
       await s.delete(PHOTO, true);
     } },
-  { label: 'auditLog: the change log — auditFlush 17-audit-log.js:129 appends this phone\'s entries to the month document, last month\'s too after a day offline; the screen reads it (:264)',
+  { label: 'auditLog: the change log — auditFlush 17-audit-log.js:219 appends this phone\'s entries to the month document, last month\'s too after a day offline; the screen reads it (:372)',
     keys: ['auditLog:YYYY-MM'], run: async (s, me) => {
       const now = auditEntry(me), late = auditEntry(me, lastMonth() + '-28T09:00:00.000Z');
       await auditFlush(s, [late, now]);

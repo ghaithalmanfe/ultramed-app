@@ -1827,8 +1827,9 @@ async function restoreMissingClinics(){
   if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(x => !(x && idSet.has(x.id)));
   const r = await persistFor('clinics');
   if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
-  auditRecord({ action: 'restore.clinics', key: 'clinics', id: ids.join(','), label: back.length === 1 ? back[0].name : null,
-    after: { clinics: back.map(c => c.name + (c.rep ? ' · ' + c.rep : '')), count: back.length }, result: r });
+  // the change log: the clinics brought back from the daily backups (none ticked still missing: nothing changed, no entry)
+  if(back.length) auditRecord({ action: 'restore.clinics', key: 'clinics', id: ids.join(','), label: back.length === 1 ? back[0].name : null,
+    after: { clinics: back.map(c => c.name + (c.rep ? ' · ' + c.rep : '')), count: back.length, source: 'backup' }, result: r });
   renderAll();
   const note = document.getElementById('recovNote');
   const ok = r.ok || sentSince('clinics', r);
@@ -1845,6 +1846,8 @@ async function restoreSnapshotNow(dateStr){
   // A backup of another month holds THAT month's visits: written over this
   // month, it would erase every visit the team logged since the 1st (v121).
   if(String(dateStr).slice(0, 7) !== todayStr().slice(0, 7)){
+    // the change log: asked for, refused by the app — nothing changed
+    auditRecord({ action: 'restore.backup', key: 'snap_' + dateStr, id: dateStr, label: dateStr, reason: '#restore-other-month', result: { res: 'refused' } });
     showToast('This backup is from another month: restoring it would erase this month\'s visits. To bring back clinics, use "Find missing clinics".', 7000);
     return;
   }
@@ -1862,6 +1865,7 @@ async function restoreSnapshotNow(dateStr){
   const goneV = (visits || []).filter(v => v && UMCore.visitHome(v, today) === 'live' && !hv.has(v.id)).length;
   const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits and the sales files stay as they are.`;
   if(!confirm(trOf(ask) || ask)) return;
+  const written = []; // the change log: the documents this restore wrote, in order (a failure says how far it got)
   try{
     clinics = normalizeClinics(snap.clinics||[]); hidePlaceholderClinics();
     products = snap.products || products;
@@ -1877,10 +1881,12 @@ async function restoreSnapshotNow(dateStr){
     for(const [k, val] of [['clinics',storedClinics()],['products',products],['tasks',tasks]]){
       const str = JSON.stringify(val);
       await window.storage.set(k, str, true);
+      written.push(k);
       mirrorSave(k, str);
       setMergeBase(k, str); // the cloud now holds exactly this (the next merge's base)
     }
     await persistVisits({ authoritative: true });
+    written.push('visits');
     // The sales files stay as they are: an older index would drop every file
     // imported since that day from every figure. Only a wiped index (no file
     // at all) takes the backup's.
@@ -1888,6 +1894,7 @@ async function restoreSnapshotNow(dateStr){
     if(!haveFiles && snap.erpIndex && Array.isArray(snap.erpIndex.periods) && snap.erpIndex.periods.length){
       // that day's sales index; its chunks are still in the cloud (7-day grace)
       await window.storage.set('erpSales', JSON.stringify(snap.erpIndex), true);
+      written.push('erpSales');
       _erpDirty = false; renderErpDirtyPill();
       erpAdoptLoaded(await loadErpSales());
     }
@@ -1901,16 +1908,19 @@ async function restoreSnapshotNow(dateStr){
       if(recycleBin[k].length !== before) binChanged = true;
     });
     if(binChanged) await persist('recycleBin');
-    // the change log: a whole day put back (written above with plain writes — each one landed, or this threw)
+    // the change log: a whole day put back (written above with plain writes — each one landed, or this threw),
+    // with what it removed, as the person was told before it began
     auditRecord({ action: 'restore.backup', key: 'snap_' + dateStr, id: dateStr, label: dateStr,
-      after: { clinics: clinics.length, visits: visits.length, tasks: tasks.length, products: products.length }, result: true });
+      after: { clinics: clinics.length, visits: visits.length, tasks: tasks.length, products: products.length,
+        removedClinics: goneC || null, removedTasks: goneT || null, removedVisits: goneV || null }, result: true });
     const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
     closeModal();
     renderAll();
     showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
   }catch(e){
     console.error(e);
-    auditRecord({ action: 'restore.backup', key: 'snap_' + dateStr, id: dateStr, label: dateStr, result: false });
+    // not saved as a whole — and said exactly when part of it was written before it stopped
+    auditRecord({ action: 'restore.backup', key: 'snap_' + dateStr, id: dateStr, label: dateStr, after: written.length ? { written: written.slice() } : null, result: false });
     showToast('Restore failed');
   }
 }

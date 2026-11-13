@@ -834,17 +834,17 @@ async function restoreTickedMissingClinics(){
   if(!picked.length){ showToast('لم تعلّم شيئًا'); return; }
   const repEl = document.querySelector('#mcRep .chip.on');
   const fallbackRep = repEl ? repEl.dataset.rep : (REPS[0]||'');
-  const live = new Set(storedClinics().map(c => c && c.id)), back = [];
+  const live = new Set(storedClinics().map(c => c && c.id)), back = [], srcs = new Set(); // srcs: where the ones brought back came from (the change log)
   picked.forEach(x=>{
     const rep = x.rep || fallbackRep;
     if(x.src==='bin'){
       if(live.has(x.obj.id)) return;
       const clean = Object.assign({}, x.obj); delete clean._deletedAt; delete clean._label;
-      back.push(normalizeClinic(clean));
+      back.push(normalizeClinic(clean)); srcs.add('bin');
     } else if(x.src==='visits'){
-      if(!live.has(x.id)) back.push(normalizeClinic({id:x.id, name:x.name, rep, cls:'B', notes:'رجعت من سجل الزيارات', addedOn:todayStr()}));
+      if(!live.has(x.id)){ back.push(normalizeClinic({id:x.id, name:x.name, rep, cls:'B', notes:'رجعت من سجل الزيارات', addedOn:todayStr()})); srcs.add('visits'); }
     } else {
-      back.push(normalizeClinic({id:uid(), name:x.name, rep, cls:'B', notes:'أُنشئت من عملاء الفواتير', addedOn:todayStr()}));
+      back.push(normalizeClinic({id:uid(), name:x.name, rep, cls:'B', notes:'أُنشئت من عملاء الفواتير', addedOn:todayStr()})); srcs.add('erp');
     }
   });
   if(!back.length){ showToast('كل ما علّمته موجود في القائمة الآن'); openMissingClinics(); return; }
@@ -856,6 +856,9 @@ async function restoreTickedMissingClinics(){
     if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(b => !(b && ids.has(b.id)));
     const r = await persistFor('clinics');
     if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+    // the change log: the ticked clinics brought back, and where the app knew them from
+    auditRecord({ action: 'restore.clinics', key: 'clinics', id: back.map(c => c.id).join(','), label: back.length === 1 ? back[0].name : null,
+      after: { clinics: back.map(c => c.name + (c.rep ? ' · ' + c.rep : '')), count: back.length, source: [...srcs] }, result: r });
     closeModal();
     renderAll();
     if(document.getElementById('clinicList')) renderClinics();

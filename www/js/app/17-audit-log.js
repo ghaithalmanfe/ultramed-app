@@ -59,9 +59,16 @@
 const AUDIT_QUEUE_KEY = 'um_auditQueue';   // entries this phone has not got into the cloud yet: [{ m: 'YYYY-MM', e }]
 const AUDIT_QUEUE_MAX = 300;
 let AUDIT_WRITE_MS = 8000;
+// An entry goes up a moment after its change, never in the middle of the
+// change's own writes (a visit's follow-up task and plan entry, a restore's
+// next document): the month document is read and written whole, and on a
+// weak link that transfer must not stand in front of the change. Entries
+// made in that moment go up together, in one write.
+let AUDIT_FLUSH_DELAY_MS = 1500;
 let _auditMem = [];                        // the same, while the phone's storage is full
 let _auditChain = Promise.resolve();
 let _auditLost = 0;                        // entries pushed out of a full queue (said on the screen)
+let _auditSoon = 0;                        // the timer of the next upload (auditFlushSoon)
 function auditQueueRead(){
   try{
     const q = JSON.parse(localStorage.getItem(AUDIT_QUEUE_KEY) || '[]');
@@ -69,22 +76,92 @@ function auditQueueRead(){
   }catch(e){ return []; }
 }
 function auditQueueWrite(q){ try{ localStorage.setItem(AUDIT_QUEUE_KEY, JSON.stringify(q)); return true; }catch(e){ return false; } }
-// Every entry still waiting on this phone (the device queue, then memory).
+// Every entry still waiting on this phone (the device queue, then memory —
+// those marked mem: only in the app's memory, this phone's storage is full).
 function auditPending(){
   const q = auditQueueRead(), have = new Set(q.map(x => x.e.eid));
-  return q.concat(_auditMem.filter(x => !have.has(x.e.eid)));
+  return q.concat(_auditMem.filter(x => !have.has(x.e.eid)).map(x => Object.assign({ mem: true }, x)));
+}
+// A full phone (04-sync.js, freeDeviceRoom): the team's records come first.
+// The entries waiting here move to the app's memory — they still upload while
+// the app is open — and their room goes to the visit or clinic list being
+// kept on the phone. Returns whether any room was freed.
+function auditYieldRoom(){
+  try{
+    const q = auditQueueRead();
+    if(!q.length) return false;
+    const have = new Set(_auditMem.map(x => x.e.eid));
+    q.forEach(x => { if(!have.has(x.e.eid)) _auditMem.push(x); });
+    while(_auditMem.length > AUDIT_QUEUE_MAX){ _auditMem.shift(); _auditLost++; }
+    localStorage.removeItem(AUDIT_QUEUE_KEY);
+    console.warn('device storage full: ' + q.length + ' change-log entries moved to memory — they upload while the app is open');
+    return true;
+  }catch(e){ return false; }
 }
 // What a save did → { ok, res }. r: true / false, a persistTold or persistFor
-// result ({ ok, outcome }), or { res } for an outcome said in words.
+// result ({ ok, outcome }), or { res } for an outcome said in words. Kept on
+// this phone = 'queued'; queued but only in the app's memory (the phone's
+// storage is full) = 'memory'; refused by the app before it wrote (persist's
+// guards say why on screen) = 'refused'; a write the app stopped waiting for
+// = 'timeout' (it may still land: "no confirmation", never "not saved").
 function auditOutcome(r, key){
   if(r && typeof r === 'object' && typeof r.res === 'string') return { ok: r.res === 'saved', res: r.res };
   if(r === true) return { ok: true, res: 'saved' };
   if(r && typeof r === 'object' && 'ok' in r){
     if(r.ok === true || (key && r.outcome && typeof sentSince === 'function' && sentSince(key, r))) return { ok: true, res: 'saved' };
     const o = r.outcome || {};
-    return { ok: false, res: o.queued ? 'queued' : 'failed' };
+    return { ok: false, res: o.queued ? (o.mirrored === false ? 'memory' : 'queued') : o.refused ? 'refused' : o.timeout ? 'timeout' : 'failed' };
   }
   return { ok: false, res: 'failed' };
+}
+// One change saved in several documents (a nameless clinic joining a listed
+// one: visits, clinics, tasks, the day plans): saved only when every part
+// landed; kept on this phone when what did not land is queued; else what the
+// first part that neither landed nor queued says. parts: [[result, key], …]
+// `waits`: the lists still queued, each owed its "uploaded" (see below).
+function auditOutcomeAll(parts){
+  const outs = (parts || []).map(p => Object.assign({ key: p[1] }, auditOutcome(p[0], p[1])));
+  if(outs.every(x => x.ok)) return { res: 'saved' };
+  const bad = outs.filter(x => !x.ok);
+  const hard = bad.find(x => x.res !== 'queued' && x.res !== 'memory');
+  if(hard) return { res: hard.res };
+  return { res: bad.some(x => x.res === 'memory') ? 'memory' : 'queued', waits: bad.map(x => x.key) };
+}
+// ---- "kept on this device" until it uploads ----
+// An entry recorded as kept on this phone (queued) is owed an answer: when
+// the phone's queue sends that list (outboxRemove, 04-sync.js — after the
+// save that carried it landed), one 'sync.upload' entry says so and names the
+// entries it settles; the screen marks each of them "uploaded since". Per
+// list, on the phone (memory while it is full), until that list uploads.
+const AUDIT_OWED_KEY = 'um_auditOwed';     // { key: [eid, …] }
+const AUDIT_OWED_MAX = 50;
+let _auditOwedMem = null;
+function auditOwedRead(){
+  if(_auditOwedMem) return _auditOwedMem;
+  try{ const o = JSON.parse(localStorage.getItem(AUDIT_OWED_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }catch(e){ return {}; }
+}
+function auditOwedWrite(o){
+  try{ if(Object.keys(o).length) localStorage.setItem(AUDIT_OWED_KEY, JSON.stringify(o)); else localStorage.removeItem(AUDIT_OWED_KEY); _auditOwedMem = null; }
+  catch(e){ _auditOwedMem = o; }
+}
+function auditOwe(key, eid){
+  try{
+    if(typeof key !== 'string' || !key || !eid) return;
+    const o = auditOwedRead(), list = Array.isArray(o[key]) ? o[key].filter(x => typeof x === 'string') : [];
+    if(!list.includes(eid)) list.push(eid);
+    o[key] = list.slice(-AUDIT_OWED_MAX);
+    auditOwedWrite(o);
+  }catch(e){}
+}
+// The phone's queue has sent `key` (its save landed): the entries owed on it are settled.
+function auditKeyLanded(key){
+  try{
+    const o = auditOwedRead(), list = Array.isArray(o[key]) ? o[key].filter(x => typeof x === 'string') : [];
+    if(!list.length) return;
+    delete o[key];
+    auditOwedWrite(o);
+    auditRecord({ action: 'sync.upload', key, after: { count: list.length }, settles: list, result: true });
+  }catch(e){ console.warn('change log: upload not recorded', e); }
 }
 // Records one change: o = { action, key, id, label, before, after, reason,
 // result } — before / after as the record's fields (only what changed is
@@ -102,20 +179,33 @@ function auditRecord(o){
       before = d.before; after = d.after;
     }
     const out = auditOutcome(o.result, o.key);
-    const e = UMCore.auditEntry({ action: o.action, key: o.key, id: o.id, label: o.label, before, after, reason: o.reason, res: out.res },
+    // kept on this phone: the lists whose upload it waits for (one, unless a change spans several)
+    const waits = out.res === 'queued' || out.res === 'memory'
+      ? (o.result && Array.isArray(o.result.waits) && o.result.waits.length ? o.result.waits : [o.owedKey || o.key]).filter(k => typeof k === 'string' && k) : [];
+    const e = UMCore.auditEntry({ action: o.action, key: o.key, id: o.id, label: o.label, before, after, reason: o.reason, res: out.res, settles: o.settles,
+      waits: waits.length > 1 || (waits.length === 1 && waits[0] !== o.key) ? waits : null },
       { by: currentUser ? currentUser.name : null, role: currentUser ? currentUser.role : null });
     const m = UMCore.localDateStr(new Date(e.at)).slice(0, 7);
     const q = auditQueueRead();
     q.push({ m, e });
     while(q.length > AUDIT_QUEUE_MAX){ q.shift(); _auditLost++; }
     if(!auditQueueWrite(q)){ _auditMem.push({ m, e }); while(_auditMem.length > AUDIT_QUEUE_MAX){ _auditMem.shift(); _auditLost++; } }
-    auditFlush();
+    // kept on this phone: owed an "uploaded" when each list it waits for goes up
+    waits.forEach(k => auditOwe(k, e.eid));
+    auditFlushSoon();
     return e;
   }catch(err){ console.warn('change log: not recorded', err); return null; }
+}
+// The next upload, a moment from now (AUDIT_FLUSH_DELAY_MS); one timer for
+// every entry made meanwhile.
+function auditFlushSoon(){
+  if(_auditSoon) return;
+  _auditSoon = setTimeout(() => { _auditSoon = 0; auditFlush(); }, AUDIT_FLUSH_DELAY_MS);
 }
 // Sends what this phone holds up to the month documents, one append at a
 // time. Never rejects. An entry leaves the queue only once the cloud has it.
 function auditFlush(){
+  if(_auditSoon){ clearTimeout(_auditSoon); _auditSoon = 0; } // this run takes them
   const run = async () => {
     if(!currentUser || typeof UMCore.auditAppend !== 'function') return;
     const pend = auditPending();
@@ -198,6 +288,17 @@ const auditTargetFields = auditSafe((t, people) => {
   (people || []).forEach(r => { const x = (t || {})[r] || {}; out.revenue[r] = x.revenue || 0; out.visits[r] = x.visits || 0; });
   return out;
 });
+// The prescription types as the log shows them: the active ones and the retired ones, by name (names are data).
+const auditRxTypesFields = auditSafe(list => {
+  const l = Array.isArray(list) ? list : [];
+  return { types: l.filter(t => t && t.active !== false).map(t => String(t.name)), retired: l.filter(t => t && t.active === false).map(t => String(t.name)) };
+});
+// A selling guide (categoryGuides[cat]): its three texts and its links (each link's title; the address apart, cleaned).
+const auditGuideFields = auditSafe(g => {
+  if(!g) return { sell: null, how: null, objections: null, links: null };
+  const links = Array.isArray(g.links) ? g.links : [];
+  return { sell: g.sell || null, how: g.how || null, objections: g.objections || null, links: links.length ? links.map(l => (l && l.title) || 'Link') : null };
+});
 // Doctors a clinic just gained (addDoctorsToClinic's newIds): one entry each.
 const auditDoctorsAdded = auditSafe((c, r, result) => {
   ((r && r.newIds) || []).forEach(id => {
@@ -233,10 +334,17 @@ const auditReasonFrom = auditSafe(id => { const el = document.getElementById(id)
 // upload are shown with them, marked; a month that could not be read says so
 // — never "no changes".
 let _cl = null; // { month, by, group, failed, limit, seq, data }
-const AUDIT_KEY_LABELS = { visits: 'Visits', clinics: 'Clinics', tasks: 'Tasks', events: 'Calendar events', dayPlans: 'Day plans', tombs: 'Deletions', chat: 'Team chat', memories: 'Memories' };
+const AUDIT_KEY_LABELS = { visits: 'Visits', clinics: 'Clinics', tasks: 'Tasks', events: 'Calendar events', dayPlans: 'Day plans', tombs: 'Deletions', chat: 'Team chat', memories: 'Memories',
+  products: 'Products', erpSales: 'Sales files', recycleBin: 'Recycle bin', rxTypes: 'Prescription types' };
 const AUDIT_KIND_LABELS = { clinics: 'Clinic', products: 'Product', visits: 'Visit' };
+// Where a returning record or its name came from (stored as a code, shown in the reader's language).
+const AUDIT_SOURCE_LABELS = { copy: 'the copy this phone kept', task: "the app's follow-up task", visit: "a visit's record", typed: 'typed by hand',
+  bin: 'the recycle bin', visits: 'the names on its visits', erp: "the sales files' customers", backup: 'a daily backup' };
+// What a sales line was marked as (erpNotes kinds).
+const AUDIT_LINE_KINDS = { deal: 'Bonus within a deal', sample: 'Sample / marketing', exchange: 'Exchange — not a return', return: 'Real return' };
 // A reason the app gives itself is stored as a code ('#…') and shown in the reader's language.
-const AUDIT_REASON_CODES = { '#undo-erp-link': 'Undo of an ERP account link change' };
+const AUDIT_REASON_CODES = { '#undo-erp-link': 'Undo of an ERP account link change',
+  '#restore-other-month': "A backup of another month: restoring it would erase this month's visits" };
 // A label map read with a key from stored data: own entries only (a stored "constructor" is not a label).
 function auditOwn(map, k){ return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k); }
 const AUDIT_GROUP_ORDER = ['visits', 'clinics', 'doctors', 'team', 'targets', 'sales', 'products', 'restore', 'sync'];
@@ -327,6 +435,12 @@ function clVal(v, field){
   if(field === 'kind' && auditOwn(AUDIT_KIND_LABELS, v)) return `<span>${AUDIT_KIND_LABELS[v]}</span>`;
   if(field === 'salesman' && v === 'ignored') return '<span>ignored</span>';
   if(field === 'policy' && (v === 'erp' || v === 'origin')) return `<span>${v === 'erp' ? 'the month it was booked' : "the original invoice's month"}</span>`;
+  // codes the app stored for itself: shown in the reader's language (one or a list)
+  const codes = { source: AUDIT_SOURCE_LABELS, lineKind: AUDIT_LINE_KINDS, written: AUDIT_KEY_LABELS }[field];
+  if(codes){
+    const all = Array.isArray(v) ? v : [v];
+    if(all.every(x => auditOwn(codes, x))) return all.map(x => `<span>${codes[x]}</span>`).join(', ');
+  }
   return `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(UMCore.auditText(v))}</bdi>`;
 }
 function clChangesHTML(e){
@@ -346,13 +460,15 @@ function clChangesHTML(e){
 // Entries come from a shared document: every value is shown as text, and one
 // odd entry shows as unreadable instead of taking the list down with it.
 function clS(x){ return x == null ? '' : String(x); }
-function clEntryHTML(e, pending){
+// pending: still on this phone ('mem': only in the app's memory); upAt: when a
+// change kept on a phone went up since (UMCore.auditSettled).
+function clEntryHTML(e, pending, upAt){
   try{
-    const ok = e.ok === true, queued = e.res === 'queued';
+    const ok = e.ok === true, queued = e.res === 'queued' || e.res === 'memory';
     const action = auditOwn(UMCore.AUDIT_ACTIONS, e.action) ? UMCore.AUDIT_ACTIONS[e.action] : clS(e.action);
     const res = auditOwn(UMCore.AUDIT_RESULTS, e.res) ? UMCore.AUDIT_RESULTS[e.res] : (ok ? 'Saved' : 'Not saved');
     const role = e.role === 'supervisor' ? 'Supervisor' : e.role === 'rep' ? 'Sales Rep' : '';
-    const label = e.action === 'sync.upload' && auditOwn(AUDIT_KEY_LABELS, e.key) ? `<div style="font-weight:600; font-size:13px; margin-top:4px;"><span>${AUDIT_KEY_LABELS[e.key]}</span></div>`
+    const label = (e.action === 'sync.upload' || e.action === 'sync.late') && auditOwn(AUDIT_KEY_LABELS, e.key) ? `<div style="font-weight:600; font-size:13px; margin-top:4px;"><span>${AUDIT_KEY_LABELS[e.key]}</span></div>`
       : e.label ? `<div dir="auto" style="font-weight:600; font-size:13px; margin-top:4px; overflow-wrap:anywhere;">${esc(clS(e.label))}</div>` : '';
     const why = e.reason ? `<div style="font-size:12.5px; margin-top:4px;"><span>Reason</span>: ${auditOwn(AUDIT_REASON_CODES, e.reason) ? `<span>${AUDIT_REASON_CODES[e.reason]}</span>` : `<bdi dir="auto" style="overflow-wrap:anywhere;">${esc(clS(e.reason))}</bdi>`}</div>` : '';
     return `<div class="card" data-audit="${esc(clS(e.eid))}" data-action="${esc(clS(e.action))}" data-res="${esc(clS(e.res))}" style="padding:10px 12px; margin-bottom:8px; border-inline-start:4px solid ${ok ? 'var(--sage)' : queued ? 'var(--amber)' : 'var(--coral)'};">
@@ -360,7 +476,9 @@ function clEntryHTML(e, pending){
     <div class="clinic-sub" style="margin-top:2px;"><bdi dir="auto">${esc(clS(e.by) || '—')}</bdi>${role ? ` · <span>${role}</span>` : ''} · <span dir="auto">${esc(clWhen(e.at))}</span></div>
     ${label}${clChangesHTML(e)}${why}
     ${e.trimmed ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>Details removed to keep the month under the size limit.</span></div>' : ''}
-    ${pending ? '<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;">⏳ <span>Recorded on this phone — waiting to upload to the change log.</span></div>' : ''}
+    ${upAt ? `<div style="color:var(--sage-ink, var(--muted)); font-size:11.5px; margin-top:4px;" data-uploaded>☁️ <span>Uploaded since</span> · <span dir="auto">${esc(clWhen(upAt))}</span></div>` : ''}
+    ${pending === 'mem' ? '<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;">⏳ <span>Recorded only in the app\'s memory (this phone\'s storage is full) — waiting to upload to the change log: keep the app open.</span></div>'
+      : pending ? '<div style="color:var(--amber-ink); font-size:11.5px; margin-top:4px;">⏳ <span>Recorded on this phone — waiting to upload to the change log.</span></div>' : ''}
     ${e.src === 'erpMapLog' ? '<div style="color:var(--muted); font-size:11.5px; margin-top:4px;"><span>From the ERP account-link log.</span></div>' : ''}
   </div>`;
   }catch(err){
@@ -375,12 +493,14 @@ function clRender(){
   const sup = currentUser.role === 'supervisor', { doc, erp } = st.data;
   const cloud = doc.ok && doc.doc ? doc.doc.entries : [];
   const inCloud = new Set(cloud.map(e => e.eid));
-  const waiting = auditPending().filter(x => x.m === st.month && !inCloud.has(x.e.eid)).map(x => x.e);
-  const waitIds = new Set(waiting.map(e => e.eid));
+  const pend = auditPending().filter(x => x.m === st.month && !inCloud.has(x.e.eid));
+  const waiting = pend.map(x => x.e);
+  const waitIds = new Set(waiting.map(e => e.eid)), memIds = new Set(pend.filter(x => x.mem).map(x => x.e.eid));
   const erpList = sup && erp.ok ? UMCore.auditFromErpMapLog(erp.list, st.month) : [];
   const all = cloud.concat(erpList, waiting);
   if(filters) filters.innerHTML = clFiltersHTML(all, sup);
-  const list = UMCore.auditView(all, { viewer: { name: currentUser.name, role: currentUser.role }, by: st.by, group: st.group, failed: st.failed });
+  const upAt = typeof UMCore.auditSettled === 'function' ? UMCore.auditSettled(all) : {};
+  const list = UMCore.auditView(all, { viewer: { name: currentUser.name, role: currentUser.role }, by: st.by, group: st.group, failed: st.failed, settled: upAt });
   const notes = [];
   if(!doc.ok) notes.push(`<div class="card" id="clReadErr" style="border-inline-start:4px solid var(--coral); font-size:12.5px; margin-bottom:8px;"><span>The change log of this month could not be read — check the connection and try again.</span> <button class="chip small" onclick="clLoad()"><span>Try again</span></button></div>`);
   else if(doc.doc.broken) notes.push(`<div class="card" style="border-inline-start:4px solid var(--coral); font-size:12.5px; margin-bottom:8px;"><span>This month's change log holds something the app cannot read — nothing was written over it.</span></div>`);
@@ -392,7 +512,7 @@ function clRender(){
   if(_auditLost && st.month === todayStr().slice(0, 7)) notes.push(`<div class="nudge" style="margin-bottom:8px;">${_auditLost} <span>entries could not be kept on this phone while it was offline for long.</span></div>`);
   let html = notes.join('');
   if(list.length){
-    html += list.slice(0, st.limit).map(e => clEntryHTML(e, waitIds.has(e.eid))).join('');
+    html += list.slice(0, st.limit).map(e => clEntryHTML(e, memIds.has(e.eid) ? 'mem' : waitIds.has(e.eid), Object.prototype.hasOwnProperty.call(upAt, e.eid) ? upAt[e.eid] : null)).join('');
     if(list.length > st.limit) html += `<button class="btn secondary small" onclick="clMore()"><span>Show more</span> (${list.length - st.limit})</button>`;
   } else if(doc.ok){
     html += `<div class="empty" id="clEmpty"><span>${all.length ? 'No changes match these filters.' : sup ? 'No changes recorded in this month.' : 'You made no recorded changes in this month.'}</span></div>`;

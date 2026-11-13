@@ -924,7 +924,7 @@ async function addHandover(clinicId, docId){
   // uploads by itself), or nothing — then the entry is taken back off the
   // screen, so nothing looks saved that is not.
   const told = await persistTold('clinics');
-  auditRecord({ action: 'doctor.edit', key: 'clinics', id: c.id + '|' + d.id, label: auditDoctorLabel(c, d), after: { handover: entry.what + ' ×' + entry.qty + ' · ' + entry.date }, result: told.ok || told.outcome.queued ? told : false });
+  auditRecord({ action: 'doctor.edit', key: 'clinics', id: c.id + '|' + d.id, label: auditDoctorLabel(c, d), after: { handover: entry.what + ' ×' + entry.qty + ' · ' + entry.date }, result: told }); // its own outcome: saved, kept on this phone, memory only, refused or not saved
   if(told.ok) showToast('🎁 سُجِّل التسليم');
   else {
     const out = told.outcome;
@@ -1241,10 +1241,12 @@ async function saveRxTypes(){
   ed.wids.push(wid); _rxMyWids.add(wid);
   const nextKey = rxTypesKey(next);
   let conflict = false, committed = null, seen = null, already = false;
+  let cloudWas = null; // the change log: the list the cloud held when this save ran (the built-in one when none was saved yet)
   const fn = s => { // Firestore may run this more than once: every run starts clean
     conflict = false; committed = null; seen = null; already = false;
     const cur = s == null ? null : UMCore.safeParse(s, null);
     const curObj = cur && typeof cur === 'object' && !Array.isArray(cur) ? cur : null;
+    cloudWas = UMCore.rxTypeList(curObj);
     const curRev = curObj && typeof curObj.rev === 'number' ? curObj.rev : 0;
     if(curRev !== shownRev){
       const own = !!curObj && typeof curObj.wid === 'string' && earlier.includes(curObj.wid);
@@ -1273,6 +1275,14 @@ async function saveRxTypes(){
   // Only the editor that saved, still the sheet on screen, is closed or
   // reopened — a sheet opened after Cancel is never touched (a toast only).
   const onScreen = rxEdOnScreen(ed);
+  // the change log: the active and retired types before → after, and what the save did
+  const logRx = result => auditRecord({ action: 'doctor.rxTypes', key: 'rxTypes', id: 'rxTypes',
+    before: auditRxTypesFields(cloudWas || rxTypes()), after: auditRxTypesFields(next), result });
+  // this phone's own earlier save (an attempt the app stopped waiting for) is what the cloud holds now
+  const ownLate = conflict && !!seen && typeof seen === 'object' && typeof seen.wid === 'string' && _rxMyWids.has(seen.wid);
+  if(already || ownLate) auditRecord({ action: 'sync.late', key: 'rxTypes', result: true }); // an earlier save landed after the app stopped waiting
+  if(written != null && committed) logRx(true);
+  else if(!already) logRx(ownLate ? { res: 'refused' } : conflict ? { res: 'conflict' } : timedOut ? { res: 'timeout' } : false); // (ownLate: "nothing else was saved")
   if((written != null && committed) || already){
     rxTypesDoc = already ? seen : committed; _rxTypesGen++;
     mirrorSave('rxTypes', already ? JSON.stringify(seen) : written);
@@ -1896,14 +1906,16 @@ function removeGuideLink(i){
 }
 async function saveCategoryGuide(cat){
   if(currentUser.role!=='supervisor') return;
+  const was = auditGuideFields(categoryGuides[cat]); // the change log
   categoryGuides[cat] = {
     sell: document.getElementById('cgSell').value.trim(),
     how: document.getElementById('cgHow').value.trim(),
     objections: document.getElementById('cgObj').value.trim(),
     links: (window._guideLinks||[]).map(l=>({title:l.title, url:l.url})),
   };
-  await persist('categoryGuides');
-  showToast('📚 Guide saved');
+  const r = await persistTold('categoryGuides');
+  auditRecord({ action: 'product.guide', key: 'categoryGuides', id: cat, label: cat, before: was, after: auditGuideFields(categoryGuides[cat]), result: r });
+  saveToast(r, 'categoryGuides', '📚 Guide saved'); // "saved" only when it landed
   openCategoryGuide(cat);
 }
 

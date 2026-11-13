@@ -4450,6 +4450,9 @@ describe('full backup: inventory, file, integrity', () => {
      'erpNotes', 'rxTypes', 'categoryGuides', 'mailLog', 'chat', 'memories'].forEach(k => assert.ok(keys.has(k), 'the scan found ' + k));
     // v121 no longer writes repairLog (no repairs at start); the documents the earlier versions wrote stay in the backup's 'logs' set
     assert.equal(core.backupSetOf('repairLog'), 'logs');
+    // the change log's month documents are a data set of their own, counted in entries (not "other documents")
+    assert.equal(core.backupSetOf('auditLog:2026-11'), 'auditLog');
+    assert.deepEqual(core.backupDocInfo('auditLog:2026-11', JSON.stringify({ v: 1, month: '2026-11', entries: [{ eid: 'a' }, { eid: 'b' }], dropped: 0, trimmed: 0 })), { set: 'auditLog', facts: { counts: { entries: 2 } } });
     ['snap_', 'photo:', 'visitsArch:', 'erpRows:'].forEach(p => assert.ok(prefixes.has(p), 'the scan found the family ' + p));
   });
 });
@@ -4634,6 +4637,66 @@ describe('change log: who sees what', () => {
     assert.equal(core.auditGroupOf('bin.purge'), 'restore');
     assert.equal(core.auditGroupOf('constructor.x'), 'other');
     assert.equal(core.auditGroupOf(null), 'other');
+  });
+});
+
+describe('change log on v122: kept on a phone, then uploaded; memory only; refused; no confirmation', () => {
+  const E = (eid, at, res, extra) => Object.assign({ eid, at, by: 'Mariam', role: 'rep', action: 'clinic.edit', key: 'clinics', ok: res === 'saved', res }, extra || {});
+  const up = (eid, at, key, settles) => ({ eid, at, by: 'Mariam', role: 'rep', action: 'sync.upload', key, ok: true, res: 'saved', settles });
+  test('an entry keeps the results the app tells apart: kept in memory only, refused, no confirmation', () => {
+    ['memory', 'queued', 'refused', 'timeout', 'conflict', 'failed', 'saved'].forEach(res => {
+      const e = core.auditEntry({ action: 'clinic.edit', res }, { by: 'Mariam', role: 'rep' });
+      assert.equal(e.res, res, res);
+      assert.equal(e.ok, res === 'saved', res);
+    });
+    assert.ok(core.AUDIT_RESULTS.memory && /memory/.test(core.AUDIT_RESULTS.memory));
+  });
+  test('an upload entry names the entries it settles; a change spanning lists names the lists it waits for; junk dropped, capped', () => {
+    const u = core.auditEntry({ action: 'sync.upload', key: 'clinics', res: 'saved', settles: ['a1', 2, null, 'a2', '', 'x'.repeat(60)] }, { by: 'Mariam' });
+    assert.deepEqual(u.settles.slice(0, 2), ['a1', 'a2']);
+    assert.equal(u.settles.length, 3);
+    assert.ok(u.settles[2].length <= 40);
+    const w = core.auditEntry({ action: 'restore.namelessMove', key: 'clinics', res: 'queued', waits: ['tasks', 'dayPlans'] }, { by: 'Renova' });
+    assert.deepEqual(w.waits, ['tasks', 'dayPlans']);
+    const many = core.auditEntry({ action: 'sync.upload', key: 'visits', res: 'saved', settles: Array.from({ length: 80 }, (_, i) => 'e' + i) }, {});
+    assert.equal(many.settles.length, 50);
+    const plain = core.auditEntry({ action: 'clinic.edit', res: 'saved' }, {});
+    assert.ok(!('settles' in plain) && !('waits' in plain), 'nothing extra on an ordinary entry');
+  });
+  test('auditSettled: a change kept on a phone is settled by the upload naming it — the latest of the lists it waits for', () => {
+    const es = [
+      E('q1', '2026-11-11T08:00:00.000Z', 'queued'),
+      E('q2', '2026-11-11T08:05:00.000Z', 'memory', { key: 'visits' }),
+      E('q3', '2026-11-11T08:06:00.000Z', 'queued', { waits: ['tasks', 'dayPlans'] }),
+      E('q4', '2026-11-11T08:07:00.000Z', 'queued'),                       // never uploaded (yet)
+      E('s1', '2026-11-11T08:08:00.000Z', 'saved'),                        // saved: never in the map
+      up('u1', '2026-11-11T09:00:00.000Z', 'clinics', ['q1', 's1']),
+      up('u2', '2026-11-11T09:10:00.000Z', 'visits', ['q2']),
+      up('u3', '2026-11-11T09:20:00.000Z', 'tasks', ['q3']),               // one of q3's two lists only
+      up('u4', '2026-11-11T09:30:00.000Z', 'clinics', ['q4x']),
+      null, 'junk', { action: 'sync.upload', key: 'clinics', settles: 'q4' } ];
+    assert.deepEqual(core.auditSettled(es), { q1: '2026-11-11T09:00:00.000Z', q2: '2026-11-11T09:10:00.000Z' });
+    es.push(up('u5', '2026-11-11T09:40:00.000Z', 'dayPlans', ['q3']));
+    assert.equal(core.auditSettled(es).q3, '2026-11-11T09:40:00.000Z', 'q3 waited for tasks and the day plans: settled when the later went up');
+    assert.deepEqual(core.auditSettled(null), {});
+    // an upload of another list never settles it
+    assert.equal(core.auditSettled([E('q9', '2026-11-11T08:00:00.000Z', 'queued'), up('u9', '2026-11-11T09:00:00.000Z', 'visits', ['q9'])]).q9, undefined);
+  });
+  test('"Not saved only" leaves out a change kept on a phone that went up since', () => {
+    const es = [E('q1', '2026-11-11T08:00:00.000Z', 'queued'), E('q2', '2026-11-11T08:01:00.000Z', 'queued'), E('f1', '2026-11-11T08:02:00.000Z', 'failed'),
+      up('u1', '2026-11-11T09:00:00.000Z', 'clinics', ['q1'])];
+    const viewer = { name: 'Dr. Ghaith', role: 'supervisor' };
+    const settled = core.auditSettled(es);
+    assert.deepEqual(core.auditView(es, { viewer, failed: true, settled }).map(e => e.eid), ['f1', 'q2']);
+    assert.deepEqual(core.auditView(es, { viewer, failed: true }).map(e => e.eid), ['f1', 'q2', 'q1'], 'without the map, as before');
+  });
+  test('the v121/v122 flows have their actions, grouped where a reader looks for them', () => {
+    const want = { 'restore.nameless': 'restore', 'restore.namelessMove': 'restore', 'restore.doctor': 'restore', 'restore.doctorMove': 'restore',
+      'doctor.gone': 'doctors', 'doctor.rxTypes': 'doctors', 'sales.note': 'sales', 'sales.lineKind': 'sales', 'sales.retry': 'sales',
+      'product.guide': 'products', 'sync.upload': 'sync', 'sync.late': 'sync' };
+    Object.keys(want).forEach(a => { assert.ok(core.AUDIT_ACTIONS[a], a + ' has a label'); assert.equal(core.auditGroupOf(a), want[a], a); });
+    assert.ok(!core.AUDIT_ACTIONS['restore.doctors'], 'the v119 start-up repair is gone (v121): no label for it');
+    ['source', 'salesMoved', 'removedClinics', 'removedTasks', 'removedVisits', 'written', 'note', 'lineKind'].forEach(f => assert.ok(core.AUDIT_FIELDS[f], f));
   });
 });
 

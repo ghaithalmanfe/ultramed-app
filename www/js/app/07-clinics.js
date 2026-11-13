@@ -538,13 +538,20 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
       let n = 0;
       visits.forEach(v => { if(v && v.clinicId === clinicId && UMCore.remapVisitDoctors(v, remap)) n++; });
       const r = await persistFor('visits');
+      // the change log: the visits of a doctor without a name joined a doctor the clinic lists (asked first)
+      auditRecord({ action: 'restore.doctorMove', key: 'visits', id: clinicId + '|' + docId, label: auditDoctorLabel(c, same),
+        after: { movedTo: same.name, visits: n, source: kind || null }, result: r });
       showToast((r.ok || sentSince('visits', r)) ? `✅ ${n} visits joined ${same.name}` : '⚠️ Saved on this device — not in the cloud yet', 4000);
     } else {
       // the record this phone kept (title, phone, notes…) when its name is the one used, else the name alone; same id either way
       const k = kind === 'copy' ? phoneCopyDoctors().get(clinicId + '|' + docId) : null;
       const base = k && UMCore.normDoctorName(k.name) === key ? JSON.parse(JSON.stringify(k)) : {};
-      c.doctors = (c.doctors || []).concat([Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, base, { id: docId, name })]);
+      const back = Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, base, { id: docId, name });
+      c.doctors = (c.doctors || []).concat([back]);
       const r = await persistFor('clinics');
+      // the change log: the doctor is back under the same id, with where the name came from
+      auditRecord({ action: 'restore.doctor', key: 'clinics', id: clinicId + '|' + docId, label: auditDoctorLabel(c, back),
+        after: Object.assign(auditDoctorFields(back) || {}, { visits: visitsNaming(clinicId, docId).length || null, source: kind || null }), result: r });
       showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back on the clinic's list` : '⚠️ Saved on this device — not in the cloud yet', 4000);
     }
   } finally { _namingBusy.delete(busy); }
@@ -556,8 +563,12 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
 async function markDoctorGone(clinicId, docId, scope){
   const c = clinics.find(x => x && x.id === clinicId);
   if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
+  const lost = lostDoctorsOf(c).find(e => e.id === docId) || null; // what the sheet showed of them (for the change log)
   tomb('doctors', clinicId + '|' + docId);
   const ok = await persistTombs();
+  // the change log: left the clinic or removed on purpose — kept out for good (the delete log is queued on this phone when it did not land)
+  auditRecord({ action: 'doctor.gone', key: 'tombs', id: clinicId + '|' + docId, label: ((lost && lost.name) || '—') + ' · ' + (c.name || ''),
+    after: { visits: lost ? lost.visits.length : null }, result: ok ? true : { res: outboxHas('tombs') ? 'queued' : 'failed' } });
   showToast(ok ? '✅ Taken off this list' : '⚠️ Taken off this list on this device — not saved to the cloud yet', 4000);
   renderAll();
   openLostDoctors(scope);
@@ -676,19 +687,26 @@ async function nameNamelessClinic(id, raw, kind, confirmed){
   try{
     if(same){
       // the clinic was added again since: its August visits, tasks, plan entries and doctors join it, the nameless record goes
-      if(!await moveToBin('clinics', h, h.name)) return;
-      repointClinic(id, same.id);
+      const log = { action: 'restore.namelessMove', key: 'clinics', id, label: same.name };
+      if(!await moveToBin('clinics', h, h.name)){ auditRecord(Object.assign(log, { after: { movedTo: same.name }, result: false })); return; } // no safety copy: nothing changed
+      const moved = repointClinic(id, same.id);
       if(carry.length){
         const m = UMCore.mergeDoctorLists(Array.isArray(same.doctors) ? same.doctors : [], JSON.parse(JSON.stringify(carry)));
         same.doctors = m.doctors;
         if(Object.keys(m.remap).length) visits.forEach(v => { if(v && v.clinicId === same.id) UMCore.remapVisitDoctors(v, m.remap); });
       }
-      const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'); await persist('dayPlans');
+      const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'), r4 = await persistFor('dayPlans');
       const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2)) && (r3.ok || sentSince('tasks', r3));
+      // the change log: one entry for the move (asked first), saved only when every list it changed landed
+      auditRecord(Object.assign(log, { after: { movedTo: same.name, visits: moved, doctors: carry.length || null, source: kind || null },
+        result: auditOutcomeAll([[r1, 'visits'], [r2, 'clinics'], [r3, 'tasks'], [r4, 'dayPlans']]) }));
       showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
     } else {
       clinics.push(next); hidePlaceholderClinics();
       const r = await persistFor('clinics');
+      // the change log: back in the list under the same id; where its name came from, and the sales lines that now count elsewhere (asked first)
+      auditRecord({ action: 'restore.nameless', key: 'clinics', id, label: next.name,
+        after: Object.assign(auditClinicFields(next) || {}, { source: kind || null, salesMoved: moves.length || null }), result: r });
       showToast((r.ok || sentSince('clinics', r)) ? `✅ ${next.name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
     }
   } finally { _namingBusy.delete(id); }
@@ -849,24 +867,29 @@ function renderClinicOrders(clinicId){
 // Notes are keyed by kind|doc|product so they survive re-imports.
 function erpNoteKey(kind, r){ return kind+'|'+(r.doc||'')+'|'+(r.product||''); }
 function erpNoteText(key){ const n = erpNotes[key]; return n ? n.text : ''; }
+// The change log's label of a sales line note: the product and the invoice (the key is kind|doc|product).
+function erpNoteLabel(key){ const p = String(key || '').split('|'); return (p.slice(2).join('|') || '—') + (p[1] ? ' · ' + p[1] : ''); }
 async function saveErpNote(key, val){
   const t = (val||'').trim();
   const prev = erpNotes[key] || {};
   if(t || prev.kind) erpNotes[key] = {text:t, by:currentUser.name, on:todayStr(), kind: prev.kind};
   else delete erpNotes[key];
-  await persist('erpNotes');
-  showToast(t ? '📝 Reason saved' : 'Reason cleared');
+  const r = await persistTold('erpNotes');
+  auditRecord({ action: 'sales.note', key: 'erpNotes', id: key, label: erpNoteLabel(key), before: { note: prev.text || null }, after: { note: t || null }, result: r });
+  saveToast(r, 'erpNotes', t ? '📝 Reason saved' : 'Reason cleared'); // "saved" only when it landed
 }
 // Free lines carry a classification: bonus inside a paying deal vs a
 // sample/marketing giveaway. The heuristic sets the default; one tap fixes it.
 function focKindOf(key, def){ const n = erpNotes[key]; return (n && n.kind) || def || 'sample'; }
 async function saveErpNoteKind(key, kind, el){
   const n = erpNotes[key] || {};
+  const was = n.kind || null; // the change log: what the line was marked as
   n.kind = kind; n.by = n.by || currentUser.name; n.on = n.on || todayStr();
   erpNotes[key] = n;
-  await persist('erpNotes');
+  const r = await persistTold('erpNotes');
+  auditRecord({ action: 'sales.lineKind', key: 'erpNotes', id: key, label: erpNoteLabel(key), before: { lineKind: was }, after: { lineKind: kind }, result: r });
   if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
-  showToast(kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
+  saveToast(r, 'erpNotes', kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
 }
 // Is this ERP line a marked EXCHANGE (تبديل)? Stock swap, not a real return.
 function isExchangeLine(r){
@@ -886,14 +909,16 @@ function retKindChips(r){
 }
 async function saveRetKind(key, kind, el){
   const n = erpNotes[key] || {};
+  const was = n.kind === 'exchange' ? 'exchange' : 'return'; // the change log: what the line counted as
   if(kind === 'exchange') n.kind = 'exchange'; else delete n.kind;
   n.by = currentUser.name; n.on = todayStr();
   if(!n.text && !n.kind && kind !== 'exchange' && !erpNotes[key]){ /* nothing to keep */ }
   erpNotes[key] = n;
-  await persist('erpNotes');
+  const r = await persistTold('erpNotes');
+  auditRecord({ action: 'sales.lineKind', key: 'erpNotes', id: key, label: erpNoteLabel(key), before: { lineKind: was }, after: { lineKind: kind === 'exchange' ? 'exchange' : 'return' }, result: r });
   if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
   renderView(activeView);
-  showToast(kind==='exchange' ? '🔁 Marked as exchange — removed from the returns figures' : '↩️ Marked as a real return');
+  saveToast(r, 'erpNotes', kind==='exchange' ? '🔁 Marked as exchange — removed from the returns figures' : '↩️ Marked as a real return');
 }
 function focKindChips(key, def){
   const k = focKindOf(key, def);

@@ -18,9 +18,10 @@ const core = require(path.resolve(WWW, 'js/core.js'));
 const PORT = 8241;
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json','.png':'image/png','.svg':'image/svg+xml'};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-// ---- fake cloud (Node side: survives reloads). failSet / failGet: matching keys throw; hangSet: a write that never answers ----
+// ---- fake cloud (Node side: survives reloads). failSet / failGet: matching keys throw; hangSet: a write that never answers;
+// gate: a sales commit (setMany) that waits until the harness lets it through; auditUpdates: the change log's appends counted ----
 const cloud = {};
-const mode = { failSet: null, failGet: null, hangSet: null };
+const mode = { failSet: null, failGet: null, hangSet: null, gate: null, auditUpdates: 0 };
 const api = {
   get: async k => { if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get'); return k in cloud ? cloud[k] : null; },
   set: async (k, v) => {
@@ -29,7 +30,8 @@ const api = {
     cloud[k] = v; return true; },
   del: async k => { delete cloud[k]; return true; },
   list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
-  setMany: async entries => { if(mode.failSet && entries.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); entries.forEach(([k, v]) => { cloud[k] = v; }); return true; },
+  setMany: async entries => { if(mode.gate) await mode.gate; if(mode.failSet && entries.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); entries.forEach(([k, v]) => { cloud[k] = v; }); return true; },
+  count: async k => { if(/^auditLog:/.test(k)) mode.auditUpdates++; return true; },
 };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined?'  → '+JSON.stringify(info).slice(0, 700):'')); if(!ok) failed++; }
@@ -39,7 +41,7 @@ const log = () => ((J(NOV) || {}).entries || []);
 const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova';
 function seed(){
   Object.keys(cloud).forEach(k => { delete cloud[k]; });
-  Object.assign(mode, { failSet: null, failGet: null, hangSet: null });
+  Object.assign(mode, { failSet: null, failGet: null, hangSet: null, gate: null });
   cloud.staff = JSON.stringify([{ name: M, role: 'rep', email: 'mariam@example.com' }, { name: R, role: 'rep', email: 'renova@example.com' },
     { name: G, role: 'supervisor', email: 'ghaith@example.com', sells: false }]);
   cloud.clinics = JSON.stringify([
@@ -73,15 +75,15 @@ function seed(){
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { const t = m.text();
     if(m.type() === 'error' && /the change log is appended by auditRecord/.test(t)){ tripwire.push(t); return; }
-    if(m.type() === 'error' && !/gstatic|firebase|net::ERR|Failed to load resource|boom-(set|get)|update failed|set refused/i.test(t)) errors.push('console: ' + t.slice(0, 200)); });
+    if(m.type() === 'error' && !/gstatic|firebase|net::ERR|Failed to load resource|boom-(set|get)|update failed|set refused|erpSales save failed Error: timeout/i.test(t)) errors.push('console: ' + t.slice(0, 200)); });
   page.on('dialog', d => d.accept());
-  for(const [n, f] of Object.entries({ __cGet: api.get, __cSet: api.set, __cDel: api.del, __cList: api.list, __cSetMany: api.setMany })) await page.exposeFunction(n, f);
+  for(const [n, f] of Object.entries({ __cGet: api.get, __cSet: api.set, __cDel: api.del, __cList: api.list, __cSetMany: api.setMany, __cCount: api.count })) await page.exposeFunction(n, f);
   await page.addInitScript(() => {
     // with update(): the read-merge-write the app runs as a Firestore transaction (here a read then a write)
     window.storage = {
       get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; },
       set: async (k, v) => window.__cSet(k, v),
-      update: async (k, fn) => { const v = await window.__cGet(k); const next = fn(v); if(next == null) return null; if(await window.__cSet(k, next) === false) throw new Error('set refused'); return next; },
+      update: async (k, fn) => { await window.__cCount(k); const v = await window.__cGet(k); const next = fn(v); if(next == null) return null; if(await window.__cSet(k, next) === false) throw new Error('set refused'); return next; },
       setMany: async entries => window.__cSetMany(entries),
       delete: async k => window.__cDel(k),
       list: async p => ({ keys: await window.__cList(p) }),
@@ -90,6 +92,9 @@ function seed(){
     let step = 0; try{ step = +localStorage.getItem('__h_clock') || 0; }catch(e){}
     const off = new Date(2026, 10, 11, 10, 0, 0).getTime() + step * 60000 - Date.now();
     const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
+    // the 20-second background refresh runs only when a check asks for it (window.__bgTick): no flush lands in the middle of a count
+    const _si = window.setInterval.bind(window);
+    window.setInterval = (fn, ms, ...a) => { if(ms === 20000){ window.__bgTick = fn; return -1; } return _si(fn, ms, ...a); };
   });
   let boots = 0;
   const boot = async (who, role, local) => {
@@ -312,6 +317,246 @@ function seed(){
   await boot(M, 'rep');
   const moreRep = await ev(() => { switchView('more'); return document.getElementById('moreContent').innerText; });
   check('a rep has the Change log in More too', /Change log/.test(moreRep) && /Your changes and whether each save landed/.test(moreRep));
+
+  // ================= 7) v121/v122 flows on a rep's phone: clinics without a name, doctors without a name, uploads that settle =================
+  const PH = id => ({ id, name: '⚠️ Restored clinic — rename me', rep: R, cls: 'B', doctors: [] });
+  seed();
+  cloud.clinics = JSON.stringify([
+    { id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A', doctors: [{ id: 'm1-d1', name: 'Dr. Huda Ali' }] },
+    { id: 'r1', name: 'Crown Dental Center', rep: R, cls: 'A', doctors: [{ id: 'dA', name: 'Dr. Amal Saleh' }] },
+    { id: 'r2', name: 'Gulf Smile Clinic', rep: R, cls: 'B', doctors: [] },
+    PH('p1'), PH('p2'), PH('p3'), PH('p4')]);
+  cloud.visits = JSON.stringify([
+    { id: 'w1', clinicId: 'p1', rep: R, date: '2026-11-02', notes: 'asked for whitening kits' },
+    { id: 'w2', clinicId: 'p2', rep: R, date: '2026-11-03' }, { id: 'w3', clinicId: 'p3', rep: R, date: '2026-11-04' },
+    { id: 'w4', clinicId: 'p4', rep: R, date: '2026-11-04' },
+    { id: 'x1', clinicId: 'r1', rep: R, date: '2026-11-05', doctorIds: ['dB'], doctorId: 'dB', doctorNames: { dB: 'Dr. Basma Adel' } },
+    { id: 'x2', clinicId: 'r1', rep: R, date: '2026-11-06', doctorIds: ['dE'], doctorId: 'dE' },
+    { id: 'x3', clinicId: 'r1', rep: R, date: '2026-11-07', doctorIds: ['dG'], doctorId: 'dG' }]);
+  cloud.tasks = JSON.stringify([
+    { id: 't1', text: 'Follow up: Pearl Dental', done: false, created: '2026-11-02', rep: R, dueDate: '2026-11-09', clinicId: 'p1', kind: 'followup' },
+    { id: 't4', text: 'Follow up: Gulf Smile', done: false, created: '2026-11-04', rep: R, dueDate: '2026-11-10', clinicId: 'p4', kind: 'followup' }]);
+  await boot(R, 'rep');
+  const confirmTap = () => ev(async () => { const b = document.querySelector('#modalInner button[data-ask]'); if(!b) throw new Error('no confirm button'); b.click(); await new Promise(r => setTimeout(r, 350)); });
+  await ev(async () => { openNamelessClinics(); await nameNamelessClinic('p1', 'Pearl Dental', 'task'); });
+  await flush();
+  e = entry(x => x.action === 'restore.nameless' && x.id === 'p1');
+  check('nameless clinic named from the app\'s follow-up task → one entry: Renova, saved, the name and where it came from',
+    !!e && e.by === R && e.ok && e.after.name === 'Pearl Dental' && e.after.source === 'task' && e.label === 'Pearl Dental', e);
+  const n0 = log().length;
+  await ev(async () => { openNamelessClinics(); await nameNamelessClinic('p2', 'gulf smile clinic', 'typed'); });
+  await flush();
+  check('… a name another clinic has is asked first: no entry until the second tap', log().length === n0 && !log().some(x => x.action === 'restore.namelessMove'));
+  await confirmTap(); await flush();
+  e = entry(x => x.action === 'restore.namelessMove' && x.id === 'p2');
+  check('… the second tap: "joined a listed clinic", its visit moved, saved', !!e && e.ok && e.after.movedTo === 'Gulf Smile Clinic' && e.after.visits === 1 && e.label === 'Gulf Smile Clinic', e);
+  // kept on this phone, then uploaded: the entry says so, and leaves "Not saved only"
+  mode.failSet = /^clinics$/;
+  await ev(async () => { _lastOfflineToast = 0; openNamelessClinics(); await nameNamelessClinic('p3', 'Coral Dental', 'typed'); });
+  mode.failSet = null;
+  await flush();
+  e = entry(x => x.action === 'restore.nameless' && x.id === 'p3');
+  check('named with no connection → "kept on this device", not saved', !!e && e.ok === false && e.res === 'queued' && e.after.source === 'typed', e);
+  await ev(async () => { await flushOutbox(); }); await flush();
+  let upE = log().filter(x => x.action === 'sync.upload' && x.key === 'clinics').slice(-1)[0];
+  check('… the queue sends the clinic list → one "Offline changes uploaded" entry naming the entry it settles', !!upE && !!e && upE.ok && (upE.settles || []).includes(e.eid) && upE.after.count === 1, upE);
+  // a change over several lists: only the tasks did not land → it waits for the tasks alone
+  mode.failSet = /^tasks$/;
+  await ev(async () => { _lastOfflineToast = 0; openNamelessClinics(); await nameNamelessClinic('p4', 'Gulf Smile Clinic', 'typed'); });
+  await confirmTap();
+  mode.failSet = null;
+  await flush();
+  const e4 = entry(x => x.action === 'restore.namelessMove' && x.id === 'p4');
+  check('a move whose tasks did not land → "kept on this device", waiting for the tasks only', !!e4 && e4.res === 'queued' && JSON.stringify(e4.waits) === '["tasks"]', e4);
+  await ev(async () => { await flushOutbox(); }); await flush();
+  upE = log().filter(x => x.action === 'sync.upload' && x.key === 'tasks').slice(-1)[0];
+  check('… the tasks go up → the upload entry settles it', !!upE && !!e4 && (upE.settles || []).includes(e4.eid), upE);
+  // doctors without a name
+  await ev(async () => { openLostDoctors('r1'); await nameLostDoctor('r1', 'dB', 'Dr. Basma Adel', 'r1', 'visit'); });
+  await flush();
+  e = entry(x => x.action === 'restore.doctor' && x.id === 'r1|dB');
+  check('doctor without a name named → back under the same id: the name, from a visit\'s record, its visits, saved',
+    !!e && e.ok && e.key === 'clinics' && e.after.name === 'Dr. Basma Adel' && e.after.source === 'visit' && e.after.visits === 1 && /Dr\. Basma Adel · Crown Dental Center/.test(e.label || ''), e);
+  await ev(async () => { openLostDoctors('r1'); await nameLostDoctor('r1', 'dE', 'dr amal saleh', 'r1', 'typed'); });
+  const askedMove = log().some(x => x.action === 'restore.doctorMove');
+  await confirmTap(); await flush();
+  e = entry(x => x.action === 'restore.doctorMove' && x.id === 'r1|dE');
+  check('a name the clinic already lists: asked first, then "visits moved to a listed doctor", saved', !askedMove && !!e && e.ok && e.key === 'visits' && e.after.movedTo === 'Dr. Amal Saleh' && e.after.visits === 1, e);
+  await ev(async () => { openLostDoctors('r1'); await markDoctorGone('r1', 'dG', 'r1'); });
+  await flush();
+  e = entry(x => x.action === 'doctor.gone' && x.id === 'r1|dG');
+  check('"left the clinic or removed on purpose" → an entry on the delete log, saved', !!e && e.ok && e.key === 'tombs' && e.after.visits === 1, e);
+  s = await openLog();
+  const p3e = entry(x => x.action === 'restore.nameless' && x.id === 'p3');
+  const p3card = (p3e && s.cards.find(c => c.eid === p3e.eid)) || {};
+  check('the screen: the entry kept on the phone says when it went up since; the name\'s source in words',
+    /Uploaded since/.test(p3card.t || '') && /Taken from: typed by hand/.test(p3card.t || '') && /Kept on this device/.test(p3card.t || ''), p3card);
+  const notSaved = await ev(() => { clPick('failed', true); return [...document.querySelectorAll('#clBody [data-audit]')].map(c => c.dataset.audit); });
+  check('… and "Not saved only" leaves out the changes that went up since', !!p3e && !!e4 && !notSaved.includes(p3e.eid) && !notSaved.includes(e4.eid), notSaved);
+
+  // ================= 8) the supervisor: types, sales lines, guides, photos, saves with no answer, refused, memory only, sales, restores =================
+  seed();
+  cloud.visits = JSON.stringify([{ id: 'v8', clinicId: 'm1', rep: M, date: '2026-11-10', doctorIds: ['m1-d1'], doctorId: 'm1-d1', notes: 'demo kit left' }]);
+  cloud.recycleBin = JSON.stringify({ clinics: [{ id: 'b1', name: 'Old Pearl Clinic', rep: M, cls: 'B', doctors: [], _deletedAt: Date.now() - 86400000, _label: 'Old Pearl Clinic' }], products: [], visits: [] });
+  cloud['snap_2026-11-10'] = JSON.stringify({ clinics: [{ id: 'm1', name: 'Dental 8 Clinic', rep: M, cls: 'A', doctors: [{ id: 'm1-d1', name: 'Dr. Huda Ali' }] }, { id: 'm2', name: 'Smile Care Clinic', rep: M, cls: 'B', doctors: [] }],
+    products: [{ id: 'P1', name: 'Sonicare 4300', brand: 'Philips', price: 30 }], visits: [], tasks: [] });
+  cloud['snap_2026-11-09'] = JSON.stringify({ clinics: JSON.parse(cloud.clinics), products: [], visits: [], tasks: [] });
+  cloud['snap_2026-10-30'] = JSON.stringify({ clinics: [], products: [], visits: [], tasks: [] });
+  await boot(G, 'supervisor');
+  // prescription types
+  await ev(async () => { openRxTypes(); await new Promise(r => setTimeout(r, 150)); document.getElementById('rxtNewName').value = 'Sample pads form'; await saveRxTypes(); });
+  await flush();
+  e = entry(x => x.action === 'doctor.rxTypes');
+  check('prescription types saved → an entry: the types before → after, saved', !!e && e.ok && e.after.types.includes('Sample pads form') && !e.before.types.includes('Sample pads form') && e.before.types.length === 2, e);
+  // a sales line marked; then a mark that did not reach the cloud
+  await toasts();
+  await ev(async () => { await saveRetKind('ret|9000001|Sonicare 4300', 'exchange', null); });
+  await flush();
+  e = entry(x => x.action === 'sales.lineKind' && x.id === 'ret|9000001|Sonicare 4300');
+  check('a sales line marked as an exchange → before → after, saved', !!e && e.ok && e.before.lineKind === 'return' && e.after.lineKind === 'exchange' && /Sonicare 4300 · 9000001/.test(e.label || ''), e);
+  await toasts();
+  mode.failSet = /^erpNotes$/;
+  await ev(async () => { _lastOfflineToast = 0; await saveErpNoteKind('foc|9000002|Sonicare 4300', 'deal', null); });
+  mode.failSet = null;
+  t = await toasts(); await flush();
+  e = entry(x => x.action === 'sales.lineKind' && x.id === 'foc|9000002|Sonicare 4300');
+  check('a mark that did not reach the cloud → not saved, and the toast says so — never "Marked: bonus"', !!e && e.ok === false && e.res === 'failed' && t.length && /Not saved/.test(t[t.length - 1]) && !/Marked: bonus/.test(t[t.length - 1]), { e, t });
+  // a selling guide
+  await toasts();
+  await ev(async () => { openEditCategoryGuide('Whitening'); document.getElementById('cgSell').value = 'Visible results in a week'; await saveCategoryGuide('Whitening'); });
+  t = await toasts(); await flush();
+  e = entry(x => x.action === 'product.guide' && x.id === 'Whitening');
+  check('a selling guide saved → before → after, saved, "Guide saved"', !!e && e.ok && e.after.sell === 'Visible results in a week' && t.some(x => /Guide saved/.test(x)), { e, t });
+  mode.failSet = /^categoryGuides$/;
+  await ev(async () => { _lastOfflineToast = 0; openEditCategoryGuide('Whitening'); document.getElementById('cgHow').value = 'Show the shade guide'; await saveCategoryGuide('Whitening'); });
+  mode.failSet = null;
+  t = await toasts(); await flush();
+  e = entry(x => x.action === 'product.guide' && x.id === 'Whitening' && x.after && x.after.how);
+  check('a guide that did not reach the cloud → not saved, never "Guide saved"', !!e && e.ok === false && !t.some(x => /Guide saved/.test(x)) && t.some(x => /Not saved/.test(x)), { e, t });
+  // Edit visit → a photo added, then removed (v122: marked waiting, kept on the phone, never waits for the upload)
+  await ev(() => { const mk = () => { const c = document.createElement('canvas'); c.width = 40; c.height = 30; const x = c.getContext('2d'); x.fillStyle = '#3a3'; x.fillRect(0, 0, 40, 30); return c.toDataURL('image/jpeg', 0.8); };
+    window.pickImage = cb => { window.__picked = Promise.resolve(cb({ id: uid(), full: mk(), thumb: mk() })); }; });
+  await ev(async () => { openEditVisit('v8'); addEditPhoto('v8'); await window.__picked; });
+  await flush();
+  e = entry(x => x.action === 'visit.edit' && x.id === 'v8' && x.after && x.after.photos === 1);
+  check('Edit visit → a photo added: photos 0 → 1, saved', !!e && e.ok && e.before.photos === 0, e);
+  await ev(async () => { const v = visits.find(x => x.id === 'v8'); await removeEditPhoto('v8', v.photos[0].id); });
+  await flush();
+  e = entry(x => x.action === 'visit.edit' && x.id === 'v8' && x.after && x.after.photos === 0);
+  check('… and removed: photos 1 → 0, saved', !!e && e.ok && e.before.photos === 1, e);
+  // a whole-document save the cloud never answers: "no confirmation", never "not saved"
+  await toasts();
+  mode.hangSet = /^targets$/;
+  await ev(async () => { _lastOfflineToast = 0; openAdminPanel(); setAdminTab('team'); document.getElementById('tgRev0').value = '1700'; await saveTargets(); });
+  mode.hangSet = null;
+  t = await toasts(); await flush();
+  e = log().filter(x => x.action === 'target.set').slice(-1)[0];
+  check('a targets save with no answer → "no confirmation from the cloud", and the toast says the same — not "Not saved"',
+    !!e && e.res === 'timeout' && e.ok === false && t.length && /No answer from the cloud yet/.test(t[t.length - 1]), { e, t });
+  // refused before any write (the factory-list guard): said so — not "check the connection"
+  await toasts();
+  await ev(async () => { _seedClinics = true; try{ openEditClinic('m2'); document.getElementById('ecPhone').value = '24440000'; await saveEditClinic('m2'); } finally { _seedClinics = false; } });
+  t = await toasts(); await flush();
+  e = entry(x => x.action === 'clinic.edit' && x.id === 'm2');
+  check('a save the app refused before it wrote → "Not saved — refused", and the toast says reopen the app', !!e && e.res === 'refused' && t.length && /reopen the app/.test(t[t.length - 1]), { e, t });
+  // the phone's storage full and no connection: in the app's memory only — said so; then it uploads
+  await ev(() => { const real = window.__realSet = window.__realSet || Storage.prototype.setItem;
+    Storage.prototype.setItem = function(k, v){ if(/^um_outbox$|^um_mirror:/.test(k)) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return real.call(this, k, v); }; });
+  mode.failSet = /^clinics$/;
+  await ev(async () => { openEditClinic('m1'); document.getElementById('ecPhone').value = '25550000'; await saveEditClinic('m1'); });
+  mode.failSet = null;
+  await ev(() => { Storage.prototype.setItem = window.__realSet; });
+  await flush();
+  e = entry(x => x.action === 'clinic.edit' && x.id === 'm1');
+  check('a full phone with no connection → "only in the app\'s memory", not "kept on this device"', !!e && e.res === 'memory' && e.ok === false, e);
+  await ev(async () => { await flushOutbox(); }); await flush();
+  const memE = e;
+  check('… it uploads → the upload entry settles it', !!memE && log().some(x => x.action === 'sync.upload' && x.key === 'clinics' && (x.settles || []).includes(memE.eid)) && (J('clinics') || []).find(c => c.id === 'm1').phone === '25550000');
+  // entries made in one moment go up together (the month document is read and written whole)
+  await flush(); mode.auditUpdates = 0;
+  await ev(async () => { await toggleSharedClinic('r1'); await toggleSharedClinic('r1'); await updateProductPrice('P1', '29'); });
+  await sleep(2600);
+  check('three changes in a moment → their entries go up in ONE write of the month document', mode.auditUpdates === 1 && log().filter(x => x.action === 'clinic.shared' && x.id === 'r1').length >= 2, mode.auditUpdates);
+  // sales: a commit the app stopped waiting for is "no confirmation"; its late landing is recorded
+  await ev(() => { ERP_WRITE_MS = 600; });
+  let open; mode.gate = new Promise(r => { open = r; });
+  await ev(async () => { _lastOfflineToast = 0; await setReturnPolicy('erp'); });
+  await flush();
+  e = entry(x => x.action === 'sales.returns');
+  check('a sales save with no answer in time → "no confirmation from the cloud" (it may still land)', !!e && e.res === 'timeout', e);
+  open(); mode.gate = null; await sleep(500); await flush();
+  e = entry(x => x.action === 'sync.late' && x.key === 'erpSales');
+  check('… it lands late → "a save with no confirmation reached the cloud"', !!e && e.ok && (J('erpSales') || {}).returnPolicy === 'erp', e);
+  await ev(() => { ERP_WRITE_MS = 45000; });
+  // the retry pill: a tap that saved what had not been saved
+  mode.failSet = /^erpSales$/;
+  await ev(async () => { _lastOfflineToast = 0; await setSalesmanMap('Sample Salesman', 'Mariam'); });
+  mode.failSet = null;
+  await ev(async () => { const pill = document.getElementById('erpDirtyPill'); if(pill) await pill.onclick(); });
+  await flush();
+  check('a sales mapping that did not land → not saved; the retry pill saves it → "Unsaved sales changes saved"',
+    log().some(x => x.action === 'sales.salesman' && x.id === 'Sample Salesman' && x.ok === false) && log().some(x => x.action === 'sales.retry' && x.ok) && (((J('erpSales') || {}).repMapGlobal || {})['Sample Salesman'] === 'Mariam'));
+  // the whole-day restore: another month is refused (in the log, with why), the same month says what it removed, a failure says how far it got
+  await ev(async () => { await restoreSnapshot('2026-10-30'); });
+  await flush();
+  e = entry(x => x.action === 'restore.backup' && x.id === '2026-10-30');
+  check('a backup of another month: refused — in the log as "Not saved — refused", with the reason', !!e && e.res === 'refused' && e.reason === '#restore-other-month', e);
+  await ev(async () => { await restoreSnapshot('2026-11-10'); });
+  await flush();
+  e = entry(x => x.action === 'restore.backup' && x.id === '2026-11-10');
+  check('a whole day restored → saved, with what it removed (Crown Dental Center, this month\'s visit)', !!e && e.ok && e.after.removedClinics === 1 && e.after.removedVisits === 1 && e.after.clinics === 2, e);
+  mode.failSet = /^tasks$/;
+  await ev(async () => { await restoreSnapshot('2026-11-10'); });
+  mode.failSet = null;
+  await flush();
+  e = log().filter(x => x.action === 'restore.backup' && x.id === '2026-11-10').slice(-1)[0];
+  check('a restore that stopped half-way → not saved, and which documents it had written before it stopped', !!e && e.ok === false && JSON.stringify(e.after && e.after.written) === '["clinics","products"]', e);
+  // clinics brought back: from the Admin sheet (the recycle bin) and from the daily backups
+  await ev(async () => { openMissingClinics(); await restoreTickedMissingClinics(); });
+  await flush();
+  e = entry(x => x.action === 'restore.clinics' && x.after && Array.isArray(x.after.source));
+  check('Admin → missing clinics brought back → the clinics and where they came from (the recycle bin), saved', !!e && e.ok && JSON.stringify(e.after.source) === '["bin"]' && /Old Pearl Clinic/.test(JSON.stringify(e.after.clinics)), e);
+  await ev(async () => { await openClinicRecovery(); await restoreMissingClinics(); });
+  await flush();
+  e = entry(x => x.action === 'restore.clinics' && x.after && x.after.source === 'backup');
+  check('Find missing clinics → brought back from a daily backup, saved', !!e && e.ok && /Crown Dental Center/.test(JSON.stringify(e.after.clinics)), e);
+  s = await openLog();
+  const refusedCard = s.cards.find(c => c.action === 'restore.backup' && /refused/.test(c.t)) || {};
+  check('the screen: the refused restore says why in words; no code shown', /A backup of another month: restoring it would erase this month's visits/.test(refusedCard.t || '') && !/#restore/.test(refusedCard.t || ''), refusedCard);
+  const memCard = s.cards.find(c => c.res === 'memory') || {};
+  check('… "only in the app\'s memory" shown as such, with its upload since', /Only in the app's memory/.test(memCard.t || '') && /Uploaded since/.test(memCard.t || ''), memCard);
+  const lineCard = s.cards.find(c => c.action === 'sales.lineKind' && c.res === 'saved') || {};
+  check('… a line mark in words: Real return → Exchange — not a return', /Marked as: Real return → Exchange — not a return/.test(lineCard.t || ''), lineCard);
+
+  await boot(G, 'supervisor', { ultramed_lang: 'ar' });
+  s = await openLog();
+  const arRefused = s.cards.find(c => c.action === 'restore.backup' && c.res === 'refused') || {};
+  const arLine = s.cards.find(c => c.action === 'sales.lineKind' && c.res === 'saved') || {};
+  check('Arabic: the refused restore and why, and a line mark, read in Arabic',
+    /نسخة احتياطية من شهر آخر/.test(arRefused.t || '') && /لم يُحفظ/.test(arRefused.t || '') && /التصنيف: مرتجع فعلي ← تبديل — ليس مرتجعاً/.test(arLine.t || ''), { arRefused, arLine });
+
+  // ================= 9) a full phone: the change log's waiting entries give their room to a visit =================
+  seed();
+  await boot(M, 'rep');
+  mode.failSet = /^auditLog:/;
+  for(let i = 0; i < 6; i++) await ev(async i => { await saveNoSaleReason('m1', 'reason number ' + i + ' ' + 'x'.repeat(60)); }, i);
+  const before9 = await ev(() => auditPending().length);
+  mode.failSet = /^auditLog:|^visits$/; // the change log still cannot be written: its entries are still on the phone when the visit is saved
+  const f9 = await ev(async () => {
+    const real = window.__realSet = window.__realSet || Storage.prototype.setItem;
+    const used = () => { let n = 0; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); n += k.length + (localStorage.getItem(k) || '').length; } return n; };
+    const quota = used() + 60;
+    Storage.prototype.setItem = function(k, val){ const old = localStorage.getItem(k); if(used() - (old != null ? k.length + old.length : 0) + k.length + String(val).length > quota) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError'); return real.call(this, k, val); };
+    const v = { id: 'vFull', clinicId: 'm1', rep: 'Mariam', date: '2026-11-11', ts: Date.now(), doctorIds: ['m1-d1'], doctorId: 'm1-d1', notes: 'visit on a full phone' };
+    visits.push(v); const r = await persistFor('visits');
+    Storage.prototype.setItem = real;
+    return { outcome: r.outcome, onPhone: JSON.parse(localStorage.getItem('um_mirror:visits') || '[]').some(x => x.id === 'vFull'), bar: !!document.getElementById('memOnlyBar'), waiting: auditPending().length };
+  });
+  mode.failSet = null;
+  check('a full phone: the change log\'s waiting entries make room — the visit and its queue entry are kept on the phone, no red bar', f9.onPhone && f9.outcome.mirrored === true && !f9.bar, f9);
+  check('… the entries are not lost: still waiting (in the app\'s memory), and they go up once the cloud answers', before9 >= 6 && f9.waiting >= before9, { before9, waiting: f9.waiting });
+  await ev(async () => { await flushOutbox(); }); await flush();
+  check('… everything lands: the visit, and every entry once', (J('visits') || []).some(x => x.id === 'vFull') && log().filter(x => x.action === 'clinic.edit' && x.id === 'm1').length === 6 && (await ev(() => auditPending().length)) === 0, log().length);
 
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
