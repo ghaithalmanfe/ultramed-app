@@ -389,6 +389,14 @@ const STAFF_SEED = [
   {name:'Renova',     role:'rep',        av:AVATARS[1]},
   {name:'Dr. Ghaith', role:'supervisor', av:AVATARS[2]}
 ];
+// The team's names as they write them in Arabic (anyone not listed keeps the
+// Latin spelling) — the Arabic weekly deck (15) and the main screen (05) use them.
+const WD_NAMES_AR = { 'Mariam': 'مريم', 'Renova': 'رانوفا', 'Dr. Ghaith': 'د. غيث' };
+const WD_NAME_RE = new RegExp('(' + Object.keys(WD_NAMES_AR).sort((a, b) => b.length - a.length).map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
+// a team name inside a longer Latin name ("Al Mariam Clinic", "Mariam Sample") is left alone
+function wdArNames(s){
+  return String(s == null ? '' : s).replace(WD_NAME_RE, (m, n, off, str) => /[A-Za-z][.']?\s?$/.test(str.slice(0, off)) || /^\s?[A-Za-z]/.test(str.slice(off + m.length)) ? m : WD_NAMES_AR[n]);
+}
 let staff = STAFF_SEED.map(s=>({...s}));
 let REPS = [];
 let USERS = {};

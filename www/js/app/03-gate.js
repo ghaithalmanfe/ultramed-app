@@ -17,6 +17,7 @@ function switchUser(){
   if(typeof dropFullBackup === 'function') dropFullBackup();
   if(FIREBASE_ENABLED && window.firebase){ firebase.auth().signOut().catch(()=>{}); }
   currentUser = null;
+  document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
   renderGate();
   document.getElementById('gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';

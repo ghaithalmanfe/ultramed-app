@@ -276,13 +276,7 @@ function wdWeekday(d){ return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][
 function wdKDar(n, dec){ const v = Number(n) || 0; return (v < 0 ? '−' : '') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: dec || 0, maximumFractionDigits: dec || 0 }) + ' د.ك'; }
 function wdRangeAr(a, b){ const A = new Date(a + 'T00:00:00'), B = new Date(b + 'T00:00:00');
   return (A.getMonth() === B.getMonth() ? A.getDate() + '–' + B.getDate() + ' ' + WD_AR_MONTHS[B.getMonth()] : wdDayAr(a) + ' – ' + wdDayAr(b)) + ' ' + B.getFullYear(); }
-// the team's names as they write them in Arabic (anyone not listed keeps the Latin spelling)
-const WD_NAMES_AR = { 'Mariam': 'مريم', 'Renova': 'رانوفا', 'Dr. Ghaith': 'د. غيث' };
-const WD_NAME_RE = new RegExp('(' + Object.keys(WD_NAMES_AR).sort((a, b) => b.length - a.length).map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'g');
-// a team name inside a longer Latin name ("Al Mariam Clinic", "Mariam Sample") is left alone
-function wdArNames(s){
-  return String(s == null ? '' : s).replace(WD_NAME_RE, (m, n, off, str) => /[A-Za-z][.']?\s?$/.test(str.slice(0, off)) || /^\s?[A-Za-z]/.test(str.slice(off + m.length)) ? m : WD_NAMES_AR[n]);
-}
+// the team's names in Arabic: WD_NAMES_AR / wdArNames live in 01-config.js (the main screen uses them too)
 // Arabic slide text with Latin names and amounts inside: right-to-left marks at
 // the field boundaries keep the reading order (clinic · amount · person), a
 // left-to-right mark keeps "The Breath Co." and "24 Sample Clinic" whole, and a
