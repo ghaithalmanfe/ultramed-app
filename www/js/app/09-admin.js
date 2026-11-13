@@ -642,11 +642,14 @@ async function saveProfileNotes(clinicId){
   showToast('📝 Saved — future you will thank you');
 }
 async function addToPlan(clinicId){
-  const today = todayStr();
+  const today = todayStr(), me = currentUser.name;
   dayPlans[today] = dayPlans[today] || {};
-  const arr = new Set(dayPlans[today][currentUser.name] || []);
-  arr.add(clinicId);
-  dayPlans[today][currentUser.name] = [...arr];
+  // One entry per clinic, in the shape the plan picker stores ({id, note, at}: `at` =
+  // when it was planned, for the KPI). Entries are objects, so a Set of them never
+  // matched a bare id and a clinic already planned was listed twice.
+  const list = dayPlans[today][me] || [];
+  if(!list.some(e => planEntryId(e) === clinicId)) list.push({ id: clinicId, note: '', at: Date.now() });
+  dayPlans[today][me] = list;
   await persist('dayPlans');
   closeModal();
   msPlanChanged();

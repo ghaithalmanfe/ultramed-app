@@ -385,6 +385,23 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   const sw2 = await cutAt(390), sw3 = await cutAt(360);
   check('The person switch never cuts a name: 3 people at 360 px, 4 at 390 and 360 px — and no page scroll', [sw1, sw2, sw3].every(x => x.cut.length === 0 && !x.over), { sw1, sw2, sw3 });
 
+  // ======================= the clinic card's "Add to today's plan": one entry per clinic, with the time it was planned =======================
+  seed(cloud);
+  await boot(M, 'rep', 390, 844);
+  const ap = await ev(async () => {
+    const t = todayStr(), me = currentUser.name;
+    dayPlans[t] = dayPlans[t] || {};
+    const mine = clinics.filter(c => c.rep === me && c.cls !== 'Closed').map(c => c.id);
+    const a = mine[0];
+    dayPlans[t][me] = (dayPlans[t][me] || []).filter(e => planEntryId(e) !== a).concat([{ id: a, note: 'planned in the picker', at: Date.now() - 3600000 }]);
+    const b = mine.find(id => id !== a && !dayPlans[t][me].some(e => planEntryId(e) === id));
+    await addToPlan(a); await addToPlan(b);
+    const list = dayPlans[t][me];
+    return { a, b, countA: list.filter(e => planEntryId(e) === a).length, keptA: list.find(e => planEntryId(e) === a), countB: list.filter(e => planEntryId(e) === b).length, entryB: list.find(e => planEntryId(e) === b) };
+  });
+  check('Add to today\'s plan from the clinic card: a clinic already planned is not listed twice and keeps its note and time; a new one is stored with the time it was planned (as the plan picker stores it)',
+    !!ap.b && ap.countA === 1 && !!ap.keptA && ap.keptA.note === 'planned in the picker' && ap.countB === 1 && !!ap.entryB && typeof ap.entryB === 'object' && typeof ap.entryB.at === 'number', ap);
+
   // ======================= a rep's phone at phone speed, a year of visits =======================
   seed(cloud, { yearVisits: true });
   await boot(M, 'rep', 390, 844);
