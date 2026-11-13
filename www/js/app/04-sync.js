@@ -1277,6 +1277,32 @@ function outboxList(){
   _outboxMem.forEach(k => { if(!out.includes(k)) out.push(k); });
   return out;
 }
+// When each queued key was first queued (the alerts center, 19-alerts.js, says
+// how long a change has waited): kept like the queue itself — in memory always,
+// on the phone when it fits. A key keeps its time until it leaves the queue.
+const OUTBOX_SINCE = 'um_outboxSince';
+const _outboxSince = {};
+function outboxSinceDevice(){ try{ const m = JSON.parse(localStorage.getItem(OUTBOX_SINCE)||'{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }catch(e){ return {}; } }
+function outboxStamp(list){
+  const dev = outboxSinceDevice(), now = Date.now(), next = {};
+  list.forEach(k => { next[k] = _outboxSince[k] > 0 ? _outboxSince[k] : dev[k] > 0 ? dev[k] : now; });
+  Object.keys(_outboxSince).forEach(k => { delete _outboxSince[k]; });
+  Object.assign(_outboxSince, next);
+  try{ localStorage.setItem(OUTBOX_SINCE, JSON.stringify(next)); }catch(e){}
+}
+// The queue as outboxList() has it (memory included), each key with the time it
+// was first queued: [{key, since}]. A key queued before this release has no time
+// yet — it is stamped the first time it is read here ("waiting since at least then").
+function outboxWaiting(){
+  const list = outboxList(), dev = outboxSinceDevice(), now = Date.now();
+  let stamped = false;
+  const out = list.filter(k => typeof k === 'string' && k).map(k => {
+    if(!(_outboxSince[k] > 0)){ _outboxSince[k] = dev[k] > 0 ? dev[k] : now; stamped = true; }
+    return { key: k, since: _outboxSince[k] };
+  });
+  if(stamped){ try{ localStorage.setItem(OUTBOX_SINCE, JSON.stringify(_outboxSince)); }catch(e){} }
+  return out;
+}
 // The queue is now exactly `list` — in memory always; on the phone if it fits.
 function outboxWrite(list){
   _outboxMem.clear(); list.forEach(k => _outboxMem.add(k));
@@ -1289,6 +1315,7 @@ function outboxWrite(list){
     if(!(Array.isArray(dev) && dev.every(k => list.includes(k)))){ try{ localStorage.removeItem('um_outbox'); if(list.length) localStorage.setItem('um_outbox', str); ok = true; }catch(e){} }
   }
   _outboxDeviceBad = !ok; // an older device queue must not bring back what was sent
+  outboxStamp(list);
   updateSyncBadge();
   return ok;
 }
@@ -1861,12 +1888,15 @@ async function storageUpdate(key, fn, ms){
   return next;
 }
 const SNAP_DAY = 'um_snapDay'; // this phone already found or wrote today's backup (v119: no download of it on every start)
+// What this phone's last backup check found — 'found' | 'written' | 'failed' (v121: the alerts center says it)
+const SNAP_LAST = 'um_snapLast';
+function snapNote(result, msg){ try{ localStorage.setItem(SNAP_LAST, JSON.stringify({ day: todayStr(), at: Date.now(), result, msg: msg ? String(msg).slice(0, 200) : '' })); }catch(e){} }
 async function maybeSnapshot(){
   try{
     const day = todayStr(), key = 'snap_' + day;
     try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
     const existing = await window.storage.get(key, true).catch(()=>null);
-    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} return; } // already snapshotted today
+    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} snapNote('found'); return; } // already snapshotted today
     // The sales index is tiny and its chunks stay in the cloud for a week
     // after being replaced, so the daily backup can restore the sales files too.
     const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
@@ -1876,12 +1906,13 @@ async function maybeSnapshot(){
     const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
     await window.storage.set(key, JSON.stringify({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}), true);
     try{ localStorage.setItem(SNAP_DAY, day); }catch(e){}
+    snapNote('written');
     // Keep 12 days: the backups that aged out are deleted by name — listing
     // them would download every backup in full (the cloud has no light listing).
     for(let i = 13; i <= 19; i++){
       const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() - i);
       await window.storage.delete('snap_' + UMCore.localDateStr(d), true).catch(()=>null);
     }
-  }catch(e){ console.error('snapshot error', e); }
+  }catch(e){ console.error('snapshot error', e); snapNote('failed', e && e.message ? e.message : e); }
 }
 
