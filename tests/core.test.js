@@ -4627,6 +4627,13 @@ describe('alerts center (v121)', () => {
     assert.equal(a.why[3], 'To reach the target: 167.00 KD a working day over the 15 working days left.');   // the coach's own figure (KD/day, rounded up)
     const tp = core.targetPace(3500, 1000, TODAY, '2026-11-09');
     assert.deepEqual([tp.state, tp.workedSoFar, tp.totalWork, tp.daysLeft, tp.perDay], ['behind', 7, 22, 15, 167]);
+    // a file that carries her covers the month, and no invoice of hers yet: the Today card and the alert count 0 KD
+    // (monthAchievement); the coach has no line of hers to judge (erpMtd lists sellers only) — said, never a made-up figure
+    const none = DATA(); none.erpSales.periods[1] = Object.assign({}, none.erpSales.periods[1], { rows: NOV.filter(r => r[8] !== RS) });
+    const zero = one(run(R, { data: none }), 'target:Renova:2026-11');
+    assert.equal(zero.why[0], 'Achieved 0.00 KD of the 2000.00 KD target (0%) — ERP sales files to Nov 9.');
+    assert.equal(core.coachInsights({ erpMtd: core.erpMtd(Object.assign({ today: TODAY }, none)), today: TODAY, repFilter: R, visits: [], clinics: none.clinics, targets: none.targets, dayPlans: {} })
+      .some(i => i.key === 'target-' + R), false);
   });
   test('a target from an earlier month: never judged, never silent — named as the Today card names it (v122)', () => {
     const stale = DATA(); stale.targets[M].month = '2026-10';
