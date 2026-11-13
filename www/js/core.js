@@ -2340,7 +2340,8 @@
     } else items.sales = { score: null, value: '—', target: 'DSR target needed', detail: 'no target for this month' };
     // 2 visits per working day
     var vpd = field.length / wd;
-    items.visits = { score: clamp(vpd / S.visitsPerDay), value: vpd.toFixed(1) + ' a day (' + field.length + ' in ' + wd + ' working days)', target: S.visitsPerDay + ' field visits a day', detail: '' };
+    items.visits = { score: clamp(vpd / S.visitsPerDay), value: vpd.toFixed(1) + ' a day (' + field.length + ' in ' + wd + ' working days)', target: S.visitsPerDay + ' field visits a day', detail: '',
+      n: { perDay: Number(vpd.toFixed(1)), count: field.length, workdays: wd } };
     // 3 daily discipline: the day's plan saved before the first visit; every visit report complete
     var plans = data.dayPlans || {}, pOk = 0, pN = 0;
     days.forEach(function(dt){
@@ -2365,7 +2366,8 @@
     var withDm = keyAcc.filter(function(c){ return (c.doctors || []).some(function(x){ return x.influence === 'decider'; }); });
     items.doctors = { score: !field.length ? null : keyAcc.length ? clamp(0.6 * Math.min(1, met / metT) + 0.4 * withDm.length / keyAcc.length) : clamp(Math.min(1, met / metT)),
       value: met + ' doctors met · decision maker known in ' + withDm.length + ' of ' + keyAcc.length + ' A accounts', target: metT + ' doctors in the period; 100% decision makers',
-      detail: keyAcc.filter(function(c){ return withDm.indexOf(c) < 0; }).map(function(c){ return c.name; }).slice(0, 6).join(', ') };
+      detail: keyAcc.filter(function(c){ return withDm.indexOf(c) < 0; }).map(function(c){ return c.name; }).slice(0, 6).join(', '),
+      n: { met: met, goal: metT, deciders: withDm.length, keyAccounts: keyAcc.length } };
     // 5 discount: every invoice within its limit (A account / open day / others)
     // the same invoices as the deck's price page: a sample (an all-free document) is not a discount
     var invs = clinicInvoices(mine, [rep], from, to, byId, S);
@@ -2407,7 +2409,8 @@
     var plT = Math.max(1, Math.round(S.newProducts * share)), naT = Math.max(1, Math.round(S.newAccounts * share));
     items.newbiz = { score: clamp(0.5 * Math.min(1, pl.length / plT) + 0.5 * Math.min(1, na.length / naT)),
       value: pl.length + ' new product placement' + (pl.length === 1 ? '' : 's') + ' · ' + na.length + ' new account' + (na.length === 1 ? '' : 's'), target: plT + ' placements · ' + naT + ' new accounts',
-      detail: pl.slice(0, 3).map(function(x){ return x.product + ' @ ' + x.account; }).concat(na.slice(0, 2).map(function(x){ return 'new: ' + x.account; })).join('; ') };
+      detail: pl.slice(0, 3).map(function(x){ return x.product + ' @ ' + x.account; }).concat(na.slice(0, 2).map(function(x){ return 'new: ' + x.account; })).join('; '),
+      n: { placements: pl.length, placementsGoal: plT, accounts: na.length, accountsGoal: naT } };
     // 10 answering clients on time: requests closed within the agreed hours
     var reqs = events.filter(function(e){ return e && e.kind === 'issue' && e.type === 'request' && e.rep === rep && String(e.at || '').slice(0, 10) >= from && String(e.at || '').slice(0, 10) <= to; });
     var lim = S.responseHours * 3600000, nowMs = opts.nowMs || Date.now(), onTime = 0, late = 0, open = 0;
@@ -2418,7 +2421,8 @@
     // stands: tracked, no target
     var stands = events.filter(function(e){ return e && e.kind === 'stand' && e.rep === rep && !e.removed; });
     var checked = stands.filter(function(e){ return (e.checks || []).some(function(c2){ return c2 >= from && c2 <= to; }) || (String(e.at || '').slice(0, 10) >= from && String(e.at || '').slice(0, 10) <= to); });
-    var list = KPI_ITEMS.map(function(it){ var x = items[it[0]]; return { key: it[0], label: it[1], weight: it[2], score: x.score, value: x.value, target: x.target, detail: x.detail || '', over: x.over }; });
+    // n: the numbers behind the words, for a screen that shows them (the main screen) — the same figures as `value` and `target`
+    var list = KPI_ITEMS.map(function(it){ var x = items[it[0]]; return { key: it[0], label: it[1], weight: it[2], score: x.score, value: x.value, target: x.target, detail: x.detail || '', over: x.over, n: x.n || null }; });
     var wSum = list.reduce(function(a2, x){ return a2 + (x.score == null ? 0 : x.weight); }, 0);
     var total = wSum ? Math.round(list.reduce(function(a2, x){ return a2 + (x.score == null ? 0 : x.score * x.weight); }, 0) / wSum * 100) : null;
     return { rep: rep, from: from, to: to, workdays: wd, total: total, items: list, stands: { active: stands.length, checked: checked.length } };
@@ -3824,7 +3828,8 @@
   //   forecast { amount, closed, people, byRep {rep: {amount, asOf, done,
   //     total}}, target, pct, forTarget },
   //   sameDays / lastYear { month, measured, current, previous, growth,
-  //     fromZero, to, mixed, people, left, byRep {rep: {to, current, previous}} },
+  //     fromZero, to, mixed, people, left, byRep {rep: {to, current, previous,
+  //     growth, fromZero}} },
   //   ytd { year, months [{month, sales, target, missing, like, likeSales,
   //     likeTarget}], sales, target, noFile, noTarget, like {sales, target,
   //     pct, months} },
@@ -3909,11 +3914,16 @@
       var both = got.filter(function(f){ return prevOf[f.rep] && prevOf[f.rep].fig.measured; });
       var sC = sum(both, amountOf), sP = sum(both, function(f){ return prevOf[f.rep].fig.amount; });
       var ends = uniq(both.map(function(f){ return prevOf[f.rep].to; })).sort();
+      // growth over the earlier figure: none from nothing — that is said as "from zero", never a percentage
+      var grow = function(c, p){ return { growth: xdR2(p) > 0 ? (c - p) / p : null, fromZero: xdR2(p) === 0 && xdR2(c) > 0 }; };
+      var g = grow(sC, sP);
       var out = { month: pm, measured: both.length > 0, current: both.length ? xdR2(sC) : null, previous: both.length ? xdR2(sP) : null,
-        growth: both.length && xdR2(sP) > 0 ? (sC - sP) / sP : null, fromZero: both.length > 0 && xdR2(sP) === 0 && xdR2(sC) > 0,
+        growth: both.length ? g.growth : null, fromZero: both.length > 0 && g.fromZero,
         to: ends.length ? ends[ends.length - 1] : null, mixed: ends.length > 1, people: both.map(repOf),
         left: got.filter(function(f){ return both.indexOf(f) < 0; }).map(repOf), byRep: Object.create(null) };
-      both.forEach(function(f){ out.byRep[f.rep] = { to: prevOf[f.rep].to, current: f.amount, previous: prevOf[f.rep].fig.amount }; });
+      // each person by the same rule: her growth here is the one her own view (rep: her) gives
+      both.forEach(function(f){ var p = prevOf[f.rep].fig.amount, gp = grow(f.amount, p);
+        out.byRep[f.rep] = { to: prevOf[f.rep].to, current: f.amount, previous: p, growth: gp.growth, fromZero: gp.fromZero }; });
       return out;
     };
     var pm1 = addMonthsStr(from, -1).slice(0, 7);
