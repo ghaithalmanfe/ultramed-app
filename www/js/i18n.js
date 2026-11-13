@@ -210,6 +210,11 @@
     'Integrity code (sha256):': 'رمز التحقق من سلامة الملف (sha256):',
     'This phone has changes the cloud does not have yet:': 'على هذا الجهاز تغييرات لم تصل إلى السحابة بعد:',
     '(no copy on this phone)': '(لا توجد نسخة منها على هذا الجهاز)',
+    // v122: a photo that reached the cloud while the backup was read; a photo store that did not answer
+    'Reached the cloud while the backup was being read, and could not be read again:': 'وصلت إلى السحابة أثناء قراءة النسخة الاحتياطية، وتعذّرت قراءتها مرة أخرى:',
+    "The file keeps this phone's copy apart where there is one. Take the backup again to have them among the cloud's documents.": 'الملف يحفظ نسخة الجهاز منها بشكل منفصل إن وُجدت. خذ النسخة الاحتياطية مرة أخرى لتكون ضمن مستندات السحابة.',
+    "This phone's photo store did not answer:": 'مخزن الصور على هذا الجهاز لم يستجب:',
+    'A photo still waiting on this phone may be missing from this file. Take the backup again later.': 'قد تكون صورة ما زالت بانتظار الرفع على هذا الجهاز غير موجودة في هذا الملف. خذ النسخة الاحتياطية مرة أخرى لاحقاً.',
     "They are not part of the cloud copy. The file keeps this phone's copy of them apart, and a restore never writes them. Stay connected until they upload, then take the backup again.": 'هذه التغييرات ليست ضمن نسخة السحابة. الملف يحفظ نسخة الجهاز منها بشكل منفصل، والاسترجاع لا يكتبها أبداً. ابقَ متصلاً حتى تُرفع، ثم خذ النسخة الاحتياطية مرة أخرى.',
     'Could not be read:': 'تعذّرت قراءة:',
     "The list of the cloud's documents": 'قائمة مستندات السحابة',
@@ -946,6 +951,7 @@
     'Add a quick note about the call': 'أضف ملاحظة سريعة عن المكالمة',
     'Add at least one product': 'أضف منتجاً واحداً على الأقل',
     'Already saving…': 'جارٍ الحفظ بالفعل…',
+    'Saving the visit…': 'جارٍ حفظ الزيارة…', // the form, locked while its visit saves (v122)
     'Another clinic already has that name': 'يوجد عيادة أخرى بنفس الاسم',
     'Choose a stronger password': 'اختر كلمة مرور أقوى',
     'Could not copy': 'تعذّر النسخ',
@@ -1003,6 +1009,27 @@
     'You can only edit your own visits': 'يمكنك تعديل زياراتك فقط',
     '♻️ Clinic re-created — all its history is attached': '♻️ أُعيد إنشاء العيادة — مع كل سجلها',
     '⚠️ Photo failed to upload — try again': '⚠️ فشل رفع الصورة — حاول مرة أخرى',
+    // photos waiting to upload (v122): the visit is saved first, each photo kept on the phone until the cloud holds it
+    '✅ Visit saved — its photos upload in the background and stay on this phone until they do': '✅ حُفظت الزيارة — صورها تُرفع في الخلفية وتبقى على هذا الهاتف حتى تصل',
+    '📴 Visit and its photos saved on this phone — they upload automatically when back online': '📴 الزيارة وصورها محفوظة على هذا الهاتف — تُرفع تلقائيًا عند عودة الاتصال',
+    "⚠️ This phone's storage is full — the photo is only in the app's memory: keep the app open until it uploads": '⚠️ ذاكرة هذا الهاتف ممتلئة — الصورة موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا حتى تُرفع',
+    '📸 Photo added — it uploads in the background and stays on this phone until it does': '📸 أُضيفت الصورة — تُرفع في الخلفية وتبقى على هذا الهاتف حتى تصل',
+    '📴 Photo added on this phone — it uploads automatically when back online': '📴 أُضيفت الصورة على هذا الهاتف — تُرفع تلقائيًا عند عودة الاتصال',
+    'Photo waiting to upload': 'صورة بانتظار الرفع',
+    'kept on this phone': 'محفوظة على هذا الهاتف',
+    "only in the app's memory — keep the app open": 'في ذاكرة التطبيق فقط — أبقِ التطبيق مفتوحًا',
+    // what the screens say about those photos (v122): the lightbox, the gallery, the red bar, the toasts (counts by pattern below)
+    'Photo lost before it uploaded — only this small preview is kept': 'فُقدت الصورة قبل أن تُرفع — بقيت هذه المعاينة الصغيرة فقط',
+    'The full photo is in the cloud — it shows when this phone is connected; this is its small preview': 'الصورة الكاملة في السحابة — تظهر عندما يتصل هذا الهاتف؛ هذه معاينتها الصغيرة',
+    'A photo reached the cloud': 'وصلت صورة إلى السحابة',
+    'The full photo is still waiting to upload from the phone that took it — this is its small preview': 'الصورة الكاملة ما زالت بانتظار الرفع من الهاتف الذي التقطها — هذه معاينتها الصغيرة',
+    '⏳ marks a photo still waiting to upload — until it arrives, other phones show only its small preview.': '⏳ تعني صورة ما زالت بانتظار الرفع — إلى أن تصل، تُظهر الهواتف الأخرى معاينتها الصغيرة فقط.',
+    '⚠️ marks a photo lost before it uploaded — only its small preview is kept.': '⚠️ تعني صورة فُقدت قبل أن تُرفع — بقيت معاينتها الصغيرة فقط.',
+    "This phone's storage is full — a photo is only in the app's memory: keep the app open and connected until it says Saved": 'ذاكرة هذا الهاتف ممتلئة — صورة موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»',
+    "A photo is only in the app's memory too": 'وصورة أيضًا موجودة في ذاكرة التطبيق فقط',
+    '1 photo still waiting to upload': 'صورة واحدة ما زالت بانتظار الرفع',
+    "⚠️ This phone's storage is full — the photo was added only in the app's memory: keep the app open and connected until it says Saved": '⚠️ ذاكرة هذا الهاتف ممتلئة — أُضيفت الصورة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»',
+    'Photo removed': 'حُذفت الصورة',
     '✅ Changes saved': '✅ حُفظت التغييرات',
     '✅ Clinic updated': '✅ حُدّثت العيادة',
     '✅ Evaluation targets updated': '✅ حُدّثت أهداف التقييم',
@@ -1026,8 +1053,14 @@
     '🔒 Only its owner can edit this event': '🔒 صاحب الحدث فقط يعدّله',
     '🗑️ Moved to recycle bin': '🗑️ نُقلت إلى سلة المحذوفات',
     '📸 Memory shared with the team': '📸 شُوركت الذكرى مع الفريق',
+    // team memories (v122): a second tap while one is being shared; the list kept on the phone only
+    'Already sharing this memory…': 'جارٍ مشاركة هذه الذكرى بالفعل…',
+    '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online': '📴 حُفظت الذكرى على هذا الهاتف — يراها الفريق بعد رفعها، وتُرفع تلقائيًا عند عودة الاتصال',
+    "⚠️ This phone's storage is full — this memory is only in the app's memory: keep the app open until it uploads": '⚠️ ذاكرة هذا الهاتف ممتلئة — هذه الذكرى موجودة في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا حتى تُرفع',
     '📸 Photo added': '📸 أُضيفت الصورة',
     '🔄 Up to date': '🔄 محدّث',
+    '📤 Yours are still uploading — showing what this phone has': '📤 ما أرسلته ما زال يُرفع — يظهر ما على هذا الهاتف', // Refresh messages (v122)
+    '📴 No connection — showing what this phone has': '📴 لا يوجد اتصال — يظهر ما على هذا الهاتف',
     '🖼 Processing photo...': '🖼 جارٍ معالجة الصورة...',
 
     // ---- quick dates, filters, statuses ----
@@ -1865,6 +1898,21 @@
 
   // Strings that carry a number or a name are matched by shape, not by text.
   var PATTERNS = [
+    // photos waiting to upload (v122): "⏳ 2 photos waiting to upload" (the sign is kept by the leading-symbol rule)
+    [/^(\d+) photos waiting to upload$/, function (m) { return 'عدد الصور بانتظار الرفع: ' + m[1]; }],
+    // …said per photo: "⏳ 3 photos waiting to upload · 1 kept on this phone · 2 only in the app's memory — keep the app open" (each part by itself)
+    [/^(\d+) kept on this phone$/, function (m) { return 'المحفوظ منها على هذا الهاتف: ' + m[1]; }],
+    [/^(\d+) only in the app's memory — keep the app open$/, function (m) { return 'الموجود منها في ذاكرة التطبيق فقط: ' + m[1] + ' — أبقِ التطبيق مفتوحًا'; }],
+    [/^(\d+) photos lost before they uploaded — only their small previews are kept$/, function (m) { return 'عدد الصور التي فُقدت قبل أن تُرفع: ' + m[1] + ' — بقيت معايناتها الصغيرة فقط'; }],
+    [/^(\d+) photos still waiting to upload$/, function (m) { return 'عدد الصور التي ما زالت بانتظار الرفع: ' + m[1]; }],
+    [/^This phone's storage is full — (\d+) photos are only in the app's memory: keep the app open and connected until it says Saved$/, function (m) { return 'ذاكرة هذا الهاتف ممتلئة — عدد الصور الموجودة في ذاكرة التطبيق فقط: ' + m[1] + ' — أبقِ التطبيق مفتوحًا ومتصلًا حتى تظهر «تم الحفظ»'; }],
+    [/^(\d+) photos are only in the app's memory too$/, function (m) { return 'وعدد الصور الموجودة أيضًا في ذاكرة التطبيق فقط: ' + m[1]; }],
+    [/^(\d+) photos reached the cloud$/, function (m) { return 'عدد الصور التي وصلت إلى السحابة: ' + m[1]; }],
+    // a photo waiting for days on another phone (v122): it may never arrive (3 days or more: أيام up to 10, يومًا from 11)
+    [/^(\d+) days now — it can only come from the phone that took it, if that phone still has it$/, function (m) { return 'منذ ' + m[1] + ' ' + (+m[1] <= 10 ? 'أيام' : 'يومًا') + ' — لا يمكن أن تصل إلا من الهاتف الذي التقطها، إن كانت ما زالت عليه'; }],
+    [/^The full photo has not arrived in (\d+) days — it can only come from the phone that took it, if that phone still has it\. This is its small preview$/, function (m) { return 'لم تصل الصورة الكاملة منذ ' + m[1] + ' ' + (+m[1] <= 10 ? 'أيام' : 'يومًا') + ' — لا يمكن أن تصل إلا من الهاتف الذي التقطها، إن كانت ما زالت عليه. هذه معاينتها الصغيرة'; }],
+    // the Visit photos gallery when some have no full photo in the cloud yet
+    [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها.'; }],
     // whole-day Restore (v121): what it removes, asked first; what it restored
     [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits and the sales files stay as they are\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات تبقى كما هي.'; }],
     [/^Restored (\S+) — (\d+) clinics, (\d+) visits$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — ' + m[2] + ' عيادة، ' + m[3] + ' زيارة'; }],
@@ -2002,7 +2050,7 @@
     [/^(\d+) top clinics quiet for 30\+ days$/, function (m) { return m[1] + ' عيادة مهمة هادئة أكثر من 30 يوماً'; }],
     [/^Search to see all (\d+) clinics$/, function (m) { return 'ابحث لعرض كل الـ' + m[1] + ' عيادة'; }],
     [/^(\d+) of (\d+) unlocked — keep going, you’re building something\.$/, function (m) { return m[1] + ' من ' + m[2] + ' مفتوحة — واصل، أنت تبني شيئاً.'; }],
-    [/^(\d+) photos across (\d+) visits\. Tap any photo to view it full size\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها بالحجم الكامل.'; }],
+    [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it full size\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها بالحجم الكامل.'; }],
     [/^(\d+) open tasks? (?:are|is) still pending \((\d+)% completion\)\.$/, function (m) { return m[1] + ' مهمة مفتوحة ما زالت معلّقة (' + m[2] + '% إنجاز).'; }],
     [/^(\d+) visited \+ (\d+) not visited = (\d+) active clinics — most urgent first\.$/, function (m) { return m[1] + ' مُزارة + ' + m[2] + ' غير مُزارة = ' + m[3] + ' عيادة نشطة — الأكثر إلحاحاً أولاً.'; }],
     [/^(\d+) of the highest-value \(A\/B class\) clinics went unvisited this period\.$/, function (m) { return m[1] + ' من أعلى العيادات قيمة (فئة A/B) لم تُزر هذه الفترة.'; }],

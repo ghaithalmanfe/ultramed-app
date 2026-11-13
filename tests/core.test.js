@@ -3561,6 +3561,42 @@ describe('v90: visits — one live document plus one archive per past month', ()
     assert.deepEqual(core.visitsStrayIds('2026-07', [{ id: 'y' }], homes, has), []);
     assert.deepEqual(core.visitsStrayIds('2026-08', [{ id: 'x' }], homes, has), []);
   });
+  test('photo marks (v122): "waiting to upload" goes once the cloud copy has the photo without it, and never comes back', () => {
+    const local = { id: 'v1', photos: [{ id: 'p1', thumb: 't1', pending: true }, { id: 'p2', thumb: 't2', pending: true }, { id: 'p3', thumb: 't3', pending: true }] };
+    const cloud = { id: 'v1', photos: [{ id: 'p1', thumb: 't1' }, { id: 'p2', thumb: 't2', pending: true }] }; // p1 landed, p2 still waits, p3 not in the cloud copy yet
+    assert.equal(core.settlePhotoMarks(local, cloud), 1);
+    assert.deepEqual(local.photos.map(p => !!p.pending), [false, true, true]);
+    assert.equal(local.photos[0].thumb, 't1'); // the thumbnail stays inline
+    // the cloud copy saying "waiting" never puts a mark back on this phone's copy
+    const settled = { id: 'v1', photos: [{ id: 'p1', thumb: 't1' }] };
+    assert.equal(core.settlePhotoMarks(settled, { id: 'v1', photos: [{ id: 'p1', thumb: 't1', pending: true }] }), 0);
+    assert.equal('pending' in settled.photos[0], false);
+    // a visit without photos (either side) is left exactly as it is
+    const plain = { id: 'v2', notes: 'x' }, before = JSON.stringify(plain);
+    assert.equal(core.settlePhotoMarks(plain, { id: 'v2', photos: [{ id: 'p9' }] }), 0);
+    assert.equal(core.settlePhotoMarks({ id: 'v3', photos: [{ id: 'p9', pending: true }] }, { id: 'v3' }), 0);
+    assert.equal(core.settlePhotoMarks(null, cloud), 0);
+    assert.equal(JSON.stringify(plain), before);
+  });
+  test('photo marks (v122): a photo lost before it uploaded is settled as lost, and the mark only moves forward', () => {
+    // the cloud copy says p1 is lost (its phone no longer held it and the cloud never got it): this copy says so too
+    const local = { id: 'v1', photos: [{ id: 'p1', thumb: 't1', pending: true, dev: 'D1' }, { id: 'p2', thumb: 't2', pending: true }] };
+    assert.equal(core.settlePhotoMarks(local, { id: 'v1', photos: [{ id: 'p1', thumb: 't1', lost: true, dev: 'D1' }, { id: 'p2', thumb: 't2' }] }), 2);
+    assert.deepEqual(local.photos.map(p => [!!p.pending, !!p.lost]), [[false, true], [false, false]]);
+    assert.equal(local.photos[0].thumb, 't1'); // the small preview stays
+    // one mark: waiting → uploaded, waiting → lost, lost → uploaded (it landed after all); never back
+    const a = { id: 'x', pending: true }, b = { id: 'y', pending: true }, c = { id: 'z' }, d = { id: 'w', lost: true }, e = { id: 'v', lost: true };
+    assert.equal(core.settlePhotoMark(a, false), true); assert.deepEqual(a, { id: 'x' });
+    assert.equal(core.settlePhotoMark(b, true), true); assert.deepEqual(b, { id: 'y', lost: true });
+    assert.equal(core.settlePhotoMark(c, true), false); assert.deepEqual(c, { id: 'z' }); // uploaded stays uploaded
+    assert.equal(core.settlePhotoMark(d, true), false); assert.deepEqual(d, { id: 'w', lost: true });
+    assert.equal(core.settlePhotoMark(e, false), true); assert.deepEqual(e, { id: 'v' });
+    assert.equal(core.settlePhotoMark(null, false), false);
+    // through the merge: the cloud's uploaded copy moves a lost one on; a waiting or lost cloud copy never moves an uploaded one back
+    const l2 = { id: 'v2', photos: [{ id: 'q1', lost: true }, { id: 'q2' }, { id: 'q3' }] };
+    assert.equal(core.settlePhotoMarks(l2, { id: 'v2', photos: [{ id: 'q1' }, { id: 'q2', pending: true }, { id: 'q3', lost: true }] }), 1);
+    assert.deepEqual(l2.photos, [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }]);
+  });
 });
 
 describe('ERP account links (v113)', () => {
