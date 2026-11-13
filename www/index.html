@@ -450,9 +450,9 @@
   .ms-src{display:flex; align-items:flex-start; gap:7px; color:var(--muted); font-size:13px; line-height:1.55; margin-top:2px;}
   .ms-src .svgi{width:16px; height:16px; color:var(--soft); margin-top:2px;}
   .ms-src b{font-weight:600; color:var(--ink); white-space:nowrap;}
-  .ms-switch{display:flex; background:#E7EEE9; border-radius:14px; padding:4px; gap:2px; margin-top:12px;}
+  .ms-switch{display:flex; flex-wrap:wrap; background:#E7EEE9; border-radius:14px; padding:4px; gap:2px; margin-top:12px;}
   .ms-switch:empty{display:none;}
-  .ms-switch button{flex:1 1 0; min-width:0; min-height:44px; border:none; background:none; border-radius:11px; font:inherit; font-size:14.5px; color:var(--muted); cursor:pointer; padding:6px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .ms-switch button{flex:1 0 auto; min-height:44px; border:none; background:none; border-radius:11px; font:inherit; font-size:14.5px; color:var(--muted); cursor:pointer; padding:6px 8px; white-space:nowrap;}   /* a name is never cut: the buttons share the row and wrap to a second one when they must */
   .ms-switch button.on{background:var(--surface); color:var(--ink); font-weight:600; box-shadow:0 1px 3px rgba(2,41,23,.08);}
   .ms-whose{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; font-size:14px; color:var(--muted);}
   .ms-whose b{color:var(--ink); font-size:16px;}
@@ -465,7 +465,8 @@
   .ms-ct .ms-hint{font-weight:500; font-size:13px; text-align:end;}
   .ms-people > .ms-ct{flex-wrap:wrap;}
   .ms-ct .ms-act{display:flex; align-items:center; gap:6px;}
-  .ms-ct .chip.small{padding:5px 10px; font-size:12.5px; border-width:1px;}
+  .ms-ct .chip.small{padding:5px 10px; font-size:12.5px; border-width:1px; position:relative;}
+  .ms-ct .chip.small::after{content:''; position:absolute; inset:-10px -2px;}   /* a 44 px thumb target around the small chip (Months) */
   .ms-i{width:36px; height:36px; margin:-6px; border:none; background:none; color:var(--soft); border-radius:50%; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; position:relative; flex-shrink:0;}
   .ms-i::after{content:''; position:absolute; inset:-4px;}
   .ms-i svg{width:19px; height:19px;}
@@ -546,6 +547,7 @@
   .ms-fold > .ms-body{display:none; margin-top:10px;}
   .ms-fold.open > .ms-body{display:block;}
   .ms-fold .link{font-size:13px; color:var(--accent); cursor:pointer; font-weight:700; text-transform:none; letter-spacing:0;}
+  @media (max-width:1023px){ .ms-fold .link{display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; padding:0 8px; white-space:nowrap;} }   /* a 44 px thumb target, clear of the fold's own tap, on one line */
   .ms-body .section-title{color:var(--muted); margin:16px 0 8px; font-size:12.5px;}
   .ms-body .section-title:first-child{margin-top:0;}
   /* the lists drawn by the older Today code, quieter inside a white card */
@@ -557,7 +559,7 @@
   #view-today .ms-body .doc-group-head{color:var(--green-dark); margin:12px 0 2px;}
   #view-today .ms-body .doc-group-head:first-child{margin-top:0;}
   #view-today .ms-taskadd{display:flex; align-items:center; gap:8px; border:1px dashed #CBD6CF; border-radius:12px; padding:2px 4px 2px 12px; margin-bottom:6px;}
-  #view-today .ms-taskadd input{border:none; background:none; padding:10px 0; font-size:15px; box-shadow:none;}
+  #view-today .ms-taskadd input{border:none; background:none; padding:10px 0; font-size:15px; box-shadow:none; min-height:44px;}
   #view-today .ms-taskadd .del{color:var(--accent); font-size:24px;}
   #view-today #docCardsNudge .card, #view-today #occasionsCard .card{background:var(--page); box-shadow:none; border:none; border-radius:12px; padding:12px 14px; margin:10px 0 0;}
   #view-today .rx-short{color:var(--muted);}

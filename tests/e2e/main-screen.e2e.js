@@ -10,7 +10,6 @@
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts, blockFirebase } = require('./_env.js');
-const core = require(path.join(WWW, 'js/core.js'));
 const PORT = 8277;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = http.createServer((req, res) => {
@@ -21,79 +20,8 @@ const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok ? '✅' : '❌') + ' ' + name + (info !== undefined ? '  → ' + JSON.stringify(info) : '')); if(!ok) failed++; }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// ---------- invented data: 3 people, 16 clinics, 12 months of sales lines (Nov 2025 – 8 Oct 2026) ----------
-const G = 'Dr. Ghaith', M = 'Mariam', R = 'Renova';
-const SM = { [M]: 'Mariam Example', [R]: 'Renova Example', [G]: 'Ghaith Example' };
-const repMap = { [SM[M]]: M, [SM[R]]: R, [SM[G]]: G };
-const CL = [['m1', 'Harbor', M, 'A'], ['m2', 'Opal', M, 'A'], ['m3', 'Willow', M, 'B'], ['m4', 'Cedar', M, 'B'], ['m5', 'Pearl', M, 'C'], ['m6', 'Lagoon', M, 'B'],
-  ['r1', 'Mira', R, 'A'], ['r2', 'Jasmine', R, 'A'], ['r3', 'Dune', R, 'B'], ['r4', 'Falcon', R, 'B'], ['r5', 'Coral', R, 'C'], ['r6', 'Marina', R, 'B'],
-  ['g1', 'Hilal', G, 'A'], ['g2', 'Summit', G, 'A'], ['g3', 'Oasis', G, 'B'], ['g4', 'Noor', G, 'C']]
-  .concat([['r7', 'Lotus', R, 'B']])
-  .map(([id, w, rep, cls]) => ({ id, name: w + ' Sample Dental Clinic', rep, cls }));
-const PROD = [['Intensiv', 'Intensiv Ortho-Strips', 38], ['Intensiv', 'Intensiv Swingle Handpiece', 145], ['TePe', 'TePe Interdental Brush Pack', 9], ['TePe', 'TePe Angle Brush', 7.5],
-  ['Philips', 'Philips Sonicare 4100', 21], ['Philips', 'Philips Zoom Kit', 96], ['Curaprox', 'Curaprox CS 5460', 3.2], ['Curaprox', 'Curaprox Perio Plus', 6.4]];
-function rng(seed){ let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
-const MONTHS = ['2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
-function monthRows(month, lastDay, rand){
-  const rows = []; let n = 0;
-  for(let d = 1; d <= lastDay; d++){
-    const date = month + '-' + String(d).padStart(2, '0'), dow = new Date(date + 'T00:00:00').getDay();
-    if(dow === 5 || dow === 6) continue;                                   // Fri, Sat: the weekend
-    for(let i = 0; i < 90; i++){
-      const who = rand(), rep = who < 0.42 ? M : who < 0.8 ? R : G, mine = CL.filter(c => c.rep === rep);
-      const c = mine[Math.floor(rand() * rand() * mine.length)];          // each person's first clinics buy most
-      if(month === '2026-10' && (c.id === 'm4' || c.id === 'r4')) continue; // two clinics stop buying in October
-      if(c.id === 'g2' || c.id === 'r7') continue;                        // an A clinic that never buys (an opportunity); a clinic whose first invoice comes this month (below)
-      const p = PROD[Math.floor(rand() * PROD.length)], qty = 1 + Math.floor(rand() * 4), net = Math.round(p[2] * qty * 13) / 100;   // a realistic month against the targets
-      rows.push([date, 'SINV' + month.replace('-', '').slice(2) + '-' + (++n), 0, p[1], qty, net, net, 0, SM[rep], p[0], c.name, 'Clinics', 0, '']);   // an invented document number
-    }
-  }
-  if(month === '2026-10') rows.push(['2026-10-06', 'SINV2610-new', 0, 'Philips Zoom Kit', 3, 288, 288, 0, SM[R], 'Philips', 'Lotus Sample Dental Clinic', 'Clinics', 0, '']);   // a new customer this month
-  return rows;
-}
-const rand = rng(20261008);
-const files = MONTHS.map(m => { const last = m === '2026-10' ? 8 : new Date(+m.slice(0, 4), +m.slice(5, 7), 0).getDate(); return { m, last, rows: monthRows(m, last, rand) }; });
-const LINES = files.reduce((s, f) => s + f.rows.length, 0);
-const brands = t => ({ Intensiv: Math.round(t * 0.42), TePe: Math.round(t * 0.14), Philips: Math.round(t * 0.34), Curaprox: Math.round(t * 0.10) });
-const tg = (rev, month) => ({ revenue: rev, month, brands: brands(rev) });
-function seed(cloud, opts){
-  opts = opts || {};
-  // renovaNotInFiles: the October file holds no line of hers and does not know her salesman — a person the files do not hold;
-  // renovaNew: her first month — the files before October hold no line of hers and do not know her salesman
-  const notHers = f => Object.assign({}, f, { rows: f.rows.filter(r => r[8] !== SM[R]), repMap: { [SM[M]]: M, [SM[G]]: G } });
-  const use = files.filter(f => !opts.noOctober || f.m !== '2026-10').map(f => (opts.renovaNotInFiles && f.m === '2026-10') || (opts.renovaNew && f.m < '2026-10') ? notHers(f) : f);
-  const split = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: opts.renovaNotInFiles ? { [SM[M]]: M, [SM[G]]: G } : repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true },
-    periods: use.map(f => ({ id: 'f' + f.m, from: f.m + '-01', to: f.m + '-' + String(f.last).padStart(2, '0'), net: Math.round(f.rows.reduce((s, r) => s + r[6], 0) * 100) / 100, rowCount: f.rows.length,
-      importedAt: f.m + '-' + String(Math.min(f.last, 28)).padStart(2, '0') + 'T08:00:00.000Z', repMap: f.repMap || repMap, rev: 1, rows: f.rows })) });
-  Object.keys(cloud).forEach(k => { delete cloud[k]; });
-  cloud.erpSales = JSON.stringify(split.index);
-  Object.keys(split.docs).forEach(k => { cloud[k] = JSON.stringify(split.docs[k]); });
-  cloud.erpMap = '{}';
-  cloud.staff = JSON.stringify([{ name: M, role: 'rep', email: 'mariam@example.com' }, { name: R, role: 'rep', email: 'renova@example.com' }, { name: G, role: 'supervisor', email: 'ghaith@example.com' }]);
-  const fu = { m2: '2026-10-05', m3: '2026-10-08', r2: '2026-10-01', r3: '2026-10-07', g3: '2026-10-12', m6: '2026-09-28' };
-  cloud.clinics = JSON.stringify(CL.map(c => Object.assign({}, c, { market: 'A', phone: '', notes: '', nextFollowUp: fu[c.id] || null,
-    doctors: [{ id: c.id + 'd1', name: 'Dr. Example ' + c.id.toUpperCase(), title: 'Dentist' }, { id: c.id + 'd2', name: 'Dr. Example ' + c.id.toUpperCase() + ' B', title: 'Dentist' }] })));
-  const hist = {}; MONTHS.slice(0, -1).forEach((m, i) => { hist[m] = { [M]: tg(7000 + i * 150, m), [R]: tg(6500 + i * 120, m), [G]: tg(3000 + i * 60, m) }; });
-  cloud.targets = JSON.stringify({ [M]: Object.assign(tg(9000, '2026-10'), { visits: 80 }), [R]: tg(8000, '2026-10'), [G]: tg(4000, '2026-10'), _history: hist });
-  const visits = []; let vn = 0; const vr = rng(77);
-  ['2026-09', '2026-10'].forEach(m => { const last = m === '2026-10' ? 8 : 30;
-    for(let d = 1; d <= last; d++){ const date = m + '-' + String(d).padStart(2, '0'), dow = new Date(date + 'T00:00:00').getDay(); if(dow === 5 || dow === 6) continue;
-      [M, R, G].forEach(rep => { const mine = CL.filter(c => c.rep === rep), k = rep === G ? (vr() < 0.5 ? 1 : 0) : 3 + Math.floor(vr() * 3);
-        for(let i = 0; i < k; i++){ const c = mine[Math.floor(vr() * mine.length)], order = vr() < 0.3, total = order ? Math.round(40 + vr() * 260) : 0;
-          if(date === '2026-10-08' && c.id === 'm1') continue;               // today's first planned clinic is not visited yet
-          visits.push({ id: 'v' + (++vn), clinicId: c.id, rep, withRep: null, date, ts: new Date(date + 'T09:00:00').getTime() + i * 3600000, products: ['p1'], orderTaken: order,
-            orders: order ? [{ id: 'o' + vn, items: [], total, net: total, gross: total, discountPct: 0 }] : [], orderItems: [], orderGross: total, orderDiscount: 0, orderTotal: total,
-            doctorId: c.id + 'd1', doctorIds: [c.id + (i % 2 ? 'd2' : 'd1')], nextFollowUp: null, notes: '', noOrderReason: order ? '' : 'Stock still available' }); } }); } });
-  visits.push({ id: 'vtoday', clinicId: 'm3', rep: M, withRep: null, date: '2026-10-08', ts: new Date('2026-10-08T08:30:00').getTime(), products: ['p1'], orderTaken: false, orders: [], orderItems: [], orderTotal: 0, doctorId: 'm3d1', doctorIds: ['m3d1'], notes: 'today', noOrderReason: 'Stock still available' });
-  // joint visits this month: Dr. Ghaith on two of Mariam's visits and one of Renova's — one record each, counted once for the team
-  [[M, '2026-10-05'], [M, '2026-10-06'], [R, '2026-10-07']].forEach(([rep, date]) => { const v = visits.find(x => x.rep === rep && x.date === date && !x.withRep); if(v) v.withRep = G; });
-  cloud.visits = JSON.stringify(visits);
-  cloud.tasks = JSON.stringify([{ id: 't1', text: 'Send the brush price list', rep: M, dueDate: '2026-10-08', done: false, created: '2026-10-06' }, { id: 't2', text: 'Confirm the demo date', rep: R, dueDate: '2026-10-07', done: false, created: '2026-10-05' }]);
-  cloud.events = '[]';
-  cloud.dayPlans = JSON.stringify({ '2026-10-08': { [M]: [{ id: 'm1', note: '', at: new Date('2026-10-07T18:00:00').getTime() }, { id: 'm3', note: '', at: new Date('2026-10-07T18:00:00').getTime() }], [R]: [{ id: 'r1', note: '', at: new Date('2026-10-07T18:05:00').getTime() }] } });
-  cloud.recycleBin = JSON.stringify({ clinics: [], products: [], visits: [] });
-  cloud.benchmarks = JSON.stringify({ coverage: 70, priority: 90, conversion: 25, tasks: 85 });
-}
+// ---------- invented data: 3 people, 17 clinics, 12 months of sales lines (Nov 2025 – 8 Oct 2026): tests/e2e/fixtures/main-screen-data.js ----------
+const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
 
 (async () => {
   await new Promise(r => server.listen(PORT, r));
@@ -171,7 +99,9 @@ function seed(cloud, opts){
         return { brand: e.dataset.brand, pct: p && p.dataset.value !== '' ? Number(p.dataset.value) : null, s: e.querySelector('.s').innerText.replace(/\s+/g, ' ').trim() }; }),
       cust: [...document.querySelectorAll('#msCust .ms-item')].map(e => e.innerText.replace(/\s+/g, ' ').trim()),
       chart: txt('#msChart'), brandsTxt: txt('#msBrands'),
-      target: txt('#targetCard'), view: txt('#view-today'), switch: txt('#msSwitch'), who: txt('#msWho'), work: txt('#msWork'), next: txt('#msNext'), grid: document.getElementById('msGrid').className };
+      target: txt('#targetCard'), view: txt('#view-today'), switch: txt('#msSwitch'), who: txt('#msWho'), work: txt('#msWork'), next: txt('#msNext'), grid: document.getElementById('msGrid').className,
+      // the whole screen as written, hidden parts too (laptop-only cards on a phone, folded cards), less the cross-invoice notice (the owner's v100 exception)
+      html: (() => { const r = document.getElementById('view-today').cloneNode(true); r.querySelectorAll('.ms-cx').forEach(e => e.remove()); return r.innerHTML; })() };
   });
   const r2 = n => Math.round(n * 100) / 100;
 
@@ -245,11 +175,11 @@ function seed(cloud, opts){
   });
   check('Laptop 1440×900: the first cards sit side by side in one row (same top, three columns)', lay.sales.y === lay.work.y && lay.work.y === lay.next.y && lay.sales.x < lay.work.x && lay.work.x < lay.next.x && lay.sales.w > 300 && lay.sales.w < 520, lay);
   check('Laptop: the navigation is a side rail (full height, narrow), not a bottom bar', lay.nav.h >= lay.vh - 1 && lay.nav.w <= 110 && lay.nav.x === 0, lay.nav);
-  const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
+  const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
     open: ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].every(id => getComputedStyle(document.querySelector('#' + id + ' .ms-body')).display !== 'none'),
     rows: getComputedStyle(document.getElementById('msRows')).display }));
   // each ⓘ is wired: a tap opens "How it is calculated"
-  const infoTap = (await act(() => ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands'].map(id => {
+  const infoTap = (await act(() => ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands', 'msCust'].map(id => {
     const b = document.querySelector('#' + id + ' .ms-i'); if(!b) return id + ': no ⓘ';
     b.click(); const open = document.getElementById('modalBack').classList.contains('show'), t = document.getElementById('modalInner').innerText; closeModal();
     return open && /How it is calculated/.test(t) ? '' : id + ': ' + (open ? t.slice(0, 40) : 'nothing opened');
@@ -387,7 +317,7 @@ function seed(cloud, opts){
   const kpiRow = await ev(() => { const r = document.querySelector('#msRows [data-row="kpi"]'); return r ? r.innerText.replace(/\s+/g, ' ') : ''; });
   check('Rep: the KPI score out of 100 = kpiScorecard (the phone\'s one-tap row)', new RegExp('Performance score \\(KPI\\) ' + rTruth.kpi + ' of 100').test(kpiRow), { kpiRow, kpi: rTruth.kpi });
   const leak = t => ['Renova', 'Ghaith', 'رانوفا', 'غيث', 'Team', 'الفريق'].filter(n => t.includes(n)).concat(rTruth.others.filter(x => t.includes(x))).concat(t.includes(rTruth.tt.goal.toFixed(2)) || t.includes(rTruth.tt.ach.toFixed(2)) ? ['team total'] : []);
-  check('Rep (English): only her own — no other person\'s name or figure, no team total, no person switch', leak(rep.view).length === 0 && rep.switch === '' && /ms-vperson/.test(rep.grid), leak(rep.view));
+  check('Rep (English): only her own — no other person\'s name or figure, no team total, no person switch — in what shows and in the hidden parts', leak(rep.view).length === 0 && leak(rep.html).length === 0 && rep.switch === '' && /ms-vperson/.test(rep.grid), { shown: leak(rep.view), html: leak(rep.html) });
   await act(() => msOpenPerson('Renova')); await ready();
   const still = await shown();
   check('Rep: the switch cannot be forced (ownRepOnly): asking for another person keeps her own screen', still.sales === rTruth.amount && leak(still.view).length === 0, leak(still.view));
@@ -441,7 +371,7 @@ function seed(cloud, opts){
   let ar = await english();
   const arRep = await shown();
   check('Arabic, rep (phone): right to left, and no English left on the main screen (names, clinics and acronyms aside)', ar.dir === 'rtl' && ar.left.length === 0, ar.left.slice(0, 20));
-  check('Arabic, rep: still only her own — no other person in Arabic or Latin letters, no team total', leak(arRep.view).length === 0 && /مبيعاتي هذا الشهر/.test(arRep.view) && /د\.ك/.test(arRep.view), leak(arRep.view));
+  check('Arabic, rep: still only her own — no other person in Arabic or Latin letters, no team total (hidden parts too)', leak(arRep.view).length === 0 && leak(arRep.html).length === 0 && /مبيعاتي هذا الشهر/.test(arRep.view) && /د\.ك/.test(arRep.view), { shown: leak(arRep.view), html: leak(arRep.html) });
   const arWrap = [];
   const wrapAt = async (who, sizes) => { for(const [w, h] of sizes){ await page.setViewportSize({ width: w, height: h }); await sleep(120); const sw = await ev(statsWrap); if(sw.length) arWrap.push({ who, w, sw }); } };
   const arWords = /التوقع للشهر/.test(arRep.view) && /\d+% من الهدف/.test(arRep.view) && /(?:يومًا|أيام) باقية|يوم واحد باقٍ|يومان باقيان/.test(arRep.view) && /لكل يوم عمل/.test(arRep.view);

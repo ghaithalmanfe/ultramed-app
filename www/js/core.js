@@ -289,18 +289,26 @@
   // Planned visits whose day has passed with no matching visit logged by that
   // rep at that clinic on that day. Looks back `daysBack` days (default 14).
   // Returns [{date, rep, clinicId, note}], oldest first.
+  // A planned clinic is visited when a FIELD visit there that day had the
+  // person on it — the one who logged it or the colleague on a joint visit
+  // alike. A call or a phone order is not a visit: the plan is of visits.
+  // One rule for the Today screen's plan, the missed plans and the e-mail:
+  // the keys 'date|person|clinicId' of the plans those visits fulfil.
+  function planVisitKeys(visits){
+    const visited = new Set();
+    (visits || []).forEach(v => {
+      if(!v || !isFieldVisit(v)) return;
+      visited.add(v.date + '|' + v.rep + '|' + v.clinicId);
+      if(v.withRep) visited.add(v.date + '|' + v.withRep + '|' + v.clinicId);
+    });
+    return visited;
+  }
   function missedPlans(dayPlans, visits, today, opts){
     const daysBack = (opts && opts.daysBack) || 14;
     const floor = new Date(today + 'T00:00:00');
     floor.setDate(floor.getDate() - daysBack);
     const floorStr = localDateStr(floor);
-    // Everyone who was AT the visit fulfilled their plan: the rep who logged
-    // it and the colleague on a joint visit alike.
-    const visited = new Set();
-    (visits || []).forEach(v => {
-      visited.add(v.date + '|' + v.rep + '|' + v.clinicId);
-      if(v.withRep) visited.add(v.date + '|' + v.withRep + '|' + v.clinicId);
-    });
+    const visited = planVisitKeys(visits);
     const out = [];
     Object.keys(dayPlans || {}).forEach(d => {
       if(d >= today || d < floorStr) return;
@@ -1898,14 +1906,15 @@
   function crossInvoices(data){
     var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales, clinics = data.clinics || [];
     var byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
-    var out = {}, ctx = null;
+    // each customer name matched once (the caller's shared pass, data.erpShare, when it has one)
+    var out = {}, ctx = null, sh = erpShareOf(data), match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {});
     erpPeriodsOf(es).filter(function(p){ return p.to >= mStart && p.from <= today; }).forEach(function(p){
-      ctx = ctx || erpCtxOf(es);
-      erpViewRowsOf(es, p, ctx).forEach(function(r){
+      if(!sh) ctx = ctx || erpCtxOf(es);
+      (sh ? sh.rows(p) : erpViewRowsOf(es, p, ctx)).forEach(function(r){
         if(r.date < mStart || r.date > today) return;
         var issuer = (p.repMap || {})[r.salesman];
         if(!issuer) return;
-        var m = matchCustomer((r.customer || '').trim(), clinics, data.erpMap || {});
+        var m = match((r.customer || '').trim());
         var c = m.clinicId && byId[m.clinicId];
         if(!c || clinicSharedOn(c, r.date)) return;
         var owner = clinicRepOn(c, r.date);
@@ -3715,13 +3724,14 @@
   // line is dated. cellsOf(rep, amount): anyone's month split by brand so.
   function execMonthFigures(data, month, to, people, brand, detail){
     var d = Object.assign({}, data, { today: to }), from = month + '-01', mtd = erpMtd(d);
-    var raw = Object.create(null), prod = Object.create(null), days = Object.create(null), last = null;
+    var raw = Object.create(null), prod = Object.create(null), days = Object.create(null), daysBy = Object.create(null), last = null;
     if(brand || detail) erpMonthLines(d, from, to, function(r, p, who){
       if(!who) return;
       var b = normBrand(r.brand), rb = raw[who] || (raw[who] = Object.create(null));
       rb[b] = (rb[b] || 0) + r.net;
       if(!detail || people.indexOf(who) < 0 || (brand && b !== brand)) return;
       days[r.date] = (days[r.date] || 0) + r.net; if(!last || r.date > last) last = r.date;
+      var dw = daysBy[who] || (daysBy[who] = Object.create(null)); dw[r.date] = (dw[r.date] || 0) + r.net;
       var name = String(r.product || '').trim(), key = xdProductKey(name, b), pw = prod[who] || (prod[who] = Object.create(null));
       var x = pw[key] || (pw[key] = { key: key, name: name, brand: b, net: 0, qty: 0, docs: Object.create(null) });
       x.net += r.net; x.qty += Number(r.qty) || 0; if(r.type !== 'return') x.docs[r.doc] = 1;
@@ -3736,7 +3746,7 @@
       return { rep: rep, measured: ok, amount: ok ? (brand ? (cells[brand] || 0) : a.amount) : null, total: ok ? a.amount : null,
         asOf: ok ? a.asOf : null, complete: ok && !!a.complete, why: ok ? null : a.basis === 'none' ? 'nofile' : 'notinfiles', brands: cells };
     });
-    return { month: month, from: from, to: to, filesTo: erpMonthCovered(d), mtd: mtd, figs: figs, products: prod, days: days, last: last, cellsOf: cellsOf };
+    return { month: month, from: from, to: to, filesTo: erpMonthCovered(d), mtd: mtd, figs: figs, products: prod, days: days, daysBy: daysBy, last: last, cellsOf: cellsOf };
   }
   // The view's month: every person's figure, those measured, and their sum;
   // offTeam (a team view): the people the files credit in the month who are
@@ -3827,13 +3837,17 @@
   //     closed, asOf },
   //   forecast { amount, closed, people, byRep {rep: {amount, asOf, done,
   //     total}}, target, pct, forTarget },
-  //   sameDays / lastYear { month, measured, current, previous, growth,
+  //   sameDays / lastYear { month, measured, why (null | 'nocurrent': this
+  //     month has no figure of these people yet | 'noprevious': that month
+  //     has none of the people measured now), current, previous, growth,
   //     fromZero, to, mixed, people, left, byRep {rep: {to, current, previous,
   //     growth, fromZero}} },
   //   ytd { year, months [{month, sales, target, missing, like, likeSales,
   //     likeTarget}], sales, target, noFile, noTarget, like {sales, target,
   //     pct, months} },
-  //   daily { measured, to, days [{date, net}] },
+  //   daily { measured, to, days [{date, net}], pair { people, days } — the
+  //     same days for the achievement's people (a target and a figure),
+  //     adding up to achievement.achieved; null without them },
   //   newCustomers { measurable, covered, since, count, list [{name, rep,
   //     clinicId, date, net}], blocked },
   //   visits { count, led, joint }, orders { count, value, phone },
@@ -3917,7 +3931,10 @@
       // growth over the earlier figure: none from nothing — that is said as "from zero", never a percentage
       var grow = function(c, p){ return { growth: xdR2(p) > 0 ? (c - p) / p : null, fromZero: xdR2(p) === 0 && xdR2(c) > 0 }; };
       var g = grow(sC, sP);
-      var out = { month: pm, measured: both.length > 0, current: both.length ? xdR2(sC) : null, previous: both.length ? xdR2(sP) : null,
+      // why there is nothing to compare: this month has no figure of these people yet ('nocurrent' — the
+      // earlier month may well be in the files), or the earlier month has none of the people measured now
+      var out = { month: pm, measured: both.length > 0, why: both.length ? null : got.length ? 'noprevious' : 'nocurrent',
+        current: both.length ? xdR2(sC) : null, previous: both.length ? xdR2(sP) : null,
         growth: both.length ? g.growth : null, fromZero: both.length > 0 && g.fromZero,
         to: ends.length ? ends[ends.length - 1] : null, mixed: ends.length > 1, people: both.map(repOf),
         left: got.filter(function(f){ return both.indexOf(f) < 0; }).map(repOf), byRep: Object.create(null) };
@@ -3952,12 +3969,18 @@
       // the percentage of the year: only the months and people with both a figure and a target
       like: { sales: likeM.length ? xdR2(lS) : null, target: likeM.length ? xdR2(lT) : null, pct: lT > 0 ? Math.round(lS / lT * 100) : null, months: likeM } };
     // the month day by day, from the lines of the figure: the days add up to it
-    var daily = { measured: false, to: null, days: [] };
+    // (pair: the same days for the people with a target and a figure — the achievement's people — adding up to
+    // achievement.achieved, so a line drawn against their target is theirs alone)
+    var daily = { measured: false, to: null, days: [], pair: null };
     if(got.length){
       var dTo = F.last && F.last > sales.asOf ? F.last : sales.asOf, dts = [];
       for(var dd = from; dd <= dTo; dd = addDaysStr(dd, 1)) dts.push(dd);
       var dSp = centsSplit(dts.map(function(x){ return F.days[x] || 0; }), sales.amount);
-      daily = { measured: true, to: dTo, days: dts.map(function(x, i){ return { date: x, net: dSp[i] }; }) };
+      daily = { measured: true, to: dTo, days: dts.map(function(x, i){ return { date: x, net: dSp[i] }; }), pair: null };
+      if(pair.length){
+        var pSp = centsSplit(dts.map(function(x){ return sum(pair, function(r){ return (F.daysBy[r] || {})[x] || 0; }); }), xdR2(ach));
+        daily.pair = { people: pair, days: dts.map(function(x, i){ return { date: x, net: pSp[i] }; }) };
+      }
     }
     // new customers: the first invoice ever in the saved files falls in this
     // month (erpWinsInRange, as the KPI scorecard and Month by month count
@@ -4138,6 +4161,50 @@
       customers: { accounts: C.accounts, totals: C.totals, people: C.people, files: C.files, missing: C.missing },
       byPerson: byPerson, byBrand: byBrand, byProduct: byProduct };
   }
+  // The week so far — Sunday to today — of the people of a view, by the month
+  // card's own rules (execDashboard): the field visits with one of them on it
+  // (a joint visit once), the orders they logged (a phone order included; a
+  // joint visit's order is its leader's) and their value — never called
+  // sales — and the week's invoiced sales: the lines dated in it that count
+  // for them (erpMonthLines, the month figure's lines and rule), for the
+  // people whose month the files hold (monthAchievement), and when the week
+  // began in the month before, whose month before the files hold to its end
+  // too. Someone they do not hold is named in `missing` with why ('nofile' |
+  // 'notinfiles' | 'short': they stop before that month's end) and the month
+  // it is about, never counted as 0. No file
+  // reaching into the week: sales = null.
+  // opts = { rep: a name | 'all', reps: the team, mtd: erpMtd(data) when the
+  // caller has it }. Returns { from, to, visits, orders, value, sales:
+  // null | { measured, amount, to, people, missing [{rep, why, month}] } }.
+  function execWeek(data, opts){
+    data = data || {}; opts = opts || {};
+    var today = String(data.today || ''), from = getWeekDates(today)[0], month = today.slice(0, 7), mStart = month + '-01';
+    var people = opts.rep && opts.rep !== 'all' ? [opts.rep] : (opts.reps || []).filter(function(r, i, a){ return !!r && a.indexOf(r) === i; });
+    var inP = function(r){ return !!r && people.indexOf(r) >= 0; };
+    var vis = (data.visits || []).filter(function(v){ return v && typeof v.date === 'string' && v.date >= from && v.date <= today; });
+    var field = vis.filter(function(v){ return isFieldVisit(v) && people.some(function(r){ return repWasThere(v, r); }); });
+    var ord = vis.filter(function(v){ return v.orderTaken && inP(v.rep); });
+    var out = { from: from, to: today, visits: field.length, orders: ord.length, value: xdR2(xdSum(ord, function(v){ return v.orderTotal; })), sales: null };
+    if(!erpPeriodsOf(data.erpSales).some(function(p){ return p.to >= from && p.from <= today; })) return out;
+    var mtd = opts.mtd || erpMtd(data), held = Object.create(null), missing = [];
+    var whyOf = function(a){ return a.basis === 'none' ? 'nofile' : 'notinfiles'; };
+    var pm = from < mStart ? from.slice(0, 7) : null, pmEnd = pm ? erpMonthEnd(pm) : null;
+    var pmData = pm ? Object.assign({}, data, { today: pmEnd }) : null, pmMtd = pm ? erpMtd(pmData) : null;
+    people.forEach(function(r){
+      var a = monthAchievement(r, data, mtd);
+      if(!(a.basis === 'erp' && a.asOf)){ missing.push({ rep: r, why: whyOf(a), month: month }); return; }
+      if(pm){
+        var b = monthAchievement(r, pmData, pmMtd);
+        var okB = b.basis === 'erp' && !!b.asOf;   // 'short': the files hold her month before, but stop before its end
+        if(!okB || b.asOf < addDaysStr(pmEnd, -ERP_GAP_DAYS)){ missing.push({ rep: r, why: okB ? 'short' : whyOf(b), month: pm }); return; }
+      }
+      held[r] = a.asOf;
+    });
+    var got = people.filter(function(r){ return r in held; }), amount = 0;
+    if(got.length) erpMonthLines(data, from, today, function(r, p, who){ if(who && who in held) amount += r.net; });
+    out.sales = { measured: got.length > 0, amount: got.length ? xdR2(amount) : null, to: xdMax(got.map(function(r){ return held[r]; })), people: got, missing: missing };
+    return out;
+  }
   // One row of the dashboard, from the same lines: what a customer bought, or
   // who bought a product. opts = { month, rep | 'all', reps, brand | 'all' }
   // as execDashboard, plus one of
@@ -4259,9 +4326,9 @@
         reasons: led.filter(function(v){ return !v.orderTaken && v.noOrderReason; }).map(function(v){ return v.noOrderReason; }),
         followUps: led.filter(function(v){ return v.nextFollowUp; }).map(function(v){ return clinicName(v.clinicId) + ' → ' + fmtDate(v.nextFollowUp); }),
       };
-      var visitedIds = {}; tv.forEach(function(v){ visitedIds[v.clinicId] = 1; });
-      b.planDone = b.plan.filter(function(e){ return visitedIds[e.id]; }).length;
-      b.planMissedToday = b.plan.filter(function(e){ return !visitedIds[e.id]; }).map(function(e){ return clinicName(e.id); });
+      var pk = planVisitKeys(tv), seen = function(e){ return pk.has(today + '|' + rep + '|' + e.id); };   // a field visit she was on (the Today screen's rule)
+      b.planDone = b.plan.filter(seen).length;
+      b.planMissedToday = b.plan.filter(function(e){ return !seen(e); }).map(function(e){ return clinicName(e.id); });
       return b;
     };
     var blocks = (forRep ? [forRep] : reps).map(repBlock);
@@ -6976,7 +7043,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpPrepClinics, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
-    monthWorkdays, execDashboard, execDrill,
+    monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,
