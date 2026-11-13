@@ -25,8 +25,12 @@ on:
         options: [daily, weekly, monthly]
         default: daily
 
+# One queue per kind. GitHub keeps ONE waiting run per group and cancels the
+# older waiting one when another arrives: in a shared group, a weekly run
+# waiting behind a late daily would be cancelled by the monthly queued after
+# it. A run by hand queues with the scheduled runs of its kind.
 concurrency:
-  group: database-backup
+  group: database-backup-${{ github.event.schedule == '45 23 * * 4' && 'weekly' || github.event.schedule == '15 0 1 * *' && 'monthly' || inputs.tier || 'daily' }}
   cancel-in-progress: false
 
 permissions:

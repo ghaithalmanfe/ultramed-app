@@ -758,4 +758,20 @@ describe('the workflow (.github/workflows/backup.yml)', () => {
     assert.equal(tier({ EVENT: 'workflow_dispatch', CHOSEN: '' }), 'tier=daily\ndays=14\n');
     assert.equal(tier({ EVENT: 'workflow_dispatch', CHOSEN: 'forever' }), 'exit 1');
   });
+  test('each kind queues on its own: a weekly or monthly run waiting behind another kind is never cancelled', () => {
+    // GitHub keeps ONE waiting run per concurrency group and cancels the older
+    // waiting one when another arrives: in one shared group, a weekly run
+    // waiting behind a late daily is cancelled by the monthly queued after it.
+    const m = /^concurrency:\n\s+group: (.+)\n\s+cancel-in-progress: false$/m.exec(y);
+    assert.ok(m, 'a concurrency group that never cancels a running backup');
+    const groupOf = (schedule, tier) => m[1].replace(/\$\{\{(.+?)\}\}/g, (_, e) => {
+      const js = e.replace(/github\.event\.schedule/g, 'S').replace(/inputs\.tier/g, 'T').replace(/==/g, '===');
+      assert.match(js, /^[\sST'=&|a-z0-9*]+$/, 'a plain expression: ' + e);
+      return String(new Function('S', 'T', 'return (' + js + ');')(schedule, tier));
+    });
+    const names = { daily: groupOf('15 23 * * *', null), weekly: groupOf('45 23 * * 4', null), monthly: groupOf('15 0 1 * *', null) };
+    assert.equal(new Set(Object.values(names)).size, 3, 'one group per kind: ' + JSON.stringify(names));
+    for(const k of ['daily', 'weekly', 'monthly']) assert.equal(groupOf(undefined, k), names[k], 'a ' + k + ' run by hand queues with the scheduled ' + k);
+    assert.equal(groupOf(undefined, ''), names.daily);
+  });
 });
