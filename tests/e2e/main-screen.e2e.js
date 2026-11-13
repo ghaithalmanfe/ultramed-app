@@ -58,10 +58,12 @@ const brands = t => ({ Intensiv: Math.round(t * 0.42), TePe: Math.round(t * 0.14
 const tg = (rev, month) => ({ revenue: rev, month, brands: brands(rev) });
 function seed(cloud, opts){
   opts = opts || {};
-  const use = files.filter(f => !opts.noOctober || f.m !== '2026-10');
-  const split = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true },
+  // renovaNotInFiles: the October file holds no line of hers and does not know her salesman — a person the files do not hold
+  const use = files.filter(f => !opts.noOctober || f.m !== '2026-10').map(f => opts.renovaNotInFiles && f.m === '2026-10'
+    ? Object.assign({}, f, { rows: f.rows.filter(r => r[8] !== SM[R]), repMap: { [SM[M]]: M, [SM[G]]: G } }) : f);
+  const split = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: opts.renovaNotInFiles ? { [SM[M]]: M, [SM[G]]: G } : repMap, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true },
     periods: use.map(f => ({ id: 'f' + f.m, from: f.m + '-01', to: f.m + '-' + String(f.last).padStart(2, '0'), net: Math.round(f.rows.reduce((s, r) => s + r[6], 0) * 100) / 100, rowCount: f.rows.length,
-      importedAt: f.m + '-' + String(Math.min(f.last, 28)).padStart(2, '0') + 'T08:00:00.000Z', repMap, rev: 1, rows: f.rows })) });
+      importedAt: f.m + '-' + String(Math.min(f.last, 28)).padStart(2, '0') + 'T08:00:00.000Z', repMap: f.repMap || repMap, rev: 1, rows: f.rows })) });
   Object.keys(cloud).forEach(k => { delete cloud[k]; });
   cloud.erpSales = JSON.stringify(split.index);
   Object.keys(split.docs).forEach(k => { cloud[k] = JSON.stringify(split.docs[k]); });
@@ -162,6 +164,12 @@ function seed(cloud, opts){
     return { sales: val('sales'), achievement: val('achievement'), remaining: val('remaining'), perday: val('perday'), forecast: val('forecast'),
       visits: val('visits'), conversion: val('conversion'), orders: val('orders'), ordersValue: val('orders-value'), newcustomers: val('newcustomers'),
       perdayVisits: val('perday-visits'), weekVisits: val('week-visits'), doctors: val('doctors'), accounts: val('accounts'),
+      cmp: val('cmp'), cmpYear: val('cmp-year'), ytd: val('ytd'), ofTarget: val('of-target'),
+      growth: Object.fromEntries([...document.querySelectorAll('#targetCard [data-ms="person-growth"]')].map(e => [e.dataset.r, Number(e.dataset.value)])),
+      brands: [...document.querySelectorAll('#msBrands .ms-person[data-brand]')].map(e => { const p = e.querySelector('[data-ms="brand-pct"]');
+        return { brand: e.dataset.brand, pct: p && p.dataset.value !== '' ? Number(p.dataset.value) : null, s: e.querySelector('.s').innerText.replace(/\s+/g, ' ').trim() }; }),
+      cust: [...document.querySelectorAll('#msCust .ms-item')].map(e => e.innerText.replace(/\s+/g, ' ').trim()),
+      chart: txt('#msChart'), brandsTxt: txt('#msBrands'),
       target: txt('#targetCard'), view: txt('#view-today'), switch: txt('#msSwitch'), who: txt('#msWho'), work: txt('#msWork'), next: txt('#msNext'), grid: document.getElementById('msGrid').className };
   });
   const r2 = n => Math.round(n * 100) / 100;
@@ -177,6 +185,17 @@ function seed(cloud, opts){
     out.D = { sales: D.sales.amount, pct: D.achievement.pct, remaining: D.remaining, perDay: D.perDay.amount, left: D.perDay.workdays.left, done: D.perDay.workdays.done, total: D.perDay.workdays.total,
       forecast: D.forecast ? D.forecast.amount : null, visits: D.visits.count, joint: D.visits.joint, conversion: D.conversion.pct, orders: D.orders.count, ordersValue: D.orders.value,
       newc: D.newCustomers.measurable ? D.newCustomers.count : null, under: D.act.under.length, potential: D.act.potential.length, firstUnder: D.act.under[0] ? D.act.under[0].name : null };
+    // each person's same days: the team's byPerson and her own screen's execDashboard (rep: her, reps: [her], as the screen asks)
+    out.growth = {}; out.ownGrowth = {};
+    D.byPerson.forEach(p => { out.growth[p.rep] = p.sameDays && p.sameDays.growth != null ? Math.round(p.sameDays.growth * 100) : null; });
+    REPS.forEach(r => { const o = UMCore.execDashboard(d, { rep: r, reps: [r] }).sameDays; out.ownGrowth[r] = o.growth != null ? Math.round(o.growth * 100) : null; });
+    out.brands = D.byBrand.rows.filter(b => b.net || b.target).slice(0, 5).map(b => ({ brand: b.brand, pct: b.pct, achieved: b.achieved, goal: b.goal, net: b.net }));
+    out.cmp = { sd: D.sameDays.growth != null ? Math.round(D.sameDays.growth * 100) : null, sdPrev: D.sameDays.previous, sdTo: D.sameDays.to, ly: D.lastYear.measured, lyMonth: D.lastYear.month,
+      ytd: D.ytd.like.pct, ytdSales: D.ytd.like.sales, ytdTarget: D.ytd.like.target };
+    out.daily = { sum: Math.round(D.daily.days.reduce((a, x) => a + x.net, 0) * 100) / 100, to: D.daily.to, n: D.daily.days.length };
+    // the biggest customers: the dashboard's accounts, and the Clinics screen's card (erpDashData) for the same names
+    const buyers = erpDashData('all').buyers;
+    out.cust = D.customers.accounts.filter(a => !a.channel && a.net > 0).slice(0, 5).map(a => ({ name: a.name, net: a.net, clinics: (buyers.find(b => b.name === a.name) || {}).net }));
     return out;
   });
   check('fixture: 3 people × 12 months of invented sales lines, every person measured this month', LINES > 20000 && truth.reps.length === 3 && truth.reps.includes(G) && truth.reps.every(r => truth.people[r].basis === 'erp' && truth.people[r].asOf === '2026-10-08'), { lines: LINES, reps: truth.reps });
@@ -187,6 +206,7 @@ function seed(cloud, opts){
     return { r, ok: new RegExp(r.replace(/[.]/g, '\\.') + ' ' + pct + '% ' + p.amount.toFixed(2).replace('.', '\\.') + ' KD of ' + p.target.toFixed(2).replace('.', '\\.') + ' KD').test(s.target) }; });
   check('Team: each person\'s row is her own figure, "<name> <pct>% <achieved> KD of <target> KD" (Dr. Ghaith\'s own row too)', rowsOk.every(x => x.ok), { rowsOk, card: s.target.slice(0, 420) });
   check('Team: the Team line = teamTargetNow (achieved of target, the number of people)', new RegExp(truth.tt.ach.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.tt.goal.toFixed(2).replace('.', '\\.') + ' KD · \\w[\\w ]* · ' + truth.tt.n + ' reps').test(s.target) && new RegExp('Team ' + truth.tt.pct + '%').test(s.target), { tt: truth.tt });
+  check('Team: the sales card says the team target it divides by (everyone with a target has a figure): teamTargetNow\'s', s.ofTarget === truth.tt.goal && new RegExp('of the team target ' + truth.tt.goal.toFixed(2).replace('.', '\\.') + ' KD').test(s.view), { ofTarget: s.ofTarget, tt: truth.tt.goal });
   check('Team: achievement, remaining, per working day and forecast = UMCore.execDashboard for the team', s.achievement === truth.D.pct && s.remaining === truth.D.remaining && s.perday === truth.D.perDay && s.forecast === truth.D.forecast && truth.D.forecast != null,
     { shown: [s.achievement, s.remaining, s.perday, s.forecast], dashboard: [truth.D.pct, truth.D.remaining, truth.D.perDay, truth.D.forecast] });
   check('Team: the pace mark says "expected by" the day the sales files reach, from the working days (Sun–Thu)', new RegExp('expected by Oct 8: ' + Math.round(truth.D.done / truth.D.total * 100) + '%').test(s.view) && truth.D.done === 6 && truth.D.total === 21,
@@ -198,6 +218,22 @@ function seed(cloud, opts){
   check('Team: "Needs you today" counts the follow-ups due (visibleDueClinics) and names a customer to act on (execDashboard.act)', new RegExp(due + ' follow-ups due').test(s.next) && (truth.D.under ? s.next.includes(truth.D.firstUnder) : true) && new RegExp(truth.D.under + ' under-performing').test(s.next),
     { due, under: truth.D.under, first: truth.D.firstUnder, next: s.next.slice(0, 300) });
   check('Team: the person switch lists the team and every person, himself included', /^Team Mariam Renova Dr\. Ghaith$/.test(s.switch), s.switch);
+  check('Team: each person\'s ▲/▼ against the same days last month = the growth her own screen gives (execDashboard for her) = the team\'s byPerson',
+    truth.reps.every(r => truth.growth[r] != null && s.growth[r] === truth.growth[r] && truth.growth[r] === truth.ownGrowth[r]) && truth.reps.every(r => new RegExp(r.replace(/[.]/g, '\\.') + ' \\d+% [^]*?[▲▼] ' + Math.abs(truth.growth[r]) + '% vs the same days last month').test(s.target)),
+    { shown: s.growth, team: truth.growth, own: truth.ownGrowth });
+  const bTxt = b => b.pct != null ? `${b.achieved.toFixed(2)} KD of ${b.goal.toFixed(2)} KD` + (Math.round(b.net * 100) !== Math.round(b.achieved * 100) ? ` · sold in all ${b.net.toFixed(2)} KD` : '') : null;
+  check('Team: the brand rows = execDashboard.byBrand — the percentage over what the people with that brand\'s target sold of it ÷ their targets (achieved of goal)',
+    truth.brands.length >= 3 && s.brands.length === truth.brands.length && truth.brands.every((b, i) => s.brands[i].brand === b.brand && s.brands[i].pct === b.pct && s.brands[i].s === bTxt(b)),
+    { shown: s.brands, dashboard: truth.brands });
+  check('Team: the chart\'s comparisons = execDashboard — the same days of September (growth, amount, days 1–8), no file a year before (said with the month), year to date like for like',
+    s.cmp === truth.cmp.sd && truth.cmp.sd != null && new RegExp(truth.cmp.sdPrev.toFixed(2).replace('.', '\\.') + ' KD · days 1–' + +truth.cmp.sdTo.slice(8) + ' Sep').test(s.chart)
+      && !truth.cmp.ly && s.cmpYear === null && /Same month last year — No sales file for October 2025/.test(s.chart)
+      && s.ytd === truth.cmp.ytd && new RegExp(truth.cmp.ytdSales.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.cmp.ytdTarget.toFixed(2).replace('.', '\\.') + ' KD').test(s.chart),
+    { shown: [s.cmp, s.cmpYear, s.ytd], dashboard: truth.cmp, chart: s.chart.slice(-260) });
+  check('Team: the day-by-day line is the month figure\'s own lines — its days add up to the team figure and it ends on it, on the day the files reach',
+    truth.daily.sum === sum && truth.daily.to === '2026-10-08' && truth.daily.n === 8 && s.chart.includes(Math.round(sum).toLocaleString('en-US')), { daily: truth.daily, sum });
+  check('Team: the biggest customers = execDashboard.customers.accounts, the same amounts as the Clinics screen\'s card',
+    truth.cust.length === 5 && truth.cust.every((a, i) => a.net === a.clinics && s.cust[i] && s.cust[i].includes(a.name) && s.cust[i].endsWith(a.net.toFixed(2) + ' KD')), { shown: s.cust, dashboard: truth.cust });
 
   // ---------- layout: laptop in columns, the side rail ----------
   const lay = await ev(() => {
@@ -245,6 +281,14 @@ function seed(cloud, opts){
       && new RegExp('goal ' + mTruth.S.visitsPerDay + ' a day').test(mSup.work) && new RegExp(mSup.doctors + ' of ' + mTruth.S.doctorsPerMonth).test(mSup.work),
     { shown: [mSup.perdayVisits, mSup.weekVisits, mSup.doctors, mSup.accounts], kpi: [mTruth.visits, mTruth.week, mTruth.doctors, mTruth.newbiz] });
   check('Switch → Mariam: the KPI score out of 100 = kpiScorecard\'s total', new RegExp('Performance score ' + mTruth.kpi + ' of 100').test(mSup.who), { who: mSup.who, kpi: mTruth.kpi });
+  check('Switch → Mariam: her growth against the same days last month = the ▲/▼ on her row in the team\'s card (one figure in both places)', mSup.cmp === truth.growth[M] && mSup.cmp === truth.ownGrowth[M], { her: mSup.cmp, row: truth.growth[M] });
+  // the sheet More → KPI scorecard shows for her, opened from her score: the same total and the same figures
+  const kpiSheet = (await act(() => { msKpi(); const t = document.getElementById('modalInner').innerText.replace(/\s+/g, ' ').trim(); closeModal(); return t; })) || '';
+  const vn = (mSup.work.match(/(\d+) visits in (\d+) working days/) || []).slice(1).map(Number);
+  check('Switch → Mariam: the score and the figures = what the KPI scorecard sheet shows for her (opened from the score): total, visits a day (count, working days), doctors met, new accounts',
+    /^KPI scorecard/.test(kpiSheet) && /Mariam · This month · 6 working days/.test(kpiSheet) && kpiSheet.includes(mTruth.kpi + '/100') && vn.length === 2
+      && kpiSheet.includes(`${mSup.perdayVisits.toFixed(1)} a day (${vn[0]} in ${vn[1]} working days)`) && kpiSheet.includes(`${mSup.doctors} doctors met`) && new RegExp(`· ${mSup.accounts} new accounts?\\b`).test(kpiSheet),
+    { shown: [mSup.perdayVisits, vn, mSup.doctors, mSup.accounts, mTruth.kpi], sheet: kpiSheet.slice(0, 420) });
   check('Switch → Mariam: her target card says her own line, "Visits n/m" from her visits target, and no Team line', /Visits \d+\/80 \(\d+%\)/.test(mSup.target) && !/\bTeam\b/.test(mSup.target) && /Achieved: ERP to Oct 8 · target: DSR/.test(mSup.target), mSup.target.slice(0, 300));
   // the ⓘ sheets, the folded rows and the switch back: looking writes nothing
   await act(() => { msHow('visits'); closeModal(); msHow('work'); closeModal(); msActSheet(); closeModal(); msFold('msDueCard'); msFold('msDueCard'); });
@@ -257,6 +301,26 @@ function seed(cloud, opts){
   const months = (await act(() => { const b = [...document.querySelectorAll('#targetCard button.chip')].find(e => /Months/.test(e.textContent)); if(!b) return { list: '(no Months button)', rep: '' };
     b.click(); const list = document.getElementById('modalInner').innerText; renderMonthClose('2026-10'); const rep = document.getElementById('modalInner').innerText; closeModal(); return { list, rep }; })) || { list: '', rep: '' };
   check('The Months button opens the month reports, and October\'s report shows each person\'s figure as the main screen does', /تقارير الشهور/.test(months.list) && truth.reps.every(r => months.rep.includes(truth.people[r].amount.toFixed(2))), months.rep.slice(0, 300));
+
+  // ---------- a brand someone sells with no target for it: the percentage counts only the people with its target ----------
+  const bx = (await act(async () => {
+    const keep = JSON.stringify(targets['Dr. Ghaith']);
+    targets['Dr. Ghaith'].brands = {};                                    // in memory only: nothing is saved
+    renderToday(); await msWhenReady();
+    const D = UMCore.execDashboard(digestData(), { rep: 'all', reps: REPS.slice() });
+    const rows = [...document.querySelectorAll('#msBrands .ms-person[data-brand]')].map(e => { const p = e.querySelector('[data-ms="brand-pct"]');
+      return { brand: e.dataset.brand, pct: p && p.dataset.value !== '' ? Number(p.dataset.value) : null, s: e.querySelector('.s').innerText.replace(/\s+/g, ' ').trim() }; });
+    msHow('brands'); const how = document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); closeModal();
+    targets['Dr. Ghaith'] = JSON.parse(keep); renderToday(); await msWhenReady();
+    return { rows, how, D: D.byBrand.rows.filter(b => b.net || b.target).slice(0, 5).map(b => ({ brand: b.brand, pct: b.pct, achieved: b.achieved, goal: b.goal, net: b.net })) };
+  })) || { rows: [], D: [], how: '' };
+  const bxSold = bx.D.filter(b => Math.round(b.net * 100) !== Math.round(b.achieved * 100));
+  check('A brand Dr. Ghaith sells with no target of his: its row is what the people with its target sold ÷ their targets, and what everyone sold is said beside it ("sold in all") — as execDashboard.byBrand',
+    bx.D.length >= 3 && bxSold.length >= 1 && bx.rows.length === bx.D.length && bx.D.every((b, i) => bx.rows[i].brand === b.brand && bx.rows[i].pct === b.pct && bx.rows[i].s === bTxt(b))
+      && bxSold.every(b => b.pct === Math.round(b.achieved / b.goal * 100) && b.pct !== Math.round(b.net / b.goal * 100) || b.achieved / b.goal === b.net / b.goal),
+    { shown: bx.rows, dashboard: bx.D });
+  check('… and its ⓘ shows that division with this view\'s numbers (achieved ÷ goal × 100 = %, sold in all)',
+    bx.D.every(b => b.pct == null || bx.how.includes(`${b.achieved.toFixed(2)} ÷ ${b.goal.toFixed(2)} × 100 = ${b.pct}%`)) && bxSold.every(b => bx.how.includes(`sold in all ${b.net.toFixed(2)} KD`)), bx.how.slice(0, 400));
 
   // ---------- speed: one render of the screen, with 3 people × 12 months of lines ----------
   const speed = await ev(async () => {
@@ -316,6 +380,7 @@ function seed(cloud, opts){
   });
   check('Rep: her sales = bestMonthRevenue(her); the same figures the supervisor sees on her screen', rep.sales === rTruth.amount && rep.sales === mSup.sales && rep.achievement === mSup.achievement && rep.remaining === mSup.remaining && rep.perday === mSup.perday && rep.forecast === mSup.forecast,
     { rep: [rep.sales, rep.achievement, rep.remaining, rep.perday, rep.forecast], sup: [mSup.sales, mSup.achievement, mSup.remaining, mSup.perday, mSup.forecast] });
+  check('Rep: her growth against the same days last month = the supervisor\'s view of her', rep.cmp === mSup.cmp && rep.cmp != null, { rep: rep.cmp, sup: mSup.cmp });
   check('Rep: visits a day, this week, doctors, new accounts = kpiScorecard for her — and the same as on the supervisor\'s view of her', rep.perdayVisits === mSup.perdayVisits && rep.weekVisits === mSup.weekVisits && rep.doctors === mSup.doctors && rep.accounts === mSup.accounts && rep.perdayVisits === kv(mTruth.visits, /^([\d.]+) a day/),
     { rep: [rep.perdayVisits, rep.weekVisits, rep.doctors, rep.accounts], sup: [mSup.perdayVisits, mSup.weekVisits, mSup.doctors, mSup.accounts] });
   const kpiRow = await ev(() => { const r = document.querySelector('#msRows [data-row="kpi"]'); return r ? r.innerText.replace(/\s+/g, ' ') : ''; });
@@ -402,6 +467,32 @@ function seed(cloud, opts){
   const noneM = await shown();
   check('No sales file: a person\'s screen says it too — a dash for remaining, per day and forecast, no achievement made up', noneM.sales === null && noneM.achievement === undefined && noneM.remaining === null && noneM.perday === null && noneM.forecast === null && /No ERP sales file for this month yet/.test(noneM.view),
     { sales: noneM.sales, ach: noneM.achievement, rest: [noneM.remaining, noneM.perday, noneM.forecast] });
+
+  // ======================= a person the month's files do not hold =======================
+  seed(cloud, { renovaNotInFiles: true });
+  await boot(G, 'supervisor', 1440, 900);
+  const nm = await shown();
+  const nmT = await ev(() => {
+    const d = digestData(), D = UMCore.execDashboard(d, { rep: 'all', reps: REPS.slice() }), bm = r => bestMonthRevenue(r);
+    return { renova: bm('Renova'), sum: Math.round((bm('Mariam').amount + bm('Dr. Ghaith').amount) * 100) / 100, tt: teamTargetNow(),
+      D: { sales: D.sales.amount, missing: D.sales.missing, pct: D.achievement.pct, notMeasured: D.achievement.notMeasured, target: D.achievement.target, achieved: D.achievement.achieved,
+        remaining: D.remaining, perDay: D.perDay.amount, forecast: D.forecast.amount, people: D.forecast.people } };
+  });
+  check('A person the files do not hold (no line of Renova\'s this month): the team figure is the others\' sum, and achievement, remaining, per day and forecast are execDashboard\'s — she is named, never counted as a 0',
+    nmT.renova.basis === 'erp' && nmT.renova.asOf === null && nm.sales === nmT.sum && nm.sales === nmT.D.sales && nm.achievement === nmT.D.pct && nm.remaining === nmT.D.remaining && nm.perday === nmT.D.perDay && nm.forecast === nmT.D.forecast
+      && nmT.D.notMeasured.join() === 'Renova' && nmT.D.missing.map(x => x.rep + ':' + x.why).join() === 'Renova:notinfiles' && !nmT.D.people.includes('Renova')
+      && /Renova: a target but no sales figure in the files, so not in the percentage\./.test(nm.view),
+    { shown: [nm.sales, nm.achievement, nm.remaining, nm.perday, nm.forecast], truth: nmT });
+  check('… the sales card adds up on its own: "of" the target its percentage divides (the people with a sales figure, not the team\'s 21000), remaining = that target − the figure',
+    nm.ofTarget === nmT.D.target && nmT.D.target === 13000 && nmT.tt.goal === 21000 && /of the target of the people with a sales figure 13000\.00 KD/.test(nm.view) && !/of the team target/.test(nm.view)
+      && nmT.D.remaining === Math.round((nmT.D.target - nmT.D.achieved) * 100) / 100 && nmT.D.achieved === nm.sales, { ofTarget: nm.ofTarget, D: nmT.D, tt: nmT.tt });
+  check('… her row on the target card keeps the Today card\'s words (no figure yet, and why); the Team line stays teamTargetNow, as on every other screen',
+    /Renova 0% 0\.00 KD of 8000\.00 KD · no figure yet/.test(nm.target) && /no invoice of this rep in the ERP files uploaded/.test(nm.target) && new RegExp('Team ' + nmT.tt.pct + '%').test(nm.target),
+    nm.target.slice(0, 700));
+  await act(() => msOpenPerson('Renova')); await ready();
+  const nmR = await shown();
+  check('… and her own screen shows a dash with the words, never a made-up 0', nmR.sales === null && /The sales files of this month hold no line of this person yet/.test(nmR.view) && nmR.remaining === null && nmR.perday === null && nmR.forecast === null,
+    { sales: nmR.sales, rest: [nmR.remaining, nmR.perday, nmR.forecast] });
 
   check('no page errors', errors.length === 0, errors.slice(0, 6));
   console.log(results.join('\n'));

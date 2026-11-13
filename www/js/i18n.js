@@ -1893,6 +1893,7 @@
     'My sales this month': 'مبيعاتي هذا الشهر',
     'Sales this month': 'المبيعات هذا الشهر',
     'of the team target': 'من مستهدف الفريق',
+    'of the target of the people with a sales figure': 'من مستهدف من لديهم رقم مبيعات',   // someone with a target is not in the sales files yet
     'of my target': 'من مستهدفي',
     'of the target': 'من المستهدف',
     'No sales target on file for this month': 'لا يوجد مستهدف مبيعات محفوظ لهذا الشهر',
@@ -1986,6 +1987,10 @@
     'No sales file covers any month of this year': 'لا يوجد ملف مبيعات يغطي أي شهر من هذه السنة',
     'from zero against the same days last month': 'من الصفر مقارنة بنفس الأيام من الشهر الماضي',
     'vs the same days last month': 'عن نفس الأيام من الشهر الماضي',
+    'No sales file for': 'لا يوجد ملف مبيعات لشهر',            // + the month: «لا يوجد ملف مبيعات لشهر أكتوبر 2025»
+    'sold in all': 'المباع كله',                               // a brand: what everyone sold of it, people with no target for it included
+    'target': 'المستهدف',
+    'no sales figure for the people with its target': 'لا يوجد رقم مبيعات لمن لديهم مستهدف لهذا البراند',
     'days 1 to': 'الأيام من 1 إلى',
     'Brands — sold against the brand target': 'البراندات — المباع مقابل مستهدف البراند',
     'My brands — sold against my brand target': 'براندتي — المباع مقابل مستهدف البراند',
@@ -2344,6 +2349,8 @@
     // the figures under the sales card, the design's short words: «102% من الهدف», «15 يومًا باقية» (the per-day figure exists only while a working day is left)
     [/^(\d+)% of target$/, function (m) { return m[1] + '% من الهدف'; }],
     [/^(\d+) days? left$/, function (m) { return countAr(m[1], ['يوم واحد باقٍ', 'يومان باقيان', 'أيام باقية', 'يومًا باقية']); }],
+    // what a comparison is made with, in the design's few words: «7247.31 د.ك · الأيام 1–8 سبتمبر» (the month follows, in Arabic)
+    [/^days 1–(\d+)$/, function (m) { return 'الأيام 1–' + m[1]; }],
     [/^(\d+) field visits?$/, function (m) { return countAr(m[1], ['زيارة ميدانية واحدة', 'زيارتان ميدانيتان', 'زيارات ميدانية', 'زيارة ميدانية']); }],
     [/^(\d+) orders?$/, function (m) { return countAr(m[1], ['طلبية واحدة', 'طلبيتان', 'طلبيات', 'طلبية']); }],
     [/^(\d+) orders? logged in the app$/, function (m) { return countAr(m[1], ['طلبية واحدة', 'طلبيتان', 'طلبيات', 'طلبية']) + ' مسجّلة في التطبيق'; }],
