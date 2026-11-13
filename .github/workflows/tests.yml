@@ -18,9 +18,11 @@ jobs:
 
   e2e:
     # The browser harnesses: every screen and role, the ERP upload and month
-    # rollover, the audit regressions, the order form. ~10 minutes.
+    # rollover, the audit regressions, the order form — on the source, then on
+    # the built site. About 14 minutes each (28 min on 13 Nov, before
+    # sync-core.e2e.js added about 1.5 min to each pass), so the limit is 45.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

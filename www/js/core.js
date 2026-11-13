@@ -1527,6 +1527,100 @@
     });
     return out;
   }
+  // Recycle bin, three ways (v123): against the bin as the cloud last showed
+  // it to this phone (base), an entry added here or added on another phone is
+  // kept, and one removed here or on another phone (restored, purged) stays
+  // removed — every phone writes the whole bin on every delete, and the later
+  // writer used to drop the other's entry (its undo gone for good). An entry
+  // is its id + deletion time; one id deleted twice keeps the newest. No base
+  // (the bin was never read here) → the union above.
+  function mergeRecycleBin3(local, cloud, base){
+    if(!base || typeof base !== 'object') return mergeRecycleBin(cloud, local);
+    var out = {};
+    var ek = function(x){ return x.id + '@' + (x._deletedAt || 0); };
+    ['clinics', 'products', 'visits'].forEach(function(k){
+      var has = function(o){ var s = Object.create(null); ((o || {})[k] || []).forEach(function(x){ if(x && x.id != null) s[ek(x)] = 1; }); return s; };
+      var inB = has(base), inL = has(local), inC = has(cloud);
+      var list = [], at = Object.create(null);
+      var put = function(x){
+        var i = at[x.id];
+        if(i == null){ at[x.id] = list.length; list.push(x); }
+        else if((x._deletedAt || 0) > (list[i]._deletedAt || 0)) list[i] = x;
+      };
+      ((local || {})[k] || []).forEach(function(x){ if(x && x.id != null && !(inB[ek(x)] && !inC[ek(x)])) put(x); });   // removed on another phone: stays removed
+      ((cloud || {})[k] || []).forEach(function(x){ if(x && x.id != null && !(inB[ek(x)] && !inL[ek(x)])) put(x); });   // removed here: stays removed
+      out[k] = list;
+    });
+    return out;
+  }
+  // A document of independent entries keyed by name (the ERP notes, v123),
+  // three ways: an entry this phone changed or removed since the base wins;
+  // every other takes the cloud's. No base → this phone's entries win and the
+  // cloud's fill in. Keys are data (ERP document numbers, product names):
+  // set as own properties, never through the prototype.
+  function mergeKeyed3(local, cloud, base){
+    var L = local || {}, C = cloud || {}, B = (base && typeof base === 'object') ? base : null;
+    var own = function(o, k){ return Object.prototype.hasOwnProperty.call(o, k); };
+    var out = {}, seen = Object.create(null), keys = [];
+    [L, C, B || {}].forEach(function(o){ Object.keys(o).forEach(function(k){ if(!seen[k]){ seen[k] = 1; keys.push(k); } }); });
+    keys.forEach(function(k){
+      var v = B ? (sameValue(own(L, k) ? L[k] : undefined, own(B, k) ? B[k] : undefined) ? (own(C, k) ? C[k] : undefined) : (own(L, k) ? L[k] : undefined))
+                : (own(L, k) ? L[k] : (own(C, k) ? C[k] : undefined));
+      if(v !== undefined) Object.defineProperty(out, k, { value: v, enumerable: true, writable: true, configurable: true });
+    });
+    return out;
+  }
+  // A short, stable fingerprint of a record's stored form (53-bit cyrb53, as
+  // text). While visits wait in the queue a phone keeps only id → fingerprint
+  // of what the cloud last confirmed (a full copy would double what the visits
+  // take on the phone): a record whose fingerprint is unchanged was not edited
+  // here, so the cloud's copy of it is taken (v123).
+  function recordHash(x){
+    var s = JSON.stringify(x === undefined ? null : x), h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for(var i = 0; i < s.length; i++){ var ch = s.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  }
+  // "Restore from this phone's copy" (v123): what a clinic list this phone
+  // kept would change, clinic by clinic — the restore applies only the rows
+  // someone ticks (it used to put the old copy back whole: owners, handovers
+  // and notes changed since were undone, and clinics deleted since came back).
+  // → { missing: [{id, clinic, deleted: 'bin'|'log'|null}], changed: [{id,
+  // name, fields: [{field, now, copy}], doctors: [doctor on the copy only]}] }.
+  // The visit-derived dates are not compared (they follow the visits).
+  // opts: binIds, tombIds (clinics deleted in the app), doctorTombs ('clinicId|doctorId').
+  var COPY_SKIP = { id: 1, doctors: 1, lastVisit: 1, nextFollowUp: 1 };
+  function deviceCopyDiff(live, copy, opts){
+    opts = opts || {};
+    var bin = Object.create(null), tomb = Object.create(null), dt = Object.create(null);
+    (opts.binIds || []).forEach(function(id){ bin[id] = 1; });
+    (opts.tombIds || []).forEach(function(id){ tomb[id] = 1; });
+    (opts.doctorTombs || []).forEach(function(k){ dt[k] = 1; });
+    var now = Object.create(null);
+    (live || []).forEach(function(c){ if(c && c.id != null) now[c.id] = c; });
+    var missing = [], changed = [], seen = Object.create(null);
+    (copy || []).forEach(function(c){
+      if(!c || c.id == null || seen[c.id]) return;
+      seen[c.id] = 1;
+      var cur = now[c.id];
+      if(!cur){ missing.push({ id: c.id, clinic: c, deleted: bin[c.id] ? 'bin' : (tomb[c.id] ? 'log' : null) }); return; }
+      var fields = [], ks = Object.create(null);
+      Object.keys(c).concat(Object.keys(cur)).forEach(function(k){ ks[k] = 1; });
+      Object.keys(ks).forEach(function(k){
+        if(COPY_SKIP[k]) return;
+        var a = cur[k], b = c[k];
+        var empty = function(v){ return v == null || v === '' || v === false; };
+        if(empty(a) && empty(b)) return;   // '', null, false and a missing field read the same on screen
+        if(!sameValue(a, b)) fields.push({ field: k, now: a === undefined ? null : a, copy: b === undefined ? null : b });
+      });
+      var have = Object.create(null);
+      (cur.doctors || []).forEach(function(d){ if(d && d.id != null) have[d.id] = 1; });
+      var docs = (c.doctors || []).filter(function(d){ return d && d.id != null && d.name && !have[d.id] && !dt[c.id + '|' + d.id]; });
+      if(fields.length || docs.length) changed.push({ id: c.id, name: cur.name || c.name || c.id, fields: fields, doctors: docs });
+    });
+    return { missing: missing, changed: changed };
+  }
   // ---- Month achievement, computed from plain data ----
   // The SAME code serves the Today card, the reports and the daily e-mail, so
   // every figure the team sees is one figure. `data` = { today, targets,
@@ -4791,6 +4885,22 @@
     return dedupeDoctors(merged);
   }
 
+  // A visit's photos when both phones changed them (v123), three ways by id: a
+  // photo added on either side is kept, one removed on either side stays
+  // removed; a photo on both sides keeps this phone's entry (its upload mark
+  // is moved forward from the cloud's afterwards — settlePhotoMarks).
+  function mergePhotos3(local, cloud, base){
+    var B = Object.create(null), L = Object.create(null);
+    (base || []).forEach(function(p){ if(p && p.id != null) B[p.id] = 1; });
+    (local || []).forEach(function(p){ if(p && p.id != null) L[p.id] = 1; });
+    var inC = Object.create(null);
+    (cloud || []).forEach(function(p){ if(p && p.id != null) inC[p.id] = 1; });
+    var out = [];
+    (local || []).forEach(function(p){ if(p && (p.id == null || !(B[p.id] && !inC[p.id]))) out.push(p); });
+    (cloud || []).forEach(function(p){ if(p && p.id != null && !L[p.id] && !B[p.id]) out.push(p); });
+    return out;
+  }
+
   // ---- ERP sales storage split ----
   // Every uploaded period's rows used to sit inside ONE cloud document. A
   // month of invoice lines is ~250 KB, so that document grew past what a
@@ -6346,7 +6456,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, sameFirstName,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,

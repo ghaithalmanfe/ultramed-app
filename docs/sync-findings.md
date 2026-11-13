@@ -46,3 +46,20 @@ Line numbers are as on this branch (as of 3014d6c; F4/F5 added since).
 | R6 | The raced refresh wrote memory (with an edit still on its way) into the phone's copy; with R1 that copy became the base after a reopen without connection, so the edit looked like the cloud's and was dropped. | The raced refresh keeps the confirmed base beside that copy (`um_base:<key>`); a start without a read takes it first (R1 check). |
 | R7 | Two overlapping day-plan saves: the second merged against the base the first had moved (the R3 overlap, for day plans). | A day-plan save merges against the base its list was taken with (D1). |
 
+
+## v123 sync core (audit items 2 and 6) — fixed, harness `tests/e2e/sync-core.e2e.js` (port 8286)
+
+Each check failed on v122 (`8670308`) and passes here; A1 and A2 are the audit's probes `race-products.js` and `race-restore.js`.
+
+| # | Scenario | Fix | Checks |
+|---|----------|-----|--------|
+| P9 | Two refreshes at once (a slow start and the tick): each emptied the read flags the other relied on — a rep's phone with a timed-out catalog read wrote the 133-item factory catalog; on the supervisor's phone the one-time wipe restore wrote a 20-clinic backup over 30 live clinics and cut this month's visits. | One `loadAll` at a time; each run's own flags, adopted only for the lists it puts on screen; the three one-time repairs deleted; factory defaults from the supervisor's phone only; the wipe banner reads backups once a day, only for a list that had 15+. | A1–A4, A8, A9 |
+| ARCH-01b | A save of a whole document made while a refresh read skipped its stale-copy guard. | Flags are never emptied at a refresh's start; and the compare-and-set below. | A5 |
+| A2-wake | Nothing refreshed when the app came back on screen. | `visibilitychange` → the tick's own path, once. | A7 |
+| P4 | Whole documents were plain sets: last writer wins, and a set the app gave up on landed later over a newer one. The bin lost another phone's entry; a restore from the bin was put back. | One compare-and-set per save, in a transaction, against the text the screen's copy came from ("Changed on another device"); the bin and the ERP notes merge three ways. | A6, B4, B5, B6 |
+| P1 | Visits merged with this phone's copy winning: a correction made on another phone was undone by an offline upload. | Three-way per document (field by field; photos three ways), fingerprints kept on the phone while queued; the merge's cloud values put on screen. | B3 (a–c) |
+| DP | Day plans had no base after an offline start or a reopen with a queued plan. | Base kept on the phone while queued; the phone's copy is the base after an offline start. | B2 |
+| P7 | The delete log forgot after 7 days. | 120 days (doctors for good). | B1 |
+| S4-device | "Restore from this phone's copy" put the old copy back whole. | Per-clinic differences; only ticked rows apply. | B7 |
+
+Still open: P5 (size guards on the merge lists), P6 (stale code after a release), P8 (the e-mail's no-overlap rule); the recycle bin is still not queued offline (a delete with no connection is refused, as before).

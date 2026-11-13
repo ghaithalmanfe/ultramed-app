@@ -384,6 +384,39 @@
     'Restore': 'استرجاع',
     'This backup is from another month: restoring it would erase this month\'s visits. To bring back clinics, use "Find missing clinics".': 'هذه النسخة من شهر آخر: استرجاعها يمحو زيارات هذا الشهر. لإرجاع عيادات استخدم «ابحث عن العيادات الناقصة».',
     'Restore failed — the backup could not be read': 'تعذّر الاسترجاع — لم تُقرأ النسخة الاحتياطية',
+    // whole-day Restore (v123): today's data is kept first; the catalog stays
+    "Restore stopped — today's backup could not be checked. Nothing was changed.": 'توقف الاسترجاع — تعذّر التحقق من نسخة اليوم الاحتياطية. لم يتغير شيء.',
+    "Restore stopped — today's data could not be kept first. Nothing was changed.": 'توقف الاسترجاع — تعذّر حفظ بيانات اليوم أولاً. لم يتغير شيء.',
+    'First, a full backup to this device': 'أولاً: نسخة كاملة على هذا الجهاز',
+    "Before a restore, the data as it is now is kept as today's backup. Today already has its own backup, which that would replace — so first save a full backup to this device: it keeps everything, today's backup too.": 'قبل الاسترجاع تُحفظ البيانات كما هي الآن نسخةً احتياطية لليوم. لليوم نسخته الاحتياطية الخاصة وستحل هذه محلها — لذلك احفظ أولاً نسخة كاملة على هذا الجهاز: تحفظ كل شيء، ومعه نسخة اليوم.',
+    'Then tap Restore again. Nothing was changed.': 'ثم اضغط «استرجاع» مرة أخرى. لم يتغير شيء.',
+    'Full backup first': 'النسخة الكاملة أولاً',
+    // "Restore from this phone's copy" (v123): compared clinic by clinic, only the ticked rows
+    "This phone's copy of the clinic list": 'نسخة هذا الهاتف من قائمة العيادات',
+    "Nothing changes until you tick a row and apply it. A ticked clinic takes this phone's copy for what is listed under it; everything else stays as the list has it now.": 'لا يتغير شيء حتى تعلّم صفاً وتطبّقه. العيادة المعلَّمة تأخذ من نسخة هذا الهاتف ما هو مكتوب تحتها فقط، ويبقى كل ما عداه كما هو في القائمة الآن.',
+    'Not in the list now': 'ليست في القائمة الآن',
+    'Different in the list now': 'مختلفة في القائمة الآن',
+    "Doctors only on this phone's copy:": 'أطباء موجودون في نسخة هذا الهاتف فقط:',
+    'A change of owner, handover or shared account moves the sales the files credit to that clinic.': 'تغيير صاحبة العيادة أو التسليم أو الحساب المشترك ينقل المبيعات التي تحسبها الملفات لتلك العيادة.',
+    'Apply the ticked rows': 'تطبيق الصفوف المعلَّمة',
+    "clinics updated from this phone's copy and saved.": 'عيادة حُدّثت من نسخة هذا الهاتف وحُفظت.',
+    'clinics changed on this device; the save has not reached the cloud yet — it uploads when the connection is back.': 'عيادة تغيّرت على هذا الجهاز؛ الحفظ لم يصل إلى السحابة بعد — يُرفع عند عودة الاتصال.',
+    'Changed on this device — not saved to the cloud yet': 'تغيّر على هذا الجهاز — لم يُحفظ في السحابة بعد',
+    'Profile notes': 'ملاحظات الملف',
+    'Deal type': 'نوع التعامل',
+    'No-sale reason': 'سبب عدم الشراء',
+    'Owner before the handover': 'صاحبة العيادة قبل التسليم',
+    'Owner since': 'صاحبة العيادة منذ',
+    'Shared account': 'حساب مشترك',
+    'Shared since': 'مشترك منذ',
+    'Government': 'حكومي',
+    'New clinic': 'عيادة جديدة',
+    'Added on': 'أُضيفت في',
+    // whole documents saved by compare-and-set (v123)
+    'Changed on another device — reopen the app, then save again': 'تغيّرت على جهاز آخر — أعد فتح التطبيق ثم احفظ من جديد',
+    'Saved — it reached the cloud late': 'حُفظ — وصل إلى السحابة متأخراً',
+    'Not saved — changed on another device. Reopen the app, then save again': 'لم يُحفظ — تغيّر على جهاز آخر. أعد فتح التطبيق ثم احفظ من جديد',
+    'Not saved — this did not load from the cloud. Reopen the app, then save again': 'لم يُحفظ — لم تُحمَّل هذه البيانات من السحابة. أعد فتح التطبيق ثم احفظ من جديد',
     'Restore this clinic': 'استرجاع هذه العيادة',
 
     // ---- Calendar ----
@@ -1914,7 +1947,8 @@
     // the Visit photos gallery when some have no full photo in the cloud yet
     [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها.'; }],
     // whole-day Restore (v121): what it removes, asked first; what it restored
-    [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits and the sales files stay as they are\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات تبقى كما هي.'; }],
+    [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits, the sales files and the product catalog stay as they are\. First, the data as it is now is kept as today's backup\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات وقائمة المنتجات تبقى كما هي. وقبل ذلك تُحفظ البيانات كما هي الآن نسخةً احتياطية لليوم.'; }],
+    [/^(\d+) clinics updated from this phone's copy$/, function (m) { return 'حُدّثت ' + m[1] + ' عيادة من نسخة هذا الهاتف'; }],
     [/^Restored (\S+) — (\d+) clinics, (\d+) visits$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — ' + m[2] + ' عيادة، ' + m[3] + ' زيارة'; }],
     // duplicate SKUs / barcodes card (v121)
     [/^(\d+) products share an item code or a barcode — tap to review$/, function (m) { return 'عدد المنتجات المشتركة في كود صنف أو باركود: ' + m[1] + ' — اضغط للمراجعة'; }],
