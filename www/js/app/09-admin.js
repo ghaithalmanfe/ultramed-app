@@ -652,7 +652,7 @@ async function addToPlan(clinicId){
   dayPlans[today][me] = list;
   await persist('dayPlans');
   closeModal();
-  msPlanChanged();
+  renderPlanList();
   showToast('Added to today\'s plan');
 }
 // Resolve a clinic name for display even after the clinic was deleted: the

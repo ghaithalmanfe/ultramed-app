@@ -747,14 +747,10 @@ function decisionMapBlock(c){
 // Today: a nudge while cards are incomplete or a clinic has no known decision maker.
 function renderDocCardsNudge(){
   const el = document.getElementById('docCardsNudge'); if(!el) return;
-  // a person's screen counts what her phone counts — her clinics and the unassigned ones (canViewClinic for her) —
-  // so the supervisor's view of her shows her own numbers, not the team's
-  const lr = typeof msListRep === 'function' ? msListRep() : null;
-  const pool = clinics.filter(c=>(lr ? (!c.rep || c.rep===lr) : canViewClinic(c)) && c.cls!=='Closed');
+  const pool = clinics.filter(c=>canViewClinic(c) && c.cls!=='Closed');
   const docs = pool.flatMap(c=>c.doctors||[]);
   const inc = docs.filter(d=>UMCore.doctorRecordCompleteness(d).pct<100).length;
   const noDecider = pool.filter(c=>(c.doctors||[]).length && !(c.doctors||[]).some(d=>d.influence==='decider')).length;
-  if(typeof _msNudge !== 'undefined') _msNudge.cards = inc;      // the folded Tasks card names it (msFoldSums)
   if(!inc && !noDecider){ el.innerHTML=''; return; }
   el.innerHTML = `<div class="card clickable" style="border-inline-start:4px solid var(--purple); margin-bottom:6px;" onclick="openDoctorRecords()">
     <div style="font-weight:700; font-size:13.5px;">🧭 Doctor cards</div>

@@ -33,9 +33,6 @@
     --line:#E5E5EA; --muted:#4E5A53;
     --purple:#5E5CE6; --purple-dim:#ECECFE; --purple-ink:#4644C9;
     --radius:16px;
-    /* the main screen (Today, v123): white cards on a light page, the Ultramed green for progress */
-    --page:#F3F6F3; --surface:#FFFFFF; --hair:#E3EAE5; --soft:#86928B;
-    --accent:#1E7A55; --accent-soft:#E4F2EA; --track:#E8EEEA;
   }
   *{box-sizing:border-box;}
   body{margin:0; background:linear-gradient(180deg,#0B3D22 0%,var(--green) 340px,var(--green) 100%) fixed, var(--green); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,sans-serif; -webkit-font-smoothing:antialiased; padding-bottom:150px;}
@@ -422,247 +419,10 @@
   @media (prefers-reduced-motion: reduce){
     *, *::before, *::after{animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important;}
   }
-  /* A wide tablet: keep the phone-width column, but bring the fixed chrome to it (a laptop gets the side rail below) */
-  @media (min-width: 920px) and (max-width: 1023px){
+  /* Desktop: keep the phone-width column, but bring the fixed chrome to it */
+  @media (min-width: 920px){
     nav.bottom{left:50%; right:auto; width:640px; transform:translateX(-50%); border:0.5px solid var(--line); border-bottom:none; border-radius:18px 18px 0 0; overflow:hidden;}
     .ai-fab{inset-inline-end:calc(50% - 320px + 16px);}
-  }
-
-  /* ---- The main screen (Today), v123 — the calm design the owner chose: few blocks, large type, white cards on a light page ----
-     Phone (< 1024 px): the cards stacked, the rest as one-tap rows, the bottom bar with "Log visit" raised in its middle.
-     Laptop (≥ 1024 px): the bottom bar becomes a side rail on every view; Today lays its cards out in rows. */
-  nav.bottom button{font-size:11px; min-height:52px;}
-  body.ar nav.bottom button{font-size:11.5px;}
-  nav.bottom .rail-mark{display:none;}
-  nav.bottom button.nav-log{color:var(--accent); white-space:nowrap;}   /* one line on a 360 px phone too */
-  nav.bottom .nav-c{width:50px; height:50px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; margin-top:-24px; box-shadow:0 6px 16px rgba(30,122,85,.35);}
-  nav.bottom .nav-c svg{width:22px; height:22px;}
-  body.on-today{background:var(--page);}
-  body.on-today .ai-fab{bottom:96px;}
-  #view-today{color:var(--ink);}
-  #view-today .ms-m{white-space:nowrap;}
-  #view-today .ms-stats .ms-m{white-space:normal;}   /* a narrow column: "KD" goes under the number, never over the next column */
-  #view-today [data-notr], #view-today [dir="auto"]{unicode-bidi:isolate;}
-  .ms-head{margin:4px 0 14px;}
-  .ms-hi, .ms-who{display:none;}
-  .ms-hello{font-size:26px; font-weight:700; color:var(--ink); line-height:1.25;}
-  .ms-date{color:var(--muted); font-size:14.5px; margin-top:2px;}
-  .ms-src{display:flex; align-items:flex-start; gap:7px; color:var(--muted); font-size:13px; line-height:1.55; margin-top:2px;}
-  .ms-src .svgi{width:16px; height:16px; color:var(--soft); margin-top:2px;}
-  .ms-src b{font-weight:600; color:var(--ink); white-space:nowrap;}
-  .ms-switch{display:flex; flex-wrap:wrap; background:#E7EEE9; border-radius:14px; padding:4px; gap:2px; margin-top:12px;}
-  .ms-switch:empty{display:none;}
-  .ms-switch button{flex:1 0 auto; min-height:44px; border:none; background:none; border-radius:11px; font:inherit; font-size:14.5px; color:var(--muted); cursor:pointer; padding:6px 8px; white-space:nowrap;}   /* a name is never cut: the buttons share the row and wrap to a second one when they must */
-  .ms-switch button.on{background:var(--surface); color:var(--ink); font-weight:600; box-shadow:0 1px 3px rgba(2,41,23,.08);}
-  .ms-whose{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:10px; font-size:14px; color:var(--muted);}
-  .ms-whose b{color:var(--ink); font-size:16px;}
-  .ms-back{border:none; background:none; color:var(--accent); font:inherit; font-weight:600; font-size:14px; cursor:pointer; min-height:44px; padding:0 4px;}
-  #view-today > #erpNudge .card, #view-today > #visitsNudge .card{background:var(--surface); border:1px solid var(--hair);}
-  .ms-grid{display:flex; flex-direction:column; gap:14px;}
-  .ms-card{background:var(--surface); border:1px solid var(--hair); border-radius:18px; padding:18px; box-shadow:0 1px 2px rgba(2,41,23,.04),0 8px 24px rgba(2,41,23,.04); min-width:0; overflow-wrap:anywhere;}
-  .ms-card:empty{display:none;}
-  .ms-ct{display:flex; justify-content:space-between; align-items:center; gap:10px; color:var(--muted); font-size:14.5px; font-weight:600; margin-bottom:8px; min-height:28px;}
-  .ms-ct .ms-hint{font-weight:500; font-size:13px; text-align:end;}
-  .ms-people > .ms-ct{flex-wrap:wrap;}
-  .ms-ct .ms-act{display:flex; align-items:center; gap:6px;}
-  .ms-ct .chip.small{padding:5px 10px; font-size:12.5px; border-width:1px; position:relative;}
-  .ms-ct .chip.small::after{content:''; position:absolute; inset:-10px -2px;}   /* a 44 px thumb target around the small chip (Months) */
-  .ms-i{width:36px; height:36px; margin:-6px; border:none; background:none; color:var(--soft); border-radius:50%; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; position:relative; flex-shrink:0;}
-  .ms-i::after{content:''; position:absolute; inset:-4px;}
-  .ms-i svg{width:19px; height:19px;}
-  .ms-big{font-size:36px; font-weight:700; line-height:1.15; color:var(--ink); letter-spacing:-.01em;}
-  .ms-big small{font-size:17px; font-weight:500; color:var(--muted); letter-spacing:0;}
-  .ms-big.none{color:var(--muted);}
-  .ms-of{color:var(--muted); font-size:15px; margin-top:2px; line-height:1.5;}
-  .ms-bar{position:relative; height:10px; border-radius:6px; background:var(--track); margin:16px 0 8px;}
-  .ms-bar i{display:block; height:100%; border-radius:6px; background:var(--accent); max-width:100%;}
-  .ms-bar i.warn{background:#D98A1E;}
-  .ms-bar b{position:absolute; top:-5px; bottom:-5px; width:2px; border-radius:2px; background:var(--green); margin-inline-start:-1px;}
-  .ms-bar.thin{height:7px; margin:0;}
-  .ms-bar.thin b{top:-4px; bottom:-4px;}
-  .ms-legend{display:flex; justify-content:space-between; gap:4px 10px; font-size:13.5px; color:var(--muted); flex-wrap:wrap;}
-  .ms-legend strong{color:var(--ink); font-weight:600;}
-  .ms-pill{display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; border-radius:999px; padding:3px 11px; margin-top:10px;}
-  .ms-pill::before{content:''; width:7px; height:7px; border-radius:50%; background:currentColor; flex-shrink:0;}
-  .ms-pill.good{background:var(--accent-soft); color:var(--accent);}
-  .ms-pill.warn{background:var(--amber-dim); color:var(--amber-ink);}
-  .ms-pill.bad{background:var(--coral-dim); color:var(--coral-ink);}
-  .ms-pill.none{background:#EEF1EF; color:var(--muted);}
-  /* the columns take the width their words need (the spare width shared out), so a long amount is not squeezed by a short label beside it */
-  .ms-stats{display:grid; grid-template-columns:repeat(3,auto); margin-top:16px; border-top:1px solid var(--hair); padding-top:14px;}
-  .ms-stats.two{grid-template-columns:repeat(2,auto);}
-  .ms-stats > div{padding-inline-end:10px; min-width:0;}
-  .ms-stats > div + div{border-inline-start:1px solid var(--hair); padding-inline-start:10px;}
-  .ms-stats > div:last-child{padding-inline-end:0;}
-  .ms-stats .ms-l{display:block; font-size:13px; color:var(--muted); line-height:1.4;}
-  .ms-stats b{display:block; font-size:15px; font-weight:600; margin-top:2px; color:var(--ink);}
-  .ms-stats em{display:block; font-style:normal; font-size:12.5px; color:var(--muted); line-height:1.4;}
-  .ms-up{color:var(--sage-ink);} .ms-down{color:var(--coral-ink);}
-  .ms-note{font-size:13px; color:var(--muted); margin-top:10px; line-height:1.55;}
-  .ms-note.warn{color:var(--amber-ink);}
-  .ms-fine{font-size:12.5px; color:var(--muted); margin-top:8px; line-height:1.55;}
-  .ms-items{display:flex; flex-direction:column;}
-  .ms-item{display:flex; align-items:center; gap:12px; padding:10px 0; border:none; border-top:1px solid var(--hair); min-height:48px; cursor:pointer; color:inherit; background:none; width:100%; text-align:start; font:inherit;}
-  .ms-item:first-child{border-top:none; padding-top:2px;}
-  .ms-item.static{cursor:default;}
-  .ms-item .t{flex:1; min-width:0;}
-  .ms-item .t > div:first-child{font-weight:600;}
-  .ms-item .s{font-size:13.5px; color:var(--muted); line-height:1.45;}
-  .ms-item > b{white-space:nowrap; font-weight:600;}
-  .ms-dot{width:9px; height:9px; border-radius:50%; flex-shrink:0; background:var(--accent);}
-  .ms-dot.warn{background:#E08A00;} .ms-dot.bad{background:var(--coral-ink);} .ms-dot.grey{background:#B7C2BB;}
-  .ms-chev{width:18px; height:18px; color:var(--soft); flex-shrink:0;}
-  [dir="rtl"] .ms-chev{transform:scaleX(-1);}
-  .ms-cls{display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:22px; border-radius:7px; background:#EEF3EF; color:var(--green-dark); font-size:12px; font-weight:700; padding:0 6px; flex-shrink:0;}
-  .ms-more{display:inline-flex; align-items:center; gap:4px; color:var(--accent); font:inherit; font-size:14px; font-weight:600; margin-top:6px; cursor:pointer; background:none; border:none; padding:8px 0; min-height:44px;}
-  .ms-person{display:grid; grid-template-columns:78px minmax(0,1fr) auto; align-items:center; gap:4px 14px; padding:12px 0; border-top:1px solid var(--hair);}
-  .ms-person.open{cursor:pointer;}
-  .ms-person:first-of-type{border-top:none; padding-top:2px;}
-  .ms-person .n{font-weight:700; font-size:15.5px; color:var(--ink); min-width:0;}
-  .ms-person .p{font-weight:700; font-size:17px; color:var(--ink); min-width:44px; text-align:end;}
-  .ms-person .p.none{color:var(--muted); font-weight:500; font-size:13.5px;}
-  .ms-person .s, .ms-person .ms-fine{grid-column:2 / 4; font-size:13.5px; color:var(--muted); margin:0; line-height:1.5;}
-  .ms-person .ms-fine{font-size:12.5px;}
-  .ms-person.team{border-top:1px solid var(--hair); margin-top:4px;}
-  .ms-person.team .n{font-weight:800;}
-  .ms-btn{display:flex; align-items:center; justify-content:center; gap:8px; min-height:52px; width:100%; border:none; border-radius:14px; background:var(--accent); color:#fff; font:inherit; font-weight:600; font-size:16px; cursor:pointer; margin-top:14px;}
-  .ms-btn.ghost{background:var(--accent-soft); color:var(--accent);}
-  .ms-btn .svgi{width:20px; height:20px;}
-  .ms-sub{font-size:14px; font-weight:600; color:var(--muted); margin:14px 0 4px;}
-  .ms-next{display:flex; align-items:center; gap:10px; margin-top:2px;}
-  .ms-next .nm{font-size:20px; font-weight:700; color:var(--ink); min-width:0;}
-  .ms-chart svg{width:100%; height:auto; display:block;}
-  .ms-keys{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12.5px; color:var(--muted); font-weight:500;}
-  .ms-keys i{display:inline-block; width:18px; height:0; border-top:2.5px solid var(--accent); vertical-align:middle; margin-inline-end:6px;}
-  .ms-keys i.t{border-top:2px dashed #9AA8A0;}
-  .ms-keys i.f{border-top:2px dotted var(--accent);}
-  .ms-laptop{display:none;}
-  /* the cards whose lists stay on the screen (plan, follow-ups, tasks, visits): on a phone a one-tap row that opens in place */
-  .ms-fold > .ms-ct{margin:0; min-height:48px; cursor:pointer;}
-  .ms-fold > .ms-ct .ms-t{display:flex; flex-direction:column; min-width:0;}
-  .ms-fold > .ms-ct .ms-t > span:first-child{color:var(--ink); font-weight:600; font-size:15px;}
-  .ms-fold > .ms-ct .ms-sum{font-weight:500; font-size:13.5px; color:var(--muted);}
-  .ms-fold > .ms-ct .ms-chev{transform:rotate(90deg);}
-  .ms-fold.open > .ms-ct .ms-chev{transform:rotate(-90deg);}
-  .ms-fold > .ms-body{display:none; margin-top:10px;}
-  .ms-fold.open > .ms-body{display:block;}
-  .ms-fold .link{font-size:13px; color:var(--accent); cursor:pointer; font-weight:700; text-transform:none; letter-spacing:0;}
-  @media (max-width:1023px){ .ms-fold .link{display:inline-flex; align-items:center; justify-content:center; min-height:44px; min-width:44px; padding:0 8px; white-space:nowrap;} }   /* a 44 px thumb target, clear of the fold's own tap, on one line */
-  .ms-body .section-title{color:var(--muted); margin:16px 0 8px; font-size:12.5px;}
-  .ms-body .section-title:first-child{margin-top:0;}
-  /* the lists drawn by the older Today code, quieter inside a white card */
-  #view-today .ms-body .card{background:none; box-shadow:none; border-radius:0; padding:10px 0; margin:0; border-top:1px solid var(--hair);}
-  #view-today .ms-body .card:first-child{border-top:none; padding-top:2px;}
-  #view-today .ms-body .card.dim{opacity:.6;}
-  #view-today .ms-body .empty{color:var(--muted); background:none; padding:14px 6px; font-size:13.5px;}
-  #view-today .ms-body .empty .big{color:var(--ink);}
-  #view-today .ms-body .doc-group-head{color:var(--green-dark); margin:12px 0 2px;}
-  #view-today .ms-body .doc-group-head:first-child{margin-top:0;}
-  #view-today .ms-taskadd{display:flex; align-items:center; gap:8px; border:1px dashed #CBD6CF; border-radius:12px; padding:2px 4px 2px 12px; margin-bottom:6px;}
-  #view-today .ms-taskadd input{border:none; background:none; padding:10px 0; font-size:15px; box-shadow:none; min-height:44px;}
-  #view-today .ms-taskadd .del{color:var(--accent); font-size:24px;}
-  #view-today #docCardsNudge .card, #view-today #occasionsCard .card{background:var(--page); box-shadow:none; border:none; border-radius:12px; padding:12px 14px; margin:10px 0 0;}
-  #view-today .rx-short{color:var(--muted);}
-  .ms-rows .ms-item{min-height:56px;}
-  .ms-rows .ms-item .t > div:first-child{font-size:15px;}
-  .ms-week{font-size:12.5px; color:var(--muted); margin-top:12px; padding-top:10px; border-top:1px solid var(--hair); line-height:1.55;}
-  .ms-week:empty{display:none;}
-  .ms-wait{color:var(--soft); font-size:13.5px;}
-  .ms-how{font-size:13.5px; line-height:1.6;}
-  .ms-how h4{margin:14px 0 4px; font-size:13px; color:var(--muted); font-weight:700;}
-  .ms-how .kv{display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--line);}
-  .ms-how .kv:last-child{border-bottom:none;}
-  .ms-how .kv > span:last-child{text-align:end; font-weight:600;}
-  @media (max-width:1023px){
-    /* the dark band spans the whole width (box-shadow + clip-path: no layout, no overflow), the words stay in the column */
-    body.on-today header.top{background:var(--green); box-shadow:0 0 0 100vmax var(--green); clip-path:inset(0 -100vmax); margin:-20px 0 0; padding:calc(16px + env(safe-area-inset-top)) 0 18px; align-items:center;}
-    body.on-today header.top > div:first-child{display:flex; flex-direction:column;}
-    body.on-today header.top .logo{display:none;}
-    body.on-today header.top h1{order:-1; font-size:20px; margin:0; font-family:inherit;}
-    body.on-today header.top .eyebrow{margin-top:2px !important; font-size:13.5px; letter-spacing:0; text-transform:none; color:#BFD9C9; font-weight:500;}
-    body.on-today header.top .stamp{background:#145234; color:#fff; width:44px; height:44px;}
-    .ms-head{margin-top:14px;}
-    .ms-grid > .ms-card, .ms-grid > #targetCard{order:20;}
-    .ms-vteam > #msSales{order:1;} .ms-vteam > #msNext{order:2;} .ms-vteam > #targetCard{order:3;} .ms-vteam > #msWork{order:4;}
-    .ms-vteam > #msPlanCard{order:5;} .ms-vteam > #msDueCard{order:6;} .ms-vteam > #msTaskCard{order:7;} .ms-vteam > #msRecentCard{order:8;} .ms-vteam > #msRows{order:9;}
-    .ms-vperson > #targetCard{order:1;} .ms-vperson > #msWork{order:2;} .ms-vperson > #msNext{order:3;}
-    .ms-vperson > #msRows{order:4;} .ms-vperson > #msPlanCard{order:5;} .ms-vperson > #msDueCard{order:6;} .ms-vperson > #msTaskCard{order:7;} .ms-vperson > #msRecentCard{order:8;}
-    .ms-vperson > #msSales{display:none;}
-    /* Today's cards scroll under the bar: the bar stays solid so its words read clearly */
-    body.on-today nav.bottom{background:rgba(255,255,255,.97);}
-  }
-  @media (max-width:420px){
-    .ms-stats b{font-size:14px;}   /* a 390 px phone keeps a team amount and its "KD" on one line */
-  }
-  @media (max-width:380px){
-    .ms-big{font-size:32px;}
-    .ms-stats b{font-size:14px;}
-    .ms-person{grid-template-columns:60px minmax(0,1fr) auto; gap:4px 10px;}
-  }
-  @media (min-width:1024px){
-    body{padding-bottom:40px;}
-    nav.bottom{top:0; bottom:0; left:auto; right:auto; inset-inline-start:0; width:96px; height:100vh; flex-direction:column; align-items:center; justify-content:flex-start; gap:6px; padding:22px 0; background:var(--green); border:none; -webkit-backdrop-filter:none; backdrop-filter:none; overflow-y:auto;}
-    nav.bottom .rail-mark{display:flex; order:-3; width:44px; height:44px; border-radius:14px; background:#0F4A2B; color:#fff; align-items:center; justify-content:center; font-weight:700; font-size:15px; margin-bottom:14px; flex-shrink:0;}
-    nav.bottom button{flex:none; width:76px; min-height:0; padding:10px 0 8px; border-radius:14px; color:#BFD9C9; font-size:12.5px; font-weight:500; gap:4px;}
-    body.ar nav.bottom button{font-size:12.5px;}
-    nav.bottom button:hover{background:#0E3A24;}
-    nav.bottom button.active{background:#123F28; color:#fff;}
-    nav.bottom svg{width:22px; height:22px;}
-    nav.bottom button.nav-log{order:-2; background:var(--green-soft); color:var(--green); font-weight:600; margin-bottom:10px;}
-    nav.bottom button.nav-log.active{background:#C4E4CE;}
-    nav.bottom .nav-c{width:auto; height:auto; background:none; color:inherit; margin:0; box-shadow:none;}
-    nav.bottom .navdot{top:7px; inset-inline-end:20px;}
-    .ai-fab, body.on-today .ai-fab{bottom:24px; inset-inline-end:24px;}
-    #app.wrap{max-width:none; margin:0; padding:20px 0 8px; padding-inline-start:96px;}
-    #app > header.top, #app > .view{max-width:640px; margin-inline:auto; padding-inline:18px;}
-    body.on-today #app > header.top{display:none;}
-    #app > #view-today{max-width:1420px; padding:12px 40px 24px;}
-    .ms-head{display:grid; grid-template-columns:minmax(0,1fr) auto auto; grid-template-areas:"hi switch who" "src switch who"; column-gap:18px; row-gap:2px; align-items:center; margin:4px 0 22px;}
-    .ms-hi{display:block; grid-area:hi;}
-    .ms-src{grid-area:src; margin-top:6px;}
-    .ms-switch{grid-area:switch; margin:0; display:inline-flex;}
-    .ms-switch button{flex:none; padding:8px 16px; min-height:40px;}
-    .ms-who{display:flex; grid-area:who; align-items:center; gap:12px;}
-    .ms-kpi{display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--hair); border-radius:16px; padding:6px 8px 6px 14px; cursor:pointer; font:inherit; color:var(--muted); font-size:13.5px; min-height:44px;}
-    [dir="rtl"] .ms-kpi{padding:6px 14px 6px 8px;}
-    .ms-kpi b{font-size:22px; font-weight:700; color:var(--ink);}
-    .ms-av{width:44px; height:44px; border-radius:50%; background:var(--green-dark); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px; cursor:pointer; position:relative; border:none; font-family:inherit;}
-    .ms-av .dot{border-color:var(--page);}
-    .ms-whose{grid-column:1 / -1; margin-top:12px;}
-    .ms-grid{display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:24px; align-items:start;}
-    .ms-grid > *{grid-column:span 4;}
-    .ms-vteam > #msSales{grid-column:span 4; grid-row:1;} .ms-vteam > #msWork{grid-row:1;} .ms-vteam > #msNext{grid-row:1;}
-    .ms-vteam > #targetCard{grid-column:span 5; grid-row:2;} .ms-vteam > #msChart{grid-column:span 7; grid-row:2;}
-    .ms-vperson > #msSales{display:none;}
-    .ms-vperson > #targetCard{grid-row:1;} .ms-vperson > #msWork{grid-row:1;} .ms-vperson > #msNext{grid-row:1;}
-    .ms-vperson > #msBrands{grid-column:span 5; grid-row:2;} .ms-vperson > #msChart{grid-column:span 7; grid-row:2;}
-    .ms-grid > .ms-card, .ms-grid > #targetCard > .ms-card{height:100%;}
-    .ms-card{padding:22px 24px; border-radius:20px;}
-    .ms-big{font-size:42px;}
-    .ms-person{grid-template-columns:96px minmax(0,1fr) auto;}
-    .ms-laptop{display:block;}
-    .ms-laptop:empty{display:none;}
-    .ms-rows{display:none !important;}
-    .ms-fold > .ms-ct{cursor:default; min-height:28px;}
-    .ms-fold > .ms-ct .ms-sum, .ms-fold > .ms-ct > .ms-chev{display:none;}
-    .ms-fold > .ms-ct .ms-t > span:first-child{color:var(--muted); font-size:14.5px;}
-    .ms-fold > .ms-body{display:block !important;}
-  }
-  /* a narrow laptop (up to 1365 px): two cards a row — three would squeeze the team's amounts — the chart across */
-  @media (min-width:1024px) and (max-width:1365px){
-    #app > #view-today{padding:12px 24px 24px;}
-    .ms-grid{gap:20px;}
-    .ms-grid > *{grid-column:span 6;}
-    .ms-vteam > #msSales, .ms-vteam > #msWork{grid-column:span 6; grid-row:1;}
-    .ms-vteam > #msNext, .ms-vteam > #targetCard{grid-column:span 6; grid-row:2;}
-    .ms-vteam > #msChart{grid-column:span 12; grid-row:3;}
-    .ms-vperson > #targetCard, .ms-vperson > #msWork{grid-column:span 6; grid-row:1;}
-    .ms-vperson > #msNext, .ms-vperson > #msBrands{grid-column:span 6; grid-row:2;}
-    .ms-vperson > #msChart{grid-column:span 12; grid-row:3;}
-  }
-  /* a laptop tall enough for it: the assistant's button sits at the foot of the side rail, never over a card */
-  @media (min-width:1024px) and (min-height:640px){
-    .ai-fab, body.on-today .ai-fab{inset-inline-start:22px; inset-inline-end:auto; bottom:22px; z-index:11; background:#123F28; box-shadow:none; border:1px solid rgba(255,255,255,.16);}
   }
 
   /* Professional report */
@@ -763,8 +523,6 @@
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/></symbol>
-  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
-  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
 </svg>
 
 <div class="gate" id="gate">
@@ -801,57 +559,34 @@
 
   <!-- TODAY -->
   <div class="view active" id="view-today">
-    <!-- The main screen (v123): where I stand against my sales target and my visit target, and what I do next.
-         A rep sees only her own; the supervisor sees the team and opens any person's own screen.
-         Cards are drawn by renderToday (05-today-calendar.js); the shells below keep the inputs that must survive a redraw. -->
-    <div class="ms-head" id="msHead">
-      <div class="ms-hi"><div class="ms-hello" id="msHello"></div><div class="ms-date" id="msDate"></div></div>
-      <div class="ms-src" id="msSource"></div>
-      <div class="ms-switch" id="msSwitch" role="tablist"></div>
-      <div class="ms-who" id="msWho"></div>
-      <div class="ms-whose" id="msWhose" style="display:none;"></div>
-    </div>
+    <!-- The Today screen answers one question: what do I do today? -->
+    <div class="hero" id="heroCard"></div>
     <div id="erpNudge" style="display:none;"></div>
     <div id="visitsNudge" style="display:none;"></div>
-    <div class="ms-grid ms-vteam" id="msGrid">
-      <section class="ms-card" id="msSales"></section>
-      <div id="targetCard"></div>
-      <section class="ms-card" id="msWork"></section>
-      <section class="ms-card" id="msNext"></section>
-      <section class="ms-card ms-laptop ms-chart" id="msChart"></section>
-      <section class="ms-card ms-laptop" id="msBrands"></section>
-      <section class="ms-card ms-laptop" id="msCust"></section>
-      <section class="ms-card ms-rows" id="msRows"></section>
+    <div id="occasionsCard"></div>
+    <div id="targetCard"></div>
+    <div id="docCardsNudge"></div>
 
-      <section class="ms-card ms-fold" id="msPlanCard">
-        <div class="ms-ct" onclick="msFold('msPlanCard')"><span class="ms-t"><span>Today's plan</span><span class="ms-sum" id="msPlanSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); openPlanDay()" id="planLink">Plan today</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
-        <div class="ms-body">
-          <div id="planList"></div>
-          <div class="section-title" id="missedTitle" style="display:none;">Missed planned visits</div>
-          <div id="missedList"></div>
-        </div>
-      </section>
-      <section class="ms-card ms-fold" id="msDueCard">
-        <div class="ms-ct" onclick="msFold('msDueCard')"><span class="ms-t"><span>Follow-ups due</span><span class="ms-sum" id="msDueSum"></span></span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></div>
-        <div class="ms-body"><div id="dueList"></div></div>
-      </section>
-      <section class="ms-card ms-fold" id="msTaskCard">
-        <div class="ms-ct" onclick="msFold('msTaskCard')"><span class="ms-t"><span>Tasks</span><span class="ms-sum" id="msTaskSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); openEmailImport()">Import from email</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
-        <div class="ms-body">
-          <div class="ms-taskadd">
-            <input type="text" id="newTaskInput" dir="auto" placeholder="Add a quick task...">
-            <button class="del" onclick="addTask()" aria-label="Add task">+</button>
-          </div>
-          <div id="taskList"></div>
-          <div id="docCardsNudge"></div>
-          <div id="occasionsCard"></div>
-        </div>
-      </section>
-      <section class="ms-card ms-fold" id="msRecentCard">
-        <div class="ms-ct" onclick="msFold('msRecentCard')"><span class="ms-t"><span>Recent visits</span><span class="ms-sum" id="msRecentSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); switchView('log')">See all</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
-        <div class="ms-body"><div id="recentVisits"></div></div>
-      </section>
+    <div class="section-title">Today's plan <span><span class="link" onclick="openPlanDay()" id="planLink">Plan today</span></span></div>
+    <div id="planList"></div>
+
+    <div class="section-title" id="missedTitle" style="display:none;">Missed planned visits</div>
+    <div id="missedList"></div>
+    <div class="section-title">Follow-ups due</div>
+    <div id="dueList"></div>
+
+    <div class="section-title">Tasks <span class="link" onclick="openEmailImport()">Import from email</span></div>
+    <div class="card">
+      <div class="row-between" style="margin-bottom:10px;">
+        <input type="text" id="newTaskInput" dir="auto" placeholder="Add a quick task..." style="flex:1; border:none; padding:4px 0; font-size:14.5px;">
+        <button class="del" style="color:var(--teal); font-size:22px;" onclick="addTask()" aria-label="Add task">+</button>
+      </div>
+      <div id="taskList"></div>
     </div>
+
+    <div class="section-title">Recent visits <span class="link" onclick="switchView('log')">See all</span></div>
+    <div id="recentVisits"></div>
+
   </div>
 
   <!-- LOG VISIT -->
@@ -1161,20 +896,18 @@
 </div>
 
 <nav class="bottom" id="bottomNav" style="display:none;">
-  <!-- v123: "Log visit" sits in the middle of the phone bar, raised; on a laptop this bar is the side rail and "Log visit" comes first -->
-  <div class="rail-mark" aria-hidden="true" data-notr>UM</div>
   <button class="active" data-view="today" onclick="switchView('today')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M4.9 4.9l2.8 2.8M2 12h4M4.9 19.1l2.8-2.8M12 18v4M16.3 16.3l2.8 2.8M18 12h4M16.3 7.7l2.8-2.8"/><circle cx="12" cy="12" r="4"/></svg>
     <span class="navdot" id="navDotToday"></span>
     Today
   </button>
+  <button data-view="log" onclick="switchView('log')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+    Log visit
+  </button>
   <button data-view="clinics" onclick="switchView('clinics')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M14 9h1M14 13h1M10 21v-5h4v5"/></svg>
     Clinics
-  </button>
-  <button class="nav-log" data-view="log" onclick="switchView('log')">
-    <span class="nav-c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
-    Log visit
   </button>
   <button data-view="calendar" onclick="switchView('calendar')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
