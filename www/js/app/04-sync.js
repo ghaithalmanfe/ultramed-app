@@ -1470,6 +1470,7 @@ function tomb(key, id){
   (_tombsUnpublished[key] = _tombsUnpublished[key] || new Set()).add(id);
   (_tombsLocalAt[key] = _tombsLocalAt[key] || {})[id] = Date.now();
   if(_untombedAt[key]) delete _untombedAt[key][id];
+  if(_untombed[key]) _untombed[key].delete(id); // revived here earlier: this new delete is published all the same (round 4)
   // deleted here and now: an ordinary delete of this phone's, whatever was held or marked for that id (round 3)
   [_tombsHeld, _tombsPending, _tombsAgain].forEach(m => { if(m[key]) m[key].delete(id); });
   try{
@@ -1484,12 +1485,12 @@ function tomb(key, id){
 // Bringing a record back to life must clear its tombstone EVERYWHERE — the
 // in-memory set, this device's durable store, and the team's shared delete
 // log — or the next merge/restart would silently delete it again.
-function untomb(key, id){
+function untomb(key, id, quiet){
   forgetTombHere(key, id);
   // one record brought back by a tap (the recycle bin, a clinic re-created): always written
   // down in the log (round 3), also when this phone knew no delete of it — a phone that holds
   // an old delete an older app cut from the log then lets it go at once, whatever the lists say
-  if(_tombstones[key] && id != null) (_untombedAt[key] = _untombedAt[key] || {})[id] = Date.now();
+  if(_tombstones[key] && id != null){ const m = (_untombedAt[key] = _untombedAt[key] || {}); m[id] = Math.max(m[id] || 0, reviveTime(key, id)); }
   if(_tombstones[key]) _tombstones[key].delete(id);
   if(_tombsUnpublished[key]) _tombsUnpublished[key].delete(id);
   try{
@@ -1498,15 +1499,22 @@ function untomb(key, id){
   }catch(e){}
   if(tombsDoc[key]) delete tombsDoc[key][id];
   _untombed[key] = _untombed[key] || new Set(); _untombed[key].add(id);
-  persistTombs(); // share the revival like we share deletes
+  if(!quiet) persistTombs(); // share the revival like we share deletes
 }
 const _untombed = {}; // revived ids — the shared log must never re-absorb them
 // …and when (v123 review): the log writes revivals down (revived), so another
 // phone that still holds the delete lets it go — never taken for an older app's cut
 const _untombedAt = {};
+// A revival is written down as later than the delete it revives, whatever this phone's clock says
+// (round 4): the delete's time comes from the phone that deleted, and a phone whose clock is behind
+// wrote a revival "before" the delete — the deleting phone then kept its delete and erased the record again.
+function reviveTime(key, id){
+  const held = m => (m[key] && m[key].get(id) || {}).at || 0;
+  return Math.max(Date.now(), (+((tombsDoc[key] || {})[id]) || 0) + 1, (+((_tombsLocalAt[key] || {})[id]) || 0) + 1, held(_tombsHeld) + 1, held(_tombsPending) + 1);
+}
 function forgetTombHere(key, id){
   // written down only for a record that was deleted (a whole-day restore revives every id it holds)
-  if((_tombstones[key] && _tombstones[key].has(id)) || (tombsDoc[key] && tombsDoc[key][id] != null)) (_untombedAt[key] = _untombedAt[key] || {})[id] = Date.now();
+  if((_tombstones[key] && _tombstones[key].has(id)) || (tombsDoc[key] && tombsDoc[key][id] != null)) (_untombedAt[key] = _untombedAt[key] || {})[id] = reviveTime(key, id);
   if(_tombsLocalAt[key]) delete _tombsLocalAt[key][id];
   [_tombsHeld, _tombsPending, _tombsAgain].forEach(m => { if(m[key]) m[key].delete(id); });
 }
@@ -1717,7 +1725,9 @@ function reconcileTombs(cloudDoc){
         if(pend && pend.has(id) && revived[id] != null && +revived[id] >= pend.get(id).at){ unpub.delete(id); forget(k, id); }
         return;
       }
-      if(((tombsDoc[k]||{})[id] || 0) > fresh) return; // a read may predate a write still on its way
+      // a read may predate a write still on its way — unless the log writes down a revival made
+      // since this delete (round 4: a day's plan emptied and planned again within the minute)
+      if(((tombsDoc[k]||{})[id] || 0) > fresh && !(revived[id] != null && +revived[id] >= ((tombsDoc[k]||{})[id] || 0))) return;
       const was = _tombsHeld[k] ? _tombsHeld[k].get(id) : null;
       const at = Math.max((tombsDoc[k]||{})[id] || 0, (_tombsLocalAt[k]||{})[id] || 0, was ? was.at : 0); // how old the delete is
       if(k !== 'doctors' && revived[id] == null && at && at < oldCut && at > keepFrom){
@@ -2134,6 +2144,26 @@ function docBaseFromPhone(key){
 // loaded/saved (_dpBase) win, every other date|rep list takes the cloud's —
 // so a clinic removed from a plan on another device stays removed.
 let _dpBase = null;
+// A day's plan emptied here or elsewhere (date|rep in the delete log) and planned again — moved
+// back, planned again for that date, a follow-up on that day, "Add to today's plan", the
+// supervisor planning it, a rename back: every plan save passes here. The delete stayed in the
+// log, and the next plan save on ANY phone whose copy of that day had not changed erased the day
+// from the cloud and from every screen (round 4). Now the delete leaves the log (untomb: written
+// down as brought back, so a phone that still holds it lets it go) BEFORE the plan is written.
+// Only a day THIS phone changed since its base: a stale copy never brings a deleted day back.
+async function revivePlannedDays(local, baseStr){
+  const t = _tombstones.dayPlans, owed = outboxHas('tombs'); // a revival still waiting in the queue goes before the plan too
+  const base = baseStr ? UMCore.safeParse(baseStr, null) : null;
+  if(!t || !t.size || !local || typeof local !== 'object' || !base || typeof base !== 'object'){ if(owed) await persistTombs(); return; } // (no base: nothing tells what this phone changed)
+  const keys = [];
+  Object.keys(local).forEach(d => Object.keys(local[d] || {}).forEach(r => {
+    const k = d + '|' + r, L = local[d][r], B = base[d] ? base[d][r] : undefined;
+    if(t.has(k) && Array.isArray(L) && L.length && JSON.stringify(L) !== JSON.stringify(B === undefined ? null : B)) keys.push(k);
+  }));
+  if(!keys.length){ if(owed) await persistTombs(); return; }
+  keys.forEach(k => untomb('dayPlans', k, true));
+  await persistTombs(); // one write of the log; not landed → it waits in the queue, and is sent again before the plan
+}
 function mergeDayPlans(local, cloud, baseStr){
   keepWhatCloudHolds('dayPlans', cloud); // (as mergeById: a plan an older app brought back stays)
   const b = baseStr !== undefined ? baseStr : _dpBase; // the base the saved list was taken with (an overlapping save may move _dpBase)
@@ -2215,6 +2245,7 @@ async function persistNow(key, opts){
       return true;
     }
     if(MERGE_KEYS[key] || key === 'dayPlans'){
+      if(key === 'dayPlans') await revivePlannedDays(value, dpBase0);
       // The team's delete log first, so a record another device deleted since
       // our load is dropped from the union instead of being resurrected.
       await refreshTombs();

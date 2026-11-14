@@ -857,6 +857,51 @@ function seedCloud(extra){
     await S.ctx.close(); await R.ctx.close();
   }
 
+  // ===================== R21. a day planned again after its plan was deleted (round 4, finding 3) =====================
+  if(want('R21')){
+    // the delete log's date|rep entry stayed after the day was planned again: the next plan save
+    // on ANY phone (one whose copy of that day had not changed) erased the day from the cloud
+    const MON = '2026-11-16', TUE = '2026-11-17', WED = '2026-11-18';
+    const planOf = (d, r) => ((((parse(cloud.dayPlans) || {})[d] || {})[r]) || []).map(e => e && typeof e === 'object' ? e.id : e);
+    const ways = [
+      ['moved back', MON, A => A.ev(async ({ MON, TUE }) => { const mv = async (f, t) => { const el = document.createElement('input'); el.id = 'rsDate'; el.value = t; document.body.appendChild(el); await saveReschedulePlan(f, 'Mariam', 'c1'); el.remove(); }; await mv(TUE, MON); }, { MON, TUE })],
+      ['planned again for that date', MON, A => A.ev(async MON => { window._dpDate = MON; window._dpRep = 'Mariam'; window._dpMine = [{ id: 'c1', note: '', at: Date.now() }]; await saveDatePlan(); }, MON)],
+      ['a visit\'s follow-up on that day', MON, A => A.ev(async MON => { await scheduleFollowUp(clinics.find(c => c.id === 'c1'), MON, 'Mariam'); }, MON)],
+      ['"Add to today\'s plan"', TODAY, A => A.ev(async () => { await addToPlan('c1'); })],
+      ['the supervisor plans it for her', MON, (A, B) => B.ev(async MON => { window._dpDate = MON; window._dpRep = 'Mariam'; window._dpMine = [{ id: 'c1', note: '', at: Date.now() }]; await saveDatePlan(); }, MON)],
+    ];
+    for(const [way, D, replan] of ways){
+      seedCloud({ dayPlans: JSON.stringify({ [D]: { Mariam: [{ id: 'c1', note: '', at: CLOCK - 3600000 }] } }) });
+      const tag = 'R21-' + ways.findIndex(w => w[0] === way);
+      const A = await mkPhone(tag + 'A'); await A.boot('Mariam', 'rep');
+      const B = await mkPhone(tag + 'B'); await B.boot('Dr. Ghaith', 'supervisor');
+      // the day's only clinic leaves it (moved to Tuesday, or removed): date|Mariam goes in the delete log
+      if(way === 'moved back') await A.ev(async ({ MON, TUE }) => { const el = document.createElement('input'); el.id = 'rsDate'; el.value = TUE; document.body.appendChild(el); await saveReschedulePlan(MON, 'Mariam', 'c1'); el.remove(); }, { MON, TUE });
+      else await A.ev(async D => { await removeMissedPlan(D, 'Mariam', 'c1'); }, D);
+      await A.tick(); await B.tick();
+      const deleted = !planOf(D, 'Mariam').length && !!((parse(cloud.tombs) || {}).dayPlans || {})[D + '|Mariam'];
+      await replan(A, B); await A.tick(); await B.tick();
+      const back = planOf(D, 'Mariam').join();
+      // later, unrelated plan saves: hers for Wednesday, then the supervisor's own day
+      await A.ev(async WED => { window._dpDate = WED; window._dpRep = 'Mariam'; window._dpMine = [{ id: 'c2', note: '', at: Date.now() }]; await saveDatePlan(); }, WED);
+      await B.ev(async WED => { window._dpDate = WED; window._dpRep = 'Dr. Ghaith'; window._dpMine = [{ id: 'c3', note: '', at: Date.now() }]; await saveDatePlan(); }, WED);
+      await A.tick(); await B.tick();
+      const seen = ph => ph.ev(D => ((dayPlans[D] || {}).Mariam || []).map(e => e && typeof e === 'object' ? e.id : e).join(), D);
+      const after = { cloud: planOf(D, 'Mariam').join(), mariam: await seen(A), supervisor: await seen(B), wed: planOf(WED, 'Mariam').join() + '/' + planOf(WED, 'Dr. Ghaith').join() };
+      check(`R21 [${way}] a day planned again after its plan was deleted stays planned: later plan saves on her phone and on the supervisor's (open since before) keep it — in the cloud and on both screens`,
+        deleted && back === 'c1' && after.cloud === 'c1' && after.mariam === 'c1' && after.supervisor === 'c1' && after.wed === 'c2/c3', { deletedFirst: deleted, plannedAgain: back, after, log: ((parse(cloud.tombs) || {}).dayPlans || {})[D + '|Mariam'] || null });
+      // …and the same day emptied again: the new delete reaches the log (a revival on this phone never hides a later delete)
+      if(way === 'moved back'){
+        await A.ev(async ({ MON, TUE }) => { const el = document.createElement('input'); el.id = 'rsDate'; el.value = TUE; document.body.appendChild(el); await saveReschedulePlan(MON, 'Mariam', 'c1'); el.remove(); }, { MON, TUE });
+        await A.tick(); await B.tick();
+        const again = { cloud: planOf(MON, 'Mariam').join(), tue: planOf(TUE, 'Mariam').join(), inLog: !!((parse(cloud.tombs) || {}).dayPlans || {})[MON + '|Mariam'], supervisor: await seen(B) };
+        check('R21 [moved out again] …moved out of Monday once more: Monday is empty in the cloud and on the supervisor\'s screen, and its delete is in the log again',
+          !again.cloud && again.tue === 'c1' && again.inLog && !again.supervisor, again);
+      }
+      await A.ctx.close(); await B.ctx.close();
+    }
+  }
+
   console.log(results.join('\n'));
   const pageErrs = Object.keys(errors).filter(k => errors[k].length).map(k => k + ': ' + errors[k].join(' | ').slice(0, 400));
   check('no page errors', !pageErrs.length, pageErrs);
