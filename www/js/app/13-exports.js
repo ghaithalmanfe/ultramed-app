@@ -1416,6 +1416,12 @@ async function renderBackupsList(){
         : sf.why === 'refused' ? "Today's backup was not saved from this phone: not allowed (ask the supervisor)."
         : "Today's backup was not saved from this phone yet — it tries again within the hour.";
       html = `<div class="card" style="border-inline-start:4px solid var(--coral); font-size:13px; margin-bottom:8px;">⚠️ ${esc(trOf(why) || why)}</div>` + html;
+    } else if(!dates.includes(todayStr()) && typeof snapshotBlockedWhy === 'function' && snapshotBlockedWhy()){
+      // Today has no backup yet and this phone is not taking one (round 3: it said nothing): why, and what ends it
+      const why = snapshotBlockedWhy() === 'queued'
+        ? "Today's backup has not been taken yet, and this phone is not taking it: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team."
+        : "Today's backup has not been taken yet, and this phone is not taking it: not every list on it came from the cloud (a read failed, or a list is shown from this phone's copy). It is taken once everything has loaded from the cloud — or by another phone of the team.";
+      html = `<div class="card" data-snap-held style="border-inline-start:4px solid var(--amber); font-size:13px; margin-bottom:8px;">⚠️ ${esc(trOf(why) || why)}</div>` + html;
     }
     // Copies kept on THIS device — the last resort if every cloud backup is bad.
     const devRows = [['um_mirror_prev:clinics','نسخة محفوظة قبل آخر تغيّر كبير','prev'],

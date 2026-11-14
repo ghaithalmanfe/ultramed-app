@@ -26,6 +26,27 @@
 //      product code change whose catalog save is refused re-points no visit
 // (R5, new clinics from the visit and order forms, is in save-truth.e2e.js
 // section E; R9, the app revision on every document, in tests/rules.)
+// The re-review of 13 Nov (round 3; its probes q10–q19):
+//  R6a rewritten (the phone that holds an old delete publishes it again by
+//      itself once a read of the list from the cloud confirms the record is
+//      gone — no other delete in between), R6d (an older app brings the record
+//      back with two writes; the delete marked "again"), R6e (re-created with
+//      the same id)
+//  R8b the backups screen says why this phone is not taking today's backup
+//  R11 old deletes of records the team brought back never delete them again
+//      (a task, a past month's visit; the first start of v123 and a v123
+//      phone's own old delete); R11c a delete made with no signal survives a
+//      reopen of the app
+//  R12 restoring today's backup after a visit was logged since the full backup;
+//  R13 two restores of earlier days; R14 a change on another phone while the
+//      restore asks or writes
+//  R15 one list that cannot be sent (refused, too large) never stops the
+//      refresh of the others; a refused list is sent again about hourly
+//  R17 a rename whose team-list save landed after the app was closed
+//  R19 the access check gets no answer: true words
+// (re-review 3, new clinics from the call log, the imports and re-create, is
+// save-truth E9–E12; 6, the revision fallback, tests/storage-adapter.test.js;
+// 10, the full backup's delete count, tests/core.test.js.)
 // Several phones share one cloud (in Node); the 20-second refresh is driven by
 // hand; clock pinned to Fri 13 Nov 2026. Port 8288. ONLY=R1,R3 runs a subset.
 const { chromium } = require('playwright');
@@ -655,6 +676,26 @@ function seedCloud(extra){
     check('R8. the day\'s backup is never written from a phone whose read of this month\'s visits failed (it would hold none of them, and nobody on the team could replace it)',
       st.failed && (!snap || (snap.visits || []).length === 12), { visitsReadFailed: st.failed, onScreen: st.onScreen, todaysBackupVisits: snap ? (snap.visits || []).length : null });
     await A.ctx.close();
+    // b — the supervisor's phone in that state: the backups screen says today's backup has not been taken and why this phone
+    // is not taking it (round 3: it said nothing); once the lists have loaded from the cloud the backup is taken and the note goes
+    seedCloud({ visits: JSON.stringify(Array.from({ length: 12 }, (_, i) => v('v' + i, i % 2 ? 'Renova' : 'Mariam', '2026-11-' + String(1 + i).padStart(2, '0')))) });
+    const B = await mkPhone('R8-B');
+    mode.hang.visits = 1;
+    await B.boot('Dr. Ghaith', 'supervisor');
+    const backups = () => B.ev(async () => {
+      openExport();
+      for(let i = 0; i < 100 && /Loading backups/.test((document.getElementById('backupList') || {}).textContent || ''); i++) await new Promise(r => setTimeout(r, 50));
+      const out = { held: (document.querySelector('#backupList [data-snap-held]') || {}).textContent || '', list: ((document.getElementById('backupList') || {}).textContent || '').replace(/\s+/g, ' ').slice(0, 160) };
+      closeModal(); return out;
+    });
+    const n1 = await backups(), taken1 = !!cloud[SNAP];
+    await B.tick(); // the next refresh reads this month's visits
+    await B.ev(async () => { await maybeSnapshot(); });
+    const n2 = await backups(), snapB = parse(cloud[SNAP]);
+    check('R8b. the backups screen says so: today\'s backup has not been taken and this phone is not taking it because not every list on it came from the cloud — and once they have loaded, the backup is taken (with the month\'s 12 visits) and the note is gone',
+      !taken1 && /Today's backup has not been taken yet, and this phone is not taking it: not every list on it came from the cloud/.test(n1.held) && !!snapB && (snapB.visits || []).length === 12 && !n2.held && /2026-11-13/.test(n2.list),
+      { before: n1, backupTakenBefore: taken1, after: n2, todaysBackupVisits: snapB ? (snapB.visits || []).length : null });
+    await B.ctx.close();
   }
 
   // ===================== R10. a rename / a product code whose first save is refused =====================

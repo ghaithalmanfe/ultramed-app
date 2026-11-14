@@ -932,8 +932,8 @@ function bulkClinicSalesCheck(list, confirmed, retry, cancel, hint){
     g.n++; g.net += Number(m.net) || 0; if((m.date || '') < month1) g.closed++;
   });
   const rows = Object.values(by).sort((a, b) => String(a.customer).localeCompare(String(b.customer)));
-  return { ok: false, html: `<div><b>⚠️ <span>Sales would then count for another person</span></b>: ${moves.length} <span>sales lines</span> · ${rows.length} <span>accounts</span></div>
-      <div style="max-height:200px; overflow:auto; margin-top:6px; font-size:12.5px;">${rows.map(g => `<div data-bulkmove style="padding:3px 0; border-bottom:1px dashed var(--line);"><b dir="auto">${esc(g.customer)}</b>: <span dir="auto">${esc(g.from)}</span> → <span dir="auto">${esc(g.to)}</span> · ${g.n} <span>lines</span> (${money(Math.round(g.net * 1000) / 1000)})${g.closed ? ` · ${g.closed} <span>in closed months</span>` : ''}</div>`).join('')}</div>
+  return { ok: false, html: `<div><b>⚠️ <span>Sales would then count for another person</span></b>: ${moves.length} <span>sales lines</span> · ${rows.length} <span>ERP accounts</span></div>
+      <div style="max-height:200px; overflow:auto; margin-top:6px; font-size:12.5px;">${rows.map(g => `<div data-bulkmove style="padding:3px 0; border-bottom:1px dashed var(--line);"><b dir="auto">${esc(g.customer)}</b>: <span dir="auto">${esc(g.from)}</span> → <span dir="auto">${esc(g.to)}</span> · ${g.n} <span>sales lines</span> (${money(Math.round(g.net * 1000) / 1000)})${g.closed ? ` · ${g.closed} <span>in closed months</span>` : ''}</div>`).join('')}</div>
       <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
         <button class="chip small" data-ask="${esc(sig)}" onclick="${retry}(this.dataset.ask)">✅ <span>Add them — these sales then count for the new clinics' owners</span></button>
         <button class="chip small" onclick="${cancel}"><span>Cancel</span></button>

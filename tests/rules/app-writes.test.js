@@ -381,9 +381,14 @@ const SUPERVISOR_SITES = [
   { label: 'restore a whole day from a backup — restoreSnapshot 13-exports.js (v123: today\'s data kept first as today\'s backup; the catalog is not restored)',
     keys: ['snap_YYYY-MM-DD', 'clinics', 'tasks', 'visits', 'visitsArch:YYYY-MM', 'visitsIndex', 'erpSales', 'recycleBin', 'tombs'], run: async (s) => {
       const snapDoc = P((await s.get(snap(-5), true)).value, {});
-      await s.set('snap_' + kuwaitDay(0), J({ clinics: clinicList(30), products: SEED.products, visits: [], tasks: [], keptBeforeRestore: kuwaitDay(-5), ts: new Date().toISOString() }), true);
+      // today's data first — created only when today has no backup yet, never written over one (round 3)
+      await unseed('snap_' + kuwaitDay(0));
+      const keep = J({ clinics: clinicList(30), products: SEED.products, visits: [], tasks: [], keptBeforeRestore: kuwaitDay(-5), ts: new Date().toISOString() });
+      assert.equal(await s.update('snap_' + kuwaitDay(0), cur => cur == null ? keep : null), keep);
+      assert.equal(await s.update('snap_' + kuwaitDay(0), cur => cur == null ? '{}' : null), null, 'today has its backup: the restore writes nothing over it');
       const tombs = P((await s.get('tombs', true) || {}).value, {}) || {}; await s.set('tombs', J(tombs), true); // untombMany
-      for(const [k, val] of [['clinics', snapDoc.clinics || []], ['tasks', []]]) await s.set(k, J(val), true);
+      // the lists by compare-and-set over exactly the document the restore checked (round 3)
+      for(const [k, val] of [['clinics', snapDoc.clinics || []], ['tasks', []]]){ const was = (await s.get(k, true) || {}).value; await s.update(k, cur => cur === was ? J(val) : null); }
       await s.update('visits', () => J([])); await s.update(ARCH, cur => cur); await s.update('visitsIndex', cur => cur); // persistVisits({authoritative:true})
       await s.set('erpSales', J({ periods: [] }), true);
       await s.update('recycleBin', () => J({ clinics: [], products: [], visits: [] }));

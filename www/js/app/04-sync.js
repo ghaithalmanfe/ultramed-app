@@ -2700,10 +2700,16 @@ function snapDone(day){ try{ localStorage.setItem(SNAP_DAY, day); localStorage.r
 // site data: v123 review, a backup with none of the month's visits, which no
 // team phone may then replace), none served from the phone's copy, none
 // waiting in the queue — and no start that went wrong.
-function snapshotReadOk(){
-  if(!_bootLoaded || _bootCrashed || _seedClinics || Object.keys(_mirrorUsed).length) return false;
-  if(['clinics', 'visits', 'tasks', 'products'].some(k => _loadFailed[k])) return false;
-  return !['clinics', 'visits', 'tasks'].some(k => outboxHas(k));
+function snapshotReadOk(){ return !snapshotBlockedWhy(); }
+// Why this phone does not take the day's backup right now (said on the backups
+// screen while today has none, round 3): 'copy' — a list on screen did not come
+// from the cloud (a read that failed, a list shown from this phone's copy, a
+// start that went wrong); 'queued' — changes of this phone's still wait to
+// upload; null — nothing holds it back.
+function snapshotBlockedWhy(){
+  if(!_bootLoaded || _bootCrashed || _seedClinics || Object.keys(_mirrorUsed).length) return 'copy';
+  if(['clinics', 'visits', 'tasks', 'products'].some(k => _loadFailed[k])) return 'copy';
+  return ['clinics', 'visits', 'tasks'].some(k => outboxHas(k)) ? 'queued' : null;
 }
 async function maybeSnapshot(){
   if(_snapRunning || !snapshotReadOk()) return;

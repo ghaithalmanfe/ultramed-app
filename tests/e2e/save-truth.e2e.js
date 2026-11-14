@@ -549,7 +549,7 @@ function seedCloud(extra){
     });
     const w10 = await whoGets(S10);
     check('E10. the clinic import shows every account whose invoices would move (who they count for now → then, lines, closed months) before anything is saved; unticked, the rest is added and Renova\'s invoices stay hers',
-      /Sales would then count for another person/.test(e10.asked) && e10.rows.length === 1 && /Bright Smile Dental: Renova → Mariam · 2 lines/.test(e10.rows[0]) && /1 in closed months/.test(e10.rows[0]) && /untick those clinics and add the rest/.test(e10.asked) && !e10.savedBefore.length
+      /Sales would then count for another person/.test(e10.asked) && e10.rows.length === 1 && /Bright Smile Dental: Renova → Mariam · 2 sales lines/.test(e10.rows[0]) && /1 in closed months/.test(e10.rows[0]) && /untick those clinics and add the rest/.test(e10.asked) && !e10.savedBefore.length
         && JSON.stringify(e10.after) === JSON.stringify(['New Horizon Dental → Mariam']) && JSON.stringify(w10) === RENOVAS && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental') && parse(cloud.clinics).some(c => c.name === 'New Horizon Dental'), { e10, who: w10 });
     await S10.ctx.close();
     seedCloud();
@@ -585,7 +585,7 @@ function seedCloud(extra){
     });
     const w11 = await whoGets(S11);
     check('E11. the contact import shows the account whose invoices its new clinic would move before anything is saved; Cancel leaves everything as it was',
-      /newClinic:Bright Smile Dental/.test((e11.plan || []).join()) && /Sales would then count for another person/.test(e11.asked) && e11.rows.length === 1 && /Bright Smile Dental: Renova → Mariam · 2 lines/.test(e11.rows[0]) && /add those clinics first/.test(e11.asked) && !e11.savedBefore && e11.open && !e11.askAfterCancel
+      /newClinic:Bright Smile Dental/.test((e11.plan || []).join()) && /Sales would then count for another person/.test(e11.asked) && e11.rows.length === 1 && /Bright Smile Dental: Renova → Mariam · 2 sales lines/.test(e11.rows[0]) && /add those clinics first/.test(e11.asked) && !e11.savedBefore && e11.open && !e11.askAfterCancel
         && JSON.stringify(w11) === RENOVAS && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental'), { e11, who: w11 });
     await S11.ctx.close();
     // E12 — "Re-create this clinic" (a clinic visits still name, gone from the list): its name is checked like a new clinic's
