@@ -6928,6 +6928,7 @@
   // daily: what the daily backup keeps of it ('yes', 'month' = this month's
   // visits only, 'list' = the list of sales files without their lines, 'no',
   // 'self' = the daily backups themselves).
+  var TOMB_LIST_KEYS = ['visits', 'tasks', 'clinics', 'events', 'dayPlans', 'doctors']; // the delete log's lists (04-sync.js _tombstones)
   var BACKUP_SETS = [
     { id: 'visits', label: 'Visits', unit: 'visits', daily: 'month', keys: ['visits', 'visitsIndex'], prefixes: [VISITS_ARCH_PREFIX],
       doc: function(k, v){
@@ -7012,8 +7013,9 @@
       doc: function(k, v){ return _isObj(v) ? { counts: {} } : null; } },   // settings: nothing to count, no number invented
     { id: 'recycleBin', label: 'Recycle bin (kept 30 days)', unit: 'items', daily: 'no', keys: ['recycleBin'],
       doc: function(k, b){ return _isObj(b) ? { counts: { items: Object.keys(b).reduce(function(s, x){ return s + (_isArr(b[x]) ? _len(b[x]) : 0); }, 0) } } : null; } },
+    // the deletes of each list only — never the log's own fields (revived, rev: v123), which are no deletes (round 3)
     { id: 'tombs', label: 'Delete log', unit: 'deletes', daily: 'no', keys: ['tombs'],
-      doc: function(k, t){ return _isObj(t) ? { counts: { deletes: Object.keys(t).reduce(function(s, x){ return s + _ownKeys(t[x]).length; }, 0) } } : null; } },
+      doc: function(k, t){ return _isObj(t) ? { counts: { deletes: TOMB_LIST_KEYS.reduce(function(s, x){ return s + _ownKeys(t[x]).length; }, 0) } } : null; } },
     { id: 'photos', label: 'Photos', unit: 'photos', daily: 'no', raw: true, prefixes: ['photo:'], doc: function(){ return { counts: { photos: 1 } }; } },
     { id: 'chat', label: 'Team chat', unit: 'messages', daily: 'no', keys: ['chat'], doc: _arrDoc('messages') },
     { id: 'memories', label: 'Memories', unit: 'memories', daily: 'no', keys: ['memories'], doc: _arrDoc('memories') },

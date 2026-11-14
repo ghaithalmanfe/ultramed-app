@@ -473,10 +473,11 @@ async function handleContactSheet(input){
           → ${x.action.type==='newClinic'?esc(x.action.clinicName)+' (جديدة)':x.action.clinic?esc(x.action.clinic.name):'—'}
           ${x.ct.area?` · 📍${esc(x.ct.area)}`:''}${x.ct.phone?' · 📞':''}${x.ct.birthday?' · 🎂':''}</div>`).join('')}
       </div>
+      <div id="ciAsk2"></div>
       <button class="btn" style="margin-top:10px;" onclick="commitContactImport()">✅ اعتماد الاستيراد</button>`;
   }catch(e){ console.error(e); prev.innerHTML = '<div class="nudge">⚠️ تعذّر قراءة الملف — جرّب حفظه كـ CSV.</div>'; }
 }
-async function commitContactImport(){
+async function commitContactImport(confirmed){
   if(!requireAdmin() || !_contactImport) return;
   const repEl = document.querySelector('#ciRep2 .chip.on');
   const newRep = repEl ? repEl.dataset.rep : (REPS[0]||'');
@@ -484,21 +485,24 @@ async function commitContactImport(){
   const HOLD_NAME = 'Contacts without a clinic';
   const newClinics = {}; // key -> clinic obj (created once, shared by its people)
   let added = 0, updated = 0, skippedN = 0, clinicsMade = 0;
-  const holdClinic = () => {
-    let c = clinics.find(x=>x.name===HOLD_NAME);
-    if(!c){ c = normalizeClinic({id:uid(), name:HOLD_NAME, rep:newRep, cls:'D', notes:'People imported without a clinic name — move each to their clinic.', addedOn:todayStr()}); clinics.push(c); clinicsMade++; }
-    return c;
-  };
+  // the clinics it makes, first on their own (round 3): the "+ Add clinic" sales check reads them
+  // before any is on the list, and the supervisor sees every account whose invoices would move
+  let holdNew = null;
+  _contactImport.plan.forEach(({action})=>{
+    if(action.type==='newClinic' && !newClinics[action.key]) newClinics[action.key] = normalizeClinic({id:uid(), name: action.clinicName, rep: action.rep || newRep, cls:'B', notes: action.area ? 'Area: '+action.area : '', addedOn:todayStr()});
+    if(action.type==='noClinic' && hold && !holdNew && !clinics.find(x=>x.name===HOLD_NAME)) holdNew = normalizeClinic({id:uid(), name:HOLD_NAME, rep:newRep, cls:'D', notes:'People imported without a clinic name — move each to their clinic.', addedOn:todayStr()});
+  });
+  const making = Object.values(newClinics).concat(holdNew ? [holdNew] : []);
+  const ask = document.getElementById('ciAsk2');
+  const chk = bulkClinicSalesCheck(making, typeof confirmed === 'string' ? confirmed : '', 'commitContactImport', "document.getElementById('ciAsk2').innerHTML=''",
+    'To keep those sales where they count now, add those clinics first (Clinics → + Add clinic asks "Count from this month"), then import this file again.');
+  if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); else showToast('⚠️ Not saved — these clinic names need a check first', 6000); return; }
+  making.forEach(c => { clinics.push(c); clinicsMade++; });
+  const holdClinic = () => clinics.find(x=>x.name===HOLD_NAME);
   _contactImport.plan.forEach(({ct, action})=>{
     let clinic = action.clinic;
     if(action.type==='noClinic'){ if(!hold){ skippedN++; return; } clinic = holdClinic(); }
-    if(action.type==='newClinic'){
-      clinic = newClinics[action.key];
-      if(!clinic){
-        clinic = normalizeClinic({id:uid(), name: action.clinicName, rep: action.rep || newRep, cls:'B', notes: action.area ? 'Area: '+action.area : '', addedOn:todayStr()});
-        clinics.push(clinic); newClinics[action.key] = clinic; clinicsMade++;
-      }
-    }
+    if(action.type==='newClinic') clinic = newClinics[action.key];
     const doc = action.type==='update' ? action.doc : {id:uid(), name:ct.name, title:'', phone:'', birthday:'', cadence:'', notes:'', handovers:[]};
     // incoming non-empty values win; existing data never blanked
     if(ct.title) doc.title = ct.title; else if(ct.titleRaw && !doc.title) doc.notes = ((doc.notes||'')+' '+ct.titleRaw).trim();

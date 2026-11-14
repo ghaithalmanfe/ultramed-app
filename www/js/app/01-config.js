@@ -30,22 +30,29 @@ if(!window.storage){
       firebase.auth().onAuthStateChanged(user => { if(user) resolve(user); });
     });
     // Every document carries the app's revision (APP_REV_NUM). Rules published
-    // before v123 accept only { value, updated }: a write they refuse is sent
-    // once more without it, and this phone leaves it out for the rest of the
-    // day (um_revOff) — refused without it too, the refusal is not the
-    // revision's doing, and the next write carries it again.
-    const REV_OFF = 'um_revOff', revDay = () => new Date().toISOString().slice(0, 10);
-    let revOff = (() => { try{ return localStorage.getItem(REV_OFF) === revDay(); }catch(e){ return false; } })();
-    const docOf = (value, updated) => revOff ? { value, updated } : { value, updated, rev: APP_REV_NUM };
+    // before v123 accept only { value, updated }; the v123 rules accept both,
+    // and refuse a revision below MIN_APP_REV() once the owner raises it. A
+    // write refused in one shape is sent once more in the other (round 3):
+    // with rev, then without — or the other way round on a phone whose last
+    // write that landed had none. The phone remembers the shape that LANDED
+    // last (um_revOff: '1' = without), so it goes back to writing rev the
+    // moment a write with it lands. (Until round 3 a refusal switched rev off
+    // for the rest of the day: raised that day, every save was refused until
+    // the next.) Refused both ways, the refusal is not the revision's doing:
+    // the shape remembered stays.
+    const REV_OFF = 'um_revOff';
+    let revOff = (() => { try{ return localStorage.getItem(REV_OFF) === '1'; }catch(e){ return false; } })();
+    const docOf = (value, updated, noRev) => noRev ? { value, updated } : { value, updated, rev: APP_REV_NUM };
     const refused = e => /permission[-_]denied/i.test(String((e && e.code) || '') + ' ' + String((e && e.message) || ''));
+    const landed = noRev => { if(noRev === revOff) return; revOff = noRev; try{ if(noRev) localStorage.setItem(REV_OFF, '1'); else localStorage.removeItem(REV_OFF); }catch(e){} };
     const withRev = async write => {
-      if(revOff) return write();
-      try{ return await write(); }
+      const first = revOff;
+      try{ const r = await write(first); landed(first); return r; }
       catch(e){
         if(!refused(e)) throw e;
-        revOff = true;
-        try{ const r = await write(); try{ localStorage.setItem(REV_OFF, revDay()); }catch(e2){} return r; }
-        catch(e2){ revOff = false; throw e2; }
+        const r = await write(!first); // refused this way too: thrown, nothing remembered
+        landed(!first);
+        return r;
       }
     };
     window.storage = {
@@ -60,7 +67,7 @@ if(!window.storage){
       },
       async set(key, value){
         await authReady;
-        await withRev(() => db.collection('state').doc(key).set(docOf(value, Date.now())));
+        await withRev(noRev => db.collection('state').doc(key).set(docOf(value, Date.now(), noRev)));
         return true;
       },
       // Several documents in ONE atomic commit: all land or none. A sales
@@ -71,11 +78,11 @@ if(!window.storage){
       async setMany(entries){
         await authReady;
         const now = Date.now();
-        await withRev(async () => {
+        await withRev(async noRev => {
           let batch = db.batch(), n = 0, bytes = 0;
           for(const [k, v] of entries){
             if(n >= 400 || bytes + v.length > 8e6){ await batch.commit(); batch = db.batch(); n = 0; bytes = 0; }
-            batch.set(db.collection('state').doc(k), docOf(v, now)); n++; bytes += v.length;
+            batch.set(db.collection('state').doc(k), docOf(v, now, noRev)); n++; bytes += v.length;
           }
           if(n) await batch.commit();
         });
@@ -89,11 +96,11 @@ if(!window.storage){
       async update(key, fn){
         await authReady;
         const ref = db.collection('state').doc(key);
-        return withRev(() => db.runTransaction(async tx => {
+        return withRev(noRev => db.runTransaction(async tx => {
           const doc = await tx.get(ref);
           const next = fn(doc.exists ? doc.data().value : null);
           if(next == null) return null;
-          tx.set(ref, docOf(next, Date.now()));
+          tx.set(ref, docOf(next, Date.now(), noRev));
           return next;
         }));
       },
