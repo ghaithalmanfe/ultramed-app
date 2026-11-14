@@ -1456,7 +1456,11 @@ async function renderBackupsList(){
 // button, and every function below. The app has no way to restore this file:
 // scripts/backup/restore.js puts it into a TEST cloud only.
 let _fullBackup = null, _fullBackupRun = 0;
-let _fullBackupSavedAt = 0; // when this sign-in last handed a full backup file to the browser (the whole-day Restore asks for one, v123)
+// The full backup file this sign-in last handed to the browser (the whole-day Restore asks for one, v123):
+// { by, at, docHash, savedAt } — the file itself, not a later read (round 4: a new read cleared the
+// file in memory but not the time of the earlier download, and the restore then counted the newer
+// read — never downloaded — as the file on this device)
+let _fullBackupSaved = null;
 const BK_PAGE_MS = 90000, BK_GET_MS = 60000, BK_LIST_MS = 90000, BK_AHEAD = 4, BK_FOLD = 1048576;
 const BK_UNIT_AR = { visits: 'زيارة', clinics: 'عيادة', doctors: 'طبيب', tasks: 'مهمة', entries: 'سجل', plans: 'خطة', files: 'ملف',
   accounts: 'حساب', people: 'شخص', products: 'منتج', types: 'نوع', guides: 'دليل', notes: 'ملاحظة', items: 'عنصر',
@@ -1470,7 +1474,7 @@ function bkNum(n){ return Number(n).toLocaleString('en-US'); }
 // A file still held from an earlier read is dropped at every sign-in and
 // sign-out (03-gate.js), and a read still running stops: nobody who signs in
 // after the supervisor on the same phone gets his file.
-function dropFullBackup(){ _fullBackup = null; _fullBackupRun++; _fullBackupSavedAt = 0; }
+function dropFullBackup(){ _fullBackup = null; _fullBackupRun++; _fullBackupSaved = null; }
 // The sheet this run opened is still the one on screen.
 function bkAlive(run){
   const back = document.getElementById('modalBack');
@@ -1775,7 +1779,8 @@ function downloadFullBackup(){
   const b = _fullBackup;
   if(!b || b.by !== currentUser.name){ showToast('Read the cloud again before downloading'); return; }
   const ok = tryDownload(b.name, b.blob, 'application/json', 120000);
-  if(ok) _fullBackupSavedAt = Date.now(); // a whole-day Restore that would replace today's backup asks for this first (v123)
+  // saved: recorded on the backup itself (a whole-day Restore that would replace today's backup asks for this first, v123)
+  if(ok){ b.savedAt = Date.now(); _fullBackupSaved = { by: b.by, at: b.at, docHash: b.docHash, savedAt: b.savedAt }; }
   showToast(ok ? 'Download started — keep the file outside the app' : 'The file could not be prepared on this device — try again');
 }
 // ---- Missing clinics, from the daily backups (v116) ----
@@ -1911,7 +1916,7 @@ async function restoreSha(str){ return str == null ? null : bkSha256(bkBytes(str
 // Where each document as it is now is kept, so the restore may replace it:
 // → { ok, sources: [text…], missing: [key…] }
 async function restoreCover(now, keys){
-  const today = todayStr(), fb = _fullBackup && _fullBackupSavedAt && _fullBackup.by === currentUser.name ? _fullBackup : null;
+  const today = todayStr(), fb = fullBackupOnDevice();
   const sources = new Set(), missing = [];
   for(const k of keys){
     const cur = now[k];
@@ -1924,14 +1929,20 @@ async function restoreCover(now, keys){
 }
 const RESTORE_KEY_NAME = { clinics: 'the clinics', tasks: 'the tasks', visits: "this month's visits" };
 function restoreKeyName(k){ return RESTORE_KEY_NAME[k] || (/^visitsArch:/.test(k) ? "this month's visits" : k); }
-function restoreAskFullBackup(sameDay, cover, haveFull){
+// The full backup file saved to this device by this sign-in — only a file that was downloaded
+// counts (round 4), never a read whose sheet was closed without Download.
+function fullBackupOnDevice(){ return _fullBackupSaved && currentUser && _fullBackupSaved.by === currentUser.name ? _fullBackupSaved : null; }
+function restoreAskFullBackup(sameDay, cover, saved){
   const changed = [...new Set(cover.missing.map(restoreKeyName))].join(', ');
-  const why = haveFull
-    ? `${changed} changed after the full backup on this device was made (at ${restoreHHMM(_fullBackup.at)}): what changed since is in no backup, and this restore would remove it.`
+  const why = saved
+    ? `${changed} changed after the full backup on this device was made (at ${restoreHHMM(saved.at)}): what changed since is in no backup, and this restore would remove it.`
     : (sameDay ? "This restores today's own backup, so the data as it is now cannot be kept as today's backup — that would replace the very backup being restored."
       : "Today already has its backup (the daily one, or the data an earlier restore kept), and a restore never replaces it.");
+  const held = _fullBackup && currentUser && _fullBackup.by === currentUser.name && !_fullBackup.savedAt ? _fullBackup : null;
+  const unsaved = held ? `The full backup read at ${restoreHHMM(held.at)} was not downloaded to this device, so it does not count.` : '';
   showModal(`<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
-    <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(why) || why)}</span></p>
+    <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(why) || why)}</span></p>${unsaved ? `
+    <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(unsaved) || unsaved)}</span></p>` : ''}
     <p style="font-size:13px; line-height:1.6;"><span>Save a full backup to this device now: it keeps everything as it is, today's backup too. Then tap Restore again.</span></p>
     <p style="color:var(--muted); font-size:12.5px;"><span>Nothing was changed.</span></p>
     <button class="btn" onclick="openFullBackup()">💾 <span>Full backup first</span></button>`);
@@ -1973,7 +1984,7 @@ async function restoreSnapshotNow(dateStr){
   let cover = null;
   if(hasToday){
     cover = await restoreCover(now, keys);
-    if(!cover.ok){ restoreAskFullBackup(sameDay, cover, !!(_fullBackup && _fullBackupSavedAt && _fullBackup.by === currentUser.name)); return; }
+    if(!cover.ok){ restoreAskFullBackup(sameDay, cover, fullBackupOnDevice()); return; }
   }
   // What the restore removes, said before anything changes (from the documents as read now).
   const P = s => { const v = UMCore.safeParse(s, null); return Array.isArray(v) ? v : []; };

@@ -209,12 +209,12 @@ function seed(){
   // and today's backup stays as it is
   dialogs.length = 0;
   const keptCopy = cloud['snap_2026-10-20'], clinicsBeforeT = cloud.clinics;
-  await page.evaluate(async () => { _fullBackupSavedAt = 0; await restoreSnapshot('2026-10-20'); await new Promise(r => setTimeout(r, 300)); });
+  await page.evaluate(async () => { window.__fbSaved = _fullBackupSaved; _fullBackupSaved = null; await restoreSnapshot('2026-10-20'); await new Promise(r => setTimeout(r, 300)); });
   const gateT = await modal();
   check('whole-day Restore: restoring today\'s own backup first asks for a full backup to this device — nothing changes, nothing asked',
     /First, a full backup to this device/.test(gateT) && /today's own backup/.test(gateT) && !dialogs.length && cloud.clinics === clinicsBeforeT && cloud['snap_2026-10-20'] === keptCopy, { gate: gateT.slice(0, 240), dialogs });
   // the full backup made before the first restore is on this device, but the data changed since: asked for a new one, nothing changes
-  await page.evaluate(async () => { _fullBackupSavedAt = Date.now(); closeModal(); await restoreSnapshot('2026-10-20'); await new Promise(r => setTimeout(r, 300)); });
+  await page.evaluate(async () => { _fullBackupSaved = window.__fbSaved; closeModal(); await restoreSnapshot('2026-10-20'); await new Promise(r => setTimeout(r, 300)); });
   const gateT2 = await modal();
   check('whole-day Restore: a full backup made before the data changed does not count — it says what changed since and asks for a new one; nothing changes, nothing asked',
     /First, a full backup to this device/.test(gateT2) && /changed after the full backup on this device was made/.test(gateT2) && !dialogs.length && cloud.clinics === clinicsBeforeT && cloud['snap_2026-10-20'] === keptCopy, { gate: gateT2.slice(0, 260), dialogs });

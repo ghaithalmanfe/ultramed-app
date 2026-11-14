@@ -178,7 +178,7 @@ function seedCloud(extra){
     for(const t0 = Date.now(); Date.now() - t0 < 60000 && !document.querySelector('[data-backup-download], [data-backup-failed]');) await new Promise(r => setTimeout(r, 50));
     if(!document.querySelector('[data-backup-download]')) return false;
     downloadFullBackup(); closeModal();
-    return !!_fullBackupSavedAt;
+    return typeof _fullBackupSaved !== 'undefined' ? !!_fullBackupSaved : !!_fullBackupSavedAt;
   });
   const fill = (ph, o) => ph.ev(o => { closeModal(); switchView('log'); prepLogView(o.clinicId); pickClinic(o.clinicId); pickDoctorSeen(o.docId); document.getElementById('visitNotes').value = o.note; }, o);
   const cloudList = k => parse(cloud[k]) || [];
@@ -828,6 +828,33 @@ function seedCloud(extra){
         && next.queued && next.onPhone && next.parked.some(([k, why]) => k === 'dayPlans' && why === 'refused') && next.toasts.some(t => /Not allowed for this login — kept on this phone, not sent/.test(t)) && !next.toasts.some(t => /not saved|signed out\?/i.test(t)),
       { firstSave: first, nextRound: next });
     await A.ctx.close();
+  }
+
+  // ===================== R20. a full backup read but never downloaded (round 4, finding 1) =====================
+  if(want('R20')){
+    // a full backup downloaded; Renova logs a visit; he reads a new full backup but closes the
+    // sheet without Download: the restore must compare the cloud with the file ON the device
+    const good = Array.from({ length: 20 }, (_, i) => ({ id: 'k' + i, name: 'Good clinic ' + i, rep: i % 2 ? 'Renova' : 'Mariam', cls: 'A', doctors: [{ id: 'dk' + i, name: 'Dr. K' + i }] }));
+    const broken = good.slice(0, 6).map(c => Object.assign({}, c, { name: 'Broken name ' + c.id }));
+    const mv = visit('vMorning', { clinicId: 'k1', rep: 'Renova', date: TODAY, ts: CLOCK - 7200000, notes: 'morning visit', doctorIds: ['dk1'] });
+    seedCloud({ clinics: JSON.stringify(broken), visits: JSON.stringify([mv]), [SNAP]: JSON.stringify({ clinics: good, products: [], visits: [mv], tasks: [], ts: TODAY + 'T05:00:00.000Z' }) });
+    const S = await mkPhone('R20-S'); await S.boot('Dr. Ghaith', 'supervisor');
+    await S.ev(() => { try{ localStorage.setItem('um_snapDay', '2026-11-13'); }catch(e){} window.__asked = []; window.confirm = m => { window.__asked.push(String(m)); return true; }; });
+    const fb1 = await fullBackup(S);
+    const R = await mkPhone('R20-R'); await R.boot('Renova', 'rep');
+    await R.ev(async () => { visits.push({ id: 'vAfternoon', clinicId: 'k3', rep: 'Renova', date: todayStr(), ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: [], orderTotal: 0, doctorIds: ['dk3'], notes: 'logged after the full backup' }); await persist('visits'); });
+    const reached = cloudList('visits').some(v => v.id === 'vAfternoon');
+    const read2 = await S.ev(async () => { await openFullBackup();
+      for(const t0 = Date.now(); Date.now() - t0 < 60000 && !document.querySelector('[data-backup-download], [data-backup-failed]');) await new Promise(r => setTimeout(r, 50));
+      const ok = !!document.querySelector('[data-backup-download]'); closeModal(); return ok; }); // read, NOT downloaded
+    await S.ev(async () => { window.__asked = []; window.__toasts = []; await restoreSnapshot('2026-11-13'); });
+    const a = await S.ev(() => ({ asked: window.__asked.slice(), toasts: window.__toasts.slice(), modal: (document.getElementById('modalInner') || {}).textContent || '' }));
+    check('R20. a full backup read but never downloaded does not count: the restore compares the cloud with the file saved to this device (made before the afternoon visit) — it does not start, says the visits changed after that file and that the newer read was not downloaded; nothing is asked, nothing changes, the visit is still in the cloud',
+      fb1 && reached && read2 && !a.asked.length && !a.toasts.some(t => /Restored/.test(t)) && /First, a full backup to this device/.test(a.modal)
+        && /this month's visits changed after the full backup on this device was made \(at \d\d:\d\d\)/.test(a.modal) && /was not downloaded to this device/.test(a.modal) && /Nothing was changed/.test(a.modal)
+        && cloudList('visits').some(v => v.id === 'vAfternoon') && cloudList('clinics').length === 6,
+      { fullBackupDownloaded: fb1, visitReachedTheCloud: reached, secondReadNotDownloaded: read2, questions: a.asked.map(q => q.slice(0, 300)), toasts: a.toasts, sheet: a.modal.slice(0, 420), liveVisits: cloudList('visits').map(v => v.id), liveClinics: cloudList('clinics').length });
+    await S.ctx.close(); await R.ctx.close();
   }
 
   console.log(results.join('\n'));
