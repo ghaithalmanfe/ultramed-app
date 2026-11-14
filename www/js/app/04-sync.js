@@ -1429,6 +1429,40 @@ let tombsDoc = { visits:{}, tasks:{}, clinics:{}, events:{}, dayPlans:{}, doctor
 // Deletes made here that the shared log has not confirmed yet (offline, or a
 // write still in flight) — the reconcile below must never drop these.
 const _tombsUnpublished = {};
+// …kept on the phone too (round 3, um_tombsUnpub). In memory only, a delete
+// made with no signal was forgotten when the app was reopened before it
+// uploaded: the first read of the log did not find it, took it for a record
+// brought back elsewhere, and the record came back from the cloud. (A held
+// delete on its way back to the log is not one of them: after a reopen it is
+// held again, and confirmed again by a read of its list.)
+const TOMBS_UNPUB = 'um_tombsUnpub';
+let _unpubSaved = null;
+function saveUnpubTombs(){
+  try{
+    const o = {};
+    Object.keys(_tombsUnpublished).forEach(k => { const ids = [..._tombsUnpublished[k]].filter(id => !(_tombsPending[k] && _tombsPending[k].has(id))); if(ids.length) o[k] = ids; });
+    const str = Object.keys(o).length ? JSON.stringify(o) : null;
+    if(str === _unpubSaved) return;
+    if(str) localStorage.setItem(TOMBS_UNPUB, str); else localStorage.removeItem(TOMBS_UNPUB);
+    _unpubSaved = str;
+  }catch(e){}
+}
+(() => {
+  try{
+    const str = localStorage.getItem(TOMBS_UNPUB);
+    const o = str ? JSON.parse(str) : null;
+    if(!o || typeof o !== 'object') return;
+    _unpubSaved = str;
+    Object.keys(o).forEach(k => {
+      if(!_tombstones[k] || !Array.isArray(o[k])) return;
+      o[k].forEach(id => {
+        if(!_tombstones[k].has(id)) return; // no longer deleted on this phone
+        (_tombsUnpublished[k] = _tombsUnpublished[k] || new Set()).add(id);
+        (tombsDoc[k] = tombsDoc[k] || {})[id] = (_tombsLocalAt[k] || {})[id] || Date.now();
+      });
+    });
+  }catch(e){}
+})();
 function tomb(key, id){
   if(!_tombstones[key] || id == null) return;
   _tombstones[key].add(id);
@@ -1443,6 +1477,7 @@ function tomb(key, id){
     localStorage.setItem('um_tombs', JSON.stringify(raw));
   }catch(e){}
   (tombsDoc[key] = tombsDoc[key] || {})[id] = Date.now();
+  saveUnpubTombs();
   persistTombs(); // fire-and-forget: share the delete with the whole team
 }
 // Bringing a record back to life must clear its tombstone EVERYWHERE — the
@@ -1588,9 +1623,11 @@ async function persistTombs(){
     Object.keys(_tombsUnpublished).forEach(k => [..._tombsUnpublished[k]].forEach(id => { if(pub[k] && pub[k][id] != null) _tombsUnpublished[k].delete(id); }));
     Object.keys(_tombsPending).forEach(k => [..._tombsPending[k].keys()].forEach(id => { if(pub[k] && pub[k][id] != null) _tombsPending[k].delete(id); }));
     syncAgainTombs(pub);
+    saveUnpubTombs();
     if(outboxHas('tombs')) outboxRemove('tombs');
     return true;
   }catch(e){
+    saveUnpubTombs();
     // Never dropped, whatever the cloud said (v123 review): the deletes stay on
     // this phone and in the queue. Refused for a phone that still has access:
     // the rules' "no" — said, and the round sends it again only now and then
@@ -1693,6 +1730,7 @@ function reconcileTombs(cloudDoc){
   });
   if(raw){ try{ localStorage.setItem('um_tombs', JSON.stringify(raw)); }catch(e){} }
   saveHeldSince();
+  saveUnpubTombs();
 }
 // The deletes the log marks as published again (again), as this read of the log has them.
 function syncAgainTombs(doc){

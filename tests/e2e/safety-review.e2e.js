@@ -332,21 +332,26 @@ function seedCloud(extra){
     await C.ev(async () => { tasks.push({ id: 'tC', text: 'added offline', done: false, created: todayStr(), rep: 'Mariam' }); await persist('tasks'); });
     cloud.tasks = JSON.stringify(cloudList('tasks').filter(t => t.id !== 'tOld'));
     cloud.tombs = JSON.stringify(Object.assign(emptyLog(), { tasks: { tOld: CLOCK - 9 * DAY } }));
-    const R = await mkPhone('R6a-R', { tombs: { tasks: { tOld: CLOCK - 9 * DAY } } }); await R.boot('Renova', 'rep');
+    const R = await mkPhone('R6a-R', { tombs: { tasks: { tOld: CLOCK - 9 * DAY } }, ls: { um_tombsMig123: '1' } }); await R.boot('Renova', 'rep');
     // the older app (v122) deletes tNew: it rewrites the log with its 7-day cutoff and nothing else
     cloud.tasks = JSON.stringify(cloudList('tasks').filter(t => t.id !== 'tNew'));
     cloud.tombs = JSON.stringify(Object.assign(emptyLog(), { tasks: { tNew: CLOCK } }));
     await R.tick();
     const rHolds = await R.ev(() => tombSet('tasks').has('tOld'));
-    await R.ev(async () => { tasks.push({ id: 'tR', text: 'Renova adds and deletes a task', done: false, created: todayStr(), rep: 'Renova' }); await persist('tasks'); await deleteTask('tR'); });
-    for(const t0 = Date.now(); !((parse(cloud.tombs) || {}).tasks || {}).tR && Date.now() - t0 < 8000;) await wait(50); // her delete reached the log
+    const logHeld = parse(cloud.tombs) || {};
+    // Renova deletes nothing more: her app just stays open (round 3 — until then the delete went
+    // back to the log only with her next delete). Once the hold has stood its five minutes, the
+    // first refresh that reads the tasks from the cloud and does not find tOld publishes it again.
+    await R.shift(6 * 60000); await R.tick();
     const log = parse(cloud.tombs) || {};
     mode.offline.delete('R6a-C');
     await C.tick(); await C.tick();
     const t = cloudList('tasks').map(x => x.id);
-    check('R6a. an older app rewrote the delete log without a task deleted 9 days ago: the phone that deleted it keeps it and publishes it again, so a phone with an old copy does not bring it back',
-      rHolds && !t.includes('tOld') && t.includes('tC') && !t.includes('tNew') && !!(log.tasks || {}).tOld && Number(log.rev) >= 123,
-      { renovaKeepsItsDelete: rHolds, cloudTasks: t, logTasks: Object.keys(log.tasks || {}), logRev: log.rev });
+    await R.tick();
+    const rShows = await R.ev(() => tasks.some(x => x && x.id === 'tOld'));
+    check('R6a. an older app rewrote the delete log without a task deleted 9 days ago: the phone that deleted it keeps the delete (not published while it is only held) and, once a read of the tasks from the cloud has confirmed the task is not there, publishes it again by itself — no other delete needed — so a phone with an old copy does not bring it back',
+      rHolds && !(logHeld.tasks || {}).tOld && !t.includes('tOld') && t.includes('tC') && !t.includes('tNew') && !!(log.tasks || {}).tOld && Number(log.rev) >= 123 && !rShows,
+      { renovaKeepsItsDelete: rHolds, logWhileOnlyHeld: Object.keys(logHeld.tasks || {}), cloudTasks: t, logTasks: Object.keys(log.tasks || {}), logRev: log.rev, renovaShowsItAgain: rShows });
     await C.ctx.close(); await R.ctx.close();
     // b — a revival on a v123 phone is written in the log: another phone holding the delete lets it go
     seedCloud({ tasks: JSON.stringify([task('tKeep', 'open task')]), tombs: JSON.stringify(Object.assign(emptyLog(), { tasks: { tBack: CLOCK - 9 * DAY } })) });
@@ -369,6 +374,134 @@ function seedCloud(extra){
     check('R6c. a task an older app brought back (no longer in the log, back in the list) is never deleted again by a phone that still held its delete',
       cloudList('tasks').some(x => x.id === 'tOld2'), { cloudTasks: cloudList('tasks').map(x => x.id), log: Object.keys((parse(cloud.tombs) || {}).tasks || {}) });
     await Q2.ctx.close();
+    // d — an older app BRINGS BACK a task deleted 9 days ago: it writes the log first (the delete
+    // goes) and the list a moment later (the task returns). A v123 phone that refreshes between
+    // the two holds the delete and waits: published again at once, it deleted the task the
+    // moment the list landed (round 3: why a held delete waits before it goes back to the log)
+    seedCloud({ tasks: JSON.stringify([task('tKeep', 'open task')]), tombs: JSON.stringify(Object.assign(emptyLog(), { tasks: { tX: CLOCK - 9 * DAY } }, { revived: {}, rev: 123 })) });
+    const Q3 = await mkPhone('R6d-Q', { tombs: { tasks: { tX: CLOCK - 9 * DAY } }, ls: { um_tombsMig123: '1' } }); await Q3.boot('Renova', 'rep');
+    cloud.tombs = JSON.stringify(emptyLog()); // the older app's log write: tX is no longer deleted (no rev, no revived)
+    await Q3.tick(); await Q3.tick();
+    const dLog1 = parse(cloud.tombs) || {};
+    cloud.tasks = JSON.stringify(cloudList('tasks').concat([task('tX', 'brought back on an older app')])); // …and its list write
+    await Q3.tick();
+    const d1 = await Q3.ev(() => ({ shows: tasks.some(t => t && t.id === 'tX'), tombed: tombSet('tasks').has('tX') }));
+    await Q3.ev(async () => { const x = tasks.find(y => y && y.id === 'tKeep'); if(x){ x.done = true; await persist('tasks'); } });
+    check('R6d. an older app brings a task back (the log first, the list a moment later) while a v123 phone holds its 9-day-old delete: the delete is not published in between, the task shows on that phone and stays in the cloud after its next save',
+      !(dLog1.tasks || {}).tX && d1.shows && !d1.tombed && cloudList('tasks').some(x => x.id === 'tX') && !((parse(cloud.tombs) || {}).tasks || {}).tX,
+      { logBetweenTheTwoWrites: Object.keys(dLog1.tasks || {}), holder: d1, cloudTasks: cloudList('tasks').map(x => x.id), log: Object.keys((parse(cloud.tombs) || {}).tasks || {}) });
+    await Q3.ctx.close();
+    // …and when that list write comes later than the wait (the older phone lost its signal for an
+    // hour): the delete was published again meanwhile — marked as such in the log — and a task the
+    // cloud's list holds under a marked delete is kept and written down as brought back
+    seedCloud({ tasks: JSON.stringify([task('tKeep', 'open task')]), tombs: JSON.stringify(Object.assign(emptyLog(), { tasks: { tX: CLOCK - 9 * DAY } }, { revived: {}, rev: 123 })) });
+    const Q4 = await mkPhone('R6d-Q2', { tombs: { tasks: { tX: CLOCK - 9 * DAY } }, ls: { um_tombsMig123: '1' } }); await Q4.boot('Renova', 'rep');
+    cloud.tombs = JSON.stringify(emptyLog());
+    await Q4.tick(); await Q4.shift(6 * 60000); await Q4.tick();
+    const dLog2 = parse(cloud.tombs) || {};
+    cloud.tasks = JSON.stringify(cloudList('tasks').concat([task('tX', 'brought back on an older app')])); // the older phone's list write lands an hour later
+    const P4 = await mkPhone('R6d-P'); await P4.boot('Mariam', 'rep');
+    const p4 = await P4.ev(() => ({ shows: tasks.some(t => t && t.id === 'tX') }));
+    await P4.ev(async () => { tasks.push({ id: 'tP', text: 'Mariam adds a task', done: false, created: todayStr(), rep: 'Mariam' }); await persist('tasks'); });
+    for(const t0 = Date.now(); ((parse(cloud.tombs) || {}).tasks || {}).tX && Date.now() - t0 < 8000;) await wait(50);
+    await Q4.tick();
+    const q4 = await Q4.ev(() => ({ shows: tasks.some(t => t && t.id === 'tX'), tombed: tombSet('tasks').has('tX') }));
+    const dLog3 = parse(cloud.tombs) || {};
+    check('R6d. …and when the older app\'s list lands after the delete was published again: the log marks such a delete (again), so the task the cloud\'s list holds is kept on every phone, stays in the cloud after the next save, and the log writes it down as brought back',
+      !!(dLog2.tasks || {}).tX && !!((dLog2.again || {}).tasks || {}).tX && p4.shows && q4.shows && !q4.tombed && cloudList('tasks').some(x => x.id === 'tX') && !(dLog3.tasks || {}).tX && !!((dLog3.revived || {}).tasks || {}).tX,
+      { logAfterPublishedAgain: { tasks: dLog2.tasks, again: dLog2.again }, anotherPhoneShows: p4.shows, holder: q4, cloudTasks: cloudList('tasks').map(x => x.id), logAtTheEnd: { tasks: dLog3.tasks, revived: dLog3.revived } });
+    await Q4.ctx.close(); await P4.ctx.close();
+    // e — a task re-created with the same id on a phone that knew no delete of it (the log had
+    // lost it to an older app): the revival is written down all the same, and the phone that
+    // held the old delete lets it go at once — before the list with the task has even landed
+    seedCloud({ tasks: JSON.stringify([task('tKeep', 'open task')]), tombs: JSON.stringify(emptyLog()) });
+    const Q5 = await mkPhone('R6e-Q', { tombs: { tasks: { tAgain: CLOCK - 9 * DAY } }, ls: { um_tombsMig123: '1' } }); await Q5.boot('Renova', 'rep');
+    const P5 = await mkPhone('R6e-P'); await P5.boot('Mariam', 'rep');
+    const q5a = await Q5.ev(() => tombSet('tasks').has('tAgain'));
+    mode.slowWrite.tasks = 2500; // the list lands after the log
+    const p5save = P5.ev(async () => { untomb('tasks', 'tAgain'); tasks.push({ id: 'tAgain', text: 're-created with the same id', done: false, created: '2026-11-01', rep: 'Mariam' }); await persist('tasks'); });
+    for(const t0 = Date.now(); !(((parse(cloud.tombs) || {}).revived || {}).tasks || {}).tAgain && Date.now() - t0 < 8000;) await wait(50);
+    await Q5.shift(6 * 60000); await Q5.tick();
+    const q5b = await Q5.ev(() => tombSet('tasks').has('tAgain'));
+    const eLog = parse(cloud.tombs) || {};
+    await p5save; await Q5.tick();
+    const q5c = await Q5.ev(() => tasks.some(t => t && t.id === 'tAgain'));
+    await Q5.ev(async () => { const x = tasks.find(y => y && y.id === 'tKeep'); if(x){ x.done = true; await persist('tasks'); } });
+    check('R6e. a task re-created with the same id on a phone that knew no delete of it: the log writes the revival down, the phone that held the 9-day-old delete lets it go at once (nothing published again), shows the task and keeps it in the cloud',
+      q5a && !q5b && !(eLog.tasks || {}).tAgain && q5c && cloudList('tasks').some(x => x.id === 'tAgain'),
+      { heldBefore: q5a, heldAfterTheRevivalWasWritten: q5b, logTasks: Object.keys(eLog.tasks || {}), logRevived: eLog.revived, holderShows: q5c, cloudTasks: cloudList('tasks').map(x => x.id) });
+    await Q5.ctx.close(); await P5.ctx.close();
+  }
+
+  // ===================== R11. old deletes of records the team brought back (re-review 1) =====================
+  // v122 ignored this phone's own deletes older than 7 days but never pruned them from the phone;
+  // v123 reads the phone's deletes back for 120 days. A record deleted here long ago and brought
+  // back by the team since (a bin restore, a whole-day restore — on the older app: nothing in the
+  // log says so) must stay: on this phone's screen, in the cloud, on every other phone.
+  if(want('R11')){
+    for(const variant of ['the first start of v123 on this phone', 'a delete this phone made on v123']){
+      const first = variant.startsWith('the first');
+      seedCloud({ tasks: JSON.stringify([task('tKeep', 'open task'), task('tBack', 'brought back by the supervisor 10 days ago')]), tombs: JSON.stringify(emptyLog()) });
+      const M = await mkPhone('R11-' + (first ? 'first' : 'own')); await M.boot('Mariam', 'rep');
+      // the phone as the older app left it: its own 20-day-old delete of tBack still on it
+      await M.ev(first => { localStorage.setItem('um_tombs', JSON.stringify({ tasks: { tBack: Date.now() - 20 * 86400000 } })); if(first) localStorage.removeItem('um_tombsMig123'); }, first);
+      mode.offline.add(M.label);
+      await M.boot('Mariam', 'rep'); // opened in the field with no signal
+      const start = await M.ev(() => ({ shows: tasks.some(t => t && t.id === 'tBack') }));
+      await M.ev(async () => { await deleteTask('tKeep'); });
+      await M.ev(async () => { tasks.push({ id: 'tNew', text: 'added in the field', done: false, created: todayStr(), rep: 'Mariam' }); await persist('tasks'); });
+      const queue = await M.ev(() => outboxList());
+      mode.offline.delete(M.label);
+      await M.tick(); await M.tick();
+      const log = parse(cloud.tombs) || {};
+      const afterUpload = cloudList('tasks').map(x => x.id);
+      const m = await M.ev(() => ({ shows: tasks.some(t => t && t.id === 'tBack'), outbox: outboxList() }));
+      const S = await mkPhone('R11-S-' + (first ? 'first' : 'own')); await S.boot('Dr. Ghaith', 'supervisor');
+      await S.ev(async () => { tasks.push({ id: 'tS', text: 'supervisor task', done: false, created: todayStr(), rep: 'Dr. Ghaith' }); await persist('tasks'); });
+      await S.tick();
+      const sSees = await S.ev(() => tasks.some(t => t && t.id === 'tBack'));
+      const final = cloudList('tasks').map(x => x.id);
+      check(`R11a [${variant}] a task this phone deleted 20 days ago and the team brought back since: the phone opens with no signal, removes one task and adds one, the signal returns — the task brought back is not deleted again (not in the log, still in the cloud, on her phone and on the supervisor's after his next save)`,
+        (first ? start.shows : true) && !(log.tasks || {}).tBack && !!(log.tasks || {}).tKeep && afterUpload.includes('tBack') && afterUpload.includes('tNew') && !afterUpload.includes('tKeep') && m.shows && sSees && final.includes('tBack'),
+        { showsAtTheOfflineStart: start.shows, queueOffline: queue, logTasks: Object.keys(log.tasks || {}), cloudAfterUpload: afterUpload, herPhoneAfter: m, supervisorSees: sSees, cloudAtTheEnd: final });
+      await M.ctx.close(); await S.ctx.close();
+    }
+    // b — a past month's visit (in no daily backup; the bin let it go when it was restored)
+    for(const variant of ['the first start of v123 on this phone', 'a delete this phone made on v123']){
+      const first = variant.startsWith('the first'), tag = first ? 'first' : 'own';
+      const ov = (id, date, notes) => visit(id, { date, ts: new Date(date + 'T10:00:00').getTime(), notes });
+      seedCloud({ 'visitsArch:2026-10': JSON.stringify([ov('vBack', '2026-10-24', 'brought back from the recycle bin'), ov('vOct', '2026-10-27', 'another October visit')]),
+        visitsIndex: JSON.stringify({ v: 1, months: { '2026-10': { n: 2, rev: CLOCK - 10 * DAY } }, updated: CLOCK - 10 * DAY }),
+        tasks: JSON.stringify([task('tDone', 'call the clinic')]), tombs: JSON.stringify(emptyLog()) });
+      const M = await mkPhone('R11b-M-' + tag); await M.boot('Mariam', 'rep');
+      const before = await M.ev(() => visits.some(v => v && v.id === 'vBack'));
+      await M.ev(first => { localStorage.setItem('um_tombs', JSON.stringify({ visits: { vBack: Date.now() - 20 * 86400000 } })); if(first) localStorage.removeItem('um_tombsMig123'); }, first);
+      // this morning, no signal: she removes a task and logs a visit — both wait in the queue
+      mode.offline.add(M.label);
+      await M.ev(async () => { await deleteTask('tDone'); });
+      await fill(M, { clinicId: 'c1', docId: 'd1', note: 'logged with no signal' });
+      await M.ev(async () => { await saveVisit(); });
+      const queue = await M.ev(() => outboxList());
+      // the app is opened again with signal, with that queue
+      mode.offline.delete(M.label);
+      await M.boot('Mariam', 'rep');
+      await M.tick(); await M.tick();
+      const arch = (parse(cloud['visitsArch:2026-10']) || []).map(v => v.id);
+      const log = parse(cloud.tombs) || {};
+      const m = await M.ev(() => ({ shows: visits.some(v => v && v.id === 'vBack'), outbox: outboxList() }));
+      const S = await mkPhone('R11b-S-' + tag); await S.boot('Dr. Ghaith', 'supervisor');
+      const sSees = await S.ev(() => visits.some(v => v && v.id === 'vBack'));
+      check(`R11b [${variant}] an October visit this phone deleted 20 days ago and the supervisor restored from the bin: the phone's queue (a delete, a task, a visit) uploads when the app is opened again — the October visit is still in the cloud, not in the delete log, on her phone and on the supervisor's`,
+        before && arch.includes('vBack') && arch.includes('vOct') && !(log.visits || {}).vBack && cloudList('visits').some(v => v.notes === 'logged with no signal') && m.shows && sSees,
+        { shownBefore: before, queue, octoberInTheCloud: arch, logVisits: Object.keys(log.visits || {}), logTasks: Object.keys(log.tasks || {}), liveVisits: cloudList('visits').map(v => v.notes), herPhone: m, supervisorSees: sSees });
+      // (found by this check) the task she removed with no signal, before the app was opened again:
+      // her delete was only in memory — the reopened app took "not in the log" for "brought back
+      // elsewhere", forgot it, and the task came back from the cloud
+      check(`R11c [${variant}] …and the task she removed with no signal before reopening the app stays removed: her delete reaches the log and the task is gone from the cloud and from her screen`,
+        !!(log.tasks || {}).tDone && !cloudList('tasks').some(t => t.id === 'tDone') && !(await M.ev(() => tasks.some(t => t && t.id === 'tDone'))),
+        { logTasks: Object.keys(log.tasks || {}), cloudTasks: cloudList('tasks').map(t => t.id) });
+      await M.ctx.close(); await S.ctx.close();
+    }
   }
 
   // ===================== R7. two phones, the same visit / the same day's plan =====================
