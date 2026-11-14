@@ -1,0 +1,5 @@
+❌ Q18. a rep's call log with a new customer never takes another person's invoices (a closed month's too): stopped like "+ Add clinic", the supervisor adds it  → {"creditedBefore":[["2026-10-20","Renova"],["2026-11-05","Renova"]],"creditedAfter":[["2026-10-20","Mariam"],["2026-11-05","Mariam"]],"newClinicOwner":"Mariam","savedToCloud":true,"toasts":["🌟 New customer added + 📞 Call logged"]}
+
+❌ Q18. a rep's call log with a new customer never takes another person's invoices (a closed month's too): stopped like "+ Add clinic", the supervisor adds it  → {"creditedBefore":[["2026-10-20","Renova"],["2026-11-05","Renova"]],"creditedAfter":[["2026-10-20","Mariam"],["2026-11-05","Mariam"]],"newClinicOwner":"Mariam","savedToCloud":true,"toasts":["🌟 New customer added + 📞 Call logged"]}
+
+1 PROBE(S) SHOW A PROBLEM

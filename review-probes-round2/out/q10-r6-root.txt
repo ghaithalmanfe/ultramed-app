@@ -1,0 +1,7 @@
+❌ Q10.1 the task deleted 9 days ago stays deleted when the phone that was offline uploads (the deleting phone, on v123, holds the delete)  → {"logAfterV122Write":["tNew"],"renovaHolds":{"tombed":true,"held":["tOld"]},"cloudTasksAfterUpload":["tOld","tKeep","tC"]}
+❌ Q10.2 the deleting phone never takes the deleted task back on its screen  → {"renovaAfter":{"tombed":false,"shows":true},"cloudTasksLater":["tOld","tKeep","tC"]}
+
+❌ Q10.1 the task deleted 9 days ago stays deleted when the phone that was offline uploads (the deleting phone, on v123, holds the delete)  → {"logAfterV122Write":["tNew"],"renovaHolds":{"tombed":true,"held":["tOld"]},"cloudTasksAfterUpload":["tOld","tKeep","tC"]}
+❌ Q10.2 the deleting phone never takes the deleted task back on its screen  → {"renovaAfter":{"tombed":false,"shows":true},"cloudTasksLater":["tOld","tKeep","tC"]}
+
+2 PROBE(S) SHOW A PROBLEM

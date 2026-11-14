@@ -1,0 +1,108 @@
+## shell | App shell — sign-in gate, header, navigation (bottom bar / side bar), More list, modal frame, toast, status bars, lightbox frame, pro-report overlay frame, language, accessibility layer, design tokens and components
+  spec: Spec §3 (design system), §4 (desktop and mobile shell), §5 (components); not one of §6.1-6.10
+  screens: Sign-in gate; E-mail login sheet; Account menu; Change password; Header; Bottom nav / desktop side bar; More list; Modal frame; Toast; Status bars (sync, memory-only, too large, refused, ERP dirty, wipe); Lightbox frame; Pro report overlay frame and toolbar placement
+  harnesses: no-real-data, smoke-all, save-truth, sync-core, sync-safety, sync-review, team-chat, photo-honesty, photo-lifecycle, hardening, main-screen (#bottomNav geometry)
+  contracts: ids gate, gateGrid, gateLogo, gatePassword, elEmail, elPwd, app, bottomNav + button[data-view], navDotToday, headerDot, headerStamp (first child = initials text), dateLabel, greeting, modalBack, modalContent, modalInner, .modal-close, lightbox, lbImg, lbCap, lbNote, toast, proreport, prDoc | bar ids syncPill, memOnlyBar, tooLargeBar, refusedPill, erpDirtyPill, wipeBanner | state classes .view.active, nav.bottom button.active, body.not-today, body.ar, #modalBack.show, .lightbox.show, #toast.show, .dot.show, .navdot.show, .chip.on, .dt.on, .t2.on, .proreport.active | More body text 'KPI scorecard', 'Requests, escalations & stands', 'Month by month', 'Weekly management deck'; never 'Ask anything about your data'; no #aiFab | global showToast/pickImage called by name; 24 legacy tokens stay resolvable on :root | modal outside #app; showProReport must hide any new shell element
+  notes: There is no router; MORE_CHILDREN decides the nav highlight. 77 static ids are read with no null check. The bars are styled with inline cssText in 04-sync.js (the safety worker's file), so only swap that for classes, in one small commit. Add viewport-fit=cover and the safe-area insets. Self-host the brand fonts and add them to the service worker's SHELL. Done before the lanes start.
+## home | Home / dashboard (Today) — the held v123 main screen returns here; not in a lane
+  spec: 6.1 Field Ops / Home
+  screens: Today (rep and supervisor; held v123: msSales, targetCard, msWork, msNext, msChart, msBrands, msCust, msRows, folded plan/follow-ups/tasks/recent cards); How it is calculated sheets (msHow); Needs-you list (msActSheet); Plan today (openPlanDay); Reschedule plan; Import from email -> tasks
+  harnesses: main-screen (home-wt, 8277), main-screen-cases (home-wt, 8278), audit-fixes, clinics-vs-today, hardening, rollover, seller-parity, shared-accounts, smoke-all (tasks), kpi (Add to today's plan entry shape)
+  contracts: #targetCard texts and DOM order per §12.5 (name → % → '<a> KD of <t> KD'; rep never 'Team'/'2 reps'; 'Achieved: … · target: DSR'; 'Target is from <Month YYYY>'; cross-invoice <details>/<summary> without leaving Today) | #heroCard week line ('2 visits') | #missedTitle/#missedList, #planLink, #planList, #dueList, #taskList, #newTaskInput, #recentVisits, #erpNudge, #visitsNudge, #occasionsCard, #docCardsNudge | held: ms* ids, data-ms keys with data-value, msWhenReady, .ms-card/.ms-stats/.ms-person/.ms-item/.ms-i/.ms-btn/.ms-back/.ms-more/.ms-ct .link/.ms-cx/.ms-fold.open, quality checks (no horizontal scroll, 44 px targets, <150 ms, no English in Arabic, rep leak checks)
+  notes: Every figure has one source: bestMonthRevenue = UMCore.monthAchievement, DSR targets, teamTargetNow/teamTargetTotal, UMCore.execDashboard, execWeek, kpiScorecard, crossInvoices, planVisitKeys/missedPlans, doctorAnalytics. To bring it back: revert 8670308, then keep safe-wt's persistTold/saveToast (05:265-267, 587-589) and the rewritten 03 gate functions, and drop #aiFab, its fab.style line and the Assistant tile. The layout checks (rail ≤ 110 px, cards per row) are re-specified on purpose; no figure check changes.
+## visit | Visit logging — log form, call, order only, edit visit, history, delete, photos and lightbox, visit log and gallery, follow-up sheets
+  spec: 6.2 Visit logging
+  screens: #view-log (7 steps + Save visit + My visit log); Quick add doctor; Call log; Order only; Edit visit; Edit history; Delete visit confirm; Full visit log; Photo gallery; Lightbox look; Follow-up confirm / reschedule (opened from Today and Clinics)
+  harnesses: order-form (390, touch), visit-rx (390, touch), visit-photo-offline, visit-photo-sync, photo-honesty, photo-lifecycle, supervisor-sells, seller-parity (log chips), smoke-all, audit-fixes (CV-2…CV-6), save-truth, safety-review, visits-storage
+  contracts: one visible <button onclick="saveVisit()"> in #view-log (offsetParent, never fixed); #view-log.log-saving + aria-busy + #logSavingNote | ids clinicSearchLog, clinicPickList, selectedClinicCard, newClinicName, newClinicAsk, doctorPickChips, productChips, rxWrap, rxYes, rxNo, rxBlocks, rxAddClinic-log, rxTotal-log, rxEditTypes, rxStaleNote, rxTypesNote, orderYes, orderNo, ordersContainer (.disc-chips/.disc-other/.stepper/input.val/#q-<order>-<slug>), orderTotalDisplay, followUpDate, visitNotes, visitPhotoRow, logAsChips, jointChips, logHistory | Edit visit: saveEditVisit( onclick, evDate, evNotes, evFollow, evTotal, evRx, editDocChips, editPhotoRow (.photo-add/.photo-thumb/.ph-del[onclick*=id]), editPhotoWait, h3 + p | Order only: soTotal, soProdChips, soQtyWrap .qty-row, soNewClinicName, soNewClinicAsk; visit log: vlSearch, vlSummary, vlBody, openEditVisit('<id>') onclick, 'Photo gallery'
+  notes: switchView('log') resets the form (R19). Hint text and the Rx total are white on the dark page (06:130, 834, 846). The prescriptions step (06:729-1014) belongs to this lane too.
+## doctors | Doctors & prescriptions — database, Rx growth tab, profile, records, data entry, contact import, Rx types editor, decision map
+  spec: 6.4 Doctors
+  screens: #view-doctors Doctors tab; Prescriptions growth tab; Doctor profile (+ handover form); Doctor records / doctor record; Easy data-entry wizard (Arabic); Contact import; Prescription types editor; Doctors directory (no entry point); Decision map block (inside the clinic card)
+  harnesses: visit-rx, hardening (duplicate doctors; sheet in 07), smoke-all, audit-fixes (ADM-4)
+  contracts: ddBody, ddTabDb, ddTabRx, ddFilters, ddSearch | #rxTypesBtn, #rxIncomplete, .rx-tile [data-rx-total], [data-rx-doctor], [data-rx-center], [data-rx-bytype], [data-pct], '▲ 100%', 'from zero' | hoWhat, hoQty, hoDate, #hoKind .chip[data-kind] | rxtNewName, rxtAdd, #rxtList [data-rxt] input.rxt-name / button.rxt-retire, rxtSave, rxtRetry, '(retired)', 'Last changed by' | Arabic of the Rx tab and editor has no English (Excel and type names aside)
+  notes: decisionMapBlock (10:737) is called from lane B's clinic card (07:988). The specialty emoji come from 01 (shell-owned).
+## calendar | Calendar & planner — month/week calendar, agenda, insights for a date range, events, date planner, week/month plan
+  spec: 6.7 Calendar
+  screens: #view-calendar month and week; Agenda; Insights for any date range; Event form; Date planner; Week/month visit plan (no entry point)
+  harnesses: smoke-all, audit-fixes (CAL-2, CAL-3, CAL-4), visit-photo-offline (#calAgenda .photo-thumb), kpi (requests never in calendar items), save-truth (Event added only when it landed)
+  contracts: calAgenda, calModeMonth/Week, calRangeLabel, calBody, calFrom/calTo, calRangeResult | evTitle, evDate, evTime, evType, evRep, evNotes; native confirm('Delete this event?') | dpSearch, dpPicker, dpSelected, dpRepChips, pvBody, pvRangeLabel, pvModeWeek/Month | globals calAnchor, calSelected, calMode, calRepFilter, planViewAnchor; .cal-cell.today/.sel/.other/.wkend
+  notes: 05 is shared with the dashboard, so lane A starts on 05 after the dashboard has finished with it. The calendar 'Sales' insights tile shows orders logged in the app (R25).
+## team | Team chat & memories
+  spec: 6.6 Team
+  screens: #view-team Chat; Memories grid; Share memory sheet
+  harnesses: team-chat (390), photo-honesty, visit-photo-offline
+  contracts: chatInput, chatSendBtn, chatList, #chatPhotoPreview img, button[aria-label='Attach from gallery'], #teamMem button 'Add a memory', #memCap, 'Share memory', #memGrid .mcard | exact toasts '📸 Memory shared with the team', 'Saved on this device', '✅ Offline changes uploaded & merged'
+  notes: The composer is sticky above the bottom nav. On desktop it must sit inside the content column, clear of the new sidebar.
+## kpi | KPI scorecard & settings, Month by month, Requests / escalations / stands
+  spec: Not named (More → tools)
+  screens: KPI scorecard sheet (table); KPI settings; Requests log; Request / escalation / stand form; Month by month sheet (table)
+  harnesses: kpi (1280), seller-parity, main-screen (msKpi opens the same sheet)
+  contracts: #modalBack innerText 'Total score', 'Sales achievement 30%', 'Open requests (1)', row text 'Sep 26 0 0 — — N Oct 26 (to 8) 0.2 1 — — N' | a rep's sheets contain no 'Team' and no 'KPI settings' | clForm_clinic, clForm_text, clForm_via, clForm_brand, kpi_<key>, kpi_openDays; globals _kpiRep, _kpiPeriod, _mbmRep
+  notes: The tables are read as row text at 1280 px. A stacked mobile version must keep the desktop DOM order; if both versions are in the DOM, one must be display:none.
+## clinics | Clinics — dashboard, list, clinic card, add/edit clinic, nameless clinics, lost/duplicate doctors, deleted/recreate, doctors on a clinic, add to plan, delete, missing and manage clinics
+  spec: 6.3 Clinics
+  screens: #view-clinics Dashboard (kpi4 tiles, Customer sales (ERP) card, coverage, class portfolio, top clinics); List (search, visit and class chips, nameless card); Clinic card; Add clinic; Edit clinic; Clinics without a name; Doctors without a name; Duplicate doctors; Deleted / recreate clinic; Missing clinics (Admin); Manage clinics (import, bulk delete)
+  harnesses: clinics-vs-today (390), clinic-recovery (390), erp-links (clinic card), hardening, save-truth, no-real-data, smoke-all, audit-fixes (ADM-1/3/5, CV-1, CV-6), seller-parity, supervisor-sells
+  contracts: #clinicDash > .kpi4 .k (direct child) .kn/.kl; #clinicDash .chartcard 'Customer sales' .csub .kpi4 .k; #erpDashRecon [data-part] [data-person]; erpDashTab | texts 'Orders logged in visits · all time' (never 'Total sales'), 'the Today screen figure', 'The Today screen shows 92.00 KD', 'No sales file for this month yet: the Today screen shows 0' | #clinicList .clinic-name, #namelessCard, [data-nameless], [data-dupdoc], button[data-ask] ('Use the name anyway', 'Yes, merge', 'Count from this month') | #mClinicName, #mClinicRep .chip(.on), #mClinicAsk; #clinicErpAccounts [data-erp-link]; #profileNotesEdit, #newDocName, .visit-hist; #mcCount, 'العيادات الناقصة', 'إرجاع المعلَّم'
+  notes: The class colour is shown as a start border. Specialty emoji appear in the list. svgDonut and svgBars are used on the dashboard.
+## erplinks | ERP account links — which clinic an ERP account's invoices count on
+  spec: Not named (opened from 6.3 clinic card)
+  screens: All ERP accounts list (openErpLinks); Link editor (openErpLinkEdit); Check before saving (openErpLinkPreview); Saved / Undo states
+  harnesses: erp-links (390), erp-links-late (390), smoke-all
+  contracts: elList, elSearch, elSave, elBack, elErr, elReopen, elUndo [data-undo], elLast, elLastChange, elPreview, elClosedCard, elClosedOk, elNewName, elClinicSearch, erpLinksCard, erpImportNote, erpUnrNameless, clinicErpAccounts | [data-erp-link], [data-target], [data-closed], .el-month[data-month], .el-move[data-month], .el-outside, .el-today[data-rep] | 128 text regexes ('Where do this account's invoices count?', 'Check before saving', 'Undo', 'Saved', 'No confirmation from the cloud yet', 'Reopen this page', '‹ Back' …)
+  notes: It is entered from the clinic card, the reconciliation, the Unrecognized list and the import card. Hook-only classes (el-*) have no CSS but must survive.
+## products | Products & catalog tools — list, add product, product detail and materials, edit product, catalog gaps, duplicate SKUs, category guides
+  spec: 6.5 Products
+  screens: #view-products (brand accordions); Add product; Product detail & sales materials; Edit product; N products missing from the catalog; Duplicate SKUs / barcodes; Category guides list / guide / edit guide
+  harnesses: catalog-gaps (1280), erp-links (products list, category guide), audit-fixes (ADM-3), smoke-all
+  contracts: productListWrap (.brand-head → .brand-body.open), input.cgap inside <label>, dupReportText, [data-key] | texts '1 product missing from the catalog', 'Duplicate SKUs / barcodes 3 products share …', 'Same item code (SKU) (1)', 'Same barcode (1)', 'nothing is merged or deleted here' | no duplicates-sheet button onclick mentions merge, delete, remove or persist | epName, epCode; 'Edit this guide', 'Edit', 'Save guide', #cgSell, 'Edit guide — Kerr's'; globals openBrands, products, categoryGuides
+  notes: Product thumbnails come from remote URLs; harnesses abort non-localhost requests, so a fallback tile (.pthumb-fb) must render.
+## playbook | Selling playbook
+  spec: 6.9 Selling playbook
+  screens: #view-playbook tile grid (+ doctors without a specialty); Playbook sheet per specialty
+  harnesses: smoke-all (openPlaybook(SPECIALTIES[0])), audit-fixes (ADM-4)
+  contracts: #playbookGrid (read with no null check) | openPlaybook(sp) | SPECIALTIES / SPECIALTY_PLAYBOOK globals
+  notes: The tiles use the specialty emoji as icons (01:440-503, shell-owned).
+## analysis | Clinic sales analysis
+  spec: 6.8 Clinic sales analysis
+  screens: #view-clanalysis; Clinic allocation detail sheet
+  harnesses: seller-parity (caBody, caRepChips), smoke-all
+  contracts: caBody, caRepChips, caSearch; global caRep; caMonthClinicSales
+  notes: renderClinicAnalysis has 34 inline styles.
+## coverage | Coverage board (opened from Report)
+  spec: 6.10 Reports (entry)
+  screens: Coverage board sheet
+  harnesses: smoke-all (openCoverageBoard, setCovRep)
+  contracts: openCoverageBoard(), setCovRep
+  notes: It lives in file 10, so lane B styles it, although it opens from lane C's Report view.
+## reports | Reports — Report view, coach, charts, scorecards, team comparison, compare, report tools, achievements, month reports and month close, pro report and documents
+  spec: 6.10 Reports
+  screens: #view-reports; Compare sheet; Report tools (share, PDF, HTML, print, copy); Achievements; Month reports (Arabic); Month close (Arabic); Pro report overlay; Master report document (optional restyle)
+  harnesses: smoke-all, audit-fixes (RE-2, RE-5, RE-6, RE-7), hardening, seller-parity, rollover, main-screen (Months → تقارير الشهور)
+  contracts: repWeek/Month/Quarter/All/Custom, repCustomRow, repFrom, repTo, coachCard, repVisits, repContacts, repOrders, repRevenueLabel, repRevenue, repErpRow, repErpRevenue, repDiscount, repClinics, repOverdue, chartsWrap, teamCompareTitle, teamCompareCard, repTopProducts, repNoOrder, scorecards, proreport, prDoc, prLangBtns | 'Sales by rep' chartcard with svg; Team row %; 'Team · <Month> target'; 'YOUR FOCUS THIS PERIOD' / 'COACHING GUIDANCE' | the buildMasterReportBody cover regex; Arabic 'التارغت'; globals reportRange, reportCustom, reportRepFilter, reportLang, reportFormat
+  notes: The welcome, streak and focus renderers in 1068-1434 are vestigial; leave them untouched. collectReportCss copies :root and every .pr/.kpi/.stamp rule into the exported reconciliation file. The charts titled 'Sales…' show orders logged in the app (R25).
+## erp | ERP import, DSR targets, salesmen map, returns policy, reconciliation, product movement
+  spec: Not named
+  screens: ERP import sheet; Parse & salesmen sheet ('💾 Save & analyze'); Targets file apply; ERP reconciliation (75 inline styles); Product movement
+  harnesses: hardening, erp-split, rollover, catalog-gaps, shared-accounts, weekly-deck, seller-parity, smoke-all
+  contracts: erpStatus (Arabic statuses), erpFile, erpPaste, erpRep-<i>, button text matching /Save & analyze/ | two Arabic native confirm() prompts (hardening counts one) | upload note 'الفريق: n% → m%'; openErpRecon('seed_sales3_aug26'); openProductMovement
+  notes: The month-figure helpers in this file (bestMonthRevenue 11:142, teamTargetTotal 148, staleTargetNote 163, teamTargetNow 167) are business logic: never change them.
+## admin | Admin panel — Team & targets & benchmarks, Territory (shared/gov chips, distribution upload), Catalog prices, Data health & recycle bin, E-mail reports; staff form
+  spec: Not named
+  screens: Admin panel tabs (Team, Territory, Prices, Data, Mail); Digest preview; Distribution preview / apply; Staff form; Remove staff; Recycle bin restore / purge
+  harnesses: shared-accounts, audit-fixes (MAIL, ADM-1), supervisor-sells, kpi, save-truth, smoke-all
+  contracts: apTabTeam/Territory/Prices/Data/Mail (.chip.on), apBody, apDataHealth, apDataBin, apDataBody | apTerrSearch, apTerrBody (.chip 'Shared'), apDistFile, 'Save 2 changes', 'Distribution saved' | mailStatusCard, mailSendNow, '07:30', '18:30', 'GitHub', 'آخر إرسال', 'لم يُرسَل أي تقرير بعد' | apStaffList, sfName, sfEmail, sfSells .chip, tgRev<i>, tgVis<i>, bm*, 'targets saved'
+  notes: Admin texts at 09:46/92/105 are light-on-dark colours inside a light sheet (a pre-existing contrast bug).
+## backups | Export, automatic backups, full backup, clinic recovery, restore, device copy
+  spec: Not named
+  screens: Export & share sheet; Full backup; Automatic backups list; Find missing clinics (recovery); Restore snapshot; Device copy; Wipe banner content
+  harnesses: full-backup (390 + 1280), clinic-recovery, sync-core, save-truth, photo-honesty, photo-lifecycle, smoke-all
+  contracts: fullBackupBody [data-set], [data-backup-download|failed|pending|landed|store], backupList | recovBody .section-title, input[data-recov] in <label>, recovNote, 'Find missing clinics' / 'ابحث عن العيادات الناقصة', 'Full backup first', native confirm /^Restore data from/ | devCopyBody input[data-devcopy], devCopyNote, wipeBanner, expFrom, expTo, 'Full backup' / 'نسخة احتياطية كاملة'; the Arabic sheet has no English left
+  notes: The wipe banner's look belongs to the shell; its content and flow belong to lane C. Restore flows run inside holdRefresh, so change their look only.
+## deck | Weekly management deck sheet
+  spec: Not named
+  screens: Weekly deck sheet (end date, language chips, ask)
+  harnesses: weekly-deck (1280; non-localhost requests aborted)
+  contracts: More text 'Weekly management deck'; openWeeklyDeck() → #modalBack, #wdEnd, #wdAsk, #wdLang; wdSetLang; downloadWeeklyDeck() download; 108 regexes on the deck's own text
+  notes: Supervisor only ('The weekly management deck is a supervisor tool').

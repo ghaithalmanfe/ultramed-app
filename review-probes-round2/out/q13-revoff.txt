@@ -1,0 +1,5 @@
+✅ Q13 old rules: the save lands (sent again without rev)  → [{"k":"tasks","rev":123,"ok":false,"rules":"old/0"},{"k":"tasks","ok":true,"rules":"old/0"}]
+❌ Q13 v123 rules, MIN_APP_REV() = 123: a v123 phone's save lands  → {"error":"permission-denied","lastWrites":[{"k":"tasks","ok":true,"rules":"old/0"},{"k":"tasks","ok":false,"rules":"v123/123"}],"um_revOff":"2026-11-13"}
+❌ Q13 …and after the app is reopened the same day  → {"error":"permission-denied","lastWrites":[{"k":"tasks","ok":true,"rules":"old/0"},{"k":"tasks","ok":false,"rules":"v123/123"}]}
+
+2 PROBE(S) SHOW A PROBLEM

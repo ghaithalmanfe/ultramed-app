@@ -1,0 +1,7 @@
+❌ P2a. after restoring today's backup, this morning's good copy is still kept as a backup in the cloud  → {"liveClinicsAfter":20,"todaysBackupNowHolds":"6 clinics, e.g. Broken name k0","keptBeforeRestore":"2026-11-13"}
+❌ P2b. a restore of today's backup that fails half-way can be done again: the second try brings back this morning's 20 good clinics  → {"firstTry":["Restore failed"],"secondTry":["✅ Restored 2026-11-13 — 6 clinics, 1 visits"],"liveClinics":6,"firstName":"Broken name k0","todaysBackupHolds":6}
+
+❌ P2a. after restoring today's backup, this morning's good copy is still kept as a backup in the cloud  → {"liveClinicsAfter":20,"todaysBackupNowHolds":"6 clinics, e.g. Broken name k0","keptBeforeRestore":"2026-11-13"}
+❌ P2b. a restore of today's backup that fails half-way can be done again: the second try brings back this morning's 20 good clinics  → {"firstTry":["Restore failed"],"secondTry":["✅ Restored 2026-11-13 — 6 clinics, 1 visits"],"liveClinics":6,"firstName":"Broken name k0","todaysBackupHolds":6}
+
+2 PROBE(S) SHOW A PROBLEM

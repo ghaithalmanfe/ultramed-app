@@ -1,0 +1,11 @@
+✅ P4 [same session] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"corrected by the supervisor"}
+✅ P4 [same session] day plan: her removal of c2 AND his added c3 both stay  → ["c1","c3"]
+✅ P4 [app reopened offline] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"corrected by the supervisor"}
+✅ P4 [app reopened offline] day plan: her removal of c2 AND his added c3 both stay  → ["c1","c3"]
+
+✅ P4 [same session] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"corrected by the supervisor"}
+✅ P4 [same session] day plan: her removal of c2 AND his added c3 both stay  → ["c1","c3"]
+✅ P4 [app reopened offline] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"corrected by the supervisor"}
+✅ P4 [app reopened offline] day plan: her removal of c2 AND his added c3 both stay  → ["c1","c3"]
+
+NO PROBLEM SHOWN

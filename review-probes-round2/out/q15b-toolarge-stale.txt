@@ -1,0 +1,5 @@
+❌ Q15b. while one list too large for the cloud waits on this phone, the phone still shows the team's changes within a few refreshes  → {"parkedState":{"outbox":["dayPlans"],"parked":[],"blocked":["dayPlans"],"bar":"🛑 Not saved: the day plans is too large for the cloud. Ask the supervisor — nothing else was changed. What this phone holds stays on this phone.Try again"},"afterSixTicks":{"name":"Dental 5 Clinic","task":false,"stuck":7},"clinicReadsDuringSixTicks":0}
+
+❌ Q15b. while one list too large for the cloud waits on this phone, the phone still shows the team's changes within a few refreshes  → {"parkedState":{"outbox":["dayPlans"],"parked":[],"blocked":["dayPlans"],"bar":"🛑 Not saved: the day plans is too large for the cloud. Ask the supervisor — nothing else was changed. What this phone holds stays on this phone.Try again"},"afterSixTicks":{"name":"Dental 5 Clinic","task":false,"stuck":7},"clinicReadsDuringSixTicks":0}
+
+1 PROBE(S) SHOW A PROBLEM

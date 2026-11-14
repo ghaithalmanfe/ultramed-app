@@ -1,0 +1,9 @@
+✅ P3a [control: a v123 phone deleted it] a task deleted 9 days ago stays deleted when a phone that was offline 10 days uploads  → {"cloudTasks":["tKeep","tC"],"sharedLogTasks":["tOld","tNew"]}
+❌ P3a [a v122 phone deleted something] a task deleted 9 days ago stays deleted when a phone that was offline 10 days uploads  → {"cloudTasks":["tOld","tKeep","tC"],"sharedLogTasks":["tNew"]}
+❌ P3b. a supervisor device still on v122 opens: the two doctors the supervisor kept apart on v123 stay two records, the visit keeps naming the second  → {"cloudDoctorsAfter":[["d1","111",null]],"distinctDoctors":["d1|d1b"],"visitDoctorIds":["d1"],"clinicsWritten":true,"visitsWritten":true}
+
+✅ P3a [control: a v123 phone deleted it] a task deleted 9 days ago stays deleted when a phone that was offline 10 days uploads  → {"cloudTasks":["tKeep","tC"],"sharedLogTasks":["tOld","tNew"]}
+❌ P3a [a v122 phone deleted something] a task deleted 9 days ago stays deleted when a phone that was offline 10 days uploads  → {"cloudTasks":["tOld","tKeep","tC"],"sharedLogTasks":["tNew"]}
+❌ P3b. a supervisor device still on v122 opens: the two doctors the supervisor kept apart on v123 stay two records, the visit keeps naming the second  → {"cloudDoctorsAfter":[["d1","111",null]],"distinctDoctors":["d1|d1b"],"visitDoctorIds":["d1"],"clinicsWritten":true,"visitsWritten":true}
+
+2 PROBE(S) SHOW A PROBLEM

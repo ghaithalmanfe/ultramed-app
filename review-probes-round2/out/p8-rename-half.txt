@@ -1,0 +1,7 @@
+✅ P8. a rename whose team-list save is refused leaves nothing half-renamed (clinics, visits and targets keep the name the team list has)  → {"toasts":["⚠️ Changed on another device — reopen the app, then save again"],"teamListInCloud":["Mariam","Renova","Dr. Ghaith","Noor"],"clinicOwner":"Renova","visitRep":"Renova","targetsFor":["Renova"]}
+✅ P8b. …and Renova (still "Renova" on the team list) still sees her clinic and her target  → {"myClinics":["Summit Dental Center"],"myTarget":true}
+
+✅ P8. a rename whose team-list save is refused leaves nothing half-renamed (clinics, visits and targets keep the name the team list has)  → {"toasts":["⚠️ Changed on another device — reopen the app, then save again"],"teamListInCloud":["Mariam","Renova","Dr. Ghaith","Noor"],"clinicOwner":"Renova","visitRep":"Renova","targetsFor":["Renova"]}
+✅ P8b. …and Renova (still "Renova" on the team list) still sees her clinic and her target  → {"myClinics":["Summit Dental Center"],"myTarget":true}
+
+NO PROBLEM SHOWN

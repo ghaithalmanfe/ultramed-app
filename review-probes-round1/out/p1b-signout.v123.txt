@@ -1,0 +1,5 @@
+❌ P1b. a rep signs out on a shared phone while her offline changes upload: what had not uploaded yet stays queued and uploads under the next login (the visit and the task reach the cloud)  → {"queued":["tasks","clinics","visits","dayPlans"],"firstSlow":"tasks","afterSignout":{"outbox":[],"aside":["um_refused:visits","um_refused:tasks","um_refused:clinics","um_refused:dayPlans"]},"end":{"outbox":[],"visitOnScreen":false,"taskOnScreen":false},"visitInCloud":false,"taskInCloud":false}
+
+❌ P1b. a rep signs out on a shared phone while her offline changes upload: what had not uploaded yet stays queued and uploads under the next login (the visit and the task reach the cloud)  → {"queued":["tasks","clinics","visits","dayPlans"],"firstSlow":"tasks","afterSignout":{"outbox":[],"aside":["um_refused:visits","um_refused:tasks","um_refused:clinics","um_refused:dayPlans"]},"end":{"outbox":[],"visitOnScreen":false,"taskOnScreen":false},"visitInCloud":false,"taskInCloud":false}
+
+1 PROBE(S) SHOW A PROBLEM

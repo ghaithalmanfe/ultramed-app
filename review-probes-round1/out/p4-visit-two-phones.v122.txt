@@ -1,0 +1,11 @@
+❌ P4 [same session] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"original notes"}
+❌ P4 [same session] day plan: her removal of c2 AND his added c3 both stay  → ["c1"]
+❌ P4 [app reopened offline] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"original notes"}
+❌ P4 [app reopened offline] day plan: her removal of c2 AND his added c3 both stay  → ["c1"]
+
+❌ P4 [same session] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"original notes"}
+❌ P4 [same session] day plan: her removal of c2 AND his added c3 both stay  → ["c1"]
+❌ P4 [app reopened offline] visit: her product AND his corrected notes both stay  → {"products":["p1"],"notes":"original notes"}
+❌ P4 [app reopened offline] day plan: her removal of c2 AND his added c3 both stay  → ["c1"]
+
+4 PROBE(S) SHOW A PROBLEM

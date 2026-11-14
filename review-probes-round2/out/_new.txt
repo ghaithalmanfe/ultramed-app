@@ -1,0 +1,16 @@
+q10-r6-root fixed rc=0 ok=0 bad=4
+q11-held-republish fixed rc=0 ok=2 bad=8
+q11b-held-visit fixed rc=0 ok=0 bad=4
+q11c-control-online fixed rc=0 ok=10 bad=0
+q14-restore-twice fixed rc=0 ok=0 bad=2
+q15-parked-stale fixed rc=0 ok=0 bad=2
+q15b-toolarge-stale fixed rc=0 ok=0 bad=2
+q16-restore-today-after-backup fixed rc=0 ok=0 bad=2
+q17-rename-late fixed rc=0 ok=0 bad=2
+q18-calllog-new-clinic fixed rc=0 ok=0 bad=2
+q19-slow-access-check fixed rc=0 ok=0 bad=2
+q11-held-republish pre-review rc=0 ok=8 bad=2
+q11b-held-visit pre-review rc=0 ok=4 bad=0
+q15-parked-stale pre-review rc=0 ok=2 bad=0
+q13-revoff rc=0 ok=1 bad=2
+DONE

@@ -1,0 +1,11 @@
+p1-auth-lapse rc=0 ok=4 bad=0
+p1b-signout rc=0 ok=2 bad=0
+p2-restore-today rc=0 ok=0 bad=4
+p3-old-version rc=0 ok=2 bad=4
+p4-visit-two-phones rc=0 ok=8 bad=0
+p5-restore-partial rc=0 ok=2 bad=0
+p6-raced-visits-base rc=0 ok=2 bad=0
+p7-new-clinic-paths rc=0 ok=6 bad=0
+p8-rename-half rc=0 ok=4 bad=0
+p9-snapshot-partial rc=0 ok=2 bad=0
+DONE

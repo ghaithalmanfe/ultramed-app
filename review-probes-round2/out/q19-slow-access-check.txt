@@ -1,0 +1,5 @@
+❌ Q19. a refusal while the access check is slow: the plan stays on the phone, and what the screen says is true (she is signed in)  → {"firstSave":{"outcome":{"ok":false,"queued":true,"mirrored":true,"noAccess":true,"timeout":false},"toasts":["🔒 Kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again"],"parked":[["dayPlans","noAccess"]],"queued":true},"nextRound":{"toasts":["🔒 Not allowed, not saved (ask the supervisor)"],"parked":[["dayPlans","refused"]],"queued":true,"onPhone":true}}
+
+❌ Q19. a refusal while the access check is slow: the plan stays on the phone, and what the screen says is true (she is signed in)  → {"firstSave":{"outcome":{"ok":false,"queued":true,"mirrored":true,"noAccess":true,"timeout":false},"toasts":["🔒 Kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again"],"parked":[["dayPlans","noAccess"]],"queued":true},"nextRound":{"toasts":["🔒 Not allowed, not saved (ask the supervisor)"],"parked":[["dayPlans","refused"]],"queued":true,"onPhone":true}}
+
+1 PROBE(S) SHOW A PROBLEM

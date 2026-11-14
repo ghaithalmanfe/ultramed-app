@@ -1,0 +1,5 @@
+✅ Q15. while one list waits parked on this phone, the phone still shows the team's changes within a few refreshes  → {"parkedState":{"outbox":[],"parked":null,"bar":null},"afterSixTicks":{"name":"Dental 5 Clinic (Salmiya)","task":true,"stuck":0},"clinicReadsDuringSixTicks":6}
+
+✅ Q15. while one list waits parked on this phone, the phone still shows the team's changes within a few refreshes  → {"parkedState":{"outbox":[],"parked":null,"bar":null},"afterSixTicks":{"name":"Dental 5 Clinic (Salmiya)","task":true,"stuck":0},"clinicReadsDuringSixTicks":6}
+
+NO PROBLEM SHOWN

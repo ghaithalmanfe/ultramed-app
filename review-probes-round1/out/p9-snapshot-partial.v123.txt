@@ -1,0 +1,5 @@
+❌ P9. the day's backup is never written from a phone whose read of this month's visits failed (it would hold none of them)  → {"visitsReadFailed":true,"mirrorUsed":[],"visitsOnScreen":0,"todaysBackupVisits":0,"cloudVisits":12}
+
+❌ P9. the day's backup is never written from a phone whose read of this month's visits failed (it would hold none of them)  → {"visitsReadFailed":true,"mirrorUsed":[],"visitsOnScreen":0,"todaysBackupVisits":0,"cloudVisits":12}
+
+1 PROBE(S) SHOW A PROBLEM

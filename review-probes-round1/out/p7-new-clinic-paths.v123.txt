@@ -1,0 +1,9 @@
+✅ P7 control. "+ Add clinic": refused for the rep, nothing moves  → {"saved":false,"ask":"⚠️ This name matches sales that count for another person now: Renova. The supervisor adds this clinic. Nothing was saved."}
+❌ P7a. a new clinic created from the visit form never moves a closed month's invoice to another person  → {"before":[["2026-10-20","Renova"],["2026-11-05","Renova"]],"after":[["2026-10-20","Mariam"],["2026-11-05","Mariam"]],"savedClinic":{"rep":"Mariam","prevRep":null,"repSince":null}}
+❌ P7b. a new customer created from the order form never moves a closed month's invoice to another person  → {"info":"ok","before":[["2026-10-20","Renova"],["2026-11-05","Renova"]],"after":[["2026-10-20","Mariam"],["2026-11-05","Mariam"]],"savedClinic":{"rep":"Mariam","prevRep":null,"repSince":null}}
+
+✅ P7 control. "+ Add clinic": refused for the rep, nothing moves  → {"saved":false,"ask":"⚠️ This name matches sales that count for another person now: Renova. The supervisor adds this clinic. Nothing was saved."}
+❌ P7a. a new clinic created from the visit form never moves a closed month's invoice to another person  → {"before":[["2026-10-20","Renova"],["2026-11-05","Renova"]],"after":[["2026-10-20","Mariam"],["2026-11-05","Mariam"]],"savedClinic":{"rep":"Mariam","prevRep":null,"repSince":null}}
+❌ P7b. a new customer created from the order form never moves a closed month's invoice to another person  → {"info":"ok","before":[["2026-10-20","Renova"],["2026-11-05","Renova"]],"after":[["2026-10-20","Mariam"],["2026-11-05","Mariam"]],"savedClinic":{"rep":"Mariam","prevRep":null,"repSince":null}}
+
+2 PROBE(S) SHOW A PROBLEM

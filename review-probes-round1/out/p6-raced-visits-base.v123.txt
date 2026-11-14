@@ -1,0 +1,5 @@
+❌ P6. a refresh that kept the screen's lists (a save ran while it read) never lets the next visit save undo another phone's correction  → {"v1OnHerScreenAfterRefresh":"original notes","v1NotesInCloudAfterHerSave":"original notes","visitsInCloud":2}
+
+❌ P6. a refresh that kept the screen's lists (a save ran while it read) never lets the next visit save undo another phone's correction  → {"v1OnHerScreenAfterRefresh":"original notes","v1NotesInCloudAfterHerSave":"original notes","visitsInCloud":2}
+
+1 PROBE(S) SHOW A PROBLEM

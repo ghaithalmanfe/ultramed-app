@@ -1,0 +1,5 @@
+❌ Q15. while one list waits parked on this phone, the phone still shows the team's changes within a few refreshes  → {"parkedState":{"outbox":["dayPlans"],"parked":[["dayPlans","refused"]],"bar":"🔒 Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone.Try again"},"afterSixTicks":{"name":"Dental 5 Clinic","task":false,"stuck":7},"clinicReadsDuringSixTicks":0}
+
+❌ Q15. while one list waits parked on this phone, the phone still shows the team's changes within a few refreshes  → {"parkedState":{"outbox":["dayPlans"],"parked":[["dayPlans","refused"]],"bar":"🔒 Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone.Try again"},"afterSixTicks":{"name":"Dental 5 Clinic","task":false,"stuck":7},"clinicReadsDuringSixTicks":0}
+
+1 PROBE(S) SHOW A PROBLEM

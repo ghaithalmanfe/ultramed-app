@@ -1,0 +1,13 @@
+✅ Q11.0 (setup, real v122 code) v122 shows the task brought back and keeps its own 20-day-old delete in um_tombs  → {"shows":true,"umTombs":"{\"tasks\":{\"tBack\":1792836000000}}"}
+✅ Q11.1 v123, (control) opened with signal: the task the team brought back still shows  → {"appRev":"v123","shows":true,"tombed":false}
+✅ Q11.2 after the upload the delete log does not delete the task the team brought back again  → {"queueWhenOffline":["tombs","tasks"],"logTasks":{"tKeep":1794564000774},"logRev":123,"logRevived":{}}
+✅ Q11.3 after the upload the cloud's task list still holds the task the team brought back  → {"cloudTasks":["tBack","tNew"],"mariamAfter":{"shows":true,"held":[],"outbox":[]}}
+✅ Q11.4 the supervisor's phone still shows it, and after his next save the cloud still holds it  → {"supervisorSees":true,"cloudTasksFinal":["tBack","tNew","tS"]}
+
+✅ Q11.0 (setup, real v122 code) v122 shows the task brought back and keeps its own 20-day-old delete in um_tombs  → {"shows":true,"umTombs":"{\"tasks\":{\"tBack\":1792836000000}}"}
+✅ Q11.1 v123, (control) opened with signal: the task the team brought back still shows  → {"appRev":"v123","shows":true,"tombed":false}
+✅ Q11.2 after the upload the delete log does not delete the task the team brought back again  → {"queueWhenOffline":["tombs","tasks"],"logTasks":{"tKeep":1794564000774},"logRev":123,"logRevived":{}}
+✅ Q11.3 after the upload the cloud's task list still holds the task the team brought back  → {"cloudTasks":["tBack","tNew"],"mariamAfter":{"shows":true,"held":[],"outbox":[]}}
+✅ Q11.4 the supervisor's phone still shows it, and after his next save the cloud still holds it  → {"supervisorSees":true,"cloudTasksFinal":["tBack","tNew","tS"]}
+
+NO PROBLEM SHOWN

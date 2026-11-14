@@ -1,0 +1,7 @@
+❌ Q11b.1 (v122 queue uploaded by v123 at its first start) the October visit brought back from the recycle bin is still in the cloud and not in the delete log  → {"v122Shows":true,"v122Queue":["tombs","tasks","clinics","visits","dayPlans"],"octoberArchive":["vOct"],"logVisits":{"vBack":1792836000000},"mariam":{"shows":false,"outbox":[]},"liveVisits":["logged with no signal on v122"]}
+❌ Q11b.2 the supervisor's phone still shows that visit  → {"supervisorSees":false}
+
+❌ Q11b.1 (v122 queue uploaded by v123 at its first start) the October visit brought back from the recycle bin is still in the cloud and not in the delete log  → {"v122Shows":true,"v122Queue":["tombs","tasks","clinics","visits","dayPlans"],"octoberArchive":["vOct"],"logVisits":{"vBack":1792836000000},"mariam":{"shows":false,"outbox":[]},"liveVisits":["logged with no signal on v122"]}
+❌ Q11b.2 the supervisor's phone still shows that visit  → {"supervisorSees":false}
+
+2 PROBE(S) SHOW A PROBLEM
