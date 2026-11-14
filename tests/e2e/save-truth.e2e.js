@@ -608,6 +608,52 @@ function seedCloud(extra){
       e12.name === 'Bright Smile Dental' && /sales lines would count for/.test(e12.asked) && !e12.savedBefore && e12.hadButton && e12.rep === 'Mariam' && e12.prevRep === 'Renova' && e12.repSince === '2026-11-01'
         && JSON.stringify(w12) === JSON.stringify([['2026-10-20', 'Renova'], ['2026-11-05', 'Mariam']]) && (parse(cloud.clinics).find(c => c.id === 'cGone') || {}).prevRep === 'Renova', { e12, who: w12 });
     await S12.ctx.close();
+    // E13 (round 4, finding 2) — the order form's new customer, saved with no product first: the
+    // clinic was put on the list before "Add at least one product" stopped the save, so the second
+    // Save took it for an existing customer and never saved the clinics list (the order pointed at
+    // a clinic no other phone — nor this one after a refresh — had)
+    seedCloud();
+    const M13 = await mkPhone('E13-M'); await M13.boot('Mariam', 'rep');
+    const e13 = await M13.ev(async () => {
+      openStandaloneOrder(); startSoNewClinic();
+      document.getElementById('soNewClinicName').value = 'Fresh Smile Kids Clinic';
+      document.getElementById('soNewClinicPhone').value = '12345';
+      window.__toasts = []; await saveStandaloneOrder();                 // no product yet
+      const first = { toasts: window.__toasts.slice(), onList: clinics.some(c => c.name === 'Fresh Smile Kids Clinic'), typed: (document.getElementById('soNewClinicName') || {}).value };
+      soItems[productKey(products[0])] = 1;
+      window.__toasts = []; await saveStandaloneOrder();
+      return { first, second: window.__toasts.slice() };
+    });
+    await M13.tick(); await M13.tick();
+    const order13 = cloudVisits().find(v => v && v.orderOnly), cl13 = parse(cloud.clinics).find(c => c.name === 'Fresh Smile Kids Clinic');
+    const after13 = await M13.ev(() => { const v = visits.find(x => x && x.orderOnly); return { onPhone: clinics.filter(c => c.name === 'Fresh Smile Kids Clinic').map(c => c.id), label: v ? clinicLabel(v.clinicId, v) : null }; });
+    check('E13. the order form\'s new customer saved before a product was added: "Add at least one product" adds no customer; the second Save adds the customer (with its phone) and the order together — both in the cloud, the order points at it, still there after a refresh',
+      e13.first.toasts.some(t => /Add at least one product/.test(t)) && !e13.first.onList && e13.first.typed === 'Fresh Smile Kids Clinic'
+        && e13.second.some(t => /New customer added/.test(t)) && !e13.second.some(t => /already exists/.test(t))
+        && !!order13 && !!cl13 && order13.clinicId === cl13.id && cl13.phone === '12345' && after13.onPhone.join() === cl13.id && after13.label === 'Fresh Smile Kids Clinic',
+      { e13, orderClinicId: order13 && order13.clinicId, inCloud: cl13 ? { id: cl13.id, phone: cl13.phone } : null, after: after13 });
+    await M13.ctx.close();
+    // E13b–d — the new customer's own save refused by the rules: the order, the call or the visit
+    // was saved all the same, pointing at a clinic that was never saved (gone at the next refresh)
+    for(const form of ['order', 'call', 'visit']){
+      seedCloud();
+      const P = await mkPhone('E13-' + form); await P.boot('Mariam', 'rep');
+      mode.deny = { re: /^clinics$/, ops: 'w' };
+      const r = await P.ev(async form => {
+        const NAME = 'Fresh Smile Kids Clinic';
+        if(form === 'order'){ openStandaloneOrder(); startSoNewClinic(); document.getElementById('soNewClinicName').value = NAME; soItems[productKey(products[0])] = 1; window.__toasts = []; await saveStandaloneOrder(); }
+        if(form === 'call'){ openCallLog(); startClNewClinic(); document.getElementById('clNewClinicName').value = NAME; document.getElementById('clNotes').value = 'E13 first call'; window.__toasts = []; await saveCallLog(); }
+        if(form === 'visit'){ closeModal(); switchView('log'); prepLogView(); startNewClinic(); document.getElementById('newClinicName').value = NAME; document.getElementById('visitNotes').value = 'E13 first visit'; window.__toasts = []; await saveVisit(); }
+        const typed = (document.getElementById(form === 'order' ? 'soNewClinicName' : form === 'call' ? 'clNewClinicName' : 'newClinicName') || {}).value;
+        return { toasts: window.__toasts.slice(), onList: clinics.some(c => c.name === NAME), record: visits.some(v => v && (v.orderOnly || v.callOnly || v.notes === 'E13 first visit')), typed };
+      }, form);
+      mode.deny = null;
+      const inCloud = cloudVisits().some(v => v && (v.orderOnly || v.callOnly || v.notes === 'E13 first visit'));
+      check(`E13${{ order: 'b', call: 'c', visit: 'd' }[form]}. [${form}] the rules refuse the new customer's save: the ${form} is not saved either (it would point at a clinic nobody has) — the words say not allowed, not saved; no customer on the list, the form keeps the name`,
+        !inCloud && !r.record && !r.onList && r.typed === 'Fresh Smile Kids Clinic' && r.toasts.some(t => /Not allowed, not saved/.test(t)) && !r.toasts.some(t => /New customer added|Order saved|logged|Visit saved/i.test(t)),
+        { r, inCloud });
+      await P.ctx.close();
+    }
   }
 
   // ===================== F. the Assistant =====================

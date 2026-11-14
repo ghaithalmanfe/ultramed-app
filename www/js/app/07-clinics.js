@@ -907,6 +907,21 @@ function newClinicSalesCheck(nc, confirmed, retry, cancel){
         </div>
         ${askedSince ? `<div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Count from this month: the earlier lines stay with</span> <b>${esc(prev[0])}</b>.</div>` : ''}` };
 }
+// A new clinic made inside another form (the visit form, the order form, the call log) is saved
+// FIRST, on its own (round 4): refused by the rules or too large for the cloud, it can never land
+// as it is — the visit, order or call was saved all the same and pointed at a clinic nobody had.
+// Now it comes off the list, nothing else is saved, the form keeps what was typed and its box
+// says why. → the save's outcome when the form may go on (saved, or kept and queued), else null.
+async function saveNewClinicFirst(nc, askId){
+  const r = await persistTold('clinics');
+  const o = (r && r.outcome) || {};
+  if(r && (r.ok || !(o.denied || o.tooLarge))) return r;
+  clinics = clinics.filter(c => c !== nc);
+  const t = saveFailText(r, 'clinics'), msg = t ? t[0] : NOT_ALLOWED_MSG;
+  const box = document.getElementById(askId);
+  if(box) box.innerHTML = newClinicAskCard(`<span>${esc(msg)}</span> <span>What you typed is still here.</span>`); // (the save's own notice says it too)
+  return null;
+}
 function newClinicAskCard(html){ return `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; }
 // The same check for clinics made in bulk (round 3): Admin → Manage clinics →
 // Import and the contact import made clinics with no check at all, and every

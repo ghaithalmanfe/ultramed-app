@@ -350,9 +350,14 @@ function renderSoTotal(){
 }
 async function saveStandaloneOrder(confirmed){
   let soNewCreated = false;
+  // Every check first, the new customer last (round 4): it was put on the list before "Add at
+  // least one product" stopped the save, and the next Save took it for an existing customer —
+  // the clinics list was never saved, and the order pointed at a clinic no other phone had.
+  if(soNewClinicMode && !document.getElementById('soNewClinicName').value.trim()){ showToast('Enter the customer name'); return; }
+  if(!soNewClinicMode && !soClinicId){ showToast('Pick a clinic first'); return; }
+  if(!Object.keys(soItems).some(id => soItems[id] > 0)){ showToast('Add at least one product'); return; }
   if(soNewClinicMode){
     const name = document.getElementById('soNewClinicName').value.trim();
-    if(!name){ showToast('Enter the customer name'); return; }
     const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
     if(dup){ soClinicId = dup.id; showToast('Customer already exists — using it'); }
     else {
@@ -366,9 +371,10 @@ async function saveStandaloneOrder(confirmed){
       const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'saveStandaloneOrder', "document.getElementById('soNewClinicAsk').innerHTML=''");
       if(!chk.ok){ if(askBox) askBox.innerHTML = newClinicAskCard(chk.html); showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000); return; }
       if(askBox) askBox.innerHTML = '';
-      soClinicId = nc.id;
       clinics.push(nc);
-      soNewCreated = true;
+      soNewCreated = await saveNewClinicFirst(nc, 'soNewClinicAsk'); // the customer first: refused or too large → no order either
+      if(!soNewCreated){ renderAll(); return; }
+      soClinicId = nc.id;
     }
   }
   if(!soClinicId){ showToast('Pick a clinic first'); return; }
@@ -378,7 +384,6 @@ async function saveStandaloneOrder(confirmed){
     const p = findProduct(id);
     return {productId:id, qty:soItems[id], unitPrice: p&&p.price!=null ? p.price : null, name: p?p.name:''};
   });
-  if(!items.length){ showToast('Add at least one product'); return; }
   const date = document.getElementById('soDate').value || todayStr();
   const notes = document.getElementById('soNotes').value.trim();
   const t = soTotals();
@@ -391,7 +396,7 @@ async function saveStandaloneOrder(confirmed){
     orderGross:t.gross, orderDiscount:t.disc, orderTotal:t.net,
     nextFollowUp:null, notes
   });
-  const [vs, cs] = await Promise.all([persistFor('visits'), soNewCreated ? persistTold('clinics') : Promise.resolve(null)]);
+  const vs = await persistFor('visits'), cs = soNewCreated || null; // (the new customer was saved first)
   soNewClinicMode = false;
   closeModal();
   // what the save did — "saved" only when it landed
@@ -520,8 +525,9 @@ async function saveCallLog(confirmed){
       const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'saveCallLog', "document.getElementById('clNewClinicAsk').innerHTML=''");
       if(!chk.ok){ if(askBox) askBox.innerHTML = newClinicAskCard(chk.html); showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000); return; }
       if(askBox) askBox.innerHTML = '';
-      clClinicId = nc.id;
       clinics.push(nc);
+      if(!await saveNewClinicFirst(nc, 'clNewClinicAsk')){ renderAll(); return; } // the customer first: refused or too large → no call either
+      clClinicId = nc.id;
       newClinicCreated = true;
     }
   }
