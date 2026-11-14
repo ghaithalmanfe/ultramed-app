@@ -117,7 +117,7 @@
 
   /* focus: a clear ring on every surface; inputs show theirs on the box */
   :focus-visible{outline:2px solid var(--focus-ring); outline-offset:2px;}
-  nav.bottom :focus-visible, .gate-brand :focus-visible, .lightbox :focus-visible, .sbar :focus-visible{outline-color:var(--focus-ring-on-dark);}
+  .gate-brand :focus-visible, .lightbox :focus-visible, .sbar :focus-visible{outline-color:var(--focus-ring-on-dark);}
 
   /* ---- Layout: the content column ---- */
   .wrap{max-width:672px; margin:0 auto; padding:0 max(var(--gutter), env(safe-area-inset-right, 0px)) 8px max(var(--gutter), env(safe-area-inset-left, 0px));}
@@ -485,9 +485,9 @@
   @keyframes dialogIn{from{opacity:0; transform:translateY(8px) scale(.985);}to{opacity:1; transform:none;}}
   .modal-handle{width:36px; height:4px; background:var(--border-default); border-radius:3px; margin:0 auto 12px;}
   /* the close button stays in sight while the sheet scrolls */
-  .modal-close{position:sticky; top:10px; z-index:3; float:inline-end; display:flex; align-items:center; justify-content:center; width:36px; height:36px; margin:-2px -6px -34px 8px; padding:0; border:none; border-radius:50%;
+  .modal-close{position:sticky; top:2px; z-index:3; float:inline-end; display:flex; align-items:center; justify-content:center; width:36px; height:36px; margin:8px -6px -44px 8px; padding:0; border:none; border-radius:50%;
     background:var(--surface-sunken); color:var(--text-secondary); font-size:20px; line-height:1; cursor:pointer;}
-  [dir="rtl"] .modal-close{margin:-2px 8px -34px -6px;}
+  [dir="rtl"] .modal-close{margin:8px 8px -44px -6px;}
   .modal-close .svgi{width:18px; height:18px;}
   #modalInner{clear:none;}
   #modalInner > h3:first-child{padding-inline-end:40px; margin-top:4px;}
@@ -498,7 +498,7 @@
     .modal-back{align-items:center; padding:24px;}
     .modal{border-radius:var(--radius-lg); max-height:min(88vh, 920px); padding:20px 24px 24px; animation:dialogIn var(--dur-base) var(--ease-standard);}
     .modal-handle{display:none;}
-    .modal-close{margin-top:-4px;}
+    .modal-close{top:-6px; margin-top:-6px; margin-bottom:-30px;}
   }
 
   /* ---- Toast ---- */
@@ -733,7 +733,8 @@
   .ms-chev{width:18px; height:18px; color:var(--soft); flex-shrink:0;}
   [dir="rtl"] .ms-chev{transform:scaleX(-1);}
   .ms-cls{display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:22px; border-radius:7px; background:var(--surface-sunken); color:var(--text-primary); font-size:12px; font-weight:700; padding:0 6px; flex-shrink:0;}
-  .ms-more{display:inline-flex; flex-wrap:wrap; align-items:center; gap:0 4px; text-align:start; color:var(--accent); font:inherit; font-size:14px; font-weight:600; margin-top:6px; cursor:pointer; background:none; border:none; padding:8px 0; min-height:44px;}
+  .ms-more{display:block; width:100%; position:relative; text-align:start; color:var(--accent); font:inherit; font-size:14px; font-weight:600; margin-top:6px; cursor:pointer; background:none; border:none; padding:8px 0; padding-inline-end:26px; min-height:44px; line-height:1.45;}
+  .ms-more .ms-chev{position:absolute; inset-inline-end:0; top:50%; margin-top:-9px;}
   .ms-person{display:grid; grid-template-columns:78px minmax(0,1fr) auto; align-items:center; gap:4px 14px; padding:12px 0; border-top:1px solid var(--hair);}
   .ms-person.open{cursor:pointer;}
   .ms-person:first-of-type{border-top:none; padding-top:2px;}
@@ -750,7 +751,6 @@
   .ms-sub{font-size:14px; font-weight:600; color:var(--muted); margin:14px 0 4px;}
   .ms-next{display:flex; align-items:center; gap:10px; margin-top:2px;}
   .ms-next .nm{font-size:20px; font-weight:600; color:var(--ink); min-width:0;}
-  .ms-more > span{white-space:nowrap;}
   .ms-chart svg{width:100%; height:auto; display:block;}
   .ms-chart svg [stroke="#1E7A55"]{stroke:var(--chart-1);} .ms-chart svg [fill="#1E7A55"]{fill:var(--chart-1);}   /* the chart's lines follow the tokens */
   .ms-keys{display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12.5px; color:var(--muted); font-weight:500;}
@@ -836,6 +836,7 @@
     nav.bottom button.active{background:var(--brand-secondary); color:var(--brand-primary); font-weight:600;}   /* the active item: lime on the deep green, as the brand's own app icon */
     nav.bottom button[data-view="more"]{display:none;}
     nav.bottom button.active:hover{background:var(--brand-secondary); color:var(--brand-primary);}
+    nav.bottom :focus-visible{outline-color:var(--focus-ring-on-dark); outline-offset:-2px;}
     /* the content */
     #app.wrap{max-width:none; margin:0; margin-inline-start:var(--sidebar-w); padding:0; --col:var(--content-max);}
     body:not(.not-today) #app.wrap{--col:var(--content-wide);}
