@@ -119,7 +119,10 @@ function applyLangChrome(){
   document.documentElement.lang = uiLang;
   document.documentElement.dir = uiLang === 'ar' ? 'rtl' : 'ltr';
   document.body.classList.toggle('ar', uiLang === 'ar');
+  const lt = document.getElementById('topLangTx');   // the top bar's language button names the other language
+  if(lt) lt.textContent = uiLang === 'ar' ? 'EN' : 'ع';
 }
+function toggleUiLang(){ setUiLang(uiLang === 'ar' ? 'en' : 'ar'); }
 function trOf(text){ return (uiLang === 'ar' && window.UMI18N) ? UMI18N.tr(text) : null; }
 const TR_SKIP = '[dir="auto"], [data-notr], script, style, textarea, option:not([value]), .proreport';
 function translateTree(root){

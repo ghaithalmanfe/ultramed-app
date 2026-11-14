@@ -255,6 +255,7 @@ function renderDoctorsDb(){
   if(!body) return;
   document.getElementById('ddTabDb').classList.toggle('on', ddTab==='db');
   document.getElementById('ddTabRx').classList.toggle('on', ddTab==='rx');
+  if(typeof syncNav === 'function') syncNav();   // the sidebar marks the Doctors entry of the open tab
   const q = ((document.getElementById('ddSearch')||{}).value||'').trim().toLowerCase();
   const repFilter = currentUser.role==='supervisor' ? 'all' : currentUser.name;
   const docs = UMCore.doctorAnalytics({clinics: ddPool(), visits, today: todayStr(), repFilter});

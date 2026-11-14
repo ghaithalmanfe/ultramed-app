@@ -127,7 +127,7 @@ function renderClinicSelect(qClinicId){
   // Step 2 stays visible with a hint, so the numbered steps never skip 1 → 3.
   document.getElementById('doctorPickWrap').style.display='block';
   document.getElementById('doctorPickChips').innerHTML =
-    `<div style="color:rgba(255,255,255,.5); font-size:12.5px; padding:2px 0 4px;">Pick the clinic in step 1 first — its doctors will appear here to tap.</div>`;
+    `<div style="color:var(--muted); font-size:13px; padding:2px 0 4px;">Pick the clinic in step 1 first — its doctors will appear here to tap.</div>`;
   document.getElementById('docTipLink').innerHTML = '';
   renderRxStep();
 
@@ -831,7 +831,7 @@ function renderRxStep(){
   rxPrune('log', recips);
   box.style.display = rxOn ? 'block' : 'none';
   if(!rxOn){ box.innerHTML = ''; return; }
-  const hint = t => `<div class="rx-hint" style="color:rgba(255,255,255,.6); font-size:12.5px; padding:2px 0 8px;">${t}</div>`;
+  const hint = t => `<div class="rx-hint" style="color:var(--muted); font-size:13px; padding:2px 0 8px;">${t}</div>`;
   if(!rxReady()){ box.innerHTML = rxNoteHTML('rxStaleNote', RX_STALE_MSG); return; }
   if(recips === null){ box.innerHTML = hint('Pick the clinic in step 1 first.'); return; }
   let html = '';
@@ -843,7 +843,7 @@ function renderRxStep(){
   if(!newClinicMode && !recips.includes('')) foot.push(`<button type="button" class="chip small" id="rxAddClinic-log" onclick="rxAddClinic('log')">+ Left at the clinic (no one person)</button>`);
   if(currentUser && currentUser.role === 'supervisor') foot.push(`<button type="button" class="chip small" id="rxEditTypes" onclick="openRxTypes()">${I('pencil')} Edit types</button>`);
   if(foot.length) html += `<div class="chip-row" style="margin:2px 0 4px;">${foot.join('')}</div>`;
-  html += `<div id="rxTotal-log" style="color:#fff; font-size:13px; text-align:end; margin:4px 2px 2px;">${rxTotalHTML('log')}</div>`;
+  html += `<div id="rxTotal-log" style="color:var(--ink); font-size:13.5px; font-weight:600; text-align:end; margin:4px 2px 2px;">${rxTotalHTML('log')}</div>`;
   box.innerHTML = html;
 }
 // One block per recipient, shared by the form and the edit sheet: a row per

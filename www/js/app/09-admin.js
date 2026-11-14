@@ -43,7 +43,7 @@ const MAIL_WORKFLOW_URL = 'https://github.com/ghaithalmanfe/ultramed-app/actions
 function adminMailHTML(){
   const people = staff.filter(s=>s && s.email);
   return `
-    <p style="color:rgba(255,255,255,.7); font-size:13px; margin-top:0;" dir="auto">يُرسَل تلقائيًا ملخصان كل يوم عمل (الأحد–الخميس): <b>الصباح 07:30</b> و<b>نهاية اليوم 18:30</b> بتوقيت الكويت. كل مندوبة تستلم يومها، والمشرف يستلم الفريق. الأرقام هي نفسها التي تظهر في شاشة اليوم.</p>
+    <p style="color:var(--muted); font-size:13px; margin-top:0;" dir="auto">يُرسَل تلقائيًا ملخصان كل يوم عمل (الأحد–الخميس): <b>الصباح 07:30</b> و<b>نهاية اليوم 18:30</b> بتوقيت الكويت. كل مندوبة تستلم يومها، والمشرف يستلم الفريق. الأرقام هي نفسها التي تظهر في شاشة اليوم.</p>
     <div class="card" id="mailStatusCard"><div style="color:var(--muted); font-size:13px;">⏳ جارٍ قراءة حالة الإرسال…</div></div>
     <div class="section-title">Recipients · المستلمون</div>
     <div class="card">${people.length ? people.map(s=>`<div class="report-line"><span>${esc(s.name)} <span style="color:var(--muted); font-size:11.5px;">· ${s.role==='supervisor'?'الفريق':'يومها'}</span></span><span class="v" dir="ltr" style="font-size:12px;">${esc(s.email)}</span></div>`).join('') : '<div class="empty">لا توجد إيميلات في قائمة الفريق — أضفها من تبويب Team.</div>'}</div>
@@ -89,7 +89,7 @@ function adminTeamHTML(){
   return `<div id="apStaffList"></div>
     <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>
     <div class="section-title">Evaluation targets</div>
-    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">These targets drive every rep's scorecard, the coaching guidance under it, and the professional report — set them once here and they apply team-wide.</p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">These targets drive every rep's scorecard, the coaching guidance under it, and the professional report — set them once here and they apply team-wide.</p>
     <div class="card">
       <label>Clinic coverage target (%)</label>
       <input type="number" min="0" max="100" id="bmCoverage" value="${BENCHMARKS.coverage}">
@@ -102,7 +102,7 @@ function adminTeamHTML(){
       <button class="btn secondary small" onclick="saveBenchmarks()">Save targets</button>
     </div>
     <div class="section-title">Monthly targets per rep</div>
-    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">Set a monthly sales and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Set a monthly sales and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
     <div class="card">
       ${REPS.map((r,i)=>{
         const t = targets[r] || {};

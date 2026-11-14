@@ -174,7 +174,8 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, dir: document.documentElement.dir };
   });
   check('Laptop 1440×900: the first cards sit side by side in one row (same top, three columns)', lay.sales.y === lay.work.y && lay.work.y === lay.next.y && lay.sales.x < lay.work.x && lay.work.x < lay.next.x && lay.sales.w > 300 && lay.sales.w < 520, lay);
-  check('Laptop: the navigation is a side rail (full height, narrow), not a bottom bar', lay.nav.h >= lay.vh - 1 && lay.nav.w <= 110 && lay.nav.x === 0, lay.nav);
+  // redesign: the laptop's navigation is a labelled sidebar (every destination by name) instead of the 96 px icon rail
+  check('Laptop: the navigation is a sidebar (full height, at the start edge, wide enough for its labels: 200–280 px), not a bottom bar', lay.nav.h >= lay.vh - 1 && lay.nav.w >= 200 && lay.nav.w <= 280 && lay.nav.x === 0, lay.nav);
   const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
     open: ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].every(id => getComputedStyle(document.querySelector('#' + id + ' .ms-body')).display !== 'none'),
     rows: getComputedStyle(document.getElementById('msRows')).display }));
@@ -297,7 +298,8 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       return { sales: r('msSales'), work: r('msWork'), next: r('msNext') }; });
   }
   const two = x => x && x.sales.y === x.work.y && x.sales.w >= 360 && x.work.w >= 360 && x.next.y > x.sales.y, three = x => x && x.sales.y === x.work.y && x.work.y === x.next.y;
-  check('Narrow laptop (1024 and 1280 px): two cards a row, each wide enough for its figures (≥ 360 px), the next card below; three a row from 1366 px', two(rowsAt[1024]) && two(rowsAt[1280]) && three(rowsAt[1366]) && three(rowsAt[1440]), rowsAt);
+  // redesign: the sidebar takes 232–248 px of the width, so three cards a row start at 1440 px (they did at 1366 px beside the 96 px rail)
+  check('Laptop up to 1366 px (1024, 1280, 1366): two cards a row, each wide enough for its figures (≥ 360 px), the next card below; three a row from 1440 px', two(rowsAt[1024]) && two(rowsAt[1280]) && two(rowsAt[1366]) && three(rowsAt[1440]), rowsAt);
   check('Supervisor (team, English): the three figures under the sales card — label, amount, sub-line — each on one line from 390 px up (360 may wrap, never spill)', wrap.length === 0, wrap.slice(0, 3));
   check('Supervisor: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over.length === 0, over);
   check('Supervisor: no figure spills out of its box (cards, stats columns, rows) at any of those widths', spill.length === 0, spill.slice(0, 3));

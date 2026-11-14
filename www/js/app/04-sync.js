@@ -894,7 +894,7 @@ function renderErpDirtyPill(){
   if(!el){
     el = document.createElement('div');
     el.id = 'erpDirtyPill';
-    el.style.cssText = 'position:fixed; top:44px; left:50%; transform:translateX(-50%); z-index:9999; background:#B3261E; color:#fff; font-size:11.5px; font-weight:700; padding:6px 14px; border-radius:99px; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer;';
+    el.className = 'sbar sbar-pill sbar-danger sbar-tap';   // the look is in index.html (status bars)
     el.onclick = async () => { el.textContent = '⏳ جارٍ الحفظ…'; const ok = await persist('erpSales'); if(ok) showToast('✅ حُفظت تغييرات المبيعات'); else renderErpDirtyPill(); };
     document.body.appendChild(el);
   }
@@ -1307,7 +1307,7 @@ function renderMemOnlyBar(){
   if(!el){
     el = document.createElement('div');
     el.id = 'memOnlyBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
-    el.style.cssText = 'position:fixed; top:10px; left:12px; right:12px; z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:center; pointer-events:none; white-space:pre-line;';
+    el.className = 'sbar sbar-wide sbar-danger';
     document.body.appendChild(el);
   }
   const lines = _memOnly.size
@@ -1638,7 +1638,7 @@ function updateSyncBadge(){
   if(!el){
     el = document.createElement('div');
     el.id = 'syncPill';
-    el.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:9999; background:#B8860B; color:#fff; font-size:11.5px; font-weight:700; padding:5px 12px; border-radius:99px; box-shadow:0 2px 10px rgba(0,0,0,.25); pointer-events:none;';
+    el.className = 'sbar sbar-pill sbar-warn';
     document.body.appendChild(el);
   }
   el.style.display = 'block';
@@ -2134,7 +2134,7 @@ function refusedSave(key, msg){
   if(!el){
     el = document.createElement('div');
     el.id = 'refusedPill'; el.setAttribute('role', 'alert');
-    el.style.cssText = 'position:fixed; top:78px; left:50%; transform:translateX(-50%); z-index:9999; max-width:92vw; background:#B3261E; color:#fff; font-size:11.5px; font-weight:700; padding:6px 14px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer; text-align:center;';
+    el.className = 'sbar sbar-pill sbar-danger sbar-tap';
     el.onclick = () => { _refused.clear(); el.remove(); };
     document.body.appendChild(el);
   }
@@ -2226,10 +2226,10 @@ function renderTooLargeBar(){
   if(!el){
     el = document.createElement('div');
     el.id = 'tooLargeBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
-    el.style.cssText = 'position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:start;';
+    el.className = 'sbar sbar-wide sbar-danger';
     document.body.appendChild(el);
   }
-  const retry = (items.some(t => t.kept) || parked.length) ? `<button class="chip small" style="margin-top:6px; background:#fff; color:#B3261E;" onclick="retryBlockedSaves()">${esc(trOf('Try again') || 'Try again')}</button>` : '';
+  const retry = (items.some(t => t.kept) || parked.length) ? `<button class="chip small" style="margin-top:6px; background:#fff; color:var(--status-danger); border-color:#fff;" onclick="retryBlockedSaves()">${esc(trOf('Try again') || 'Try again')}</button>` : '';
   const lines = items.map(tooLargeText).concat(parked.length ? [parked.includes('noAccess') ? PARKED_NO_ACCESS : PARKED_REFUSED] : []);
   const html = lines.map(t => `<div>${esc(trOf(t) || t)}</div>`).join('') + retry;
   if(el.innerHTML !== html) el.innerHTML = html; // an alert: said again only when it changes

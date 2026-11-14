@@ -2133,11 +2133,11 @@ async function checkWipeBanner(){
     if(!bar){
       bar = document.createElement('div');
       bar.id = 'wipeBanner';
-      bar.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:10000; background:#8B0000; color:#fff; padding:10px 14px; font-size:13px; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.4);';
+      bar.className = 'sbar';   // the look is in index.html (status bars)
       document.body.appendChild(bar);
     }
     bar.innerHTML = `⚠️ قائمة العيادات الحالية (${clinics.length}) أصغر بكثير من النسخة الاحتياطية ليوم ${esc(best.d)} (${best.n} عيادة) — البيانات ليست ضائعة.
-      <button onclick="openExport()" style="margin-inline-start:10px; background:#fff; color:#8B0000; border:0; border-radius:8px; padding:5px 12px; font-weight:700;">استرجاع الآن</button>`;
+      <button onclick="openExport()" style="margin-inline-start:10px; background:#fff; color:#8B1A0E; border:0; border-radius:999px; padding:6px 14px; font-weight:600; font-family:inherit; cursor:pointer;">استرجاع الآن</button>`;
   }catch(e){}
 }
 function copyReport(){

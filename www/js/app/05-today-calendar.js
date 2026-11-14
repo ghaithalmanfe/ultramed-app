@@ -280,9 +280,31 @@ async function deleteEvent(id){
 }
 
 let activeView = 'today';
-// Products / Playbook / Team are full screens reached from More — the More
-// nav button stays highlighted while inside them.
-const MORE_CHILDREN = ['products', 'playbook', 'team', 'clanalysis', 'doctors', 'more'];
+// Products / Playbook / Team / Report … are full screens reached from More on a phone — the More
+// tab stays highlighted while inside them (the sidebar of a wide screen lists each one itself).
+const MORE_CHILDREN = ['products', 'playbook', 'team', 'clanalysis', 'doctors', 'reports', 'more'];
+// ---- The shell (redesign): the top bar's title and the navigation's active item follow the view ----
+// One <nav id="bottomNav"> serves every width (index.html): the phone shows its five tabs, a wide screen
+// every destination. A button is active when its data-view is the open view — or, for the "More" tab,
+// when the view is reached from More; the two Doctors entries (data-tab) follow the Doctors screen's tab.
+const VIEW_TITLES = { today:'Today', log:'Log a visit', clinics:'Clinics', calendar:'Calendar', reports:'Report', more:'More',
+  products:'Products', playbook:'Selling Playbook', team:'Team', clanalysis:'Clinic Sales Analysis', doctors:'Doctors Database' };
+function syncNav(){
+  const name = activeView, navName = MORE_CHILDREN.includes(name) ? 'more' : name;
+  const tab = typeof ddTab === 'string' ? ddTab : 'db';
+  document.querySelectorAll('nav.bottom button').forEach(b => {
+    const v = b.dataset.view;
+    const on = !!v && (v === name || v === navName) && (!b.dataset.tab || b.dataset.tab === tab);
+    b.classList.toggle('active', on);
+    if(on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+}
+function syncShell(name){
+  document.body.dataset.view = name;
+  const t = document.getElementById('topTitle');
+  if(t && VIEW_TITLES[name] && t.dataset.for !== name){ t.dataset.for = name; t.textContent = VIEW_TITLES[name]; }   // a new text node: the translator picks it up
+  syncNav();
+}
 function renderView(name){
   if(name==='today') renderToday();
   if(name==='log') prepLogView();
@@ -303,46 +325,47 @@ function switchView(name){
   document.body.classList.toggle('on-today', name==='today');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
-  const navName = MORE_CHILDREN.includes(name) ? 'more' : name;
-  document.querySelectorAll('nav.bottom button').forEach(b=>b.classList.toggle('active', b.dataset.view===navName));
+  syncShell(name);
   renderView(name);
 }
 function renderMore(){
   const el = document.getElementById('moreContent');
   if(!el) return;
   const sup = currentUser.role==='supervisor';
+  // a row of a group's list: its icon, name, one line about it; the whole row is the button
   const tile = (icon, name, sub, action) => `
-    <div class="card clickable" style="padding:13px 15px; margin-bottom:8px;" onclick="${action}">
-      <div style="display:flex; align-items:center; gap:13px;">
-        <div style="font-size:21px; width:30px; text-align:center;">${icon}</div>
-        <div style="flex:1;">
-          <div style="font-weight:700; font-size:14.5px;">${name}</div>
-          <div style="color:var(--muted); font-size:12px;">${sub}</div>
-        </div>
-        <span style="color:var(--muted);">›</span>
-      </div>
-    </div>`;
-  el.innerHTML = `
-    <div class="section-title">Reference</div>
-    ${tile(I('package'),'Products & prices','Catalog, prices and specs',"switchView('products')")}
-    ${tile(I('target'),'Clinic sales analysis','Per-clinic targets, purchases and next moves',"switchView('clanalysis')")}
-    ${tile(I('chart'),'Product movement','Every brand → its products ranked by real sales: fast, mid, slow','openProductMovement()')}
-    ${tile(I('stethoscope'),'Doctors database','Profiles, birthdays, follow-up rhythm & prescriptions',"switchView('doctors')")}
-    ${tile(I('clipboard'),'Doctor records','Who is who in every clinic — fill one card per doctor','openDoctorRecords()')}
-    ${tile(I('book'),'Selling playbook','Tips per doctor specialty',"switchView('playbook')")}
-    ${tile(I('layers'),'Category guides','How to sell every category','openCategoryGuides()')}
-    <div class="section-title">Team</div>
-    ${tile(I('chat'),'Team chat & memories','Messages and shared photos',"switchView('team')")}
-    ${tile(I('award'),'Achievements','Badges, streaks and milestones','openAchievements()')}
-    <div class="section-title">Tools</div>
-    ${tile(I('share'),'Export & share','CSV files and report sharing','openExport()')}
-    ${sup ? tile(I('chart'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : ''}
-    ${tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()')}
-    ${tile(I('chart'),'Month by month','Sales, field work and KPI against earlier months','openMonthByMonth()')}
-    ${tile(I('clipboard'),'Requests, escalations & stands','Log client requests, escalations and stands','openClientLog()')}
-    ${sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : ''}
-    ${sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : ''}
-    <div style="text-align:center; color:rgba(255,255,255,.5); font-size:11px; margin-top:14px;">UltraMed Clinical Sales Team · ${APP_REV}</div>`;
+    <button class="navrow" onclick="${action}">
+      <span class="ri">${icon}</span>
+      <span class="rt"><span class="rn">${name}</span><span class="rs">${sub}</span></span>
+      <svg class="svgi ui-chev" aria-hidden="true"><use href="#i-chev"/></svg>
+    </button>`;
+  const group = (title, rows) => { const r = rows.filter(Boolean).join(''); return r ? `<div class="section-title">${title}</div><div class="navlist">${r}</div>` : ''; };
+  el.innerHTML =
+    group('Overview', [
+      tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()'),
+      tile(I('trend'),'Month by month','Sales, field work and KPI against earlier months','openMonthByMonth()'),
+      tile(I('award'),'Achievements','Badges, streaks and milestones','openAchievements()')]) +
+    group('Customers', [
+      tile(I('stethoscope'),'Doctors database','Profiles, birthdays, follow-up rhythm & prescriptions',"ddTab='db'; switchView('doctors')"),
+      tile(I('clipboard'),'Doctor records','Who is who in every clinic — fill one card per doctor','openDoctorRecords()')]) +
+    group('Sales', [
+      tile(I('package'),'Products & prices','Catalog, prices and specs',"switchView('products')"),
+      tile(I('pie'),'Clinic sales analysis','Per-clinic targets, purchases and next moves',"switchView('clanalysis')"),
+      tile(I('activity'),'Product movement','Every brand → its products ranked by real sales: fast, mid, slow','openProductMovement()'),
+      tile(I('pill'),'Prescriptions growth','Prescription pads given, by doctor and by center',"ddTab='rx'; switchView('doctors')")]) +
+    group('Field operations', [
+      tile(I('chat'),'Team chat & memories','Messages and shared photos',"switchView('team')"),
+      tile(I('flag'),'Requests, escalations & stands','Log client requests, escalations and stands','openClientLog()')]) +
+    group('Intelligence', [
+      tile(I('chart'),'Report','Visits, orders and coverage for any period, with the sales coach',"switchView('reports')"),
+      tile(I('share'),'Export & share','CSV files and report sharing','openExport()'),
+      tile(I('book'),'Selling playbook','Tips per doctor specialty',"switchView('playbook')"),
+      tile(I('layers'),'Category guides','How to sell every category','openCategoryGuides()'),
+      sup ? tile(I('file'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : '']) +
+    group('Management', [
+      sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : '',
+      sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : '']) +
+    `<div class="more-foot">UltraMed Clinical Sales Team · ${APP_REV}</div>`;
 }
 
 function followStatus(dateStr){ return UMCore.followStatus(dateStr, todayStr()); }
@@ -373,6 +396,12 @@ function renderAll(){
   if(erpBtn) erpBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
   const mgBtn = document.getElementById('manageClinicsBtn');
   if(mgBtn) mgBtn.style.display = currentUser.role==='supervisor' ? '' : 'none';
+  // the shell: who is signed in (top bar), the supervisor's own entries (navigation), the title and active item
+  const un = document.getElementById('topUserName'), ur = document.getElementById('topUserRole');
+  if(un) un.textContent = msName(currentUser.name);
+  if(ur) ur.textContent = currentUser.role === 'supervisor' ? 'Supervisor' : 'Sales Rep';
+  document.querySelectorAll('#bottomNav [data-sup]').forEach(el => { el.hidden = currentUser.role !== 'supervisor'; });
+  syncShell(activeView);
 
   const chipsFor = (containerId, current, setter) => {
     const el = document.getElementById(containerId);

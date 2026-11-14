@@ -2213,7 +2213,33 @@
     '% of target': 'النسبة من المستهدف',
     'not counted — the sales files do not hold the month before, so every account would look new': 'لا يُحسب — ملفات المبيعات لا تحمل الشهر السابق، فيظهر كل حساب جديدًا',
     'New accounts: not measured yet — they are counted only when the sales files hold the month before for this person; otherwise every account would look new.': 'الحسابات الجديدة: لم تُحسب بعد — تُحسب فقط حين تحمل ملفات المبيعات الشهر السابق لهذا الشخص، وإلا ظهر كل حساب جديدًا.',
-    'Compared with the same days of': 'مقارنة بنفس الأيام من'
+    'Compared with the same days of': 'مقارنة بنفس الأيام من',
+
+    // ---- the shell (premium redesign): the navigation's groups, the top bar, the More list ----
+    'Overview': 'نظرة عامة',
+    'Field operations': 'العمل الميداني',
+    'Intelligence': 'التقارير والتحليل',
+    'Management': 'الإدارة',
+    'Main navigation': 'القائمة الرئيسية',
+    'Language': 'اللغة',
+    'Close photo': 'إغلاق الصورة',
+    'Dismiss tip': 'إخفاء الملاحظة',
+    'Prescription pads given, by doctor and by center': 'دفاتر البريسكريبشن المسلَّمة، حسب الطبيب وحسب العيادة',
+    'Visits, orders and coverage for any period, with the sales coach': 'الزيارات والطلبيات والتغطية لأي فترة، مع مدرب المبيعات',
+
+    // The screen-by-screen redesign adds its Arabic below, each part in its own marked block and nowhere else
+    // (every entry ends with a comma; a key written twice keeps the LAST value — check before adding).
+    // === DASHBOARD ===
+    // === END DASHBOARD ===
+
+    // === SCREENS A ===
+    // === END SCREENS A ===
+
+    // === SCREENS B ===
+    // === END SCREENS B ===
+
+    // === SCREENS C ===
+    // === END SCREENS C ===
   };
 
   // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
@@ -2561,11 +2587,30 @@
     return t2 != null ? t2 : r;
   }
 
+  // Words whose only entry starts with an emoji ("✅ All caught up"): the same words WITHOUT the emoji
+  // find it too (redesign: an emoji used as an interface icon becomes a line icon in the markup, and
+  // the words alone reach the dictionary). Built once, on the first miss; an exact entry always wins.
+  var BARE = null;
+  function bare(t) {
+    if (!BARE) {
+      BARE = {};
+      Object.keys(AR).forEach(function (k) {
+        var m = k.match(LEAD);
+        if (!m || Object.prototype.hasOwnProperty.call(AR, m[2]) || Object.prototype.hasOwnProperty.call(BARE, m[2])) return;
+        var v = String(AR[k]).match(LEAD);
+        BARE[m[2]] = v ? v[2] : AR[k];
+      });
+    }
+    return Object.prototype.hasOwnProperty.call(BARE, t) ? BARE[t] : null;
+  }
+
   function lookup(t) {
     if (Object.prototype.hasOwnProperty.call(AR, t)) return AR[t];
     // wrapped source lines reach the DOM with newlines and indentation in them
     var flat = t.replace(/\s+/g, ' ');
     if (flat !== t && Object.prototype.hasOwnProperty.call(AR, flat)) return AR[flat];
+    var b = bare(flat);
+    if (b != null) return b;
     for (var i = 0; i < PATTERNS.length; i++) {
       var m = t.match(PATTERNS[i][0]) || (flat !== t ? flat.match(PATTERNS[i][0]) : null);
       if (m) return PATTERNS[i][1](m);
