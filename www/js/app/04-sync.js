@@ -1228,6 +1228,7 @@ async function loadAllNow(){
   _bootLoaded = true;
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: reads the daily backups at most once a day, only when the list looks wiped (13)
+  if(typeof checkPendingRename === 'function') checkPendingRename(); // a rename this phone started and the app was closed on (08-team-orders.js, round 3)
   flushOutbox(); // anything saved offline goes up now, merged with the cloud
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for

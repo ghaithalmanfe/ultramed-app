@@ -563,7 +563,7 @@ async function markDoctorGone(clinicId, docId, scope){
   tomb('doctors', clinicId + '|' + docId);
   const ok = await persistTombs();
   if(ok) showToast('✅ Taken off this list', 4000);
-  else if(_saveParked.get('tombs') === 'refused') showToast(NOT_ALLOWED_MSG, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
+  else if(_saveParked.get('tombs') === 'refused') showToast(REFUSED_KEPT, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
   else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
   renderAll();
   openLostDoctors(scope);
@@ -915,8 +915,9 @@ function newClinicAskCard(html){ return `<div class="card" style="margin-top:10p
 // whose invoices would move is shown in the import's own confirmation (who
 // they count for now → for whom then, lines, value, closed months), and none
 // moves without the supervisor's tap; Cancel leaves the list to untick.
-// `list`: the clinics the import would add (not on the list yet). → { ok: true } | { ok: false, html }
-function bulkClinicSalesCheck(list, confirmed, retry, cancel){
+// `list`: the clinics the import would add (not on the list yet); `hint`: how to keep
+// those sales where they count now, in that import's own words. → { ok: true } | { ok: false, html }
+function bulkClinicSalesCheck(list, confirmed, retry, cancel, hint){
   if(!(list || []).length || !erpPeriods().some(p => p)) return { ok: true };
   if(!salesCheckComplete()) return { ok: false, html: '⚠️ <span>Some sales files did not load on this device, so what these names would move cannot be checked. Nothing was saved — try again with a connection.</span>' };
   const moves = UMCore.erpAddClinicMoves({ erpSales, clinics: storedClinics(), erpMap }, list);
@@ -937,7 +938,7 @@ function bulkClinicSalesCheck(list, confirmed, retry, cancel){
         <button class="chip small" data-ask="${esc(sig)}" onclick="${retry}(this.dataset.ask)">✅ <span>Add them — these sales then count for the new clinics' owners</span></button>
         <button class="chip small" onclick="${cancel}"><span>Cancel</span></button>
       </div>
-      <div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Nothing was saved. To keep those sales where they count now, untick those clinics and add the rest.</span></div>` };
+      <div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Nothing was saved.</span> <span>${esc(trOf(hint) || hint)}</span></div>` };
 }
 async function submitAddClinic(confirmed){
   const name = document.getElementById('mClinicName').value.trim();

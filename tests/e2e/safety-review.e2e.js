@@ -151,6 +151,14 @@ function seedCloud(extra){
     const shift = ms => page.evaluate(ms => { window.__shiftBy(ms); }, ms);
     return { page, boot, tick, ev, label, ctx, watch, shift };
   };
+  // a full backup to this device, as the supervisor makes it: the sheet reads the cloud, he downloads the file
+  const fullBackup = ph => ph.ev(async () => {
+    await openFullBackup();
+    for(const t0 = Date.now(); Date.now() - t0 < 60000 && !document.querySelector('[data-backup-download], [data-backup-failed]');) await new Promise(r => setTimeout(r, 50));
+    if(!document.querySelector('[data-backup-download]')) return false;
+    downloadFullBackup(); closeModal();
+    return !!_fullBackupSavedAt;
+  });
   const fill = (ph, o) => ph.ev(o => { closeModal(); switchView('log'); prepLogView(o.clinicId); pickClinic(o.clinicId); pickDoctorSeen(o.docId); document.getElementById('visitNotes').value = o.note; }, o);
   const cloudList = k => parse(cloud[k]) || [];
 
@@ -275,16 +283,18 @@ function seedCloud(extra){
     check('R3a. restoring today\'s own backup with no full backup on this device: it asks for the full backup first, and nothing changes (today\'s backup still holds the 20 good clinics)',
       asked && allGood(snapClinics()) && cloudList('clinics').length === 6, { asked, todaysBackup: snapClinics().length + ' clinics, e.g. ' + (snapClinics()[0] || {}).name, live: cloudList('clinics').length });
     // b — after a full backup: restored, and today's backup is never replaced
-    await S.ev(() => { _fullBackupSavedAt = Date.now(); closeModal(); });
+    await S.ev(() => { closeModal(); });
+    const fbB = await fullBackup(S); // (round 3: the file itself is checked against the cloud, so a real one is made here)
     await S.ev(async () => { window.__toasts = []; await restoreSnapshot('2026-11-13'); });
     const tb = await S.ev(() => window.__toasts.slice());
     check('R3b. with a full backup on this device, today\'s backup is restored (20 good clinics) and stays as it was — never replaced by the damaged data',
-      allGood(cloudList('clinics')) && allGood(snapClinics()), { toasts: tb, live: cloudList('clinics').length + ' e.g. ' + (cloudList('clinics')[0] || {}).name, todaysBackup: snapClinics().length + ' e.g. ' + (snapClinics()[0] || {}).name });
+      fbB && allGood(cloudList('clinics')) && allGood(snapClinics()), { fullBackupMade: fbB, toasts: tb, live: cloudList('clinics').length + ' e.g. ' + (cloudList('clinics')[0] || {}).name, todaysBackup: snapClinics().length + ' e.g. ' + (snapClinics()[0] || {}).name });
     await S.ctx.close();
     // c — the connection drops half-way; the second try restores the same good copy
     seedR3();
     const T = await mkPhone('R3c'); await T.boot('Dr. Ghaith', 'supervisor');
-    await T.ev(() => { try{ localStorage.setItem('um_snapDay', '2026-11-13'); }catch(e){} _fullBackupSavedAt = Date.now(); });
+    await T.ev(() => { try{ localStorage.setItem('um_snapDay', '2026-11-13'); }catch(e){} });
+    const fbC = await fullBackup(T);
     let dropped = false;
     mode.onWrite = (who, k) => { if(who === 'R3c' && (k === 'tombs' || k === SNAP) && !dropped){ dropped = true; mode.offline.add('R3c'); mode.onWrite = null; } };
     await T.ev(async () => { window.__toasts = []; await restoreSnapshot('2026-11-13'); });
@@ -294,8 +304,102 @@ function seedCloud(extra){
     await T.ev(async () => { window.__toasts = []; await restoreSnapshot('2026-11-13'); });
     const t2 = await T.ev(() => window.__toasts.slice());
     check('R3c. a restore of today\'s backup that fails half-way can be done again: the second try brings back the same 20 good clinics, and today\'s backup still holds them',
-      allGood(cloudList('clinics')) && allGood(snapClinics()), { dropped, firstTry: t1, secondTry: t2, live: cloudList('clinics').length + ' e.g. ' + (cloudList('clinics')[0] || {}).name, todaysBackup: snapClinics().length });
+      fbC && dropped && allGood(cloudList('clinics')) && allGood(snapClinics()) && !t1.some(x => /Restored|Nothing was changed/.test(x)), { fullBackupMade: fbC, dropped, firstTry: t1, secondTry: t2, live: cloudList('clinics').length + ' e.g. ' + (cloudList('clinics')[0] || {}).name, todaysBackup: snapClinics().length });
     await T.ctx.close();
+  }
+
+  // ===================== R12–R14. a restore removes only what is kept somewhere (re-review 2, 7) =====================
+  if(want('R12')){
+    // today's backup is restored (it is never replaced, R3): what it removes must be in the full
+    // backup on this device — as the cloud holds it NOW, not as it was when the file was made
+    const good = Array.from({ length: 20 }, (_, i) => ({ id: 'k' + i, name: 'Good clinic ' + i, rep: i % 2 ? 'Renova' : 'Mariam', cls: 'A', doctors: [{ id: 'dk' + i, name: 'Dr. K' + i }] }));
+    const broken = good.slice(0, 6).map(c => Object.assign({}, c, { name: 'Broken name ' + c.id }));
+    const mv = visit('vMorning', { clinicId: 'k1', rep: 'Renova', date: TODAY, ts: CLOCK - 7200000, notes: 'morning visit', doctorIds: ['dk1'] });
+    seedCloud({ clinics: JSON.stringify(broken), visits: JSON.stringify([mv]), [SNAP]: JSON.stringify({ clinics: good, products: [], visits: [mv], tasks: [], ts: TODAY + 'T05:00:00.000Z' }) });
+    const S = await mkPhone('R12-S'); await S.boot('Dr. Ghaith', 'supervisor');
+    await S.ev(() => { try{ localStorage.setItem('um_snapDay', '2026-11-13'); }catch(e){} window.__asked = []; window.confirm = m => { window.__asked.push(String(m)); return true; }; });
+    await S.ev(async () => { await restoreSnapshot('2026-11-13'); });
+    const asked0 = await S.ev(() => /full backup/i.test((document.getElementById('modalInner') || {}).textContent || ''));
+    await S.ev(() => closeModal());
+    const fb1 = await fullBackup(S);
+    // a few minutes later Renova logs a visit
+    const R = await mkPhone('R12-R'); await R.boot('Renova', 'rep');
+    await R.ev(async () => { visits.push({ id: 'vAfternoon', clinicId: 'k3', rep: 'Renova', date: todayStr(), ts: Date.now(), products: [], orderTaken: false, orders: [], orderItems: [], orderTotal: 0, doctorIds: ['dk3'], notes: 'logged after the full backup' }); await persist('visits'); });
+    const reached = cloudList('visits').some(v => v.id === 'vAfternoon');
+    // the supervisor taps Restore again
+    await S.ev(async () => { window.__asked = []; window.__toasts = []; await restoreSnapshot('2026-11-13'); });
+    const a = await S.ev(() => ({ asked: window.__asked.slice(), toasts: window.__toasts.slice(), modal: (document.getElementById('modalInner') || {}).textContent || '' }));
+    const liveA = cloudList('visits').map(v => v.id);
+    check('R12a. a visit logged after the full backup was made: the restore of today\'s backup does not start — it says this month\'s visits changed after the full backup and asks for a new one; nothing is asked, nothing changes, the visit is still in the cloud',
+      asked0 && fb1 && reached && !a.asked.length && /this month's visits changed after the full backup/.test(a.modal) && /Nothing was changed/.test(a.modal) && liveA.includes('vAfternoon') && cloudList('clinics').length === 6,
+      { askedFirst: asked0, fullBackupMade: fb1, visitReachedTheCloud: reached, questions: a.asked, sheet: a.modal.slice(0, 260), liveVisits: liveA, liveClinics: cloudList('clinics').length });
+    // …with a new full backup the restore runs: what it removes is in that file, and its question says so
+    await S.ev(() => closeModal());
+    const fb2 = await fullBackup(S);
+    const inFile = await S.ev(async () => (await _fullBackup.blob.text()).includes('vAfternoon'));
+    await S.ev(async () => { window.__asked = []; window.__toasts = []; await restoreSnapshot('2026-11-13'); });
+    const b = await S.ev(() => ({ asked: window.__asked.slice(), toasts: window.__toasts.slice() }));
+    check('R12b. …after a new full backup the restore runs: its question says what it removes (1 visit) and that everything it replaces is in the full backup saved to this device (with its time); the visit is in that file, today\'s backup is untouched',
+      fb2 && inFile && /0 clinics, 0 tasks and 1 visits of this month/.test(b.asked[0] || '') && /in the full backup saved to this device at \d\d:\d\d \(checked just now\)\. Today's backup stays as it is\./.test(b.asked[0] || '')
+        && b.toasts.some(t => /Restored 2026-11-13/.test(t)) && cloudList('clinics').length === 20 && cloudList('visits').map(v => v.id).join() === 'vMorning' && ((parse(cloud[SNAP]) || {}).clinics || []).length === 20,
+      { fullBackupMade: fb2, visitInTheFile: inFile, question: (b.asked[0] || '').slice(0, 420), toasts: b.toasts, liveVisits: cloudList('visits').map(v => v.id) });
+    await S.ctx.close(); await R.ctx.close();
+  }
+  if(want('R13')){
+    // two restores of earlier days: the copy the first one kept as today's backup is never written over
+    const good = Array.from({ length: 20 }, (_, i) => ({ id: 'k' + i, name: 'Good clinic ' + i, rep: i % 2 ? 'Renova' : 'Mariam', cls: 'A', doctors: [] }));
+    const broken = good.slice(0, 6).map(c => Object.assign({}, c, { name: 'Broken name ' + c.id }));
+    const morning = { id: 'kMorning', name: 'New Smile Clinic (added this morning)', rep: 'Mariam', cls: 'B', doctors: [{ id: 'dm', name: 'Dr. Noor' }], isNew: true, addedOn: TODAY };
+    seedCloud({ clinics: JSON.stringify(broken.concat([morning])),
+      'snap_2026-11-12': JSON.stringify({ clinics: broken.slice(0, 3), products: [], visits: [], tasks: [], ts: '2026-11-12T05:00:00.000Z' }), // damaged already
+      'snap_2026-11-11': JSON.stringify({ clinics: good, products: [], visits: [], tasks: [], ts: '2026-11-11T05:00:00.000Z' }) });
+    const holders = () => Object.keys(cloud).filter(k => /^snap_/.test(k) && ((parse(cloud[k]) || {}).clinics || []).some(c => c && c.id === 'kMorning')).concat(cloudList('clinics').some(c => c.id === 'kMorning') ? ['clinics'] : []);
+    const S = await mkPhone('R13-S'); await S.boot('Dr. Ghaith', 'supervisor');
+    await S.ev(() => { try{ localStorage.setItem('um_snapDay', '2026-11-13'); }catch(e){} window.__asked = []; window.confirm = m => { window.__asked.push(String(m)); return true; }; });
+    await S.ev(async () => { window.__toasts = []; await restoreSnapshot('2026-11-12'); });
+    const first = await S.ev(() => ({ asked: window.__asked.slice(), toasts: window.__toasts.slice() }));
+    const afterFirst = holders(), keptCopy = cloud[SNAP];
+    // that day was damaged too: the day before
+    await S.ev(async () => { window.__asked = []; window.__toasts = []; await restoreSnapshot('2026-11-11'); });
+    const gate = await S.ev(() => ({ asked: window.__asked.slice(), modal: (document.getElementById('modalInner') || {}).textContent || '' }));
+    const untouched = cloud[SNAP] === keptCopy && cloudList('clinics').length === 3;
+    await S.ev(() => closeModal());
+    const fb = await fullBackup(S);
+    await S.ev(async () => { window.__asked = []; window.__toasts = []; await restoreSnapshot('2026-11-11'); });
+    const second = await S.ev(() => ({ asked: window.__asked.slice(), toasts: window.__toasts.slice() }));
+    check('R13. a second restore of an earlier day never writes over the copy the first one kept as today\'s backup: it asks for a full backup first (nothing changes), then restores — and the clinic added this morning is still in today\'s backup, exactly as the first restore kept it',
+      /First, the data as it is now is kept as today's backup/.test(first.asked[0] || '') && afterFirst.join() === SNAP
+        && !gate.asked.length && /full backup/i.test(gate.modal) && /a restore never replaces it/.test(gate.modal) && untouched
+        && fb && second.toasts.some(t => /Restored 2026-11-11/.test(t)) && cloudList('clinics').length === 20 && cloud[SNAP] === keptCopy && holders().join() === SNAP
+        && /Today's backup stays as it is/.test(second.asked[0] || '') && !/kept as today's backup/.test(second.asked[0] || ''),
+      { firstQuestion: (first.asked[0] || '').slice(-80), heldAfterFirst: afterFirst, secondGate: gate.modal.slice(0, 200), nothingChangedAtTheGate: untouched, fullBackupMade: fb,
+        secondQuestion: (second.asked[0] || '').slice(-190), secondToasts: second.toasts, heldAfterSecond: holders(), todaysBackupUnchanged: cloud[SNAP] === keptCopy });
+    await S.ctx.close();
+  }
+  if(want('R14')){
+    // the restore writes only over exactly what it checked: a change on another phone in between stops it
+    const good = Array.from({ length: 20 }, (_, i) => ({ id: 'k' + i, name: 'Good clinic ' + i, rep: i % 2 ? 'Renova' : 'Mariam', cls: 'A', doctors: [] }));
+    const broken = good.slice(0, 6).map(c => Object.assign({}, c, { name: 'Broken name ' + c.id }));
+    const other = JSON.stringify([task('tOther', 'added on another phone just now', { rep: 'Renova' })]);
+    for(const variant of ['while the question was open', 'while the restore was writing']){
+      const open = variant.startsWith('while the question');
+      seedCloud({ clinics: JSON.stringify(broken), tasks: JSON.stringify([task('tMine', 'an open task')]),
+        'snap_2026-11-12': JSON.stringify({ clinics: good, products: [], visits: [], tasks: [], ts: '2026-11-12T05:00:00.000Z' }) });
+      const S = await mkPhone('R14-' + (open ? 'q' : 'w')); await S.boot('Dr. Ghaith', 'supervisor');
+      await S.ev(() => { try{ localStorage.setItem('um_snapDay', '2026-11-13'); }catch(e){} });
+      if(open) await S.ev(other => { window.confirm = () => { window.__cSet('tasks', other); return true; }; }, other); // another phone's save lands while he reads the question
+      else { await S.ev(() => { window.confirm = () => true; }); mode.onWrite = (who, k) => { if(who === S.label && k === 'tombs'){ mode.onWrite = null; cloud.tasks = other; } }; } // …or between its check and its writes
+      await S.ev(async () => { window.__toasts = []; await restoreSnapshot('2026-11-12'); });
+      mode.onWrite = null;
+      const t = await S.ev(() => window.__toasts.slice());
+      await S.tick();
+      const mem = await S.ev(() => ({ clinics: clinics.length, tasks: tasks.map(x => x.id) }));
+      check(`R14 [${variant}] a task another phone saved ${variant} is never written over: the restore stops, says so, and nothing is changed (the clinics are as they were, the task is in the cloud and on this screen)`,
+        t.some(x => /Restore stopped — the tasks changed on another phone/.test(x) && /Nothing was changed/.test(x)) && !t.some(x => /Restored/.test(x))
+          && cloudList('tasks').map(x => x.id).join() === 'tOther' && cloudList('clinics').length === 6 && /^Broken/.test(cloudList('clinics')[0].name) && mem.clinics === 6 && mem.tasks.join() === 'tOther',
+        { toasts: t, cloudTasks: cloudList('tasks').map(x => x.id), cloudClinics: cloudList('clinics').length + ' e.g. ' + cloudList('clinics')[0].name, onScreen: mem, todaysBackupKept: !!cloud[SNAP] });
+      await S.ctx.close();
+    }
   }
 
   // ===================== R4. a restore on a phone whose visits did not load =====================
@@ -592,6 +696,97 @@ function seedCloud(extra){
       JSON.stringify(vp.products) === '["p1"]' && JSON.stringify(pb.memVisit) === '[["p1"],["p1"]]' && pb.memCodes.includes('p1') && !pb.memCodes.includes('p1-new') && cloudList('products').some(p => p.id === 'p1'),
       { toasts: pb.toasts, cloudVisit: vp.products, onScreen: pb, cloudCodes: cloudList('products').map(p => p.id) });
     await S2.ctx.close();
+  }
+
+  // ===================== R15. one list that cannot be sent never freezes the others (re-review 5) =====================
+  if(want('R15')){
+    for(const variant of ['the rules refuse it', 'it is too large for the cloud']){
+      const refusedV = variant.startsWith('the rules');
+      seedCloud();
+      const A = await mkPhone('R15-' + (refusedV ? 'r' : 'l')); await A.boot('Mariam', 'rep');
+      mode.offline.add(A.label);
+      await A.ev(async big => { const d = todayStr(); dayPlans[d] = dayPlans[d] || {}; dayPlans[d].Mariam = [{ id: 'c3', note: big ? 'x'.repeat(1100000) : '', at: Date.now() }]; await persist('dayPlans'); }, !refusedV);
+      mode.offline.delete(A.label);
+      if(refusedV) mode.deny = { re: /^dayPlans$/, ops: 'w', who: new Set([A.label]) };
+      await A.tick();
+      const st = await A.ev(() => ({ outbox: outboxList(), parked: [..._saveParked.entries()], blocked: [..._saveBlocked], bar: ((document.getElementById('tooLargeBar') || {}).textContent || '').slice(0, 90) }));
+      // the supervisor renames a clinic and gives her a task
+      const S = await mkPhone('R15-S' + (refusedV ? 'r' : 'l')); await S.boot('Dr. Ghaith', 'supervisor');
+      await S.ev(async () => { const c = clinics.find(x => x.id === 'c1'); c.name = 'Dental 5 Clinic (Salmiya)'; await persist('clinics'); tasks.push({ id: 'tS', text: 'call Dr. Ahmed today', done: false, created: todayStr(), rep: 'Mariam' }); await persist('tasks'); });
+      const reads0 = mode.reads.filter(r => r === A.label + '|clinics').length;
+      await A.tick(); await A.tick();
+      const seen = await A.ev(() => ({ name: (clinics.find(x => x.id === 'c1') || {}).name, task: tasks.some(t => t && t.id === 'tS'), plan: (((dayPlans[todayStr()] || {}).Mariam || [])[0] || {}).id || null, kept: /"c3"/.test(localStorage.getItem('um_mirror:dayPlans') || ''), outbox: outboxList() }));
+      const reads = mode.reads.filter(r => r === A.label + '|clinics').length - reads0;
+      check(`R15 [${variant}] a day's plan waits on her phone because ${variant}: the phone still refreshes every round — the clinic the supervisor renamed and the task he gave her show at once — and her plan stays on her phone and in the queue`,
+        (refusedV ? st.parked.some(([k, why]) => k === 'dayPlans' && why === 'refused') : st.blocked.includes('dayPlans')) && seen.name === 'Dental 5 Clinic (Salmiya)' && seen.task && reads >= 2 && seen.plan === 'c3' && seen.kept && seen.outbox.includes('dayPlans'),
+        { afterTheFirstRound: st, afterTwoMoreRounds: seen, clinicReadsInTwoRounds: reads });
+      if(refusedV){
+        const tries = () => mode.tries.filter(x => x === A.label + '|dayPlans').length;
+        const t0 = tries();
+        await A.tick(); await A.tick();
+        const t1 = tries();
+        await A.shift(61 * 60000); await A.tick();
+        const t2 = tries();
+        const still = await A.ev(() => ({ outbox: outboxList(), parked: [..._saveParked.entries()] }));
+        mode.deny = null; // the supervisor fixed the rules
+        await A.shift(61 * 60000); await A.tick();
+        const end = await A.ev(() => ({ outbox: outboxList(), parked: [..._saveParked.entries()], bar: !!document.getElementById('tooLargeBar') }));
+        const inCloud = ((((parse(cloud.dayPlans) || {})[TODAY] || {}).Mariam || [])[0] || {}).id || null;
+        check('R15. …a list the rules refused is not sent every round, but again about hourly: refused again it stays kept; once the rules allow it, it lands by itself (no tap, no reopen) and the bar goes',
+          t1 === t0 && t2 === t1 + 1 && still.outbox.includes('dayPlans') && still.parked.some(([k]) => k === 'dayPlans') && inCloud === 'c3' && !end.outbox.length && !end.parked.length && !end.bar,
+          { triesBefore: t0, afterTwoRounds: t1, afterAnHour: t2, stillKept: still, planInTheCloudAfterTheNextHour: inCloud, end });
+      }
+      mode.deny = null;
+      await A.ctx.close(); await S.ctx.close();
+    }
+  }
+
+  // ===================== R17. a rename that landed after the app was closed (re-review 8) =====================
+  if(want('R17')){
+    seedCloud();
+    const S = await mkPhone('R17-S'); await S.boot('Dr. Ghaith', 'supervisor');
+    mode.slowWrite.staff = 16000; // the team list's write lands 16 s later (a slow link)
+    const p = S.ev(async () => { const idx = staff.findIndex(s => s.name === 'Renova'); openStaffForm(idx); await new Promise(r => setTimeout(r, 200)); document.getElementById('sfName').value = 'Renova K.'; await saveStaff(idx); }).catch(() => {});
+    await S.page.waitForTimeout(13500); // "no answer yet" was said; he closes the app
+    const before = await S.ev(() => ({ toasts: window.__toasts.slice(), note: localStorage.getItem('um_renamePending') })).catch(() => ({}));
+    await S.page.goto('about:blank');
+    await S.page.waitForTimeout(4000); // the write lands meanwhile
+    held = false; waiters.length = 0; // (the page that closed held this fake cloud's one write lock: gone with the page)
+    const team = cloudList('staff').map(x => x.name);
+    await S.boot('Dr. Ghaith', 'supervisor'); // he opens the app again
+    const st = await S.ev(() => ({ team: staff.map(x => x.name), oldNameClinics: clinics.filter(c => c.rep === 'Renova').length, banner: (document.getElementById('renameBanner') || {}).textContent || '' }));
+    const untouched = cloudList('clinics').some(c => c.rep === 'Renova') && Object.keys(parse(cloud.targets) || {}).includes('Renova'); // nothing renamed itself
+    await S.ev(async () => { window.__toasts = []; const b = document.querySelector('#renameBanner button'); if(b && typeof finishPendingRename === 'function') await finishPendingRename(); });
+    const done = await S.ev(() => ({ toasts: window.__toasts.slice(), banner: !!document.getElementById('renameBanner'), note: localStorage.getItem('um_renamePending'), hers: clinics.filter(c => c.rep === 'Renova K.').length }));
+    const R = await mkPhone('R17-R'); await R.boot('Renova K.', 'rep');
+    const mine = await R.ev(() => ({ myClinics: clinics.filter(c => canViewClinic(c)).map(c => c.name), myTarget: !!(targets[currentUser.name] && targets[currentUser.name].revenue) }));
+    check('R17. a rename whose team-list save landed only after the app was closed: at the next start the supervisor is told the rename was not finished (the team list has the new name, her clinic and target the old one) — nothing renames itself — and one tap on "Finish the rename" renames the rest: she sees her clinic and her target under the new name',
+      team.includes('Renova K.') && /Renova K\./.test(before.note || '') && /was not finished/.test(st.banner) && /Renova K\./.test(st.banner) && st.oldNameClinics === 1 && untouched
+        && done.toasts.some(t => /Rename finished/.test(t)) && !done.banner && !done.note && done.hers === 1 && !cloudList('clinics').some(c => c.rep === 'Renova') && Object.keys(parse(cloud.targets) || {}).includes('Renova K.')
+        && mine.myClinics.includes('Summit Dental Center') && mine.myTarget,
+      { saidBeforeClosing: before.toasts, noteOnThePhone: before.note, teamListInTheCloud: team, atTheNextStart: st, nothingRenamedItself: untouched, afterTheTap: done, cloudOwners: cloudList('clinics').map(c => c.rep), cloudTargets: Object.keys(parse(cloud.targets) || {}), renovaK: mine });
+    await p; await S.ctx.close(); await R.ctx.close();
+  }
+
+  // ===================== R19. the access check gets no answer (re-review 9) =====================
+  if(want('R19')){
+    seedCloud();
+    const A = await mkPhone('R19-A'); await A.boot('Mariam', 'rep');
+    mode.deny = { re: /^dayPlans$/, ops: 'w', who: new Set(['R19-A']) }; // the rules refuse this one document for her login
+    mode.hang.staff = 1;                                                 // …and the access check's read does not answer (a slow link)
+    const first = await A.ev(async () => { window.__toasts = []; const d = todayStr(); dayPlans[d] = { Mariam: [{ id: 'c3', note: '', at: Date.now() }] }; const r = await persistTold('dayPlans');
+      return { outcome: r.outcome, text: (saveFailText(r, 'dayPlans') || [])[0] || '', toasts: window.__toasts.slice(), parked: [..._saveParked.entries()], queued: outboxHas('dayPlans'), onPhone: /"c3"/.test(localStorage.getItem('um_mirror:dayPlans') || '') }; });
+    mode.hang.staff = 0;
+    await A.ev(() => { window.__toasts = []; });
+    await A.tick();
+    const next = await A.ev(() => ({ toasts: window.__toasts.slice(), parked: [..._saveParked.entries()], queued: outboxHas('dayPlans'), onPhone: /"c3"/.test(localStorage.getItem('um_mirror:dayPlans') || ''), bar: ((document.getElementById('tooLargeBar') || {}).textContent || '').slice(0, 120) }));
+    mode.deny = null;
+    const said = first.toasts.concat([first.text]), UNSURE = /Kept on this phone — the cloud did not answer whether this login may save it; it is tried again/;
+    check('R19. the rules refuse a save and the access check gets no answer in time: the plan is kept on the phone and queued, and the words say so — "the cloud did not answer whether this login may save it; it is tried again" — never "signed out?", never "not saved"; at the next round, when the cloud answers, it says "Not allowed for this login — kept on this phone, not sent"',
+      first.queued && first.onPhone && !first.parked.length && said.every(t => !/signed out\?|not saved/i.test(t)) && first.toasts.some(t => UNSURE.test(t)) && UNSURE.test(first.text)
+        && next.queued && next.onPhone && next.parked.some(([k, why]) => k === 'dayPlans' && why === 'refused') && next.toasts.some(t => /Not allowed for this login — kept on this phone, not sent/.test(t)) && !next.toasts.some(t => /not saved|signed out\?/i.test(t)),
+      { firstSave: first, nextRound: next });
+    await A.ctx.close();
   }
 
   console.log(results.join('\n'));

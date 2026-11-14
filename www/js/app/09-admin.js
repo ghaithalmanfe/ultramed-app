@@ -980,7 +980,8 @@ async function commitClinicImport(confirmed){
       account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
   });
   const ask = document.getElementById('ciAsk');
-  const chk = bulkClinicSalesCheck(add, typeof confirmed === 'string' ? confirmed : '', 'commitClinicImport', "document.getElementById('ciAsk').innerHTML=''");
+  const chk = bulkClinicSalesCheck(add, typeof confirmed === 'string' ? confirmed : '', 'commitClinicImport', "document.getElementById('ciAsk').innerHTML=''",
+    'To keep those sales where they count now, untick those clinics and add the rest.');
   if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); else showToast('⚠️ Not saved — these clinic names need a check first', 6000); return; }
   let added = 0, updated = 0, skipped = 0;
   _clinicImport.rows.forEach(x=>{

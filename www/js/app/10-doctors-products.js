@@ -493,7 +493,8 @@ async function commitContactImport(confirmed){
   });
   const making = Object.values(newClinics).concat(holdNew ? [holdNew] : []);
   const ask = document.getElementById('ciAsk2');
-  const chk = bulkClinicSalesCheck(making, typeof confirmed === 'string' ? confirmed : '', 'commitContactImport', "document.getElementById('ciAsk2').innerHTML=''");
+  const chk = bulkClinicSalesCheck(making, typeof confirmed === 'string' ? confirmed : '', 'commitContactImport', "document.getElementById('ciAsk2').innerHTML=''",
+    'To keep those sales where they count now, add those clinics first (Clinics → + Add clinic asks "Count from this month"), then import this file again.');
   if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); else showToast('⚠️ Not saved — these clinic names need a check first', 6000); return; }
   making.forEach(c => { clinics.push(c); clinicsMade++; });
   const holdClinic = () => clinics.find(x=>x.name===HOLD_NAME);
