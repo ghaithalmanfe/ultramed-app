@@ -145,12 +145,16 @@ async function restore(argv, env, log, io){
     }catch(e){
       const appeared = !a.force && (e.code === 'ALREADY_EXISTS' || e.code === 'FAILED_PRECONDITION') ? ' (a document appeared in the target meanwhile)' : '';
       // A refused commit writes none of its documents. In production the
-      // published rules (firestore.rules) refuse an old daily backup (snap_), a
-      // key they do not list, and the supervisor's documents for another login.
+      // published rules (firestore.rules, v123) accept a restore only from the
+      // supervisor's login — the e-mail and backup jobs' logins only read —
+      // and only of the documents the app itself writes: never an old daily
+      // backup (snap_) or a key they do not list, and, once MIN_APP_REV() was
+      // raised in the console, never a document an older app version saved
+      // (it carries a lower `rev`, or none; a restore adds none).
       const rules = e.status === 403;
       log.error('Restore stopped', e.message + appeared + '. ' + done + ' of ' + writes.length + ' documents had been written'
         + (done ? '; the target now holds a partial copy: ' + (rules ? 'once its rules allow the writes, ' : '') + 'run again with --force to finish' : '') + '.'
-        + (rules ? ' The target\'s security rules refused the write: the restore login must be allowed to write every document of "state" (docs/backup.md, "Restore into a separate project"; for production, "Restore into production").' : ''));
+        + (rules ? ' The target\'s security rules refused the write, and a refused batch writes none of its documents. A separate project\'s rules must let the restore login write every document of "state" (docs/backup.md, "Restore into a separate project"). Production\'s published rules accept only the supervisor\'s login (the e-mail and backup jobs\' logins only read), only the documents the app itself writes (the --only list in the guide), and, once MIN_APP_REV() was raised in the console, only documents carrying that app revision (docs/backup.md, "Restore into production").' : ''));
       return 1;
     }
     done += batches[i].length;

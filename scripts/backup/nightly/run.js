@@ -61,10 +61,15 @@ function pickLogin(env, log){
   if(!!env.BACKUP_LOGIN_EMAIL !== !!env.BACKUP_LOGIN_PASSWORD){
     log.warn('Backup login incomplete', 'Only one of BACKUP_LOGIN_EMAIL and BACKUP_LOGIN_PASSWORD is set; it is ignored.');
   }
-  if(pair('BACKUP_LOGIN_EMAIL', 'BACKUP_LOGIN_PASSWORD')) return { email: String(env.BACKUP_LOGIN_EMAIL).trim(), password: String(env.BACKUP_LOGIN_PASSWORD), source: 'the backup login (BACKUP_LOGIN_EMAIL)' };
-  if(pair('REPORT_LOGIN_EMAIL', 'REPORT_LOGIN_PASSWORD')) return { email: String(env.REPORT_LOGIN_EMAIL).trim(), password: String(env.REPORT_LOGIN_PASSWORD), source: "the daily e-mails' login (REPORT_LOGIN_EMAIL)" };
+  if(pair('BACKUP_LOGIN_EMAIL', 'BACKUP_LOGIN_PASSWORD')) return { email: String(env.BACKUP_LOGIN_EMAIL).trim(), password: String(env.BACKUP_LOGIN_PASSWORD), source: 'the backup login (BACKUP_LOGIN_EMAIL)', secrets: 'BACKUP_LOGIN_EMAIL and BACKUP_LOGIN_PASSWORD' };
+  if(pair('REPORT_LOGIN_EMAIL', 'REPORT_LOGIN_PASSWORD')) return { email: String(env.REPORT_LOGIN_EMAIL).trim(), password: String(env.REPORT_LOGIN_PASSWORD), source: "the daily e-mails' login (REPORT_LOGIN_EMAIL)", secrets: 'REPORT_LOGIN_EMAIL and REPORT_LOGIN_PASSWORD' };
   return null;
 }
+// What to do about a refusal, said with the failure (the owner reads the run's
+// page, not this file). Names secrets, never their values.
+function withHint(e, hint){ if(e && typeof e === 'object' && !e.hint) e.hint = hint; return e; }
+const READ_REFUSED = 'the security rules refused the read: the backup\'s login must be an e-mail and password login on the company\'s domain (docs/backup.md, "One-time setup")';
+const refusedRead = e => (e instanceof F.ApiError && e.status === 403 ? withHint(e, READ_REFUSED) : e);
 // GitHub step outputs and job summary; a failure here never fails a backup
 // that is already written.
 function ghAppend(file, text, log){
@@ -114,7 +119,14 @@ async function backup(env, argv, log, now){
 
   log.info('UltraMed database backup (' + tier + ') of project ' + project + ', started ' + now.toISOString());
   if(ends.emulator) log.info('Using the local emulator named by FIRESTORE_EMULATOR_HOST / FIREBASE_AUTH_EMULATOR_HOST, not the real Firebase.');
-  const s = await F.signIn({ identity: ends.identity, apiKey: app.apiKey, email: login.email, password: login.password, retry, log: log.info });
+  let s;
+  try{ s = await F.signIn({ identity: ends.identity, apiKey: app.apiKey, email: login.email, password: login.password, retry, log: log.info }); }
+  catch(e){
+    // refused, not unreachable: the login itself is wrong, disabled or removed
+    throw e instanceof F.ApiError && !e.transient
+      ? withHint(e, 'the sign-in was refused: check that the repository secrets ' + login.secrets + ' hold the e-mail and password of a working login of the app (docs/backup.md, "One-time setup")')
+      : e;
+  }
   log.addSecret(s.idToken); log.addSecret(s.refreshToken);
   log.info('Signed in with ' + login.source + '.');
 
@@ -131,10 +143,10 @@ async function backup(env, argv, log, now){
   try{
     listed = await F.listCollection(Object.assign({}, listOpts, { readTime }));
   }catch(e){
-    if(!(e instanceof F.ApiError) || e.status !== 400 || e.page !== 1) throw e;
+    if(!(e instanceof F.ApiError) || e.status !== 400 || e.page !== 1) throw refusedRead(e);
     log.warn('Backup read time refused', 'Firestore refused a fixed read time (' + e.message + '). Reading each page as it is now instead: a save made during these seconds could be caught half-way.');
     readTime = null;
-    listed = await F.listCollection(listOpts);
+    try{ listed = await F.listCollection(listOpts); }catch(e2){ throw refusedRead(e2); }
   }
   const docs = listed.docs;
   log.info('Listed ' + plural(docs.size, 'document') + ' in ' + plural(listed.pages, 'page') + '.');
@@ -204,7 +216,7 @@ async function main(o){
   try{
     return await backup(env, o.argv || process.argv.slice(2), log, o.now ? o.now() : new Date());
   }catch(e){
-    log.error('Backup failed', ((e && e.message) || String(e)) + (outOfRoom(e) ? TOO_BIG : '') + '. No backup file was written.');
+    log.error('Backup failed', ((e && e.message) || String(e)) + (e && e.hint ? ' — ' + e.hint : '') + (outOfRoom(e) ? TOO_BIG : '') + '. No backup file was written.');
     return 1;
   }
 }

@@ -40,8 +40,8 @@ above include them.
 ## What the nightly backup holds
 
 Every document of the collection `state` in project `ultramed-field-ops` — everything
-the app keeps (one document per key, `{value, updated}`, as `www/js/app/01-config.js`
-stores it): clinics and doctors, visits (this month's `visits`, every past month's
+the app keeps (one document per key, as `www/js/app/01-config.js` stores it: `{value,
+updated}` and, since v123, `rev`, the revision of the app that saved it): clinics and doctors, visits (this month's `visits`, every past month's
 `visitsArch:YYYY-MM`, and `visitsIndex`), tasks, day plans, requests and stands
 (`events`), targets, the team list (`staff`), the product catalog, prescription types,
 selling guides, discount limits and KPI settings, the ERP sales index (`erpSales`) and
@@ -50,8 +50,9 @@ the delete log, photos (`photo:<id>`), team chat and memories, the e-mail and re
 logs, the change log (`auditLog:YYYY-MM`, once the release that adds it is out), the
 app's own daily `snap_` backups, and any older document still there.
 
-Each document is kept whole, exactly as stored (its `value` string is never parsed or
-rewritten), with its create and update times. Nothing is chosen by name: the whole
+Each document is kept whole, exactly as stored — its `value` string never parsed or
+rewritten, its `rev` kept where it has one and none added where it has not — with its
+create and update times. Nothing is chosen by name, and no field is chosen: the whole
 collection is listed, so a kind of document added later is backed up too. All pages are
 read at one instant (a Firestore read time), so a save made during the backup cannot
 leave it half old, half new; if Firestore refused a fixed read time, the run says so and
@@ -101,11 +102,18 @@ secret**:
   later, older files still need the old one until they expire.
 - The login: nothing to add if the daily e-mails are set up — the backup then signs in
   with `REPORT_LOGIN_EMAIL` / `REPORT_LOGIN_PASSWORD`. To give the backup a login of its
-  own (better: it can be changed without touching the e-mails), add
+  own (better: its password can be changed without touching the e-mails), add
   `BACKUP_LOGIN_EMAIL` and `BACKUP_LOGIN_PASSWORD`, an e-mail/password login made in the
-  Firebase console → Authentication → Users → Add user. It must be on the company domain
-  (`…@ultramed-kw.com`): the security rules in `firestore.rules`, once published, refuse
-  any other login, and the run turns red with "page 1: HTTP 403 PERMISSION_DENIED".
+  Firebase console → Authentication → Users → Add user; when both are set, the backup
+  uses them. Either login must be on the company's domain: the security rules in
+  `firestore.rules`, once published, refuse any other, and the run turns red with "page
+  1: HTTP 403 PERMISSION_DENIED … the security rules refused the read".
+- Make that login read-only: when the security rules are published, its address goes in
+  `JOB_EMAILS()` (in the Firebase console only, never in the repository — the rules file
+  says how, beside the supervisor's). A login listed there reads every document and can
+  write nothing but the e-mail job's log (`mailLog`). Until it is listed the backup works
+  all the same, but the login is an ordinary team login: it could write the team's
+  documents if its password leaked.
 
 Then Actions → "Database backup" → **Run workflow** once and check that the run is green
 and lists an artifact. The schedule only runs from the default branch (`main`).
@@ -175,29 +183,45 @@ the others); a full backup taken on the phone (that one goes into a test cloud o
 ## Restore into production (last resort)
 
 Only with the owner's approval, and with a developer: it replaces every change made since
-the backup (a phone that still holds its own later changes may send them again when it
-next saves). It needs both `--i-understand-this-overwrites-production` and, unless the
-database is empty, `--force`; `RESTORE_API_KEY` is then the app's own web API key and the
-login is the supervisor's (the published rules let only the supervisor write the team
-list, targets, settings and sales files).
+the backup. Have everyone close the app before the restore and open it again after; a
+phone that held changes it had not sent yet sends them when it opens, and they merge
+into the restored data.
 
-The published security rules (`firestore.rules`) refuse a **whole** restore: they never
-let anyone write a daily backup older than yesterday (`snap_`) or a key they do not list
-(an old app version's document). The restore then stops at the batch that holds one,
-writes none of that batch's documents (the message counts any batch written before it)
-and says the rules refused it. Two ways:
+It needs both `--i-understand-this-overwrites-production` and, because production is not
+empty, `--force`. `RESTORE_API_KEY` is then the app's own web API key, and the login is
+the **supervisor's**: under the published rules only the supervisor writes the team list,
+the targets, the settings and the sales files, and the e-mail and backup jobs' logins
+only read (a restore with one of them is refused).
 
-- restore the documents the app uses, which the rules accept:
+What the published security rules (`firestore.rules`, v123) accept from a restore — a
+batch they refuse writes none of its documents (the message counts any batch written
+before it), and the tool says it was the rules:
 
-  ```sh
-  node scripts/backup/nightly/restore.js <bundle.json> --i-understand-this-overwrites-production --force \
-    --only=clinics,visits,visitsIndex,visitsArch:,tasks,dayPlans,events,tombs,recycleBin,erpNotes,products,repairLog,chat,memories,mailLog,auditLog:,photo:,staff,targets,benchmarks,categoryGuides,erpSales,erpRows:,erpMap,erpMapLog,rxTypes
-  ```
+- **Not the whole backup.** They never let anyone write a daily backup older than
+  yesterday (`snap_`) or a key they do not list (an old app version's document). Restore
+  the documents the app keeps, with the list below.
+- **Documents exactly as they were.** A restored document is the stored one, field for
+  field: it carries the app revision `rev` if it had one, and none is added. Rules
+  published before v123 accept only `value` and `updated`, so they refuse a document
+  that carries `rev`: publish the v123 rules first.
+- **The oldest revision allowed.** `MIN_APP_REV()` is 0 in the repository (every version
+  may write). If it was raised in the console, the rules refuse every document an older
+  version saved — one with a lower `rev`, or with none — except `mailLog`. Set it back
+  to 0 for the minutes of the restore, then raise it again.
 
-  (the first phone that opens the app that day makes the day's backup again);
-- or, for the minutes of the restore, publish rules that let the restore login write
-  `state`, restore everything, then publish `firestore.rules` again (with the supervisor's
-  address in place of the placeholder, as when it was first published).
+```sh
+node scripts/backup/nightly/restore.js <bundle.json> --i-understand-this-overwrites-production --force \
+  --only=clinics,visits,visitsIndex,visitsArch:,tasks,dayPlans,events,tombs,recycleBin,erpNotes,products,repairLog,chat,memories,mailLog,auditLog:,photo:,staff,targets,benchmarks,categoryGuides,erpSales,erpRows:,erpMap,erpMapLog,rxTypes
+```
+
+Every document in that list comes back exactly as the backup holds it. The app's own
+daily backups (`snap_`) and any document not in the list stay as they are — the daily
+backup taken on the day of the damage included.
+
+The other way, to restore everything: for the minutes of the restore publish rules that
+let the restore login write `state` (as for a separate project, above), restore, then
+publish `firestore.rules` again with the addresses in place of its two placeholders, as
+when it was first published.
 
 ## Recovery objectives
 
@@ -232,11 +256,11 @@ and says the rules refused it. Two ways:
 - **Inactivity**: GitHub disables scheduled workflows of a public repository after 60
   days without repository activity (it e-mails a warning first); re-enable it on the
   workflow's page.
-- **The backup login can also write**: the security rules have no read-only role, so the
-  backup's login may write what that login may write anywhere — the team's documents
-  (clinics, visits, tasks …) for a team login, everything for the supervisor's. A login
-  used only by the backup, with a long password, limits who knows it; a read-only role
-  for it would be a change to `firestore.rules`.
+- **The backup's login**: listed in `JOB_EMAILS()` when the rules are published (see the
+  setup), it only reads — the rules refuse every write but the e-mail log. Not listed,
+  or while the published rules are older than v123, it is an ordinary team login that
+  may write the team's documents (clinics, visits, tasks …). Never use the supervisor's
+  login for the backup: it may write everything.
 - **The in-app `snap_` backups** stay as they are; they live in the same database and are
   included in this backup.
 

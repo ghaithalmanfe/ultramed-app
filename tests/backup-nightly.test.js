@@ -53,7 +53,8 @@ function storedKinds(){
 const V122_VALUES = {
   chat: [{ id: 'm1', who: 'مريم', text: AR + ' ' + MARKER, ts: 1762900000000, photoId: 'p3', thumb: 'data:image/jpeg;base64,AAAA' }],
   memories: [{ id: 'mem1', who: 'رانوفا', text: 'ذكرى ' + MARKER, ts: 1762900000001 }],
-  tombs: { visits: { v9: 1762900000000 }, clinics: { c99: 1762900000000 }, doctors: { 'c1|d7': 1762900000000 } },
+  // the delete log as v123 writes it: the writer's app revision and the revivals, inside the value
+  tombs: { visits: { v9: 1762900000000 }, clinics: { c99: 1762900000000 }, doctors: { 'c1|d7': 1762900000000 }, revived: { clinics: { c5: 1762900000001 } }, rev: 123 },
   recycleBin: { clinics: [{ id: 'c98', name: 'عيادة محذوفة ' + MARKER, at: 1762900000000 }], visits: [] },
   rxTypes: { rev: 2, types: [{ id: 'fast', name: 'Ultramed fast moving products', active: true }, { id: 'tepe', name: 'Tepe prescription', active: true }] },
   erpMapLog: [{ at: 1762900000000, who: 'Dr. Ghaith', account: 'مستوصف الري', from: null, to: 'c3' }],
@@ -64,6 +65,12 @@ const V122_VALUES = {
   erpNotes: { 'SINV1|Brush': { reason: 'عينات ' + MARKER } },
 };
 const FAMILY_IDS = { 'visitsArch:': '2026-10', 'auditLog:': '2026-11', 'photo:': 'mh2k3x9ab', 'erpRows:': 'oct26:1:0', 'snap_': '2026-11-12' };
+// Since v123 a document is { value, updated, rev } — rev = the app revision
+// that saved it (window.storage, 01-config.js). One an older version saved, or
+// one saved while the phone left the revision out (um_revOff), has no rev, and
+// the e-mail job's mailLog never has one. These carry it here; the others do not.
+const REV_IDS = ['clinics', 'visits', 'visitsIndex', 'tasks', 'tombs', 'products', 'chat', 'targets', 'photo:p0', 'visitsArch:2026-09', 'erpRows:sep26:3:0', 'snap_2026-11-12'];
+const NO_REV_IDS = ['staff', 'dayPlans', 'events', 'erpSales', 'mailLog', 'memories', 'photo:p1', 'visitsArch:2026-08', 'erpRows:sep26:3:1', 'snap_2026-11-01'];
 
 function sourceDocs(){
   const rand = prng(20261111);
@@ -112,6 +119,7 @@ function sourceDocs(){
   const kinds = storedKinds();
   kinds.keys.forEach(k => { if(!docs.has(k)) put(k, V122_VALUES[k] || { note: MARKER, ar: AR }); });
   kinds.families.forEach(p => { if(!Array.from(docs.keys()).some(id => id.startsWith(p))) put(p + (FAMILY_IDS[p] || 'x1'), { note: MARKER, ar: AR }); });
+  REV_IDS.forEach(id => { docs.get(id).fields.rev = { integerValue: '123' }; });
   return docs;
 }
 
@@ -503,6 +511,31 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
       assert.match(runLog, new RegExp('\\n  ' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' +' + n + ' '), p + ' in the run log');
     }
   });
+  // v123: { value, updated, rev }. The backup takes the document, not a list of
+  // fields: whatever a document carries is in the file, and nothing is added
+  // to one that does not carry it (a restore must not date a document as v123's).
+  const sameDoc = (got, want, what) => {
+    assert.deepEqual(Object.keys(got).sort(), Object.keys(want).sort(), what + ': the same fields, none added, none dropped');
+    for(const f of Object.keys(want)) assert.equal(JSON.stringify(got[f]), JSON.stringify(want[f]), what + ': field ' + f);
+    assert.ok(Buffer.from(got.value.stringValue, 'utf8').equals(Buffer.from(want.value.stringValue, 'utf8')), what + ': the value, byte for byte');
+  };
+  test('a document with the app revision (rev, v123) and one without are in the backup exactly as stored', () => {
+    const bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf8'));
+    for(const id of REV_IDS){
+      assert.deepEqual(source.get(id).fields.rev, { integerValue: '123' }, 'the test data: ' + id + ' carries rev');
+      assert.deepEqual(bundle.keys[id].fields.rev, { integerValue: '123' }, id + ' keeps its rev');
+      sameDoc(bundle.keys[id].fields, source.get(id).fields, id);
+    }
+    for(const id of NO_REV_IDS){
+      assert.ok(!('rev' in source.get(id).fields), 'the test data: ' + id + ' has no rev');
+      assert.ok(!('rev' in bundle.keys[id].fields), id + ' is not given a rev');
+      sameDoc(bundle.keys[id].fields, source.get(id).fields, id);
+    }
+    // the delete log's own revision and its revivals are inside its value: text the backup never parses
+    const tombs = JSON.parse(bundle.keys.tombs.fields.value.stringValue);
+    assert.equal(tombs.rev, 123); assert.deepEqual(tombs.revived, { clinics: { c5: 1762900000001 } });
+    assert.equal(bundle.keys.tombs.fields.value.stringValue, source.get('tombs').fields.value.stringValue);
+  });
   test('verify.js refuses a wrong passphrase, a changed or cut file, and a bundle inside the repository', async () => {
     const wrong = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: PASS + '!' }));
     assert.equal(wrong.code, 1); assert.match(wrong.err, /wrong passphrase/);
@@ -576,6 +609,9 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
       assert.deepStrictEqual(docs.get(id).fields, d.fields, id);
       if(d.fields.value) assert.ok(Buffer.from(docs.get(id).fields.value.stringValue).equals(Buffer.from(d.fields.value.stringValue)), 'value bytes of ' + id);
     }
+    // backup → verify → restore: rev comes back where it was, and only there
+    for(const id of REV_IDS){ assert.deepEqual(docs.get(id).fields.rev, { integerValue: '123' }, id + ' restored with its rev'); sameDoc(docs.get(id).fields, source.get(id).fields, 'restored ' + id); }
+    for(const id of NO_REV_IDS){ assert.ok(!('rev' in docs.get(id).fields), id + ' restored without a rev'); sameDoc(docs.get(id).fields, source.get(id).fields, 'restored ' + id); }
   });
   test('restore.js refuses a non-empty project unless --force, and then leaves its other documents alone', async () => {
     const stamp = '2026-11-12T00:00:00.000000Z';
@@ -629,6 +665,10 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
       assert.match(r.err, /HTTP 403 PERMISSION_DENIED/);
       assert.match(r.err, /security rules refused/);
       assert.match(r.err, /docs\/backup\.md/);
+      // what the published rules (v123) ask of a restore into production
+      assert.match(r.err, /only the supervisor's login \(the e-mail and backup jobs' logins only read\)/);
+      assert.match(r.err, /--only/);
+      assert.match(r.err, /MIN_APP_REV\(\)/);
       assert.equal(fake.projects['demo-rules'].docs.size, 0);
       assertCleanLog(r.all);
     }finally{ fake.denyCommit = origCommit; }
@@ -657,11 +697,17 @@ describe('run.js refuses to write a backup it cannot vouch for', () => {
     assert.equal(r.code, 1); assert.match(r.err, /page 2: HTTP 403 PERMISSION_DENIED/);
     assert.equal(fake.failPage.count, 1, 'not retried');
     assert.deepEqual(filesIn(dir), []);
+    // …and says what the security rules ask of the backup's login (firestore.rules: a password login on the company's domain)
+    assert.match(r.err, /the security rules refused the read: the backup's login must be an e-mail and password login on the company's domain \(docs\/backup\.md, "One-time setup"\)/);
     fake.failPage = null;
     const bad = await runNode('run.js', [], backupEnv(dir, { BACKUP_LOGIN_PASSWORD: 'wrong-password' }));
     assert.equal(bad.code, 1); assert.match(bad.err, /sign-in: HTTP 400 \(INVALID_LOGIN_CREDENTIALS\)/);
+    assert.match(bad.err, /the sign-in was refused: check that the repository secrets BACKUP_LOGIN_EMAIL and BACKUP_LOGIN_PASSWORD hold the e-mail and password of a working login of the app \(docs\/backup\.md, "One-time setup"\)/);
     assert.deepEqual(filesIn(dir), []);
-    assertCleanLog(r.all + bad.all);
+    // the e-mails' login, when that is the one used, is named by its own secrets
+    const bad2 = await runNode('run.js', [], env({ BACKUP_PASSPHRASE: PASS, REPORT_LOGIN_EMAIL: LOGIN.email, REPORT_LOGIN_PASSWORD: 'wrong-password', BACKUP_OUT_DIR: dir }));
+    assert.equal(bad2.code, 1); assert.match(bad2.err, /check that the repository secrets REPORT_LOGIN_EMAIL and REPORT_LOGIN_PASSWORD hold/);
+    assertCleanLog(r.all + bad.all + bad2.all);
   });
   test('the listing must agree with Firestore\'s own count, and must not be empty', async () => {
     resetSource();
@@ -762,6 +808,30 @@ describe('the guide (docs/backup.md)', () => {
     }
     assert.ok(named.has('Limits') && named.has('Restore into a separate project') && named.has('Restore into production'), 'the scan finds the sections the messages name: ' + [...named].join(' | '));
     for(const n of named) assert.ok(headings.some(h => h === n || h.startsWith(n + ' (')), 'docs/backup.md has no section "' + n + '" (it has: ' + headings.join(' | ') + ')');
+  });
+  // v123: the rules have a role that only reads (the jobs' logins), every
+  // document carries the app revision, and the owner may raise the oldest
+  // revision allowed to write. What the guide tells the owner must be those rules.
+  test('what the guide says about the backup\'s login and about a restore into production is true for the published rules (v123)', () => {
+    const rules = fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8');
+    assert.match(rules, /function JOB_EMAILS\(\)/, 'the rules have the jobs\' read-only logins');
+    assert.match(rules, /function MIN_APP_REV\(\)/);
+    assert.match(guide, /JOB_EMAILS\(\)/, 'the guide tells the owner to list the backup\'s login there');
+    assert.doesNotMatch(guide, /no read-only role/, 'the rules have had a read-only role since v123');
+    const at = guide.indexOf('\n## Restore into production');
+    assert.ok(at > 0);
+    const section = guide.slice(at, guide.indexOf('\n## ', at + 5));
+    assert.match(section, /supervisor/); assert.match(section, /`rev`/); assert.match(section, /MIN_APP_REV\(\)/);
+    // the --only list: every document the rules let someone write, and nothing they do not list
+    const only = /--only=([A-Za-z0-9:_,]+)/.exec(section)[1].split(',');
+    const keys = new Set(), families = new Set();
+    for(const m of rules.matchAll(/key in \[([^\]]*)\]/g)) (m[1].match(/'[^']+'/g) || []).forEach(q => keys.add(q.slice(1, -1)));
+    for(const m of rules.matchAll(/key\.matches\('([A-Za-z]+[:_])/g)) families.add(m[1]);
+    assert.ok(keys.has('clinics') && keys.has('mailLog') && keys.has('staff') && families.has('visitsArch:') && families.has('snap_'), 'the scan reads the rules');
+    families.delete('snap_');   // the app's own daily backups: the rules refuse an old one, so the list leaves them out
+    for(const k of [...keys, ...families]) assert.ok(only.includes(k), 'the guide\'s --only list lacks ' + k);
+    for(const k of only) assert.ok(keys.has(k) || families.has(k), 'the guide\'s --only list names ' + k + ', which the rules do not list');
+    assert.equal(new Set(only).size, only.length, 'no name twice');
   });
   test('the "Limits" section says the size the backup stops at, the warning before it, and what to do', () => {
     const at = guide.indexOf('\n## Limits\n');
