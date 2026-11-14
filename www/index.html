@@ -1065,6 +1065,11 @@
   .ms-fcnote .svgi{width:17px; height:17px; color:var(--brand-secondary); flex-shrink:0; margin-top:1px;}
   .ms-fcnote b{color:#fff; font-weight:600;}
   .ms-cxw{margin-top:12px;}
+  .ms-hero .ms-ct .chip.small{white-space:nowrap; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;}
+  .ms-fold > .ms-ct{gap:12px;}
+  .ms-fold > .ms-ct > .ms-t{flex:1 1 auto;}
+  .ms-fold > .ms-ct > .ms-tile{width:36px; height:36px; border-radius:11px;}
+  .ms-fold > .ms-ct > .ms-tile .svgi{width:18px; height:18px;}
   .ms-cxw:empty{display:none;}
 
   /* ---- the four figure cards ---- */
@@ -1159,7 +1164,17 @@
     .ms-vperson > #msRows{order:6;} .ms-vperson > #msPlanCard{order:7;} .ms-vperson > #msDueCard{order:8;} .ms-vperson > #msTaskCard{order:9;} .ms-vperson > #msRecentCard{order:10;}
     .ms-vperson > #msSales{display:none;}
     .ms-grid > #msStatus{display:none;}
-    #view-today .ms-switch{flex:1 1 100%;}
+    #view-today .ms-switch{flex:1 1 100%; order:2;}
+    #view-today .ms-hr{display:contents;}   /* a phone shows only the person switch from that row */
+    /* the target card on a phone: its title across, the ring beside the figure, the bar and the three figures across */
+    .ms-hin{column-gap:16px; row-gap:0;}
+    .ms-hmain{display:contents;}
+    .ms-hmain > *{grid-column:1 / -1;}
+    .ms-hin > .ms-ringc{grid-column:1; grid-row:2 / span 2; align-self:center;}
+    .ms-hmain > .ms-ct{grid-row:1; margin-bottom:12px;}
+    .ms-hmain > .ms-big{grid-column:2; grid-row:2; align-self:end;}
+    .ms-hmain > .ms-of{grid-column:2; grid-row:3; align-self:start;}
+    .ms-hin > .ms-stats{margin-top:14px;}
     #view-today .ms-who{display:none;}
     .ms-people .ms-ct .ms-va{min-height:44px;}
     /* the bottom bar: Home · Customers · (+) Log visit · Sales · More */
@@ -1443,7 +1458,7 @@
       <section class="ms-card ms-rows" id="msRows"></section>
 
       <section class="ms-card ms-fold" id="msPlanCard">
-        <div class="ms-ct" onclick="msFold('msPlanCard')"><span class="ms-t"><span>Today's plan</span><span class="ms-sum" id="msPlanSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); openPlanDay()" id="planLink">Plan today</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
+        <div class="ms-ct" onclick="msFold('msPlanCard')"><span class="ms-tile t-green" aria-hidden="true"><svg class="svgi"><use href="#i-compass"/></svg></span><span class="ms-t"><span>Today's plan</span><span class="ms-sum" id="msPlanSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); openPlanDay()" id="planLink">Plan today</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
         <div class="ms-body">
           <div id="planList"></div>
           <div class="section-title" id="missedTitle" style="display:none;">Missed planned visits</div>
@@ -1451,11 +1466,11 @@
         </div>
       </section>
       <section class="ms-card ms-fold" id="msDueCard">
-        <div class="ms-ct" onclick="msFold('msDueCard')"><span class="ms-t"><span>Follow-ups due</span><span class="ms-sum" id="msDueSum"></span></span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></div>
+        <div class="ms-ct" onclick="msFold('msDueCard')"><span class="ms-tile t-amber" aria-hidden="true"><svg class="svgi"><use href="#i-clipboard"/></svg></span><span class="ms-t"><span>Follow-ups due</span><span class="ms-sum" id="msDueSum"></span></span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></div>
         <div class="ms-body"><div id="dueList"></div></div>
       </section>
       <section class="ms-card ms-fold" id="msTaskCard">
-        <div class="ms-ct" onclick="msFold('msTaskCard')"><span class="ms-t"><span>Tasks</span><span class="ms-sum" id="msTaskSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); openEmailImport()">Import from email</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
+        <div class="ms-ct" onclick="msFold('msTaskCard')"><span class="ms-tile t-blue" aria-hidden="true"><svg class="svgi"><use href="#i-check"/></svg></span><span class="ms-t"><span>Tasks</span><span class="ms-sum" id="msTaskSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); openEmailImport()">Import from email</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
         <div class="ms-body">
           <div class="ms-taskadd">
             <input type="text" id="newTaskInput" dir="auto" placeholder="Add a quick task...">
@@ -1467,7 +1482,7 @@
         </div>
       </section>
       <section class="ms-card ms-fold" id="msRecentCard">
-        <div class="ms-ct" onclick="msFold('msRecentCard')"><span class="ms-t"><span>Recent visits</span><span class="ms-sum" id="msRecentSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); switchView('log')">See all</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
+        <div class="ms-ct" onclick="msFold('msRecentCard')"><span class="ms-tile t-lime" aria-hidden="true"><svg class="svgi"><use href="#i-clock"/></svg></span><span class="ms-t"><span>Recent visits</span><span class="ms-sum" id="msRecentSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); switchView('log')">See all</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
         <div class="ms-body"><div id="recentVisits"></div></div>
       </section>
     </div>

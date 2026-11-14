@@ -421,7 +421,6 @@ function renderMore(){
     group('', [
       tile(I('calendar'),'Calendar','Your plan, visits and events by day',"switchView('calendar')"),
       tile(I('chart'),'Report','Visits, orders and coverage for any period, with the sales coach',"switchView('reports')")]) +
-    `<div class="more-gap"></div>` +
     group('Overview', [
       tile(I('target'),'KPI scorecard','The 10 measures management follows, score out of 100','openKpiScorecard()'),
       tile(I('trend'),'Month by month','Sales, field work and KPI against earlier months','openMonthByMonth()'),
@@ -1064,7 +1063,7 @@ function msPersonExtra(b){
 function msTeamWorkHTML(v, m, week){
   week = week || '';
   const D = m && msOf(m.D), Vi = D && msOf(D.visits), O = D && msOf(D.orders), C = D && msOf(D.conversion), N = D && msOf(D.newCustomers);
-  let html = `<div class="ms-ct"><span>${msT('Visits & orders')}</span>${msInfo('work')}</div>`;
+  let html = `<div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-blue">${I('calendar')}</span><span>${msT('Visits & orders')}</span></span>${msInfo('work')}</div>`;
   if(!D) return html + msWait(m) + week;
   // new customers: counted only for the people whose month before the files hold (else every account would look new) — the others named
   const blocked = N && N.measurable && Array.isArray(N.blocked) ? N.blocked : [];
@@ -1094,7 +1093,7 @@ function msKpiNums(m){
 function msVisitsHTML(v, m, week){
   week = week || '';
   const own = v.own;
-  let html = `<div class="ms-ct"><span>${msT(own ? 'My visits' : 'Visits')}</span>${msInfo('visits')}</div>`;
+  let html = `<div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-green">${I('activity')}</span><span>${msT(own ? 'My visits' : 'Visits')}</span></span>${msInfo('visits')}</div>`;
   if(!m) return html + msWait(m) + week;
   const k = msKpiNums(m), mo = k.month;
   if(!mo) return html + `<div class="ms-note">${msT('The KPI scorecard could not be read on this device.')}</div>` + week;
@@ -1387,7 +1386,7 @@ function msChartSVG(D, days, to, goal, fc){
 function msBrandsHTML(v, m, P){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own;
   const D = m && msOf(m.D), B = D && msOf(D.byBrand);
-  let html = `<div class="ms-ct"><span>${msT(team ? 'Brands — sold against the brand target' : own ? 'My brands — sold against my brand target' : 'Brands — sold against the brand target')}</span>${msInfo('brands')}</div>`;
+  let html = `<div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-lime">${I('package')}</span><span>${msT(team ? 'Brands — sold against the brand target' : own ? 'My brands — sold against my brand target' : 'Brands — sold against the brand target')}</span></span>${msInfo('brands')}</div>`;
   if(!D) return html + msWait(m);
   const rows = B && Array.isArray(B.rows) ? B.rows.filter(b => b && (b.net || b.target)) : [];
   if(!rows.length) return html + `<div class="ms-note">${msT(B && B.total == null ? 'No sales figure for this month yet.' : 'No brand sold and no brand target this month.')}</div>`;
@@ -1414,12 +1413,12 @@ function msCustHTML(v, m){
   const none = msT(!C || !C.totals || C.totals.total == null ? 'No sales figure for this month yet.' : 'No customer invoiced this month yet.');
   const big = list => `<div class="ms-items">${list.map(a => `<button class="ms-item"${a.clinicId != null ? ` data-c="${esc(String(a.clinicId))}" onclick="openClinicDetail(this.dataset.c)"` : ' disabled'}>${a.cls ? `<span class="ms-cls" data-notr>${esc(a.cls)}</span>` : ''}<div class="t"><div>${msData(a.name)}</div>${team && Array.isArray(a.reps) && a.reps.length ? `<div class="s">${a.reps.map(msWho).join(' + ')}</div>` : ''}</div><b>${msKd(a.net)}</b></button>`).join('')}</div>`;
   if(team){
-    let html = `<div class="ms-ct"><span>${msT('Biggest customers this month')}</span>${msInfo('cust')}</div>`;
+    let html = `<div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-gold">${I('building')}</span><span>${msT('Biggest customers this month')}</span></span>${msInfo('cust')}</div>`;
     if(!D) return html + msWait(m);
     html += acc.length ? big(acc.slice(0, 5)) : `<div class="ms-note">${none}</div>`;
     return html + `<button class="ms-more" onclick="switchView('clinics')">${msT('All customers')} ${msChev()}</button>`;
   }
-  let html = `<div class="ms-ct"><span>${msT(own ? 'My customers to act on' : 'Customers to act on')}</span>${msInfo('pcust')}</div>`;
+  let html = `<div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-gold">${I('building')}</span><span>${msT(own ? 'My customers to act on' : 'Customers to act on')}</span></span>${msInfo('pcust')}</div>`;
   if(!D) return html + msWait(m);
   const u = act && act.measurable ? act.under || [] : [], p = act && act.measurable ? act.potential || [] : [];
   html += act && act.measurable
