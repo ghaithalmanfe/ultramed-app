@@ -36,21 +36,29 @@ async function bgRefresh(){
   // visits, clinics and plans — and this phone's queued offline saves —
   // must keep moving meanwhile (v121: the flag froze them until reload).
   if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
-  if(refreshRunning()) return;
+  if(refreshRunning() || _roundBusy) return;
   if(currentUser && document.visibilityState==='visible'){
-    // Queued offline edits go up first (the delete log, then each list the
-    // round may send), then the refresh — EVERY round (round 3). Until then a
-    // round that left anything queued skipped the refresh, ~5 minutes at a
-    // time: a list that keeps waiting (the rules refuse it, it is too large
-    // for the cloud, no answer) froze every other list on this phone. A queued
-    // list loses nothing to the refresh: it is served from this phone's copy
-    // (cloudGet, loadVisits; from memory when that copy could not be written)
-    // until it is sent.
-    if(outboxList().length) await flushOutbox();
-    await loadAll();
-    if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
+    _roundBusy = true;
+    try{
+      // Queued offline edits go up first (the delete log, then each list the
+      // round may send), then the refresh — EVERY round (round 3). Until then a
+      // round that left anything queued skipped the refresh, ~5 minutes at a
+      // time: a list that keeps waiting (the rules refuse it, it is too large
+      // for the cloud, no answer) froze every other list on this phone. A queued
+      // list loses nothing to the refresh: it is served from this phone's copy
+      // (cloudGet, loadVisits; from memory when that copy could not be written)
+      // until it is sent. The refresh ends by sending what is still queued
+      // (loadAllNow): the round is over only once that is done too, and a round
+      // never starts while the last one is still on its way (_roundBusy) — a
+      // phone closed right after a round leaves nothing of it half-sent.
+      if(outboxList().length) await flushOutbox();
+      await loadAll();
+      if(_refreshFlush){ try{ await _refreshFlush; }catch(e){} }
+      if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
+    } finally { _roundBusy = false; }
   }
 }
+let _roundBusy = false;
 if(FIREBASE_ENABLED){
   setInterval(bgRefresh, 20000);
   document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && currentUser && _bootLoaded) bgRefresh(); });

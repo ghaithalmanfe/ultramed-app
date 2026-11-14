@@ -1229,7 +1229,7 @@ async function loadAllNow(){
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: reads the daily backups at most once a day, only when the list looks wiped (13)
   if(typeof checkPendingRename === 'function') checkPendingRename(); // a rename this phone started and the app was closed on (08-team-orders.js, round 3)
-  flushOutbox(); // anything saved offline goes up now, merged with the cloud
+  _refreshFlush = flushOutbox(); // anything saved offline goes up now, merged with the cloud (the 20-second round waits for it: bgRefresh)
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for
 // ---- SMART MERGE-ON-SAVE ----
@@ -1863,6 +1863,7 @@ function dropTombedDoctors(c){
   return c;
 }
 let _flushing = false;
+let _refreshFlush = null; // the upload a refresh ends with (loadAllNow): the 20-second round is over only once it is done (round 3)
 let _bootLoaded = false;   // flush only with real, loaded state — never factory globals
 let _lastOfflineToast = 0;
 function offlineToast(msg){
