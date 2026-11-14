@@ -2043,27 +2043,41 @@ async function restoreSnapshotNow(dateStr){
   // answer never came is checked too; put back in reverse if a later step stops
   const wrote = [];
   const kept = hasToday ? cover.sources.join(' or in ') : "today's backup (the data as it was before this restore)";
+  // Round 4: a write whose answer did not come in time is UNKNOWN, never "unchanged" — its commit
+  // may still be on its way (it landed after "Nothing was changed" and removed what the restore
+  // was stopped for). Each write is followed (w.p: the write itself); once the restore stops, a
+  // run of its writes writes nothing (cancelled), the document is written as it was all the same
+  // (a commit still on its way then finds it changed and runs again), and a write that lands late
+  // anyway is put back when it does — said on the screen.
+  let cancelled = false;
+  const follow = w => p => { w.p = p; w.settled = false; p.then(() => { w.settled = true; }, () => { w.settled = true; }); };
   const stop = async (why, e) => {
     if(e) console.error('restore stopped', e);
+    cancelled = true;
     // every document it touched: as it was before (nothing to do), still what the restore wrote
     // (put back), or something else / no answer (it cannot be put back from here)
-    let clean = true;
-    for(const [k, str, prev] of wrote.slice().reverse()){
+    let clean = true; const open = [];
+    for(const w of wrote.slice().reverse()){
+      const [k, str, prev] = w;
+      const pending = !!(w.p && !w.settled); // no answer yet: it may still land
       let state = 'unknown';
       try{
         await storageUpdate(k, cur => {
           const c = cur == null ? null : String(cur);
           state = c === prev ? 'same' : c === str ? 'ours' : 'other';
-          return state === 'ours' && prev != null ? prev : null;
+          return (state === 'ours' || (state === 'same' && pending)) && prev != null ? prev : null;
         }, 15000);
         if(state === 'ours' && prev == null) state = 'other'; // there was no document before: nothing to write back
       }catch(e2){ state = 'unknown'; }
+      if(pending) open.push(w);
       if(state !== 'same' && state !== 'ours') clean = false;
     }
     const tb = Object.keys(revived).length ? await retombMany(revived).catch(() => false) : true;
     putBack();
-    if(clean && tb) showToast(why + ' Nothing was changed.', 8000);
-    else showToast(why + ' Part of what it had written could not be put back (no connection?). The data as it was is in ' + kept + '. Check the connection, then tap Restore again.', 12000);
+    if(!clean || !tb) showToast(why + ' Part of what it had written could not be put back (no connection?). The data as it was is in ' + kept + '. Check the connection, then tap Restore again.', 12000);
+    else if(open.length) showToast(`${why} No answer from the cloud yet for ${[...new Set(open.map(w => restoreKeyName(w[0])))].join(', ')}: what the restore sent may still land — this phone puts it back if it does; keep the app open. The data as it was is in ${kept}.`, 12000);
+    else showToast(why + ' Nothing was changed.', 8000);
+    open.forEach(w => restoreFollowLate(w, clean && tb, kept)); // (not waited for)
     return 'stopped';
   };
   try{
@@ -2076,8 +2090,8 @@ async function restoreSnapshotNow(dateStr){
     for(const [k, val] of [['clinics', nextClinics], ['tasks', nextTasks]]){
       const str = JSON.stringify(val);
       let changed = false;
-      wrote.push([k, str, now[k]]);
-      const r = await storageUpdate(k, cur => { changed = (cur == null ? null : String(cur)) !== now[k]; return changed ? null : str; }, 15000);
+      const w = [k, str, now[k]]; wrote.push(w);
+      const r = await storageUpdate(k, cur => { if(cancelled) return null; changed = (cur == null ? null : String(cur)) !== now[k]; return changed ? null : str; }, 15000, follow(w));
       if(changed || r == null){ wrote.pop(); return await stop(`Restore stopped — ${restoreKeyName(k)} changed on another phone while it ran.`); } // (it wrote nothing there)
     }
     if(typeof hiddenPlaceholderClinics !== 'undefined') hiddenPlaceholderClinics = []; // memory holds exactly what was written
@@ -2085,8 +2099,8 @@ async function restoreSnapshotNow(dateStr){
     tasks = nextTasks;
     visits = nextVisits;
     // (the live document as an authoritative save writes it: this month's visits of the backup, none of them deleted any more)
-    wrote.push(['visits', JSON.stringify(UMCore.visitsPartition(nextVisits, todayStr()).live), now.visits]);
-    try{ await persistVisits({ authoritative: true, expect: { live: now.visits } }); }
+    const wv = ['visits', JSON.stringify(UMCore.visitsPartition(nextVisits, todayStr()).live), now.visits]; wrote.push(wv);
+    try{ await persistVisits({ authoritative: true, expect: { live: now.visits }, cancelled: () => cancelled, onRaw: (key, p) => { if(key === 'visits') follow(wv)(p); } }); }
     catch(e){
       if(e && e.casChanged){ wrote.pop(); return await stop(`Restore stopped — ${restoreKeyName('visits')} changed on another phone while it ran.`); } // (the first write of the visits: nothing written)
       return await stop('Restore stopped — the visits could not be written.', e);
@@ -2122,6 +2136,29 @@ async function restoreSnapshotNow(dateStr){
   }catch(e){
     return await stop('Restore failed.', e);
   }
+}
+// A restore write that had no answer when the restore stopped (round 4): when it settles, a
+// write that landed after all is put back (only over exactly what it wrote), and the screen says
+// what became of it — "Nothing was changed" only once that is known.
+async function restoreFollowLate(w, clean, kept){
+  const [k, str, prev] = w, name = restoreKeyName(k);
+  let res = null;
+  try{ res = await w.p; }catch(e){ res = null; }
+  if(res == null){ showToast(`The restore's write of ${name} did not land.` + (clean ? ' Nothing was changed.' : ''), 8000); return; }
+  let state = 'unknown';
+  try{
+    await storageUpdate(k, cur => {
+      const c = cur == null ? null : String(cur);
+      state = c === prev ? 'same' : c === str ? 'ours' : 'other';
+      return state === 'ours' && prev != null ? prev : null;
+    }, 15000);
+    if(state === 'ours' && prev == null) state = 'other';
+  }catch(e){ state = 'unknown'; }
+  if(state === 'same' || state === 'ours'){
+    showToast(`The restore's write of ${name} reached the cloud late — it was put back.` + (clean ? ' Nothing was changed.' : ''), 9000);
+    try{ await loadAll(); }catch(e){} // the screen and the merge bases: the cloud as it is now
+  }
+  else showToast(`The restore's write of ${name} reached the cloud late and could not be put back (no connection?). The data as it was is in ${kept}. Check the connection, then tap Restore again.`, 12000);
 }
 // "Restore from this phone's copy" (v123): the clinic list this phone kept is
 // compared with the list, clinic by clinic (UMCore.deviceCopyDiff), and only

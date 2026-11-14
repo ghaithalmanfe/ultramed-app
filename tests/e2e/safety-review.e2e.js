@@ -62,9 +62,13 @@ const server = http.createServer((req,res)=>{ const u = req.url.split('?')[0]; c
 // deny: { re, ops: 'r'|'w'|'rw', who?: Set of phone labels } — permission-denied, as the rules answer
 // offline: phones with no connection · hang[k] = n: the next n reads of k never answer
 // slowWrite[k] = ms: the next write of k lands ms later · onWrite(who, key): called after each write
+// slowCommit[k] = ms: the next transaction of k is a real one's optimistic commit — read, computed,
+// committed ms later only if k is still exactly as read (else it runs again), holding no lock;
+// versioned: "as read" means not written since (any write counts, as a real commit's precondition)
 const cloud = {};
 const LIMIT = 1048576 - 100;
-const mode = { deny: null, offline: new Set(), hang: {}, slowGet: {}, slowWrite: {}, onWrite: null, reads: [], writes: [], tries: [] };
+const mode = { deny: null, offline: new Set(), hang: {}, slowGet: {}, slowWrite: {}, slowCommit: {}, versioned: false, onWrite: null, reads: [], writes: [], tries: [] };
+const ver = {}; // how many times each document was written
 let held = false; const waiters = [];
 const acquire = async () => { if(!held){ held = true; return true; } await new Promise(r => waiters.push(r)); return true; };
 const release = async () => { const next = waiters.shift(); if(next) next(); else held = false; return true; };
@@ -82,7 +86,7 @@ const api = {
     if(mode.slowWrite[k]){ const ms = mode.slowWrite[k]; delete mode.slowWrite[k]; await wait(ms); }
     if(denied(who, k, 'w')){ mode.tries.push(who + '|' + k); return { __err: 'permission-denied' }; }
     if(Buffer.byteLength(v, 'utf8') > LIMIT){ mode.tries.push(who + '|' + k); return { __err: 'invalid-argument', msg: `Document 'state/${k}' cannot be written because its size exceeds the maximum allowed size of 1,048,576 bytes.` }; }
-    mode.writes.push(who + '|' + k); cloud[k] = v; if(mode.onWrite) try{ mode.onWrite(who, k, v); }catch(e){} return true; },
+    mode.writes.push(who + '|' + k); cloud[k] = v; ver[k] = (ver[k] || 0) + 1; if(mode.onWrite) try{ mode.onWrite(who, k, v); }catch(e){} return true; },
   setMany: async (who, e) => { const o = off(who); if(o) return o; for(const [k] of e){ if(denied(who, k, 'w')) return { __err: 'permission-denied' }; } e.forEach(([k, v]) => { mode.writes.push(who + '|' + k); cloud[k] = v; }); return true; },
   del: async (who, k) => { const o = off(who); if(o) return o; if(denied(who, k, 'w')) return { __err: 'permission-denied' }; mode.writes.push(who + '|del:' + k); delete cloud[k]; return true; },
   list: async (who, p) => { const o = off(who); if(o) return o; return Object.keys(cloud).filter(k => k.startsWith(p)); },
@@ -99,7 +103,7 @@ const task = (id, text, extra) => Object.assign({ id, text, done: false, created
 const emptyLog = () => ({ visits: {}, tasks: {}, clinics: {}, events: {}, dayPlans: {}, doctors: {} });
 function seedCloud(extra){
   Object.keys(cloud).forEach(k => delete cloud[k]);
-  held = false; waiters.length = 0; mode.hang = {}; mode.slowGet = {}; mode.slowWrite = {}; mode.deny = null; mode.onWrite = null;
+  held = false; waiters.length = 0; mode.hang = {}; mode.slowGet = {}; mode.slowWrite = {}; mode.slowCommit = {}; mode.versioned = false; mode.deny = null; mode.onWrite = null;
   cloud.staff = twoRepStaff();
   cloud.clinics = JSON.stringify([
     { id: 'c1', name: 'Dental 5 Clinic', rep: 'Mariam', cls: 'A', doctors: [{ id: 'd1', name: 'Dr. Ahmed' }] },
@@ -133,13 +137,19 @@ function seedCloud(extra){
     await page.exposeFunction('__cGet', k => api.get(label, k)); await page.exposeFunction('__cGetTx', k => api.get(label, k, true)); await page.exposeFunction('__cSet', (k, v) => api.set(label, k, v)); await page.exposeFunction('__cDel', k => api.del(label, k));
     await page.exposeFunction('__cList', p => api.list(label, p)); await page.exposeFunction('__cSetMany', e => api.setMany(label, e));
     await page.exposeFunction('__cAcquire', acquire); await page.exposeFunction('__cRelease', release);
+    await page.exposeFunction('__cSlowCommit', k => { const ms = mode.slowCommit[k] || 0; if(ms) delete mode.slowCommit[k]; return ms; });
+    await page.exposeFunction('__cCommit', async (k, cur, next, ms) => { const v0 = ver[k] || 0; await wait(ms); const now = k in cloud ? cloud[k] : null;
+      if(mode.versioned ? (ver[k] || 0) !== v0 : now !== cur) return 'retry'; mode.writes.push(label + '|late:' + k); cloud[k] = next; ver[k] = (ver[k] || 0) + 1; return true; });
     await page.addInitScript(({ clock, tombs, fakeAuth, ls }) => {
       // what the Firebase SDK throws: a FirebaseError with its code
       const fail = r => { if(r && r.__err){ const e = new Error(r.__err === 'permission-denied' ? 'Missing or insufficient permissions.' : (r.msg || r.__err)); e.code = r.__err; e.name = 'FirebaseError'; throw e; } return r; };
       window.storage = {
         get: async k => { const v = fail(await window.__cGet(k)); return v == null ? null : { value: v }; },
         set: async (k, v) => fail(await window.__cSet(k, v)), setMany: async e => fail(await window.__cSetMany(e)), delete: async k => fail(await window.__cDel(k)), list: async p => ({ keys: fail(await window.__cList(p)) }),
-        update: async (k, fn) => { await window.__cAcquire(); try{ const cur = fail(await window.__cGetTx(k)); const next = fn(cur == null ? null : cur); if(next == null) return null; fail(await window.__cSet(k, next)); return next; } finally { await window.__cRelease(); } },
+        update: async (k, fn) => {
+          const slow = await window.__cSlowCommit(k);
+          if(slow){ for(let i = 0; i < 5; i++){ const cur = fail(await window.__cGet(k)); const next = fn(cur == null ? null : cur); if(next == null) return null; if(fail(await window.__cCommit(k, cur == null ? null : cur, next, slow)) === true) return next; } throw new Error('contention'); }
+          await window.__cAcquire(); try{ const cur = fail(await window.__cGetTx(k)); const next = fn(cur == null ? null : cur); if(next == null) return null; fail(await window.__cSet(k, next)); return next; } finally { await window.__cRelease(); } },
       };
       if(tombs && !sessionStorage.getItem('__tombsSet')){ try{ localStorage.setItem('um_tombs', tombs); sessionStorage.setItem('__tombsSet', '1'); }catch(e){} }
       if(ls && !sessionStorage.getItem('__lsSet')){ try{ Object.keys(ls).forEach(k => localStorage.setItem(k, ls[k])); sessionStorage.setItem('__lsSet', '1'); }catch(e){} }
@@ -899,6 +909,43 @@ function seedCloud(extra){
           !again.cloud && again.tue === 'c1' && again.inLog && !again.supervisor, again);
       }
       await A.ctx.close(); await B.ctx.close();
+    }
+  }
+
+  // ===================== R22. a restore whose write lands late (round 4, finding 4) =====================
+  if(want('R22')){
+    // the restore's compare-and-set write of the clinics gets no answer within its 15 s and its
+    // commit lands a few seconds later (a slow link): it said "Nothing was changed" and wrote
+    // nothing back, so the late commit removed the clinic added since that day
+    const c1 = { id: 'c1', name: 'Dental 5 Clinic', rep: 'Mariam', cls: 'A', doctors: [] };
+    const c2 = { id: 'c2', name: 'Added after the backup', rep: 'Mariam', cls: 'B', doctors: [] };
+    const v1 = visit('v1', { date: '2026-11-09', ts: CLOCK - 4 * DAY, notes: 'before the backup' });
+    const v2 = visit('v2', { clinicId: 'c2', date: '2026-11-12', ts: CLOCK - DAY, notes: 'after the backup' });
+    for(const versioned of [false, true]){
+    seedCloud({ clinics: JSON.stringify([c1, c2]), visits: JSON.stringify([v1, v2]),
+      'snap_2026-11-10': JSON.stringify({ clinics: [c1], products: [], visits: [v1], visitsMonths: {}, tasks: [], ts: '2026-11-10T08:00:00.000Z' }) });
+    mode.versioned = versioned; // the commit's precondition: the text as read (it lands, then is put back) or no write since (the put-back makes it run again, and it writes nothing)
+    const S = await mkPhone('R22-S' + (versioned ? 'v' : ''), { ls: { um_snapDay: TODAY } }); await S.boot('Dr. Ghaith', 'supervisor');
+    await S.ev(() => { window.__asked = []; window.confirm = m => { window.__asked.push(String(m)); return true; }; });
+    const w0 = mode.writes.length;
+    mode.slowCommit = { clinics: 19000 }; // committed 19 s after it was sent
+    const r = await S.ev(async () => { window.__toasts = []; const res = await restoreSnapshot('2026-11-10'); return { res, toasts: window.__toasts.slice() }; });
+    const meanwhile = { clinics: cloudList('clinics').map(c => c.id).join() };
+    await S.ev(() => { window.__toasts = []; });
+    await new Promise(res => setTimeout(res, 9000)); // the commit lands
+    await S.tick();
+    const later = await S.ev(() => ({ toasts: window.__toasts.slice(), clinics: clinics.map(c => c.id).join() }));
+    const live = cloudList('clinics').map(c => c.id).join();
+    const lateWrites = mode.writes.slice(w0).filter(w => /late:/.test(w));
+    check(versioned
+      ? 'R22b. …and when the put-back makes the commit on its way run again: it writes nothing (the restore had stopped), the clinic added after that day never leaves the cloud, and the screen then says the write did not land — "Nothing was changed" only now'
+      : 'R22. a restore write that got no answer in time is never told "Nothing was changed": it says the write may still land and that this phone puts it back; when it lands late it is put back (the clinic added after that day is in the cloud and on the screen again, its visit points at it) and that is said',
+      r.res === 'stopped' && !r.toasts.some(t => /Nothing was changed/.test(t)) && r.toasts.some(t => /may still land/.test(t))
+        && live === 'c1,c2' && later.clinics === 'c1,c2' && cloudList('visits').some(v => v.id === 'v2' && v.clinicId === 'c2')
+        && (versioned ? meanwhile.clinics === 'c1,c2' && !lateWrites.length && later.toasts.some(t => /did not land\. Nothing was changed/.test(t))
+          : later.toasts.some(t => /reached the cloud late — it was put back/.test(t))),
+      { restore: r, cloudWhileWaiting: meanwhile, afterTheLateCommit: { live, screen: later.clinics, toasts: later.toasts }, lateWrites });
+    await S.ctx.close();
     }
   }
 

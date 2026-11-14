@@ -2032,6 +2032,11 @@
       return x;
     }).join(' أو في ');
   }
+  function restoreWhyAr(t) {
+    var m = String(t).match(/^Restore stopped — (.+) changed on another phone while it ran\.$/);
+    if (m) return 'توقف الاسترجاع — ' + restoreNamesAr(m[1]) + ' تغيّرت على هاتف آخر أثناء التنفيذ.';
+    return /delete log/.test(t) ? 'توقف الاسترجاع — تعذّر تحديث سجل الحذف.' : /visits could not/.test(t) ? 'توقف الاسترجاع — تعذّرت كتابة الزيارات.' : 'فشل الاسترجاع.';
+  }
   function restoreNamesAr(t) {
     var N = { 'the clinics': 'العيادات', 'the tasks': 'المهام', "this month's visits": 'زيارات هذا الشهر' };
     return String(t).split(', ').map(function (x) { return N[x] || x; }).join('، ');
@@ -2071,6 +2076,11 @@
         : /delete log/.test(m[1]) ? 'توقف الاسترجاع — تعذّر تحديث سجل الحذف.' : /visits could not/.test(m[1]) ? 'توقف الاسترجاع — تعذّرت كتابة الزيارات.' : 'فشل الاسترجاع.';
       return why + (m[4] ? ' تعذّر إرجاع جزء مما كتبه (لا اتصال؟). البيانات كما كانت موجودة في ' + restoreSrcAr(m[4]) + '. تحقق من الاتصال ثم اضغط «استرجاع» مرة أخرى.' : ' لم يتغير شيء.');
     }],
+    // round 4: a restore write with no answer in time — it may still land, and is put back if it does
+    [/^(Restore stopped — the delete log could not be updated\.|Restore stopped — the visits could not be written\.|Restore failed\.|Restore stopped — .+ changed on another phone while it ran\.) No answer from the cloud yet for (.+): what the restore sent may still land — this phone puts it back if it does; keep the app open\. The data as it was is in (.+)\.$/, function (m) { return restoreWhyAr(m[1]) + ' لا رد من السحابة بعد على ' + restoreNamesAr(m[2]) + ': ما أرسله الاسترجاع قد يصل لاحقاً — وهذا الهاتف يعيده كما كان إن وصل؛ أبقِ التطبيق مفتوحاً. البيانات كما كانت موجودة في ' + restoreSrcAr(m[3]) + '.'; }],
+    [/^The restore's write of (.+) did not land\.( Nothing was changed\.)?$/, function (m) { return 'ما كتبه الاسترجاع في ' + restoreNamesAr(m[1]) + ' لم يصل إلى السحابة.' + (m[2] ? ' لم يتغير شيء.' : ''); }],
+    [/^The restore's write of (.+) reached the cloud late — it was put back\.( Nothing was changed\.)?$/, function (m) { return 'ما كتبه الاسترجاع في ' + restoreNamesAr(m[1]) + ' وصل إلى السحابة متأخراً — وأُعيد كما كان.' + (m[2] ? ' لم يتغير شيء.' : ''); }],
+    [/^The restore's write of (.+) reached the cloud late and could not be put back \(no connection\?\)\. The data as it was is in (.+)\. Check the connection, then tap Restore again\.$/, function (m) { return 'ما كتبه الاسترجاع في ' + restoreNamesAr(m[1]) + ' وصل إلى السحابة متأخراً وتعذّرت إعادته كما كان (لا اتصال؟). البيانات كما كانت موجودة في ' + restoreSrcAr(m[2]) + '. تحقق من الاتصال ثم اضغط «استرجاع» مرة أخرى.'; }],
     // round 3: a rename the app was closed on (the names are data)
     [/^The rename of "(.+)" to "(.+)" was not finished: the team list has the new name, (\d+) records \(clinics, visits, tasks, plans, targets\) still have the old one\.$/, function (m) { return 'لم تكتمل إعادة تسمية «' + m[1] + '» إلى «' + m[2] + '»: قائمة الفريق تحمل الاسم الجديد، و' + m[3] + ' سجلاً (عيادات، زيارات، مهام، خطط، أهداف) ما زالت بالاسم القديم.'; }],
     [/^(\d+) clinics updated from this phone's copy$/, function (m) { return 'حُدّثت ' + m[1] + ' عيادة من نسخة هذا الهاتف'; }],

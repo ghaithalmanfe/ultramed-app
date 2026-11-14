@@ -434,6 +434,7 @@ async function persistVisitsInner(opts){
       let merged = arr, tooBig = 0, took = [], changed = false;
       const res = await storageUpdate(keyOf(doc), cloudStr => {
         tooBig = 0; changed = false; // a transaction may run more than once
+        if(opts.cancelled && opts.cancelled()) return null; // a whole-day restore that stopped: a run of its write after that writes nothing (round 4)
         // a whole-day restore writes only over exactly the document it checked (round 3)
         if(opts.expect && Object.prototype.hasOwnProperty.call(opts.expect, doc) && (cloudStr == null ? null : String(cloudStr)) !== opts.expect[doc]){ changed = true; return null; }
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
@@ -442,7 +443,7 @@ async function persistVisitsInner(opts){
         const str = JSON.stringify(merged);
         if(!UMCore.fitsBytes(str, DOC_MAX_BYTES)){ tooBig = UMCore.utf8Len(str); return null; }
         return str;
-      }, 12000);
+      }, 12000, typeof opts.onRaw === 'function' ? p => opts.onRaw(keyOf(doc), p) : undefined);
       if(tooBig) throw tooLargeError('visits', monthOf(doc), tooBig); // said by persistNow (bar + toast), never queued
       if(changed){ const e = new Error('changed meanwhile: ' + keyOf(doc)); e.casChanged = keyOf(doc); throw e; }
       if(res == null) throw new Error('visits update failed');
@@ -2687,12 +2688,16 @@ function saveToastAll(pairs, okMsg, ms){
 }
 // Atomic read-merge-write where the storage supports it; a plain (non-atomic)
 // read → fn → write otherwise, with the same contract.
-async function storageUpdate(key, fn, ms){
-  if(typeof window.storage.update === 'function') return withTimeout(window.storage.update(key, fn), ms || 12000);
+// onRaw(p): the write itself, which goes on after the time limit (a commit on its way can still
+// land) — a caller that must know whether it landed in the end follows it (the whole-day Restore, round 4)
+async function storageUpdate(key, fn, ms, onRaw){
+  if(typeof window.storage.update === 'function'){ const p = window.storage.update(key, fn); if(typeof onRaw === 'function') onRaw(p); return withTimeout(p, ms || 12000); }
   const cur = await withTimeout(window.storage.get(key, true), 5000);
   const next = fn(cur ? cur.value : null);
   if(next == null) return null;
-  const ok = await withTimeout(window.storage.set(key, next, true), 7000);
+  const sp = window.storage.set(key, next, true);
+  if(typeof onRaw === 'function') onRaw(sp.then(ok => ok ? next : null));
+  const ok = await withTimeout(sp, 7000);
   if(!ok) throw new Error('set failed');
   return next;
 }
