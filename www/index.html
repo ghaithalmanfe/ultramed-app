@@ -796,11 +796,6 @@
   .ms-how .kv > span:last-child{text-align:end; font-weight:600;}
   @media (max-width:1023px){
     .ms-head{margin-top:2px;}
-    .ms-grid > .ms-card, .ms-grid > #targetCard{order:20;}
-    .ms-vteam > #msSales{order:1;} .ms-vteam > #msNext{order:2;} .ms-vteam > #targetCard{order:3;} .ms-vteam > #msWork{order:4;}
-    .ms-vteam > #msPlanCard{order:5;} .ms-vteam > #msDueCard{order:6;} .ms-vteam > #msTaskCard{order:7;} .ms-vteam > #msRecentCard{order:8;} .ms-vteam > #msRows{order:9;}
-    .ms-vperson > #targetCard{order:1;} .ms-vperson > #msWork{order:2;} .ms-vperson > #msNext{order:3;}
-    .ms-vperson > #msRows{order:4;} .ms-vperson > #msPlanCard{order:5;} .ms-vperson > #msDueCard{order:6;} .ms-vperson > #msTaskCard{order:7;} .ms-vperson > #msRecentCard{order:8;}
     .ms-vperson > #msSales{display:none;}
   }
   @media (max-width:420px){
@@ -891,15 +886,6 @@
     .ms-av{width:44px; height:44px; border-radius:50%; background:var(--brand-primary); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:14px; cursor:pointer; position:relative; border:none; font-family:inherit;}
     .ms-av .dot{border-color:var(--page);}
     .ms-whose{flex:1 0 100%; margin-top:0;}
-    .ms-grid{display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:20px; align-items:start;}
-    .ms-grid > *{grid-column:span 6;}
-    .ms-vteam > #msSales, .ms-vteam > #msWork{grid-column:span 6; grid-row:1;}
-    .ms-vteam > #msNext, .ms-vteam > #targetCard{grid-column:span 6; grid-row:2;}
-    .ms-vteam > #msChart{grid-column:span 12; grid-row:3;}
-    .ms-vperson > #msSales{display:none;}
-    .ms-vperson > #targetCard, .ms-vperson > #msWork{grid-column:span 6; grid-row:1;}
-    .ms-vperson > #msNext, .ms-vperson > #msBrands{grid-column:span 6; grid-row:2;}
-    .ms-vperson > #msChart{grid-column:span 12; grid-row:3;}
     .ms-grid > .ms-card, .ms-grid > #targetCard > .ms-card{height:100%;}
     .ms-card{padding:22px;}
     .ms-big{font-size:40px;}
@@ -915,14 +901,6 @@
   @media (min-width:1280px){
     :root{--sidebar-w:248px; --gutter:32px;}
     .ms-grid{gap:24px;}
-  }
-  /* a wide laptop (from 1440 px): three cards a row, the chart beside the people */
-  @media (min-width:1440px){
-    .ms-grid > *{grid-column:span 4;}
-    .ms-vteam > #msSales{grid-column:span 4; grid-row:1;} .ms-vteam > #msWork{grid-column:span 4; grid-row:1;} .ms-vteam > #msNext{grid-column:span 4; grid-row:1;}
-    .ms-vteam > #targetCard{grid-column:span 5; grid-row:2;} .ms-vteam > #msChart{grid-column:span 7; grid-row:2;}
-    .ms-vperson > #targetCard{grid-column:span 4; grid-row:1;} .ms-vperson > #msWork{grid-column:span 4; grid-row:1;} .ms-vperson > #msNext{grid-column:span 4; grid-row:1;}
-    .ms-vperson > #msBrands{grid-column:span 5; grid-row:2;} .ms-vperson > #msChart{grid-column:span 7; grid-row:2;}
   }
   @media (min-width:1440px) and (max-width:1599px){
     .ms-stats b{font-size:14px;}   /* three cards beside the sidebar: an amount and its "KD" stay on one line */
@@ -990,6 +968,316 @@
      (Tokens and the classes above are shared: change them only in the design-system part.)
      ================================================================================================ */
   /* === DASHBOARD === */
+  /* The home screen in the owner's final design (14 Nov): the deep-green target card with its ring, four figure cards
+     with soft icon tiles, the chart beside the leaderboard (a person: her own performance), the sales advisor, the
+     recent visits as a timeline and the pace card. Phone: the target card first, the figures two a row, the advisor,
+     the next actions, the bottom bar Home · Customers · (+) · Sales · More. Every figure is the screen's own (05). */
+
+  /* ---- the top bar: quick find, the bell, the account ---- */
+  header.top .logo-word{display:none; height:22px; width:auto; flex-shrink:0;}
+  body:not(.not-today) header.top .logo, body:not(.not-today) header.top .top-text{display:none;}
+  body:not(.not-today) header.top .logo-word{display:block;}
+  .top-search{display:none;}
+  .top-bell{position:relative; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex-shrink:0; border:1px solid var(--border-subtle); border-radius:var(--radius-pill); background:var(--surface-card); color:var(--text-primary); cursor:pointer; font-family:inherit;}
+  .top-bell .svgi{width:20px; height:20px;}
+  .bell-n{position:absolute; top:-3px; inset-inline-end:-4px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--status-danger); color:#fff; font-size:10.5px; font-weight:700; line-height:16px; text-align:center; border:2px solid var(--surface-page); box-sizing:content-box;}
+  .bell-n[hidden]{display:none;}
+  @media (max-width:1023px){ .top-lang{display:none;} }   /* the language is in the account menu */
+
+  /* ---- the head: the date, the greeting, the one line, the person switch and the period ---- */
+  #view-today .ms-head{display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px 16px; margin:2px 0 16px;}
+  #view-today .ms-hi{display:block; flex:1 1 300px; min-width:0; order:1;}
+  #view-today .ms-date{font-size:13px; color:var(--text-muted); font-weight:500; margin:0 0 2px;}
+  #view-today .ms-hello{font-size:24px; font-weight:600; letter-spacing:-.015em; line-height:1.25;}
+  #view-today .ms-src{order:3; flex:1 0 100%; margin:0;}
+  #view-today .ms-hr{order:2; display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-width:0; flex:1 0 100%;}
+  #view-today .ms-hr:empty{display:none;}
+  #view-today .ms-switch{flex:1 1 auto; margin:0;}
+  #view-today .ms-whose{order:4;}
+  .ms-per{display:none;}
+  .ms-period{display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 14px; border:1px solid var(--border-subtle); border-radius:var(--radius-md); background:var(--surface-card); font:inherit; font-weight:600; font-size:14px; color:var(--text-primary); cursor:pointer; white-space:nowrap; box-shadow:var(--shadow-sm);}
+  .ms-period .svgi{width:18px; height:18px;}
+  .ms-period .ms-pchev{width:15px; height:15px; transform:rotate(90deg); color:var(--text-muted);}
+
+  /* ---- the cards: white, a soft lift (the reference's liveliness), titles in the text colour ---- */
+  #view-today .ms-card{box-shadow:0 1px 2px rgba(2,41,23,.04), 0 8px 24px rgba(2,41,23,.05);}
+  #view-today .ms-card > .ms-ct{color:var(--text-primary); font-size:15.5px;}
+  .ms-ttl{display:inline-flex; align-items:center; gap:11px; min-width:0; color:var(--text-primary); font-weight:600;}
+  .ms-tt{display:flex; flex-direction:column; line-height:1.3; min-width:0;}
+  .ms-tt small{font-size:12.5px; color:var(--text-muted); font-weight:500;}
+  /* soft icon tiles: a few calm colours, always beside a word */
+  .ms-tile{display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; flex-shrink:0; background:var(--brand-secondary-soft); color:var(--brand-primary);}
+  .ms-tile .svgi{width:20px; height:20px;}
+  .ms-ttl .ms-tile{width:36px; height:36px; border-radius:11px;}
+  .ms-ttl .ms-tile .svgi{width:18px; height:18px;}
+  .ms-tile.t-green{background:#E2F0E7; color:#1C6A45;}
+  .ms-tile.t-blue{background:#E6EEFB; color:#2A58B3;}
+  .ms-tile.t-amber{background:#FBEFD9; color:#8F5B00;}
+  .ms-tile.t-lime{background:var(--brand-secondary-soft); color:#3B6912;}
+  .ms-tile.t-gold{background:#FAF0D7; color:#8C640D;}
+
+  /* ---- the target card (team: #msSales; a person: #targetCard's card): deep green, the ring, the three figures ---- */
+  #view-today .ms-hero{background:radial-gradient(circle at 100% 100%, transparent 0 92px, rgba(255,255,255,.035) 93px 120px, transparent 121px), radial-gradient(90% 120% at 100% 0%, rgba(165,207,99,.16) 0%, rgba(165,207,99,0) 55%), linear-gradient(140deg, #064027 0%, #022917 55%, #011D10 100%);
+    color:#fff; border:none; padding:18px; position:relative; overflow:hidden; box-shadow:0 12px 32px rgba(2,41,23,.20);}
+  .ms-hero > *{position:relative; z-index:1;}
+  .ms-hero .ms-ct{color:rgba(255,255,255,.8) !important; font-size:14.5px !important; margin-bottom:4px;}
+  .ms-hero .ms-i{color:rgba(255,255,255,.72);}
+  .ms-hero .ms-ct .chip.small{background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.28);}
+  .ms-hero .ms-big{color:#fff; font-size:32px;}
+  .ms-hero .ms-big small{color:rgba(255,255,255,.72);}
+  .ms-hero .ms-big.none{color:rgba(255,255,255,.7);}
+  .ms-hero .ms-of{color:rgba(255,255,255,.8); font-size:14px;}
+  .ms-hero .ms-bar{background:rgba(255,255,255,.16); height:8px; margin:12px 0 8px;}
+  .ms-hero .ms-bar i{background:var(--brand-secondary);}
+  .ms-hero .ms-bar b{background:#fff;}
+  .ms-hero .ms-legend{color:rgba(255,255,255,.78); align-items:center; font-size:13px;}
+  .ms-hero .ms-pill{margin-top:0;}
+  .ms-hero .ms-pill.good{background:rgba(165,207,99,.2); color:#D4EBAE;}
+  .ms-hero .ms-pill.warn{background:rgba(246,200,95,.18); color:#F6D27A;}
+  .ms-hero .ms-note, .ms-hero .ms-fine, .ms-hero .ms-wait{color:rgba(255,255,255,.74);}
+  .ms-hero .ms-note.warn{color:#F6D27A;}
+  .ms-hero .ms-note b, .ms-hero .ms-fine b{color:#fff;}
+  .ms-hero > div[style*="amber-ink"]{color:#F6D27A !important;}
+  .ms-hero .ms-src2{margin-top:12px;}
+  .ms-hin{display:grid; grid-template-columns:auto minmax(0,1fr); gap:14px 16px; align-items:center;}
+  .ms-hin > .ms-stats{grid-column:1 / -1;}
+  .ms-hmain{min-width:0;}
+  .ms-ringc{position:relative; width:104px; height:104px; flex-shrink:0; align-self:start;}
+  .ms-ring{width:100%; height:100%; display:block;}
+  [dir="rtl"] .ms-ring{transform:scaleX(-1);}
+  .ms-ring circle{fill:none; stroke-width:10;}
+  .ms-ring .trk{stroke:rgba(255,255,255,.14);}
+  .ms-ring .val{stroke:var(--brand-secondary); stroke-linecap:round;}
+  .ms-ring .mk{stroke:#fff; stroke-width:2.5; stroke-linecap:round; opacity:.85;}
+  .ms-rc{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; line-height:1.1;}
+  .ms-rc strong{font-size:24px; font-weight:600; color:#fff; letter-spacing:-.01em;}
+  .ms-rc > span{font-size:11.5px; color:rgba(255,255,255,.76); margin-top:3px;}
+  .ms-ringc.none{display:flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:16px; background:rgba(255,255,255,.09);}
+  .ms-rt .svgi{width:26px; height:26px; color:var(--brand-secondary);}
+  .ms-hero .ms-stats{margin-top:2px; border-top:1px solid rgba(255,255,255,.14); padding-top:12px;}
+  .ms-hero .ms-stats > div + div{border-inline-start-color:rgba(255,255,255,.14);}
+  .ms-hero .ms-stats > div.fc{border-inline-start:1.5px dashed rgba(165,207,99,.7);}
+  .ms-hero .ms-stats .ms-l{color:rgba(255,255,255,.72);}
+  .ms-hero .ms-stats b{color:#fff;}
+  .ms-hero .ms-stats .fc b{color:var(--brand-secondary);}
+  .ms-hero .ms-stats em{color:rgba(255,255,255,.72);}
+  .ms-fcnote{display:flex; align-items:flex-start; gap:8px; margin-top:14px; padding:9px 12px; border:1.5px dashed rgba(165,207,99,.55); border-radius:var(--radius-md); font-size:13px; color:rgba(255,255,255,.86); line-height:1.5;}
+  .ms-fcnote .svgi{width:17px; height:17px; color:var(--brand-secondary); flex-shrink:0; margin-top:1px;}
+  .ms-fcnote b{color:#fff; font-weight:600;}
+  .ms-cxw{margin-top:12px;}
+  .ms-cxw:empty{display:none;}
+
+  /* ---- the four figure cards ---- */
+  .ms-kpis{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
+  .ms-kpis:empty{display:none;}
+  .ms-kc{display:flex; flex-direction:column; align-items:flex-start; gap:10px; min-width:0; text-align:start; background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:14px; font:inherit; color:inherit; cursor:pointer;
+    box-shadow:0 1px 2px rgba(2,41,23,.04), 0 8px 24px rgba(2,41,23,.05); transition:border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;}
+  .ms-kc .ms-tile{width:38px; height:38px;}
+  .ms-kb{display:flex; flex-direction:column; gap:2px; min-width:0; width:100%;}
+  .ms-kl{font-size:13px; color:var(--text-secondary); font-weight:500; line-height:1.3;}
+  .ms-kv{font-size:26px; font-weight:600; color:var(--text-primary); line-height:1.15; letter-spacing:-.01em; overflow-wrap:anywhere;}
+  .ms-kv small{font-size:13px; color:var(--text-muted); font-weight:500; letter-spacing:0;}
+  .ms-kv .ms-m{white-space:normal;}
+  .ms-ks{font-size:12.5px; color:var(--text-muted); line-height:1.4;}
+  .ms-kbar{display:block; position:relative; height:6px; border-radius:3px; background:var(--surface-sunken); margin:6px 0 4px;}
+  .ms-kbar i{display:block; height:100%; border-radius:3px; background:#1C6A45; max-width:100%;}
+  .ms-kbar b{position:absolute; top:-3px; bottom:-3px; width:2px; border-radius:2px; background:var(--text-muted); margin-inline-start:-1px;}
+  .ms-chip{display:inline-flex; align-items:center; gap:5px; width:max-content; max-width:100%; font-size:12px; font-weight:600; border-radius:var(--radius-pill); padding:3px 9px; margin:3px 0 1px;}
+  .ms-chip.warn{background:var(--status-warning-soft); color:var(--status-warning);}
+  .ms-chip .svgi{width:13px; height:13px; flex-shrink:0;}
+  .ms-kc.fc{border:1.5px dashed var(--border-default); box-shadow:none; background:linear-gradient(180deg, #FBFDF8, #FFFFFF);}
+  @media (hover:hover){ .ms-kc:hover{border-color:var(--border-default); box-shadow:var(--shadow-md);} }
+
+  /* ---- the leaderboard (the team's #targetCard) ---- */
+  .ms-people > .ms-ct{flex-wrap:wrap; row-gap:4px;}
+  .ms-people > .ms-ct > .ms-ttl{flex:1 1 auto;}
+  .ms-tt > span{white-space:nowrap;}
+  .ms-people .ms-bar i{background:#1C6A45;}
+  .ms-chart > .ms-ct{flex-wrap:wrap; row-gap:6px;}
+  .ms-chart > .ms-ct > .ms-ttl{flex:1 1 240px;}
+  .ms-chart > .ms-ct > .ms-act{margin-inline-start:auto;}
+  .ms-chart svg [stroke="#1E7A55"]{stroke:#1C6A45;} .ms-chart svg [fill="#1E7A55"]{fill:#1C6A45;}
+  .ms-people > .ms-ct .ms-act{flex-shrink:0;}
+  .ms-people > .ms-hint{font-size:12.5px; font-weight:500; color:var(--text-muted); margin:-2px 0 6px; text-align:start;}
+  .ms-va{display:inline-flex; align-items:center; border:none; background:none; color:#1C6A45; font:inherit; font-weight:600; font-size:13.5px; cursor:pointer; padding:6px 4px; white-space:nowrap;}
+  .ms-people .ms-person{grid-template-columns:24px 34px minmax(0,1fr) 48px; gap:3px 10px; padding:11px 0;}
+  .ms-people .ms-person > .rk{grid-column:1; grid-row:1; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13.5px; color:var(--text-muted);}
+  .ms-people .ms-person > .rk.first .svgi{width:18px; height:18px; color:var(--accent-gold);}
+  .ms-people .ms-person > .av{grid-column:2; grid-row:1; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#E2F0E7; color:#1C6A45; font-size:12.5px; font-weight:700;}
+  .ms-people .ms-person > .av.tm{background:var(--surface-sunken); color:var(--text-primary);}
+  .ms-people .ms-person > .av.tm .svgi{width:17px; height:17px;}
+  .ms-people .ms-person > .n{grid-column:3; grid-row:1;}
+  .ms-people .ms-person > .p{grid-column:4; grid-row:1;}
+  .ms-people .ms-person > .ms-bar, .ms-people .ms-person > div:not([class]){grid-column:3 / 5; grid-row:2;}
+  .ms-people .ms-person > .s, .ms-people .ms-person > .ms-fine{grid-column:3 / 5;}
+  .ms-people .ms-person > div:not([class]):empty{display:none;}
+
+  /* ---- the sales advisor (the team's #msNext, a person's #msAdvisor) ---- */
+  .ms-vteam > #msNext, #view-today .ms-adv{background:linear-gradient(165deg, #F1F8E9 0%, #FFFFFF 58%);}
+  .ms-lead{display:flex; align-items:flex-start; gap:10px; background:rgba(165,207,99,.2); border-radius:var(--radius-md); padding:11px 13px; margin:2px 0 6px; font-size:14px; line-height:1.5; color:var(--text-primary);}
+  .ms-lead .svgi{width:18px; height:18px; flex-shrink:0; margin-top:2px; color:#3B6912;}
+  .ms-lead b{font-weight:700;}
+  .ms-tip{display:flex; gap:9px; align-items:flex-start; font-size:13px; color:var(--text-secondary); margin-top:8px; padding-top:10px; border-top:1px dashed var(--border-default); line-height:1.5;}
+  .ms-tip .svgi{width:16px; height:16px; flex-shrink:0; margin-top:2px; color:var(--text-muted);}
+  .ms-tip .k{font-weight:600; color:var(--text-primary);}
+
+  /* ---- the pace card ---- */
+  #view-today .ms-status{background:radial-gradient(80% 90% at 100% 100%, rgba(165,207,99,.28) 0%, rgba(165,207,99,0) 70%), linear-gradient(160deg, #EEF6E8 0%, #F8FBF5 70%);}
+  .ms-st{display:flex; flex-direction:column; align-items:flex-start; gap:6px; height:100%;}
+  .ms-stic{width:52px; height:52px; border-radius:16px; background:var(--surface-card); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm); margin-bottom:6px;}
+  .ms-stic .svgi{width:26px; height:26px; color:#1C6A45;}
+  .ms-st.warn .ms-stic .svgi{color:var(--status-warning);}
+  .ms-st.none .ms-stic .svgi{color:var(--text-muted);}
+  .ms-stt{font-size:21px; font-weight:600; letter-spacing:-.01em; line-height:1.3; color:var(--text-primary);}
+  .ms-sts{font-size:13.5px; color:var(--text-secondary); line-height:1.5;}
+  .ms-stb{margin-top:auto; display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 16px 0 18px; border:none; border-radius:var(--radius-md); background:var(--brand-primary); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer;}
+  .ms-stb .ms-chev{color:var(--brand-secondary);}
+  .ms-st > .ms-stb{margin-top:14px;}
+
+  /* ---- the recent visits, as a timeline ---- */
+  .ms-tl{position:relative;}
+  .ms-tl::before{content:''; position:absolute; inset-inline-start:17px; top:20px; bottom:20px; width:2px; border-radius:1px; background:var(--border-subtle);}
+  #view-today .ms-body .card.ms-tli{display:flex; align-items:center; gap:12px; padding:9px 0; border-top:none; position:relative;}
+  .ms-tli .ms-tile{width:36px; height:36px; border-radius:50%; position:relative; z-index:1; box-shadow:0 0 0 3px var(--surface-card);}
+  .ms-tli .ms-tile .svgi{width:17px; height:17px;}
+  .ms-tlt{flex:1; min-width:0;}
+  .ms-tlt .clinic-name{font-weight:600; font-size:14.5px; line-height:1.35;}
+  .ms-tlt .clinic-sub{font-size:12.5px;}
+  .ms-ago{font-size:12.5px; color:var(--text-muted); white-space:nowrap; align-self:flex-start; margin-top:3px;}
+
+  /* ---- the chart card ---- */
+  .ms-chart .ms-keys{gap:4px 14px;}
+  .ms-chart .ms-keys i{width:16px; border-top-width:3px; border-radius:2px;}
+  .ms-chart svg .ax{font-variant-numeric:tabular-nums;}
+
+  /* ---- phone and tablet: one column in the order of the reference ---- */
+  @media (max-width:1023px){
+    .ms-grid > *{order:30;}
+    .ms-vteam > #msSales{order:1;} .ms-grid > #msKpis{order:2;} .ms-vteam > #msNext{order:3;} .ms-vteam > #targetCard{order:4;} .ms-vteam > #msWork{order:5;}
+    .ms-vteam > #msPlanCard{order:6;} .ms-vteam > #msDueCard{order:7;} .ms-vteam > #msTaskCard{order:8;} .ms-vteam > #msRecentCard{order:9;} .ms-vteam > #msRows{order:10;}
+    .ms-vperson > #targetCard{order:1;} .ms-vperson > #msAdvisor{order:3;} .ms-vperson > #msNext{order:4;} .ms-vperson > #msWork{order:5;}
+    .ms-vperson > #msRows{order:6;} .ms-vperson > #msPlanCard{order:7;} .ms-vperson > #msDueCard{order:8;} .ms-vperson > #msTaskCard{order:9;} .ms-vperson > #msRecentCard{order:10;}
+    .ms-vperson > #msSales{display:none;}
+    .ms-grid > #msStatus{display:none;}
+    #view-today .ms-switch{flex:1 1 100%;}
+    #view-today .ms-who{display:none;}
+    .ms-people .ms-ct .ms-va{min-height:44px;}
+    /* the bottom bar: Home · Customers · (+) Log visit · Sales · More */
+    nav.bottom .nav-gb{display:contents;}
+    nav.bottom .nav-sep, nav.bottom .nt-d{display:none;}
+    nav.bottom button[data-view="today"]{order:1;} nav.bottom button[data-view="clinics"]{order:2;} nav.bottom button[data-view="log"]{order:3;}
+    nav.bottom button[data-view="sales"]{order:4;} nav.bottom button[data-view="more"]{order:5;}
+    nav.bottom button.nav-tab.nav-log .nav-tx{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;}
+    nav.bottom button.nav-tab.nav-log .nav-ic{width:56px; height:56px; border-radius:50%; margin-top:-24px; border:4px solid #fff; box-sizing:content-box; box-shadow:0 8px 18px rgba(2,41,23,.26);}
+    nav.bottom button.nav-tab.nav-log .nav-ic .svgi{width:26px; height:26px;}
+  }
+  @media (max-width:380px){
+    .ms-ringc{width:92px; height:92px;}
+    .ms-rc strong{font-size:21px;}
+    .ms-hero .ms-big{font-size:28px;}
+    .ms-kv{font-size:23px;}
+  }
+
+  /* ---- desktop ---- */
+  @media (min-width:1024px){
+    .nt-m, nav.bottom button.nav-sales{display:none;}
+    /* the top bar: quick find at the start (Today: in place of the title), then the actions */
+    body:not(.not-today) header.top .top-title{display:none;}
+    header.top{gap:16px;}
+    .top-search{display:flex; align-items:center; gap:10px; position:relative; flex:0 1 500px; min-width:220px; height:44px; padding:0 14px; margin-inline-end:auto; background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-md); color:var(--text-muted); box-shadow:var(--shadow-sm);}
+    .top-search > .svgi{width:18px; height:18px; flex-shrink:0;}
+    .top-search:focus-within{border-color:var(--border-strong); box-shadow:0 0 0 3px rgba(165,207,99,.35);}
+    .top-search input, .top-search input[type=search]{flex:1; min-width:0; height:100%; min-height:0; border:none; background:none; padding:0; font-size:14.5px; box-shadow:none; outline:none; color:var(--text-primary);}
+    .top-search input:focus{box-shadow:none; outline:none;}
+    .qf-list{position:absolute; top:calc(100% + 6px); inset-inline:0; background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:14px; box-shadow:var(--shadow-lg); padding:6px; max-height:min(440px, 70vh); overflow:auto; z-index:30;}
+    .qf-list[hidden]{display:none;}
+    .qf-h{font-size:11.5px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; padding:8px 10px 4px;}
+    body.ar .qf-h{text-transform:none; font-size:12.5px;}
+    .qf-item{display:flex; align-items:center; gap:10px; width:100%; padding:7px 10px; border:none; background:none; border-radius:10px; text-align:start; font:inherit; color:var(--text-primary); cursor:pointer;}
+    .qf-item:hover, .qf-item.sel{background:var(--surface-page);}
+    .qf-ic{width:32px; height:32px; border-radius:9px; background:var(--brand-secondary-soft); color:var(--brand-primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+    .qf-ic .svgi{width:16px; height:16px;}
+    .qf-t{display:flex; flex-direction:column; min-width:0;}
+    .qf-t > span:first-child{font-weight:600; font-size:14px;}
+    .qf-s{font-size:12.5px; color:var(--text-muted);}
+    .qf-none{padding:14px; color:var(--text-muted); font-size:13.5px;}
+    /* the sidebar: the dashboard, then groups that open onto their entries */
+    nav.bottom .nav-scroll{padding-top:10px;}
+    nav.bottom .nav-scroll > button, nav.bottom .nav-gh{min-height:44px; padding:8px 14px; font-size:14.5px; margin:2px 0;}
+    nav.bottom .nav-gh .nav-chev{width:15px; height:15px; transform:rotate(90deg); opacity:.55; transition:transform var(--dur-fast) ease;}
+    nav.bottom .nav-group.open > .nav-gh .nav-chev{transform:rotate(-90deg);}
+    nav.bottom .nav-group + .nav-group{margin-top:0;}
+    nav.bottom .nav-gb{display:none; margin:2px 0 8px; margin-inline-start:23px; padding-inline-start:8px; border-inline-start:1px solid rgba(255,255,255,.12);}
+    nav.bottom .nav-group.open > .nav-gb{display:block;}
+    nav.bottom .nav-gb button{min-height:36px; padding:6px 10px; font-size:13.5px; color:var(--text-on-inverse);}
+    nav.bottom .nav-gb button .nav-ic .svgi{width:17px; height:17px;}
+    nav.bottom .nav-group.has-active:not(.open) > .nav-gh{background:rgba(165,207,99,.14); color:#fff;}
+    nav.bottom .nav-group.open > .nav-gh{color:#fff;}
+    nav.bottom .nav-sep{height:1px; background:rgba(255,255,255,.12); margin:12px 14px;}
+    nav.bottom .nav-brand{height:72px; padding:0 26px;}
+    nav.bottom .nav-brand img{height:26px;}
+    /* the head */
+    #view-today .ms-head{margin:0 0 20px; align-items:center;}
+    #view-today .ms-hello{font-size:30px;}
+    #view-today .ms-hr{flex:0 1 auto; justify-content:flex-end;}
+    #view-today .ms-switch{flex:none;}
+    .ms-per{display:block;}
+    /* the target card */
+    #view-today .ms-hero{padding:24px 28px;}
+    .ms-hin{grid-template-columns:auto minmax(0,1.1fr) minmax(0,1fr); gap:0 28px;}
+    .ms-hin > .ms-stats{grid-column:auto; display:block; margin:0; border-top:none; padding:0; padding-inline-start:26px; border-inline-start:1px solid rgba(255,255,255,.14);}
+    .ms-hin > .ms-stats > div{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; column-gap:12px; padding:8px 0; border-inline-start:none !important; padding-inline-start:0 !important; padding-inline-end:0;}
+    .ms-hin > .ms-stats > div + div{border-top:1px solid rgba(255,255,255,.1);}
+    .ms-hin > .ms-stats > div > .ms-l{font-size:13.5px;}
+    .ms-hin > .ms-stats > div > b{grid-column:2; font-size:18px; text-align:end; margin:0; white-space:nowrap;}
+    .ms-hin > .ms-stats > div > em{grid-column:1 / -1; text-align:end;}
+    .ms-hin > .ms-stats > div.fc{border:1.5px dashed rgba(165,207,99,.6) !important; border-radius:12px; padding:8px 12px !important; margin-top:8px;}
+    .ms-hin > .ms-stats .ms-m{white-space:nowrap;}
+    .ms-ringc{width:132px; height:132px; align-self:center;}
+    .ms-rc strong{font-size:30px;}
+    .ms-rc > span{font-size:12.5px;}
+    .ms-ringc.none{width:72px; height:72px; border-radius:20px;}
+    .ms-hero .ms-big{font-size:38px;}
+    /* the figure cards: four a row */
+    .ms-kpis{grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px;}
+    .ms-kc{flex-direction:row; gap:14px; padding:18px;}
+    .ms-kc .ms-tile{width:44px; height:44px; border-radius:50%;}
+    .ms-kc .ms-tile .svgi{width:21px; height:21px;}
+    .ms-kv{font-size:28px;}
+    /* the grid: the target card, the figures, the chart beside the leaderboard (a person: her performance),
+       then the advisor, the recent visits and the pace card, then the rest of the month and the day's lists */
+    .ms-grid{display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:20px; align-items:stretch;}
+    .ms-grid > *{grid-column:span 6; order:30;}
+    .ms-grid > #msSales, .ms-vperson > #targetCard, .ms-grid > #msKpis{grid-column:1 / -1;}
+    .ms-grid > #msSales, .ms-vperson > #targetCard{order:1;}
+    .ms-grid > #msKpis{order:2;}
+    .ms-grid > #msChart{grid-column:1 / -1; order:3;}
+    .ms-vteam > #targetCard, .ms-vperson > #msWork{grid-column:1 / -1; order:4;}
+    .ms-vteam > #msNext, .ms-vperson > #msAdvisor{order:5;}
+    .ms-grid > #msRecentCard{order:6;}
+    .ms-grid > #msStatus{order:7;}
+    .ms-vteam > #msWork, .ms-vperson > #msNext{order:8;}
+    .ms-grid > #msBrands{order:9;} .ms-grid > #msCust{order:10;} .ms-grid > #msPlanCard{order:11;} .ms-grid > #msDueCard{order:12;} .ms-grid > #msTaskCard{order:13;}
+    .ms-vperson > #msSales, .ms-vteam > #msAdvisor{display:none;}
+    .ms-vperson > #targetCard > .ms-card{height:auto;}
+    .ms-people .ms-person{grid-template-columns:26px 36px minmax(0,1fr) minmax(64px,120px) 52px; gap:3px 12px;}
+    .ms-people .ms-person > .ms-bar, .ms-people .ms-person > div:not([class]){grid-column:4; grid-row:1;}
+    .ms-people .ms-person > .p{grid-column:5;}
+    .ms-people .ms-person > .s, .ms-people .ms-person > .ms-fine{grid-column:3 / 6;}
+    .ms-people .ms-person > .av{width:36px; height:36px;}
+    #view-today .ms-card > .ms-ct, .ms-fold > .ms-ct .ms-t > span:first-child{color:var(--text-primary) !important; font-size:16px !important;}
+  }
+  @media (min-width:1280px){
+    .ms-grid > #msChart{grid-column:span 7;}
+    .ms-vteam > #targetCard, .ms-vperson > #msWork{grid-column:span 5;}
+    .ms-ringc{width:148px; height:148px;}
+    .ms-rc strong{font-size:34px;}
+  }
+  @media (min-width:1440px){
+    .ms-grid > *{grid-column:span 4;}
+    .ms-grid > #msChart{grid-column:span 7;}
+    .ms-vteam > #targetCard, .ms-vperson > #msWork{grid-column:span 5;}
+  }
   /* === END DASHBOARD === */
 
   /* === SCREENS A === */
@@ -1059,6 +1347,10 @@
   <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
   <symbol id="i-pie" viewBox="0 0 24 24"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></symbol>
   <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
 </svg>
 
@@ -1096,15 +1388,23 @@
   <header class="top">
     <div class="top-title">
       <img class="logo" src="icons/mark-green.png" alt="UltraMed">
+      <img class="logo-word" src="icons/logo-green.png" alt="UltraMed">
       <div class="top-text">
         <div class="top-page" id="topTitle">Today</div>
         <h1 id="greeting">Field Ops</h1>
         <div class="eyebrow" id="dateLabel">Loading...</div>
       </div>
     </div>
+    <!-- Quick find (wide screens): the clinics, doctors and products this phone already holds; each opens its own screen. -->
+    <div class="top-search" role="search">
+      <svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg>
+      <input type="search" id="quickFind" autocomplete="off" placeholder="Search clinics, doctors, or products…" aria-label="Quick find" oninput="quickFind(this.value)" onfocus="quickFind(this.value)" onkeydown="quickFindKey(event)" onblur="setTimeout(qfClose, 180)">
+      <div class="qf-list" id="quickFindList" role="listbox" hidden></div>
+    </div>
     <div class="top-actions">
       <button class="top-cta" onclick="switchView('log')"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg><span>Log visit</span></button>
       <button class="top-lang" onclick="toggleUiLang()" aria-label="Language"><svg class="svgi" aria-hidden="true"><use href="#i-globe"/></svg><span id="topLangTx" data-notr>ع</span></button>
+      <button class="top-bell" onclick="bellOpen()" aria-label="Follow-ups due" title="Follow-ups due"><svg class="svgi" aria-hidden="true"><use href="#i-bell"/></svg><span class="bell-n" id="bellCount" data-notr hidden></span></button>
       <div class="userchip" onclick="openAccountMenu()" aria-label="Account menu">
         <div class="top-user"><span class="top-name" id="topUserName" data-notr></span><span class="top-role" id="topUserRole"></span></div>
         <div class="stamp" id="headerStamp">•••<div class="dot" id="headerDot"></div></div>
@@ -1118,20 +1418,26 @@
          A rep sees only her own; the supervisor sees the team and opens any person's own screen.
          Cards are drawn by renderToday (05-today-calendar.js); the shells below keep the inputs that must survive a redraw. -->
     <div class="ms-head" id="msHead">
-      <div class="ms-hi"><div class="ms-hello" id="msHello"></div><div class="ms-date" id="msDate"></div></div>
+      <div class="ms-hi"><div class="ms-date" id="msDate"></div><div class="ms-hello" id="msHello"></div></div>
       <div class="ms-src" id="msSource"></div>
-      <div class="ms-switch" id="msSwitch" role="tablist"></div>
-      <div class="ms-who" id="msWho"></div>
+      <div class="ms-hr">
+        <div class="ms-switch" id="msSwitch" role="tablist"></div>
+        <div class="ms-who" id="msWho"></div>
+        <div class="ms-per" id="msPeriod"></div>
+      </div>
       <div class="ms-whose" id="msWhose" style="display:none;"></div>
     </div>
     <div id="erpNudge" style="display:none;"></div>
     <div id="visitsNudge" style="display:none;"></div>
     <div class="ms-grid ms-vteam" id="msGrid">
-      <section class="ms-card" id="msSales"></section>
+      <section class="ms-card ms-hero" id="msSales"></section>
       <div id="targetCard"></div>
+      <section class="ms-kpis" id="msKpis"></section>
       <section class="ms-card" id="msWork"></section>
       <section class="ms-card" id="msNext"></section>
+      <section class="ms-card ms-adv" id="msAdvisor"></section>
       <section class="ms-card ms-laptop ms-chart" id="msChart"></section>
+      <section class="ms-card ms-status" id="msStatus"></section>
       <section class="ms-card ms-laptop" id="msBrands"></section>
       <section class="ms-card ms-laptop" id="msCust"></section>
       <section class="ms-card ms-rows" id="msRows"></section>
@@ -1479,49 +1785,66 @@
      From 1024 px it is the sidebar: every destination, in the groups the More screen uses on a phone.
      data-sup = supervisor only (renderAll shows them to a supervisor; a rep never sees them). -->
 <nav class="bottom" id="bottomNav" style="display:none;" aria-label="Main navigation">
+  <!-- One navigation for every width. From 1024 px the deep-green sidebar: the dashboard, then groups that open onto
+       every existing entry (the group of the open screen opens by itself). Below 1024 px only the .nav-tab buttons show,
+       as the bottom bar: Home · Customers · (+) Log visit · Sales · More (CSS order). -->
   <div class="nav-brand"><img src="icons/logo-white.png" alt="UltraMed"></div>
   <div class="nav-scroll">
-    <div class="nav-group">
-      <div class="nav-gl">Overview</div>
-      <button class="nav-tab active" data-view="today" onclick="switchView('today')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-home"/></svg></span><span class="nav-tx">Today</span><span class="navdot" id="navDotToday"></span></button>
-      <button onclick="openKpiScorecard()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-target"/></svg></span><span class="nav-tx">KPI scorecard</span></button>
-      <button onclick="openMonthByMonth()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-trend"/></svg></span><span class="nav-tx">Month by month</span></button>
-      <button onclick="openAchievements()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-award"/></svg></span><span class="nav-tx">Achievements</span></button>
+    <button class="nav-tab nav-home active" data-view="today" onclick="switchView('today')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-home"/></svg></span><span class="nav-tx"><span class="nt-d">Dashboard</span><span class="nt-m">Home</span></span><span class="navdot" id="navDotToday"></span></button>
+    <div class="nav-group" data-g="customers">
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-users"/></svg></span><span class="nav-tx">Customers</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <div class="nav-gb">
+        <button class="nav-tab nav-cust" data-view="clinics" onclick="switchView('clinics')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-building"/></svg></span><span class="nav-tx"><span class="nt-d">Clinics</span><span class="nt-m">Customers</span></span></button>
+        <button data-view="doctors" data-tab="db" onclick="ddTab='db'; switchView('doctors')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg></span><span class="nav-tx">Doctors database</span></button>
+        <button onclick="openDoctorRecords()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg></span><span class="nav-tx">Doctor records</span></button>
+      </div>
     </div>
-    <div class="nav-group">
-      <div class="nav-gl">Customers</div>
-      <button class="nav-tab" data-view="clinics" onclick="switchView('clinics')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-building"/></svg></span><span class="nav-tx">Clinics</span></button>
-      <button data-view="doctors" data-tab="db" onclick="ddTab='db'; switchView('doctors')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg></span><span class="nav-tx">Doctors database</span></button>
-      <button onclick="openDoctorRecords()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg></span><span class="nav-tx">Doctor records</span></button>
+    <div class="nav-group" data-g="sales">
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="nav-tx">Sales</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <div class="nav-gb">
+        <button data-view="products" onclick="switchView('products')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-package"/></svg></span><span class="nav-tx">Products &amp; prices</span></button>
+        <button data-view="clanalysis" onclick="switchView('clanalysis')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pie"/></svg></span><span class="nav-tx">Clinic sales analysis</span></button>
+        <button onclick="openProductMovement()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-activity"/></svg></span><span class="nav-tx">Product movement</span></button>
+        <button data-view="doctors" data-tab="rx" onclick="ddTab='rx'; switchView('doctors')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pill"/></svg></span><span class="nav-tx">Prescriptions growth</span></button>
+      </div>
     </div>
-    <div class="nav-group">
-      <div class="nav-gl">Sales</div>
-      <button data-view="products" onclick="switchView('products')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-package"/></svg></span><span class="nav-tx">Products &amp; prices</span></button>
-      <button data-view="clanalysis" onclick="switchView('clanalysis')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pie"/></svg></span><span class="nav-tx">Clinic sales analysis</span></button>
-      <button onclick="openProductMovement()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-activity"/></svg></span><span class="nav-tx">Product movement</span></button>
-      <button data-view="doctors" data-tab="rx" onclick="ddTab='rx'; switchView('doctors')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pill"/></svg></span><span class="nav-tx">Prescriptions growth</span></button>
+    <div class="nav-group" data-g="field">
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg></span><span class="nav-tx">Field operations</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <div class="nav-gb">
+        <button class="nav-tab nav-log" data-view="log" onclick="switchView('log')" aria-label="Log visit"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg></span><span class="nav-tx">Log visit</span></button>
+        <button data-view="calendar" onclick="switchView('calendar')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg></span><span class="nav-tx">Calendar</span></button>
+        <button data-view="team" onclick="switchView('team')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chat"/></svg></span><span class="nav-tx">Team chat &amp; memories</span></button>
+        <button onclick="openClientLog()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-flag"/></svg></span><span class="nav-tx">Requests, escalations &amp; stands</span></button>
+      </div>
     </div>
-    <div class="nav-group">
-      <div class="nav-gl">Field operations</div>
-      <button class="nav-tab nav-log" data-view="log" onclick="switchView('log')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg></span><span class="nav-tx">Log visit</span></button>
-      <button class="nav-tab" data-view="calendar" onclick="switchView('calendar')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg></span><span class="nav-tx">Calendar</span></button>
-      <button data-view="team" onclick="switchView('team')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chat"/></svg></span><span class="nav-tx">Team chat &amp; memories</span></button>
-      <button onclick="openClientLog()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-flag"/></svg></span><span class="nav-tx">Requests, escalations &amp; stands</span></button>
+    <div class="nav-group" data-g="intel">
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-compass"/></svg></span><span class="nav-tx">Intelligence</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <div class="nav-gb">
+        <button onclick="openKpiScorecard()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-target"/></svg></span><span class="nav-tx">KPI scorecard</span></button>
+        <button onclick="openMonthByMonth()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-trend"/></svg></span><span class="nav-tx">Month by month</span></button>
+        <button onclick="openAchievements()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-award"/></svg></span><span class="nav-tx">Achievements</span></button>
+        <button data-view="playbook" onclick="switchView('playbook')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg></span><span class="nav-tx">Selling playbook</span></button>
+        <button onclick="openCategoryGuides()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-layers"/></svg></span><span class="nav-tx">Category guides</span></button>
+      </div>
     </div>
-    <div class="nav-group">
-      <div class="nav-gl">Intelligence</div>
-      <button data-view="reports" onclick="switchView('reports')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="nav-tx">Report</span></button>
-      <button onclick="openExport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-share"/></svg></span><span class="nav-tx">Export &amp; share</span></button>
-      <button data-view="playbook" onclick="switchView('playbook')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg></span><span class="nav-tx">Selling playbook</span></button>
-      <button onclick="openCategoryGuides()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-layers"/></svg></span><span class="nav-tx">Category guides</span></button>
-      <button data-sup hidden onclick="openWeeklyDeck()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-file"/></svg></span><span class="nav-tx">Weekly management deck</span></button>
+    <div class="nav-sep"></div>
+    <div class="nav-group" data-g="reports">
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pie"/></svg></span><span class="nav-tx">Reports</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <div class="nav-gb">
+        <button data-view="reports" onclick="switchView('reports')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="nav-tx">Report</span></button>
+        <button onclick="openExport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-share"/></svg></span><span class="nav-tx">Export &amp; share</span></button>
+        <button data-sup hidden onclick="openWeeklyDeck()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-file"/></svg></span><span class="nav-tx">Weekly management deck</span></button>
+      </div>
     </div>
-    <div class="nav-group" data-sup hidden>
-      <div class="nav-gl">Management</div>
-      <button onclick="openErpImport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nav-tx">ERP import</span></button>
-      <button onclick="openAdminPanel()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="nav-tx">Admin panel</span></button>
+    <div class="nav-group" data-g="mgmt" data-sup hidden>
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="nav-tx">Management</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <div class="nav-gb">
+        <button onclick="openErpImport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nav-tx">ERP import</span></button>
+        <button onclick="openAdminPanel()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="nav-tx">Admin panel</span></button>
+      </div>
     </div>
-    <button class="nav-tab" data-view="more" onclick="switchView('more')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-grid"/></svg></span><span class="nav-tx">More</span><span class="navdot" id="navDotTeam"></span></button>
+    <button class="nav-tab nav-sales" data-view="sales" onclick="openSalesHub()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-bag"/></svg></span><span class="nav-tx">Sales</span></button>
+    <button class="nav-tab" data-view="more" onclick="switchView('more')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-more"/></svg></span><span class="nav-tx">More</span><span class="navdot" id="navDotTeam"></span></button>
   </div>
 </nav>
 

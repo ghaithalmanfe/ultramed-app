@@ -166,14 +166,21 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   check('Team: the biggest customers = execDashboard.customers.accounts, the same amounts as the Clinics screen\'s card',
     truth.cust.length === 5 && truth.cust.every((a, i) => a.net === a.clinics && s.cust[i] && s.cust[i].includes(a.name) && s.cust[i].endsWith(a.net.toFixed(2) + ' KD')), { shown: s.cust, dashboard: truth.cust });
 
-  // ---------- layout: laptop in columns, the side rail ----------
+  // ---------- layout: the owner's final home design (14 Nov), the sidebar ----------
+  // (redesign: the target card spans the content, the four figure cards follow in one row, the chart sits beside the
+  // leaderboard, then the advisor, the recent visits and the pace card — the held design had three cards in its first row)
   const lay = await ev(() => {
     const r = id => { const e = document.getElementById(id); const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
     const nav = document.getElementById('bottomNav').getBoundingClientRect();
-    return { sales: r('msSales'), work: r('msWork'), next: r('msNext'), people: r('targetCard'), nav: { x: nav.left, y: nav.top, w: nav.width, h: nav.height }, vw: innerWidth, vh: innerHeight,
+    const kpis = [...document.querySelectorAll('#msKpis .ms-kc')].map(e => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; });
+    return { sales: r('msSales'), work: r('msWork'), next: r('msNext'), people: r('targetCard'), chart: r('msChart'), recent: r('msRecentCard'), status: r('msStatus'), kpis,
+      nav: { x: nav.left, y: nav.top, w: nav.width, h: nav.height }, vw: innerWidth, vh: innerHeight,
       sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, dir: document.documentElement.dir };
   });
-  check('Laptop 1440×900: the first cards sit side by side in one row (same top, three columns)', lay.sales.y === lay.work.y && lay.work.y === lay.next.y && lay.sales.x < lay.work.x && lay.work.x < lay.next.x && lay.sales.w > 300 && lay.sales.w < 520, lay);
+  check('Laptop 1440×900: the target card spans the content at the top, the four figure cards in one row under it, the chart beside the leaderboard, then the advisor, the recent visits and the pace card side by side',
+    lay.sales.w >= 1000 && lay.kpis.length === 4 && lay.kpis.every((k, i) => k.y === lay.kpis[0].y && (!i || k.x > lay.kpis[i - 1].x)) && lay.kpis[0].y >= lay.sales.y + lay.sales.h
+    && lay.chart.y === lay.people.y && lay.chart.x < lay.people.x && lay.chart.w > lay.people.w && lay.chart.y > lay.kpis[0].y
+    && lay.next.y === lay.recent.y && lay.recent.y === lay.status.y && lay.next.x < lay.recent.x && lay.recent.x < lay.status.x && lay.next.y > lay.chart.y, lay);
   // redesign: the laptop's navigation is a labelled sidebar (every destination by name) instead of the 96 px icon rail
   check('Laptop: the navigation is a sidebar (full height, at the start edge, wide enough for its labels: 200–280 px), not a bottom bar', lay.nav.h >= lay.vh - 1 && lay.nav.w >= 200 && lay.nav.w <= 280 && lay.nav.x === 0, lay.nav);
   const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
@@ -295,11 +302,16 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     const sp = await ev(spilled); if(sp.length) spill.push({ w, sp });
     if(w >= 390){ const sw = await ev(statsWrap); if(sw.length) wrap.push({ w, sw }); }
     if(w >= 1024) rowsAt[w] = await ev(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
-      return { sales: r('msSales'), work: r('msWork'), next: r('msNext') }; });
+      return { sales: r('msSales'), next: r('msNext'), people: r('targetCard'), chart: r('msChart'), recent: r('msRecentCard'), status: r('msStatus'),
+        kpis: [...document.querySelectorAll('#msKpis .ms-kc')].map(e => Math.round(e.getBoundingClientRect().top)) }; });
   }
-  const two = x => x && x.sales.y === x.work.y && x.sales.w >= 360 && x.work.w >= 360 && x.next.y > x.sales.y, three = x => x && x.sales.y === x.work.y && x.work.y === x.next.y;
-  // redesign: the sidebar takes 232–248 px of the width, so three cards a row start at 1440 px (they did at 1366 px beside the 96 px rail)
-  check('Laptop up to 1366 px (1024, 1280, 1366): two cards a row, each wide enough for its figures (≥ 360 px), the next card below; three a row from 1440 px', two(rowsAt[1024]) && two(rowsAt[1280]) && two(rowsAt[1366]) && three(rowsAt[1440]), rowsAt);
+  // redesign (the owner's final home design): the target card across the content and the four figures in one row at every
+  // laptop width; the chart beside the leaderboard from 1280 px (above it at 1024); the cards below two a row, each wide
+  // enough for its figures (≥ 360 px), up to 1366 px, and three a row (advisor, recent visits, pace) from 1440 px
+  const okAt = (x, w) => !!x && x.kpis.length === 4 && x.kpis.every(t => t === x.kpis[0]) && x.sales.w >= 1.9 * x.next.w
+    && (w >= 1280 ? x.chart.y === x.people.y && x.chart.x !== x.people.x : x.people.y > x.chart.y)
+    && x.next.y === x.recent.y && (w >= 1440 ? x.status.y === x.next.y : x.status.y > x.next.y && x.next.w >= 360 && x.recent.w >= 360);
+  check('Laptop from 1024 to 1440 px: the target card across the content and the four figures in one row; the chart beside the leaderboard from 1280 px (above it at 1024); the advisor and the recent visits side by side (≥ 360 px each up to 1366 px), the pace card beside them from 1440 px', [1024, 1280, 1366, 1440].every(w => okAt(rowsAt[w], w)), rowsAt);
   check('Supervisor (team, English): the three figures under the sales card — label, amount, sub-line — each on one line from 390 px up (360 may wrap, never spill)', wrap.length === 0, wrap.slice(0, 3));
   check('Supervisor: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over.length === 0, over);
   check('Supervisor: no figure spills out of its box (cards, stats columns, rows) at any of those widths', spill.length === 0, spill.slice(0, 3));
@@ -326,10 +338,15 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const phone = await ev(() => {
     const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
     const nav = document.getElementById('bottomNav').getBoundingClientRect(), log = document.querySelector('#bottomNav button[data-view="log"]').getBoundingClientRect();
-    return { sales: r('targetCard'), work: r('msWork'), next: r('msNext'), nav: { top: Math.round(nav.top), bottom: Math.round(nav.bottom), w: Math.round(nav.width), h: Math.round(nav.height) },
+    const kpis = [...document.querySelectorAll('#msKpis .ms-kc')].map(e => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top) }; });
+    return { sales: r('targetCard'), work: r('msWork'), next: r('msNext'), adv: r('msAdvisor'), kpis, nav: { top: Math.round(nav.top), bottom: Math.round(nav.bottom), w: Math.round(nav.width), h: Math.round(nav.height) },
       log: { top: Math.round(log.top), bottom: Math.round(log.bottom), w: Math.round(log.width), h: Math.round(log.height) }, vh: innerHeight, vw: innerWidth, sw: document.documentElement.scrollWidth };
   });
-  check('Phone 390×844: one column — her sales, her visits, her next step stacked, each the width of the screen', phone.sales.x === phone.work.x && phone.work.x === phone.next.x && phone.sales.y < phone.work.y && phone.work.y < phone.next.y && phone.sales.w >= 340, phone);
+  // redesign (the owner's final home design): her target card first, her four figures two a row, her advisor, her next step, then her visits
+  check('Phone 390×844: one column — her target card first, then her four figures two a row, her advisor, her next step and her visits, each the width of the screen',
+    phone.sales.x === phone.adv.x && phone.adv.x === phone.next.x && phone.next.x === phone.work.x && phone.sales.w >= 340 && phone.adv.w >= 340
+    && phone.kpis.length === 4 && phone.kpis[0].y === phone.kpis[1].y && phone.kpis[2].y === phone.kpis[3].y && phone.kpis[2].y > phone.kpis[0].y
+    && phone.sales.y < phone.kpis[0].y && phone.kpis[3].y < phone.adv.y && phone.adv.y < phone.next.y && phone.next.y < phone.work.y, phone);
   check('Phone: the fixed bottom navigation, with "Log visit" in it (a thumb target ≥ 44 px) on the first screen', phone.nav.bottom === phone.vh && phone.nav.w === phone.vw && phone.nav.h < 120 && phone.log.top >= phone.vh - 120 && phone.log.h >= 44 && phone.log.w >= 44, phone);
   const fold = (await act(() => {
     const body = () => getComputedStyle(document.querySelector('#msDueCard .ms-body')).display;

@@ -2258,6 +2258,30 @@
     // The screen-by-screen redesign adds its Arabic below, each part in its own marked block and nowhere else
     // (every entry ends with a comma; a key written twice keeps the LAST value — check before adding).
     // === DASHBOARD ===
+    // the home screen in the owner's final design (14 Nov): the shell, the figure cards, the advisor, the pace card
+    'Home': 'الرئيسية',
+    'Search clinics, doctors, or products…': 'ابحث في العيادات أو الأطباء أو المنتجات…',
+    'Quick find': 'بحث سريع',
+    'Nothing found': 'لا توجد نتائج',
+    'Team achievement': 'إنجاز الفريق',
+    "Today's field visits": 'الزيارات الميدانية اليوم',
+    'Needs attention': 'تحتاج انتباهاً',
+    'at the current pace': 'بالوتيرة الحالية',
+    'of target': 'من الهدف',
+    'Sales advisor': 'مستشار المبيعات',
+    'To reach the target:': 'لبلوغ الهدف:',
+    'per working day': 'لكل يوم عمل',
+    'Sales coach': 'مدرب المبيعات',
+    'Team leaderboard': 'ترتيب الفريق',
+    'View all': 'عرض الكل',
+    'View detailed report': 'عرض التقرير المفصل',
+    'At the current pace:': 'بالوتيرة الحالية:',
+    'above the target': 'فوق الهدف',
+    'short of the target': 'دون الهدف',
+    'an estimate, not a result': 'تقدير وليس نتيجة',
+    'Your plan, visits and events by day': 'خطتك وزياراتك وفعالياتك يوماً بيوم',
+    'just now': 'الآن',
+    'Yesterday': 'أمس',
     // === END DASHBOARD ===
 
     // === SCREENS A ===
@@ -2627,7 +2651,11 @@
     [/^Achieved: ERP to ([A-Z][a-z]{2} \d{1,2})( \(partial month\))?$/, function (m) { return 'المحقق: من ملفات ERP حتى ' + enDateAr(m[1]) + (m[2] ? ' (شهر غير مكتمل)' : ''); }],
     [/^Achieved: no ERP sales file for this month yet$/, function () { return 'المحقق: لا يوجد ملف مبيعات ERP لهذا الشهر بعد'; }],
     [/^Achieved: no invoice of this rep in the ERP files uploaded \(to ([A-Z][a-z]{2} \d{1,2})\)$/, function (m) { return 'المحقق: لا توجد فاتورة لهذا الشخص في ملفات ERP المرفوعة (حتى ' + enDateAr(m[1]) + ')'; }],
-    [/^Target is from (.+) — upload this month's DSR$/, function (m) { return 'المستهدف من ' + m[1] + ' — ارفع ملف DSR لهذا الشهر'; }]
+    [/^Target is from (.+) — upload this month's DSR$/, function (m) { return 'المستهدف من ' + m[1] + ' — ارفع ملف DSR لهذا الشهر'; }],
+    // === DASHBOARD === how long ago a visit was logged (the home screen's recent visits)
+    [/^(\d+) min ago$/, function (m) { return 'قبل ' + countAr(m[1], ['دقيقة', 'دقيقتين', 'دقائق', 'دقيقة']); }],
+    [/^(\d+)h ago$/, function (m) { return 'قبل ' + countAr(m[1], ['ساعة', 'ساعتين', 'ساعات', 'ساعة']); }],
+    [/^(\d+) days ago$/, function (m) { return 'قبل ' + countAr(m[1], ['يوم', 'يومين', 'أيام', 'يومًا']); }],
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
