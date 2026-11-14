@@ -16,7 +16,8 @@
 //   node tests/e2e/tools/shots.js --out <dir> [--www www|dist|<path>] [--as supervisor|rep|<name>]
 //        [--views today,log,clinics,…] [--step "name=js snippet"]… [--steps steps.json]
 //        [--widths 360,390,768,1024,1440] [--langs en,ar] [--dpr 1|2] [--viewport-only]
-//        [--seed cross,missed,…] [--height 900] [--gate] [--port 0]
+//        [--seed cross,missed,…] [--height 900] [--gate] [--port 0] [--settle 2400]
+// (--settle: milliseconds to wait after the sign-in, so the start-up toast is gone from the pictures)
 // Steps: a view name (today log clinics calendar reports more products playbook team clanalysis doctors)
 // switches to that view; "gate" shoots the sign-in screen; "name=js" runs the snippet (awaited) and
 // shoots what it opened (a sheet: the viewport, else the whole page). A steps file is a JSON array of
@@ -43,7 +44,8 @@ for(let i = 0; i < args.length; i++){
   else if(a === '--height') opt.height = Number(v());
   else if(a === '--gate') opt.gate = true;
   else if(a === '--port') opt.port = Number(v());
-  else if(a === '--help' || a === '-h'){ console.log(fs.readFileSync(__filename, 'utf8').split('\n').filter(l => l.startsWith('//')).slice(0, 26).join('\n')); process.exit(0); }
+  else if(a === '--settle') opt.settle = Number(v());
+  else if(a === '--help' || a === '-h'){ console.log(fs.readFileSync(__filename, 'utf8').split('\n').filter(l => l.startsWith('//')).slice(0, 27).join('\n')); process.exit(0); }
   else { console.error('unknown option ' + a); process.exit(2); }
 }
 if(!opt.out){ console.error('--out <dir> is required (try --help)'); process.exit(2); }
@@ -152,13 +154,15 @@ function audit(phone){
       for(const st of steps){
         if(!st.gate && !signedIn){
           await page.evaluate(async ({ who, role }) => { await selectUser(who, role); }, { who: WHO, role: ROLE });
-          await sleep(350); signedIn = true;
+          await sleep(opt.settle != null ? opt.settle : 2400); signedIn = true;
         }
         if(st.view) await page.evaluate(v => { closeModal(); switchView(v); scrollTo(0, 0); }, st.view).catch(e => errors.push('step ' + st.name + ': ' + e.message.split('\n')[0]));
         if(st.js) await page.evaluate(async js => { const r = (0, eval)(js); if(r && typeof r.then === 'function') await r; }, st.js).catch(e => errors.push('step ' + st.name + ': ' + e.message.split('\n')[0]));
         await page.evaluate(() => typeof msWhenReady === 'function' ? msWhenReady() : null).catch(() => {});
         await page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
         await sleep(st.wait || 250);
+        await page.waitForFunction(() => !document.querySelector('#toast.show'), null, { timeout: 4000 }).catch(() => {});   // a toast of the step itself: wait it out
+        await sleep(300);
         const sheet = await page.evaluate(() => !!document.querySelector('#modalBack.show, .lightbox.show'));
         const full = st.full != null ? !!st.full : !opt.viewportOnly && !sheet;
         const file = `${lang}-${w}-${TAG}-${st.name}.png`;
