@@ -868,7 +868,13 @@ async function persistErpSalesNow(){
   try{ return await persistErpSalesInner(); }
   finally{ _erpSaving = false; }
 }
+// The last sales save sent its one commit and stopped waiting for the answer
+// (it may land later — then the screen re-reads the cloud, and the change
+// log records the landing). Read by the change log right after a failed save.
+let _erpSaveTimedOut = false;
+function erpSaveResult(ok){ return ok === true ? true : _erpSaveTimedOut ? { res: 'timeout' } : false; }
 async function persistErpSalesInner(){
+  _erpSaveTimedOut = false;
   if(_loadFailed.erpSales){
     // The index itself never loaded (cloud unreachable, no mirror): what is on
     // screen is empty, and writing it would erase every uploaded file.
@@ -932,7 +938,13 @@ async function persistErpSalesInner(){
       : (async () => { for(const [k, v] of entries.slice(0, -1)) await window.storage.set(k, v, true); return window.storage.set('erpSales', entries[entries.length - 1][1], true); })();
     try{ await withTimeout(commit, ERP_WRITE_MS); }
     catch(e){
-      if(/timeout/.test(String(e && e.message))) commit.then(() => { _erpSaveChain = _erpSaveChain.then(erpReloadFromCloud, erpReloadFromCloud); }).catch(() => {});
+      if(/timeout/.test(String(e && e.message))){
+        _erpSaveTimedOut = true; // the change log says "no confirmation" for this save, not "not saved"
+        commit.then(() => {
+          if(typeof auditRecord === 'function') auditRecord({ action: 'sync.late', key: 'erpSales', result: true });
+          _erpSaveChain = _erpSaveChain.then(erpReloadFromCloud, erpReloadFromCloud);
+        }).catch(() => {});
+      }
       throw e;
     }
     entries.forEach(([k]) => { if(k !== 'erpSales') _erpStored.add(k); });
@@ -963,7 +975,12 @@ function renderErpDirtyPill(){
     el = document.createElement('div');
     el.id = 'erpDirtyPill';
     el.style.cssText = 'position:fixed; top:44px; left:50%; transform:translateX(-50%); z-index:9999; background:#B3261E; color:#fff; font-size:11.5px; font-weight:700; padding:6px 14px; border-radius:99px; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer;';
-    el.onclick = async () => { el.textContent = '⏳ جارٍ الحفظ…'; const ok = await persist('erpSales'); if(ok) showToast('✅ حُفظت تغييرات المبيعات'); else renderErpDirtyPill(); };
+    el.onclick = async () => {
+      el.textContent = '⏳ جارٍ الحفظ…';
+      const ok = await persist('erpSales');
+      if(ok){ if(typeof auditRecord === 'function') auditRecord({ action: 'sales.retry', key: 'erpSales', result: true }); showToast('✅ حُفظت تغييرات المبيعات'); }
+      else renderErpDirtyPill();
+    };
     document.body.appendChild(el);
   }
   el.textContent = '⚠️ تغييرات المبيعات غير محفوظة — اضغط لإعادة المحاولة';
@@ -1207,6 +1224,7 @@ async function loadAll(){
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: compares against automatic backups
   flushOutbox(); // anything saved offline goes up now, merged with the cloud
+  if(typeof auditFlush === 'function') auditFlush(); // change-log entries this phone still holds (never waited for)
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for
 // ---- SMART MERGE-ON-SAVE ----
@@ -1242,7 +1260,8 @@ const _deviceStale = {};      // key → its device copy is older than memory
 const _memOnly = new Set();   // queued saves the phone could not keep (bar until they upload)
 function deviceSet(k, v, mayFree){
   try{ localStorage.setItem(k, v); return true; }catch(e){}
-  if(mayFree && freeDeviceRoom()){ try{ localStorage.setItem(k, v); return true; }catch(e){} }
+  // each kind of room once (the sales rows, then the change log's waiting entries): freeDeviceRoom says false when nothing is left to free
+  if(mayFree) while(freeDeviceRoom()){ try{ localStorage.setItem(k, v); return true; }catch(e){} }
   return false;
 }
 // Room on a full phone — only a copy the cloud can send again: the rows of
@@ -1251,6 +1270,11 @@ function deviceSet(k, v, mayFree){
 // Never a copy that may be the only one (a file put back from this phone,
 // unsaved sales, the copies kept aside as um_mirror_prev:*).
 function freeDeviceRoom(){
+  if(freeSalesRowsRoom()) return true;
+  // then the change log's entries waiting on this phone: to memory (they still upload while the app is open) — a record comes first
+  return typeof auditYieldRoom === 'function' && auditYieldRoom();
+}
+function freeSalesRowsRoom(){
   if(_erpDirty || _erpSaving) return false;
   let m = null; try{ m = UMCore.safeParse(localStorage.getItem('um_mirror:erpSales'), null); }catch(e){}
   if(!m || !Array.isArray(m.periods)) return false;
@@ -1293,7 +1317,12 @@ function outboxWrite(list){
   return ok;
 }
 function outboxAdd(key){ const l = outboxList(); if(!l.includes(key)){ l.push(key); return outboxWrite(l); } return !_outboxDeviceBad; }
-function outboxRemove(key){ outboxWrite(outboxList().filter(k=>k!==key)); }
+function outboxRemove(key){
+  outboxWrite(outboxList().filter(k=>k!==key));
+  // every caller but dropQueuedErpMap removes a key after the save that carried it landed:
+  // the change log's entries kept on this phone for that list are settled (17-audit-log.js)
+  if(key !== 'erpMap' && typeof auditKeyLanded === 'function') auditKeyLanded(key);
+}
 function outboxHas(key){ return outboxList().includes(key); }
 // What a queued key holds in memory, for the reads that would otherwise
 // serve its older device copy.
@@ -1563,7 +1592,7 @@ function updateSyncBadge(){
   el.style.display = 'block';
   el.textContent = !navigator.onLine ? '📴 Offline — saving locally' : `⏳ Uploading offline changes (${n})…`;
 }
-window.addEventListener('online', ()=>{ updateSyncBadge(); flushOutbox(); });
+window.addEventListener('online', ()=>{ updateSyncBadge(); flushOutbox(); if(typeof auditFlush === 'function') auditFlush(); });
 window.addEventListener('offline', updateSyncBadge);
 function tombSet(key){ return _tombstones[key] || new Set(); }
 // `base` (optional, v121): Map id → the record as the cloud last confirmed it
@@ -1685,6 +1714,9 @@ async function persistNow(key, opts){
   // (10-doctors-products.js) as a compare-and-set — never a blind write, never
   // queued offline, never from a rep's phone.
   if(key === 'rxTypes'){ console.error("rxTypes is saved by saveRxTypes — persist('rxTypes') refused"); return false; }
+  // The change log is only ever appended to, one entry at a time (auditFlush,
+  // 17-audit-log.js) — never written whole from here.
+  if(String(key).indexOf('auditLog:') === 0){ console.error('the change log is appended by auditRecord — never saved whole: ' + key + ' refused'); return false; }
   // The factory clinic list must never be written over a live account. It can
   // be on screen only because a boot went wrong — saving from that state is
   // exactly how a whole team's list gets destroyed.
@@ -1702,6 +1734,7 @@ async function persistNow(key, opts){
   // (opts.told, see persistFor): another save of the same key can start before
   // that caller gets to read persistOutcome.
   const tell = info => { _persistInfo[key] = info; if(typeof opts.told === 'function'){ try{ opts.told(info); }catch(e){} } };
+  let writing = false;
   try{
     if(key === 'visits'){
       await persistVisits(opts); // live + archives + index; throws when the cloud is unreachable
@@ -1798,6 +1831,7 @@ async function persistNow(key, opts){
       }catch(e){ throw e; } // still unreachable -> offline path below
     }
     const str = JSON.stringify(value);
+    writing = true; // from here a timeout means "no confirmation", not "not written"
     const res = await withTimeout(window.storage.set(key, str, true), 7000);
     if(!res){ showToast('Save failed, try again'); return false; }
     mirrorSave(key, str);
@@ -1825,7 +1859,8 @@ async function persistNow(key, opts){
       offlineToast(mOk ? '📴 No connection — retry this save when back online'
                        : '⚠️ Device storage full — retry this save when back online');
     }
-    tell({ ok: false, queued: !!queueable, mirrored: onPhone });
+    // timeout: a whole-document write sent, its answer not back in time (the change log says "no confirmation")
+    tell(writing && /timeout/.test(String(e && e.message)) ? { ok: false, queued: !!queueable, mirrored: onPhone, timeout: true } : { ok: false, queued: !!queueable, mirrored: onPhone });
     return false;
   }
 }
@@ -1849,6 +1884,33 @@ function persistFor(key, opts){
 // it (a later save of the same list carries it, since the list in memory
 // holds it): it is saved.
 function sentSince(key, r){ return !!r && !r.ok && !!(r.outcome && r.outcome.queued) && !outboxHas(key) && persistOutcome(key).ok === true; }
+// persist(key) with what THIS call did and nothing else: { ok, outcome }.
+// Unlike persistFor it never falls back on an earlier save's outcome — a
+// save refused before it tried (the factory-list guard, a document this phone
+// could not read) reads as not saved, never as "kept on this device". What
+// the change log records (17-audit-log.js) and the toast the person sees.
+// Nothing told and not saved = refused before it tried (persist's guards say
+// why on screen) — never read as "kept on this device".
+function persistTold(key, opts){
+  let info = null;
+  const told = (ok, refused) => ({ ok: ok === true, outcome: info || { ok: ok === true, queued: false, mirrored: false, refused: !!refused && ok !== true } });
+  return persist(key, Object.assign({}, opts || {}, { told: x => { info = x; } }))
+    .then(ok => told(ok, true), e => { console.warn('save of ' + key + ' failed', e); return told(false, false); });
+}
+// The toast for one save, from what that save did (persistTold / persistFor):
+// okMsg only when it landed; else kept on this phone (it uploads by itself),
+// or not saved — "saved" never covers a failure. Returns whether it landed.
+function saveToast(r, key, okMsg, ms){
+  const landed = !!r && (r.ok === true || (!!key && sentSince(key, r)));
+  const o = (r && r.outcome) || {};
+  if(landed) showToast(okMsg, ms);
+  else if(o.queued && o.mirrored) showToast('📴 Saved on this device — uploads automatically when back online', 4000); // the same words as persist's own offline notice
+  else if(o.queued) showToast('⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000);
+  else if(o.refused) showToast('⚠️ Not saved — reopen the app, then try again', 5000);      // a guard refused it before any write
+  else if(o.timeout) showToast('⏳ No answer from the cloud yet — check the connection, then reopen this screen to see whether it was saved', 6000);
+  else showToast('⚠️ Not saved — check the connection and try again', 4000);
+  return landed;
+}
 // Atomic read-merge-write where the storage supports it; a plain (non-atomic)
 // read → fn → write otherwise, with the same contract.
 async function storageUpdate(key, fn, ms){

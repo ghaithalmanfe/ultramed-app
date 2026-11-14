@@ -538,13 +538,20 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
       let n = 0;
       visits.forEach(v => { if(v && v.clinicId === clinicId && UMCore.remapVisitDoctors(v, remap)) n++; });
       const r = await persistFor('visits');
+      // the change log: the visits of a doctor without a name joined a doctor the clinic lists (asked first)
+      auditRecord({ action: 'restore.doctorMove', key: 'visits', id: clinicId + '|' + docId, label: auditDoctorLabel(c, same),
+        after: { movedTo: same.name, visits: n, source: kind || null }, result: r });
       showToast((r.ok || sentSince('visits', r)) ? `✅ ${n} visits joined ${same.name}` : '⚠️ Saved on this device — not in the cloud yet', 4000);
     } else {
       // the record this phone kept (title, phone, notes…) when its name is the one used, else the name alone; same id either way
       const k = kind === 'copy' ? phoneCopyDoctors().get(clinicId + '|' + docId) : null;
       const base = k && UMCore.normDoctorName(k.name) === key ? JSON.parse(JSON.stringify(k)) : {};
-      c.doctors = (c.doctors || []).concat([Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, base, { id: docId, name })]);
+      const back = Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, base, { id: docId, name });
+      c.doctors = (c.doctors || []).concat([back]);
       const r = await persistFor('clinics');
+      // the change log: the doctor is back under the same id, with where the name came from
+      auditRecord({ action: 'restore.doctor', key: 'clinics', id: clinicId + '|' + docId, label: auditDoctorLabel(c, back),
+        after: Object.assign(auditDoctorFields(back) || {}, { visits: visitsNaming(clinicId, docId).length || null, source: kind || null }), result: r });
       showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back on the clinic's list` : '⚠️ Saved on this device — not in the cloud yet', 4000);
     }
   } finally { _namingBusy.delete(busy); }
@@ -556,8 +563,12 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
 async function markDoctorGone(clinicId, docId, scope){
   const c = clinics.find(x => x && x.id === clinicId);
   if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
+  const lost = lostDoctorsOf(c).find(e => e.id === docId) || null; // what the sheet showed of them (for the change log)
   tomb('doctors', clinicId + '|' + docId);
   const ok = await persistTombs();
+  // the change log: left the clinic or removed on purpose — kept out for good (the delete log is queued on this phone when it did not land)
+  auditRecord({ action: 'doctor.gone', key: 'tombs', id: clinicId + '|' + docId, label: ((lost && lost.name) || '—') + ' · ' + (c.name || ''),
+    after: { visits: lost ? lost.visits.length : null }, result: ok ? true : { res: outboxHas('tombs') ? 'queued' : 'failed' } });
   showToast(ok ? '✅ Taken off this list' : '⚠️ Taken off this list on this device — not saved to the cloud yet', 4000);
   renderAll();
   openLostDoctors(scope);
@@ -676,19 +687,26 @@ async function nameNamelessClinic(id, raw, kind, confirmed){
   try{
     if(same){
       // the clinic was added again since: its August visits, tasks, plan entries and doctors join it, the nameless record goes
-      if(!await moveToBin('clinics', h, h.name)) return;
-      repointClinic(id, same.id);
+      const log = { action: 'restore.namelessMove', key: 'clinics', id, label: same.name };
+      if(!await moveToBin('clinics', h, h.name)){ auditRecord(Object.assign(log, { after: { movedTo: same.name }, result: false })); return; } // no safety copy: nothing changed
+      const moved = repointClinic(id, same.id);
       if(carry.length){
         const m = UMCore.mergeDoctorLists(Array.isArray(same.doctors) ? same.doctors : [], JSON.parse(JSON.stringify(carry)));
         same.doctors = m.doctors;
         if(Object.keys(m.remap).length) visits.forEach(v => { if(v && v.clinicId === same.id) UMCore.remapVisitDoctors(v, m.remap); });
       }
-      const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'); await persist('dayPlans');
+      const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'), r4 = await persistFor('dayPlans');
       const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2)) && (r3.ok || sentSince('tasks', r3));
+      // the change log: one entry for the move (asked first), saved only when every list it changed landed
+      auditRecord(Object.assign(log, { after: { movedTo: same.name, visits: moved, doctors: carry.length || null, source: kind || null },
+        result: auditOutcomeAll([[r1, 'visits'], [r2, 'clinics'], [r3, 'tasks'], [r4, 'dayPlans']]) }));
       showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
     } else {
       clinics.push(next); hidePlaceholderClinics();
       const r = await persistFor('clinics');
+      // the change log: back in the list under the same id; where its name came from, and the sales lines that now count elsewhere (asked first)
+      auditRecord({ action: 'restore.nameless', key: 'clinics', id, label: next.name,
+        after: Object.assign(auditClinicFields(next) || {}, { source: kind || null, salesMoved: moves.length || null }), result: r });
       showToast((r.ok || sentSince('clinics', r)) ? `✅ ${next.name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
     }
   } finally { _namingBusy.delete(id); }
@@ -751,12 +769,14 @@ async function submitAddClinic(){
   const acctEl2 = document.querySelector('#mClinicAcct .chip.on');
   const newEl2 = document.querySelector('#mClinicNew .chip.on');
 
-  clinics.push(normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
-    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
-  await persist('clinics');
+  const nc = normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
+    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()});
+  clinics.push(nc);
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.add', key: 'clinics', id: nc.id, label: nc.name, after: auditClinicFields(nc), result: r });
   closeModal();
   renderClinics();
-  showToast('🌟 New clinic added — territory growing');
+  saveToast(r, 'clinics', '🌟 New clinic added — territory growing');
 }
 
 function openClinicDetail(id){
@@ -847,24 +867,29 @@ function renderClinicOrders(clinicId){
 // Notes are keyed by kind|doc|product so they survive re-imports.
 function erpNoteKey(kind, r){ return kind+'|'+(r.doc||'')+'|'+(r.product||''); }
 function erpNoteText(key){ const n = erpNotes[key]; return n ? n.text : ''; }
+// The change log's label of a sales line note: the product and the invoice (the key is kind|doc|product).
+function erpNoteLabel(key){ const p = String(key || '').split('|'); return (p.slice(2).join('|') || '—') + (p[1] ? ' · ' + p[1] : ''); }
 async function saveErpNote(key, val){
   const t = (val||'').trim();
   const prev = erpNotes[key] || {};
   if(t || prev.kind) erpNotes[key] = {text:t, by:currentUser.name, on:todayStr(), kind: prev.kind};
   else delete erpNotes[key];
-  await persist('erpNotes');
-  showToast(t ? '📝 Reason saved' : 'Reason cleared');
+  const r = await persistTold('erpNotes');
+  auditRecord({ action: 'sales.note', key: 'erpNotes', id: key, label: erpNoteLabel(key), before: { note: prev.text || null }, after: { note: t || null }, result: r });
+  saveToast(r, 'erpNotes', t ? '📝 Reason saved' : 'Reason cleared'); // "saved" only when it landed
 }
 // Free lines carry a classification: bonus inside a paying deal vs a
 // sample/marketing giveaway. The heuristic sets the default; one tap fixes it.
 function focKindOf(key, def){ const n = erpNotes[key]; return (n && n.kind) || def || 'sample'; }
 async function saveErpNoteKind(key, kind, el){
   const n = erpNotes[key] || {};
+  const was = n.kind || null; // the change log: what the line was marked as
   n.kind = kind; n.by = n.by || currentUser.name; n.on = n.on || todayStr();
   erpNotes[key] = n;
-  await persist('erpNotes');
+  const r = await persistTold('erpNotes');
+  auditRecord({ action: 'sales.lineKind', key: 'erpNotes', id: key, label: erpNoteLabel(key), before: { lineKind: was }, after: { lineKind: kind }, result: r });
   if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
-  showToast(kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
+  saveToast(r, 'erpNotes', kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
 }
 // Is this ERP line a marked EXCHANGE (تبديل)? Stock swap, not a real return.
 function isExchangeLine(r){
@@ -884,14 +909,16 @@ function retKindChips(r){
 }
 async function saveRetKind(key, kind, el){
   const n = erpNotes[key] || {};
+  const was = n.kind === 'exchange' ? 'exchange' : 'return'; // the change log: what the line counted as
   if(kind === 'exchange') n.kind = 'exchange'; else delete n.kind;
   n.by = currentUser.name; n.on = todayStr();
   if(!n.text && !n.kind && kind !== 'exchange' && !erpNotes[key]){ /* nothing to keep */ }
   erpNotes[key] = n;
-  await persist('erpNotes');
+  const r = await persistTold('erpNotes');
+  auditRecord({ action: 'sales.lineKind', key: 'erpNotes', id: key, label: erpNoteLabel(key), before: { lineKind: was }, after: { lineKind: kind === 'exchange' ? 'exchange' : 'return' }, result: r });
   if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
   renderView(activeView);
-  showToast(kind==='exchange' ? '🔁 Marked as exchange — removed from the returns figures' : '↩️ Marked as a real return');
+  saveToast(r, 'erpNotes', kind==='exchange' ? '🔁 Marked as exchange — removed from the returns figures' : '↩️ Marked as a real return');
 }
 function focKindChips(key, def){
   const k = focKindOf(key, def);
@@ -904,9 +931,11 @@ async function saveNoSaleReason(clinicId, val){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
   if(!canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
+  const was = c.noSaleReason || null;
   c.noSaleReason = (val||'').trim();
-  await persist('clinics');
-  showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { noSaleReason: was }, after: { noSaleReason: c.noSaleReason || null }, result: r });
+  saveToast(r, 'clinics', c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
 }
 // The ERP accounts whose invoices count on this branch (supervisor): each can
 // be moved from here, and another account can be counted here — the editor
@@ -1108,15 +1137,20 @@ async function saveEditClinic(id){
     fresh = Array.isArray(arr) ? arr.find(x=>x && x.id===id) : null;
   }catch(e){}
   const same = (a, b) => JSON.stringify(a===undefined?null:a) === JSON.stringify(b===undefined?null:b);
+  const was = auditClinicFields(c), mine = []; // the change log: what the record held, and the fields this person changed
   Object.keys(form).forEach(f=>{
     const touched = !(f in base) || !same(form[f], base[f]);
-    if(touched) c[f] = form[f];
-    else if(fresh && f in fresh && !same(fresh[f], c[f])) c[f] = fresh[f];
+    if(touched){ c[f] = form[f]; mine.push(f); }
+    else if(fresh && f in fresh && !same(fresh[f], c[f])) c[f] = fresh[f]; // another device's change: not this person's
   });
   window._ecBase = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  // closing a clinic archives it (out of every list, history kept); reopening brings it back
+  const now = auditClinicFields(c);
+  const act = mine.includes('cls') && was.cls !== 'Closed' && now.cls === 'Closed' ? 'clinic.close' : mine.includes('cls') && was.cls === 'Closed' && now.cls !== 'Closed' ? 'clinic.reopen' : 'clinic.edit';
+  auditRecord({ action: act, key: 'clinics', id: c.id, label: c.name, before: was, after: now, fields: mine, result: r });
   closeModal();
-  showToast('✅ Clinic updated');
+  saveToast(r, 'clinics', '✅ Clinic updated');
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
 }
@@ -1159,6 +1193,7 @@ async function saveEditProduct(key){
   const price = priceRaw==='' ? null : parseFloat(priceRaw);
   if(price!==null && (isNaN(price) || price<0)){ showToast('Enter a valid price'); return; }
   const oldKey = productKey(p), oldId = p.id;
+  const was = auditProductFields(p); // the change log
   p.name = name;
   p.brand = document.getElementById('epBrand').value.trim() || 'Other';
   p.id = code;
@@ -1166,7 +1201,7 @@ async function saveEditProduct(key){
   p.desc = document.getElementById('epDesc').value.trim();
   p.specialties = Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec);
   assignProductKeys();
-  const saves = [persist('products')];
+  const saves = [persistTold('products')];
   if(code !== oldId){
     // every visit, order line and bin entry that pointed at the old key now points at the new one
     const newKey = productKey(p);
@@ -1182,9 +1217,10 @@ async function saveEditProduct(key){
     if(n) saves.push(persist('visits'));
     if(nb) saves.push(persist('recycleBin'));
   }
-  await Promise.all(saves);
+  const [r] = await Promise.all(saves);
+  auditRecord({ action: 'product.edit', key: 'products', id: p.id, label: p.name, before: was, after: auditProductFields(p), result: r });
   closeModal();
-  showToast('✅ Product updated');
+  saveToast(r, 'products', '✅ Product updated');
   if(document.getElementById('productListWrap')) renderProducts();
   if(document.getElementById('apPriceBody')) renderAdminPrices();
 }
@@ -1221,12 +1257,14 @@ async function removeProduct(key){
   const idx = products.indexOf(p);
   if(idx<0) return;
   const copy = {...p}; delete copy._key;
-  if(!await moveToBin('products', copy, p.name)) return;
+  const log = { action: 'product.delete', key: 'products', id: p.id, label: p.name, before: auditProductFields(p) };
+  if(!await moveToBin('products', copy, p.name)){ auditRecord(Object.assign(log, { result: false })); return; } // no safety copy, nothing deleted
   products.splice(idx,1);
   assignProductKeys();
-  await persist('products');
+  const r = await persistTold('products');
+  auditRecord(Object.assign(log, { result: r }));
   closeModal();
-  showToast('Moved to recycle bin');
+  saveToast(r, 'products', 'Moved to recycle bin');
   if(document.getElementById('productListWrap')) renderProducts();
 }
 // A clinic the team still visits must stay REACHABLE even after deletion:
@@ -1288,13 +1326,15 @@ async function confirmRecreateClinic(id){
   if(clinics.some(c=>c.id===id)){ showToast('This clinic is already back'); closeModal(); return; }
   const repEl = document.querySelector('#rcRepChips .chip.on');
   const clsEl = document.querySelector('#rcClsChips .chip.on');
-  clinics.push(normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
-    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() }));
+  const nc = normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
+    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() });
+  clinics.push(nc);
   untomb('clinics', id); // alive again — cleared from every delete log, team-wide
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'restore.recreate', key: 'clinics', id, label: name, after: Object.assign(auditClinicFields(nc) || {}, { visits: visits.filter(v => v && v.clinicId === id).length || null }), result: r });
   closeModal();
   renderAll();
-  showToast('♻️ Clinic re-created — all its history is attached');
+  saveToast(r, 'clinics', '♻️ Clinic re-created — all its history is attached');
   openClinicDetail(id);
 }
 async function restoreFromBin(kind, idx){
@@ -1313,8 +1353,9 @@ async function restoreFromBin(kind, idx){
   }
   untomb(kind, clean.id);
   recycleBin[kind].splice(idx,1);
-  const saves = [persist('recycleBin')];
-  if(!alreadyLive) saves.push(persist(kind));
+  // the record's own list decides what the person is told (and what the change log records)
+  const own = alreadyLive ? Promise.resolve(null) : persistTold(kind);
+  const saves = [persistTold('recycleBin'), own];
   if(kind==='visits'){
     // the clinic's "last visit" must reflect the restored visit
     const clinic = clinics.find(c=>c.id===clean.clinicId);
@@ -1324,17 +1365,22 @@ async function restoreFromBin(kind, idx){
       if(last !== (clinic.lastVisit||null)){ clinic.lastVisit = last; saves.push(persist('clinics')); }
     }
   }
-  await Promise.all(saves);
-  showToast(alreadyLive ? '✅ Already restored' : '✅ Restored');
+  const [rb, rk] = await Promise.all(saves);
+  const label = item._label || item.name || clean.id;
+  const what = kind === 'visits' ? auditVisitFields(clean) : kind === 'clinics' ? auditClinicFields(clean) : auditProductFields(clean);
+  if(alreadyLive){ auditRecord({ action: 'restore.bin', key: 'recycleBin', id: clean.id, label, after: { kind, already: true }, result: rb }); showToast('✅ Already restored'); }
+  else { auditRecord({ action: 'restore.bin', key: kind, id: clean.id, label, after: what, result: rk }); saveToast(rk, kind, '✅ Restored'); }
   renderAll();
   if(document.getElementById('apTabData')) { setAdminTab('data'); setDataSub('bin'); } // only refresh the bin view if it is open
 }
 async function purgeFromBin(kind, idx){
   if(!requireAdmin()) return;
-  if(!(recycleBin[kind]||[])[idx]) return;
+  const item = (recycleBin[kind]||[])[idx];
+  if(!item) return;
   recycleBin[kind].splice(idx,1);
-  await persist('recycleBin');
-  showToast('Permanently deleted');
+  const r = await persistTold('recycleBin');
+  auditRecord({ action: 'bin.purge', key: 'recycleBin', id: item.id, label: item._label || item.name || item.id, before: { kind }, result: r });
+  saveToast(r, 'recycleBin', 'Permanently deleted');
   setAdminTab('data'); setDataSub('bin');
 }
 function adminBinHTML(){

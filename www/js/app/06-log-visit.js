@@ -498,6 +498,7 @@ async function saveVisitNow(gen){
   const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
   const joint = jointRep;
   if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ showToast('Choose which rep you are logging for'); return; }
+  let newClinic = null; // a customer added from this form (the change log records it)
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
     if(!name){ showToast('Enter a clinic name'); return; }
@@ -506,11 +507,12 @@ async function saveVisitNow(gen){
     const clsEl = document.querySelector('#newClinicClsChips .chip.on');
     const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
     clinicId = uid();
-    clinics.push(normalizeClinic({id:clinicId, name, rep,
+    newClinic = normalizeClinic({id:clinicId, name, rep,
       cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'',
       account: acctEl?acctEl.dataset.acct:null, isNew:true, addedOn:todayStr(),
       contact: document.getElementById('newClinicContact').value.trim(),
-      phone: document.getElementById('newClinicPhone').value.trim()}));
+      phone: document.getElementById('newClinicPhone').value.trim()});
+    clinics.push(newClinic);
   }
   if(!clinicId){ showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be
@@ -569,7 +571,10 @@ async function saveVisitNow(gen){
   // This save's own outcome, read the moment its visits write settles: the
   // offline queue may send visits again while the follow-up step runs, and
   // that later save is not this one (persistFor / sentSince, 04).
-  const [vs] = await Promise.all([persistFor('visits'), persist('clinics')]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), persistTold('clinics')]);
+  // the change log: this save's own outcome, recorded now, never waited for
+  auditRecord({ action: auditVisitAction(visit, 'add'), key: 'visits', id: visit.id, label: auditVisitLabel(visit), after: auditVisitFields(visit), result: vs });
+  if(newClinic) auditRecord({ action: 'clinic.add', key: 'clinics', id: newClinic.id, label: newClinic.name, after: auditClinicFields(newClinic), result: cs });
   const kept = keeping ? await keeping : null;
   shots.forEach(ph => photoUpload(ph.id, ph.full)); // in the background, once the visit is saved or queued
   if(clinic) await scheduleFollowUp(clinic, followUp, rep);
@@ -651,21 +656,25 @@ async function saveReschedule(clinicId){
   if(!c) return;
   const val = document.getElementById('rfDate').value;
   if(!val){ showToast('Pick a date'); return; }
+  const was = c.nextFollowUp || null;
   c.nextFollowUp = val;
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { nextFollowUp: was }, after: { nextFollowUp: val }, result: r });
   await scheduleFollowUp(c, val, c.rep);
   closeModal();
-  showToast('Follow-up rescheduled');
+  saveToast(r, 'clinics', 'Follow-up rescheduled');
   renderAll();
 }
 async function clearFollowUp(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
+  const was = c.nextFollowUp || null;
   c.nextFollowUp = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.edit', key: 'clinics', id: c.id, label: c.name, before: { nextFollowUp: was }, after: { nextFollowUp: null }, result: r });
   await scheduleFollowUp(c, null, c.rep);
   closeModal();
-  showToast('Follow-up cleared');
+  saveToast(r, 'clinics', 'Follow-up cleared');
   renderAll();
 }
 

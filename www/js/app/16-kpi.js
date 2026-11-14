@@ -82,8 +82,12 @@ async function saveKpiSettings(){
     if(k === 'openDays') out[k] = el.value.split(/[,\s]+/).map(x => x.trim()).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x));
     else { const v = parseFloat(el.value); out[k] = isFinite(v) && v >= 0 ? v : S[k]; }
   });
+  const was = Object.assign({}, S);
   BENCHMARKS = Object.assign({}, BENCHMARKS, { kpi: out });
-  if(await persist('benchmarks')) { showToast('✅ KPI settings saved'); openKpiScorecard(); }
+  const r = await persistTold('benchmarks');
+  auditRecord({ action: 'target.settings', key: 'benchmarks', id: 'kpi', before: was, after: out, result: r });
+  if(r.ok) { showToast('✅ KPI settings saved'); openKpiScorecard(); }
+  else saveToast(r, 'benchmarks', '');
 }
 
 // ---- client requests, escalations, stands ----
@@ -162,9 +166,11 @@ async function removeStand(id){
 async function toggleGovClinic(clinicId){
   if(!requireAdmin()) return;
   const c = clinics.find(x => x.id === clinicId); if(!c) return;
-  c.gov = !UMCore.isGovClinic(c);
-  await persist('clinics');
-  showToast(`${c.name}: ${c.gov ? 'government account – visited every week' : 'not a government account'}`);
+  const was = UMCore.isGovClinic(c);
+  c.gov = !was;
+  const r = await persistTold('clinics');
+  auditRecord({ action: 'clinic.gov', key: 'clinics', id: c.id, label: c.name, before: { gov: was }, after: { gov: c.gov }, result: r });
+  saveToast(r, 'clinics', `${c.name}: ${c.gov ? 'government account – visited every week' : 'not a government account'}`);
   renderAdminTerritory();
 }
 
