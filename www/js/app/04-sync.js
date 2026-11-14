@@ -1,12 +1,31 @@
 // load / persist, ERP split storage, merge-on-save, offline layer, tombstones
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- LOAD / PERSIST (shared team data) ----
-let _docRemap = {}; // duplicate doctor id → surviving id, filled while clinics normalize
-// Visits that named a duplicate doctor record now name the surviving one, so
-// every doctor's history stays whole — the people met and the prescription
-// pads given to them (UMCore.remapVisitDoctors; lines that then name the same
-// type and person are added together). Returns how many visits changed.
+let _docRemap = {}; // merged doctor id → the record it was merged into (the supervisor's taps, clinic.doctorMerges)
+const _saveBlocked = new Set(); // lists too large for the cloud whose changes stay queued here, not sent by the round (saveBlocked)
+const _tooLarge = {};           // "key" or "visits:YYYY-MM" → { key, month, bytes, kept } — the lasting bar (renderTooLargeBar)
+// Queued lists the cloud refused (v123 review): never thrown away — kept on
+// this phone and in the queue, but not sent by the 20-second round until it can
+// land. 'noAccess': this phone had no access to the team's data (signed out, a
+// sign-in that ended) — sent again once the cloud answers it; 'refused': the
+// rules' "no" for this login — sent again by a new sign-in, the bar's "Try
+// again" or the next start (parkSave, flushOutbox).
+const _saveParked = new Map();
+// Two records of one doctor are merged only by the supervisor's tap (v123,
+// the owner's rule of 12 Nov: no automatic merges — until v122 every phone
+// collapsed same-name doctors at start, and the supervisor's phone wrote the
+// result back, dropping the second record's phone, role and stage). The merge
+// is kept on the clinic (doctorMerges: {mergedId: keptId}); a visit that still
+// names the merged record (logged on a phone that was offline then) shows the
+// kept one — in memory only, nothing is written at start (mergeDuplicateDoctors,
+// 07-clinics.js). Returns how many visits changed.
+function doctorMergesRemap(){
+  const out = {};
+  (clinics || []).forEach(c => { const m = c && c.doctorMerges; if(m && typeof m === 'object' && !Array.isArray(m)) Object.keys(m).forEach(k => { if(typeof m[k] === 'string' && m[k] && m[k] !== k) out[k] = m[k]; }); });
+  return out;
+}
 function applyDoctorRemap(){
+  _docRemap = doctorMergesRemap();
   const ids = Object.keys(_docRemap);
   if(!ids.length) return 0;
   let changed = 0;
@@ -38,10 +57,8 @@ function normalizeClinic(c){
     .filter(d => d && typeof d === 'object')
     .map(d => Object.assign({ title:'', phone:'', birthday:'', cadence:'', notes:'', handovers:[] }, d));
   c.doctors.forEach(d => { if(!Array.isArray(d.handovers)) d.handovers = []; });
-  // One person, one record: duplicates (same name, another "Dr." spelling)
-  // collapse into the first; visits that pointed at the duplicate follow it.
-  const dd = UMCore.dedupeDoctors(c.doctors);
-  if(Object.keys(dd.remap).length){ c.doctors = dd.doctors; Object.assign(_docRemap, dd.remap); }
+  // Two records with one name both stay (v123): the supervisor is offered them
+  // as a possible duplicate and merges by tap (openDupDoctors, 07-clinics.js).
   c.contact = c.contact || '';
   c.phone = c.phone || '';
   c.lastVisit = c.lastVisit || null;
@@ -72,126 +89,15 @@ async function applyProductImgSeed(){
     if(u){ pr.img = u; changed++; }
   });
   if(!changed) return;
-  await persist('products');
-  showToast(`🖼️ ${changed} product photos added`);
+  const r = await persistTold('products');
+  saveToast(r, 'products', `🖼️ ${changed} product photos added`); // "added" only when the save landed
 }
-// One-time orphan sweep, at the supervisor's request: any DELETED clinic the
-// team still has logged visits for comes back automatically — visits mean it
-// is a real working clinic, so its deletion was a cleanup accident. Clinics
-// with no visits at all stay deleted (that cleanup was intentional), and the
-// sweep runs once ever, so future deliberate deletes are respected.
-async function restoreOrphanClinics(){
-  if(currentUser.role !== 'supervisor') return;
-  if((erpSales.seeds || {}).orphanRestore_v58) return;
-  const keys = ['clinics','visits','erpSales'];
-  if(keys.some(k => _loadFailed[k] || _mirrorUsed[k])) return; // only on a real cloud read
-  const live = new Set(clinics.map(c=>c.id));
-  const orphans = {}; // id -> {visits:[], name, repCount}
-  visits.forEach(v=>{
-    if(!v.clinicId || live.has(v.clinicId)) return;
-    const o = orphans[v.clinicId] || (orphans[v.clinicId] = { n:0, name:'', reps:{} });
-    o.n++;
-    if(!o.name && v.clinicName) o.name = v.clinicName;
-    if(v.rep) o.reps[v.rep] = (o.reps[v.rep]||0)+1;
-  });
-  const ids = Object.keys(orphans);
-  const restored = [];
-  ids.forEach(id=>{
-    const o = orphans[id];
-    // the recycle bin may still remember it better than the visits do
-    const b = ((recycleBin && recycleBin.clinics)||[]).find(x=>x && x.id===id);
-    const name = (b && b.name) || o.name || '⚠️ Restored clinic — rename me';
-    const rep = (b && b.rep) || Object.keys(o.reps).sort((a,b2)=>o.reps[b2]-o.reps[a])[0] || REPS[0] || '';
-    clinics.push(normalizeClinic(Object.assign({}, b || {}, {
-      id, name, rep, cls: (b && b.cls) || 'B', addedOn: todayStr(),
-      notes: ((b && b.notes) ? b.notes + ' · ' : '') + 'Auto-restored (had ' + o.n + ' logged visits)',
-    })));
-    untomb('clinics', id);
-    restored.push(name);
-  });
-  erpSales.seeds = Object.assign({}, erpSales.seeds, { orphanRestore_v58: true });
-  if(restored.length){
-    recycleBin.clinics = (recycleBin.clinics||[]).filter(x=>!(x && orphans[x.id]));
-    await persist('clinics');
-    await persist('recycleBin');
-  }
-  await persist('erpSales');
-  if(restored.length){
-    renderAll();
-    showModal(`
-      <h3 style="margin-top:0;">♻️ ${restored.length} deleted clinic${restored.length===1?'':'s'} restored automatically</h3>
-      <p style="color:var(--muted); font-size:13px; margin-top:-6px;">These clinics still had logged visits, so they are back with their full history. Clinics with no visits stayed deleted.</p>
-      <div class="card">${restored.map(n=>`<div class="report-line"><span>${esc(n)}</span><span class="v">✅</span></div>`).join('')}</div>
-      <button class="btn" style="margin-top:12px;" onclick="closeModal()">Done</button>
-    `);
-  }
-}
-// One-time automatic recovery from the Aug-30 clinic wipe, at the supervisor's
-// request ("do the restore yourself"): on his next open, if the live clinic
-// list is drastically smaller than a recent automatic backup, the best backup
-// day is restored by itself — no buttons. Backup versions win on shared ids
-// (the wipe left stale/junk copies); clinics that only exist in the live list
-// (added after the backup) are kept; the delete log is cleared for everything
-// restored so it STICKS. Runs once ever, only on real cloud reads, and does
-// nothing at all when the list is healthy.
-async function autoRestoreWipe(){
-  if(currentUser.role !== 'supervisor') return;
-  if((erpSales.seeds || {}).autoRestore_v64) return;
-  const keys = ['clinics','visits','erpSales'];
-  if(keys.some(k => _loadFailed[k] || _mirrorUsed[k])) return; // only on a real cloud read
-  let best = null;
-  try{
-    const list = await window.storage.list('snap_', true);
-    const dates = (list && list.keys || []).map(k=>k.replace('snap_','')).sort().reverse().slice(0, 12);
-    for(const d of dates){
-      const res = await window.storage.get('snap_'+d, true).catch(()=>null);
-      const snap = res ? UMCore.safeParse(res.value, null) : null;
-      const n = snap && Array.isArray(snap.clinics) ? snap.clinics.length : 0;
-      if(n >= 15 && (!best || n > best.n)) best = { d, n, snap };
-    }
-  }catch(e){ return; } // backups unreachable — try again next open, keep the flag unset
-  const wiped = best && (_seedClinics || clinics.length < best.n / 3);
-  if(!wiped){
-    // Evaluated healthy with good reads: mark done so a future legitimately-
-    // small list (a real cleanup) can never trigger a surprise rollback.
-    erpSales.seeds = Object.assign({}, erpSales.seeds, { autoRestore_v64: true });
-    await persist('erpSales');
-    return;
-  }
-  try{ await holdRefresh(async () => { // a refresh on its way must not put the wiped lists back over this restore
-    const snapClinics = normalizeClinics(best.snap.clinics);
-    const byId = new Map(snapClinics.map(c=>[c.id, c]));
-    const extras = _seedClinics ? [] : clinics.filter(c => c && c.id != null && !byId.has(c.id));
-    clinics = snapClinics.concat(extras);
-    _seedClinics = false;
-    const restoredMsg = [`${clinics.length} عيادة`];
-    const sets = { clinics: clinics.map(c=>c.id) };
-    // Visits only if they were hit too — never roll back a healthy visit log.
-    const snapVisits = Array.isArray(best.snap.visits) ? best.snap.visits : [];
-    if(snapVisits.length >= 15 && visits.length < snapVisits.length / 3){
-      const haveV = new Set(visits.map(v=>v && v.id));
-      visits = visits.concat(snapVisits.filter(v => v && !haveV.has(v.id)));
-      sets.visits = visits.map(v=>v.id);
-      restoredMsg.push(`${visits.length} زيارة`);
-    }
-    await untombMany(sets); // clear the delete log FIRST or the restore un-does itself
-    { const str = JSON.stringify(clinics); await window.storage.set('clinics', str, true); mirrorSave('clinics', str); setMergeBase('clinics', str); }
-    if(sets.visits) await persistVisits({ authoritative: true });
-    // Today's automatic snapshot may have caught the wiped state — replace it
-    // with the recovered one so no bad copy sits in the backup window.
-    await window.storage.set('snap_'+todayStr(), JSON.stringify({clinics: storedClinics(), products, visits: UMCore.visitsPartition(visits, todayStr()).live, tasks, ts: new Date().toISOString()}), true).catch(()=>{});
-    erpSales.seeds = Object.assign({}, erpSales.seeds, { autoRestore_v64: true });
-    await persist('erpSales'); // flag only AFTER success — a failure retries next open
-    console.log(`auto-restore: recovered from snap_${best.d}`, restoredMsg.join(', '));
-    renderAll();
-    showModal(`
-      <h3 style="margin-top:0;">✅ رجعت العيادات</h3>
-      <p style="color:var(--muted); font-size:13.5px; line-height:1.7;">تم الاسترجاع تلقائيًا من النسخة الاحتياطية ليوم <b>${esc(best.d)}</b>:
-      <b>${restoredMsg.join(' · ')}</b>. أي عيادة أُضيفت بعد النسخة بقيت كما هي، والحذف الخاطئ أُلغي نهائيًا فلن تختفي مرة أخرى.</p>
-      <button class="btn" onclick="closeModal()">تمام</button>
-    `);
-  }); }catch(e){ console.error('auto-restore failed, will retry next open', e); }
-}
+// The one-time start-up repairs of Aug–Sep (v58 orphan sweep, v64 automatic
+// wipe restore, v65 deep restore) are retired (v123): their work was done, and
+// they wrote clinics, visits and today's backup at start without anyone's tap
+// — an overlapping refresh could disarm their guards and write an older backup
+// over the live list. Bringing clinics back is a tap: Export → Automatic
+// backups → "Find missing clinics", and the "Clinics without a name" sheet.
 // Clinics without a name and doctors met on a visit whose record is gone
 // from the clinic (most lost in the August–September incidents). v121 (the
 // owner's rules of 12 Nov: zero data loss, no automatic merges, no change to
@@ -225,86 +131,16 @@ function phoneCopyDoctors(){
   })));
   return docs;
 }
-// Second recovery pass after the Aug-30 wipe: the single-day restore brought
-// most things back, but records missing from that one day and clinics revived
-// as "⚠️ Restored clinic — rename me" placeholders remained. This sweep unions
-// EVERY backup day (newest copy of each record wins), skips anything the team
-// deliberately deleted (recycle bin + delete log), and renames placeholders
-// from the best surviving source: a backup copy, the name stamped on its
-// visits, or the recycle bin. Runs once, supervisor only, real reads only.
-async function deepRestoreSweep(){
-  if(currentUser.role !== 'supervisor') return;
-  if((erpSales.seeds || {}).deepRestore_v65) return;
-  if(['clinics','visits','erpSales'].some(k => _loadFailed[k] || _mirrorUsed[k])) return;
-  try{
-    const bestById = new Map(), visById = new Map();
-    const list = await window.storage.list('snap_', true);
-    const dates = (list && list.keys || []).map(k=>k.replace('snap_','')).sort(); // oldest → newest, newer wins
-    for(const d of dates){
-      const res = await window.storage.get('snap_'+d, true).catch(()=>null);
-      const snap = res ? UMCore.safeParse(res.value, null) : null;
-      if(!snap) continue;
-      (Array.isArray(snap.clinics)?snap.clinics:[]).forEach(c=>{ if(c && c.id != null) bestById.set(c.id, c); });
-      (Array.isArray(snap.visits)?snap.visits:[]).forEach(v=>{ if(v && v.id != null) visById.set(v.id, v); });
-    }
-    const isPlaceholder = n => /rename me/i.test(n || '');
-    const binC = (recycleBin && recycleBin.clinics) || [];
-    const binIds = new Set(binC.map(x=>x && x.id));
-    const haveC = new Set(clinics.map(c=>c && c.id));
-    const addedC = [];
-    bestById.forEach((c, id)=>{
-      // deliberate deletes stay deleted: recycle bin (30 days) + delete log (7 days)
-      if(haveC.has(id) || binIds.has(id) || tombSet('clinics').has(id)) return;
-      clinics.push(c); addedC.push(c.name || id);
-    });
-    const renamed = [];
-    clinics.forEach(c=>{
-      if(!c || !isPlaceholder(c.name)) return;
-      const snapC = bestById.get(c.id);
-      let nm = (snapC && !isPlaceholder(snapC.name) && snapC.name) || null;
-      if(!nm){ const sv = visits.find(v=>v && v.clinicId===c.id && v.clinicName && !isPlaceholder(v.clinicName)); nm = sv && sv.clinicName; }
-      if(!nm){ const b = binC.find(x=>x && x.id===c.id); nm = (b && !isPlaceholder(b.name) && b.name) || null; }
-      if(!nm) return;
-      renamed.push(nm);
-      c.name = nm;
-      // a placeholder was reborn bare — refill anything the backup copy still knows
-      if(snapC) ['rep','cls','phone','contact','account','dealType','doctors','profileNotes','noSaleReason','notes'].forEach(k=>{
-        const empty = c[k] == null || c[k] === '' || (Array.isArray(c[k]) && !c[k].length);
-        if(empty && snapC[k] != null) c[k] = snapC[k];
-      });
-    });
-    const haveV = new Set(visits.map(v=>v && v.id));
-    let addedV = 0;
-    visById.forEach((v, id)=>{
-      if(haveV.has(id) || tombSet('visits').has(id)) return;
-      visits.push(v); addedV++;
-    });
-    clinics = normalizeClinics(clinics);
-    const changed = addedC.length || renamed.length || addedV;
-    if(changed){
-      await persist('clinics');
-      await persist('visits');
-    }
-    erpSales.seeds = Object.assign({}, erpSales.seeds, { deepRestore_v65: true });
-    await persist('erpSales');
-    if(changed){
-      renderAll();
-      showModal(`
-        <h3 style="margin-top:0;">🧩 اكتمل الترميم العميق</h3>
-        <div class="card" style="padding:10px 12px;">
-          ${addedC.length?`<div class="spec-row"><span class="k">عيادات ناقصة رجعت من كل النسخ الاحتياطية</span><span class="v">${addedC.length}</span></div>`:''}
-          ${renamed.length?`<div class="spec-row"><span class="k">عيادات "rename me" استعادت اسمها الحقيقي</span><span class="v">${renamed.length}</span></div>`:''}
-          ${addedV?`<div class="spec-row"><span class="k">زيارات ناقصة رجعت</span><span class="v">${addedV}</span></div>`:''}
-        </div>
-        ${renamed.length?`<div style="max-height:140px; overflow:auto; margin-top:8px; font-size:12px; color:var(--muted);">${renamed.map(esc).join(' · ')}</div>`:''}
-        <p style="color:var(--muted); font-size:12px; margin-top:8px;">ما حذفتموه بأنفسكم بقي محذوفًا — سلة المحذوفات وسجل الحذف يُحترمان.</p>
-        <button class="btn" onclick="closeModal()">تمام</button>
-      `);
-    }
-  }catch(e){ console.error('deep restore failed, will retry next open', e); }
-}
-let _loadFailed = {}; // docs whose LAST read rejected — a failed read is not an empty account
-let _mirrorUsed = {}; // docs served from the local mirror (offline) — never authoritative
+let _loadFailed = {}; // docs whose read failed for the copy on screen — a failed read is not an empty account
+let _mirrorUsed = {}; // docs on screen served from the local mirror (offline) — never authoritative
+// Each refresh reads into flags of its own ({failed, mirror}, passed to cloudGet,
+// loadVisits and loadErpSales) and they replace the two above only for the
+// lists it puts on screen (v123): the save guards always describe what is on
+// screen. They used to be emptied when a refresh began, so for as long as its
+// reads took a save made from the phone's copy skipped its guard, and a second
+// refresh's start disarmed the first one's (the factory catalog written over
+// the live one; an old backup restored over the live clinics).
+const readFlags = run => run || { failed: _loadFailed, mirror: _mirrorUsed };
 // ---- ERP sales: split storage (index document + row-chunk documents) ----
 // Every uploaded period's rows used to sit inside ONE cloud document. A month
 // of invoice lines is ~250 KB, so that document outgrew what a phone can read
@@ -385,7 +221,35 @@ function erpMirrorSave(sales){
 // read this session is never written. An old app version that writes the
 // whole list back into `visits` is harmless: the next save re-homes it.
 let _visitsLive = [];        // the live document as last read / written
-let _visitsLoaded = null;    // JSON of that live array (change detection)
+let _visitsLoaded = null;    // JSON of that live array (change detection; the base of the live document's three-way merge)
+let _visitsBaseHash = null;  // id → fingerprint: the base where no document of this session gives one, kept on the phone while queued (v123)
+let _visitsBaseText = null;  // the phone's copy taken as that base at a start without a read — parsed only when a save needs it (v123)
+let _visitsBaseParsed = null;
+let _visitsBaseRecs = null;  // id → the visit as the cloud last confirmed it, for the visits this phone changed while they waited in the queue (um_base:visitsRec, v123 review)
+let _visitsBaseMixed = null;
+let _visitsDirtyDocs = null; // the documents the last visits save found changed here ('live' / 'YYYY-MM'): only their visits are looked at for a base record
+// The base of a visits document that no read or write of this session gave:
+// the fingerprints the phone kept — with the whole record for a visit this
+// phone changed meanwhile, so a reopen still merges it field by field (v123
+// review: a fingerprint alone took the whole visit from this phone, and
+// another phone's correction of it was undone) — else the records of its copy at start.
+function visitsFallbackBase(){
+  if(_visitsBaseHash){
+    if(!_visitsBaseRecs || !_visitsBaseRecs.size) return _visitsBaseHash;
+    if(!_visitsBaseMixed || _visitsBaseMixed.h !== _visitsBaseHash || _visitsBaseMixed.r !== _visitsBaseRecs){
+      const m = new Map(_visitsBaseHash);
+      _visitsBaseRecs.forEach((rec, id) => { if(m.get(id) === UMCore.recordHash(rec)) m.set(id, rec); }); // the record IS that fingerprint's visit
+      _visitsBaseMixed = { h: _visitsBaseHash, r: _visitsBaseRecs, m };
+    }
+    return _visitsBaseMixed.m;
+  }
+  if(typeof _visitsBaseText !== 'string') return null;
+  if(!_visitsBaseParsed || _visitsBaseParsed.text !== _visitsBaseText){
+    const arr = UMCore.safeParse(_visitsBaseText, null);
+    _visitsBaseParsed = { text: _visitsBaseText, map: new Map((Array.isArray(arr) ? arr : []).filter(v => v && v.id != null).map(v => [v.id, v])) };
+  }
+  return _visitsBaseParsed.map;
+}
 let _visitsArch = {};        // month → { rev, arr, json } as last read / written (json = change detection; the objects are shared with the list on screen)
 let _visitsBroken = [];      // months whose archive could not be read (never written, shown as a warning)
 let _visitsSaving = false;   // a save in flight: the refresh keeps its hands off the list
@@ -400,14 +264,15 @@ function visitsMirrorSave(all){
   return ok;
 }
 function visitsArchivesObj(){ const o = {}; Object.keys(_visitsArch).forEach(m => { o[m] = _visitsArch[m].arr; }); return o; }
-async function loadVisits(){
+async function loadVisits(run){
   if(_visitsSaving) return visits; // never swap the list underneath a save
+  const F = readFlags(run);
   const gen0 = _localGen; // a save that runs while this reads makes what it read older than memory (v121)
   const today = todayStr();
   if(outboxHas('visits')){
-    if(_deviceStale.visits){ _mirrorUsed.visits = true; return visits; } // its device copy is older than memory (a full phone)
+    if(_deviceStale.visits){ F.mirror.visits = true; return visits; } // its device copy is older than memory (a full phone)
     const mm = UMCore.safeParse(mirrorGet('visits'), undefined);
-    if(Array.isArray(mm)){ _mirrorUsed.visits = true; return mm; } // queued offline edits win until flushed
+    if(Array.isArray(mm)){ F.mirror.visits = true; mergeBaseFromPhone('visits'); return mm; } // queued offline edits win until flushed (merged against what the phone kept, v123)
   }
   let liveRes, idxRes;
   try{
@@ -416,48 +281,78 @@ async function loadVisits(){
       withTimeout(window.storage.get('visitsIndex', true), 8000).catch(() => null),
     ]);
   }catch(e){
-    if(_deviceStale.visits){ _mirrorUsed.visits = true; return visits; } // the device copy is older than memory (a full phone)
-    const m = UMCore.safeParse(mirrorGet('visits'), null);
-    if(Array.isArray(m)){ _mirrorUsed.visits = true; return m; }
-    _loadFailed.visits = true;
+    noteNoAccess('visits', e); // the rules refused this read: said, never taken for "no connection" (v123)
+    if(_deviceStale.visits){ F.mirror.visits = true; return visits; } // the device copy is older than memory (a full phone)
+    const raw = mirrorGet('visits'), m = UMCore.safeParse(raw, null);
+    if(Array.isArray(m)){
+      F.mirror.visits = true;
+      // nothing queued: what the phone kept beside a save that was on its way, else that
+      // copy — what this phone last saw the cloud hold — is the base of the next save
+      // where no read of this session gave one (v123, as for clinics; kept as text,
+      // read only if a save needs it — the start does no extra work)
+      if(!outboxHas('visits')){ mergeBaseFromPhone('visits'); if(!_visitsBaseHash && _visitsLoaded == null && _visitsBaseText == null) _visitsBaseText = raw; }
+      return m;
+    }
+    F.failed.visits = true;
     return [];
   }
   const liveArr = liveRes && liveRes.value != null ? (UMCore.safeParse(liveRes.value, null) || []) : [];
   const index = idxRes && idxRes.value != null ? (UMCore.safeParse(idxRes.value, null) || {}) : {};
   let months = Object.keys(index.months || {});
+  // every month the cloud holds was read now (or is unchanged since): only then does
+  // a visit missing from them say anything (a held delete is confirmed, round 3)
+  let complete = !!(idxRes && idxRes.value != null);
   if((!idxRes || idxRes.value == null) && !_visitsListed){
     // no index yet (legacy account, or its write failed): look for archives once per session
     _visitsListed = true;
-    try{ const l = await withTimeout(window.storage.list(UMCore.VISITS_ARCH_PREFIX, true), 8000); months = (l && l.keys || []).map(k => k.slice(UMCore.VISITS_ARCH_PREFIX.length)); }catch(e){}
+    try{ const l = await withTimeout(window.storage.list(UMCore.VISITS_ARCH_PREFIX, true), 8000); months = (l && l.keys || []).map(k => k.slice(UMCore.VISITS_ARCH_PREFIX.length)); complete = !!idxRes; }catch(e){}
   }
   Object.keys(_visitsArch).forEach(m => { if(!months.includes(m)) months.push(m); });
   const broken = [], got = {};
+  // while a visit's delete is held and may be confirmed now (round 3), every month is read again:
+  // "the cloud no longer holds that visit" must come from a read made now, never from the copy an
+  // earlier read left
+  const readAll = !!heldSettledNow().visits;
   await Promise.all(months.map(async m => {
     const rev = (index.months && index.months[m] && index.months[m].rev) || 0;
     const have = _visitsArch[m];
-    if(have && have.rev === rev) return; // unchanged since last read / written by this device
+    if(have && have.rev === rev && !readAll) return; // unchanged since last read / written by this device
     try{
       const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000);
       const arr = r && r.value != null ? (UMCore.safeParse(r.value, null) || []) : [];
       got[m] = { rev, arr, json: JSON.stringify(arr) };
-    }catch(e){ if(!have) broken.push(m); } // an earlier copy is kept; a month never read is flagged
+    }catch(e){ complete = false; if(!have) broken.push(m); } // an earlier copy is kept; a month never read is flagged
   }));
+  if(run) run.visitsComplete = complete;
   // A visits save ran meanwhile: what this read brought back is older than
   // the list in memory and than what that save recorded as stored — keep
   // both; the next refresh reads again.
   if(_bootLoaded && savedSince(gen0)){ console.warn('visits: a save ran while this refresh read — the list on screen is kept'); return visits; }
-  Object.assign(_visitsArch, got);
-  _visitsBroken = broken;
-  _visitsLive = liveArr;
-  _visitsLoaded = JSON.stringify(liveArr);
   const order = v => (v && v.ts) || (v && v.date ? new Date(v.date + 'T00:00:00').getTime() : 0);
-  const all = UMCore.visitsAssemble(liveArr, visitsArchivesObj(), today).sort((a, b) => order(a) - order(b)); // the same chronological order the single document had
-  // If the assembled log arrives FAR smaller than what this device saw last
-  // time, keep the old copy aside — it may be the only surviving one.
-  const prevRaw = mirrorGet('visits'), prev = UMCore.safeParse(prevRaw, null);
-  if(Array.isArray(prev) && prev.length >= 10 && all.length < prev.length / 3){ try{ localStorage.setItem('um_mirror_prev:visits', prevRaw); }catch(e){} }
-  visitsMirrorSave(all);
-  renderVisitsNudge();
+  const archNext = Object.assign({}, _visitsArch, got), archObj = {};
+  Object.keys(archNext).forEach(m => { archObj[m] = archNext[m].arr; });
+  const all = UMCore.visitsAssemble(liveArr, archObj, today).sort((a, b) => order(a) - order(b)); // the same chronological order the single document had
+  // What was read becomes the base of the next save — the documents' texts,
+  // the phone's copy — only together with the visits on screen (v123 review):
+  // a refresh that keeps the lists on screen because a save ran while it read
+  // (loadAllNow's "raced") left its base moved under the older visits, and the
+  // next save took this phone's older copy of every visit for its own change —
+  // another phone's correction was undone. With a run, loadAllNow commits it
+  // when it puts these visits on screen; without one, at once.
+  const commit = () => {
+    Object.assign(_visitsArch, got);
+    _visitsBroken = broken;
+    _visitsLive = liveArr;
+    _visitsLoaded = JSON.stringify(liveArr);
+    if(!outboxHas('visits')){ _visitsBaseHash = null; _visitsBaseRecs = null; _visitsBaseText = null; _visitsBaseParsed = null; dropMergeBaseOnPhone('visits'); } // the documents just read are the base now
+    // If the assembled log arrives FAR smaller than what this device saw last
+    // time, keep the old copy aside — it may be the only surviving one.
+    const prevRaw = mirrorGet('visits'), prev = UMCore.safeParse(prevRaw, null);
+    if(Array.isArray(prev) && prev.length >= 10 && all.length < prev.length / 3){ try{ localStorage.setItem('um_mirror_prev:visits', prevRaw); }catch(e){} }
+    visitsMirrorSave(all);
+    renderVisitsNudge();
+  };
+  if(run) run.visitsCommit = commit; else commit();
   return all;
 }
 function renderVisitsNudge(){
@@ -472,8 +367,15 @@ function renderVisitsNudge(){
   </div>`;
 }
 async function retryVisitsArchives(){
-  const all = await loadVisits();
-  if(!_visitsSaving){ visits = all.filter(v => !(v && tombSet('visits').has(v.id))); renderAll(); }
+  const run = { failed: {}, mirror: {} }, gen0 = _localGen;
+  const all = await loadVisits(run);
+  // what was read goes on screen (and becomes the base) only when no save ran meanwhile (v123 review)
+  if(!_visitsSaving && !savedSince(gen0)){
+    if(run.visitsCommit) run.visitsCommit();
+    if(run.failed.visits) _loadFailed.visits = true; else delete _loadFailed.visits;
+    if(run.mirror.visits) _mirrorUsed.visits = true; else delete _mirrorUsed.visits;
+    visits = all.filter(v => !(v && tombSet('visits').has(v.id))); renderAll();
+  }
   showToast(_visitsBroken.length ? '⚠️ ما زالت بعض الأشهر غير متاحة' : '✅ حُمِّلت كل الزيارات');
 }
 // One save at a time; throws on failure so persist() can queue it offline.
@@ -502,8 +404,8 @@ async function persistVisitsInner(opts){
     const written = {};
     // The cloud refuses a document above 1 MB. A month can only get there
     // with a great many photos; say so plainly instead of retrying a save
-    // that can never land.
-    const VISITS_DOC_MAX = 950000;
+    // that can never land (v123: measured in bytes, never queued — persistNow).
+    const monthOf = doc => doc === 'live' ? today.slice(0, 7) : doc;
     // What each transaction committed, as the exact string it wrote (v122).
     // `written` holds the merged objects, which ARE the visits on screen: an
     // edit made while the commit was on its way changed them too, and
@@ -511,23 +413,45 @@ async function persistVisitsInner(opts){
     // it started then found nothing to write and still said "saved".
     const writtenStr = {};
     const committedStr = (res, arr) => typeof res === 'string' ? res : JSON.stringify(arr);
+    // The base of each document's three-way merge (v123): the document as the
+    // cloud last confirmed it to this phone — the text read or written this
+    // session — else the fingerprints kept on the phone or taken from its copy
+    // at a start without a read. A visit this phone did not change takes the
+    // cloud's version (a correction made on another phone stays); with no base
+    // at all this phone's copy wins, as before (v121 and earlier: always).
+    // When the cloud still holds exactly that text, no other phone wrote the
+    // document since: there is nothing to take from it, and no merge runs (the
+    // usual save costs one comparison; the base is parsed only when needed).
+    const baseOf = (doc, cloudStr) => {
+      const str = doc === 'live' ? _visitsLoaded : (_visitsArch[doc] && _visitsArch[doc].json);
+      if(typeof str !== 'string') return visitsFallbackBase();
+      if(cloudStr === str) return null;
+      const arr = UMCore.safeParse(str, null);
+      return Array.isArray(arr) ? new Map(arr.filter(v => v && v.id != null).map(v => [v.id, v])) : visitsFallbackBase();
+    };
+    const patches = []; // what the merges took from the cloud, put on screen once everything has landed
     const writeUnion = async (doc, arr) => {
-      let merged = arr, tooBig = false;
+      let merged = arr, tooBig = 0, took = [], changed = false;
       const res = await storageUpdate(keyOf(doc), cloudStr => {
+        tooBig = 0; changed = false; // a transaction may run more than once
+        if(opts.cancelled && opts.cancelled()) return null; // a whole-day restore that stopped: a run of its write after that writes nothing (round 4)
+        // a whole-day restore writes only over exactly the document it checked (round 3)
+        if(opts.expect && Object.prototype.hasOwnProperty.call(opts.expect, doc) && (cloudStr == null ? null : String(cloudStr)) !== opts.expect[doc]){ changed = true; return null; }
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
-        merged = (!opts.authoritative && Array.isArray(cloud)) ? mergeById('visits', arr, cloud).merged : arr.filter(v => v && !ts.has(v.id));
+        took = [];
+        merged = (!opts.authoritative && Array.isArray(cloud)) ? mergeById('visits', arr, cloud, baseOf(doc, cloudStr), took).merged : arr.filter(v => v && !ts.has(v.id));
         const str = JSON.stringify(merged);
-        if(str.length > VISITS_DOC_MAX){ tooBig = true; return null; }
+        if(!UMCore.fitsBytes(str, DOC_MAX_BYTES)){ tooBig = UMCore.utf8Len(str); return null; }
         return str;
-      }, 12000);
-      if(tooBig){
-        showToast(doc === 'live' ? '🛑 زيارات هذا الشهر كبيرة جدًا (صور كثيرة) — احذف بعض الصور من الزيارات ثم أعد المحاولة' : `🛑 زيارات شهر ${doc} كبيرة جدًا — احذف بعض صورها ثم أعد المحاولة`);
-        throw new Error('visits document too large: ' + doc);
-      }
+      }, 12000, typeof opts.onRaw === 'function' ? p => opts.onRaw(keyOf(doc), p) : undefined);
+      if(tooBig) throw tooLargeError('visits', monthOf(doc), tooBig); // said by persistNow (bar + toast), never queued
+      if(changed){ const e = new Error('changed meanwhile: ' + keyOf(doc)); e.casChanged = keyOf(doc); throw e; }
       if(res == null) throw new Error('visits update failed');
+      clearTooLarge('visits:' + monthOf(doc)); // that month's document took this write: it is no longer too large
       written[doc] = merged;
       writtenStr[doc] = committedStr(res, merged);
       note(doc, merged);
+      took.forEach(t => patches.push(t));
       return merged;
     };
     // Pass A — union writes of every document this device changed (never loses).
@@ -538,6 +462,7 @@ async function persistVisitsInner(opts){
       const have = _visitsArch[m];
       if(!have || JSON.stringify(part.months[m]) !== have.json) dirty.push([m, part.months[m]]);
     });
+    _visitsDirtyDocs = new Set(dirty.map(([doc]) => doc)); // a save that does not land keeps the bases of what changed in these (visitsChangedBases)
     const overflow = {}; // cloud-only entries found in a document that is not their home
     for(const [doc, arr] of dirty){
       const merged = await writeUnion(doc, arr);
@@ -587,6 +512,15 @@ async function persistVisitsInner(opts){
       writtenMonths.concat(owed).forEach(m => { delete _visitsIdxOwed[m]; });
     }
     if(written.live){ _visitsLive = written.live; _visitsLoaded = writtenStr.live; }
+    // What the merges took from the cloud (another phone's correction of a
+    // visit this phone did not change) goes on the visits on screen, in place:
+    // left on the older copy, the next save counted it as this phone's change
+    // and put it back. A field edited here while the save was on its way keeps
+    // that edit (its own save follows).
+    patches.forEach(p => p.fields.forEach(([k, before, val]) => {
+      if(JSON.stringify(p.obj[k] === undefined ? null : p.obj[k]) !== before) return;
+      if(val === undefined) delete p.obj[k]; else p.obj[k] = val;
+    }));
     // Memory: this device's list in its own order, plus what other devices
     // added (recovered by the unions), minus what the delete log removed.
     const cloudAll = UMCore.visitsAssemble(_visitsLive, visitsArchivesObj(), today);
@@ -603,6 +537,7 @@ async function persistVisitsInner(opts){
     later.forEach(v => haveIds.add(v.id));
     visits = mine.concat(later, cloudAll.filter(v => v && !ts.has(v.id) && !haveIds.has(v.id)));
     visitsMirrorSave(visits);
+    _visitsDirtyDocs = null;
     return true;
   }finally{ _visitsSaving = false; }
 }
@@ -726,9 +661,10 @@ async function patchVisitPhotosNow(changes){
   }finally{ _visitsSaving = false; }
   return out;
 }
-async function loadErpSales(){
+async function loadErpSales(run){
+  const F = readFlags(run);
   const prevMirror = UMCore.safeParse(mirrorGet('erpSales'), null); // assembled copy from last time
-  const es = await cloudGet('erpSales');
+  const es = await cloudGet('erpSales', null, run);
   const index = Object.assign({periods: []}, UMCore.safeParse(es && es.value, null) || {});
   if(!Array.isArray(index.periods)) index.periods = [];
   const keys = UMCore.erpChunkKeys(index);
@@ -741,7 +677,7 @@ async function loadErpSales(){
   ((prevMirror && prevMirror.periods) || []).forEach(p => { if(p && Array.isArray(p.rows) && p.rows.length) held[UMCore.erpRowsKey(p)] = p.rows.length; });
   const fetchKeys = UMCore.erpChunkKeys({ periods: index.periods.filter(h => !(h && h.rowsRef && held[h.rowsRef.key] != null && (h.rowsRef.count == null || held[h.rowsRef.key] === h.rowsRef.count))) });
   let docs = {};
-  if(fetchKeys.length && !_mirrorUsed.erpSales && !_loadFailed.erpSales) docs = await erpFetchChunks(fetchKeys);
+  if(fetchKeys.length && !F.mirror.erpSales && !F.failed.erpSales) docs = await erpFetchChunks(fetchKeys);
   _erpPutBack = 0;
   const out = UMCore.erpAssemble(index, docs);
   if(out.missing.length) out.missing = erpFillFromMirror(out.sales, prevMirror);
@@ -765,7 +701,7 @@ async function loadErpSales(){
     console.error('erpSales: rows unreadable for periods', out.missing);
     if(prevMirror) mirrorSave('erpSales', JSON.stringify(prevMirror)); // keep the last good assembled copy
     setTimeout(() => { retryErpRows({ quiet: true, timeoutMs: 60000 }).catch(() => {}); }, 1500);
-  } else if(!_mirrorUsed.erpSales && !_loadFailed.erpSales){
+  } else if(!F.mirror.erpSales && !F.failed.erpSales){
     erpMirrorSave(assembled); // cloudGet mirrored the bare index — replace it with the assembled copy
   }
   return out.sales;
@@ -868,10 +804,15 @@ async function persistErpSalesNow(){
   try{ return await persistErpSalesInner(); }
   finally{ _erpSaving = false; }
 }
+// What the last sales save that did not land was (persistNow's outcome): the
+// rules refused it, its answer did not come back in time, or a guard stopped it.
+let _erpSaveFail = null;
 async function persistErpSalesInner(){
+  _erpSaveFail = null;
   if(_loadFailed.erpSales){
     // The index itself never loaded (cloud unreachable, no mirror): what is on
     // screen is empty, and writing it would erase every uploaded file.
+    _erpSaveFail = { refused: true, quiet: true };
     showToast('⚠️ بيانات المبيعات لم تُحمَّل — أعد فتح التطبيق على اتصال جيد ثم أعد المحاولة');
     _erpDirty = true; renderErpDirtyPill();
     return false;
@@ -948,7 +889,10 @@ async function persistErpSalesInner(){
   }catch(e){
     console.error('erpSales save failed', e);
     _erpDirty = true; renderErpDirtyPill();
-    offlineToast('📴 لم يُحفظ ملف المبيعات — تحقق من الاتصال وأعد المحاولة');
+    const kind = saveErrKind(e);
+    _erpSaveFail = kind === 'refused' ? { refused: true, denied: true } : kind === 'tooLarge' ? { tooLarge: true } : /timeout/.test(String(e && e.message)) ? { timeout: true } : null;
+    if(kind === 'refused') showToast(NOT_ALLOWED_MSG, 6000); // the rules said no: a retry cannot land until they change
+    else offlineToast('📴 لم يُحفظ ملف المبيعات — تحقق من الاتصال وأعد المحاولة');
     return false;
   }
 }
@@ -995,12 +939,26 @@ let _bootCrashed = false; // loadAll hit an error — state may be partial, neve
 // `src` (optional, v122): src.cloud is set true only when the cloud answered
 // THIS call. _mirrorUsed / _loadFailed are session-wide — another read of the
 // same key can set or clear them while this one is on its way (loadTeam).
-async function cloudGet(key, src){
+// A read the security rules refused (v123): this login may not read the
+// team's data (a login outside the rules' lists, rules not matching the
+// app). What this phone holds is still shown, as with no connection — but
+// it is said for what it is, once per session.
+const _noAccess = {};
+let _noAccessSaid = false;
+function noteNoAccess(key, e){
+  if(saveErrKind(e) !== 'refused') return false;
+  _noAccess[key] = true;
+  console.warn('read refused by the security rules: ' + key); // said on screen (noteNoAccess): a handled refusal, not a page error
+  if(!_noAccessSaid){ _noAccessSaid = true; showToast('🔒 No access to the team\'s data on this login — ask the supervisor', 8000); }
+  return true;
+}
+async function cloudGet(key, src, run){
+  const F = readFlags(run); // the flags of the refresh that asked (v123), else those of the copy on screen
   if(outboxHas(key)){
-    if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ _mirrorUsed[key] = true; return { value: mem }; } } // its device copy is older than memory (a full phone)
+    if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ F.mirror[key] = true; return { value: mem }; } } // its device copy is older than memory (a full phone)
     const mm = mirrorGet(key);
     if(mm != null && UMCore.safeParse(mm, undefined) !== undefined){
-      _mirrorUsed[key] = true; // offline edits win until flushed — but never authoritative
+      F.mirror[key] = true; // offline edits win until flushed — but never authoritative
       return { value: mm };
     }
   }
@@ -1027,28 +985,50 @@ async function cloudGet(key, src){
     return r;
   }catch(e){
     if(src) src.cloud = false;
-    if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ _mirrorUsed[key] = true; return { value: mem }; } } // the device copy is older than memory (a full phone)
+    noteNoAccess(key, e); // the rules refused this read: said, never taken for "no connection" (v123)
+    if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ F.mirror[key] = true; return { value: mem }; } } // the device copy is older than memory (a full phone)
     const m = mirrorGet(key);
-    if(m != null){ _mirrorUsed[key] = true; return { value: m }; }
-    _loadFailed[key] = true;
+    if(m != null){ F.mirror[key] = true; return { value: m }; }
+    F.failed[key] = true;
     return null;
   }
 }
-async function loadAll(){
+// One refresh at a time (v123): a second caller — the 20-second tick, the app
+// coming back on screen, a sign-in — gets the refresh already on its way. Two
+// at once used to overlap: each reset the read flags the other relied on, so a
+// read that had failed looked like an empty account (the factory catalog was
+// written over the live one) — and an older read could finish last.
+let _loadAllRun = null;
+function loadAll(){
+  if(_loadAllRun) return _loadAllRun;
+  const p = loadAllNow();
+  _loadAllRun = p;
+  const done = () => { if(_loadAllRun === p) _loadAllRun = null; };
+  p.then(done, done);
+  return p;
+}
+function refreshRunning(){ return !!_loadAllRun; }
+// The whole documents: saved by compare-and-set against the exact string the
+// copy on screen came from (persistNow), kept here per key: the cloud's text
+// as read or as this phone last wrote it, null = no such document, undefined =
+// not known (the read failed and the phone holds no copy).
+const WHOLE_DOCS = ['products', 'targets', 'staff', 'recycleBin', 'benchmarks', 'categoryGuides', 'erpNotes'];
+const _docLoaded = {};
+async function loadAllNow(){
+  const run = { failed: {}, mirror: {} }; // this refresh's own read flags (v123)
+  const lf = run.failed, mu = run.mirror;
+  let crashed = false;
   try{
     const mapGen0 = _erpMapGen; // a link saved while this read runs is newer than what it brings back
     const rxGen0 = _rxTypesGen; // likewise a prescription-types save
-    const gen0 = _localGen, lf0 = _loadFailed, mu0 = _mirrorUsed, seed0 = _seedClinics; // likewise any list saved here (v121)
+    const gen0 = _localGen; // likewise any list saved here (v121)
+    const heldSettled = heldSettledNow(); // the deletes held long enough as these reads begin: a read of the list may confirm them (round 3)
     dropQueuedErpMap();        // before cloudGet: a queued key would make it serve this device's stale copy
-    _loadFailed = {};
-    _mirrorUsed = {};
-    _seedClinics = false;
-    _bootCrashed = false;
-    const g = cloudGet;
+    const g = k => cloudGet(k, null, run);
     const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em,en,rt] = await Promise.all([
       g('clinics'),
       g('products'),
-      loadVisits(), // live month + archived months, assembled (see persistVisits)
+      loadVisits(run), // live month + archived months, assembled (see persistVisits)
       g('tasks'),
       g('dayPlans'),
       g('staff'),
@@ -1057,15 +1037,31 @@ async function loadAll(){
       g('events'),
       g('targets'),
       g('categoryGuides'),
-      loadErpSales(), // index document + row chunks, assembled (see persistErpSales)
+      loadErpSales(run), // index document + row chunks, assembled (see persistErpSales)
       g('erpMap'),
       g('erpNotes'),
       g('rxTypes'), // the supervisor's prescription types — read only; never seeded, never written from here
       refreshTombs(), // the team's delete log, read alongside the lists so a deleted record never reaches the screen
     ]);
+    // The flags of a list this refresh puts on screen become the screen's.
+    const adopt = k => { if(lf[k]) _loadFailed[k] = true; else delete _loadFailed[k]; if(mu[k]) _mirrorUsed[k] = true; else delete _mirrorUsed[k]; };
     // Each key parses independently: one corrupt entry falls back alone instead
     // of throwing and resetting every collection to seed data.
     const notDeleted = key => { const ts = tombSet(key); return x => !(x && ts.has(x.id)); };
+    // What a list read FROM THE CLOUD now (a document that exists; never the
+    // phone's copy, never a read that failed) says about the deletes this phone
+    // holds although the log no longer has them (reconcileTombs): the list holds
+    // the record → the hold is let go (v123 review); it does not, and the hold
+    // has stood long enough → the delete goes back to the log now (round 3).
+    // Likewise a record the list holds under a delete published again: it stays.
+    const fromCloud = k => !lf[k] && !mu[k];
+    let tombsToWrite = 0;
+    const settleHeld = (k, ids) => {
+      if(!fromCloud(k) || !ids) return;
+      const has = id => ids.has(id);
+      tombsToWrite += reviveAgainTombs(k, has);
+      tombsToWrite += settleHeldTombs(k, has, heldSettled[k]);
+    };
     // A list saved here while these reads were on their way (v121): what came
     // back is older than memory. Assigned, the older copy showed — and the
     // next save of that list wrote it over the cloud. Every list stays as it
@@ -1074,58 +1070,85 @@ async function loadAll(){
     const raced = _bootLoaded && savedSince(gen0);
     if(raced){
       console.warn('refresh: a save ran while it read — the lists on screen are kept; the next refresh reads again');
-      Object.keys(LOCAL_KEYS).forEach(k => { if(lf0[k]) _loadFailed[k] = true; else delete _loadFailed[k]; if(mu0[k]) _mirrorUsed[k] = true; else delete _mirrorUsed[k]; });
-      _seedClinics = seed0;
-      const onPhone = (k, val) => { if(!lf0[k]) mirrorSave(k, JSON.stringify(val)); }; // never defaults over a real copy
-      if(!seed0) onPhone('clinics', storedClinics());
-      if(!lf0.visits) visitsMirrorSave(visits);
+      const onPhone = (k, val) => { if(_loadFailed[k]) return; const str = JSON.stringify(val); mirrorSave(k, str); if(WHOLE_DOCS.includes(k)) keepDocBaseOnPhone(k, str); }; // never defaults over a real copy
+      if(!_seedClinics) onPhone('clinics', storedClinics());
+      if(!_loadFailed.visits) visitsMirrorSave(visits);
       onPhone('products', products); onPhone('tasks', tasks); onPhone('dayPlans', dayPlans); onPhone('events', events);
       onPhone('targets', targets); onPhone('staff', staff); onPhone('recycleBin', recycleBin); onPhone('benchmarks', BENCHMARKS);
       onPhone('categoryGuides', categoryGuides); onPhone('erpNotes', erpNotes);
       // that copy may hold an edit whose save is still on its way: keep beside it the base the
       // cloud last confirmed, so a reopen without a connection still counts the edit as this phone's
-      ['clinics', 'tasks', 'events'].forEach(k => { if(!lf0[k] && !(k === 'clinics' && seed0)) keepMergeBaseOnPhone(k); });
+      ['clinics', 'tasks', 'events', 'dayPlans', 'visits'].forEach(k => { if(!_loadFailed[k] && !(k === 'clinics' && _seedClinics)) keepMergeBaseOnPhone(k); });
     }
     const clinicsDoc = UMCore.safeParse(c && c.value, null);
     const clinicsBefore = clinics;
     if(!raced){
+    Object.keys(LOCAL_KEYS).forEach(k => { if(k !== 'visits' || !_visitsSaving) adopt(k); });
     // No clinic list ships with the app (the code is public, v121): an account
     // without one starts empty and builds it (Admin → Manage clinics → Import,
     // or Territory → Upload a clinic distribution).
+    if(c && c.value != null && Array.isArray(clinicsDoc)) settleHeld('clinics', idsOfList(clinicsDoc));
     clinics = normalizeClinics((clinicsDoc || []).filter(notDeleted('clinics')).map(dropTombedDoctors));
-    _seedClinics = !clinicsDoc; // nothing read — never allowed to overwrite live data
+    // nothing read (the read failed with no copy here, or the document is not a list):
+    // never allowed to overwrite live data; a real read of no document is a new account
+    _seedClinics = !clinicsDoc && !(!c && !lf.clinics && !mu.clinics);
     if(clinicsDoc) reinsertKeptClinics(clinicsBefore); // a branch saved while this read was on its way stays
     products = UMCore.safeParse(p && p.value, null) || PRODUCTS_SEED;
     assignProductKeys();
-    if(!_visitsSaving) visits = (Array.isArray(v) ? v : []).filter(notDeleted('visits'));
-    tasks = UMCore.safeParse(t && t.value, []).filter(notDeleted('tasks'));
+    if(!_visitsSaving){
+      if(run.visitsCommit) run.visitsCommit();
+      // a month that did not load confirms nothing: what was read still lets a hold go
+      if(fromCloud('visits') && Array.isArray(v)){ if(_visitsBroken.length || !run.visitsComplete){ const ids = idsOfList(v); releaseHeldTombs('visits', heldIdsIn('visits', v)); tombsToWrite += reviveAgainTombs('visits', id => ids.has(id)); } else settleHeld('visits', idsOfList(v)); }
+      visits = (Array.isArray(v) ? v : []).filter(notDeleted('visits'));
+    } // the base moves with the visits on screen (v123 review)
+    const tasksRead = UMCore.safeParse(t && t.value, []), eventsRead = UMCore.safeParse(ev && ev.value, []);
     dayPlans = UMCore.safeParse(dp && dp.value, {});
-    if(!_loadFailed.dayPlans && !_mirrorUsed.dayPlans && !outboxHas('dayPlans')) _dpBase = JSON.stringify(dayPlans); // what the cloud held when we loaded — the base of the next three-way merge
-    events = UMCore.safeParse(ev && ev.value, []).filter(notDeleted('events'));
+    if(t && t.value != null && Array.isArray(tasksRead)) settleHeld('tasks', idsOfList(tasksRead));
+    if(ev && ev.value != null && Array.isArray(eventsRead)) settleHeld('events', idsOfList(eventsRead));
+    if(dp && dp.value != null && dayPlans && typeof dayPlans === 'object') settleHeld('dayPlans', planKeysOf(dayPlans));
+    tasks = (Array.isArray(tasksRead) ? tasksRead : []).filter(notDeleted('tasks'));
+    events = (Array.isArray(eventsRead) ? eventsRead : []).filter(notDeleted('events'));
     // The base of the next three-way merge: a real read is exactly what the
     // screen now shows; a key waiting in the queue keeps what the cloud last
     // confirmed (kept on the phone when it was queued — a reopened phone).
-    [['clinics', c], ['tasks', t], ['events', ev]].forEach(([k, r]) => {
-      if(!_loadFailed[k] && !_mirrorUsed[k]){ setMergeBase(k, r && r.value != null ? r.value : null); if(!outboxHas(k)) dropMergeBaseOnPhone(k); }
+    [['clinics', c], ['tasks', t], ['events', ev], ['dayPlans', dp]].forEach(([k, r]) => {
+      const fromRead = k === 'dayPlans' ? JSON.stringify(dayPlans) : (r && r.value != null ? r.value : null);
+      if(!lf[k] && !mu[k]){ if(k === 'dayPlans') _dpBase = fromRead; else setMergeBase(k, fromRead); if(!outboxHas(k)) dropMergeBaseOnPhone(k); }
       else if(outboxHas(k)) mergeBaseFromPhone(k);
       // read from the phone's copy (offline start, or the read failed) and nothing queued:
       // that copy is what this phone last saw the cloud hold — the base, so the next save
-      // never puts back this phone's copy of records it did not touch
-      else if(!mergeBaseFor(k) && r && r.value != null){ mergeBaseFromPhone(k); if(!mergeBaseFor(k)) setMergeBase(k, r.value); }
+      // never puts back this phone's copy of records it did not touch (day plans too, v123)
+      else if(!(k === 'dayPlans' ? _dpBase != null : mergeBaseFor(k)) && r && r.value != null){
+        mergeBaseFromPhone(k);
+        if(k === 'dayPlans'){ if(_dpBase == null) _dpBase = fromRead; }
+        else if(!mergeBaseFor(k)) setMergeBase(k, r.value);
+      }
     });
     targets = UMCore.safeParse(tg && tg.value, {});
     // Merge so newly seeded categories appear even for users with a saved copy,
     // while supervisor edits to existing categories win over the seed.
     const cgVal = UMCore.safeParse(cg && cg.value, null);
     categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), cgVal || {});
+    // What each whole document on screen came from: the base of its compare-and-set
+    // (a copy served from the phone takes what the phone kept beside it after a save
+    // that did not land, else that copy itself).
+    [['products', p], ['targets', tg], ['staff', st], ['recycleBin', rb], ['benchmarks', bm], ['categoryGuides', cg], ['erpNotes', en]].forEach(([k, r]) => {
+      if(lf[k]){ delete _docLoaded[k]; return; }
+      if(mu[k]){ const kept = docBaseFromPhone(k); _docLoaded[k] = kept !== undefined ? kept : (r && r.value != null ? r.value : null); return; }
+      _docLoaded[k] = r && r.value != null ? r.value : null;
+      dropDocBaseOnPhone(k);
+    });
     } // !raced
+    // the held deletes this read confirmed go back to the log now — not at this
+    // phone's next delete (round 3): a phone with an old copy uploading later is held back by it
+    if(tombsToWrite) await publishConfirmedTombs();
     if(_erpSaving || _erpDirty) console.warn('erpSales: refresh skipped — a save is in flight or unsaved edits exist');
-    else erpAdoptLoaded(es); // already assembled: periods carry their rows
+    else { erpAdoptLoaded(es); adopt('erpSales'); } // already assembled: periods carry their rows
     // An account link confirmed by the cloud while this read was on its way
     // (or a link save still in flight) is newer than the copy read here: keep
     // it, and keep the device copy on it, instead of showing the old link for
     // a whole refresh cycle.
-    if(!_erpLinkSaving && mapGen0 === _erpMapGen) erpMap = UMCore.safeParse(em && em.value, {}) || {};
+    if(!_erpLinkSaving && mapGen0 === _erpMapGen){ erpMap = UMCore.safeParse(em && em.value, {}) || {}; adopt('erpMap'); }
     else {
       console.warn('erpMap: refresh skipped — an account link was saved while it read');
       mirrorSave('erpMap', JSON.stringify(erpMap));
@@ -1136,7 +1159,8 @@ async function loadAll(){
     // phone then shows the built-in forms with a note); a document that does
     // not exist yet is null (the built-in forms); a save confirmed while this
     // read ran is newer than what it brings back.
-    if(!_loadFailed.rxTypes){
+    adopt('rxTypes');
+    if(!lf.rxTypes){
       if(!_rxSaving && rxGen0 === _rxTypesGen){
         const rtVal = UMCore.safeParse(rt && rt.value, null);
         rxTypesDoc = rtVal && typeof rtVal === 'object' ? rtVal : null;
@@ -1148,7 +1172,7 @@ async function loadAll(){
         if(rxGen0 !== _rxTypesGen && rxTypesDoc){ mirrorSave('rxTypes', JSON.stringify(rxTypesDoc)); delete _mirrorUsed.rxTypes; }
       }
     }
-    if(!_loadFailed.rxTypes) _rxTypesRead = 'read'; else if(_rxTypesRead !== 'read') _rxTypesRead = 'failed';
+    if(!lf.rxTypes) _rxTypesRead = 'read'; else if(_rxTypesRead !== 'read') _rxTypesRead = 'failed';
     if(typeof rxTypesRefreshed === 'function'){ try{ rxTypesRefreshed(); }catch(e){ console.warn('types editor refresh', e); } } // a types editor waiting for the list (10)
     const stVal = raced ? null : UMCore.safeParse(st && st.value, null);
     if(stVal){ staff = stVal; refreshStaff(); }
@@ -1157,35 +1181,33 @@ async function loadAll(){
     const bmVal = raced ? null : UMCore.safeParse(bm && bm.value, null);
     if(bmVal){ BENCHMARKS = Object.assign({}, BENCHMARKS, bmVal); }
     await loadTeam();
-    // Seed a missing doc ONLY when the read genuinely said "empty" — a failed
-    // or mirror-served read must never write factory defaults over live data.
+    // The flags of the copy on screen (this refresh's, for the lists it put there).
     const readOk = k => !_loadFailed[k] && !_mirrorUsed[k];
-    // Duplicate doctor records collapsed while normalizing: point the visits
-    // at the survivors, and (supervisor, real reads) write the clean lists back.
-    const remapped = applyDoctorRemap();
-    if(Object.keys(_docRemap).length && currentUser.role === 'supervisor' && readOk('clinics') && readOk('visits')){
-      console.log(`doctors: ${Object.keys(_docRemap).length} duplicate record(s) merged, ${remapped} visit(s) re-pointed`);
-      await persist('clinics');
-      if(remapped) await persist('visits');
-    }
-    // Recovery runs BEFORE fresh-account seeding: an account that has backup
-    // snapshots but no clinic doc is damaged, not new — restore, don't seed.
-    await autoRestoreWipe();
-    await deepRestoreSweep();
+    // Doctors the supervisor merged by tap: a visit that still names the merged
+    // record shows the kept one. Memory only — nothing is written at start
+    // (v123; until v122 the supervisor's phone collapsed same-name doctors and
+    // wrote the clinic list back at every refresh).
+    applyDoctorRemap();
     archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
-    if(_seedClinics && !c && readOk('clinics')) _seedClinics = false; // genuinely fresh account: nothing to write — its first clinic creates the list
-    if(!p && readOk('products')) await persist('products');
-    if(!st && readOk('staff')) await persist('staff');
-    if(!bm && readOk('benchmarks')) await persist('benchmarks');
-    if(!cg && readOk('categoryGuides')) await persist('categoryGuides');
+    // A missing settings document gets its factory default only from the
+    // supervisor's phone, only when this refresh itself read the cloud and found
+    // no document, and only as a compare-and-set that the document still does
+    // not exist (persistNow, a transaction on the server) — never from a rep's
+    // phone, nor from one whose read failed or was served from its own copy
+    // (v123: a rep's phone whose read had timed out wrote the factory catalog).
+    const seedOk = k => !raced && currentUser && currentUser.role === 'supervisor' && !lf[k] && !mu[k] && !_loadFailed[k] && !_mirrorUsed[k];
+    const quiet = { quietConflict: true }; // another phone created it meanwhile: the next refresh shows it
+    if(!p && seedOk('products')) await persist('products', quiet);
+    if(!st && seedOk('staff')) await persist('staff', quiet);
+    if(!bm && seedOk('benchmarks')) await persist('benchmarks', quiet);
+    if(!cg && seedOk('categoryGuides')) await persist('categoryGuides', quiet);
     if(currentUser && currentUser.role === 'supervisor' && !_loadFailed.erpSales && !_mirrorUsed.erpSales) await purgeIgnoredSalesmen();
     await applyProductImgSeed();
-    await restoreOrphanClinics();
   }catch(e){
     // A late failure (team load, a seed) must NOT throw away collections that
     // already parsed fine — only fill in whatever is still missing.
     console.error('load error', e);
-    _bootCrashed = true;
+    crashed = true;
     if(!Array.isArray(clinics) || !clinics.length){ clinics = []; _seedClinics = true; }
     if(!Array.isArray(products) || !products.length) products = PRODUCTS_SEED;
     if(!Array.isArray(visits)) visits = [];
@@ -1193,6 +1215,7 @@ async function loadAll(){
     if(!dayPlans || typeof dayPlans !== 'object') dayPlans = {};
     if(!categoryGuides) categoryGuides = JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED));
   }
+  _bootCrashed = crashed;
   hidePlaceholderClinics();
   // Rep filters default once per sign-in; the background refresh keeps
   // whatever the supervisor has selected (a rep is always pinned to herself).
@@ -1205,8 +1228,9 @@ async function loadAll(){
   renderAll();
   _bootLoaded = true;
   updateSyncBadge();
-  checkWipeBanner(); // fire-and-forget: compares against automatic backups
-  flushOutbox(); // anything saved offline goes up now, merged with the cloud
+  checkWipeBanner(); // fire-and-forget: reads the daily backups at most once a day, only when the list looks wiped (13)
+  if(typeof checkPendingRename === 'function') checkPendingRename(); // a rename this phone started and the app was closed on (08-team-orders.js, round 3)
+  _refreshFlush = flushOutbox(); // anything saved offline goes up now, merged with the cloud (the 20-second round waits for it: bgRefresh)
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for
 // ---- SMART MERGE-ON-SAVE ----
@@ -1363,15 +1387,43 @@ function dropQueuedErpMap(){
   console.warn('outbox: a queued whole-map "erpMap" save was dropped — account links are saved per account (saveErpLink)');
   return true;
 }
-// tombstones: {docKey: {id: deletedAtMs}} kept 7 days
+// tombstones: {docKey: {id: deletedAtMs}} kept 120 days (v123; 7 until then: a
+// phone whose copy was older than a week put a deleted record back)
+const TOMB_KEEP_MS = 120 * 86400000;
+// An older app version (v122 and before) still rewrites the shared log with a
+// 7-day cutoff: a delete older than that may be missing from the log without
+// anyone having brought the record back (reconcileTombs, v123 review).
+const OLD_TOMB_CUT_MS = 7 * 86400000;
+// The first start of v123 on a phone (round 3, once — um_tombsMig123): v122
+// IGNORED this phone's own deletes older than 7 days but never pruned them
+// from um_tombs. Read back as live deletes for 120 days, the old deletes of
+// records the team brought back since (bin restores, whole-day restores, the
+// August–September repairs) deleted them again, everywhere. They had expired
+// under v122 and are dropped once, as v122 treated them; doctor removals are
+// kept for good, as before (v121).
+const TOMBS_MIG = 'um_tombsMig123';
+const _tombsLocalAt = {}; // key → { id: when this phone deleted it } (um_tombs): reconcileTombs reads the age
 const _tombstones = (()=>{
   const out = { visits:new Set(), tasks:new Set(), clinics:new Set(), events:new Set(), dayPlans:new Set(), doctors:new Set() };
   try{
-    const raw = JSON.parse(localStorage.getItem('um_tombs')||'{}');
-    const cutoff = Date.now() - 7*86400000;
+    let raw = JSON.parse(localStorage.getItem('um_tombs')||'{}');
+    if(!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {};
+    let migrated = false; try{ migrated = localStorage.getItem(TOMBS_MIG) === '1'; }catch(e){}
+    if(!migrated){
+      const cut = Date.now() - OLD_TOMB_CUT_MS;
+      let dropped = 0;
+      Object.keys(raw).forEach(k => {
+        if(k === 'doctors' || !raw[k] || typeof raw[k] !== 'object') return;
+        Object.keys(raw[k]).forEach(id => { if(!(+raw[k][id] > cut)){ delete raw[k][id]; dropped++; } });
+      });
+      // in memory at once; on the phone with the flag (a write that fails is done again at the next start)
+      try{ if(dropped) localStorage.setItem('um_tombs', JSON.stringify(raw)); localStorage.setItem(TOMBS_MIG, '1'); }catch(e){}
+      if(dropped) console.warn(`delete log: ${dropped} of this phone's deletes older than 7 days left out (they had expired under v122)`);
+    }
+    const cutoff = Date.now() - TOMB_KEEP_MS;
     // doctor removals are kept for good (v121): after 7 days a removed doctor would
     // otherwise come back as "lost" on the Doctors-without-a-name sheet
-    Object.keys(out).forEach(k=>Object.keys(raw[k]||{}).forEach(id=>{ if(k === 'doctors' || raw[k][id] > cutoff) out[k].add(id); }));
+    Object.keys(out).forEach(k=>Object.keys(raw[k]||{}).forEach(id=>{ if(k === 'doctors' || raw[k][id] > cutoff){ out[k].add(id); (_tombsLocalAt[k] = _tombsLocalAt[k] || {})[id] = +raw[k][id] || 0; } }));
   }catch(e){}
   return out;
 })();
@@ -1379,22 +1431,67 @@ let tombsDoc = { visits:{}, tasks:{}, clinics:{}, events:{}, dayPlans:{}, doctor
 // Deletes made here that the shared log has not confirmed yet (offline, or a
 // write still in flight) — the reconcile below must never drop these.
 const _tombsUnpublished = {};
+// …kept on the phone too (round 3, um_tombsUnpub). In memory only, a delete
+// made with no signal was forgotten when the app was reopened before it
+// uploaded: the first read of the log did not find it, took it for a record
+// brought back elsewhere, and the record came back from the cloud. (A held
+// delete on its way back to the log is not one of them: after a reopen it is
+// held again, and confirmed again by a read of its list.)
+const TOMBS_UNPUB = 'um_tombsUnpub';
+let _unpubSaved = null;
+function saveUnpubTombs(){
+  try{
+    const o = {};
+    Object.keys(_tombsUnpublished).forEach(k => { const ids = [..._tombsUnpublished[k]].filter(id => !(_tombsPending[k] && _tombsPending[k].has(id))); if(ids.length) o[k] = ids; });
+    const str = Object.keys(o).length ? JSON.stringify(o) : null;
+    if(str === _unpubSaved) return;
+    if(str) localStorage.setItem(TOMBS_UNPUB, str); else localStorage.removeItem(TOMBS_UNPUB);
+    _unpubSaved = str;
+  }catch(e){}
+}
+(() => {
+  try{
+    const str = localStorage.getItem(TOMBS_UNPUB);
+    const o = str ? JSON.parse(str) : null;
+    if(!o || typeof o !== 'object') return;
+    _unpubSaved = str;
+    Object.keys(o).forEach(k => {
+      if(!_tombstones[k] || !Array.isArray(o[k])) return;
+      o[k].forEach(id => {
+        if(!_tombstones[k].has(id)) return; // no longer deleted on this phone
+        (_tombsUnpublished[k] = _tombsUnpublished[k] || new Set()).add(id);
+        (tombsDoc[k] = tombsDoc[k] || {})[id] = (_tombsLocalAt[k] || {})[id] || Date.now();
+      });
+    });
+  }catch(e){}
+})();
 function tomb(key, id){
   if(!_tombstones[key] || id == null) return;
   _tombstones[key].add(id);
   (_tombsUnpublished[key] = _tombsUnpublished[key] || new Set()).add(id);
+  (_tombsLocalAt[key] = _tombsLocalAt[key] || {})[id] = Date.now();
+  if(_untombedAt[key]) delete _untombedAt[key][id];
+  if(_untombed[key]) _untombed[key].delete(id); // revived here earlier: this new delete is published all the same (round 4)
+  // deleted here and now: an ordinary delete of this phone's, whatever was held or marked for that id (round 3)
+  [_tombsHeld, _tombsPending, _tombsAgain].forEach(m => { if(m[key]) m[key].delete(id); });
   try{
     const raw = JSON.parse(localStorage.getItem('um_tombs')||'{}');
     (raw[key] = raw[key] || {})[id] = Date.now();
     localStorage.setItem('um_tombs', JSON.stringify(raw));
   }catch(e){}
   (tombsDoc[key] = tombsDoc[key] || {})[id] = Date.now();
+  saveUnpubTombs();
   persistTombs(); // fire-and-forget: share the delete with the whole team
 }
 // Bringing a record back to life must clear its tombstone EVERYWHERE — the
 // in-memory set, this device's durable store, and the team's shared delete
 // log — or the next merge/restart would silently delete it again.
-function untomb(key, id){
+function untomb(key, id, quiet){
+  forgetTombHere(key, id);
+  // one record brought back by a tap (the recycle bin, a clinic re-created): always written
+  // down in the log (round 3), also when this phone knew no delete of it — a phone that holds
+  // an old delete an older app cut from the log then lets it go at once, whatever the lists say
+  if(_tombstones[key] && id != null){ const m = (_untombedAt[key] = _untombedAt[key] || {}); m[id] = Math.max(m[id] || 0, reviveTime(key, id)); }
   if(_tombstones[key]) _tombstones[key].delete(id);
   if(_tombsUnpublished[key]) _tombsUnpublished[key].delete(id);
   try{
@@ -1403,9 +1500,25 @@ function untomb(key, id){
   }catch(e){}
   if(tombsDoc[key]) delete tombsDoc[key][id];
   _untombed[key] = _untombed[key] || new Set(); _untombed[key].add(id);
-  persistTombs(); // share the revival like we share deletes
+  if(!quiet) persistTombs(); // share the revival like we share deletes
 }
 const _untombed = {}; // revived ids — the shared log must never re-absorb them
+// …and when (v123 review): the log writes revivals down (revived), so another
+// phone that still holds the delete lets it go — never taken for an older app's cut
+const _untombedAt = {};
+// A revival is written down as later than the delete it revives, whatever this phone's clock says
+// (round 4): the delete's time comes from the phone that deleted, and a phone whose clock is behind
+// wrote a revival "before" the delete — the deleting phone then kept its delete and erased the record again.
+function reviveTime(key, id){
+  const held = m => (m[key] && m[key].get(id) || {}).at || 0;
+  return Math.max(Date.now(), (+((tombsDoc[key] || {})[id]) || 0) + 1, (+((_tombsLocalAt[key] || {})[id]) || 0) + 1, held(_tombsHeld) + 1, held(_tombsPending) + 1);
+}
+function forgetTombHere(key, id){
+  // written down only for a record that was deleted (a whole-day restore revives every id it holds)
+  if((_tombstones[key] && _tombstones[key].has(id)) || (tombsDoc[key] && tombsDoc[key][id] != null)) (_untombedAt[key] = _untombedAt[key] || {})[id] = reviveTime(key, id);
+  if(_tombsLocalAt[key]) delete _tombsLocalAt[key][id];
+  [_tombsHeld, _tombsPending, _tombsAgain].forEach(m => { if(m[key]) m[key].delete(id); });
+}
 // Bulk revival (a backup restore): clear whole batches from every delete layer
 // with ONE shared-log write instead of one per record.
 async function untombMany(sets){
@@ -1413,6 +1526,7 @@ async function untombMany(sets){
     if(!_tombstones[k]) return;
     const ids = (sets[k]||[]).filter(id=>id!=null);
     ids.forEach(id=>{
+      forgetTombHere(k, id);
       _tombstones[k].delete(id);
       if(_tombsUnpublished[k]) _tombsUnpublished[k].delete(id);
       if(tombsDoc[k]) delete tombsDoc[k][id];
@@ -1423,7 +1537,39 @@ async function untombMany(sets){
       if(raw[k]){ ids.forEach(id=>{ delete raw[k][id]; }); localStorage.setItem('um_tombs', JSON.stringify(raw)); }
     }catch(e){}
   });
-  await persistTombs();
+  return await persistTombs(); // whether the log took the revivals (a restore stops when it did not)
+}
+// The deletes a bulk revival is about to clear, so a restore that stops half-way
+// can put them back (retombMany, round 3): { key: { id: { at, own } } }. A held
+// delete (not in the log: reconcileTombs) is not one of them — once let go it
+// stays let go (in doubt, the record stays).
+function tombsOf(sets){
+  const out = {};
+  Object.keys(sets).forEach(k => {
+    if(!_tombstones[k]) return;
+    (sets[k] || []).forEach(id => {
+      if(id == null || !_tombstones[k].has(id)) return;
+      if((_tombsHeld[k] && _tombsHeld[k].has(id)) || (_tombsPending[k] && _tombsPending[k].has(id))) return;
+      const own = (_tombsLocalAt[k] || {})[id];
+      (out[k] = out[k] || {})[id] = { at: Math.max((tombsDoc[k] || {})[id] || 0, own || 0) || Date.now(), own: own != null ? own : null };
+    });
+  });
+  return out;
+}
+// Those deletes back, everywhere (the revival undone), with ONE write of the log.
+async function retombMany(prev){
+  const now = Date.now();
+  let raw = null; try{ raw = JSON.parse(localStorage.getItem('um_tombs') || '{}'); }catch(e){ raw = null; }
+  Object.keys(prev || {}).forEach(k => Object.keys(prev[k]).forEach(id => {
+    if(_untombed[k]) _untombed[k].delete(id);
+    if(_untombedAt[k]) delete _untombedAt[k][id];
+    _tombstones[k].add(id);
+    (_tombsUnpublished[k] = _tombsUnpublished[k] || new Set()).add(id);
+    (tombsDoc[k] = tombsDoc[k] || {})[id] = now; // newer than the revival just written: the log drops that
+    if(prev[k][id].own != null){ (_tombsLocalAt[k] = _tombsLocalAt[k] || {})[id] = prev[k][id].own; if(raw) (raw[k] = raw[k] || {})[id] = prev[k][id].own; }
+  }));
+  if(raw){ try{ localStorage.setItem('um_tombs', JSON.stringify(raw)); }catch(e){} }
+  return await persistTombs();
 }
 function absorbTombs(doc){
   Object.keys(_tombstones).forEach(k=>{
@@ -1434,7 +1580,7 @@ function absorbTombs(doc){
     });
   });
 }
-// The shared delete log is itself a UNION document (max timestamp wins, 7-day
+// The shared delete log is itself a UNION document (max timestamp wins, 120-day
 // retention) — safe to write from any device at any time, safe to queue.
 // Read → union → write as ONE atomic step (v121): it used to read the log,
 // then write the whole log back — a phone deleting at the same moment (or a
@@ -1446,7 +1592,7 @@ async function persistTombs(){
     const written = await storageUpdate('tombs', cur => {
       const cloud = cur != null ? (UMCore.safeParse(cur, null) || {}) : {};
       reconcileTombs(cloud); // BEFORE the union: a delete revived elsewhere must not be re-published from our stale copy
-      const cutoff = Date.now() - 7*86400000;
+      const cutoff = Date.now() - TOMB_KEEP_MS;
       out = {};
       Object.keys(_tombstones).forEach(k=>{
         out[k] = {};
@@ -1455,7 +1601,25 @@ async function persistTombs(){
           if(k === 'doctors' || (src[id]||0) > cutoff) out[k][id] = Math.max(out[k][id]||0, src[id] || 0); // doctor removals are kept for good (v121)
         }));
       });
-      return JSON.stringify(out);
+      // Revivals written down beside the deletes (v123 review), 120 days, unless
+      // deleted again since; and which version wrote the log (an older one drops both).
+      const revived = {}, cloudRv = cloud.revived && typeof cloud.revived === 'object' ? cloud.revived : {};
+      Object.keys(_tombstones).forEach(k => {
+        const m = {};
+        [cloudRv[k] || {}, _untombedAt[k] || {}].forEach(src => Object.keys(src).forEach(id => { const t = +src[id] || 0; if(t > cutoff && !(out[k][id] >= t)) m[id] = Math.max(m[id] || 0, t); }));
+        if(Object.keys(m).length) revived[k] = m;
+      });
+      // A held delete published again (round 3) is marked as such (again: id → the delete's own time),
+      // so a record the list holds again is never deleted on the strength of it (reviveAgainTombs).
+      // The mark goes with a newer delete of the same id (a person deleted it again).
+      const again = {}, cloudAg = cloud.again && typeof cloud.again === 'object' ? cloud.again : {};
+      Object.keys(_tombstones).forEach(k => {
+        const m = {}, add = (id, t) => { t = +t || 0; if(t && out[k][id] === t) m[id] = t; };
+        Object.keys(cloudAg[k] || {}).forEach(id => add(id, cloudAg[k][id]));
+        if(_tombsPending[k]) _tombsPending[k].forEach((v, id) => add(id, v.at));
+        if(Object.keys(m).length) again[k] = m;
+      });
+      return JSON.stringify(Object.assign({}, out, { revived, again, rev: APP_REV_NUM }));
     }, 12000);
     if(written == null) throw new Error('tombs update failed');
     // A delete made here while the write was on its way is not in it: kept
@@ -1467,9 +1631,26 @@ async function persistTombs(){
     tombsDoc = out;
     absorbTombs(out);
     Object.keys(_tombsUnpublished).forEach(k => [..._tombsUnpublished[k]].forEach(id => { if(pub[k] && pub[k][id] != null) _tombsUnpublished[k].delete(id); }));
+    Object.keys(_tombsPending).forEach(k => [..._tombsPending[k].keys()].forEach(id => { if(pub[k] && pub[k][id] != null) _tombsPending[k].delete(id); }));
+    syncAgainTombs(pub);
+    saveUnpubTombs();
     if(outboxHas('tombs')) outboxRemove('tombs');
     return true;
-  }catch(e){ outboxAdd('tombs'); return false; }
+  }catch(e){
+    saveUnpubTombs();
+    // Never dropped, whatever the cloud said (v123 review): the deletes stay on
+    // this phone and in the queue. Refused for a phone that still has access:
+    // the rules' "no" — said, and the round sends it again only now and then
+    // (parked); with no access (signed out, a sign-in that ended) it waits for
+    // the next sign-in; when the cloud did not say which, the round tries again.
+    outboxAdd('tombs');
+    if(saveErrKind(e) === 'refused'){
+      const acc = await accessCheck();
+      if(acc === 'lost') parkSave('tombs', 'noAccess');
+      else if(acc === 'ok') saveBlocked('tombs', 'refused', e);
+    }
+    return false;
+  }
 }
 // The shared log is the team's truth about deletes. An id THIS device
 // tombstoned that is no longer in the log was brought back from the recycle
@@ -1478,32 +1659,211 @@ async function persistTombs(){
 // and its next persistTombs would even re-publish the delete to everyone.
 // Our own deletes that the log has not confirmed yet, and anything younger
 // than a minute (a read may predate an in-flight write), are left alone.
+//
+// v123 review: an older app version (v122) still rewrites the log with its
+// 7-day cutoff, so a delete older than that can be missing although nobody
+// brought the record back. Such a delete is kept (HELD) — unless the log says
+// it was brought back (revived).
+// Round 3 — a held delete deletes nothing by itself:
+//  - it is never published from here, nor queued (until round 3 it went out
+//    with this phone's next write of the log: the old deletes of records the
+//    team had brought back on the older app deleted them again, everywhere);
+//  - it goes back to the log only once this session has read the list itself
+//    FROM THE CLOUD (never the phone's copy, never a read that failed) and
+//    found the record absent — at the first refresh that shows it after the
+//    hold has stood HELD_SETTLE_MS, not at this phone's next delete: a phone
+//    with an old copy that uploads later is then held back by the log;
+//  - when a list from the cloud holds the record, the hold is let go: a record
+//    that exists is never deleted on the strength of a held delete (in doubt,
+//    the record stays). That stays true after it was published again: the log
+//    marks such a delete (again), and a record the cloud's list holds under a
+//    marked delete is let go and written down as brought back (revived).
+// Why it waits HELD_SETTLE_MS: an older app brings a record back by writing the
+// log first (the delete goes) and the list after (the record returns). A v123
+// phone that reads between the two sees "not in the log, not in the list" —
+// published again at once, the delete removed the record the moment its list
+// landed (proved with the real v122: a recycle-bin restore on a slow link).
+// Until a held delete is settled it stays off this phone's screen and out of
+// what this phone uploads (its own old copy never puts the record back).
+// The wait counts across reopenings of the app: when each of this phone's own
+// held deletes was first found missing is kept on the phone (um_tombsHeldAt) —
+// a phone opened a minute at a time would otherwise never publish one.
+let HELD_SETTLE_MS = 5 * 60000;
+const HELD_AT = 'um_tombsHeldAt';
+function heldSinceOnPhone(){ try{ const o = JSON.parse(localStorage.getItem(HELD_AT) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }catch(e){ return {}; } }
+function saveHeldSince(){
+  try{
+    const o = {};
+    Object.keys(_tombsHeld).forEach(k => _tombsHeld[k].forEach((v, id) => { (o[k] = o[k] || {})[id] = v.since; }));
+    if(Object.keys(o).length) localStorage.setItem(HELD_AT, JSON.stringify(o)); else if(localStorage.getItem(HELD_AT) != null) localStorage.removeItem(HELD_AT);
+  }catch(e){}
+}
+const _tombsHeld = {};    // key → Map id → { at: when it was deleted, since: when this phone first found it missing from the log } — kept here, NOT published
+const _tombsPending = {}; // key → Map id → { at, since }: held, found absent by a read of the list, on its way to the log
+const _tombsAgain = {};   // key → Map id → at: deletes the log marks as published again (this phone's or another's)
 function reconcileTombs(cloudDoc){
   const doc = cloudDoc || {};
-  const fresh = Date.now() - 60000;
-  let raw = null;
+  const now = Date.now(), fresh = now - 60000, oldCut = now - OLD_TOMB_CUT_MS, keepFrom = now - TOMB_KEEP_MS;
+  const revivedAll = doc.revived && typeof doc.revived === 'object' ? doc.revived : {};
+  let raw = null, sinceOnPhone = null;
+  // a hold that began before the app was last closed keeps its start — if that start fits this delete (a hold begins once the delete is older than 7 days)
+  const sinceOf = (k, id, at) => { sinceOnPhone = sinceOnPhone || heldSinceOnPhone(); const t = +((sinceOnPhone[k] || {})[id]) || 0; return t >= at + OLD_TOMB_CUT_MS && t <= now ? t : now; };
+  const forget = (k, id) => {
+    _tombstones[k].delete(id);
+    if(tombsDoc[k]) delete tombsDoc[k][id];
+    if(_tombsLocalAt[k]) delete _tombsLocalAt[k][id];
+    [_tombsHeld, _tombsPending, _tombsAgain].forEach(m => { if(m[k]) m[k].delete(id); });
+    try{ raw = raw || JSON.parse(localStorage.getItem('um_tombs')||'{}'); if(raw[k]) delete raw[k][id]; }catch(e){}
+  };
   Object.keys(_tombstones).forEach(k=>{
-    const inCloud = doc[k] || {};
+    const inCloud = doc[k] || {}, revived = revivedAll[k] || {};
     const unpub = _tombsUnpublished[k] || new Set();
+    const pend = _tombsPending[k];
     [..._tombstones[k]].forEach(id=>{
-      if(inCloud[id] != null || unpub.has(id)) return;
-      if(((tombsDoc[k]||{})[id] || 0) > fresh) return;
-      _tombstones[k].delete(id);
-      if(tombsDoc[k]) delete tombsDoc[k][id];
-      try{ raw = raw || JSON.parse(localStorage.getItem('um_tombs')||'{}'); if(raw[k]) delete raw[k][id]; }catch(e){}
+      if(inCloud[id] != null){ if(_tombsHeld[k]) _tombsHeld[k].delete(id); return; } // in the log (again): an ordinary delete
+      if(unpub.has(id)){
+        // a held delete on its way back to the log that someone brought back meanwhile (the log says so): let go
+        if(pend && pend.has(id) && revived[id] != null && +revived[id] >= pend.get(id).at){ unpub.delete(id); forget(k, id); }
+        return;
+      }
+      // a read may predate a write still on its way — unless the log writes down a revival made
+      // since this delete (round 4: a day's plan emptied and planned again within the minute)
+      if(((tombsDoc[k]||{})[id] || 0) > fresh && !(revived[id] != null && +revived[id] >= ((tombsDoc[k]||{})[id] || 0))) return;
+      const was = _tombsHeld[k] ? _tombsHeld[k].get(id) : null;
+      const at = Math.max((tombsDoc[k]||{})[id] || 0, (_tombsLocalAt[k]||{})[id] || 0, was ? was.at : 0); // how old the delete is
+      if(k !== 'doctors' && revived[id] == null && at && at < oldCut && at > keepFrom){
+        (_tombsHeld[k] = _tombsHeld[k] || new Map()).set(id, { at, since: was ? was.since : sinceOf(k, id, at) });
+        if(tombsDoc[k]) delete tombsDoc[k][id]; // out of what this phone writes to the log until a read of the list confirms it
+        if(_tombsAgain[k]) _tombsAgain[k].delete(id); // (its mark went with it)
+        return;
+      }
+      forget(k, id);
     });
   });
   if(raw){ try{ localStorage.setItem('um_tombs', JSON.stringify(raw)); }catch(e){} }
+  saveHeldSince();
+  saveUnpubTombs();
+}
+// The deletes the log marks as published again (again), as this read of the log has them.
+function syncAgainTombs(doc){
+  const ag = doc && doc.again && typeof doc.again === 'object' ? doc.again : {};
+  Object.keys(_tombstones).forEach(k => {
+    const next = new Map();
+    Object.keys(ag[k] || {}).forEach(id => { const t = +ag[k][id] || 0; if(t && ((doc || {})[k] || {})[id] === t && _tombstones[k].has(id)) next.set(id, t); });
+    if(next.size) _tombsAgain[k] = next; else delete _tombsAgain[k];
+  });
+}
+// Forgotten on this phone, nothing written to the log (it does not have them).
+function dropTombsHere(key, ids){
+  let raw = null;
+  ids.forEach(id => {
+    if(_tombstones[key]) _tombstones[key].delete(id);
+    if(_tombsUnpublished[key]) _tombsUnpublished[key].delete(id);
+    if(tombsDoc[key]) delete tombsDoc[key][id];
+    if(_tombsLocalAt[key]) delete _tombsLocalAt[key][id];
+    [_tombsHeld, _tombsPending, _tombsAgain].forEach(m => { if(m[key]) m[key].delete(id); });
+    try{ raw = raw || JSON.parse(localStorage.getItem('um_tombs') || '{}'); if(raw[key]) delete raw[key][id]; }catch(e){}
+  });
+  if(raw){ try{ localStorage.setItem('um_tombs', JSON.stringify(raw)); }catch(e){} }
+  saveHeldSince();
+}
+// A delete held above whose record the list holds again (brought back on an
+// older app version): let go — the record stays, on every phone (v123 review).
+function releaseHeldTombs(key, ids){
+  const h = _tombsHeld[key];
+  if(!h || !h.size || !ids) return;
+  dropTombsHere(key, ids.filter(id => h.has(id)));
+}
+// A delete published again after an older app's cut (marked in the log, or this
+// phone's own on its way) whose record a list FROM THE CLOUD holds (round 3):
+// the record exists — let go here and written down as brought back (revived),
+// so every phone lets it go and the log drops the delete. → how many
+function reviveAgainTombs(key, has){
+  const ids = [];
+  [_tombsAgain[key], _tombsPending[key]].forEach(m => { if(m) m.forEach((v, id) => { if(has(id) && !ids.includes(id)) ids.push(id); }); });
+  if(!ids.length) return 0;
+  const now = Date.now();
+  ids.forEach(id => {
+    (_untombedAt[key] = _untombedAt[key] || {})[id] = now;
+    (_untombed[key] = _untombed[key] || new Set()).add(id);
+  });
+  dropTombsHere(key, ids);
+  console.warn(`delete log: ${ids.length} ${key} record(s) the list holds again under a delete published again — kept, written down as brought back`);
+  return ids.length;
+}
+// What a read of the list FROM THE CLOUD says about the deletes held (round 3):
+// a record the list holds → let go (it exists: it stays); one it does not hold,
+// held for HELD_SETTLE_MS before this read began (`settled`: those ids) →
+// confirmed: back to the log at once (publishConfirmedTombs). `has(id)`: the
+// list holds it. → how many were confirmed.
+function settleHeldTombs(key, has, settled){
+  const h = _tombsHeld[key];
+  if(!h || !h.size) return 0;
+  const present = [], confirm = [];
+  h.forEach((v, id) => { if(has(id)) present.push(id); else if(settled && settled.has(id)) confirm.push([id, v]); });
+  if(present.length) releaseHeldTombs(key, present);
+  confirm.forEach(([id, v]) => {
+    h.delete(id);
+    (_tombsPending[key] = _tombsPending[key] || new Map()).set(id, v);
+    (_tombsUnpublished[key] = _tombsUnpublished[key] || new Set()).add(id);
+    (tombsDoc[key] = tombsDoc[key] || {})[id] = v.at;
+    _tombstones[key].add(id);
+  });
+  if(confirm.length) saveHeldSince();
+  return confirm.length;
+}
+// The deletes held long enough, as the reads of a refresh begin: key → Set of ids.
+function heldSettledNow(){
+  const o = {}, now = Date.now();
+  Object.keys(_tombsHeld).forEach(k => { const s = new Set(); _tombsHeld[k].forEach((v, id) => { if(now - v.since >= HELD_SETTLE_MS) s.add(id); }); if(s.size) o[k] = s; });
+  return o;
+}
+// The confirmed deletes (and the revivals a refresh wrote down) go to the log
+// now. A confirmed delete that does not land (no connection, refused) goes
+// back to held — never left in the queue as a delete to publish: only the next
+// read of the list that confirms it again sends it (round 3).
+async function publishConfirmedTombs(){
+  const ok = await persistTombs();
+  Object.keys(_tombsPending).forEach(k => {
+    const p = _tombsPending[k];
+    [...p.keys()].forEach(id => {
+      if(!(_tombsUnpublished[k] && _tombsUnpublished[k].has(id))){ p.delete(id); return; } // it landed (this write or another)
+      if(ok) return;
+      const v = p.get(id); p.delete(id);
+      _tombsUnpublished[k].delete(id);
+      if(tombsDoc[k]) delete tombsDoc[k][id];
+      if(_tombstones[k] && _tombstones[k].has(id)) (_tombsHeld[k] = _tombsHeld[k] || new Map()).set(id, v);
+    });
+  });
+  if(!ok) saveHeldSince();
+  return ok;
+}
+const idsOfList = list => new Set((Array.isArray(list) ? list : []).map(x => x && x.id).filter(id => id != null));
+const planKeysOf = plans => new Set((plans && typeof plans === 'object') ? Object.keys(plans).flatMap(d => Object.keys(plans[d] || {}).map(r => d + '|' + r)) : []);
+const heldIdsIn = (key, list) => (_tombsHeld[key] && _tombsHeld[key].size && Array.isArray(list)) ? list.filter(x => x && x.id != null && _tombsHeld[key].has(x.id)).map(x => x.id) : null;
+const heldPlanKeysIn = plans => (_tombsHeld.dayPlans && _tombsHeld.dayPlans.size && plans && typeof plans === 'object') ? [...planKeysOf(plans)].filter(k => _tombsHeld.dayPlans.has(k)) : null;
+// In a merge with the cloud's list (inside its transaction): what that list
+// holds is never deleted by a held delete, nor by one published again. The
+// revival goes to the log right after (never from inside the transaction).
+let _tombsOwed = 0;
+function keepWhatCloudHolds(key, cloud){
+  const ids = key === 'dayPlans' ? planKeysOf(cloud) : idsOfList(cloud);
+  if(key === 'dayPlans') releaseHeldTombs('dayPlans', heldPlanKeysIn(cloud)); else releaseHeldTombs(key, heldIdsIn(key, cloud));
+  if(reviveAgainTombs(key, id => ids.has(id)) && !_tombsOwed){ _tombsOwed = setTimeout(() => { _tombsOwed = 0; persistTombs(); }, 0); }
 }
 // Read-only pull of the team's delete log — MUST run before flushing queued
 // offline edits, or another device's delete could be resurrected by our flush.
+// → 'ok' (the cloud answered), 'refused' (this login has no access: said once,
+// noteNoAccess) or 'failed' (no connection) — the queue's flush reads it (v123 review).
 async function refreshTombs(){
   try{
     const cur = await withTimeout(window.storage.get('tombs', true), 5000);
     const doc = cur ? (UMCore.safeParse(cur.value, null) || {}) : {};
     absorbTombs(doc);
     reconcileTombs(doc);
-  }catch(e){}
+    syncAgainTombs(doc);
+    return 'ok';
+  }catch(e){ return noteNoAccess('tombs', e) ? 'refused' : 'failed'; }
 }
 // A doctor removed from a clinic (tombstone 'clinicId|doctorId') must not
 // come back from a stale copy of the clinic — at load or in a merge.
@@ -1514,7 +1874,7 @@ function dropTombedDoctors(c){
   return c;
 }
 let _flushing = false;
-let _stuckTicks = 0;
+let _refreshFlush = null; // the upload a refresh ends with (loadAllNow): the 20-second round is over only once it is done (round 3)
 let _bootLoaded = false;   // flush only with real, loaded state — never factory globals
 let _lastOfflineToast = 0;
 function offlineToast(msg){
@@ -1528,14 +1888,33 @@ async function flushOutbox(){
   if(_flushing || !navigator.onLine || !_bootLoaded || !currentUser) return;
   if(typeof retryPhotos === 'function') retryPhotos(); // photos kept on this phone until the cloud holds them (12-reports.js) — in the background, even with nothing queued
   dropQueuedErpMap(); // never replayed (see dropQueuedErpMap)
+  // A list the rules refused is sent again now and then (round 3: about hourly),
+  // as well as at a sign-in and on the bar's "Try again".
+  let due = 0;
+  [..._saveParked.entries()].forEach(([k, why]) => { if(why === 'refused' && Date.now() - (_parkedAt.get(k) || 0) >= PARK_RETRY_MS){ _saveParked.delete(k); _parkedAt.delete(k); due++; } });
+  if(due){ renderTooLargeBar(); updateSyncBadge(); }
   const pending = outboxList();
-  if(!pending.length) return;
+  // nothing the round may send (too large for the cloud, refused by the rules): nothing to do here,
+  // and the refresh goes on for every other list (bgRefresh, round 3)
+  if(!pending.some(k => !_saveBlocked.has(k) && _saveParked.get(k) !== 'refused')) return;
   _flushing = true;
   let allOk = true;
   const memOnly0 = _memOnly.size; // its own "Saved" toast says it when such a save lands
+  const who = currentUser;
   try{
-    await refreshTombs(); // learn the team's deletes before pushing our queue
+    const tr = await refreshTombs(); // learn the team's deletes before pushing our queue
+    // The cloud answers this login again: what waited for access goes now.
+    // It refuses this login everything (signed out, a sign-in that ended):
+    // nothing is sent, all of it stays on this phone and in the queue (v123 review).
+    if(tr === 'ok') unparkSaves('noAccess');
+    else if(tr === 'refused'){ pending.forEach(k => { if(!_saveParked.has(k)) parkSave(k, 'noAccess'); }); allOk = false; return; }
     for(const key of pending){
+      // signed out (or someone else signed in) while this ran: the rest waits on this phone for the next round
+      if(currentUser !== who){ allOk = false; break; }
+      // a list too large for the cloud stays kept on this phone, but the round
+      // does not send it again by itself (v123): a tap does (saveBlocked); so
+      // does a list the cloud refused (parked, kept on this phone: v123 review)
+      if(_saveBlocked.has(key) || _saveParked.has(key)){ allOk = false; continue; }
       const ok = key==='tombs' ? await persistTombs()
         : (key==='chat'||key==='memories') ? await persistTeam(key) : await persist(key);
       if(!ok) allOk = false;
@@ -1551,7 +1930,7 @@ async function flushOutbox(){
 }
 function updateSyncBadge(){
   let el = document.getElementById('syncPill');
-  const n = outboxList().length;
+  const n = outboxList().filter(k => !_saveBlocked.has(k) && !_saveParked.has(k)).length; // a list too large for the cloud, or one the cloud refused, is not uploading: the red bar says so (v123)
   const show = (!navigator.onLine || n > 0) && !_memOnly.size; // the red bar (renderMemOnlyBar) says it all on a full phone
   if(!show){ if(el) el.style.display='none'; return; }
   if(!el){
@@ -1571,8 +1950,14 @@ function tombSet(key){ return _tombstones[key] || new Set(); }
 // merged field by field (UMCore.merge3Record): what this phone did not change
 // takes the cloud's value, so an offline phone's upload no longer undoes what
 // another phone changed meanwhile. Without it: this phone's copy wins, as before.
-function mergeById(key, local, cloud, base){
+// Visits (v123) merge the same way against the document's own base; a base
+// value that is a fingerprint (kept on the phone while the visits waited in
+// the queue) takes the cloud's whole visit when this phone did not change it.
+// `patches` (visits): filled with what the merge took from the cloud for each
+// visit on screen, so the caller puts it on screen once the write has landed.
+function mergeById(key, local, cloud, base, patches){
   if(!Array.isArray(cloud)) return { merged: local, recovered: 0 };
+  keepWhatCloudHolds(key, cloud); // brought back elsewhere on an older app: kept, never deleted again (v123 review; round 3: also under a delete published again)
   const ts = _tombstones[key] || new Set();
   if(base && key === 'clinics') cloud = normalizeClinics(cloud); // compared with the base, which is normalized the same way
   // Deleted ids are dropped from BOTH sides: our own deletes never come back
@@ -1582,11 +1967,19 @@ function mergeById(key, local, cloud, base){
   let recovered = 0;
   const cloudById = {};
   cloud.forEach(x => { if(x && x.id != null) cloudById[x.id] = x; });
-  const fieldMerge = key === 'clinics' ? { doctors: (L, C, B) => { const m = UMCore.mergeDoctorLists3(L, C, B); Object.assign(_docRemap, m.remap); return m.doctors; } } : null;
+  const fieldMerge = key === 'clinics' ? { doctors: (L, C, B) => UMCore.mergeDoctorLists3(L, C, B).doctors } // by id: two records of one name both stay (v123)
+    : (key === 'visits' && typeof UMCore.mergePhotos3 === 'function') ? { photos: (L, C, B) => UMCore.mergePhotos3(L, C, B) } : null;
   const merged = localKept.map(x => {
     const bx = base && x && x.id != null ? base.get(x.id) : null;
-    if(!bx || !cloudById[x.id] || typeof UMCore.merge3Record !== 'function') return x; // (an old cached core.js: as before)
-    const r = UMCore.merge3Record(x, cloudById[x.id], bx, fieldMerge);
+    const cx = x && x.id != null ? cloudById[x.id] : null;
+    if(bx == null || !cx) return x;
+    if(typeof bx === 'string'){ // a fingerprint (visits): unchanged here since the cloud confirmed it → the cloud's visit
+      if(typeof UMCore.recordHash !== 'function' || UMCore.recordHash(x) !== bx || JSON.stringify(cx) === JSON.stringify(x)) return x;
+      recovered++;
+      return cx;
+    }
+    if(typeof UMCore.merge3Record !== 'function') return x; // (an old cached core.js: as before)
+    const r = UMCore.merge3Record(x, cx, bx, fieldMerge);
     if(r.fromCloud) recovered++;
     // a doctor the team removed never comes back from the cloud's side of the
     // three-way merge (a stale copy, or a phone still on an older version)
@@ -1595,20 +1988,30 @@ function mergeById(key, local, cloud, base){
   // A photo the cloud already holds stays uploaded (v122): a phone whose copy
   // of the visit still says "waiting to upload" never puts that mark back.
   if(key === 'visits' && typeof UMCore.settlePhotoMarks === 'function') merged.forEach(x => { if(x && cloudById[x.id]) UMCore.settlePhotoMarks(x, cloudById[x.id]); });
+  // What the merge took from the cloud for each visit on screen, field by field
+  // with the value the screen had (an edit made while the write is on its way
+  // is never overwritten when the caller applies it).
+  if(patches) merged.forEach((m, i) => {
+    const x = localKept[i];
+    if(m === x || !x || typeof x !== 'object') return;
+    const fields = [], ks = new Set(Object.keys(x).concat(Object.keys(m)));
+    ks.forEach(k => { const a = JSON.stringify(x[k] === undefined ? null : x[k]); if(a !== JSON.stringify(m[k] === undefined ? null : m[k])) fields.push([k, a, m[k]]); });
+    if(fields.length) patches.push({ obj: x, fields });
+  });
   cloud.forEach(x => {
     if(x && x.id != null && !have.has(x.id) && !ts.has(x.id)){ merged.push(x); recovered++; }
   });
   // A clinic's doctors are a shared list: a doctor added on another device
-  // is kept (union by id, then by person) instead of being overwritten by
-  // this device's older copy of the clinic.
+  // is kept (union by id) instead of being overwritten by this device's older
+  // copy of the clinic. Two records of one name both stay (v123: the
+  // supervisor merges them by tap — never this union).
   if(key === 'clinics') merged.forEach(x => {
     const cx = x && cloudById[x.id];
     if(!cx || !Array.isArray(cx.doctors) || !cx.doctors.length) return;
     const before = (x.doctors || []).length;
     const dt = _tombstones.doctors || new Set();
-    const m = UMCore.mergeDoctorLists(x.doctors || [], cx.doctors.filter(d => d && !dt.has(x.id + '|' + d.id)));
+    const m = (typeof UMCore.unionDoctorsById === 'function' ? UMCore.unionDoctorsById : UMCore.mergeDoctorLists)(x.doctors || [], cx.doctors.filter(d => d && !dt.has(x.id + '|' + d.id)));
     x.doctors = m.doctors;
-    Object.assign(_docRemap, m.remap);
     if(x.doctors.length !== before) recovered++;
   });
   return { merged, recovered };
@@ -1622,6 +2025,11 @@ function mergeById(key, local, cloud, base){
 // every record is this phone's copy, exactly as before.
 const BASE_KEYS = { clinics: 1, tasks: 1, events: 1 };
 const _mergeBase = {}, _mergeBaseStr = {};
+// Day plans and visits keep their base on the phone too while queued (v123):
+// day plans as the text of _dpBase; visits as id → fingerprint of each visit as
+// the cloud last confirmed it (UMCore.recordHash — the full copy would double
+// what the visits take on the phone), from the documents this phone read or
+// wrote, else the fingerprints it kept or took from its copy at start.
 function setMergeBase(key, str){
   if(!BASE_KEYS[key]) return;
   const arr = typeof str === 'string' ? UMCore.safeParse(str, null) : null;
@@ -1631,18 +2039,134 @@ function setMergeBase(key, str){
   _mergeBaseStr[key] = str;
 }
 function mergeBaseFor(key){ return (BASE_KEYS[key] && _mergeBase[key]) || null; }
-function keepMergeBaseOnPhone(key){ if(BASE_KEYS[key] && _mergeBaseStr[key] != null){ try{ localStorage.setItem('um_base:' + key, _mergeBaseStr[key]); }catch(e){} } }
-function dropMergeBaseOnPhone(key){ if(BASE_KEYS[key]){ try{ localStorage.removeItem('um_base:' + key); }catch(e){} } }
+function keepMergeBaseOnPhone(key){
+  let str = null;
+  if(BASE_KEYS[key]) str = _mergeBaseStr[key];
+  else if(key === 'dayPlans') str = _dpBase;
+  else if(key === 'visits'){
+    const m = visitsBaseFingerprints();
+    str = m && m.size ? JSON.stringify(Object.fromEntries(m)) : null;
+    // beside the fingerprints, the whole base record of each visit this phone
+    // changed (only those: a copy of every visit would double what the visits
+    // take on the phone) — a reopen then still merges it field by field
+    const recs = m && m.size ? visitsChangedBases(m) : {};
+    try{ if(Object.keys(recs).length) localStorage.setItem('um_base:visitsRec', JSON.stringify(recs)); else localStorage.removeItem('um_base:visitsRec'); }catch(e){}
+  }
+  if(str != null){ try{ localStorage.setItem('um_base:' + key, str); }catch(e){} }
+}
+// id → the base record (as the cloud last confirmed it) of every visit on
+// screen whose fingerprint differs from it: kept from earlier, else from the
+// documents this session read, else from the phone's copy (before this save
+// replaces it: a visit it had not changed then is still its base).
+function visitsChangedBases(fps){
+  const out = {}, today = todayStr();
+  const dirty = _visitsDirtyDocs; _visitsDirtyDocs = null; // (unknown → every document: a few ms more, never a visit missed)
+  let docs = null, copy = null;
+  const index = (map, str) => { const a = typeof str === 'string' ? UMCore.safeParse(str, null) : null; if(Array.isArray(a)) a.forEach(v => { if(v && v.id != null && !map.has(v.id)) map.set(v.id, v); }); };
+  const fromDocs = id => { if(!docs){ docs = new Map(); index(docs, _visitsLoaded); Object.keys(_visitsArch).forEach(mo => index(docs, _visitsArch[mo].json)); } return docs.get(id); };
+  const fromCopy = id => { if(!copy){ copy = new Map(); index(copy, mirrorGet('visits')); } return copy.get(id); };
+  (visits || []).forEach(v => {
+    if(!v || v.id == null) return;
+    const fp = fps.get(v.id);
+    if(typeof fp !== 'string') return; // new here: no base
+    const kept = _visitsBaseRecs && _visitsBaseRecs.get(v.id);
+    if(kept && UMCore.recordHash(kept) === fp){ out[v.id] = kept; return; } // changed before: its base is kept already
+    if(dirty && !dirty.has(UMCore.visitHome(v, today))) return; // its document is as the cloud last confirmed it
+    if(UMCore.recordHash(v) === fp) return; // unchanged: the fingerprint says it all
+    for(const get of [fromDocs, fromCopy]){
+      const b = get(v.id);
+      if(b && typeof b === 'object' && UMCore.recordHash(b) === fp){ out[v.id] = b; return; }
+    }
+  });
+  return out;
+}
+function dropMergeBaseOnPhone(key){
+  if(BASE_KEYS[key] || key === 'dayPlans' || key === 'visits'){ try{ localStorage.removeItem('um_base:' + key); if(key === 'visits') localStorage.removeItem('um_base:visitsRec'); }catch(e){} }
+}
 function mergeBaseFromPhone(key){
-  if(!BASE_KEYS[key] || _mergeBase[key]) return;
+  if(key === 'dayPlans' && _dpBase != null) return;
+  if(key === 'visits' && (_visitsBaseHash || _visitsLoaded != null)) return;
+  if(BASE_KEYS[key] && _mergeBase[key]) return;
+  if(!BASE_KEYS[key] && key !== 'dayPlans' && key !== 'visits') return;
   let s = null; try{ s = localStorage.getItem('um_base:' + key); }catch(e){}
-  if(s != null) setMergeBase(key, s);
+  if(s == null) return;
+  if(key === 'dayPlans'){ if(UMCore.safeParse(s, null)) _dpBase = s; return; }
+  if(key === 'visits'){ // the fingerprints kept beside a queued or unfinished save come first
+    const o = UMCore.safeParse(s, null);
+    if(o && typeof o === 'object' && !Array.isArray(o)){
+      _visitsBaseHash = new Map(Object.entries(o).filter(([, h]) => typeof h === 'string')); _visitsBaseText = null; _visitsBaseParsed = null;
+      let r = null; try{ r = UMCore.safeParse(localStorage.getItem('um_base:visitsRec'), null); }catch(e){}
+      _visitsBaseRecs = r && typeof r === 'object' && !Array.isArray(r) ? new Map(Object.entries(r).filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v))) : null;
+    }
+    return;
+  }
+  setMergeBase(key, s);
+}
+// id → fingerprint of every visit the cloud last confirmed to this phone: the
+// documents read or written this session, else the fingerprints kept earlier.
+// Each document's fingerprints are kept while its text is the same, so only a
+// month that changed is read again (a queue of offline saves asks at every save).
+const _vbhDoc = {};
+function visitsBaseFingerprints(){
+  const fb = visitsFallbackBase(), map = new Map();
+  if(fb) fb.forEach((v, id) => map.set(id, typeof v === 'string' ? v : UMCore.recordHash(v)));
+  const docs = { live: _visitsLoaded };
+  Object.keys(_visitsArch).forEach(m => { docs[m] = _visitsArch[m].json; });
+  Object.keys(docs).forEach(d => {
+    const str = docs[d];
+    if(typeof str !== 'string') return;
+    let memo = _vbhDoc[d];
+    if(!memo || memo.str !== str){
+      const arr = UMCore.safeParse(str, null);
+      memo = _vbhDoc[d] = { str, pairs: Array.isArray(arr) ? arr.filter(v => v && v.id != null).map(v => [v.id, UMCore.recordHash(v)]) : [] };
+    }
+    memo.pairs.forEach(([id, h]) => map.set(id, h));
+  });
+  return map;
+}
+// The base of a whole document's compare-and-set, kept beside the phone's copy
+// when that copy holds an edit the cloud has not confirmed (a save that did not
+// land, or a refresh that ran while it was on its way): a start without a
+// connection then still compares with what the cloud last held, instead of
+// calling this phone's own edit "changed on another device" (v123).
+function keepDocBaseOnPhone(key, shown){
+  const b = _docLoaded[key];
+  try{
+    if(b === undefined || shown === b) localStorage.removeItem('um_docbase:' + key);
+    else localStorage.setItem('um_docbase:' + key, JSON.stringify({ v: b }));
+  }catch(e){}
+}
+function dropDocBaseOnPhone(key){ try{ localStorage.removeItem('um_docbase:' + key); }catch(e){} }
+function docBaseFromPhone(key){
+  let o = null; try{ o = UMCore.safeParse(localStorage.getItem('um_docbase:' + key), null); }catch(e){}
+  return o && typeof o === 'object' && 'v' in o && (o.v === null || typeof o.v === 'string') ? o.v : undefined;
 }
 // Day plans merge three ways: the lists this device changed since it last
 // loaded/saved (_dpBase) win, every other date|rep list takes the cloud's —
 // so a clinic removed from a plan on another device stays removed.
 let _dpBase = null;
+// A day's plan emptied here or elsewhere (date|rep in the delete log) and planned again — moved
+// back, planned again for that date, a follow-up on that day, "Add to today's plan", the
+// supervisor planning it, a rename back: every plan save passes here. The delete stayed in the
+// log, and the next plan save on ANY phone whose copy of that day had not changed erased the day
+// from the cloud and from every screen (round 4). Now the delete leaves the log (untomb: written
+// down as brought back, so a phone that still holds it lets it go) BEFORE the plan is written.
+// Only a day THIS phone changed since its base: a stale copy never brings a deleted day back.
+async function revivePlannedDays(local, baseStr){
+  const t = _tombstones.dayPlans, owed = outboxHas('tombs'); // a revival still waiting in the queue goes before the plan too
+  const base = baseStr ? UMCore.safeParse(baseStr, null) : null;
+  if(!t || !t.size || !local || typeof local !== 'object' || !base || typeof base !== 'object'){ if(owed) await persistTombs(); return; } // (no base: nothing tells what this phone changed)
+  const keys = [];
+  Object.keys(local).forEach(d => Object.keys(local[d] || {}).forEach(r => {
+    const k = d + '|' + r, L = local[d][r], B = base[d] ? base[d][r] : undefined;
+    if(t.has(k) && Array.isArray(L) && L.length && JSON.stringify(L) !== JSON.stringify(B === undefined ? null : B)) keys.push(k);
+  }));
+  if(!keys.length){ if(owed) await persistTombs(); return; }
+  keys.forEach(k => untomb('dayPlans', k, true));
+  await persistTombs(); // one write of the log; not landed → it waits in the queue, and is sent again before the plan
+}
 function mergeDayPlans(local, cloud, baseStr){
+  keepWhatCloudHolds('dayPlans', cloud); // (as mergeById: a plan an older app brought back stays)
   const b = baseStr !== undefined ? baseStr : _dpBase; // the base the saved list was taken with (an overlapping save may move _dpBase)
   const base = b ? UMCore.safeParse(b, null) : null;
   return UMCore.mergeDayPlans3(local || {}, cloud || {}, base, _tombstones.dayPlans);
@@ -1676,6 +2200,10 @@ async function persist(key, opts){
 }
 async function persistNow(key, opts){
   opts = opts || {};
+  // What THIS call did — kept for persistOutcome, and told to its own caller
+  // (opts.told, see persistFor / persistTold): another save of the same key
+  // can start before that caller gets to read persistOutcome.
+  const tell = info => { _persistInfo[key] = info; if(typeof opts.told === 'function'){ try{ opts.told(info); }catch(e){} } };
   // Account links are saved one account at a time with a compare-and-set
   // (saveErpLink, 11-erp.js). A whole-map write here would silently undo a
   // link another device saved meanwhile — refused, and loudly, so a caller
@@ -1690,27 +2218,35 @@ async function persistNow(key, opts){
   // exactly how a whole team's list gets destroyed.
   if(key === 'clinics' && _seedClinics && !opts.allowSeed){
     showToast('⚠️ بيانات العيادات لم تُحمَّل بشكل صحيح — أعد فتح التطبيق قبل الحفظ');
+    tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: true }); // its own words above say why
     return false;
   }
-  if(key === 'erpSales') return persistErpSales(); // split storage: index + row chunks
+  if(key === 'erpSales'){ // split storage: index + row chunks; a failure keeps the red retry bar (never queued)
+    const ok = await persistErpSales();
+    tell(ok === true ? { ok: true } : Object.assign({ ok: false, queued: false, mirrored: false, erp: true }, _erpSaveFail || {}));
+    return ok;
+  }
   const map = {clinics, products, visits, tasks, dayPlans, events, targets, staff, recycleBin, benchmarks: BENCHMARKS, categoryGuides, erpSales, erpMap, erpNotes};
+  // The recycle bin keeps 30 days: pruned on every write of it (v123), not
+  // only when its screen opens — an old bin grew towards the cloud's size
+  // limit, and past it every delete was refused.
+  if(key === 'recycleBin' && typeof pruneBin === 'function') pruneBin();
   let value = key === 'clinics' ? storedClinics() : map[key]; // hoisted: the catch mirrors the MERGED copy, not the pre-merge one
   const base0 = mergeBaseFor(key); // the base this list was taken with: an overlapping save of the same list may move it meanwhile
   const dpBase0 = _dpBase;          // likewise for the day plans
   _persistInfo[key] = null;
-  // What THIS call did — kept for persistOutcome, and told to its own caller
-  // (opts.told, see persistFor): another save of the same key can start before
-  // that caller gets to read persistOutcome.
-  const tell = info => { _persistInfo[key] = info; if(typeof opts.told === 'function'){ try{ opts.told(info); }catch(e){} } };
   try{
     if(key === 'visits'){
       await persistVisits(opts); // live + archives + index; throws when the cloud is unreachable
       if(outboxHas('visits')) outboxRemove('visits');
+      dropMergeBaseOnPhone('visits'); // the documents just written are the base now
+      saveUnblocked('visits');
       tell({ ok: true });
-      if(!Object.keys(_mirrorUsed).length && !_bootCrashed && !_seedClinics) maybeSnapshot();
+      maybeSnapshot(); // only from a copy that is the cloud's (snapshotReadOk)
       return true;
     }
     if(MERGE_KEYS[key] || key === 'dayPlans'){
+      if(key === 'dayPlans') await revivePlannedDays(value, dpBase0);
       // The team's delete log first, so a record another device deleted since
       // our load is dropped from the union instead of being resurrected.
       await refreshTombs();
@@ -1720,8 +2256,9 @@ async function persistNow(key, opts){
       // additions. If the cloud is unreachable we never fall back to a blind
       // overwrite — the save queues in the offline outbox and uploads merged.
       const local = value;
-      let refused = false, applied = null;
+      let refused = false, applied = null, big = 0;
       const mergeFn = cloudStr => {
+        refused = false; big = 0; // a transaction may run more than once: each run starts clean
         const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
         let v = local;
         if(cloud){
@@ -1738,13 +2275,18 @@ async function persistNow(key, opts){
           }
           applied = { value: v, recovered: r.recovered };
         } else applied = { value: v, recovered: 0 };
-        return JSON.stringify(v);
+        const s = JSON.stringify(v);
+        // A list the cloud cannot store (v123): nothing is written, and it is said — never queued.
+        if(!UMCore.fitsBytes(s, DOC_MAX_BYTES)){ big = UMCore.utf8Len(s); return null; }
+        return s;
       };
       const written = await storageUpdate(key, mergeFn, 12000);
       if(refused){
         showToast('🛑 مُنع حفظٌ كان سيحذف معظم العيادات — افتح النسخ الاحتياطية إذا كانت القائمة ناقصة');
+        tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: true }); // its own words above say why
         return false;
       }
+      if(big) throw tooLargeError(key, null, big);
       if(written == null) throw new Error('update failed');
       value = applied ? applied.value : local;
       // Reflect the merge on screen when it changed anything: entries another
@@ -1762,72 +2304,319 @@ async function persistNow(key, opts){
       setMergeBase(key, written); dropMergeBaseOnPhone(key); // likewise for clinics, tasks, events
       mirrorSave(key, written);
       if(outboxHas(key)) outboxRemove(key);
+      saveUnblocked(key);
       tell({ ok: true });
-      if(['clinics','visits','tasks'].includes(key) && !Object.keys(_mirrorUsed).length &&
-         !_bootCrashed && !_seedClinics) maybeSnapshot(); // never snapshot stale or partial state
+      if(['clinics','visits','tasks'].includes(key)) maybeSnapshot(); // never stale or partial state (snapshotReadOk)
       return true;
     }
-    // A whole-document key this device could not READ (timeout on a fresh
-    // phone, no mirror) holds this device's defaults, not the team's data —
-    // writing it would replace the team's recycle bin / targets / catalog
-    // with an empty one. Re-read first; a bin unions, anything else refuses.
-    if(_loadFailed[key]){
-      const fresh = await withTimeout(window.storage.get(key, true), 5000); // unreachable → offline path below
-      if(fresh && fresh.value != null){
-        if(key === 'recycleBin'){
-          value = UMCore.mergeRecycleBin(UMCore.safeParse(fresh.value, null), value);
-          recycleBin = value;
-        } else {
-          offlineToast('⚠️ هذه البيانات لم تُحمَّل من السحابة بعد — أعد فتح التطبيق قبل الحفظ');
-          return false;
-        }
+    // Whole documents (v123): ONE compare-and-set, in a transaction, against the
+    // exact text the copy on screen came from (_docLoaded: read, written by this
+    // phone, or the phone's own copy after a start without a connection). If
+    // another phone saved in between, nothing is written: "Changed on another
+    // device". A transaction needs the server, so a save the app gave up on can
+    // no longer land minutes later over a newer one (the plain set could), and
+    // the first save after a start from the phone's copy is no longer refused
+    // when nothing changed. A copy that was never read (the read failed and the
+    // phone holds none) expects no document at all. The recycle bin and the ERP
+    // notes, which every phone writes, are merged three ways instead (an entry
+    // added or removed on another phone is kept so). A document larger than the
+    // cloud stores is never sent: said, never queued (saveBlocked).
+    const loaded = _loadFailed[key] ? undefined : _docLoaded[key];
+    const merged3 = key === 'recycleBin' || key === 'erpNotes';
+    const str = merged3 ? null : JSON.stringify(value);
+    if(!merged3 && !UMCore.fitsBytes(str, DOC_MAX_BYTES)) throw tooLargeError(key, null, UMCore.utf8Len(str));
+    let conflict = false, big = 0;
+    const fn = cur => {
+      conflict = false; big = 0; // a transaction may run more than once: each run starts clean
+      if(merged3){
+        const c = cur != null ? UMCore.safeParse(cur, null) : null;
+        const s = JSON.stringify(c && typeof c === 'object' ? mergeWholeDoc(key, key === 'recycleBin' ? recycleBin : erpNotes, c, loaded) : (key === 'recycleBin' ? recycleBin : erpNotes));
+        if(!UMCore.fitsBytes(s, DOC_MAX_BYTES)){ big = UMCore.utf8Len(s); return null; }
+        return s;
       }
-      delete _loadFailed[key];
+      if(cur === str) return str; // already there (a run of the transaction whose answer was lost)
+      if(cur !== (loaded === undefined ? null : loaded)){ conflict = true; return null; }
+      return str;
+    };
+    const op = typeof window.storage.update === 'function' ? window.storage.update(key, fn) : storageUpdate(key, fn, 12000);
+    let written;
+    try{ written = await withTimeout(op, 12000); }
+    catch(e){
+      // no answer in time: if the transaction does land after all, the phone follows it
+      // (opts.onLate: what the screen still had to do once it landed — the rename's other lists, v123 review)
+      if(/timeout/.test(String(e && e.message))) Promise.resolve(op).then(late => { if(late != null){ wholeDocLanded(key, late, loaded, true); saveUnblocked(key); showToast('✅ Saved — it reached the cloud late', 5000); if(typeof opts.onLate === 'function'){ try{ opts.onLate(late); }catch(e2){ console.warn('after a late save', e2); } } } }, () => {});
+      throw e; // → "No connection — retry" below (never queued)
     }
-    // A doc served from the mirror is stale by definition — writing it back
-    // over a newer cloud copy is silent data loss. Merge-safe keys are fine
-    // (the union above already reconciled); others must re-read first.
-    if(_mirrorUsed[key] && !(MERGE_KEYS[key] || key === 'dayPlans')){
-      try{
-        const fresh = await withTimeout(window.storage.get(key, true), 5000);
-        if(fresh && fresh.value != null && JSON.stringify(UMCore.safeParse(fresh.value, null)) !== JSON.stringify(value)){
-          offlineToast('⚠️ This data was refreshed elsewhere — reopen the app before saving again');
-          return false;
-        }
-        delete _mirrorUsed[key]; // cloud reachable and identical: safe to write
-      }catch(e){ throw e; } // still unreachable -> offline path below
+    if(conflict){
+      if(!opts.quietConflict){
+        const msg = loaded === undefined ? '⚠️ هذه البيانات لم تُحمَّل من السحابة بعد — أعد فتح التطبيق قبل الحفظ' : '⚠️ Changed on another device — reopen the app, then save again';
+        showToast(msg, 6000);
+        refusedSave(key, loaded === undefined ? REFUSED_NOT_READ : REFUSED_ELSEWHERE); // stays said, whatever the screen that saved says next
+      }
+      tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: !opts.quietConflict }); // its own words above (and the bar) say why
+      return false;
     }
-    const str = JSON.stringify(value);
-    const res = await withTimeout(window.storage.set(key, str, true), 7000);
-    if(!res){ showToast('Save failed, try again'); return false; }
-    mirrorSave(key, str);
+    if(big) throw tooLargeError(key, null, big);
+    if(written == null) throw new Error('update failed');
+    wholeDocLanded(key, written, loaded);
     if(outboxHas(key)) outboxRemove(key);
+    saveUnblocked(key);
     tell({ ok: true });
     return true;
   }catch(e){
+    // Refused by the security rules, or larger than the cloud can store: it
+    // can never land as it is — said at once, never queued (v123). A refusal
+    // on a phone that has lost its access to the team's data (signed out, a
+    // sign-in that ended) is not the rules' "no": kept and queued below, like a
+    // save with no connection, and sent once access is back (v123 review).
+    const kind = saveErrKind(e);
+    const acc = kind === 'refused' ? await accessCheck() : null;
+    const lost = acc === 'lost', unsure = acc === 'unknown'; // unsure (round 3): kept and queued like an offline save, tried again by the round
+    if(kind && !lost && !unsure){
+      // a list already waiting in the queue keeps this change with the others on the phone (round 3: "kept on this phone" is then true of it too)
+      if(kind === 'refused' && (MERGE_KEYS[key] || key === 'dayPlans') && outboxHas(key)){
+        const v = (typeof value !== 'undefined' && value !== null) ? value : map[key];
+        keepMergeBaseOnPhone(key);
+        if(!mirrorSave(key, JSON.stringify(v))){ _memOnly.add(key); renderMemOnlyBar(); } // the phone is full: only in memory, said by the red bar
+      }
+      tell(saveBlocked(key, kind, e)); return false;
+    }
     // Cloud unreachable. Merge-safe lists queue for an automatic, union-based
     // upload; whole-document supervisor files do NOT (a delayed overwrite
     // could erase a newer cloud version) — those ask for a manual retry.
     const queueable = MERGE_KEYS[key] || key === 'dayPlans';
     const toSave = (typeof value !== 'undefined' && value !== null) ? value : map[key]; // the MERGED copy when the merge ran
+    // What the cloud last confirmed: the upload merges against it, even after a
+    // reopen — kept before the phone's copy is replaced (the copy it replaces
+    // holds the base of a visit this save is the first to change, v123 review).
+    if(queueable) keepMergeBaseOnPhone(key);
     const mOk = mirrorSave(key, JSON.stringify(toSave));
     let onPhone = mOk;
     if(queueable){
       // Queued even when the device store is full: the copy in memory still
       // uploads the moment the cloud is back — as long as the app stays open.
       onPhone = outboxAdd(key) && mOk; // the queue entry and the copy, both on the phone
-      keepMergeBaseOnPhone(key); // what the cloud last confirmed: the upload merges against it, even after a reopen
+      if(lost) parkSave(key, 'noAccess');
       if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); } // the truth stays on screen until it uploads
       updateSyncBadge();
-      offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
-                           : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+      if(lost || unsure) noAccessToast(onPhone ? (lost ? NO_ACCESS_KEPT : ACCESS_UNKNOWN_KEPT) : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+      else offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
+                                : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     } else {
-      offlineToast(mOk ? '📴 No connection — retry this save when back online'
-                       : '⚠️ Device storage full — retry this save when back online');
+      if(WHOLE_DOCS.includes(key)) keepDocBaseOnPhone(key, JSON.stringify(toSave)); // the phone's copy now holds an edit the cloud has not: keep what the cloud held beside it
+      if(lost || unsure) noAccessToast(lost ? NO_ACCESS_NOT_SAVED : ACCESS_UNKNOWN_NOT_SAVED);
+      else offlineToast(mOk ? '📴 No connection — retry this save when back online'
+                            : '⚠️ Device storage full — retry this save when back online');
     }
-    tell({ ok: false, queued: !!queueable, mirrored: onPhone });
+    // a whole document whose answer did not come in time may still land (followed above): said as "no answer yet", never as "not saved"
+    tell({ ok: false, queued: !!queueable, mirrored: onPhone, noAccess: lost || undefined, accessUnknown: unsure || undefined, timeout: !queueable && /timeout/.test(String(e && e.message)) });
     return false;
   }
+}
+// A whole document's merge with the cloud's copy (the recycle bin, the ERP
+// notes), three ways against the text the copy on screen came from (`loaded`:
+// null = there was no document, undefined = never read → a union).
+function mergeWholeDoc(key, mine, cloud, loaded){
+  const empty = key === 'recycleBin' ? { clinics: [], products: [], visits: [] } : {};
+  const base = loaded === undefined ? null : (loaded === null ? empty : UMCore.safeParse(loaded, null));
+  if(key === 'recycleBin'){
+    const m = Object.assign({ clinics: [], products: [], visits: [] }, typeof UMCore.mergeRecycleBin3 === 'function' ? UMCore.mergeRecycleBin3(mine, cloud, base) : UMCore.mergeRecycleBin(cloud, mine));
+    // the bin keeps 30 days on every write (v123), whatever another phone's copy still held
+    const cutoff = Date.now() - (typeof BIN_DAYS === 'number' ? BIN_DAYS : 30) * 86400000;
+    ['clinics', 'products', 'visits'].forEach(k => { m[k] = (Array.isArray(m[k]) ? m[k] : []).filter(x => x && (x._deletedAt || 0) > cutoff); });
+    return m;
+  }
+  return typeof UMCore.mergeKeyed3 === 'function' ? UMCore.mergeKeyed3(mine, cloud, base) : Object.assign({}, cloud, mine);
+}
+// The cloud now holds `str` for a whole document: it is the base of the next
+// compare-and-set and the phone's copy; a merged document's screen copy takes
+// what the merge kept from other phones (and keeps what changed here since).
+// A save that landed late (`late`) after a refresh had read the document again
+// is left to the next refresh (the copy on screen is that read's).
+function wholeDocLanded(key, str, loaded, late){
+  if(late && _docLoaded[key] !== loaded) return;
+  refusedSave(key, null); // a save of it landed: no refusal left to say
+  _docLoaded[key] = str;
+  delete _loadFailed[key]; delete _mirrorUsed[key];
+  mirrorSave(key, str);
+  dropDocBaseOnPhone(key);
+  if(key === 'recycleBin' || key === 'erpNotes'){
+    const w = UMCore.safeParse(str, null);
+    if(w && typeof w === 'object'){
+      if(key === 'recycleBin') recycleBin = mergeWholeDoc(key, recycleBin, w, loaded);
+      else erpNotes = mergeWholeDoc(key, erpNotes, w, loaded);
+    }
+  }
+}
+// A whole document whose save was refused stays said by a bar until a save of
+// it lands or it is tapped away (v123): several screens still say "saved"
+// right after a save whatever its outcome, and that toast would otherwise be
+// the last word.
+const REFUSED_ELSEWHERE = '⚠️ Not saved — changed on another device. Reopen the app, then save again';
+const REFUSED_NOT_READ = '⚠️ Not saved — this did not load from the cloud. Reopen the app, then save again';
+const _refused = new Map(); // key → what to say
+function refusedSave(key, msg){
+  if(msg) _refused.set(key, msg); else if(!_refused.delete(key)) return;
+  let el = document.getElementById('refusedPill');
+  if(!_refused.size){ if(el) el.remove(); return; }
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'refusedPill'; el.setAttribute('role', 'alert');
+    el.style.cssText = 'position:fixed; top:78px; left:50%; transform:translateX(-50%); z-index:9999; max-width:92vw; background:#B3261E; color:#fff; font-size:11.5px; font-weight:700; padding:6px 14px; border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.25); cursor:pointer; text-align:center;';
+    el.onclick = () => { _refused.clear(); el.remove(); };
+    document.body.appendChild(el);
+  }
+  const last = [..._refused.values()].pop();
+  el.textContent = trOf(last) || last;
+}
+// ---- Saves that can never land as they are (v123) ----
+// Until v122 every failed save was "offline": a save the security rules
+// refuse, and a document larger than the cloud stores, were queued with
+// "Saved on this device — uploads automatically", retried every 20 seconds
+// for ever, and while a list waited in the queue this phone stopped showing
+// the others' changes to it. Now each is told for what it is.
+const DOC_MAX_BYTES = 1000000; // the cloud refuses a document above 1 MiB (1,048,576 bytes with its name and fields): a value above this never lands
+const NOT_ALLOWED_MSG = '🔒 Not allowed, not saved (ask the supervisor)';
+// A phone with no access to the team's data (v123 review): what it saves stays on it
+const NO_ACCESS_KEPT = "🔒 Kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again";
+const NO_ACCESS_NOT_SAVED = "🔒 Not saved — no access to the team's data right now (signed out?). Sign in again, then save again";
+// The cloud refused a save and did not answer whether this login may save at all (round 3): kept, tried again
+const ACCESS_UNKNOWN_KEPT = "🔒 Kept on this phone — the cloud did not answer whether this login may save it; it is tried again";
+const ACCESS_UNKNOWN_NOT_SAVED = "🔒 Not saved — the cloud did not answer whether this login may save it. Try again in a moment";
+// A queued list the rules refuse for this login (it is kept on this phone, never "not saved")
+const REFUSED_KEPT = "🔒 Not allowed for this login — kept on this phone, not sent (ask the supervisor)";
+let _noAccessToastAt = 0;
+function noAccessToast(msg){ if(Date.now() - _noAccessToastAt < 60000) return; _noAccessToastAt = Date.now(); showToast(msg, 7000); }
+// A save the security rules refused: the rules' "no" for this login — or has
+// this phone lost its access to the team's data altogether (signed out; a
+// sign-in that ended: a password changed on another device, the login
+// disabled or reset)? It is the rules' only when the app is signed in, the
+// sign-in still holds (a fresh token) and the cloud answers a read right now;
+// anything else keeps the change on this phone (v123 review: a refused save
+// emptied the queue, and every save of a phone whose sign-in had ended was
+// refused). Asked only after a refusal: it costs a save nothing otherwise.
+// → 'ok' (this login has access: the refusal is the rules'), 'lost' (signed
+// out, a sign-in that ended, reads refused too) or 'unknown' (round 3: the
+// check itself got no answer in time, or no connection — kept and tried
+// again, and said for what it is: never "signed out?", never "not saved").
+async function accessCheck(){
+  if(!currentUser) return 'lost';
+  // a refused read, or an auth answer that the sign-in is over → lost; no answer, no network → unknown
+  const why = e => { const c = String(e && e.code || ''); return (saveErrKind(e) === 'refused' || (/^auth\//.test(c) && !/network|internal|too-many/.test(c))) ? 'lost' : 'unknown'; };
+  try{
+    if(FIREBASE_ENABLED && window.firebase && typeof firebase.auth === 'function'){
+      const u = firebase.auth().currentUser;
+      if(!u) return 'lost';
+      await withTimeout(u.getIdToken(true), 8000);
+    }
+  }catch(e){ return why(e); }
+  try{ await withTimeout(window.storage.get('staff', true, { server: true }), 6000); return 'ok'; }
+  catch(e){ return why(e); }
+}
+// A queued list the cloud refused: it stays queued and on this phone, and the
+// round leaves it until it can land (see _saveParked); the red bar says so.
+const _parkedAt = new Map();          // key → when it was parked (a refused list is sent again after PARK_RETRY_MS)
+const PARK_RETRY_MS = 60 * 60000;
+function parkSave(key, why){ _saveParked.set(key, why); _parkedAt.set(key, Date.now()); renderTooLargeBar(); updateSyncBadge(); }
+function unparkSaves(why){
+  let n = 0;
+  [..._saveParked.keys()].forEach(k => { if(!why || _saveParked.get(k) === why){ _saveParked.delete(k); _parkedAt.delete(k); n++; } });
+  if(n){ renderTooLargeBar(); updateSyncBadge(); }
+  return n;
+}
+const PARKED_NO_ACCESS = "🔒 Changes wait on this phone, not sent: no access to the team's data right now (signed out, or the password was changed on another device). Sign in again — they upload by themselves.";
+const PARKED_REFUSED = "🔒 Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone.";
+// 'refused' (the security rules said no) | 'tooLarge' (over the cloud's size
+// limit) | null (anything else: no connection, a timeout — the offline path)
+function saveErrKind(e){
+  if(!e) return null;
+  if(e.tooLarge) return 'tooLarge';
+  const code = String(e.code || ''), msg = String(e.message || e);
+  if(/permission[-_]denied/i.test(code) || /missing or insufficient permissions|permission[-_]denied/i.test(msg)) return 'refused';
+  if(/invalid[-_]argument/i.test(code) && /size|exceed|too (big|large)|maximum/i.test(msg)) return 'tooLarge';
+  if(/exceeds the maximum allowed size|cannot be written because its size|document too large/i.test(msg)) return 'tooLarge';
+  return null;
+}
+function tooLargeError(key, month, bytes){
+  const e = new Error('document too large: ' + key + (month ? ' ' + month : ''));
+  e.tooLarge = true; e.key = key; e.month = month || null; e.bytes = bytes || null;
+  return e;
+}
+// Lists this phone holds changes for that the cloud cannot take because the
+// document is too large: still queued (they are kept on this phone — never
+// thrown away), but never sent by the 20-second round; a save of the same
+// list from a tap tries again, and so does the bar's "Try again".
+// (_saveBlocked and _tooLarge are declared at the top of this file: the sync badge reads them)
+let _refusedToastAt = 0;
+// What to do, said with the month or the list (the bar and the toasts).
+function tooLargeMonthLabel(m){
+  if(!/^\d{4}-\d{2}$/.test(m || '')) return m || '';
+  const d = new Date(+m.slice(0, 4), +m.slice(5, 7) - 1, 1);
+  try{ return d.toLocaleDateString(uiLang === 'ar' ? 'ar-KW-u-nu-latn' : 'en-US', { month: 'long', year: 'numeric' }); }catch(e){ return m; }
+}
+const TOO_LARGE_LIST = { erpSales: 'the sales file', clinics: 'the clinic list', tasks: 'the tasks', events: 'the events', dayPlans: 'the day plans', chat: 'the team chat', memories: 'the memories', recycleBin: 'the recycle bin', products: 'the product catalog', targets: 'the targets', erpNotes: 'the sales notes', staff: 'the team list', benchmarks: 'the settings', categoryGuides: 'the category guides', tombs: 'the delete log' };
+function tooLargeText(t){
+  if(t.key === 'visits') return `🛑 Not saved: the visits of ${tooLargeMonthLabel(t.month)} are too large for the cloud (too many photos). Remove some photos from that month's visits (Edit visit → ×), then save again.` + (t.kept ? ' What this phone holds for them stays on this phone.' : '');
+  return `🛑 Not saved: ${TOO_LARGE_LIST[t.key] || t.key} is too large for the cloud. Ask the supervisor — nothing else was changed.` + (t.kept ? ' What this phone holds stays on this phone.' : '');
+}
+function renderTooLargeBar(){
+  let el = document.getElementById('tooLargeBar');
+  const items = Object.keys(_tooLarge).map(k => _tooLarge[k]);
+  const parked = [..._saveParked.values()]; // queued lists the cloud refused (v123 review): on this bar too
+  if(!items.length && !parked.length){ if(el) el.remove(); return; }
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'tooLargeBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
+    el.style.cssText = 'position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); z-index:10001; background:#B3261E; color:#fff; font-size:12.5px; font-weight:700; line-height:1.45; padding:9px 12px; border-radius:12px; box-shadow:0 2px 12px rgba(0,0,0,.3); text-align:start;';
+    document.body.appendChild(el);
+  }
+  const retry = (items.some(t => t.kept) || parked.length) ? `<button class="chip small" style="margin-top:6px; background:#fff; color:#B3261E;" onclick="retryBlockedSaves()">${esc(trOf('Try again') || 'Try again')}</button>` : '';
+  const lines = items.map(tooLargeText).concat(parked.length ? [parked.includes('noAccess') ? PARKED_NO_ACCESS : PARKED_REFUSED] : []);
+  const html = lines.map(t => `<div>${esc(trOf(t) || t)}</div>`).join('') + retry;
+  if(el.innerHTML !== html) el.innerHTML = html; // an alert: said again only when it changes
+}
+function noteTooLarge(id, info){ _tooLarge[id] = info; renderTooLargeBar(); }
+function clearTooLarge(id){ if(_tooLarge[id]){ delete _tooLarge[id]; renderTooLargeBar(); } }
+// A save of `key` landed: what the bar said about that list is over. (A
+// month of visits leaves the bar when ITS document is written — persistVisitsInner.)
+function saveUnblocked(key){
+  _saveBlocked.delete(key);
+  if(_saveParked.delete(key)){ renderTooLargeBar(); updateSyncBadge(); }
+  if(key !== 'visits') clearTooLarge(key);
+}
+// The bar's "Try again": a list kept on this phone is sent once more (a list
+// the cloud refused too: v123 review).
+async function retryBlockedSaves(){
+  const keys = [...new Set([..._saveBlocked, ..._saveParked.keys()])];
+  _saveBlocked.clear(); unparkSaves();
+  for(const k of keys){ if(k === 'chat' || k === 'memories') await persistTeam(k); else if(k === 'tombs') await persistTombs(); else await persist(k); }
+}
+// What a save that cannot land does, and what it tells (persistNow's outcome).
+function saveBlocked(key, kind, e){
+  const queued = outboxHas(key);
+  if(kind === 'refused'){
+    console.warn('save refused by the security rules: ' + key, e && (e.code || e.message)); // said on screen
+    // What already waits in the queue stays there and on this phone — never
+    // thrown away (v123 review: it was taken off the queue, set aside where
+    // nothing read it, and the next refresh put the cloud's copy over it).
+    // Parked: the 20-second round stops sending it; a new sign-in, the bar's
+    // "Try again" or the next start sends it again. This save itself is not
+    // saved, and said so.
+    if(queued) parkSave(key, 'refused');
+    // what waits in the queue is kept on this phone: never "not saved" for it (round 3)
+    if(Date.now() - _refusedToastAt > 3000){ _refusedToastAt = Date.now(); showToast(queued ? REFUSED_KEPT : NOT_ALLOWED_MSG, 6000); }
+    return { ok: false, refused: true, denied: true, queued: false, mirrored: false, keptQueued: queued || undefined };
+  }
+  // too large: never queued; a list already queued on this phone stays there
+  // (its changes are kept) but is not sent again by itself
+  const month = (e && e.month) || null, bytes = (e && e.bytes) || null;
+  console.warn('document too large for the cloud: ' + key + (month ? ' ' + month : '') + (bytes ? ' (' + bytes + ' bytes)' : '')); // said on screen (the bar)
+  if(queued) _saveBlocked.add(key);
+  noteTooLarge(key === 'visits' && month ? 'visits:' + month : key, { key, month, bytes, kept: queued });
+  showToast(key === 'visits'
+    ? (month && month !== todayStr().slice(0, 7) ? `🛑 زيارات شهر ${month} كبيرة جدًا — لم تُحفظ: احذف بعض صورها ثم أعد المحاولة` : '🛑 زيارات هذا الشهر كبيرة جدًا (صور كثيرة) — لم تُحفظ: احذف بعض الصور من الزيارات ثم أعد المحاولة')
+    : tooLargeText({ key, month, kept: queued }), 7000);
+  return { ok: false, tooLarge: true, month, bytes, queued, mirrored: queued };
 }
 // What the last persist(key) actually did — so a screen can tell the user
 // the truth ("saved", "saved on this device only", "not saved") instead of
@@ -1849,39 +2638,146 @@ function persistFor(key, opts){
 // it (a later save of the same list carries it, since the list in memory
 // holds it): it is saved.
 function sentSince(key, r){ return !!r && !r.ok && !!(r.outcome && r.outcome.queued) && !outboxHas(key) && persistOutcome(key).ok === true; }
+// persist(key) with what THIS call did and nothing else: { ok, outcome }.
+// Unlike persistFor it never falls back on an earlier save's outcome — a
+// save refused before it tried (a guard; persist's own words say why) reads
+// as not saved, never as "kept on this device". (The same contract as the
+// change-log branch's persistTold.)
+function persistTold(key, opts){
+  let info = null;
+  const told = (ok, refused) => ({ ok: ok === true, outcome: info || { ok: ok === true, queued: false, mirrored: false, refused: !!refused && ok !== true } });
+  return persist(key, Object.assign({}, opts || {}, { told: x => { info = x; } }))
+    .then(ok => told(ok, true), e => { console.warn('save of ' + key + ' failed', e); return told(false, false); });
+}
+// The words for a save that did not land, from what it did (persistTold /
+// persistFor): refused by the rules, too large for the cloud, kept on this
+// phone (it uploads by itself), or not saved. null: it landed, or persist's
+// own words already say why (a guard). [text, ms]
+function saveFailText(r, key){
+  if(!r || r.ok === true || (!!key && sentSince(key, r))) return null;
+  const o = r.outcome || {};
+  if(o.denied) return [o.keptQueued ? REFUSED_KEPT : NOT_ALLOWED_MSG, 6000];
+  if(o.tooLarge) return [tooLargeText({ key, month: o.month || (key === 'visits' ? todayStr().slice(0, 7) : null), kept: !!o.queued }), 8000];
+  if(o.quiet) return null;
+  if(o.erp) return ['⚠️ Not saved yet — tap the red bar to try again', 5000];
+  // no access to the team's data (signed out): kept and queued, or not saved (a whole document) — v123 review
+  if(o.noAccess) return [!o.queued ? NO_ACCESS_NOT_SAVED : o.mirrored ? NO_ACCESS_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000];
+  if(o.accessUnknown) return [!o.queued ? ACCESS_UNKNOWN_NOT_SAVED : o.mirrored ? ACCESS_UNKNOWN_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000]; // (round 3)
+  if(o.queued && o.mirrored) return ['📴 Saved on this device — uploads automatically when back online', 4000]; // the same words as persist's own offline notice
+  if(o.queued) return ['⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000];
+  if(o.refused) return ['⚠️ Not saved — reopen the app, then try again', 5000];      // a guard refused it before any write
+  if(o.timeout) return ['⏳ No answer from the cloud yet — check the connection, then reopen this screen to see whether it was saved', 6000];
+  return ['⚠️ Not saved — check the connection and try again', 4000];
+}
+// The toast for one save: okMsg only when it landed, else what really
+// happened — "saved" never covers a failure. Returns whether it landed.
+function saveToast(r, key, okMsg, ms){
+  const landed = !!r && (r.ok === true || (!!key && sentSince(key, r)));
+  if(landed){ if(okMsg) showToast(okMsg, ms); return true; }
+  const t = saveFailText(r, key);
+  if(t) showToast(t[0], t[1]);
+  return false;
+}
+// One message for a change saved in several lists: okMsg only when every one
+// landed; else what the first that did not land did. pairs: [[result, key], …]
+function saveToastAll(pairs, okMsg, ms){
+  const miss = (pairs || []).find(([r, k]) => r && !(r.ok === true || sentSince(k, r)));
+  if(!miss){ if(okMsg) showToast(okMsg, ms); return true; }
+  saveToast(miss[0], miss[1], okMsg, ms);
+  return false;
+}
 // Atomic read-merge-write where the storage supports it; a plain (non-atomic)
 // read → fn → write otherwise, with the same contract.
-async function storageUpdate(key, fn, ms){
-  if(typeof window.storage.update === 'function') return withTimeout(window.storage.update(key, fn), ms || 12000);
+// onRaw(p): the write itself, which goes on after the time limit (a commit on its way can still
+// land) — a caller that must know whether it landed in the end follows it (the whole-day Restore, round 4)
+async function storageUpdate(key, fn, ms, onRaw){
+  if(typeof window.storage.update === 'function'){ const p = window.storage.update(key, fn); if(typeof onRaw === 'function') onRaw(p); return withTimeout(p, ms || 12000); }
   const cur = await withTimeout(window.storage.get(key, true), 5000);
   const next = fn(cur ? cur.value : null);
   if(next == null) return null;
-  const ok = await withTimeout(window.storage.set(key, next, true), 7000);
+  const sp = window.storage.set(key, next, true);
+  if(typeof onRaw === 'function') onRaw(sp.then(ok => ok ? next : null));
+  const ok = await withTimeout(sp, 7000);
   if(!ok) throw new Error('set failed');
   return next;
 }
 const SNAP_DAY = 'um_snapDay'; // this phone already found or wrote today's backup (v119: no download of it on every start)
+// The daily backup's document: the clinics, the catalog, this month's visits,
+// the tasks and the sales index — as they are in memory now (`extra` adds
+// fields: the whole-day Restore marks the copy it keeps before restoring).
+function snapshotDoc(extra){
+  // The sales index is tiny and its chunks stay in the cloud for a week
+  // after being replaced, so the daily backup can restore the sales files too.
+  const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
+  // Visits: this month only — past months sit in their own archive documents
+  // (untouched by day-to-day saves), which keeps the backup well under the cap.
+  const vp = UMCore.visitsPartition(visits, todayStr());
+  const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
+  return Object.assign({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}, extra || {});
+}
+// The daily backup is ONE document, so the cloud's size limit is its limit
+// too (v123). Measured before it is written: above SNAP_SLIM_BYTES the
+// visits keep their photos' ids but not their small previews (the full
+// photos are their own documents; a whole-day Restore puts back the preview
+// this phone holds under the same id); still over the limit, it is not
+// written and that is said. After a failure this phone waits an hour before
+// it tries again — every try sends the whole backup.
+const SNAP_SLIM_BYTES = 900000;
+const SNAP_RETRY_MS = 3600000;
+const SNAP_FAIL = 'um_snapFail'; // { day, at, why: 'tooLarge' | 'refused' | 'failed', bytes } — this phone's last failed daily backup
+let _snapRunning = false;        // one at a time: saves call it in bursts
+function snapFailInfo(){ try{ const f = UMCore.safeParse(localStorage.getItem(SNAP_FAIL), null); return f && typeof f === 'object' ? f : null; }catch(e){ return null; } }
+function snapFailed(day, why, bytes){
+  console.warn('daily backup not saved: ' + why + (bytes ? ' (' + bytes + ' bytes)' : '')); // said on the backups screen
+  try{ localStorage.setItem(SNAP_FAIL, JSON.stringify({ day, at: Date.now(), why, bytes: bytes || null })); }catch(e){}
+}
+function snapDone(day){ try{ localStorage.setItem(SNAP_DAY, day); localStorage.removeItem(SNAP_FAIL); }catch(e){} }
+// The day's backup is taken only from a copy that is the cloud's: the lists it
+// holds all read in the refresh on screen — none failed (a new phone, cleared
+// site data: v123 review, a backup with none of the month's visits, which no
+// team phone may then replace), none served from the phone's copy, none
+// waiting in the queue — and no start that went wrong.
+function snapshotReadOk(){ return !snapshotBlockedWhy(); }
+// Why this phone does not take the day's backup right now (said on the backups
+// screen while today has none, round 3): 'copy' — a list on screen did not come
+// from the cloud (a read that failed, a list shown from this phone's copy, a
+// start that went wrong); 'queued' — changes of this phone's still wait to
+// upload; null — nothing holds it back.
+function snapshotBlockedWhy(){
+  if(!_bootLoaded || _bootCrashed || _seedClinics || Object.keys(_mirrorUsed).length) return 'copy';
+  if(['clinics', 'visits', 'tasks', 'products'].some(k => _loadFailed[k])) return 'copy';
+  return ['clinics', 'visits', 'tasks'].some(k => outboxHas(k)) ? 'queued' : null;
+}
 async function maybeSnapshot(){
+  if(_snapRunning || !snapshotReadOk()) return;
+  const day = todayStr(), key = 'snap_' + day;
+  try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
+  const fail = snapFailInfo();
+  if(fail && fail.day === day && Date.now() - (fail.at || 0) < SNAP_RETRY_MS) return; // tried within the hour: not again yet
+  _snapRunning = true;
   try{
-    const day = todayStr(), key = 'snap_' + day;
-    try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
     const existing = await window.storage.get(key, true).catch(()=>null);
-    if(existing){ try{ localStorage.setItem(SNAP_DAY, day); }catch(e){} return; } // already snapshotted today
-    // The sales index is tiny and its chunks stay in the cloud for a week
-    // after being replaced, so the daily backup can restore the sales files too.
-    const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
-    // Visits: this month only — past months sit in their own archive documents
-    // (untouched by day-to-day saves), which keeps the backup well under the cap.
-    const vp = UMCore.visitsPartition(visits, todayStr());
-    const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
-    await window.storage.set(key, JSON.stringify({clinics: storedClinics(), products, visits: vp.live, visitsMonths, tasks, erpIndex, ts: new Date().toISOString()}), true);
-    try{ localStorage.setItem(SNAP_DAY, day); }catch(e){}
+    if(existing){ snapDone(day); return; } // already snapshotted today
+    const out = UMCore.snapshotPayload(snapshotDoc(), { slimAt: SNAP_SLIM_BYTES, max: DOC_MAX_BYTES });
+    if(out.tooLarge){ snapFailed(day, 'tooLarge', out.bytes); return; }
+    if(out.slimmed) console.warn(`daily backup: ${out.slimmed} photo previews left out to stay under the size limit (${out.bytes} bytes)`);
+    try{ await window.storage.set(key, out.str, true); }
+    catch(e){
+      // another phone may have written today's backup meanwhile (the team only creates one; the supervisor may replace it)
+      const now = await window.storage.get(key, true).catch(()=>null);
+      if(now){ snapDone(day); return; }
+      const kind = saveErrKind(e);
+      snapFailed(day, kind === 'tooLarge' ? 'tooLarge' : kind === 'refused' ? 'refused' : 'failed', kind === 'tooLarge' ? out.bytes : null);
+      return;
+    }
+    snapDone(day);
     // Keep 12 days: the backups that aged out are deleted by name — listing
     // them would download every backup in full (the cloud has no light listing).
     for(let i = 13; i <= 19; i++){
       const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() - i);
       await window.storage.delete('snap_' + UMCore.localDateStr(d), true).catch(()=>null);
     }
-  }catch(e){ console.error('snapshot error', e); }
+  }catch(e){ console.error('snapshot error', e); snapFailed(day, 'failed', null); }
+  finally{ _snapRunning = false; }
 }
 

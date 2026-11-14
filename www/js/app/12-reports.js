@@ -41,88 +41,18 @@ function openReportForRange(from, to){
   switchView('reports');
   applyReportCustomRange();
 }
-// ---- AI ASSISTANT ----
-// Calls go through a small Netlify Function so the AI key never lives in this
-// page. Absolute URL so the installed Android/PWA app reaches it too.
-const AI_ENDPOINT = 'https://resonant-granita-6e6cce.netlify.app/.netlify/functions/assistant';
-let aiMsgs = [];
-let aiBusy = false;
+// ---- AI ASSISTANT: not available (v123) ----
+// It went through a small function on the old Netlify site, which the team no
+// longer uses (its address answers "site not found"), and every question sent
+// that address the team's clinics, phones, doctors, visit notes, tasks, events,
+// both reps' targets and the catalog. Nothing is sent anywhere now: the ✨
+// button and the More tile are gone, and anything still linking here says it
+// is not available. A future assistant must check the signed-in user first.
 function openAssistant(){
   showModal(`
     <h3 style="margin-top:0;">${I('sparkles')} Assistant</h3>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Ask anything about your clinics, visits, products or plans — in Arabic or English. It only sees this app's data.</p>
-    <div id="aiThread" style="max-height:45vh; overflow-y:auto; margin-bottom:10px;"></div>
-    <div style="display:flex; gap:8px;">
-      <input type="text" id="aiInput" dir="auto" placeholder="e.g. What should I focus on this week?" onkeydown="if(event.key==='Enter') sendAssistant()">
-      <button class="btn" style="width:auto; padding:0 18px;" id="aiSendBtn" onclick="sendAssistant()">Send</button>
-    </div>`);
-  renderAiThread();
-  const inp = document.getElementById('aiInput');
-  if(inp) inp.focus();
-}
-function renderAiThread(){
-  const el = document.getElementById('aiThread');
-  if(!el) return;
-  el.innerHTML = aiMsgs.length ? aiMsgs.map(m=>`
-    <div style="margin-bottom:8px; ${m.role==='user'?'text-align:end;':''}">
-      <div style="display:inline-block; max-width:88%; text-align:start; padding:9px 12px; border-radius:12px; font-size:13.5px; line-height:1.55; white-space:pre-wrap; ${m.role==='user'?'background:var(--green); color:#fff;':'background:var(--paper);'}">${esc(m.content)}</div>
-    </div>`).join('')
-    : `<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:12px 0;">Try: “Summarize my month so far” · “لخص لي عيادة قبل زيارتي” · “Write a follow-up WhatsApp message”</div>`;
-  el.scrollTop = el.scrollHeight;
-}
-function buildAssistantContext(){
-  const me = currentUser;
-  const mine = r => me.role==='supervisor' || r===me.name;
-  const cname = id => clinicLabel(id);
-  const m = getMonthDates(todayStr());
-  const data = {visits, clinics, tasks, events, dayPlans};
-  return {
-    today: todayStr(),
-    user: {name: me.name, role: me.role},
-    monthSummary: UMCore.rangeSummary(m[0], m[m.length-1], me.role==='supervisor'?'all':me.name, data),
-    monthlyTargets: targets,
-    clinics: clinics.filter(c=>mine(c.rep)).map(c=>({name:c.name, cls:c.cls, rep:c.rep, area:c.area||'', phone:c.phone||'', nextFollowUp:c.nextFollowUp||null, notes:(c.notes||'').slice(0,150), doctors:(c.doctors||[]).map(d=>d.name+(d.title?' ('+d.title+')':'')).slice(0,6)})),
-    recentVisits: [...visits].sort((a,b)=>(b.ts||0)-(a.ts||0)).filter(v=>mine(v.rep)||mine(v.withRep)).slice(0,40)
-      .map(v=>({date:v.date, rep:v.rep, jointWith:v.withRep||null, clinic:cname(v.clinicId), contacts:UMCore.contactCount(v), order:!!v.orderTaken, totalKD:v.orderTotal||0, call:!!v.callOnly, notes:(v.notes||'').slice(0,120)})),
-    openTasks: tasks.filter(t=>!t.done && (mine(t.rep)||t.rep==='Team')).slice(0,25).map(t=>({text:t.text, due:t.dueDate||null, rep:t.rep})),
-    upcomingEvents: events.filter(e=>e.date>=todayStr()).slice(0,15).map(e=>({title:e.title, date:e.date, time:e.time||'', type:e.type, rep:e.rep, notes:e.notes||''})),
-    dormantClinics: UMCore.dormantClinics(clinics, visits, todayStr(), {days:30}).filter(c=>mine(c.rep)).slice(0,12),
-    productCatalog: products.slice(0,200).map(p=>({name:p.name, brand:p.brand, priceKD:p.price})),
-  };
-}
-async function sendAssistant(){
-  if(aiBusy) return;
-  const inp = document.getElementById('aiInput');
-  const q = (inp.value||'').trim();
-  if(!q) return;
-  inp.value = '';
-  aiBusy = true;
-  aiMsgs.push({role:'user', content:q});
-  aiMsgs.push({role:'assistant', content:'Thinking…', pending:true});
-  renderAiThread();
-  try{
-    const res = await fetch(AI_ENDPOINT, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        messages: aiMsgs.filter(m=>!m.pending).map(m=>({role:m.role, content:m.content})),
-        context: buildAssistantContext(),
-      }),
-    });
-    const data = await res.json().catch(()=>({}));
-    aiMsgs = aiMsgs.filter(m=>!m.pending);
-    if(res.ok && data.reply){
-      aiMsgs.push({role:'assistant', content:data.reply});
-    } else if(data.error==='NO_KEY'){
-      aiMsgs.push({role:'assistant', content:'The assistant isn\'t activated yet. The supervisor needs to add the AI key once in Netlify: Site settings → Environment variables → add ANTHROPIC_API_KEY, then redeploy.'});
-    } else {
-      aiMsgs.push({role:'assistant', content:'Something went wrong reaching the assistant — please try again in a moment.'});
-    }
-  }catch(e){
-    aiMsgs = aiMsgs.filter(m=>!m.pending);
-    aiMsgs.push({role:'assistant', content:'Couldn\'t reach the assistant service. Check your internet connection and try again.'});
-  }
-  aiBusy = false;
-  renderAiThread();
+    <p style="font-size:13.5px; line-height:1.6;">The assistant is not available in this version of the app. Nothing is sent from this screen.</p>
+    <button class="btn" onclick="closeModal()">OK</button>`);
 }
 
 // ---- PERIOD COMPARISON ----
@@ -879,16 +809,32 @@ async function persistTeam(key){
   try{ return await persistTeamNow(key); }
   finally{ _teamSaving[key]--; _teamGen[key]++; }
 }
+// Chat and memories are one document each, with a small photo preview on
+// every photo message and memory (v123): kept under TEAM_DOC_BYTES by leaving
+// out the previews of the OLDEST entries — the entry itself (its words, who,
+// when) and its full photo (its own document) stay, and tapping it opens the
+// full photo. Never an entry dropped. Still over the cloud's limit: not saved,
+// said for what it is (persistNow's saveBlocked), never queued.
+const TEAM_DOC_BYTES = 900000;
 async function persistTeamNow(key){
-  let value = null, seen = new Set(); // the merged copy (the catch keeps it on the phone) and every id it was made of
+  let value = null, seen = new Set(), big = 0; // the merged copy (the catch keeps it on the phone) and every id it was made of
   try{
     const str = await storageUpdate(key, cur => {
+      big = 0; // a transaction may run more than once
       const cloud = cur != null ? UMCore.safeParse(cur, null) : null;
       const mine = teamList(key); // as it is now: a message sent since this save began goes too
       seen = new Set(mine.concat(Array.isArray(cloud) ? cloud : []).map(x => x && x.id));
       value = Array.isArray(cloud) ? teamMerge(key, mine, cloud) : mine.slice();
-      return JSON.stringify(value);
+      if(typeof UMCore.trimTeamThumbs === 'function'){
+        const t = UMCore.trimTeamThumbs(value, TEAM_DOC_BYTES);
+        value = t.list;
+        if(!t.fits){ big = UMCore.utf8Len(JSON.stringify(value)); return null; }
+      }
+      const out = JSON.stringify(value);
+      if(!UMCore.fitsBytes(out, DOC_MAX_BYTES)){ big = UMCore.utf8Len(out); return null; }
+      return out;
     }, 12000);
+    if(big) throw tooLargeError(key, null, big);
     if(str == null) throw new Error(key + ' update failed');
     // Never put back the copy this save took (v122): a message sent while it was on its way (the
     // queue's upload running when she sent one) dropped out of memory, and the next upload, built
@@ -899,9 +845,17 @@ async function persistTeamNow(key){
     setTeamList(key, now);
     mirrorSave(key, later.length ? JSON.stringify(now) : str);
     if(!later.length){ if(outboxHas(key)) outboxRemove(key); memOnlyLanded(key); }
+    saveUnblocked(key);
     return true;
   }
   catch(e){
+    // refused by the rules, or too large for the cloud: never queued as "offline" (v123) —
+    // but a refusal on a phone with no access to the team's data (signed out, a sign-in that
+    // ended) is kept and queued like a save with no connection (v123 review, accessLost)
+    const kind = saveErrKind(e);
+    const acc = kind === 'refused' ? await accessCheck() : null;
+    const lost = acc === 'lost', unsure = acc === 'unknown'; // unsure: the cloud did not say — kept, tried again (round 3)
+    if(kind && !lost && !unsure){ _teamLastFail[key] = saveBlocked(key, kind, e); return false; }
     // queued in memory always (it uploads while the app stays open); on the phone when both fit —
     // everything memory holds, with what this save had merged from the cloud
     let onPhone = false;
@@ -909,13 +863,16 @@ async function persistTeamNow(key){
       const mOk = mirrorSave(key, JSON.stringify(teamMerge(key, teamList(key), value)));
       onPhone = outboxAdd(key) && mOk;
     }catch(e2){}
+    if(lost) parkSave(key, 'noAccess');
     if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); }
     updateSyncBadge();
-    offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
-                         : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+    if(lost || unsure) noAccessToast(onPhone ? (lost ? NO_ACCESS_KEPT : ACCESS_UNKNOWN_KEPT) : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+    else offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
+                              : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     return false;
   }
 }
+const _teamLastFail = {}; // key → the outcome of its last save that could not land (saveMemory says it)
 function setTeamTab(t){
   teamTab=t;
   document.getElementById('tabChat').classList.toggle('on', t==='chat');
@@ -979,7 +936,8 @@ function renderChat(){
     return `<div class="msg ${me?'me':'them'}">
       ${me?'':`<div class="who">${esc(m.who)}</div>`}
       ${m.text?`<div dir="auto">${esc(m.text)}</div>`:''}
-      ${m.photoId?`<img src="${m.thumb||''}" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">`:''}
+      ${m.photoId?(m.thumb?`<img src="${m.thumb}" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">`
+        :`<button class="chip small" style="margin-top:4px;" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">📷 <span>Photo — tap to open</span></button>`):''}
       <div class="when">${fmtWhen(m.ts)}</div>
     </div>`;
   }).join('');
@@ -1021,7 +979,15 @@ async function sendChat(){
     // photo uploaded are her next message — they were wiped from the draft unsent.
     if(pendingChatPhoto === ph) clearChatPhoto();
     if(inp.value.trim() === text) inp.value = '';
-    await persistTeam('chat');
+    delete _teamLastFail.chat;
+    const sent = await persistTeam('chat');
+    if(!sent && _teamLastFail.chat){
+      // refused, or the chat too large for the cloud (v123): in no list and never uploading — taken
+      // back, and what she wrote goes back in the box (its words were already said on screen)
+      chatMsgs = chatMsgs.filter(x => !(x && x.id === msg.id));
+      if(!inp.value.trim()) inp.value = text;
+      if(ph && !pendingChatPhoto){ pendingChatPhoto = ph; const pv = document.getElementById('chatPhotoPreview'); if(pv) pv.innerHTML = `<div class="ph-wrap" style="margin-bottom:8px;"><img class="photo-thumb" src="${ph.thumb}"><button class="ph-del" onclick="clearChatPhoto()">&times;</button></div>`; }
+    }
     renderChat();
     window.scrollTo(0, document.body.scrollHeight);
   } finally {
@@ -1065,14 +1031,23 @@ async function saveMemory(){
     const ok = await savePhotoBlob(pm.id, pm.full); // gives up after PHOTO_UP_MS: the sheet stays open with the photo
     if(!ok){ showToast('⚠️ Photo failed to upload — try again'); return; }
     if(!memories.some(m => m && m.id === pm.id)) memories.push({id:pm.id, thumb:pm.thumb, cap, tag:tagEl?tagEl.dataset.tag:'', who:currentUser.name, ts:Date.now()});
+    delete _teamLastFail.memories;
     const saved = await persistTeam('memories');
+    const blocked = !saved && _teamLastFail.memories;
+    if(blocked){
+      // refused, or too large: in no list and never uploading — taken back, the sheet stays open with the photo
+      memories = memories.filter(m => !(m && m.id === pm.id));
+      showToast(blocked.denied ? NOT_ALLOWED_MSG : tooLargeText({ key: 'memories' }), 7000);
+      return;
+    }
     if(window._pendingMem === pm){ window._pendingMem = null; if(memSheetShown(pm)) closeModal(); } // only this memory's sheet
     setTeamTab('mem');
     renderBadges();
     // The real outcome (v122): "shared with the team" was said for a memory only kept on this phone.
     if(saved) showToast('\u{1F4F8} Memory shared with the team');
     else showToast(_memOnly.has('memories') ? "⚠️ This phone's storage is full — this memory is only in the app's memory: keep the app open until it uploads"
-                                            : '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online', 4000);
+                   : _saveParked.get('memories') === 'noAccess' ? NO_ACCESS_KEPT // signed out: kept, it uploads after the next sign-in (v123 review)
+                   : '📴 Memory saved on this phone — the team sees it once it uploads, automatically when back online', 4000);
   } finally { _memSharing.delete(pm.id); }
 }
 function renderMemories(){
@@ -1083,7 +1058,7 @@ function renderMemories(){
   }
   el.innerHTML = [...memories].sort((a,b)=>b.ts-a.ts).map(m=>`
     <div class="mcard" onclick="showLightbox('${m.id}','${esc((m.cap||'').replace(/'/g,''))}')">
-      <img src="${m.thumb}" alt="" onerror="this.style.display='none'">
+      ${m.thumb ? `<img src="${m.thumb}" alt="" onerror="this.style.display='none'">` : `<div style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:12.5px; color:var(--muted);">📷 <span>Photo — tap to open</span></div>`}
       <div class="mmeta">
         <div class="mcap">${m.tag?m.tag+' ':''}${esc(m.cap||'Untitled')}</div>
         <div class="mwho">${esc(m.who)} \u00b7 ${new Date(m.ts).toLocaleDateString([], {month:'short',day:'numeric'})}</div>
@@ -1510,18 +1485,18 @@ async function commitEmailTasks(){
   chosen.forEach(t=>{
     tasks.push({id:uid(), text:t.text, done:false, created:todayStr(), source:'email', rep: currentUser.role==='supervisor' ? 'Team' : currentUser.name});
   });
-  await persist('tasks');
+  const r = await persistTold('tasks');
   closeModal();
   renderToday();
-  showToast(chosen.length+' task'+(chosen.length===1?'':'s')+' added');
+  saveToast(r, 'tasks', chosen.length+' task'+(chosen.length===1?'':'s')+' added'); // "added" only when it landed
 }
 async function addManualEmailTask(){
   const val = (document.getElementById('manualTaskFromEmail').value||'').trim();
   if(!val){ showToast('Type a task first'); return; }
   tasks.push({id:uid(), text:val, done:false, created:todayStr(), source:'email', rep: currentUser.role==='supervisor' ? 'Team' : currentUser.name});
-  await persist('tasks');
+  const r = await persistTold('tasks');
   closeModal();
   renderToday();
-  showToast('Task added');
+  saveToast(r, 'tasks', 'Task added');
 }
 

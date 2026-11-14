@@ -272,8 +272,24 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
     const v = visits.find(x => x.id === 'v1');
     return { names: c.doctors.map(d => d.name), title: c.doctors[0].title, visitDocs: v.doctorIds, cloudDocs: null };
   });
-  check('duplicate doctor records collapse at boot (fields merged), the visit follows the survivor', JSON.stringify(docs.names)===JSON.stringify(['Dr. Ahmed','Dr. Sara']) && docs.title==='Periodontist' && JSON.stringify(docs.visitDocs)===JSON.stringify(['d1']), docs);
-  check('…and the clean lists were written back to the cloud', JSON.parse(cloud.clinics).find(c=>c.id==='c1').doctors.length===2 && JSON.parse(cloud.visits)[0].doctorIds[0]==='d1', { cloudDoctors: JSON.parse(cloud.clinics).find(c=>c.id==='c1').doctors.map(d=>d.name) });
+  // v123 (the owner's rule of 12 Nov: no automatic merges): until v122 the two
+  // records collapsed at boot by themselves and the supervisor's phone wrote that back
+  check('two records of one doctor\'s name both stay at boot — nothing merged by itself, the visit keeps its doctor', JSON.stringify(docs.names)===JSON.stringify(['Dr. Ahmed','dr ahmed','Dr. Sara']) && JSON.stringify(docs.visitDocs)===JSON.stringify(['d2']), docs);
+  check('…and nothing was written at start: the cloud keeps both records and the visit as they were', JSON.parse(cloud.clinics).find(c=>c.id==='c1').doctors.length===3 && JSON.parse(cloud.visits)[0].doctorIds[0]==='d2', { cloudDoctors: JSON.parse(cloud.clinics).find(c=>c.id==='c1').doctors.map(d=>d.name) });
+  // the supervisor merges them by tap: asked in the card first, applied on the second tap
+  const tap = await page.evaluate(async () => {
+    openDupDoctors('');
+    const offered = !!document.querySelector('#modalInner [data-dupdoc]');
+    const before = JSON.stringify(clinics.find(x => x.id === 'c1').doctors.map(d => d.id));
+    await mergeDupDoctors('c1', UMCore.normDoctorName('Dr. Ahmed'), '');
+    const btn = [...document.querySelectorAll('#modalInner [data-ask]')].find(b => /Yes, merge/.test(b.textContent));
+    const unchangedWhileAsked = JSON.stringify(clinics.find(x => x.id === 'c1').doctors.map(d => d.id)) === before;
+    if(btn) await mergeDupDoctors(btn.dataset.c, btn.dataset.k, btn.dataset.scope, btn.dataset.ask);
+    const c = clinics.find(x => x.id === 'c1'), v = visits.find(x => x.id === 'v1');
+    return { offered, asked: !!btn, unchangedWhileAsked, names: c.doctors.map(d => d.name), title: c.doctors[0].title, visitDocs: v.doctorIds };
+  });
+  check('the supervisor merges them by tap (asked in the card first): one record with both records\' fields, the visit follows it', tap.offered && tap.asked && tap.unchangedWhileAsked && JSON.stringify(tap.names)===JSON.stringify(['Dr. Ahmed','Dr. Sara']) && tap.title==='Periodontist' && JSON.stringify(tap.visitDocs)===JSON.stringify(['d1']), tap);
+  check('…and the merged lists were written to the cloud', JSON.parse(cloud.clinics).find(c=>c.id==='c1').doctors.length===2 && JSON.parse(cloud.visits)[0].doctorIds[0]==='d1', { cloudDoctors: JSON.parse(cloud.clinics).find(c=>c.id==='c1').doctors.map(d=>d.name) });
   const quick = await page.evaluate(async () => {
     switchView('log'); prepLogView('c1');
     openQuickAddDoctor('c1');
@@ -286,7 +302,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   // a stale device that still has the old 3-record clinic saves it: the merge keeps the union without twins
   const stale = JSON.parse(cloud.clinics); stale.find(c=>c.id==='c1').doctors = [{id:'d1',name:'Dr. Ahmed'},{id:'d9',name:'Dr. Zain'}];
   const merged = await page.evaluate((staleList) => { const r = mergeById('clinics', staleList, JSON.parse(localStorage.getItem('um_mirror:clinics')||'[]')); return r.merged.find(c=>c.id==='c1').doctors.map(d=>d.name); }, stale);
-  check('clinic merge unions doctors from both devices (by id, then by person) — nobody lost, nobody twice', merged.includes('Dr. Zain') && merged.includes('Dr. Noor') && merged.filter(n=>/ahmed/i.test(n)).length===1, merged);
+  check('clinic merge unions doctors from both devices (by id) — nobody lost, nobody twice', merged.includes('Dr. Zain') && merged.includes('Dr. Noor') && merged.filter(n=>/ahmed/i.test(n)).length===1, merged);
 
   // ---------- 13) month rollover: targets are stamped with their month and flagged when stale ----------
   const stale2 = await page.evaluate(() => { targets.Mariam.month = '2026-08'; renderToday(); return { note: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '' }; });

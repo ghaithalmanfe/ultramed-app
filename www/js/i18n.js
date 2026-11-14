@@ -12,6 +12,67 @@
   'use strict';
 
   var AR = {
+    // ---- v123: saves that cannot land as they are, the honest outcome of every save ----
+    'Not allowed, not saved (ask the supervisor)': 'غير مسموح — لم يُحفظ (اسأل المشرف)',
+    "No access to the team's data on this login — ask the supervisor": 'لا صلاحية لهذا الحساب على بيانات الفريق — اسأل المشرف',
+    'Not saved yet — tap the red bar to try again': 'لم يُحفظ بعد — اضغط الشريط الأحمر لإعادة المحاولة',
+    'Not saved on this device (storage full) — keep the app open until it uploads': 'لم يُحفظ على هذا الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحاً حتى يُرفع',
+    'Not saved — check the connection and try again': 'لم يُحفظ — تحقق من الاتصال وحاول مرة أخرى',
+    'Not saved — reopen the app, then try again': 'لم يُحفظ — أعد فتح التطبيق ثم حاول مرة أخرى',
+    'No answer from the cloud yet — check the connection, then reopen this screen to see whether it was saved': 'لا رد من السحابة بعد — تحقق من الاتصال ثم أعد فتح هذه الشاشة لترى هل حُفظ',
+    'Photo not added — not allowed (ask the supervisor)': 'لم تُضف الصورة — غير مسموح (اسأل المشرف)',
+    'Visit not saved — not allowed (ask the supervisor). What you typed is still on this screen.': 'لم تُحفظ الزيارة — غير مسموح (اسأل المشرف). ما كتبته ما زال في هذه الشاشة.',
+    "Photo not added — this month's visits are too large for the cloud (too many photos)": 'لم تُضف الصورة — زيارات هذا الشهر أكبر مما تقبله السحابة (صور كثيرة)',
+    "Visit not saved — this month's visits are too large for the cloud (too many photos). What you typed is still on this screen: remove some photos from this month's visits, then save again.": 'لم تُحفظ الزيارة — زيارات هذا الشهر أكبر مما تقبله السحابة (صور كثيرة). ما كتبته ما زال في هذه الشاشة: احذف بعض الصور من زيارات هذا الشهر ثم احفظ مرة أخرى.',
+    'Not allowed — nothing was deleted (ask the supervisor)': 'غير مسموح — لم يُحذف شيء (اسأل المشرف)',
+    'The recycle bin is too large for the cloud — nothing was deleted. Ask the supervisor.': 'سلة المحذوفات أكبر مما تقبله السحابة — لم يُحذف شيء. اسأل المشرف.',
+    "Today's backup was not saved from this phone: not allowed (ask the supervisor).": 'لم تُحفظ نسخة اليوم الاحتياطية من هذا الهاتف: غير مسموح (اسأل المشرف).',
+    "Today's backup was not saved from this phone yet — it tries again within the hour.": 'لم تُحفظ نسخة اليوم الاحتياطية من هذا الهاتف بعد — يحاول مرة أخرى خلال ساعة.',
+    // v123 review: a phone with no access to the team's data (signed out, a sign-in that ended) keeps what it saves
+    "Kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again": 'محفوظ على هذا الهاتف — لا صلاحية على بيانات الفريق الآن (هل خرجت من الحساب؟). يُرفع تلقائيًا بعد أن تسجّل الدخول مرة أخرى',
+    "Not saved — no access to the team's data right now (signed out?). Sign in again, then save again": 'لم يُحفظ — لا صلاحية على بيانات الفريق الآن (هل خرجت من الحساب؟). سجّل الدخول مرة أخرى ثم احفظ من جديد',
+    "Changes wait on this phone, not sent: no access to the team's data right now (signed out, or the password was changed on another device). Sign in again — they upload by themselves.": 'تغييرات محفوظة على هذا الهاتف ولم تُرسل: لا صلاحية على بيانات الفريق الآن (خرجت من الحساب، أو غُيّرت كلمة المرور من جهاز آخر). سجّل الدخول مرة أخرى — وتُرفع تلقائيًا.',
+    'Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone.': 'تغييرات محفوظة على هذا الهاتف ولم تُرسل: السحابة لا تسمح لهذا الحساب بحفظها. اسأل المشرف — تبقى على هذا الهاتف.',
+    'Signed out — sign in again. Changes wait on this phone and upload after you sign in': 'خرجت من الحساب — سجّل الدخول مرة أخرى. التغييرات محفوظة على هذا الهاتف وتُرفع بعد تسجيل الدخول',
+    'Signed out — sign in again': 'خرجت من الحساب — سجّل الدخول مرة أخرى',
+    "Visit kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again": 'الزيارة محفوظة على هذا الهاتف — لا صلاحية على بيانات الفريق الآن (هل خرجت من الحساب؟). تُرفع تلقائيًا بعد أن تسجّل الدخول مرة أخرى',
+    // v123 review: the whole-day Restore reads the lists first, and never replaces the backup it restores
+    'Restore stopped — the clinics, tasks or visits on this device did not all load from the cloud, or changes on this device have not reached it yet. Nothing was changed. Check the connection, then try again.': 'توقف الاسترجاع — لم تُحمَّل كل العيادات أو المهام أو الزيارات على هذا الجهاز من السحابة، أو أن تغييرات على هذا الجهاز لم تصل إليها بعد. لم يتغير شيء. تحقق من الاتصال ثم حاول مرة أخرى.',
+    "This restores today's own backup, so the data as it is now cannot be kept as today's backup — that would replace the very backup being restored. First save a full backup to this device: it keeps everything as it is now, today's backup too.": 'هذا يسترجع نسخة اليوم نفسها، فلا يمكن حفظ البيانات كما هي الآن نسخةً احتياطية لليوم — فذلك يستبدل النسخة نفسها التي تُسترجع. احفظ أولاً نسخة كاملة على هذا الجهاز: تحفظ كل شيء كما هو الآن، ونسخة اليوم أيضًا.',
+    // v123 review: the visit and order forms' new clinic runs the "+ Add clinic" sales check
+    'Not saved — this clinic name needs a check first (see under the name)': 'لم يُحفظ — اسم العيادة هذا يحتاج إلى مراجعة أولاً (انظر تحت الاسم)',
+    // "+ Add clinic" (v123): whose it is, and sales that would move
+    'Whose clinic is it?': 'لمن هذه العيادة؟',
+    'Choose whose clinic this is': 'اختر لمن هذه العيادة',
+    'Some sales files did not load on this device, so what this name would move cannot be checked. Nothing was saved — try again with a connection.': 'بعض ملفات المبيعات لم تُحمَّل على هذا الجهاز، فلا يمكن التحقق مما سينقله هذا الاسم. لم يُحفظ شيء — أعد المحاولة مع اتصال.',
+    'This name matches sales that count for another person now:': 'هذا الاسم يطابق مبيعات تُحسب الآن لشخص آخر:',
+    'The supervisor adds this clinic. Nothing was saved.': 'المشرف يضيف هذه العيادة. لم يُحفظ شيء.',
+    'This name matches sales of closed months. The supervisor adds this clinic. Nothing was saved.': 'هذا الاسم يطابق مبيعات في أشهر مُغلقة. المشرف يضيف هذه العيادة. لم يُحفظ شيء.',
+    'What you typed is still here.': 'ما كتبته ما زال هنا.',
+    'sales lines would count for': 'سطر مبيعات سيُحسب لـ',
+    'of them are in closed months.': 'منها في أشهر مُغلقة.',
+    'Count from this month': 'يُحسب من هذا الشهر',
+    'Count all of them, closed months too': 'تُحسب كلها، والأشهر المُغلقة أيضًا',
+    'Add the clinic': 'أضف العيادة',
+    'Count from this month: the earlier lines stay with': 'يُحسب من هذا الشهر: السطور الأقدم تبقى مع',
+    // possible duplicate doctors (v123): merged only by the supervisor's tap
+    'possible duplicate doctors': 'أطباء قد يكونون مكررين',
+    'Possible duplicate doctors': 'أطباء قد يكونون مكررين',
+    'Two records with one name at the same clinic. Both are kept until you check them.': 'سجلّان بالاسم نفسه في العيادة نفسها. يبقى الاثنان حتى تراجعهما.',
+    'Two records with one name. Tap to check.': 'سجلّان بالاسم نفسه. اضغط للمراجعة.',
+    'The same person — merge': 'الشخص نفسه — ادمج',
+    'Different people — keep both': 'شخصان مختلفان — أبقِ الاثنين',
+    'These doctors of one clinic have the same name once "Dr." and titles are left out. Both records are kept until you decide. Merging keeps everything either record holds: their visits, orders and prescriptions join one record. Nothing changes until you tap.': 'لهؤلاء الأطباء في العيادة نفسها الاسم نفسه إذا حُذفت «د.» والألقاب. يبقى السجلّان حتى تقرر. الدمج يحفظ كل ما في السجلّين: الزيارات والطلبيات والوصفات تنضم إلى سجل واحد. لا يتغير شيء حتى تضغط.',
+    'Nothing left to check.': 'لا شيء للمراجعة.',
+    'Merge into': 'الدمج في',
+    'visits of the other record join it.': 'زيارة من السجل الآخر تنضم إليه.',
+    'Different values are kept in the notes:': 'القيم المختلفة تُحفظ في الملاحظات:',
+    'Yes, merge': 'نعم، ادمج',
+    'Kept as different people': 'بقيا شخصين مختلفين',
+    // chat and memories: a photo whose small preview was left out (the list was full)
+    'Photo — tap to open': 'صورة — اضغط لفتحها',
+    'The assistant is not available in this version of the app. Nothing is sent from this screen.': 'المساعد غير متاح في هذا الإصدار من التطبيق. لا يُرسل شيء من هذه الشاشة.',
+
     // ---- shell & navigation ----
     'Today': 'اليوم',
     'Log visit': 'تسجيل زيارة',
@@ -384,6 +445,67 @@
     'Restore': 'استرجاع',
     'This backup is from another month: restoring it would erase this month\'s visits. To bring back clinics, use "Find missing clinics".': 'هذه النسخة من شهر آخر: استرجاعها يمحو زيارات هذا الشهر. لإرجاع عيادات استخدم «ابحث عن العيادات الناقصة».',
     'Restore failed — the backup could not be read': 'تعذّر الاسترجاع — لم تُقرأ النسخة الاحتياطية',
+    // whole-day Restore (v123): today's data is kept first; the catalog stays
+    "Restore stopped — today's backup could not be checked. Nothing was changed.": 'توقف الاسترجاع — تعذّر التحقق من نسخة اليوم الاحتياطية. لم يتغير شيء.',
+    "Restore stopped — today's data could not be kept first. Nothing was changed.": 'توقف الاسترجاع — تعذّر حفظ بيانات اليوم أولاً. لم يتغير شيء.',
+    'First, a full backup to this device': 'أولاً: نسخة كاملة على هذا الجهاز',
+    "Before a restore, the data as it is now is kept as today's backup. Today already has its own backup, which that would replace — so first save a full backup to this device: it keeps everything, today's backup too.": 'قبل الاسترجاع تُحفظ البيانات كما هي الآن نسخةً احتياطية لليوم. لليوم نسخته الاحتياطية الخاصة وستحل هذه محلها — لذلك احفظ أولاً نسخة كاملة على هذا الجهاز: تحفظ كل شيء، ومعه نسخة اليوم.',
+    'Then tap Restore again. Nothing was changed.': 'ثم اضغط «استرجاع» مرة أخرى. لم يتغير شيء.',
+    'Full backup first': 'النسخة الكاملة أولاً',
+    // round 3: a restore removes only what is kept somewhere, checked against the cloud as it is now
+    "This restores today's own backup, so the data as it is now cannot be kept as today's backup — that would replace the very backup being restored.": 'هذا استرجاع لنسخة اليوم نفسها، فلا يمكن حفظ البيانات كما هي الآن نسخةً احتياطية لليوم — لأن ذلك يستبدل النسخة نفسها التي تُسترجع.',
+    'Today already has its backup (the daily one, or the data an earlier restore kept), and a restore never replaces it.': 'لليوم نسخته الاحتياطية بالفعل (النسخة اليومية، أو البيانات التي حفظها استرجاع سابق)، والاسترجاع لا يستبدلها أبداً.',
+    "Save a full backup to this device now: it keeps everything as it is, today's backup too. Then tap Restore again.": 'احفظ الآن نسخة كاملة على هذا الجهاز: تحفظ كل شيء كما هو، ونسخة اليوم أيضاً. ثم اضغط «استرجاع» مرة أخرى.',
+    'Nothing was changed.': 'لم يتغير شيء.',
+    'Restore stopped — the cloud could not be read just now. Nothing was changed.': 'توقف الاسترجاع — تعذّرت قراءة السحابة الآن. لم يتغير شيء.',
+    "Restore stopped — another phone saved today's backup a moment ago, and a restore never replaces it. Nothing was changed. Tap Restore again.": 'توقف الاسترجاع — هاتف آخر حفظ نسخة اليوم الاحتياطية قبل لحظات، والاسترجاع لا يستبدلها أبداً. لم يتغير شيء. اضغط «استرجاع» مرة أخرى.',
+    // round 3: why this phone is not taking today's backup
+    "Today's backup has not been taken yet, and this phone is not taking it: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team.": 'لم تُحفظ نسخة اليوم الاحتياطية بعد، وهذا الهاتف لا يحفظها الآن: تغييرات على هذا الهاتف ما زالت تنتظر الرفع. تُحفظ بعد رفعها — أو من هاتف آخر في الفريق.',
+    "Today's backup has not been taken yet, and this phone is not taking it: not every list on it came from the cloud (a read failed, or a list is shown from this phone's copy). It is taken once everything has loaded from the cloud — or by another phone of the team.": 'لم تُحفظ نسخة اليوم الاحتياطية بعد، وهذا الهاتف لا يحفظها الآن: ليست كل القوائم عليه محمّلة من السحابة (فشلت قراءة، أو تُعرض قائمة من نسخة هذا الهاتف). تُحفظ بعد تحميل كل شيء من السحابة — أو من هاتف آخر في الفريق.',
+    // round 3: a save the cloud refused while it did not say whether this login may save at all; a refused change that is kept
+    'Kept on this phone — the cloud did not answer whether this login may save it; it is tried again': 'محفوظ على هذا الهاتف — لم تُجب السحابة هل يُسمح لهذا الحساب بحفظه؛ ستُعاد المحاولة',
+    'Not saved — the cloud did not answer whether this login may save it. Try again in a moment': 'لم يُحفظ — لم تُجب السحابة هل يُسمح لهذا الحساب بحفظه. حاول مرة أخرى بعد قليل',
+    'Not allowed for this login — kept on this phone, not sent (ask the supervisor)': 'غير مسموح لهذا الحساب — محفوظ على هذا الهاتف ولم يُرسل (اسأل المشرف)',
+    // round 3: clinics made in bulk (the clinic import, the contact import) run the sales check
+    'Not saved — these clinic names need a check first': 'لم يُحفظ — أسماء هذه العيادات تحتاج إلى مراجعة أولاً',
+    'Some sales files did not load on this device, so what these names would move cannot be checked. Nothing was saved — try again with a connection.': 'بعض ملفات المبيعات لم تُحمَّل على هذا الجهاز، فلا يمكن التحقق مما ستنقله هذه الأسماء. لم يُحفظ شيء — حاول مرة أخرى مع وجود اتصال.',
+    'Sales would then count for another person': 'ستُحسب مبيعات عندئذ لشخص آخر',
+    'sales lines': 'سطر مبيعات',
+    'ERP accounts': 'حساب فواتير',
+    'in closed months': 'في أشهر مُغلقة',
+    "Add them — these sales then count for the new clinics' owners": 'أضفها — تُحسب هذه المبيعات عندئذ لأصحاب العيادات الجديدة',
+    'Nothing was saved.': 'لم يُحفظ شيء.',
+    'To keep those sales where they count now, untick those clinics and add the rest.': 'لإبقاء هذه المبيعات حيث تُحسب الآن، ألغِ تحديد هذه العيادات وأضف الباقي.',
+    'To keep those sales where they count now, add those clinics first (Clinics → + Add clinic asks "Count from this month"), then import this file again.': 'لإبقاء هذه المبيعات حيث تُحسب الآن، أضف هذه العيادات أولاً (العيادات ← «إضافة عيادة» تسأل «يُحسب من هذا الشهر»)، ثم استورد هذا الملف مرة أخرى.',
+    // round 3: a rename the app was closed on
+    'Finish the rename': 'أكمل إعادة التسمية',
+    'Rename finished': 'اكتملت إعادة التسمية',
+    // "Restore from this phone's copy" (v123): compared clinic by clinic, only the ticked rows
+    "This phone's copy of the clinic list": 'نسخة هذا الهاتف من قائمة العيادات',
+    "Nothing changes until you tick a row and apply it. A ticked clinic takes this phone's copy for what is listed under it; everything else stays as the list has it now.": 'لا يتغير شيء حتى تعلّم صفاً وتطبّقه. العيادة المعلَّمة تأخذ من نسخة هذا الهاتف ما هو مكتوب تحتها فقط، ويبقى كل ما عداه كما هو في القائمة الآن.',
+    'Not in the list now': 'ليست في القائمة الآن',
+    'Different in the list now': 'مختلفة في القائمة الآن',
+    "Doctors only on this phone's copy:": 'أطباء موجودون في نسخة هذا الهاتف فقط:',
+    'A change of owner, handover or shared account moves the sales the files credit to that clinic.': 'تغيير صاحبة العيادة أو التسليم أو الحساب المشترك ينقل المبيعات التي تحسبها الملفات لتلك العيادة.',
+    'Apply the ticked rows': 'تطبيق الصفوف المعلَّمة',
+    "clinics updated from this phone's copy and saved.": 'عيادة حُدّثت من نسخة هذا الهاتف وحُفظت.',
+    'clinics changed on this device; the save has not reached the cloud yet — it uploads when the connection is back.': 'عيادة تغيّرت على هذا الجهاز؛ الحفظ لم يصل إلى السحابة بعد — يُرفع عند عودة الاتصال.',
+    'Changed on this device — not saved to the cloud yet': 'تغيّر على هذا الجهاز — لم يُحفظ في السحابة بعد',
+    'Profile notes': 'ملاحظات الملف',
+    'Deal type': 'نوع التعامل',
+    'No-sale reason': 'سبب عدم الشراء',
+    'Owner before the handover': 'صاحبة العيادة قبل التسليم',
+    'Owner since': 'صاحبة العيادة منذ',
+    'Shared account': 'حساب مشترك',
+    'Shared since': 'مشترك منذ',
+    'Government': 'حكومي',
+    'New clinic': 'عيادة جديدة',
+    'Added on': 'أُضيفت في',
+    // whole documents saved by compare-and-set (v123)
+    'Changed on another device — reopen the app, then save again': 'تغيّرت على جهاز آخر — أعد فتح التطبيق ثم احفظ من جديد',
+    'Saved — it reached the cloud late': 'حُفظ — وصل إلى السحابة متأخراً',
+    'Not saved — changed on another device. Reopen the app, then save again': 'لم يُحفظ — تغيّر على جهاز آخر. أعد فتح التطبيق ثم احفظ من جديد',
+    'Not saved — this did not load from the cloud. Reopen the app, then save again': 'لم يُحفظ — لم تُحمَّل هذه البيانات من السحابة. أعد فتح التطبيق ثم احفظ من جديد',
     'Restore this clinic': 'استرجاع هذه العيادة',
 
     // ---- Calendar ----
@@ -1893,11 +2015,40 @@
     if (r >= 11) return n + ' دفتراً';
     return n + ' دفتر';
   }
+  // the lists named in "too large" (v123)
+  var TOO_LARGE_AR = { 'the clinic list': 'قائمة العيادات', 'the tasks': 'المهام', 'the events': 'الأحداث', 'the day plans': 'خطط الأيام', 'the team chat': 'محادثة الفريق', 'the memories': 'الذكريات', 'the recycle bin': 'سلة المحذوفات', 'the product catalog': 'قائمة المنتجات', 'the targets': 'الأهداف', 'the sales notes': 'ملاحظات المبيعات', 'the team list': 'قائمة الفريق', 'the settings': 'الإعدادات', 'the category guides': 'أدلة الفئات', 'the delete log': 'سجل الحذف', 'the sales file': 'ملف المبيعات' };
   var MONEY = '([\\d.,]+ KD)';
   var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure)\\))?';
 
   // Strings that carry a number or a name are matched by shape, not by text.
+  // whole-day Restore (round 3): where the data as it is now is kept, and which lists changed
+  function restoreSrcAr(t) {
+    return String(t).split(' or in ').map(function (x) {
+      var m = x.match(/^the full backup saved to this device at (\d\d:\d\d)$/);
+      if (m) return 'النسخة الكاملة المحفوظة على هذا الجهاز الساعة ' + m[1];
+      m = x.match(/^today's backup \(the data as it was before your restore at (\d\d:\d\d)\)$/);
+      if (m) return 'نسخة اليوم الاحتياطية (البيانات كما كانت قبل استرجاعك الساعة ' + m[1] + ')';
+      if (x === "today's backup (the data as it was before this restore)") return 'نسخة اليوم الاحتياطية (البيانات كما كانت قبل هذا الاسترجاع)';
+      return x;
+    }).join(' أو في ');
+  }
+  function restoreWhyAr(t) {
+    var m = String(t).match(/^Restore stopped — (.+) changed on another phone while it ran\.$/);
+    if (m) return 'توقف الاسترجاع — ' + restoreNamesAr(m[1]) + ' تغيّرت على هاتف آخر أثناء التنفيذ.';
+    return /delete log/.test(t) ? 'توقف الاسترجاع — تعذّر تحديث سجل الحذف.' : /visits could not/.test(t) ? 'توقف الاسترجاع — تعذّرت كتابة الزيارات.' : 'فشل الاسترجاع.';
+  }
+  function restoreNamesAr(t) {
+    var N = { 'the clinics': 'العيادات', 'the tasks': 'المهام', "this month's visits": 'زيارات هذا الشهر' };
+    return String(t).split(', ').map(function (x) { return N[x] || x; }).join('، ');
+  }
   var PATTERNS = [
+    // v123: a document too large for the cloud — the lasting bar and the toasts (the month already in the app's language)
+    [/^Not saved: the visits of (.+) are too large for the cloud \(too many photos\)\. Remove some photos from that month's visits \(Edit visit → ×\), then save again\.( What this phone holds for them stays on this phone\.)?$/, function (m) { return 'لم يُحفظ: زيارات ' + m[1] + ' أكبر مما تقبله السحابة (صور كثيرة). احذف بعض الصور من زيارات ذلك الشهر (تعديل الزيارة ← ×) ثم احفظ مرة أخرى.' + (m[2] ? ' ما يحمله هذا الهاتف منها يبقى عليه.' : ''); }],
+    [/^Not saved: (.+) is too large for the cloud\. Ask the supervisor — nothing else was changed\.( What this phone holds stays on this phone\.)?$/, function (m) { return 'لم يُحفظ: ' + (TOO_LARGE_AR[m[1]] || m[1]) + ' أكبر مما تقبله السحابة. اسأل المشرف — لم يتغير شيء آخر.' + (m[2] ? ' ما يحمله هذا الهاتف يبقى عليه.' : ''); }],
+    [/^Today's backup was not saved from this phone: it is too large for the cloud \((\d+) KB, even without the photo previews\)\. Take a Full backup above\.$/, function (m) { return 'لم تُحفظ نسخة اليوم الاحتياطية من هذا الهاتف: أكبر مما تقبله السحابة (' + m[1] + ' ك.ب، حتى بدون معاينات الصور). خذ نسخة كاملة من الأعلى.'; }],
+    [/^Restored (\S+) — but the recycle bin was not updated: some restored records may still show there\. Do not restore them from the bin\.$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — لكن سلة المحذوفات لم تُحدَّث: قد تظهر فيها بعض السجلات المسترجعة. لا تسترجعها من السلة.'; }],
+    [/^(\d+) clinics brought back — but the recycle bin was not updated: they may still show there\. Do not restore them from the bin\.$/, function (m) { return 'رجعت ' + m[1] + ' عيادة — لكن سلة المحذوفات لم تُحدَّث: قد تظهر فيها بعد. لا تسترجعها من السلة.'; }],
+    [/^(\d+) records are now one: (.+)$/, function (m) { return 'صار ' + m[1] + ' سجلات سجلًا واحدًا: ' + m[2]; }],
     // photos waiting to upload (v122): "⏳ 2 photos waiting to upload" (the sign is kept by the leading-symbol rule)
     [/^(\d+) photos waiting to upload$/, function (m) { return 'عدد الصور بانتظار الرفع: ' + m[1]; }],
     // …said per photo: "⏳ 3 photos waiting to upload · 1 kept on this phone · 2 only in the app's memory — keep the app open" (each part by itself)
@@ -1914,7 +2065,27 @@
     // the Visit photos gallery when some have no full photo in the cloud yet
     [/^(\d+) photos? across (\d+) visits?\. Tap any photo to view it\.$/, function (m) { return m[1] + ' صورة عبر ' + m[2] + ' زيارة. اضغط أي صورة لعرضها.'; }],
     // whole-day Restore (v121): what it removes, asked first; what it restored
-    [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits and the sales files stay as they are\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات تبقى كما هي.'; }],
+    [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits, the sales files and the product catalog stay as they are\. First, the data as it is now is kept as today's backup\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات وقائمة المنتجات تبقى كما هي. وقبل ذلك تُحفظ البيانات كما هي الآن نسخةً احتياطية لليوم.'; }],
+    [/^Restore data from (\S+)\? The clinics, tasks and this month's visits become that day's backup: (\d+) clinics, (\d+) tasks and (\d+) visits of this month that it does not hold are removed\. Past months' visits, the sales files and the product catalog stay as they are\. Everything it replaces is, as it is now, in (.+) \(checked just now\)\. Today's backup stays as it is\.$/, function (m) { return 'استرجاع بيانات يوم ' + m[1] + '؟ تصبح العيادات والمهام وزيارات هذا الشهر كما في نسخة ذلك اليوم: يُحذف ' + m[2] + ' عيادة و' + m[3] + ' مهمة و' + m[4] + ' زيارة من هذا الشهر ليست في النسخة. زيارات الأشهر السابقة وملفات المبيعات وقائمة المنتجات تبقى كما هي. كل ما يستبدله موجود، كما هو الآن، في ' + restoreSrcAr(m[5]) + ' (تم التحقق الآن). ونسخة اليوم تبقى كما هي.'; }],
+    // round 3: what stops a restore, and whether what it had written was put back
+    [/^(.+) changed after the full backup on this device was made \(at (\d\d:\d\d)\): what changed since is in no backup, and this restore would remove it\.$/, function (m) { return restoreNamesAr(m[1]) + ' تغيّرت بعد إنشاء النسخة الكاملة على هذا الجهاز (الساعة ' + m[2] + '): ما تغيّر بعدها ليس في أي نسخة، وهذا الاسترجاع سيحذفه.'; }],
+    [/^The full backup read at (\d\d:\d\d) was not downloaded to this device, so it does not count\.$/, function (m) { return 'النسخة الكاملة التي قُرئت الساعة ' + m[1] + ' لم تُنزَّل على هذا الجهاز، فلا تُحتسب.'; }],
+    [/^Restore stopped — (.+) changed on another phone while the question was open\. Nothing was changed\. Tap Restore again to see the new counts\.$/, function (m) { return 'توقف الاسترجاع — ' + restoreNamesAr(m[1]) + ' تغيّرت على هاتف آخر أثناء عرض السؤال. لم يتغير شيء. اضغط «استرجاع» مرة أخرى لترى الأعداد الجديدة.'; }],
+    [/^(Restore stopped — the delete log could not be updated\.|Restore stopped — the visits could not be written\.|Restore failed\.|Restore stopped — (.+) changed on another phone while it ran\.) (Nothing was changed\.|Part of what it had written could not be put back \(no connection\?\)\. The data as it was is in (.+)\. Check the connection, then tap Restore again\.)$/, function (m) {
+      var why = m[2] ? 'توقف الاسترجاع — ' + restoreNamesAr(m[2]) + ' تغيّرت على هاتف آخر أثناء التنفيذ.'
+        : /delete log/.test(m[1]) ? 'توقف الاسترجاع — تعذّر تحديث سجل الحذف.' : /visits could not/.test(m[1]) ? 'توقف الاسترجاع — تعذّرت كتابة الزيارات.' : 'فشل الاسترجاع.';
+      return why + (m[4] ? ' تعذّر إرجاع جزء مما كتبه (لا اتصال؟). البيانات كما كانت موجودة في ' + restoreSrcAr(m[4]) + '. تحقق من الاتصال ثم اضغط «استرجاع» مرة أخرى.' : ' لم يتغير شيء.');
+    }],
+    // round 4: a restore write with no answer in time — it may still land, and is put back if it does
+    [/^(Restore stopped — the delete log could not be updated\.|Restore stopped — the visits could not be written\.|Restore failed\.|Restore stopped — .+ changed on another phone while it ran\.) No answer from the cloud yet for (.+): what the restore sent may still land — this phone puts it back if it does; keep the app open\. The data as it was is in (.+)\.$/, function (m) { return restoreWhyAr(m[1]) + ' لا رد من السحابة بعد على ' + restoreNamesAr(m[2]) + ': ما أرسله الاسترجاع قد يصل لاحقاً — وهذا الهاتف يعيده كما كان إن وصل؛ أبقِ التطبيق مفتوحاً. البيانات كما كانت موجودة في ' + restoreSrcAr(m[3]) + '.'; }],
+    [/^The restore's write of (.+) did not land\.( Nothing was changed\.)?$/, function (m) { return 'ما كتبه الاسترجاع في ' + restoreNamesAr(m[1]) + ' لم يصل إلى السحابة.' + (m[2] ? ' لم يتغير شيء.' : ''); }],
+    [/^The restore's write of (.+) reached the cloud late — it was put back\.( Nothing was changed\.)?$/, function (m) { return 'ما كتبه الاسترجاع في ' + restoreNamesAr(m[1]) + ' وصل إلى السحابة متأخراً — وأُعيد كما كان.' + (m[2] ? ' لم يتغير شيء.' : ''); }],
+    [/^The restore's write of (.+) reached the cloud late and could not be put back \(no connection\?\)\. The data as it was is in (.+)\. Check the connection, then tap Restore again\.$/, function (m) { return 'ما كتبه الاسترجاع في ' + restoreNamesAr(m[1]) + ' وصل إلى السحابة متأخراً وتعذّرت إعادته كما كان (لا اتصال؟). البيانات كما كانت موجودة في ' + restoreSrcAr(m[2]) + '. تحقق من الاتصال ثم اضغط «استرجاع» مرة أخرى.'; }],
+    // round 3: a rename the app was closed on (the names are data)
+    [/^The rename of "(.+)" to "(.+)" was not finished: the team list has the new name, (\d+) records \(clinics, visits, tasks, plans, targets\) still have the old one\.$/, function (m) { return 'لم تكتمل إعادة تسمية «' + m[1] + '» إلى «' + m[2] + '»: قائمة الفريق تحمل الاسم الجديد، و' + m[3] + ' سجلاً (عيادات، زيارات، مهام، خطط، أهداف) ما زالت بالاسم القديم.'; }],
+    [/^(\d+) clinics updated from this phone's copy$/, function (m) { return 'حُدّثت ' + m[1] + ' عيادة من نسخة هذا الهاتف'; }],
+    [/^Restore stopped — today's data is too large for a backup in the cloud \((\d+) KB\)\. Nothing was changed\.$/, function (m) { return 'توقف الاسترجاع — بيانات اليوم أكبر مما تقبله السحابة لنسخة احتياطية (' + m[1] + ' ك.ب). لم يتغير شيء.'; }],
+    [/^(\d+) clinics updated from this phone's copy — but the recycle bin was not updated: they may still show there\. Do not restore them from the bin\.$/, function (m) { return 'حُدّثت ' + m[1] + ' عيادة من نسخة هذا الهاتف — لكن سلة المحذوفات لم تُحدَّث: قد تظهر فيها بعد. لا تسترجعها من السلة.'; }],
     [/^Restored (\S+) — (\d+) clinics, (\d+) visits$/, function (m) { return 'استُرجعت نسخة ' + m[1] + ' — ' + m[2] + ' عيادة، ' + m[3] + ' زيارة'; }],
     // duplicate SKUs / barcodes card (v121)
     [/^(\d+) products share an item code or a barcode — tap to review$/, function (m) { return 'عدد المنتجات المشتركة في كود صنف أو باركود: ' + m[1] + ' — اضغط للمراجعة'; }],

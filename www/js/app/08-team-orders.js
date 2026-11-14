@@ -24,6 +24,108 @@ function openStaffForm(idx){
     ${editing?`<button class="btn ghost" onclick="removeStaff(${idx})">Remove from team</button>`:''}
   `);
 }
+// Every record that points at a team member by name follows a rename: the
+// owner of a clinic and the owner before a handover, visits, tasks, plans,
+// events, the month target and its archived months, the ERP salesman
+// mappings. Run only once the team list holds the new name (saveStaff), or by
+// the supervisor's tap on "Finish the rename" (round 3). → [[outcome, key]…]
+function renameRepInLists(prevName, name){
+  return holdRefresh(async () => {
+    // Keep existing records pointing at this person — the owner, and the owner
+    // before a handover: the earlier months of a handed-over clinic count for
+    // prevRep — left on the old name, they counted for nobody on the team and
+    // closed months moved (v123)
+    clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; if(c.prevRep===prevName) c.prevRep = name; });
+    visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
+    tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
+    Object.keys(dayPlans).forEach(d=>{
+      if(dayPlans[d] && dayPlans[d][prevName]){
+        const moved = dayPlans[d][prevName], have = dayPlans[d][name] || [];
+        const ids = new Set(have.map(planEntryId));
+        dayPlans[d][name] = have.concat(moved.filter(e=>!ids.has(planEntryId(e)))); // never two copies of a plan
+        delete dayPlans[d][prevName];
+        tomb('dayPlans', d+'|'+prevName);
+      }
+    });
+    visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
+    events.forEach(e=>{ if(e.rep===prevName) e.rep = name; });
+    // the month target and its archived months
+    if(targets[prevName] && !targets[name]){ targets[name] = targets[prevName]; delete targets[prevName]; }
+    Object.keys(targets._history||{}).forEach(m=>{ const h = targets._history[m]; if(h && h[prevName] && !h[name]){ h[name] = h[prevName]; delete h[prevName]; } });
+    // ERP salesman → rep mappings
+    erpPeriods().forEach(pp=>{ Object.keys(pp.repMap||{}).forEach(k=>{ if(pp.repMap[k]===prevName) pp.repMap[k]=name; }); });
+    Object.keys(erpSales.repMapGlobal||{}).forEach(k=>{ if(erpSales.repMapGlobal[k]===prevName) erpSales.repMapGlobal[k]=name; });
+    if(logAsRep===prevName) logAsRep = name;
+    if(clinicRepFilter===prevName) clinicRepFilter = name;
+    if(reportRepFilter===prevName) reportRepFilter = name;
+    if(calRepFilter===prevName) calRepFilter = name;
+    const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
+    const got = await Promise.all([persistTold('clinics'), persistTold('visits'), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
+    return got.map((r, i) => [r, keys[i]]);
+  });
+}
+// A rename that was started is noted on the phone (round 3: um_renamePending
+// { from, to, at }) until the team list AND the other lists have it. The team
+// list is saved first; when its answer does not come in time and it lands
+// only after the app was closed, the team list has the new name and every
+// other list keeps the old one — her clinics, visits and target were on a
+// name the team no longer had. At the next read from the cloud the supervisor
+// is told and offered "Finish the rename" (one tap, the same rename as
+// above). Nothing renames itself.
+const RENAME_NOTE = 'um_renamePending';
+let _renameRunning = 0;
+function renameNote(){ try{ const o = JSON.parse(localStorage.getItem(RENAME_NOTE) || 'null'); return o && o.from && o.to ? o : null; }catch(e){ return null; } }
+function setRenameNote(from, to){ try{ localStorage.setItem(RENAME_NOTE, JSON.stringify({ from, to, at: Date.now() })); }catch(e){} }
+function clearRenameNote(){ try{ localStorage.removeItem(RENAME_NOTE); }catch(e){} const b = document.getElementById('renameBanner'); if(b) b.remove(); }
+// How many records still carry a name
+function renameLeftovers(from){
+  const hist = (targets && targets._history) || {};
+  return clinics.filter(c => c && (c.rep === from || c.prevRep === from)).length
+    + (typeof hiddenPlaceholderClinics !== 'undefined' ? hiddenPlaceholderClinics.filter(c => c && (c.rep === from || c.prevRep === from)).length : 0)
+    + visits.filter(v => v && (v.rep === from || v.withRep === from)).length
+    + tasks.filter(t => t && t.rep === from).length
+    + events.filter(e => e && e.rep === from).length
+    + Object.keys(dayPlans || {}).filter(d => dayPlans[d] && dayPlans[d][from]).length
+    + (targets && targets[from] ? 1 : 0) + Object.keys(hist).filter(m => hist[m] && hist[m][from]).length;
+}
+// After every refresh (loadAllNow): is a rename this phone started half done?
+function checkPendingRename(){
+  const note = renameNote(), bar = document.getElementById('renameBanner');
+  if(!note || !currentUser || currentUser.role !== 'supervisor'){ if(bar) bar.remove(); return; }
+  if(_renameRunning) return;
+  // judged only from lists the cloud sent now, with nothing of this phone's still waiting for them
+  if(['staff', 'clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets'].some(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k))) return;
+  const hasTo = staff.some(x => x.name === note.to), hasFrom = staff.some(x => x.name === note.from);
+  // the team list did not take the new name (nothing was renamed), or someone on the team carries the old one: nothing to finish
+  if(!hasTo || hasFrom){ clearRenameNote(); return; }
+  const left = renameLeftovers(note.from);
+  if(!left){ clearRenameNote(); return; } // finished
+  const text = `⚠️ The rename of "${note.from}" to "${note.to}" was not finished: the team list has the new name, ${left} records (clinics, visits, tasks, plans, targets) still have the old one.`;
+  let el = bar;
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'renameBanner'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
+    el.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:9999; background:#7A4B00; color:#fff; padding:10px 14px; font-size:13px; line-height:1.5; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.4);';
+    document.body.appendChild(el);
+  }
+  const html = `<span>${esc(trOf(text) || text)}</span> <button onclick="finishPendingRename()" style="margin-inline-start:10px; background:#fff; color:#7A4B00; border:0; border-radius:8px; padding:5px 12px; font-weight:700;">${esc(trOf('Finish the rename') || 'Finish the rename')}</button>`;
+  if(el.innerHTML !== html) el.innerHTML = html;
+}
+async function finishPendingRename(){
+  if(!requireAdmin()) return;
+  const note = renameNote();
+  if(!note || _renameRunning) return;
+  if(!staff.some(x => x.name === note.to) || staff.some(x => x.name === note.from)){ clearRenameNote(); return; }
+  _renameRunning++;
+  let pairs;
+  try{ pairs = await renameRepInLists(note.from, note.to); }
+  finally{ _renameRunning--; }
+  // the note goes only when every list has landed; otherwise the banner comes back after the next refresh
+  if(pairs.every(([r, k]) => r && (r.ok === true || sentSince(k, r)))) clearRenameNote();
+  saveToastAll(pairs, '✅ Rename finished');
+  renderAll();
+  checkPendingRename();
+}
 async function saveStaff(idx){
   if(!requireAdmin()) return;
   const name = document.getElementById('sfName').value.trim();
@@ -35,44 +137,47 @@ async function saveStaff(idx){
   if(!email || !email.includes('@')){ showToast('Enter a valid email'); return; }
   const clash = staff.find((s,i)=>i!==idx && (s.name.toLowerCase()===name.toLowerCase() || s.email===email));
   if(clash){ showToast('That name or email is already used'); return; }
-  if(idx>=0){
-    const prevName = staff[idx].name;
-    staff[idx] = {...staff[idx], name, email, role, sells};
-    if(prevName !== name){
-      // Keep existing records pointing at this person
-      clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; });
-      visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
-      tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
-      Object.keys(dayPlans).forEach(d=>{
-        if(dayPlans[d] && dayPlans[d][prevName]){
-          const moved = dayPlans[d][prevName], have = dayPlans[d][name] || [];
-          const ids = new Set(have.map(planEntryId));
-          dayPlans[d][name] = have.concat(moved.filter(e=>!ids.has(planEntryId(e)))); // never two copies of a plan
-          delete dayPlans[d][prevName];
-          tomb('dayPlans', d+'|'+prevName);
-        }
-      });
-      visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
-      events.forEach(e=>{ if(e.rep===prevName) e.rep = name; });
-      // the month target and its archived months
-      if(targets[prevName] && !targets[name]){ targets[name] = targets[prevName]; delete targets[prevName]; }
-      Object.keys(targets._history||{}).forEach(m=>{ const h = targets._history[m]; if(h && h[prevName] && !h[name]){ h[name] = h[prevName]; delete h[prevName]; } });
-      // ERP salesman → rep mappings
-      erpPeriods().forEach(pp=>{ Object.keys(pp.repMap||{}).forEach(k=>{ if(pp.repMap[k]===prevName) pp.repMap[k]=name; }); });
-      Object.keys(erpSales.repMapGlobal||{}).forEach(k=>{ if(erpSales.repMapGlobal[k]===prevName) erpSales.repMapGlobal[k]=name; });
-      if(logAsRep===prevName) logAsRep = name;
-      if(clinicRepFilter===prevName) clinicRepFilter = name;
-      if(reportRepFilter===prevName) reportRepFilter = name;
-      if(calRepFilter===prevName) calRepFilter = name;
-      await Promise.all([persist('clinics'), persist('visits'), persist('tasks'), persist('dayPlans'), persist('events'), persist('targets'), persist('erpSales')]);
-    }
-  } else {
-    staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
-  }
+  const was = staff.map(s => Object.assign({}, s)); // the team list as it is, put back if the save does not land
+  const prevName = idx >= 0 ? staff[idx].name : null;
+  const renaming = idx >= 0 && prevName !== name;
+  if(idx>=0) staff[idx] = {...staff[idx], name, email, role, sells};
+  else staff.push({name, email, role, sells, av:AVATARS[staff.length % AVATARS.length]});
   refreshStaff();
-  await persist('staff');
+  const saved = staff.map(s => Object.assign({}, s));
+  // The team list first, by its compare-and-set; the other lists are renamed
+  // only once it has landed (v123 review): renamed first, a team list refused
+  // ("Changed on another device") left clinics, visits and targets on a name
+  // the team list did not have — the renamed rep saw none of her clinics and
+  // no target, and her sales counted for nobody. Refused: nothing changes.
+  // A save with no answer in time that lands later renames them then (onLate).
+  const renameLists = () => renaming ? renameRepInLists(prevName, name) : Promise.resolve([]);
+  const landedAll = pairs => pairs.every(([x, k]) => x && (x.ok === true || sentSince(k, x)));
+  const late = () => {
+    staff = saved.map(s => Object.assign({}, s)); refreshStaff();
+    setRenameNote(prevName, name); _renameRunning++;
+    renameLists().then(pairs => { if(landedAll(pairs)) clearRenameNote(); saveToastAll(pairs, '✅ Team updated'); renderAll(); }).finally(() => { _renameRunning--; });
+  };
+  if(renaming){ setRenameNote(prevName, name); _renameRunning++; } // on the phone until the team list and the other lists have the new name (round 3)
+  let r;
+  try{ r = await persistTold('staff', renaming ? { onLate: late } : undefined); }
+  finally{ if(renaming) _renameRunning--; }
+  if(!r.ok){
+    // not saved, nothing renamed: the note goes — unless no answer came in time: the save may still land,
+    // here (onLate above) or after the app was closed (the note is then read at the next start)
+    if(renaming && !(r.outcome && r.outcome.timeout)) clearRenameNote();
+    staff = was; refreshStaff(); // not saved: the screen shows the team list as the cloud has it
+    closeModal();
+    saveToast(r, 'staff', ''); // what that save did (refused on another device, no answer yet, no connection)
+    renderGate(); renderAll(); openAdminPanel(); setAdminTab('staff');
+    return;
+  }
+  if(renaming) _renameRunning++;
+  let renamed;
+  try{ renamed = await renameLists(); }
+  finally{ if(renaming) _renameRunning--; }
+  if(renaming && landedAll(renamed)) clearRenameNote();
   closeModal();
-  showToast('✅ Team updated');
+  saveToastAll([[r, 'staff']].concat(renamed), '✅ Team updated'); // "updated" only when the team list and every renamed list landed
   renderGate();
   renderAll();
   openAdminPanel(); setAdminTab('staff');
@@ -99,9 +204,9 @@ async function confirmRemoveStaff(idx){
   if(!s) return;
   staff.splice(idx,1);
   refreshStaff();
-  await persist('staff');
+  const r = await persistTold('staff');
   closeModal();
-  showToast(`${s.name} removed`);
+  saveToast(r, 'staff', `${s.name} removed`);
   renderGate();
   renderAll();
   openAdminPanel(); setAdminTab('staff');
@@ -123,6 +228,7 @@ function openStandaloneOrder(prefillClinicId){
     <div id="soNewClinicFields" style="display:none; margin-top:10px;">
       <input type="text" id="soNewClinicName" placeholder="Clinic / customer name">
       <input type="tel" id="soNewClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+      <div id="soNewClinicAsk"></div>
       <label>Class</label>
       <div class="chip-row" id="soNewClinicClsChips"></div>
       <button class="btn ghost" onclick="cancelSoNewClinic()">Cancel</button>
@@ -242,21 +348,33 @@ function renderSoTotal(){
     ${soDiscount?`<div class="row-between" style="font-size:12.5px; color:var(--coral-ink); margin-top:4px;"><span>Discount (${soDiscount}%)</span><span>− ${money(t.disc)}</span></div>`:''}
     <div class="row-between" style="margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-weight:700;"><span>Order total</span><span>${money(t.net)}</span></div>`;
 }
-async function saveStandaloneOrder(){
+async function saveStandaloneOrder(confirmed){
   let soNewCreated = false;
+  // Every check first, the new customer last (round 4): it was put on the list before "Add at
+  // least one product" stopped the save, and the next Save took it for an existing customer —
+  // the clinics list was never saved, and the order pointed at a clinic no other phone had.
+  if(soNewClinicMode && !document.getElementById('soNewClinicName').value.trim()){ showToast('Enter the customer name'); return; }
+  if(!soNewClinicMode && !soClinicId){ showToast('Pick a clinic first'); return; }
+  if(!Object.keys(soItems).some(id => soItems[id] > 0)){ showToast('Add at least one product'); return; }
   if(soNewClinicMode){
     const name = document.getElementById('soNewClinicName').value.trim();
-    if(!name){ showToast('Enter the customer name'); return; }
     const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
     if(dup){ soClinicId = dup.id; showToast('Customer already exists — using it'); }
     else {
       const clsEl = document.querySelector('#soNewClinicClsChips .chip.on');
-      soClinicId = uid();
-      clinics.push(normalizeClinic({id:soClinicId, name, rep: currentUser.name,
+      const nc = normalizeClinic({id:uid(), name, rep: currentUser.name,
         cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'', account:null,
         isNew:true, addedOn:todayStr(), contact:'',
-        phone: document.getElementById('soNewClinicPhone').value.trim()}));
-      soNewCreated = true;
+        phone: document.getElementById('soNewClinicPhone').value.trim()});
+      // the same sales check as "+ Add clinic" (v123 review): nothing is saved until it passes
+      const askBox = document.getElementById('soNewClinicAsk');
+      const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'saveStandaloneOrder', "document.getElementById('soNewClinicAsk').innerHTML=''");
+      if(!chk.ok){ if(askBox) askBox.innerHTML = newClinicAskCard(chk.html); showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000); return; }
+      if(askBox) askBox.innerHTML = '';
+      clinics.push(nc);
+      soNewCreated = await saveNewClinicFirst(nc, 'soNewClinicAsk'); // the customer first: refused or too large → no order either
+      if(!soNewCreated){ renderAll(); return; }
+      soClinicId = nc.id;
     }
   }
   if(!soClinicId){ showToast('Pick a clinic first'); return; }
@@ -266,7 +384,6 @@ async function saveStandaloneOrder(){
     const p = findProduct(id);
     return {productId:id, qty:soItems[id], unitPrice: p&&p.price!=null ? p.price : null, name: p?p.name:''};
   });
-  if(!items.length){ showToast('Add at least one product'); return; }
   const date = document.getElementById('soDate').value || todayStr();
   const notes = document.getElementById('soNotes').value.trim();
   const t = soTotals();
@@ -279,10 +396,11 @@ async function saveStandaloneOrder(){
     orderGross:t.gross, orderDiscount:t.disc, orderTotal:t.net,
     nextFollowUp:null, notes
   });
-  await Promise.all([persist('visits'), soNewCreated ? persist('clinics') : Promise.resolve()]);
+  const vs = await persistFor('visits'), cs = soNewCreated || null; // (the new customer was saved first)
   soNewClinicMode = false;
   closeModal();
-  showToast(soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
+  // what the save did — "saved" only when it landed
+  saveToastAll([[vs, 'visits'], [cs, 'clinics']], soNewCreated ? `🌟 New customer added · 🛒 Order saved — ${money(t.net)}` : `🛒 Order saved — ${money(t.net)}`);
   renderAll();
 }
 
@@ -309,6 +427,7 @@ function openCallLog(prefillClinicId){
     <div id="clNewClinicFields" style="display:none; margin-top:10px;">
       <input type="text" id="clNewClinicName" placeholder="Clinic / customer name">
       <input type="tel" id="clNewClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+      <div id="clNewClinicAsk"></div>
       <label>Class</label>
       <div class="chip-row" id="clNewClinicClsChips"></div>
       <button class="btn ghost" onclick="cancelClNewClinic()">Cancel</button>
@@ -385,20 +504,30 @@ function pickClQuickDate(days){
   document.getElementById('clFollowUp').value = localDateStr(d);
 }
 const CHANNEL_LABELS = {call:'📞 Call', whatsapp:'💬 WhatsApp', email:'✉️ Email', other:'💭 Other'};
-async function saveCallLog(){
+async function saveCallLog(confirmed){
   let newClinicCreated = false;
   if(clNewClinicMode){
     const name = document.getElementById('clNewClinicName').value.trim();
     if(!name){ showToast('Enter the customer name'); return; }
+    if(!document.getElementById('clNotes').value.trim()){ showToast('Add a quick note about the call'); return; } // before any clinic is made
     const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
     if(dup){ clClinicId = dup.id; showToast('Customer already exists — using it'); }
     else {
       const clsEl = document.querySelector('#clNewClinicClsChips .chip.on');
-      clClinicId = uid();
-      clinics.push(normalizeClinic({id:clClinicId, name, rep: currentUser.name,
+      const nc = normalizeClinic({id:uid(), name, rep: currentUser.name,
         cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'', account:null,
         isNew:true, addedOn:todayStr(), contact:'',
-        phone: document.getElementById('clNewClinicPhone').value.trim()}));
+        phone: document.getElementById('clNewClinicPhone').value.trim()});
+      // the "+ Add clinic" sales check, as the order form does (round 3: the call log made
+      // clinics without it — a rep's new customer took another person's invoices, closed months
+      // too): nothing is saved until it passes; a rep is stopped and the form keeps what she typed
+      const askBox = document.getElementById('clNewClinicAsk');
+      const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'saveCallLog', "document.getElementById('clNewClinicAsk').innerHTML=''");
+      if(!chk.ok){ if(askBox) askBox.innerHTML = newClinicAskCard(chk.html); showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000); return; }
+      if(askBox) askBox.innerHTML = '';
+      clinics.push(nc);
+      if(!await saveNewClinicFirst(nc, 'clNewClinicAsk')){ renderAll(); return; } // the customer first: refused or too large → no call either
+      clClinicId = nc.id;
       newClinicCreated = true;
     }
   }
@@ -417,11 +546,11 @@ async function saveCallLog(){
     contactName: contactName||null, contactRole: contactRole||null, contactPhone: contactPhone||null,
     notes, nextFollowUp:followUp});
   if(clinic && followUp) clinic.nextFollowUp = followUp;
-  await Promise.all([persist('visits'), (clinic || newClinicCreated) ? persist('clinics') : Promise.resolve()]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), (clinic || newClinicCreated) ? persistTold('clinics') : Promise.resolve(null)]);
   if(clinic && followUp) await scheduleFollowUp(clinic, followUp, rep);
   clNewClinicMode = false;
   closeModal();
-  showToast(newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
+  saveToastAll([[vs, 'visits'], [newClinicCreated ? cs : null, 'clinics']], newClinicCreated ? '🌟 New customer added + '+CHANNEL_LABELS[channel]+' logged' : CHANNEL_LABELS[channel]+' logged');
   renderAll();
 }
 
@@ -523,6 +652,16 @@ function addEditPhoto(visitId){
     // removed (×) while that save was on its way: never kept on the phone, never sent
     const onVisit = () => { const cur = visits.find(x=>x.id===visitId); return !!(cur && (cur.photos||[]).some(p => p && p.id === id)); };
     if(!onVisit()){ showToast('Photo removed'); return; }
+    // refused by the rules, or the month too large for the cloud (v123): the photo is in no
+    // list and can never upload as it is — taken back off the visit, said for what it is
+    const ro = r.outcome || {};
+    if(!(r.ok || sentSince('visits', r)) && (ro.denied || ro.tooLarge)){
+      const cur = visits.find(x=>x.id===visitId);
+      if(cur) cur.photos = (cur.photos||[]).filter(p => !(p && p.id === id));
+      if(editSheetShows(visitId)) renderEditPhotos(visitId);
+      showToast(visitSaveMsg(r, null, true), 7000);
+      return;
+    }
     const kept = await keepVisitPhotos(v.id, [{id, full}]);
     if(editSheetShows(visitId)) renderEditPhotos(visitId);
     showToast(onVisit() ? visitSaveMsg(r, kept, true) : 'Photo removed', 4500);
@@ -617,6 +756,7 @@ async function saveEditVisit(visitId){
   // Queued here and sent by the queue meanwhile = saved.
   const outcome = vs.outcome;
   if(vs.ok || sentSince('visits', vs)) showToast('✅ Changes saved');
+  else if(outcome.denied || outcome.tooLarge) saveToast(vs, 'visits', ''); // refused, or the month too large: never "kept, uploads by itself" (v123)
   else if(outcome.queued && outcome.mirrored) showToast('📴 Changes kept on this device — they upload automatically when back online');
   else showToast('⚠️ Changes not saved on this device (storage full) — keep the app open until they upload');
   renderAll();
@@ -674,9 +814,9 @@ async function deleteVisit(visitId){
     const cv = visits.filter(x=>x.clinicId===clinicId && isFieldVisit(x));
     clinic.lastVisit = cv.length ? cv.map(x=>x.date).sort().slice(-1)[0] : null;
   }
-  await Promise.all([persist('visits'), persist('clinics')]);
+  const [vs, cs] = await Promise.all([persistFor('visits'), persistTold('clinics')]);
   closeModal();
-  showToast('Moved to recycle bin');
+  saveToastAll([[vs, 'visits'], [cs, 'clinics']], 'Moved to recycle bin');
   renderAll();
 }
 

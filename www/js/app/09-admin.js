@@ -126,8 +126,8 @@ async function saveTargets(){
       visits: Math.round(clamp(document.getElementById('tgVis'+i).value)),
     });
   });
-  await persist('targets');
-  showToast('🎯 Monthly targets saved');
+  const r = await persistTold('targets');
+  saveToast(r, 'targets', '🎯 Monthly targets saved'); // "saved" only when it landed
   renderTargetCard();
 }
 async function saveBenchmarks(){
@@ -138,8 +138,8 @@ async function saveBenchmarks(){
     conversion: clamp(document.getElementById('bmConversion').value),
     tasks: clamp(document.getElementById('bmTasks').value),
   });
-  await persist('benchmarks');
-  showToast('✅ Evaluation targets updated');
+  const r = await persistTold('benchmarks');
+  saveToast(r, 'benchmarks', '✅ Evaluation targets updated');
   if(document.getElementById('scorecards')) renderScorecards();
 }
 function renderAdminStaff(){
@@ -261,8 +261,8 @@ async function toggleSharedClinic(clinicId){
   if(!c) return;
   if(c.shared){ c.shared = false; c.sharedSince = null; }
   else { c.shared = true; c.sharedSince = todayStr().slice(0, 7) + '-01'; }
-  await persist('clinics');
-  showToast(c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
   renderAdminTerritory();
   renderAll();
 }
@@ -306,9 +306,12 @@ async function applyDistributionUpload(){
   const plan = _distPlan; _distPlan = null;
   const before = JSON.stringify(clinics);
   const n = UMCore.applyDistributionPlan(plan, clinics, REPS);
-  if(!await persist('clinics')){
+  const r = await persistTold('clinics');
+  if(!r.ok){
     clinics = JSON.parse(before);
-    showModal(`<h3 style="margin-top:0;">❌ Not saved</h3><div style="font-size:13px;">The clinic list could not be saved to the cloud — nothing was changed. Check the connection and upload the file again.</div><button class="btn" style="margin-top:12px;" onclick="closeModal()">OK</button>`);
+    mirrorSave('clinics', JSON.stringify(storedClinics())); // the phone's copy too: a queued save must never upload the distribution later
+    const o = r.outcome || {}, why = (o.denied || o.tooLarge) ? (saveFailText(r, 'clinics') || [''])[0] : 'The clinic list could not be saved to the cloud — nothing was changed. Check the connection and upload the file again.';
+    showModal(`<h3 style="margin-top:0;">❌ Not saved</h3><div style="font-size:13px;">${esc(trOf(why) || why)}</div><button class="btn" style="margin-top:12px;" onclick="closeModal()">OK</button>`);
     return;
   }
   renderAll();
@@ -331,8 +334,8 @@ async function reassignClinic(clinicId, newRep){
     else { c.prevRep = prev; c.repSince = since; }
   }
   c.rep = newRep;
-  await persist('clinics');
-  showToast(`${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', `${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
   renderAdminTerritory();
   renderAll();
 }
@@ -426,8 +429,8 @@ async function updateProductPrice(key, val){
   const n = parseFloat(val);
   if(isNaN(n) || n<0){ showToast('Enter a valid price'); return; }
   p.price = Math.round(n*100)/100;
-  await persist('products');
-  showToast(`${p.name.slice(0,28)} → ${money(p.price)}`);
+  const r = await persistTold('products');
+  saveToast(r, 'products', `${p.name.slice(0,28)} → ${money(p.price)}`);
 }
 
 // ---- FULL VISIT LOG ----
@@ -614,16 +617,17 @@ async function addDoctor(clinicId){
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return null; }
   const r = addDoctorsToClinic(c, name, title);
   if(!r.ids.length){ showToast('Enter a doctor name'); return null; }
-  if(r.added) await persist('clinics');
+  const saved = r.added ? await persistTold('clinics') : null;
   // The clinic-detail sheet has this list; the quick-add sheet from Log visit doesn't
   const dl = document.getElementById('docListInModal');
   if(dl) dl.innerHTML = renderDoctorRows(c);
   document.getElementById('newDocName').value='';
   document.querySelectorAll('#newDocTitleChips .chip').forEach(c=>c.classList.remove('on'));
-  showToast(r.added === 0 ? `👤 ${r.reused === 1 ? 'This doctor is already on the list — selected' : r.reused + ' doctors already on the list — selected'}`
+  const msg = r.added === 0 ? `👤 ${r.reused === 1 ? 'This doctor is already on the list — selected' : r.reused + ' doctors already on the list — selected'}`
     : r.added > 1 ? `🤝 ${r.added} doctors added${r.reused ? ` · ${r.reused} already listed` : ''}`
     : title ? '🤝 Doctor added — relationships compound'
-    : '🤝 Added — tag their specialty in the Playbook so they count there');
+    : '🤝 Added — tag their specialty in the Playbook so they count there';
+  if(saved) saveToast(saved, 'clinics', msg); else showToast(msg); // "added" only when the save landed
   return r;
 }
 async function removeDoctor(clinicId, docId){
@@ -638,19 +642,22 @@ async function saveProfileNotes(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   c.profileNotes = document.getElementById('profileNotesEdit').value.trim();
-  await persist('clinics');
-  showToast('📝 Saved — future you will thank you');
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', '📝 Saved — future you will thank you');
 }
 async function addToPlan(clinicId){
-  const today = todayStr();
+  const today = todayStr(), me = currentUser.name;
   dayPlans[today] = dayPlans[today] || {};
-  const arr = new Set(dayPlans[today][currentUser.name] || []);
-  arr.add(clinicId);
-  dayPlans[today][currentUser.name] = [...arr];
-  await persist('dayPlans');
+  // One entry per clinic, in the shape the plan picker stores ({id, note, at}: `at` =
+  // when it was planned, for the KPI). Entries are objects, so a Set of them never
+  // matched a bare id and a clinic already planned was listed twice.
+  const list = dayPlans[today][me] || [];
+  if(!list.some(e => planEntryId(e) === clinicId)) list.push({ id: clinicId, note: '', at: Date.now() });
+  dayPlans[today][me] = list;
+  const r = await persistTold('dayPlans');
   closeModal();
   renderPlanList();
-  showToast('Added to today\'s plan');
+  saveToast(r, 'dayPlans', 'Added to today\'s plan');
 }
 // Resolve a clinic name for display even after the clinic was deleted: the
 // live list first, then the name stamped on the visit at delete time, then
@@ -686,7 +693,7 @@ async function confirmDeleteClinic(id){
   closeModal();
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
-  showToast('Moved to recycle bin');
+  saveToast(r.told, 'clinics', 'Moved to recycle bin');
 }
 // The one way a clinic leaves the list (the delete sheet, and Undo of an ERP
 // account move that made a branch): a safety copy in the recycle bin first —
@@ -702,8 +709,8 @@ async function removeClinicToBin(id){
   if(typeof forgetKeptClinic === 'function') forgetKeptClinic(id);
   clinics = clinics.filter(x=>x.id!==id);
   delete _persistInfo.clinics;
-  const ok = await persist('clinics');
-  return { ok, queued: !ok && persistOutcome('clinics').queued };
+  const told = await persistTold('clinics');
+  return { ok: told.ok, queued: !told.ok && !!told.outcome.queued && !told.outcome.tooLarge, told }; // told: that save's own outcome (saveToast)
 }
 // ERP accounts linked by hand to any of these clinics: once a clinic is gone
 // their invoices count for the salesman who issued them — said before a delete.
@@ -822,12 +829,14 @@ async function restoreTickedMissingClinics(){
     const ids = new Set(back.map(c => c.id)), before = ((recycleBin && recycleBin.clinics) || []).length;
     if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(b => !(b && ids.has(b.id)));
     const r = await persistFor('clinics');
-    if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+    const rb = (recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) ? await persistTold('recycleBin') : null;
     closeModal();
     renderAll();
     if(document.getElementById('clinicList')) renderClinics();
-    const ok = r.ok || sentSince('clinics', r);
-    showToast(ok ? `✅ رجعت ${back.length} عيادة` : `⚠️ رجعت ${back.length} عيادة على هذا الجهاز — لم تصل إلى السحابة بعد، وتُرفع عند عودة الاتصال`, 4000);
+    const ok = r.ok || sentSince('clinics', r), o = r.outcome || {};
+    if(ok && rb && !rb.ok) showToast(`✅ رجعت ${back.length} عيادة — لكن سلة المحذوفات لم تُحدَّث، فقد تظهر فيها بعد. لا تسترجعها من السلة`, 6000);
+    else if(ok || (o.queued && o.mirrored && !o.tooLarge)) showToast(ok ? `✅ رجعت ${back.length} عيادة` : `⚠️ رجعت ${back.length} عيادة على هذا الجهاز — لم تصل إلى السحابة بعد، وتُرفع عند عودة الاتصال`, 4000);
+    else saveToast(r, 'clinics', ''); // refused, too large, not saved: said for what it is
   });
 }
 
@@ -888,7 +897,7 @@ async function bulkDeleteClinics(){
   const warn = links.length ? `⚠️ ${t('ERP accounts linked by hand to the selected clinics:')} ${links.length}\n` + links.slice(0, 8).map(n => '• ' + (n.trim() || '(no name)')).join('\n')
     + (links.length > 8 ? `\n• … +${links.length - 8}` : '') + `\n${t('Once they are removed their invoices count for the salesman who issued them — move them first from the clinic card.')}\n\n` : '';
   if(!confirm(warn + `Delete ${_mgSelected.size} clinic(s)? They move to the recycle bin and can be restored for a while.`)) return;
-  const removed = new Set();
+  const removed = new Set(), _mgAsked = _mgSelected.size;
   for(const id of _mgSelected){
     const c = clinics.find(x=>x.id===id);
     if(!c) continue;
@@ -899,10 +908,11 @@ async function bulkDeleteClinics(){
   clinics = clinics.filter(c=>!removed.has(c.id));
   _mgSelected = new Set();
   if(!removed.size){ renderMgList(); return; }
-  await persist('clinics', {allowShrink:true}); // explicit, confirmed bulk delete
+  const r = await persistTold('clinics', {allowShrink:true}); // explicit, confirmed bulk delete
   renderMgList(); renderAll();
   if(document.getElementById('clinicList')) renderClinics();
-  showToast('🗑️ Moved to recycle bin');
+  if(removed.size === _mgAsked) saveToast(r, 'clinics', '🗑️ Moved to recycle bin');
+  else if(!(r.ok || sentSince('clinics', r))) saveToast(r, 'clinics', ''); // (the "some moved" notice above stays when the save landed)
 }
 async function handleClinicSheet(input){
   const f = input.files && input.files[0];
@@ -948,18 +958,31 @@ async function handleClinicSheet(input){
           </div>`).join('')}
         ${list.length>60?`<div style="color:var(--muted); font-size:12px; text-align:center; padding:6px;">+${list.length-60} more (all included)</div>`:''}
       </div>
+      <div id="ciAsk"></div>
       <button class="btn" style="margin-top:10px;" onclick="commitClinicImport()">Add clinics</button>`;
   }catch(e){
     console.error(e);
     prev.innerHTML = '<div style="color:var(--coral-ink); font-size:13px;">Could not read this file — save it as .xlsx or .csv and retry.</div>';
   }
 }
-async function commitClinicImport(){
+async function commitClinicImport(confirmed){
   if(!requireAdmin() || !_clinicImport) return;
   const repEl = document.querySelector('#ciRepChips .chip.on');
   const defaultRep = repEl ? repEl.dataset.rep : REPS[0];
   const updateDups = !!document.getElementById('ciUpdateDups')?.checked;
   const repByLower = new Map(REPS.map(r=>[r.toLowerCase(), r]));
+  // the clinics it adds, first on their own: the sales check reads them before any is on the list (round 3)
+  const add = [];
+  _clinicImport.rows.forEach(x=>{
+    if(!x.include || x.dup) return;
+    const d = x.data, rep = repByLower.get((d.rep||'').toLowerCase()) || defaultRep;
+    add.push(normalizeClinic({id:uid(), name:d.name, rep, cls:d.cls, market:d.market,
+      account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
+  });
+  const ask = document.getElementById('ciAsk');
+  const chk = bulkClinicSalesCheck(add, typeof confirmed === 'string' ? confirmed : '', 'commitClinicImport', "document.getElementById('ciAsk').innerHTML=''",
+    'To keep those sales where they count now, untick those clinics and add the rest.');
+  if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); else showToast('⚠️ Not saved — these clinic names need a check first', 6000); return; }
   let added = 0, updated = 0, skipped = 0;
   _clinicImport.rows.forEach(x=>{
     if(!x.include){ skipped++; return; }
@@ -972,15 +995,12 @@ async function commitClinicImport(){
       } else skipped++;
       return;
     }
-    const rep = repByLower.get((d.rep||'').toLowerCase()) || defaultRep;
-    clinics.push(normalizeClinic({id:uid(), name:d.name, rep, cls:d.cls, market:d.market,
-      account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
-    added++;
   });
-  await persist('clinics');
+  add.forEach(c => { clinics.push(c); added++; });
+  const r = await persistTold('clinics');
   closeModal();
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
-  showToast(`✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
+  saveToast(r, 'clinics', `✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
 }
 

@@ -1,0 +1,31 @@
+name: Security rules
+
+# firestore.rules on Google's Firestore and Auth emulators (tests/rules):
+# who may read and write what, and the app's own storage code replaying every
+# write it makes, per role. The rules are published by hand in the Firebase
+# console; this proves the committed file before the owner pastes it. (The
+# source scan — every write target the app has is one the rules know — also
+# runs in `npm test`, which gates the deploy.)
+on:
+  push:
+  pull_request:
+
+jobs:
+  emulators:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/rules/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+        working-directory: tests/rules
+      - run: npm test
+        working-directory: tests/rules

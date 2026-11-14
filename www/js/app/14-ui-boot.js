@@ -24,32 +24,44 @@ if('serviceWorker' in navigator){
   if(document.readyState === 'complete') registerSW();
   else window.addEventListener('load', registerSW);
 }
-if(FIREBASE_ENABLED){
-  // Poll for changes made by other reps/devices so data stays reasonably fresh
-  // without a full realtime-listener rewrite of every render call.
-  setInterval(async ()=>{
-    // Never refresh underneath a sales upload or a sales save in flight.
-    // Sales edits the cloud has not confirmed (_erpDirty) do NOT stop the
-    // refresh: loadAll keeps that copy in memory by itself, and the team's
-    // visits, clinics and plans — and this phone's queued offline saves —
-    // must keep moving meanwhile (v121: the flag froze them until reload).
-    if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
-    if(currentUser && document.visibilityState==='visible'){
-      // Queued offline edits must reach the cloud BEFORE a refresh replaces
-      // memory with the (still-stale) cloud copy — otherwise they'd be lost.
-      // If a flush keeps failing we still refresh periodically so the device
-      // never gets pinned to stale data forever (merge-on-save protects the
-      // queued entries, and the mirror still wins for the stuck key).
-      if(outboxList().length){
-        await flushOutbox();
-        _stuckTicks = outboxList().length ? _stuckTicks + 1 : 0;
-        if(_stuckTicks < 15) return;   // ~5 minutes of retries before refreshing anyway
-        _stuckTicks = 0;
-      }
+// Poll for changes made by other reps/devices so data stays reasonably fresh
+// without a full realtime-listener rewrite of every render call. The same one
+// path runs every 20 seconds and once when the app comes back on screen (v123:
+// a phone woken from the pocket showed data as old as its last refresh), and
+// never while a refresh is still on its way (loadAll is one at a time).
+async function bgRefresh(){
+  // Never refresh underneath a sales upload or a sales save in flight.
+  // Sales edits the cloud has not confirmed (_erpDirty) do NOT stop the
+  // refresh: loadAll keeps that copy in memory by itself, and the team's
+  // visits, clinics and plans — and this phone's queued offline saves —
+  // must keep moving meanwhile (v121: the flag froze them until reload).
+  if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
+  if(refreshRunning() || _roundBusy) return;
+  if(currentUser && document.visibilityState==='visible'){
+    _roundBusy = true;
+    try{
+      // Queued offline edits go up first (the delete log, then each list the
+      // round may send), then the refresh — EVERY round (round 3). Until then a
+      // round that left anything queued skipped the refresh, ~5 minutes at a
+      // time: a list that keeps waiting (the rules refuse it, it is too large
+      // for the cloud, no answer) froze every other list on this phone. A queued
+      // list loses nothing to the refresh: it is served from this phone's copy
+      // (cloudGet, loadVisits; from memory when that copy could not be written)
+      // until it is sent. The refresh ends by sending what is still queued
+      // (loadAllNow): the round is over only once that is done too, and a round
+      // never starts while the last one is still on its way (_roundBusy) — a
+      // phone closed right after a round leaves nothing of it half-sent.
+      if(outboxList().length) await flushOutbox();
       await loadAll();
+      if(_refreshFlush){ try{ await _refreshFlush; }catch(e){} }
       if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
-    }
-  }, 20000);
+    } finally { _roundBusy = false; }
+  }
+}
+let _roundBusy = false;
+if(FIREBASE_ENABLED){
+  setInterval(bgRefresh, 20000);
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && currentUser && _bootLoaded) bgRefresh(); });
 }
 // ---- Bottom-sheet drag-to-dismiss ----
 // The sheet already looks draggable (it has a handle); make the gesture real.

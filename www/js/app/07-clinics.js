@@ -444,7 +444,11 @@ function renderNamelessCard(){
   const n = namelessMine().length;
   const lost = UMCore.lostDoctors(clinics.filter(canNameForClinic), visits, tombSet('doctors'));
   const nd = Object.keys(lost).reduce((s, k) => s + lost[k].length, 0), nc = Object.keys(lost).length;
-  el.innerHTML = (n ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openNamelessClinics()">
+  const dups = currentUser && currentUser.role === 'supervisor' ? dupDoctorsFor(clinics).length : 0;
+  el.innerHTML = (dups ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openDupDoctors('')">
+      <div style="font-weight:700; font-size:13.5px;">⚠️ ${dups} <span>possible duplicate doctors</span></div>
+      <div style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Two records with one name at the same clinic. Both are kept until you check them.</span></div>
+    </div>` : '') + (n ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openNamelessClinics()">
       <div style="font-weight:700; font-size:13.5px;">⚠️ ${n} <span>clinics from August have no name</span></div>
       <div style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Their visits are kept. Tap to name them — they show again in the list.</span></div>
     </div>` : '') + (nd ? `<div class="card clickable" style="margin-top:12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" onclick="openLostDoctors('')">
@@ -502,7 +506,7 @@ function visitsNaming(clinicId, docId){
 // A question asked inside the card it is about (the app's own confirm step:
 // nothing changes until the second tap).
 function askInCard(selector, html){
-  const card = [...document.querySelectorAll('#modalInner [data-lostdoc], #modalInner [data-nameless]')].find(el => (el.dataset.lostdoc || el.dataset.nameless) === selector);
+  const card = [...document.querySelectorAll('#modalInner [data-lostdoc], #modalInner [data-nameless], #modalInner [data-dupdoc]')].find(el => (el.dataset.lostdoc || el.dataset.nameless || el.dataset.dupdoc) === selector);
   if(card) card.innerHTML = html;
   return !!card;
 }
@@ -538,14 +542,14 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
       let n = 0;
       visits.forEach(v => { if(v && v.clinicId === clinicId && UMCore.remapVisitDoctors(v, remap)) n++; });
       const r = await persistFor('visits');
-      showToast((r.ok || sentSince('visits', r)) ? `✅ ${n} visits joined ${same.name}` : '⚠️ Saved on this device — not in the cloud yet', 4000);
+      saveToast(r, 'visits', `✅ ${n} visits joined ${same.name}`, 4000); // what that save did: in the cloud, kept on this phone, refused, too large
     } else {
       // the record this phone kept (title, phone, notes…) when its name is the one used, else the name alone; same id either way
       const k = kind === 'copy' ? phoneCopyDoctors().get(clinicId + '|' + docId) : null;
       const base = k && UMCore.normDoctorName(k.name) === key ? JSON.parse(JSON.stringify(k)) : {};
       c.doctors = (c.doctors || []).concat([Object.assign({ title: '', phone: '', birthday: '', cadence: '', notes: '', handovers: [] }, base, { id: docId, name })]);
       const r = await persistFor('clinics');
-      showToast((r.ok || sentSince('clinics', r)) ? `✅ ${name} is back on the clinic's list` : '⚠️ Saved on this device — not in the cloud yet', 4000);
+      saveToast(r, 'clinics', `✅ ${name} is back on the clinic's list`, 4000);
     }
   } finally { _namingBusy.delete(busy); }
   renderAll();
@@ -558,9 +562,114 @@ async function markDoctorGone(clinicId, docId, scope){
   if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
   tomb('doctors', clinicId + '|' + docId);
   const ok = await persistTombs();
-  showToast(ok ? '✅ Taken off this list' : '⚠️ Taken off this list on this device — not saved to the cloud yet', 4000);
+  if(ok) showToast('✅ Taken off this list', 4000);
+  else if(_saveParked.get('tombs') === 'refused') showToast(REFUSED_KEPT, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
+  else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
   renderAll();
   openLostDoctors(scope);
+}
+// ---- Possible duplicate doctors (v123, the supervisor) ----
+// Until v122 every phone collapsed two doctors of one clinic whose names
+// matched once "Dr.", titles and punctuation were dropped, and the
+// supervisor's phone wrote that back at start: the second record's phone,
+// role and stage were lost and its visits moved — an automatic merge, against
+// the owner's rule of 12 Nov. Now both records stay; the supervisor sees them
+// here and decides by tap: the same person (merged — nothing either record
+// held is lost, a differing value is written into the notes) or different
+// people (never offered again).
+function dupDoctorsFor(list){ return typeof UMCore.possibleDuplicateDoctors === 'function' ? UMCore.possibleDuplicateDoctors(list) : []; }
+function dupDoctorsLine(c){
+  if(!c || !currentUser || currentUser.role !== 'supervisor') return '';
+  const n = dupDoctorsFor([c]).length;
+  return n ? `<div class="card clickable" style="padding:8px 12px; border-inline-start:4px solid var(--amber); background:var(--amber-dim);" data-id="${esc(c.id)}" onclick="openDupDoctors(this.dataset.id)">
+      <div style="font-weight:700; font-size:13px;">⚠️ ${n} <span>possible duplicate doctors</span></div>
+      <div style="font-size:12px; color:var(--muted);"><span>Two records with one name. Tap to check.</span></div>
+    </div>` : '';
+}
+// the record a merge keeps: the first on the clinic's list (the older one) —
+// its id and name; every field of the other is kept (UMCore.mergeDoctorPair)
+function dupKeepOf(c, g){ return g.doctors[0]; }
+function dupDocFacts(c, d){
+  const bits = [d.title, d.role, d.stage, d.phone, d.whatsapp, d.email].filter(x => x != null && String(x).trim() !== '').map(x => esc(String(x)));
+  return `<div style="font-size:13px; margin-top:4px;"><b dir="auto">${esc(d.name || '—')}</b>${bits.length ? ' · <bdi>' + bits.join(' · ') + '</bdi>' : ''} · ${visitsNaming(c.id, d.id).length} <span>visits</span></div>`;
+}
+function openDupDoctors(scope){
+  if(!currentUser || currentUser.role !== 'supervisor') return;
+  const list = clinics.filter(c => c && (!scope || c.id === scope));
+  const groups = dupDoctorsFor(list);
+  const body = groups.map(g => {
+    const c = clinics.find(x => x && x.id === g.clinicId);
+    return (scope ? '' : `<div class="section-title" dir="auto" style="margin-top:14px;">${esc(c.name)}</div>`) + `<div class="card" style="padding:10px 12px;" data-dupdoc="${esc(g.clinicId + '|' + g.key)}">
+      ${g.doctors.map(d => dupDocFacts(c, d)).join('')}
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-c="${esc(g.clinicId)}" data-k="${esc(g.key)}" data-scope="${esc(scope || '')}" onclick="mergeDupDoctors(this.dataset.c, this.dataset.k, this.dataset.scope)">🔗 <span>The same person — merge</span></button>
+        <button class="chip small" data-c="${esc(g.clinicId)}" data-k="${esc(g.key)}" data-scope="${esc(scope || '')}" onclick="keepDupDoctors(this.dataset.c, this.dataset.k, this.dataset.scope)"><span>Different people — keep both</span></button>
+      </div>
+    </div>`;
+  }).join('');
+  showModal(`<h3 style="margin-top:0;">⚠️ <span>Possible duplicate doctors</span></h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>These doctors of one clinic have the same name once "Dr." and titles are left out. Both records are kept until you decide. Merging keeps everything either record holds: their visits, orders and prescriptions join one record. Nothing changes until you tap.</span></p>
+    ${body || '<div class="empty"><span>Nothing left to check.</span></div>'}
+    <button class="btn secondary" style="margin-top:8px;" data-scope="${esc(scope || '')}" onclick="closeModal(); if(this.dataset.scope) openClinicDetail(this.dataset.scope); else renderClinics();">Done</button>`);
+}
+const _dupBusy = new Set();
+async function mergeDupDoctors(clinicId, key, scope, confirmed){
+  if(!currentUser || currentUser.role !== 'supervisor') return;
+  const c = clinics.find(x => x && x.id === clinicId);
+  const g = c ? dupDoctorsFor([c]).find(x => x.key === key) : null;
+  const sel = clinicId + '|' + key;
+  if(!g){ showToast('This changed since you were asked — nothing was changed', 4000); openDupDoctors(scope); return; }
+  if(_dupBusy.has(sel)) return;
+  if(!visitsComplete()){
+    askInCard(sel, `<div style="font-size:13px; line-height:1.6;">⚠️ <span>Some months of visits did not load on this device, so not every visit could move. Nothing was changed.</span></div>
+      <div style="margin-top:8px;"><button class="chip small" data-scope="${esc(scope || '')}" onclick="openDupDoctors(this.dataset.scope)"><span>OK</span></button></div>`);
+    return;
+  }
+  const keep = dupKeepOf(c, g), others = g.doctors.filter(d => d !== keep);
+  const asked = 'merge:' + g.doctors.map(d => d.id).join(',') + '>' + keep.id;
+  if(confirmed !== asked){
+    // what the merge does, asked in the card first (the second tap applies it)
+    let merged = keep, conflicts = [];
+    others.forEach(d => { const m = UMCore.mergeDoctorPair(merged, d); merged = m.doctor; conflicts = conflicts.concat(m.conflicts); });
+    const n = others.reduce((a, d) => a + visitsNaming(c.id, d.id).length, 0);
+    askInCard(sel, `<div style="font-size:13px; line-height:1.6;"><span>Merge into</span> <b dir="auto">${esc(keep.name)}</b>: ${n} <span>visits of the other record join it.</span>${conflicts.length ? ` <span>Different values are kept in the notes:</span> <bdi>${[...new Set(conflicts)].map(esc).join(', ')}</bdi>.` : ''}</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-c="${esc(clinicId)}" data-k="${esc(key)}" data-scope="${esc(scope || '')}" data-ask="${esc(asked)}" onclick="mergeDupDoctors(this.dataset.c, this.dataset.k, this.dataset.scope, this.dataset.ask)">✅ <span>Yes, merge</span></button>
+        <button class="chip small" data-scope="${esc(scope || '')}" onclick="openDupDoctors(this.dataset.scope)"><span>Cancel</span></button>
+      </div>`);
+    return;
+  }
+  _dupBusy.add(sel);
+  try{
+    let merged = keep;
+    others.forEach(d => { merged = UMCore.mergeDoctorPair(merged, d).doctor; });
+    const remap = Object.create(null);
+    others.forEach(d => { remap[d.id] = keep.id; });
+    const gone = new Set(others.map(d => d.id));
+    c.doctors = (c.doctors || []).filter(d => !(d && gone.has(d.id))).map(d => d === keep ? merged : d);
+    c.doctorMerges = Object.assign({}, c.doctorMerges || {}, remap); // a visit a phone logged offline under the merged record still shows the kept one
+    others.forEach(d => tomb('doctors', c.id + '|' + d.id));         // a stale copy of the clinic never brings the merged record back
+    let n = 0;
+    visits.forEach(v => { if(v && v.clinicId === c.id && UMCore.remapVisitDoctors(v, remap)) n++; });
+    const rv = n ? await persistFor('visits') : null;
+    const rc = await persistFor('clinics');
+    saveToastAll([[rc, 'clinics'], [rv, 'visits']], `✅ ${others.length + 1} records are now one: ${keep.name}`, 4000);
+  } finally { _dupBusy.delete(sel); }
+  renderAll();
+  openDupDoctors(scope);
+}
+async function keepDupDoctors(clinicId, key, scope){
+  if(!currentUser || currentUser.role !== 'supervisor') return;
+  const c = clinics.find(x => x && x.id === clinicId);
+  const g = c ? dupDoctorsFor([c]).find(x => x.key === key) : null;
+  if(!g){ openDupDoctors(scope); return; }
+  const pairs = new Set(Array.isArray(c.distinctDoctors) ? c.distinctDoctors : []);
+  for(let i = 0; i < g.doctors.length; i++) for(let j = i + 1; j < g.doctors.length; j++) pairs.add(UMCore.distinctPair(g.doctors[i].id, g.doctors[j].id));
+  c.distinctDoctors = [...pairs].sort();
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', '✅ Kept as different people', 4000);
+  renderAll();
+  openDupDoctors(scope);
 }
 // One spelling key for clinic names (case and spaces), as the nameless sheet's
 // "already in the list" check always compared them.
@@ -683,13 +792,12 @@ async function nameNamelessClinic(id, raw, kind, confirmed){
         same.doctors = m.doctors;
         if(Object.keys(m.remap).length) visits.forEach(v => { if(v && v.clinicId === same.id) UMCore.remapVisitDoctors(v, m.remap); });
       }
-      const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'); await persist('dayPlans');
-      const ok = (r1.ok || sentSince('visits', r1)) && (r2.ok || sentSince('clinics', r2)) && (r3.ok || sentSince('tasks', r3));
-      showToast(ok ? `✅ Visits moved to ${same.name}` : '⚠️ Moved on this device — not saved to the cloud yet', 4000);
+      const r1 = await persistFor('visits'), r2 = await persistFor('clinics'), r3 = await persistFor('tasks'), r4 = await persistFor('dayPlans');
+      saveToastAll([[r1, 'visits'], [r2, 'clinics'], [r3, 'tasks'], [r4, 'dayPlans']], `✅ Visits moved to ${same.name}`, 4000); // "moved" only when every list landed
     } else {
       clinics.push(next); hidePlaceholderClinics();
       const r = await persistFor('clinics');
-      showToast((r.ok || sentSince('clinics', r)) ? `✅ ${next.name} is back in the list` : '⚠️ Named on this device — not saved to the cloud yet', 4000);
+      saveToast(r, 'clinics', `✅ ${next.name} is back in the list`, 4000);
     }
   } finally { _namingBusy.delete(id); }
   renderAll();
@@ -700,8 +808,7 @@ function openAddClinic(){
     <h3 style="margin-top:0;">Add clinic</h3>
     <label>Clinic name</label>
     <input type="text" id="mClinicName" placeholder="e.g. Bright Smile Dental">
-    <label>Assigned rep</label>
-    <div class="chip-row" id="mClinicRep">${REPS.map((r,i)=>`<div class="chip ${i===0?'on':''}" data-rep="${r}" onclick="pickModalRep(this)">${r}</div>`).join('')}</div>
+    ${addClinicOwnerHTML()}
     <label>Class</label>
     <div class="chip-row" id="mClinicCls">${['A','B','C','D','F'].map(c=>`<div class="chip" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('')}</div>
     <label>Account type</label>
@@ -717,8 +824,18 @@ function openAddClinic(){
     <input type="text" id="mClinicContact" dir="auto" placeholder="Optional">
     <label>Phone</label>
     <input type="tel" id="mClinicPhone" placeholder="Optional">
-    <button class="btn" onclick="submitAddClinic()">Save clinic</button>
+    <div id="mClinicAsk"></div>
+    <button class="btn" id="mClinicSave" onclick="submitAddClinic()">Save clinic</button>
   `);
+}
+// Whose the new clinic is (v123): a rep's is hers — no choice to get wrong
+// (until v122 every seller was listed with the first one ticked, so Renova's
+// new clinic was saved as Mariam's and its invoices counted for Mariam); the
+// supervisor picks, with nothing ticked.
+function addClinicOwnerHTML(){
+  if(currentUser.role !== 'supervisor') return `<label>Assigned rep</label><div class="chip-row" id="mClinicRep"><div class="chip on" data-rep="${esc(currentUser.name)}">${esc(currentUser.name)}</div></div>`;
+  return `<label>Whose clinic is it?</label>
+    <div class="chip-row" id="mClinicRep">${REPS.map(r=>`<div class="chip" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>`;
 }
 function pickDocTitle(el){ const was = el.classList.contains('on'); el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); if(!was) el.classList.add('on'); }
 function pickModalCls(el){ el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
@@ -740,23 +857,140 @@ function dealTypeLabel(c, opts){
   return short ? '🛒 Direct' : '🛒 Direct sales';
 }
 function pickModalRep(el){ el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); }
-async function submitAddClinic(){
+// One check for every way a new clinic is made (v123 review): "+ Add clinic",
+// the visit form's "New clinic" and the order form's "+ Add a new customer" —
+// the last two skipped it, and a rep's new clinic took another person's
+// invoices, closed months too. A name that starts matching an ERP account makes
+// its invoices count for the new clinic's owner (UMCore.erpAddClinicMoves). A
+// rep is stopped when another person's lines, or a closed month's, would move
+// (the supervisor adds that clinic); the supervisor is asked first — "Count
+// from this month" (prevRep = the person the earlier lines count for now,
+// repSince = the 1st) or all of them. `confirmed`: the answer of one of the
+// question's buttons (a signature of the lines it was asked about — asked
+// again if they changed meanwhile); `retry`: the function those buttons call
+// with it; `cancel`: what the Cancel button runs. → { ok: true } (nc then may
+// carry prevRep / repSince) | { ok: false, html } — what to show where the form asks.
+function newClinicSalesCheck(nc, confirmed, retry, cancel){
+  const sup = currentUser.role === 'supervisor', rep = nc.rep, name = nc.name;
+  const hasFiles = erpPeriods().some(p => p);
+  if(hasFiles && !salesCheckComplete()) return { ok: false, html: '⚠️ <span>Some sales files did not load on this device, so what this name would move cannot be checked. Nothing was saved — try again with a connection.</span>' };
+  const data = { erpSales, clinics: storedClinics(), erpMap };
+  const moves = hasFiles ? UMCore.erpAddClinicMoves(data, [nc]) : [];
+  if(!moves.length) return { ok: true };
+  const sig = list => list.map(m => [m.customer, m.date, m.from, m.to].join('|')).sort().join(';');
+  const month1 = todayStr().slice(0, 7) + '-01';
+  const earlier = moves.filter(m => (m.date || '') < month1);
+  const others = [...new Set(moves.map(m => m.from).filter(f => f && f !== rep))];
+  // a rep never takes another person's sales by adding a clinic: the supervisor decides
+  if(!sup && others.length) return { ok: false, html: `⚠️ <span>This name matches sales that count for another person now:</span> <b>${others.map(esc).join(', ')}</b>. <span>The supervisor adds this clinic. Nothing was saved.</span>` };
+  // …nor changes a closed month's figures (they never move)
+  if(!sup && earlier.length) return { ok: false, html: '⚠️ <span>This name matches sales of closed months. The supervisor adds this clinic. Nothing was saved.</span>' };
+  // "count from this month": earlier lines stay with the person they count for now (one person, or it cannot be kept)
+  const prev = [...new Set(earlier.map(m => m.from))];
+  const sinceOk = !earlier.length || (prev.length === 1 && !!prev[0] && prev[0] !== rep);
+  const ncSince = sinceOk && earlier.length ? Object.assign({}, nc, { prevRep: prev[0], repSince: month1 }) : nc;
+  const movesSince = sinceOk ? UMCore.erpAddClinicMoves(data, [ncSince]) : null;
+  const keepsClosed = !!movesSince && !movesSince.some(m => (m.date || '') < month1);
+  const want = typeof confirmed === 'string' ? confirmed : '';
+  const askedAll = 'all:' + sig(moves), askedSince = keepsClosed && earlier.length ? 'since:' + sig(movesSince) : null;
+  if(want && want === askedSince){ nc.prevRep = ncSince.prevRep; nc.repSince = ncSince.repSince; return { ok: true }; }
+  if(want && want === askedAll) return { ok: true };
+  if(want) showToast('This changed since you were asked — nothing was changed', 4000);
+  const net = list => Math.round(list.reduce((a, m) => a + (Number(m.net) || 0), 0) * 1000) / 1000;
+  const pairs = {}; moves.forEach(m => { const k = (m.from || '—') + ' → ' + (m.to || '—'); pairs[k] = (pairs[k] || 0) + 1; });
+  return { ok: false, html: `<div><b dir="auto">${esc(name)}</b>: ⚠️ ${moves.length} <span>sales lines would count for</span> <b>${esc(rep)}</b> (${money(net(moves))}): ${Object.keys(pairs).map(k => `<span dir="auto">${esc(k)}</span> ${pairs[k]}`).join(' · ')}</div>
+        ${earlier.length ? `<div style="margin-top:4px;">${earlier.length} <span>of them are in closed months.</span></div>` : ''}
+        <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+          ${askedSince ? `<button class="chip small" data-ask="${esc(askedSince)}" onclick="${retry}(this.dataset.ask)">✅ <span>Count from this month</span> (${movesSince.length})</button>` : ''}
+          <button class="chip small" data-ask="${esc(askedAll)}" onclick="${retry}(this.dataset.ask)">${askedSince ? '' : '✅ '}<span>${earlier.length ? 'Count all of them, closed months too' : 'Add the clinic'}</span></button>
+          <button class="chip small" onclick="${cancel}"><span>Cancel</span></button>
+        </div>
+        ${askedSince ? `<div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Count from this month: the earlier lines stay with</span> <b>${esc(prev[0])}</b>.</div>` : ''}` };
+}
+// A new clinic made inside another form (the visit form, the order form, the call log) is saved
+// FIRST, on its own (round 4): refused by the rules or too large for the cloud, it can never land
+// as it is — the visit, order or call was saved all the same and pointed at a clinic nobody had.
+// Now it comes off the list, nothing else is saved, the form keeps what was typed and its box
+// says why. → the save's outcome when the form may go on (saved, or kept and queued), else null.
+async function saveNewClinicFirst(nc, askId){
+  const r = await persistTold('clinics');
+  const o = (r && r.outcome) || {};
+  if(r && (r.ok || !(o.denied || o.tooLarge))) return r;
+  clinics = clinics.filter(c => c !== nc);
+  const t = saveFailText(r, 'clinics'), msg = t ? t[0] : NOT_ALLOWED_MSG;
+  const box = document.getElementById(askId);
+  if(box) box.innerHTML = newClinicAskCard(`<span>${esc(msg)}</span> <span>What you typed is still here.</span>`); // (the save's own notice says it too)
+  return null;
+}
+function newClinicAskCard(html){ return `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; }
+// The same check for clinics made in bulk (round 3): Admin → Manage clinics →
+// Import and the contact import made clinics with no check at all, and every
+// invoice of an ERP account their names start matching then counted for the
+// new clinic's owner — another person's, a closed month's too. Every account
+// whose invoices would move is shown in the import's own confirmation (who
+// they count for now → for whom then, lines, value, closed months), and none
+// moves without the supervisor's tap; Cancel leaves the list to untick.
+// `list`: the clinics the import would add (not on the list yet); `hint`: how to keep
+// those sales where they count now, in that import's own words. → { ok: true } | { ok: false, html }
+function bulkClinicSalesCheck(list, confirmed, retry, cancel, hint){
+  if(!(list || []).length || !erpPeriods().some(p => p)) return { ok: true };
+  if(!salesCheckComplete()) return { ok: false, html: '⚠️ <span>Some sales files did not load on this device, so what these names would move cannot be checked. Nothing was saved — try again with a connection.</span>' };
+  const moves = UMCore.erpAddClinicMoves({ erpSales, clinics: storedClinics(), erpMap }, list);
+  if(!moves.length) return { ok: true };
+  const sig = 'bulk:' + moves.map(m => [m.customer, m.date, m.from, m.to].join('|')).sort().join(';');
+  if(confirmed === sig) return { ok: true };
+  if(confirmed) showToast('This changed since you were asked — nothing was changed', 4000);
+  const month1 = todayStr().slice(0, 7) + '-01', by = {};
+  moves.forEach(m => {
+    const k = [m.customer, m.from || '—', m.to || '—'].join('\u0000');
+    const g = by[k] = by[k] || { customer: m.customer, from: m.from || '—', to: m.to || '—', n: 0, net: 0, closed: 0 };
+    g.n++; g.net += Number(m.net) || 0; if((m.date || '') < month1) g.closed++;
+  });
+  const rows = Object.values(by).sort((a, b) => String(a.customer).localeCompare(String(b.customer)));
+  return { ok: false, html: `<div><b>⚠️ <span>Sales would then count for another person</span></b>: ${moves.length} <span>sales lines</span> · ${rows.length} <span>ERP accounts</span></div>
+      <div style="max-height:200px; overflow:auto; margin-top:6px; font-size:12.5px;">${rows.map(g => `<div data-bulkmove style="padding:3px 0; border-bottom:1px dashed var(--line);"><b dir="auto">${esc(g.customer)}</b>: <span dir="auto">${esc(g.from)}</span> → <span dir="auto">${esc(g.to)}</span> · ${g.n} <span>sales lines</span> (${money(Math.round(g.net * 1000) / 1000)})${g.closed ? ` · ${g.closed} <span>in closed months</span>` : ''}</div>`).join('')}</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-ask="${esc(sig)}" onclick="${retry}(this.dataset.ask)">✅ <span>Add them — these sales then count for the new clinics' owners</span></button>
+        <button class="chip small" onclick="${cancel}"><span>Cancel</span></button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Nothing was saved.</span> <span>${esc(trOf(hint) || hint)}</span></div>` };
+}
+async function submitAddClinic(confirmed){
   const name = document.getElementById('mClinicName').value.trim();
   if(!name){ showToast('Enter a name'); return; }
   const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
   if(dup){ showToast('A clinic with this name already exists'); return; }
+  const sup = currentUser.role === 'supervisor';
   const repEl = document.querySelector('#mClinicRep .chip.on');
-  const rep = repEl ? repEl.dataset.rep : REPS[0];
+  const rep = sup ? (repEl ? repEl.dataset.rep : '') : currentUser.name; // a rep's own, always
+  if(!rep || (sup && !REPS.includes(rep))){ showToast('Choose whose clinic this is'); return; }
   const clsEl = document.querySelector('#mClinicCls .chip.on');
   const acctEl2 = document.querySelector('#mClinicAcct .chip.on');
   const newEl2 = document.querySelector('#mClinicNew .chip.on');
-
-  clinics.push(normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
-    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()}));
-  await persist('clinics');
+  const nc = normalizeClinic({id:uid(), name, rep, cls: clsEl ? clsEl.dataset.cls : null,
+    account: acctEl2?acctEl2.dataset.acct:null, dealType: dealFromChips('#mClinicDeal'), isNew: newEl2 ? newEl2.dataset.new==='yes' : false, addedOn: todayStr(), market:null, notes:'', contact: document.getElementById('mClinicContact').value.trim(), phone: document.getElementById('mClinicPhone').value.trim()});
+  // A name that starts matching an ERP account makes those invoices count for
+  // the new clinic's owner — closed months too (no handover date). Shown in
+  // the sheet before anything is saved (v123, newClinicSalesCheck).
+  const ask = document.getElementById('mClinicAsk');
+  const say = html => { if(ask) ask.innerHTML = newClinicAskCard(html); };
+  const chk = newClinicSalesCheck(nc, confirmed, 'submitAddClinic', 'closeModal()');
+  if(!chk.ok){ say(chk.html); return; }
+  clinics.push(nc);
+  const r = await persistTold('clinics');
+  const o = (r && r.outcome) || {};
+  if(!r.ok && (o.denied || o.tooLarge)){
+    // a clinic that can never land as it is (refused, too large) is not left
+    // on the list as if it were added: off it, and the sheet keeps what was typed
+    clinics = clinics.filter(c => c !== nc);
+    const t = saveFailText(r, 'clinics');
+    say(`<span>${esc(t ? t[0] : NOT_ALLOWED_MSG)}</span> <span>What you typed is still here.</span>`);
+    renderClinics();
+    return;
+  }
   closeModal();
   renderClinics();
-  showToast('🌟 New clinic added — territory growing');
+  saveToast(r, 'clinics', '🌟 New clinic added — territory growing');
 }
 
 function openClinicDetail(id){
@@ -793,6 +1027,7 @@ function openClinicDetail(id){
 
     <div class="section-title" style="margin-top:20px;">Doctors</div>
     ${lostDoctorsLine(c)}
+    ${dupDoctorsLine(c)}
     <div id="docListInModal">${renderDoctorRows(c)}</div>
     <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
     <div class="chip-row" id="newDocTitleChips" style="margin-top:8px;">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
@@ -852,8 +1087,8 @@ async function saveErpNote(key, val){
   const prev = erpNotes[key] || {};
   if(t || prev.kind) erpNotes[key] = {text:t, by:currentUser.name, on:todayStr(), kind: prev.kind};
   else delete erpNotes[key];
-  await persist('erpNotes');
-  showToast(t ? '📝 Reason saved' : 'Reason cleared');
+  const r = await persistTold('erpNotes');
+  saveToast(r, 'erpNotes', t ? '📝 Reason saved' : 'Reason cleared'); // "saved" only when it landed
 }
 // Free lines carry a classification: bonus inside a paying deal vs a
 // sample/marketing giveaway. The heuristic sets the default; one tap fixes it.
@@ -862,9 +1097,9 @@ async function saveErpNoteKind(key, kind, el){
   const n = erpNotes[key] || {};
   n.kind = kind; n.by = n.by || currentUser.name; n.on = n.on || todayStr();
   erpNotes[key] = n;
-  await persist('erpNotes');
+  const r = await persistTold('erpNotes');
   if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
-  showToast(kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
+  saveToast(r, 'erpNotes', kind==='deal' ? '🤝 Marked: bonus within a deal' : '🎁 Marked: sample / marketing');
 }
 // Is this ERP line a marked EXCHANGE (تبديل)? Stock swap, not a real return.
 function isExchangeLine(r){
@@ -888,10 +1123,10 @@ async function saveRetKind(key, kind, el){
   n.by = currentUser.name; n.on = todayStr();
   if(!n.text && !n.kind && kind !== 'exchange' && !erpNotes[key]){ /* nothing to keep */ }
   erpNotes[key] = n;
-  await persist('erpNotes');
+  const r = await persistTold('erpNotes');
   if(el && el.parentElement) el.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c===el));
   renderView(activeView);
-  showToast(kind==='exchange' ? '🔁 Marked as exchange — removed from the returns figures' : '↩️ Marked as a real return');
+  saveToast(r, 'erpNotes', kind==='exchange' ? '🔁 Marked as exchange — removed from the returns figures' : '↩️ Marked as a real return');
 }
 function focKindChips(key, def){
   const k = focKindOf(key, def);
@@ -905,8 +1140,8 @@ async function saveNoSaleReason(clinicId, val){
   if(!c) return;
   if(!canViewClinic(c)){ showToast('🔒 Not your clinic'); return; }
   c.noSaleReason = (val||'').trim();
-  await persist('clinics');
-  showToast(c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
+  const r = await persistTold('clinics');
+  saveToast(r, 'clinics', c.noSaleReason ? '📝 Reason saved' : 'Reason cleared');
 }
 // The ERP accounts whose invoices count on this branch (supervisor): each can
 // be moved from here, and another account can be counted here — the editor
@@ -1114,9 +1349,9 @@ async function saveEditClinic(id){
     else if(fresh && f in fresh && !same(fresh[f], c[f])) c[f] = fresh[f];
   });
   window._ecBase = null;
-  await persist('clinics');
+  const r = await persistTold('clinics');
   closeModal();
-  showToast('✅ Clinic updated');
+  saveToast(r, 'clinics', '✅ Clinic updated');
   renderAll();
   if(document.getElementById('clinicList')) renderClinics();
 }
@@ -1159,17 +1394,20 @@ async function saveEditProduct(key){
   const price = priceRaw==='' ? null : parseFloat(priceRaw);
   if(price!==null && (isNaN(price) || price<0)){ showToast('Enter a valid price'); return; }
   const oldKey = productKey(p), oldId = p.id;
-  p.name = name;
-  p.brand = document.getElementById('epBrand').value.trim() || 'Other';
-  p.id = code;
-  p.price = price===null ? null : Math.round(price*100)/100;
-  p.desc = document.getElementById('epDesc').value.trim();
-  p.specialties = Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec);
+  const was = { name: p.name, brand: p.brand, id: p.id, price: p.price, desc: p.desc, specialties: p.specialties };
+  const edit = { name, brand: document.getElementById('epBrand').value.trim() || 'Other', id: code, price: price===null ? null : Math.round(price*100)/100,
+    desc: document.getElementById('epDesc').value.trim(), specialties: Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec) };
+  Object.assign(p, edit);
   assignProductKeys();
-  const saves = [persist('products')];
-  if(code !== oldId){
+  // The catalog first; visits are re-pointed to a new code only once it has
+  // landed (v123 review): re-pointed alongside, a catalog refused ("Changed
+  // on another device") left orders on a code the catalog did not have.
+  // Refused: the screen keeps the product as the catalog has it. A save with
+  // no answer in time that lands later re-points them then (onLate).
+  const repoint = async (prod) => {
+    if(code === oldId || !prod) return [];
     // every visit, order line and bin entry that pointed at the old key now points at the new one
-    const newKey = productKey(p);
+    const newKey = productKey(prod);
     const remap = v => {
       let hit = false;
       if(Array.isArray(v.products) && v.products.includes(oldKey)){ v.products = v.products.map(x=>x===oldKey?newKey:x); hit = true; }
@@ -1179,12 +1417,25 @@ async function saveEditProduct(key){
     };
     const n = visits.filter(remap).length;
     const nb = (recycleBin.visits||[]).filter(remap).length;
-    if(n) saves.push(persist('visits'));
-    if(nb) saves.push(persist('recycleBin'));
+    const saves = [];
+    if(n) saves.push([persistTold('visits'), 'visits']);
+    if(nb) saves.push([persistTold('recycleBin'), 'recycleBin']);
+    const res = await Promise.all(saves.map(x => x[0]));
+    return res.map((r, i) => [r, saves[i][1]]);
+  };
+  const late = () => { const q = findProduct(oldKey) || findProduct(code); if(!q) return; Object.assign(q, edit); assignProductKeys(); repoint(q).then(pairs => { saveToastAll(pairs, '✅ Product updated'); renderAll(); }); };
+  const pr = await persistTold('products', code !== oldId ? { onLate: late } : undefined);
+  if(!pr.ok){
+    Object.assign(p, was); assignProductKeys(); // not saved: as the catalog has it
+    closeModal();
+    saveToast(pr, 'products', '');
+    if(document.getElementById('productListWrap')) renderProducts();
+    if(document.getElementById('apPriceBody')) renderAdminPrices();
+    return;
   }
-  await Promise.all(saves);
+  const pairs = await repoint(p);
   closeModal();
-  showToast('✅ Product updated');
+  saveToastAll([[pr, 'products']].concat(pairs), '✅ Product updated'); // "updated" only when every list it changed landed
   if(document.getElementById('productListWrap')) renderProducts();
   if(document.getElementById('apPriceBody')) renderAdminPrices();
 }
@@ -1194,14 +1445,17 @@ const BIN_DAYS = 30;
 async function moveToBin(kind, item, label){
   recycleBin[kind] = recycleBin[kind] || [];
   recycleBin[kind].push({...item, _deletedAt: Date.now(), _label: label});
-  const ok = await persist('recycleBin');
-  if(!ok){
+  const r = await persistTold('recycleBin');
+  if(!r.ok){
     // The bin is a whole document (no offline queue): a delete whose safety
     // copy never landed would be a delete with no way back — refuse it.
     recycleBin[kind] = recycleBin[kind].filter(x=>x.id!==item.id);
-    showToast('⚠️ لم يصل إلى سلة المحذوفات — لم يُحذف شيء، أعد المحاولة عند توفر الاتصال');
+    const o = r.outcome || {};
+    showToast(o.denied ? '🔒 Not allowed — nothing was deleted (ask the supervisor)'
+      : o.tooLarge ? '🛑 The recycle bin is too large for the cloud — nothing was deleted. Ask the supervisor.'
+      : '⚠️ لم يصل إلى سلة المحذوفات — لم يُحذف شيء، أعد المحاولة عند توفر الاتصال', 6000);
   }
-  return ok;
+  return r.ok;
 }
 function pruneBin(){
   const cutoff = Date.now() - BIN_DAYS*86400000;
@@ -1224,9 +1478,9 @@ async function removeProduct(key){
   if(!await moveToBin('products', copy, p.name)) return;
   products.splice(idx,1);
   assignProductKeys();
-  await persist('products');
+  const r = await persistTold('products');
   closeModal();
-  showToast('Moved to recycle bin');
+  saveToast(r, 'products', 'Moved to recycle bin');
   if(document.getElementById('productListWrap')) renderProducts();
 }
 // A clinic the team still visits must stay REACHABLE even after deletion:
@@ -1261,8 +1515,10 @@ function openDeletedClinic(id){
 // visits still remember its id and name, so the clinic can be RE-CREATED with
 // the SAME internal id: every past visit, plan and ERP name-match reattaches
 // to it instantly, as if it was never deleted.
+let _rcId = null; // the clinic being re-created (its sales check answers through confirmRecreateAsked)
 function openRecreateClinic(id){
   if(!requireAdmin()) return;
+  _rcId = id;
   const cVisits = visits.filter(v=>v.clinicId===id);
   const name = ((cVisits.find(v=>v.clinicName)||{}).clinicName || '').trim();
   // the rep who visited it most is almost certainly its owner
@@ -1278,23 +1534,31 @@ function openRecreateClinic(id){
     <div class="chip-row" id="rcRepChips">${REPS.map(r=>`<div class="chip ${r===guessRep?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>
     <label>Class</label>
     <div class="chip-row" id="rcClsChips">${['A','B','C'].map(k=>`<div class="chip ${k==='B'?'on':''}" data-cls="${k}" onclick="pickModalCls(this)">${k}</div>`).join('')}</div>
+    <div id="rcAsk"></div>
     <button class="btn" style="margin-top:12px;" onclick="confirmRecreateClinic('${esc(id)}')">Create</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">Cancel</button>
   `);
 }
-async function confirmRecreateClinic(id){
+function confirmRecreateAsked(ask){ if(_rcId) return confirmRecreateClinic(_rcId, ask); }
+async function confirmRecreateClinic(id, confirmed){
+  if(!requireAdmin()) return;
   const name = (document.getElementById('rcName').value||'').trim();
   if(!name){ showToast('Enter the clinic name'); return; }
   if(clinics.some(c=>c.id===id)){ showToast('This clinic is already back'); closeModal(); return; }
   const repEl = document.querySelector('#rcRepChips .chip.on');
   const clsEl = document.querySelector('#rcClsChips .chip.on');
-  clinics.push(normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
-    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() }));
+  const nc = normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
+    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() });
+  // the "+ Add clinic" sales check (round 3): the invoices its name (or a link to its id) starts matching are shown first
+  const ask = document.getElementById('rcAsk');
+  const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'confirmRecreateAsked', "document.getElementById('rcAsk').innerHTML=''");
+  if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); return; }
+  clinics.push(nc);
   untomb('clinics', id); // alive again — cleared from every delete log, team-wide
-  await persist('clinics');
+  const r = await persistTold('clinics');
   closeModal();
   renderAll();
-  showToast('♻️ Clinic re-created — all its history is attached');
+  saveToast(r, 'clinics', '♻️ Clinic re-created — all its history is attached');
   openClinicDetail(id);
 }
 async function restoreFromBin(kind, idx){
@@ -1313,8 +1577,8 @@ async function restoreFromBin(kind, idx){
   }
   untomb(kind, clean.id);
   recycleBin[kind].splice(idx,1);
-  const saves = [persist('recycleBin')];
-  if(!alreadyLive) saves.push(persist(kind));
+  // the record's own list decides what the person is told
+  const saves = [persistTold('recycleBin'), alreadyLive ? Promise.resolve(null) : persistTold(kind)];
   if(kind==='visits'){
     // the clinic's "last visit" must reflect the restored visit
     const clinic = clinics.find(c=>c.id===clean.clinicId);
@@ -1324,8 +1588,9 @@ async function restoreFromBin(kind, idx){
       if(last !== (clinic.lastVisit||null)){ clinic.lastVisit = last; saves.push(persist('clinics')); }
     }
   }
-  await Promise.all(saves);
-  showToast(alreadyLive ? '✅ Already restored' : '✅ Restored');
+  const [rb, rk] = await Promise.all(saves);
+  if(alreadyLive) saveToast(rb, 'recycleBin', '✅ Already restored');
+  else saveToastAll([[rk, kind], [rb, 'recycleBin']], '✅ Restored');
   renderAll();
   if(document.getElementById('apTabData')) { setAdminTab('data'); setDataSub('bin'); } // only refresh the bin view if it is open
 }
@@ -1333,8 +1598,8 @@ async function purgeFromBin(kind, idx){
   if(!requireAdmin()) return;
   if(!(recycleBin[kind]||[])[idx]) return;
   recycleBin[kind].splice(idx,1);
-  await persist('recycleBin');
-  showToast('Permanently deleted');
+  const r = await persistTold('recycleBin');
+  saveToast(r, 'recycleBin', 'Permanently deleted');
   setAdminTab('data'); setDataSub('bin');
 }
 function adminBinHTML(){

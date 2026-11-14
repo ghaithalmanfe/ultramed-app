@@ -1399,7 +1399,8 @@ async function renderBackupsList(){
       try{
         const res = await window.storage.get('snap_'+d, true);
         const snap = res ? UMCore.safeParse(res.value, null) : null;
-        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة`;
+        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} صورة بلا معاينة` : '')
+          + (snap.keptBeforeRestore ? ` · البيانات كما كانت قبل استعادة نسخة ${esc(String(snap.keptBeforeRestore).slice(0, 10))}` : ''); // the copy a whole-day Restore kept first (v123 review)
       }catch(e){}
       html += `
       <div class="card row-between">
@@ -1408,6 +1409,20 @@ async function renderBackupsList(){
       </div>`;
     }
     if(!html) html = `<div style="color:var(--muted); font-size:13px;">No backups yet — one will be created automatically today.</div>`;
+    // This phone's last daily backup that did not save (v123): said here, never only in the console.
+    const sf = typeof snapFailInfo === 'function' ? snapFailInfo() : null;
+    if(sf && sf.day === todayStr()){
+      const why = sf.why === 'tooLarge' ? `Today's backup was not saved from this phone: it is too large for the cloud (${Math.round((sf.bytes || 0) / 1024)} KB, even without the photo previews). Take a Full backup above.`
+        : sf.why === 'refused' ? "Today's backup was not saved from this phone: not allowed (ask the supervisor)."
+        : "Today's backup was not saved from this phone yet — it tries again within the hour.";
+      html = `<div class="card" style="border-inline-start:4px solid var(--coral); font-size:13px; margin-bottom:8px;">⚠️ ${esc(trOf(why) || why)}</div>` + html;
+    } else if(!dates.includes(todayStr()) && typeof snapshotBlockedWhy === 'function' && snapshotBlockedWhy()){
+      // Today has no backup yet and this phone is not taking one (round 3: it said nothing): why, and what ends it
+      const why = snapshotBlockedWhy() === 'queued'
+        ? "Today's backup has not been taken yet, and this phone is not taking it: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team."
+        : "Today's backup has not been taken yet, and this phone is not taking it: not every list on it came from the cloud (a read failed, or a list is shown from this phone's copy). It is taken once everything has loaded from the cloud — or by another phone of the team.";
+      html = `<div class="card" data-snap-held style="border-inline-start:4px solid var(--amber); font-size:13px; margin-bottom:8px;">⚠️ ${esc(trOf(why) || why)}</div>` + html;
+    }
     // Copies kept on THIS device — the last resort if every cloud backup is bad.
     const devRows = [['um_mirror_prev:clinics','نسخة محفوظة قبل آخر تغيّر كبير','prev'],
                      ['um_mirror:clinics','آخر نسخة شاهدها هذا الجهاز','cur']]
@@ -1441,6 +1456,11 @@ async function renderBackupsList(){
 // button, and every function below. The app has no way to restore this file:
 // scripts/backup/restore.js puts it into a TEST cloud only.
 let _fullBackup = null, _fullBackupRun = 0;
+// The full backup file this sign-in last handed to the browser (the whole-day Restore asks for one, v123):
+// { by, at, docHash, savedAt } — the file itself, not a later read (round 4: a new read cleared the
+// file in memory but not the time of the earlier download, and the restore then counted the newer
+// read — never downloaded — as the file on this device)
+let _fullBackupSaved = null;
 const BK_PAGE_MS = 90000, BK_GET_MS = 60000, BK_LIST_MS = 90000, BK_AHEAD = 4, BK_FOLD = 1048576;
 const BK_UNIT_AR = { visits: 'زيارة', clinics: 'عيادة', doctors: 'طبيب', tasks: 'مهمة', entries: 'سجل', plans: 'خطة', files: 'ملف',
   accounts: 'حساب', people: 'شخص', products: 'منتج', types: 'نوع', guides: 'دليل', notes: 'ملاحظة', items: 'عنصر',
@@ -1454,7 +1474,7 @@ function bkNum(n){ return Number(n).toLocaleString('en-US'); }
 // A file still held from an earlier read is dropped at every sign-in and
 // sign-out (03-gate.js), and a read still running stops: nobody who signs in
 // after the supervisor on the same phone gets his file.
-function dropFullBackup(){ _fullBackup = null; _fullBackupRun++; }
+function dropFullBackup(){ _fullBackup = null; _fullBackupRun++; _fullBackupSaved = null; }
 // The sheet this run opened is still the one on screen.
 function bkAlive(run){
   const back = document.getElementById('modalBack');
@@ -1685,8 +1705,10 @@ async function openFullBackup(){
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;"><span>This screen only reads — nothing in the cloud changes.</span></p>
     <div id="fullBackupBody" style="font-size:13px;"><div><span>Reading every record in the cloud…</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Documents read so far:</span> <b id="fullBackupCount">0</b></div></div>`);
-  const b = UMCore.backupBuilder({ app: APP_REV, project: bkProject(), takenAt: new Date().toISOString(), takenBy: by });
+  const startedAt = Date.now();
+  const b = UMCore.backupBuilder({ app: APP_REV, project: bkProject(), takenAt: new Date(startedAt).toISOString(), takenBy: by });
   const w = bkWriter();
+  const docHash = {}; // the sha256 of each document a whole-day Restore may replace, as this file holds it (round 3: restoreCover)
   w.push(b.head());
   let res = null, err = null, stopped = false;
   const readPhotos = new Set(); // the photo: documents the read found (a photo still kept on this phone is in the file once)
@@ -1702,8 +1724,9 @@ async function openFullBackup(){
     res = await readCloudForBackup(async d => {
       if(!bkAlive(run)){ stopped = true; throw new Error('the sheet was closed'); }
       if(String(d.key).startsWith('photo:')) readPhotos.add(String(d.key));
-      const bytes = bkBytes(d.value);
-      w.push(b.addDoc(d.key, d.value, d.updated, await bkSha256(bytes), bytes.length));
+      const bytes = bkBytes(d.value), sha = await bkSha256(bytes);
+      if(RESTORE_DOC_RE.test(String(d.key))) docHash[d.key] = sha;
+      w.push(b.addDoc(d.key, d.value, d.updated, sha, bytes.length));
     }, n => { const el = document.getElementById('fullBackupCount'); if(el && run === _fullBackupRun) el.textContent = bkNum(n); });
   }catch(e){ err = e; if(!stopped) console.error('full backup: read', e); }
   if(!bkAlive(run) || !currentUser || currentUser.name !== by) return;   // closed, opened again, or someone else signed in
@@ -1738,7 +1761,7 @@ async function openFullBackup(){
   const blob = w.blob();
   if(!bkAlive(run) || currentUser.name !== by) return;
   const inv = b.inventory();
-  _fullBackup = { name: bkFileName(), blob, by, sha, documents: b.documents() };
+  _fullBackup = { name: bkFileName(), blob, by, sha, documents: b.documents(), docHash, at: startedAt };
   body.innerHTML = `
     <div class="card" data-backup-summary style="margin-bottom:10px;">
       <div><span>Documents read:</span> <b>${bkNum(b.documents())}</b> · <span>File size:</span> <b data-notr>${bkSize(blob.size)}</b></div>
@@ -1756,6 +1779,8 @@ function downloadFullBackup(){
   const b = _fullBackup;
   if(!b || b.by !== currentUser.name){ showToast('Read the cloud again before downloading'); return; }
   const ok = tryDownload(b.name, b.blob, 'application/json', 120000);
+  // saved: recorded on the backup itself (a whole-day Restore that would replace today's backup asks for this first, v123)
+  if(ok){ b.savedAt = Date.now(); _fullBackupSaved = { by: b.by, at: b.at, docHash: b.docHash, savedAt: b.savedAt }; }
   showToast(ok ? 'Download started — keep the file outside the app' : 'The file could not be prepared on this device — try again');
 }
 // ---- Missing clinics, from the daily backups (v116) ----
@@ -1826,18 +1851,102 @@ async function restoreMissingClinics(){
   const idSet = new Set(ids), before = ((recycleBin && recycleBin.clinics) || []).length;
   if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(x => !(x && idSet.has(x.id)));
   const r = await persistFor('clinics');
-  if(recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) await persist('recycleBin');
+  const rb = (recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) ? await persistTold('recycleBin') : null;
   renderAll();
   const note = document.getElementById('recovNote');
   const ok = r.ok || sentSince('clinics', r);
-  const msg = ok ? `✅ ${ids.length} <span>clinics are back in the list and saved.</span>` : `⚠️ ${ids.length} <span>clinics are back on this device; the save has not reached the cloud yet — it uploads when the connection is back.</span>`;
-  showToast(ok ? `✅ ${ids.length} clinics brought back` : '⚠️ Brought back on this device — not saved to the cloud yet', 4000);
+  const onPhone = !ok && !!(r.outcome && r.outcome.queued && r.outcome.mirrored && !r.outcome.tooLarge);
+  const fail = ok || onPhone ? null : saveFailText(r, 'clinics'); // refused, too large, not saved: never "uploads when the connection is back"
+  const msg = ok ? `✅ ${ids.length} <span>clinics are back in the list and saved.</span>` : onPhone ? `⚠️ ${ids.length} <span>clinics are back on this device; the save has not reached the cloud yet — it uploads when the connection is back.</span>`
+    : `⚠️ <span>${esc(trOf((fail && fail[0]) || '') || (fail && fail[0]) || 'Not saved')}</span>`;
+  if(ok && rb && !rb.ok) showToast(`✅ ${ids.length} clinics brought back — but the recycle bin was not updated: they may still show there. Do not restore them from the bin.`, 6000);
+  else if(ok || onPhone) showToast(ok ? `✅ ${ids.length} clinics brought back` : '⚠️ Brought back on this device — not saved to the cloud yet', 4000);
+  else saveToast(r, 'clinics', '');
   // the sheet as it is now: what is still missing, if anything
   await openClinicRecovery();
   const n2 = document.getElementById('recovNote'); if(n2) n2.innerHTML = msg; else if(note) note.innerHTML = msg;
 }
-// v121: a refresh on its way must not put the replaced lists back over a restore (holdRefresh, 04)
-async function restoreSnapshot(dateStr){ return holdRefresh(() => restoreSnapshotNow(dateStr)); }
+// v121: a refresh on its way must not put the replaced lists back over a restore (holdRefresh, 04).
+// v123 review: the lists are read again first — what the restore counts, keeps
+// and removes is the cloud's as it is now, never an older copy on this phone,
+// and a list that does not load stops it (restoreSnapshotNow).
+async function restoreSnapshot(dateStr){
+  if(!requireAdmin()) return;
+  try{ await loadAll(); }catch(e){ console.warn('restore: the read before it', e); }
+  const r = await holdRefresh(() => restoreSnapshotNow(dateStr));
+  // a restore that stopped after its first write: the lists and their merge bases are read again from the cloud
+  if(r === 'stopped'){ try{ await loadAll(); }catch(e){ console.warn('restore: the read after it stopped', e); } }
+  return r;
+}
+// v123: the product catalog is no longer part of a whole-day restore (it
+// replaced the catalog without saying so: prices, catalog additions and
+// materials since that day were undone), and today's data is kept before
+// anything changes — as today's backup.
+// Round 3: a restore removes only what is kept somewhere it can be brought back
+// from, said in its question, and checked against the cloud as it is now:
+//  - today has no backup yet → the data as it is now becomes today's backup
+//    first (created only if there is still none: never written over one);
+//  - today's backup exists (the daily one, or the copy an earlier restore kept)
+//    or it is today's own backup being restored (R3) → today's backup is never
+//    replaced; each document the restore replaces must be, exactly as the
+//    cloud holds it now, in the full backup saved to this device (its sha256
+//    as the file holds it) — or, after a restore of this phone's that stopped
+//    and put everything back, in the copy it kept as today's backup — else
+//    nothing changes and a (new) full backup is asked for;
+//  - the clinics, tasks and visits are read again right after the question,
+//    and written only over exactly that (compare-and-set): a change made on
+//    another phone in between stops the restore, and what it had written is
+//    put back — nothing changed, said on the screen.
+// (Until round 3 a full backup downloaded within the hour counted, and the
+// question said the data as it is now was in it — false for a visit logged
+// after it; a second restore of an earlier day wrote over the copy the first
+// one had kept.)
+const RESTORE_DOC_RE = /^(clinics|tasks|visits|visitsArch:\d{4}-\d{2})$/;
+let _restoreKept = null; // { day, at, dateStr, hash: { key: sha256 } } — the documents this phone kept as today's backup before restoring
+function restoreHHMM(t){ const d = new Date(t); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+async function restoreReadNow(keys){
+  const out = {};
+  await Promise.all(keys.map(async k => {
+    const r = await withTimeout(window.storage.get(k, true, { server: true }), 15000);
+    out[k] = r && r.value != null ? String(r.value) : null;
+  }));
+  return out;
+}
+async function restoreSha(str){ return str == null ? null : bkSha256(bkBytes(str)); }
+// Where each document as it is now is kept, so the restore may replace it:
+// → { ok, sources: [text…], missing: [key…] }
+async function restoreCover(now, keys){
+  const today = todayStr(), fb = fullBackupOnDevice();
+  const sources = new Set(), missing = [];
+  for(const k of keys){
+    const cur = now[k];
+    const h = await restoreSha(cur);
+    if(_restoreKept && _restoreKept.day === today && Object.prototype.hasOwnProperty.call(_restoreKept.hash, k) && _restoreKept.hash[k] === h){ sources.add(`today's backup (the data as it was before your restore at ${restoreHHMM(_restoreKept.at)})`); continue; }
+    if(fb && (fb.docHash[k] || null) === h){ sources.add(`the full backup saved to this device at ${restoreHHMM(fb.at)}`); continue; }
+    missing.push(k);
+  }
+  return { ok: !missing.length, sources: [...sources], missing };
+}
+const RESTORE_KEY_NAME = { clinics: 'the clinics', tasks: 'the tasks', visits: "this month's visits" };
+function restoreKeyName(k){ return RESTORE_KEY_NAME[k] || (/^visitsArch:/.test(k) ? "this month's visits" : k); }
+// The full backup file saved to this device by this sign-in — only a file that was downloaded
+// counts (round 4), never a read whose sheet was closed without Download.
+function fullBackupOnDevice(){ return _fullBackupSaved && currentUser && _fullBackupSaved.by === currentUser.name ? _fullBackupSaved : null; }
+function restoreAskFullBackup(sameDay, cover, saved){
+  const changed = [...new Set(cover.missing.map(restoreKeyName))].join(', ');
+  const why = saved
+    ? `${changed} changed after the full backup on this device was made (at ${restoreHHMM(saved.at)}): what changed since is in no backup, and this restore would remove it.`
+    : (sameDay ? "This restores today's own backup, so the data as it is now cannot be kept as today's backup — that would replace the very backup being restored."
+      : "Today already has its backup (the daily one, or the data an earlier restore kept), and a restore never replaces it.");
+  const held = _fullBackup && currentUser && _fullBackup.by === currentUser.name && !_fullBackup.savedAt ? _fullBackup : null;
+  const unsaved = held ? `The full backup read at ${restoreHHMM(held.at)} was not downloaded to this device, so it does not count.` : '';
+  showModal(`<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
+    <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(why) || why)}</span></p>${unsaved ? `
+    <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(unsaved) || unsaved)}</span></p>` : ''}
+    <p style="font-size:13px; line-height:1.6;"><span>Save a full backup to this device now: it keeps everything as it is, today's backup too. Then tap Restore again.</span></p>
+    <p style="color:var(--muted); font-size:12.5px;"><span>Nothing was changed.</span></p>
+    <button class="btn" onclick="openFullBackup()">💾 <span>Full backup first</span></button>`);
+}
 async function restoreSnapshotNow(dateStr){
   if(!requireAdmin()) return; // a restore replaces the whole team's data
   // A backup of another month holds THAT month's visits: written over this
@@ -1852,33 +1961,151 @@ async function restoreSnapshotNow(dateStr){
     if(!res){ showToast('Backup not found'); return; }
     snap = JSON.parse(res.value);
   }catch(e){ console.error(e); showToast('Restore failed — the backup could not be read'); return; }
-  // What the restore removes, said before anything changes.
+  const today = todayStr(), todayKey = 'snap_' + today, monthKey = UMCore.visitsArchKey(today.slice(0, 7));
+  // The lists it counts, keeps and replaces must be the cloud's (v123 review):
+  // a read that failed, a list served from this phone's copy or a change still
+  // waiting in the queue would make its counts wrong and the copy it keeps
+  // empty — this month's visits were erased everywhere while the confirmation
+  // promised a copy.
+  const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k));
+  if(notRead.length || _seedClinics || _bootCrashed){
+    showToast('Restore stopped — the clinics, tasks or visits on this device did not all load from the cloud, or changes on this device have not reached it yet. Nothing was changed. Check the connection, then try again.', 8000);
+    return;
+  }
+  // The documents it replaces, exactly as the cloud holds them now (round 3),
+  // and whether today already has its backup.
+  const keys = ['clinics', 'tasks', 'visits', monthKey];
+  const sameDay = dateStr === today;
+  let now;
+  try{ now = await restoreReadNow(sameDay ? keys : keys.concat([todayKey])); }
+  catch(e){ showToast('Restore stopped — the cloud could not be read just now. Nothing was changed.', 6000); return; }
+  const hasToday = sameDay || now[todayKey] != null;
+  delete now[todayKey];
+  let cover = null;
+  if(hasToday){
+    cover = await restoreCover(now, keys);
+    if(!cover.ok){ restoreAskFullBackup(sameDay, cover, fullBackupOnDevice()); return; }
+  }
+  // What the restore removes, said before anything changes (from the documents as read now).
+  const P = s => { const v = UMCore.safeParse(s, null); return Array.isArray(v) ? v : []; };
   const held = list => new Set((Array.isArray(list) ? list : []).map(x => x && x.id));
-  const hc = held(snap.clinics), ht = held(snap.tasks), hv = held(snap.visits), today = todayStr();
-  const goneC = storedClinics().filter(c => c && !hc.has(c.id)).length;
-  const goneT = (tasks || []).filter(t => t && !ht.has(t.id)).length;
-  const goneV = (visits || []).filter(v => v && UMCore.visitHome(v, today) === 'live' && !hv.has(v.id)).length;
-  const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits and the sales files stay as they are.`;
+  const hc = held(snap.clinics), ht = held(snap.tasks), hv = held(snap.visits);
+  const goneC = P(now.clinics).filter(c => c && !hc.has(c.id)).length;
+  const goneT = P(now.tasks).filter(t => t && !ht.has(t.id)).length;
+  const goneV = P(now.visits).filter(v => v && !hv.has(v.id)).length;
+  const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits, the sales files and the product catalog stay as they are. `
+    + (hasToday ? `Everything it replaces is, as it is now, in ${cover.sources.join(' or in ')} (checked just now). Today's backup stays as it is.` : 'First, the data as it is now is kept as today\'s backup.');
   if(!confirm(trOf(ask) || ask)) return;
+  // Read again: a change made while the question was open stops it (nothing changed).
+  let again;
+  try{ again = await restoreReadNow(keys); }
+  catch(e){ showToast('Restore stopped — the cloud could not be read just now. Nothing was changed.', 6000); return; }
+  const moved = keys.filter(k => again[k] !== now[k]);
+  if(moved.length){
+    showToast(`Restore stopped — ${[...new Set(moved.map(restoreKeyName))].join(', ')} changed on another phone while the question was open. Nothing was changed. Tap Restore again to see the new counts.`, 8000);
+    return;
+  }
+  // Today's data first (no backup yet today): created only if there is still none.
+  // Measured like the daily backup (v123): above 900 KB the visits keep their
+  // photo ids without previews; still too large for the cloud, it stops here.
+  if(!hasToday){
+    const liveNow = P(now.visits), monthNow = now[monthKey] != null ? P(now[monthKey]) : null;
+    const keptVisits = monthNow ? UMCore.visitsAssemble(liveNow, { [today.slice(0, 7)]: monthNow }, today) : liveNow;
+    const vp = UMCore.visitsPartition(visits, today); const visitsMonths = {}; Object.keys(vp.months).forEach(m => { visitsMonths[m] = vp.months[m].length; });
+    const erpIndex = (!_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpPeriods().some(p => p && p.rowsMissing)) ? UMCore.erpSplitForStorage(erpSales).index : undefined;
+    const doc = { clinics: P(now.clinics), products, visits: keptVisits, visitsMonths, tasks: P(now.tasks), erpIndex, ts: new Date().toISOString(), keptBeforeRestore: dateStr };
+    const keep = UMCore.snapshotPayload(doc, { slimAt: SNAP_SLIM_BYTES, max: DOC_MAX_BYTES });
+    if(keep.tooLarge){ showToast(`Restore stopped — today's data is too large for a backup in the cloud (${Math.round(keep.bytes / 1024)} KB). Nothing was changed.`, 7000); return; }
+    let made = false;
+    try{
+      const r = await storageUpdate('snap_' + today, cur => cur == null ? keep.str : null, 20000);
+      made = r != null;
+    }catch(e){ console.error('restore: keeping today\'s data', e); showToast('Restore stopped — today\'s data could not be kept first. Nothing was changed.', 6000); return; }
+    if(!made){ showToast('Restore stopped — another phone saved today\'s backup a moment ago, and a restore never replaces it. Nothing was changed. Tap Restore again.', 8000); return; }
+    snapDone(today); // today's backup exists now: a failure noted earlier today is over
+    const hash = {}; for(const k of keys) hash[k] = await restoreSha(now[k]);
+    _restoreKept = { day: today, at: Date.now(), dateStr, hash };
+  }
+  // The lists to write, and the memory to put back if the restore stops.
+  const before = { clinics, visits, tasks, hidden: typeof hiddenPlaceholderClinics !== 'undefined' ? hiddenPlaceholderClinics : null };
+  const putBack = () => { clinics = before.clinics; visits = before.visits; tasks = before.tasks; if(before.hidden && typeof hiddenPlaceholderClinics !== 'undefined') hiddenPlaceholderClinics = before.hidden; renderAll(); };
+  const nextClinics = normalizeClinics(JSON.parse(JSON.stringify(snap.clinics || [])));
+  // The backup holds the visits of ITS month; older months live in their own
+  // archive documents and are kept as they are. A backup saved without the
+  // photo previews (too large, v123) takes the preview this phone holds under
+  // the same photo id.
+  const snapVisits = typeof UMCore.fillSnapThumbs === 'function' ? UMCore.fillSnapThumbs(snap.visits, visits).visits : snap.visits;
+  const nextVisits = UMCore.visitsAssemble(Array.isArray(snapVisits) ? snapVisits : [], visitsArchivesObj(), todayStr());
+  const nextTasks = Array.isArray(snap.tasks) ? snap.tasks : [];
+  const sets = { clinics: nextClinics.map(c => c.id), visits: nextVisits.map(v => v.id), tasks: nextTasks.map(t => t.id) };
+  const revived = tombsOf(sets); // the deletes this restore clears: put back if it stops
+  // [key, text being written, text before] — noted BEFORE each write, so a write whose
+  // answer never came is checked too; put back in reverse if a later step stops
+  const wrote = [];
+  const kept = hasToday ? cover.sources.join(' or in ') : "today's backup (the data as it was before this restore)";
+  // Round 4: a write whose answer did not come in time is UNKNOWN, never "unchanged" — its commit
+  // may still be on its way (it landed after "Nothing was changed" and removed what the restore
+  // was stopped for). Each write is followed (w.p: the write itself); once the restore stops, a
+  // run of its writes writes nothing (cancelled), the document is written as it was all the same
+  // (a commit still on its way then finds it changed and runs again), and a write that lands late
+  // anyway is put back when it does — said on the screen.
+  let cancelled = false;
+  const follow = w => p => { w.p = p; w.settled = false; p.then(() => { w.settled = true; }, () => { w.settled = true; }); };
+  const stop = async (why, e) => {
+    if(e) console.error('restore stopped', e);
+    cancelled = true;
+    // every document it touched: as it was before (nothing to do), still what the restore wrote
+    // (put back), or something else / no answer (it cannot be put back from here)
+    let clean = true; const open = [];
+    for(const w of wrote.slice().reverse()){
+      const [k, str, prev] = w;
+      const pending = !!(w.p && !w.settled); // no answer yet: it may still land
+      let state = 'unknown';
+      try{
+        await storageUpdate(k, cur => {
+          const c = cur == null ? null : String(cur);
+          state = c === prev ? 'same' : c === str ? 'ours' : 'other';
+          return (state === 'ours' || (state === 'same' && pending)) && prev != null ? prev : null;
+        }, 15000);
+        if(state === 'ours' && prev == null) state = 'other'; // there was no document before: nothing to write back
+      }catch(e2){ state = 'unknown'; }
+      if(pending) open.push(w);
+      if(state !== 'same' && state !== 'ours') clean = false;
+    }
+    const tb = Object.keys(revived).length ? await retombMany(revived).catch(() => false) : true;
+    putBack();
+    if(!clean || !tb) showToast(why + ' Part of what it had written could not be put back (no connection?). The data as it was is in ' + kept + '. Check the connection, then tap Restore again.', 12000);
+    else if(open.length) showToast(`${why} No answer from the cloud yet for ${[...new Set(open.map(w => restoreKeyName(w[0])))].join(', ')}: what the restore sent may still land — this phone puts it back if it does; keep the app open. The data as it was is in ${kept}.`, 12000);
+    else showToast(why + ' Nothing was changed.', 8000);
+    open.forEach(w => restoreFollowLate(w, clean && tb, kept)); // (not waited for)
+    return 'stopped';
+  };
   try{
-    clinics = normalizeClinics(snap.clinics||[]); hidePlaceholderClinics();
-    products = snap.products || products;
-    // The backup holds the visits of ITS month; older months live in their
-    // own archive documents and are kept as they are.
-    visits = UMCore.visitsAssemble(Array.isArray(snap.visits) ? snap.visits : [], visitsArchivesObj(), todayStr());
-    tasks = Array.isArray(snap.tasks) ? snap.tasks : [];
-    _seedClinics = false; _bootCrashed = false;
     // Clear the delete log for every restored record FIRST — otherwise the
     // next merge or restart would silently delete them all over again.
-    await untombMany({ clinics: clinics.map(c=>c.id), visits: visits.map(v=>v.id), tasks: tasks.map(t=>t.id) });
-    // A restore is authoritative: write that day's copy exactly as it was.
-    for(const [k, val] of [['clinics',storedClinics()],['products',products],['tasks',tasks]]){
+    if(!await untombMany(sets)) return await stop('Restore stopped — the delete log could not be updated.');
+    _seedClinics = false; _bootCrashed = false;
+    // A restore writes that day's copy exactly as it was — over exactly the
+    // documents checked above (compare-and-set): a change in between stops it.
+    for(const [k, val] of [['clinics', nextClinics], ['tasks', nextTasks]]){
       const str = JSON.stringify(val);
-      await window.storage.set(k, str, true);
-      mirrorSave(k, str);
-      setMergeBase(k, str); // the cloud now holds exactly this (the next merge's base)
+      let changed = false;
+      const w = [k, str, now[k]]; wrote.push(w);
+      const r = await storageUpdate(k, cur => { if(cancelled) return null; changed = (cur == null ? null : String(cur)) !== now[k]; return changed ? null : str; }, 15000, follow(w));
+      if(changed || r == null){ wrote.pop(); return await stop(`Restore stopped — ${restoreKeyName(k)} changed on another phone while it ran.`); } // (it wrote nothing there)
     }
-    await persistVisits({ authoritative: true });
+    if(typeof hiddenPlaceholderClinics !== 'undefined') hiddenPlaceholderClinics = []; // memory holds exactly what was written
+    clinics = nextClinics; hidePlaceholderClinics();
+    tasks = nextTasks;
+    visits = nextVisits;
+    // (the live document as an authoritative save writes it: this month's visits of the backup, none of them deleted any more)
+    const wv = ['visits', JSON.stringify(UMCore.visitsPartition(nextVisits, todayStr()).live), now.visits]; wrote.push(wv);
+    try{ await persistVisits({ authoritative: true, expect: { live: now.visits }, cancelled: () => cancelled, onRaw: (key, p) => { if(key === 'visits') follow(wv)(p); } }); }
+    catch(e){
+      if(e && e.casChanged){ wrote.pop(); return await stop(`Restore stopped — ${restoreKeyName('visits')} changed on another phone while it ran.`); } // (the first write of the visits: nothing written)
+      return await stop('Restore stopped — the visits could not be written.', e);
+    }
+    for(const [k, str] of wrote){ if(k !== 'visits'){ mirrorSave(k, str); setMergeBase(k, str); } } // the cloud now holds exactly this (the next merge's base)
     // The sales files stay as they are: an older index would drop every file
     // imported since that day from every figure. Only a wiped index (no file
     // at all) takes the backup's.
@@ -1892,59 +2119,186 @@ async function restoreSnapshotNow(dateStr){
     // Records the backup brought back to life leave the recycle bin, or a
     // later "Restore" there would push a second copy with the same id.
     let binChanged = false;
-    [['clinics',clinics],['products',products],['visits',visits]].forEach(([k,list])=>{
+    [['clinics',clinics],['visits',visits]].forEach(([k,list])=>{
       const live = new Set(list.map(x=>x && x.id));
       const before = (recycleBin[k]||[]).length;
       recycleBin[k] = (recycleBin[k]||[]).filter(x=>!(x && live.has(x.id)));
       if(recycleBin[k].length !== before) binChanged = true;
     });
-    if(binChanged) await persist('recycleBin');
+    const rb = binChanged ? await persistTold('recycleBin') : null;
     const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
     closeModal();
     renderAll();
-    showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
+    // the restore's own writes threw if they failed; the bin's save says what it did
+    if(!rb || rb.ok) showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
+    else showToast(`⚠️ Restored ${dateStr} — but the recycle bin was not updated: some restored records may still show there. Do not restore them from the bin.`, 8000);
+    return 'restored';
   }catch(e){
-    console.error(e);
-    showToast('Restore failed');
+    return await stop('Restore failed.', e);
   }
 }
-// Restore the clinic list from a copy kept on this device (mirror). Replaces
-// the in-memory list, clears delete-log entries, then merges with the cloud so
-// nothing saved by other devices meanwhile is lost.
-async function restoreDeviceClinics(which){ return holdRefresh(() => restoreDeviceClinicsNow(which)); } // (v121, see restoreSnapshot)
-async function restoreDeviceClinicsNow(which){
+// A restore write that had no answer when the restore stopped (round 4): when it settles, a
+// write that landed after all is put back (only over exactly what it wrote), and the screen says
+// what became of it — "Nothing was changed" only once that is known.
+async function restoreFollowLate(w, clean, kept){
+  const [k, str, prev] = w, name = restoreKeyName(k);
+  let res = null;
+  try{ res = await w.p; }catch(e){ res = null; }
+  if(res == null){ showToast(`The restore's write of ${name} did not land.` + (clean ? ' Nothing was changed.' : ''), 8000); return; }
+  let state = 'unknown';
+  try{
+    await storageUpdate(k, cur => {
+      const c = cur == null ? null : String(cur);
+      state = c === prev ? 'same' : c === str ? 'ours' : 'other';
+      return state === 'ours' && prev != null ? prev : null;
+    }, 15000);
+    if(state === 'ours' && prev == null) state = 'other';
+  }catch(e){ state = 'unknown'; }
+  if(state === 'same' || state === 'ours'){
+    showToast(`The restore's write of ${name} reached the cloud late — it was put back.` + (clean ? ' Nothing was changed.' : ''), 9000);
+    try{ await loadAll(); }catch(e){} // the screen and the merge bases: the cloud as it is now
+  }
+  else showToast(`The restore's write of ${name} reached the cloud late and could not be put back (no connection?). The data as it was is in ${kept}. Check the connection, then tap Restore again.`, 12000);
+}
+// "Restore from this phone's copy" (v123): the clinic list this phone kept is
+// compared with the list, clinic by clinic (UMCore.deviceCopyDiff), and only
+// the rows someone ticks are applied — a clinic the list no longer has comes
+// back as the copy holds it; one that differs takes the copy's values for the
+// fields listed and gets back the doctors only the copy has. Nothing is ticked
+// at first. Until v123 the copy went back whole: owners, handovers and notes
+// changed since were undone, and clinics deleted since came back.
+let _devCopy = null;
+const DEV_FIELD = { name: 'Name', rep: 'Owner', cls: 'Class', phone: 'Phone', contact: 'Contact', notes: 'Notes', profileNotes: 'Profile notes',
+  account: 'Account', dealType: 'Deal type', noSaleReason: 'No-sale reason', prevRep: 'Owner before the handover', repSince: 'Owner since',
+  shared: 'Shared account', sharedSince: 'Shared since', gov: 'Government', isNew: 'New clinic', addedOn: 'Added on' };
+function devCopyVal(v){
+  if(v == null || v === '') return '—';
+  if(v === true) return '✓';
+  if(v === false) return '✗';
+  return typeof v === 'object' ? JSON.stringify(v).slice(0, 120) : String(v).slice(0, 160);
+}
+function devCopyRaw(which){
+  const raw = which === 'prev' ? (function(){ try{ return localStorage.getItem('um_mirror_prev:clinics'); }catch(e){ return null; } })() : mirrorGet('clinics');
+  const arr = UMCore.safeParse(raw, null);
+  return Array.isArray(arr) ? arr.filter(c => c && typeof c === 'object' && c.id != null) : [];
+}
+function restoreDeviceClinics(which){
   if(!requireAdmin()) return;
-  const raw = which==='prev' ? (function(){ try{ return localStorage.getItem('um_mirror_prev:clinics'); }catch(e){ return null; } })() : mirrorGet('clinics');
-  const list = normalizeClinics(UMCore.safeParse(raw, null));
-  if(!list.length){ showToast('لا توجد نسخة صالحة على هذا الجهاز'); return; }
-  if(!confirm(`استرجاع ${list.length} عيادة من نسخة هذا الجهاز؟`)) return;
-  clinics = list; hidePlaceholderClinics();
-  _seedClinics = false;
-  await untombMany({ clinics: list.map(c=>c.id) });
-  const ok = await persist('clinics', {allowShrink:true});
-  const bar = document.getElementById('wipeBanner'); if(bar) bar.remove();
-  closeModal();
+  if(_loadFailed.clinics || _mirrorUsed.clinics){ showToast('⚠️ The clinic list did not load from the cloud — check the connection and open this again'); return; }
+  const copy = devCopyRaw(which);
+  if(!copy.length){ showToast('لا توجد نسخة صالحة على هذا الجهاز'); return; }
+  const diff = UMCore.deviceCopyDiff(storedClinics(), copy, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id), tombIds: [...tombSet('clinics')], doctorTombs: [...tombSet('doctors')] });
+  _devCopy = { which, diff, picked: new Set() };
+  showModal(`<h3 style="margin-top:0;">📱 <span>This phone's copy of the clinic list</span></h3><div id="devCopyBody"></div>`);
+  renderDeviceCopy();
+}
+function renderDeviceCopy(){
+  const body = document.getElementById('devCopyBody');
+  if(!body || !_devCopy) return;
+  const d = _devCopy.diff;
+  const box = id => `<input type="checkbox" data-devcopy="${esc(id)}" ${_devCopy.picked.has(id) ? 'checked' : ''} onchange="devCopyToggle(this.dataset.devcopy, this.checked)">`;
+  const why = m => m.deleted === 'bin' ? ' · <span>deleted in the app (recycle bin)</span>' : m.deleted === 'log' ? ' · <span>deleted in the app</span>' : '';
+  const missing = d.missing.map(m => `<label style="display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px;">${box(m.id)}
+      <span><b dir="auto">${esc(m.clinic.name || m.id)}</b><br><span style="color:var(--muted); font-size:12px;"><span dir="auto">${esc(m.clinic.rep || '—')}</span>${why(m)}</span></span></label>`).join('');
+  const changed = d.changed.map(ch => `<label style="display:flex; gap:10px; align-items:flex-start; padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px;">${box(ch.id)}
+      <span><b dir="auto">${esc(ch.name)}</b>${ch.fields.map(f => `<br><span style="font-size:12px;"><span>${esc(DEV_FIELD[f.field] || f.field)}</span>: <span dir="auto" data-notr>${esc(devCopyVal(f.now))}</span> → <span dir="auto" data-notr>${esc(devCopyVal(f.copy))}</span></span>`).join('')}${ch.doctors.length ? `<br><span style="font-size:12px;"><span>Doctors only on this phone's copy:</span> <span dir="auto" data-notr>${ch.doctors.map(x => esc(x.name)).join(', ')}</span></span>` : ''}</span></label>`).join('');
+  body.innerHTML = `
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Nothing changes until you tick a row and apply it. A ticked clinic takes this phone's copy for what is listed under it; everything else stays as the list has it now.</span></p>
+    <div class="section-title"><span>Not in the list now</span> (${d.missing.length})</div>
+    ${missing || '<div class="empty"><span>None</span></div>'}
+    <div class="section-title" style="margin-top:12px;"><span>Different in the list now</span> (${d.changed.length})</div>
+    ${changed || '<div class="empty"><span>None</span></div>'}
+    ${d.changed.some(ch => ch.fields.some(f => ['rep', 'prevRep', 'repSince', 'shared', 'sharedSince'].includes(f.field))) ? '<div style="color:var(--amber-ink); font-size:12px; margin-top:8px;"><span>A change of owner, handover or shared account moves the sales the files credit to that clinic.</span></div>' : ''}
+    ${(d.missing.length || d.changed.length) ? `<button class="btn" id="devCopyGo" style="margin-top:10px;" onclick="applyDeviceCopy()">♻️ <span>Apply the ticked rows</span> (<span id="devCopyN">${_devCopy.picked.size}</span>)</button>` : ''}
+    <div id="devCopyNote" style="font-size:12.5px; margin-top:8px;"></div>`;
+}
+function devCopyToggle(id, on){
+  if(!_devCopy) return;
+  if(on) _devCopy.picked.add(id); else _devCopy.picked.delete(id);
+  const n = document.getElementById('devCopyN'); if(n) n.textContent = _devCopy.picked.size;
+}
+async function applyDeviceCopy(){
+  if(!requireAdmin() || !_devCopy) return;
+  const st = _devCopy, d = st.diff;
+  if(!st.picked.size){ showToast('Nothing ticked'); return; }
+  const btn = document.getElementById('devCopyGo'); if(btn) btn.disabled = true;
+  const r = await holdRefresh(async () => {
+    const live = new Map(storedClinics().map(c => [c && c.id, c]));
+    const back = d.missing.filter(m => st.picked.has(m.id) && !live.has(m.id)).map(m => dropTombedDoctors(normalizeClinic(JSON.parse(JSON.stringify(m.clinic)))));
+    const ids = back.map(c => c.id);
+    if(ids.length) await untombMany({ clinics: ids }); // the delete log first — otherwise the next merge would remove them again
+    clinics = clinics.concat(back);
+    let fields = 0;
+    d.changed.filter(ch => st.picked.has(ch.id)).forEach(ch => {
+      const c = live.get(ch.id);
+      if(!c) return;
+      ch.fields.forEach(f => { if(f.copy == null) delete c[f.field]; else c[f.field] = JSON.parse(JSON.stringify(f.copy)); fields++; });
+      c.doctors = Array.isArray(c.doctors) ? c.doctors : [];
+      ch.doctors.forEach(doc => { if(!c.doctors.some(x => x && x.id === doc.id)){ c.doctors.push(Object.assign({ title:'', phone:'', birthday:'', cadence:'', notes:'', handovers:[] }, JSON.parse(JSON.stringify(doc)))); fields++; } });
+    });
+    hidePlaceholderClinics();
+    const idSet = new Set(ids), before = ((recycleBin && recycleBin.clinics) || []).length;
+    if(recycleBin && recycleBin.clinics) recycleBin.clinics = recycleBin.clinics.filter(x => !(x && idSet.has(x.id)));
+    const res = await persistFor('clinics', _seedClinics ? { allowSeed: true } : undefined);
+    if(res.ok || sentSince('clinics', res)) _seedClinics = false;
+    const rb = (recycleBin && recycleBin.clinics && recycleBin.clinics.length !== before) ? await persistTold('recycleBin') : null;
+    return { res, rb, n: st.picked.size };
+  });
   renderAll();
-  showToast(ok ? `✅ أُعيدت ${clinics.length} عيادة من نسخة الجهاز` : '⚠️ الاسترجاع محلي فقط — أعد المحاولة عند توفر الاتصال');
+  const ok = r.res.ok || sentSince('clinics', r.res);
+  // kept on this phone and queued (it uploads by itself) — or refused, too large, not saved: said for what it is (v123)
+  const onPhone = !ok && !!(r.res.outcome && r.res.outcome.queued && r.res.outcome.mirrored && !r.res.outcome.tooLarge);
+  const fail = ok || onPhone ? null : saveFailText(r.res, 'clinics');
+  if(ok && r.rb && !r.rb.ok) showToast(`✅ ${r.n} clinics updated from this phone's copy — but the recycle bin was not updated: they may still show there. Do not restore them from the bin.`, 6000);
+  else if(ok || onPhone) showToast(ok ? `✅ ${r.n} clinics updated from this phone's copy` : '⚠️ Changed on this device — not saved to the cloud yet', 4000);
+  else saveToast(r.res, 'clinics', '');
+  restoreDeviceClinics(st.which); // the sheet as it is now
+  const note = document.getElementById('devCopyNote');
+  if(note) note.innerHTML = ok ? `✅ ${r.n} <span>clinics updated from this phone's copy and saved.</span>`
+    : onPhone ? `⚠️ ${r.n} <span>clinics changed on this device; the save has not reached the cloud yet — it uploads when the connection is back.</span>`
+    : `⚠️ <span>${esc(trOf((fail && fail[0]) || '') || (fail && fail[0]) || 'Not saved')}</span>`;
 }
 // Boot-time wipe detector (supervisor): if today's clinic list is far smaller
 // than a recent automatic backup, say so loudly and point at the restore.
+// v123: listing the backups downloads every one of them (the cloud has no light
+// listing), so they are read at most once a day on a phone — the counts are
+// kept on the phone and the banner is shown again from them — and only for an
+// account this phone has seen with 15 or more clinics: a small, new account is
+// not a wiped one. (It ran after every refresh while the list was small.)
+const WIPE_CHECK = 'um_wipeCheck', CLINICS_PEAK = 'um_clinicsPeak';
+function storedClinicsPeak(){ try{ return parseInt(localStorage.getItem(CLINICS_PEAK) || '0', 10) || 0; }catch(e){ return 0; } }
+// the most clinics this phone has seen: what it noted, and its two copies of the list
+function clinicsPeak(){
+  let n = storedClinicsPeak();
+  ['um_mirror_prev:clinics', 'um_mirror:clinics'].forEach(k => { let a = null; try{ a = UMCore.safeParse(localStorage.getItem(k), null); }catch(e){} if(Array.isArray(a)) n = Math.max(n, a.length); });
+  return n;
+}
 async function checkWipeBanner(){
   try{
     if(!currentUser || currentUser.role !== 'supervisor') return;
     if(_loadFailed.clinics || _mirrorUsed.clinics) return; // offline — no verdict
+    const now = storedClinics().length;
+    if(!_seedClinics && now > storedClinicsPeak()){ try{ localStorage.setItem(CLINICS_PEAK, String(now)); }catch(e){} }
     const healthy = clinics.length >= 15 && !_seedClinics;
     if(healthy) return;
+    if(clinicsPeak() < 15) return; // never 15 here: a small account, not a wiped one
     const threshold = _seedClinics ? 15 : Math.max(15, clinics.length * 2);
-    const list = await window.storage.list('snap_', true).catch(()=>null);
-    const dates = (list && list.keys || []).map(k=>k.replace('snap_','')).sort().reverse();
-    let best = null;
-    for(const d of dates.slice(0, 4)){
-      const res = await window.storage.get('snap_'+d, true).catch(()=>null);
-      const snap = res ? UMCore.safeParse(res.value, null) : null;
-      const n = snap && Array.isArray(snap.clinics) ? snap.clinics.length : 0;
-      if(n >= threshold){ best = {d, n}; break; }
+    const day = todayStr();
+    let seen = null; try{ seen = UMCore.safeParse(localStorage.getItem(WIPE_CHECK), null); }catch(e){}
+    if(!(seen && seen.day === day && Array.isArray(seen.counts))){
+      const list = await window.storage.list('snap_', true).catch(()=>null);
+      if(!list) return; // unreachable: no verdict, asked again on a later refresh
+      const dates = (list.keys || []).map(k=>k.replace('snap_','')).sort().reverse();
+      const counts = [];
+      for(const d of dates.slice(0, 4)){
+        const res = await window.storage.get('snap_'+d, true).catch(()=>null);
+        const snap = res ? UMCore.safeParse(res.value, null) : null;
+        counts.push({ d, n: snap && Array.isArray(snap.clinics) ? snap.clinics.length : 0 });
+      }
+      seen = { day, counts };
+      try{ localStorage.setItem(WIPE_CHECK, JSON.stringify(seen)); }catch(e){}
     }
+    const best = seen.counts.find(x => x && x.n >= threshold);
     if(!best) return;
     let bar = document.getElementById('wipeBanner');
     if(!bar){
