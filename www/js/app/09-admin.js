@@ -958,18 +958,30 @@ async function handleClinicSheet(input){
           </div>`).join('')}
         ${list.length>60?`<div style="color:var(--muted); font-size:12px; text-align:center; padding:6px;">+${list.length-60} more (all included)</div>`:''}
       </div>
+      <div id="ciAsk"></div>
       <button class="btn" style="margin-top:10px;" onclick="commitClinicImport()">Add clinics</button>`;
   }catch(e){
     console.error(e);
     prev.innerHTML = '<div style="color:var(--coral-ink); font-size:13px;">Could not read this file — save it as .xlsx or .csv and retry.</div>';
   }
 }
-async function commitClinicImport(){
+async function commitClinicImport(confirmed){
   if(!requireAdmin() || !_clinicImport) return;
   const repEl = document.querySelector('#ciRepChips .chip.on');
   const defaultRep = repEl ? repEl.dataset.rep : REPS[0];
   const updateDups = !!document.getElementById('ciUpdateDups')?.checked;
   const repByLower = new Map(REPS.map(r=>[r.toLowerCase(), r]));
+  // the clinics it adds, first on their own: the sales check reads them before any is on the list (round 3)
+  const add = [];
+  _clinicImport.rows.forEach(x=>{
+    if(!x.include || x.dup) return;
+    const d = x.data, rep = repByLower.get((d.rep||'').toLowerCase()) || defaultRep;
+    add.push(normalizeClinic({id:uid(), name:d.name, rep, cls:d.cls, market:d.market,
+      account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
+  });
+  const ask = document.getElementById('ciAsk');
+  const chk = bulkClinicSalesCheck(add, typeof confirmed === 'string' ? confirmed : '', 'commitClinicImport', "document.getElementById('ciAsk').innerHTML=''");
+  if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); else showToast('⚠️ Not saved — these clinic names need a check first', 6000); return; }
   let added = 0, updated = 0, skipped = 0;
   _clinicImport.rows.forEach(x=>{
     if(!x.include){ skipped++; return; }
@@ -982,11 +994,8 @@ async function commitClinicImport(){
       } else skipped++;
       return;
     }
-    const rep = repByLower.get((d.rep||'').toLowerCase()) || defaultRep;
-    clinics.push(normalizeClinic({id:uid(), name:d.name, rep, cls:d.cls, market:d.market,
-      account:d.account, phone:d.phone, contact:d.contact, notes:'', isNew:false, addedOn:todayStr()}));
-    added++;
   });
+  add.forEach(c => { clinics.push(c); added++; });
   const r = await persistTold('clinics');
   closeModal();
   renderAll();

@@ -4315,6 +4315,14 @@ describe('full backup: inventory, file, integrity', () => {
     assert.equal(s['other:someNewDoc'].docs, 1, 'a document no set claims is still listed, by name');
     assert.equal(s.events.records, 0);
   });
+  test('the delete log as v123 writes it: only its lists\' deletes are counted — never its revivals (revived) or its revision (rev) (v123 round 3)', () => {
+    const log = { tasks: { a: 1, b: 2 }, visits: { c: 3, d: 4 }, clinics: {}, events: {}, dayPlans: {}, doctors: {},
+      revived: { tasks: { e: 5 }, clinics: { f: 6 }, visits: { g: 7 } }, rev: 123 };
+    const s = by(core.cloudInventory({ tombs: { value: J(log), updated: 1 } }));
+    assert.equal(s.tombs.records, 4, 'a log with 4 deletes (and 3 revivals) counts 4');
+    const s2 = by(core.cloudInventory({ tombs: { value: J({ doctors: { 'c1|d1': 1 }, tasks: { t: 2 }, revived: {}, rev: 123 }), updated: 1 } }));
+    assert.equal(s2.tombs.records, 2, 'doctor removals are deletes too');
+  });
   test('every document belongs to exactly one line; totals add up', () => {
     const docs = team(), inv = core.cloudInventory(docs);
     assert.equal(inv.docs, Object.keys(docs).length, 'the daily backups are part of it');

@@ -38,17 +38,15 @@ async function bgRefresh(){
   if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
   if(refreshRunning()) return;
   if(currentUser && document.visibilityState==='visible'){
-    // Queued offline edits must reach the cloud BEFORE a refresh replaces
-    // memory with the (still-stale) cloud copy — otherwise they'd be lost.
-    // If a flush keeps failing we still refresh periodically so the device
-    // never gets pinned to stale data forever (merge-on-save protects the
-    // queued entries, and the mirror still wins for the stuck key).
-    if(outboxList().length){
-      await flushOutbox();
-      _stuckTicks = outboxList().length ? _stuckTicks + 1 : 0;
-      if(_stuckTicks < 15) return;   // ~5 minutes of retries before refreshing anyway
-      _stuckTicks = 0;
-    }
+    // Queued offline edits go up first (the delete log, then each list the
+    // round may send), then the refresh — EVERY round (round 3). Until then a
+    // round that left anything queued skipped the refresh, ~5 minutes at a
+    // time: a list that keeps waiting (the rules refuse it, it is too large
+    // for the cloud, no answer) froze every other list on this phone. A queued
+    // list loses nothing to the refresh: it is served from this phone's copy
+    // (cloudGet, loadVisits; from memory when that copy could not be written)
+    // until it is sent.
+    if(outboxList().length) await flushOutbox();
     await loadAll();
     if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
   }
