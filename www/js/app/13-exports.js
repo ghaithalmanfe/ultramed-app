@@ -1862,7 +1862,10 @@ async function restoreMissingClinics(){
 async function restoreSnapshot(dateStr){
   if(!requireAdmin()) return;
   try{ await loadAll(); }catch(e){ console.warn('restore: the read before it', e); }
-  return holdRefresh(() => restoreSnapshotNow(dateStr));
+  const r = await holdRefresh(() => restoreSnapshotNow(dateStr));
+  // a restore that stopped after its first write: the lists and their merge bases are read again from the cloud
+  if(r === 'stopped'){ try{ await loadAll(); }catch(e){ console.warn('restore: the read after it stopped', e); } }
+  return r;
 }
 // v123: the product catalog is no longer part of a whole-day restore (it
 // replaced the catalog without saying so: prices, catalog additions and
@@ -1974,7 +1977,7 @@ async function restoreSnapshotNow(dateStr){
   const goneT = P(now.tasks).filter(t => t && !ht.has(t.id)).length;
   const goneV = P(now.visits).filter(v => v && !hv.has(v.id)).length;
   const ask = `Restore data from ${dateStr}? The clinics, tasks and this month's visits become that day's backup: ${goneC} clinics, ${goneT} tasks and ${goneV} visits of this month that it does not hold are removed. Past months' visits, the sales files and the product catalog stay as they are. `
-    + (hasToday ? `Each of them is in ${cover.sources.join(', or in ')}. Today's backup stays as it is.` : 'First, the data as it is now is kept as today\'s backup.');
+    + (hasToday ? `Everything it replaces is, as it is now, in ${cover.sources.join(' or in ')} (checked just now). Today's backup stays as it is.` : 'First, the data as it is now is kept as today\'s backup.');
   if(!confirm(trOf(ask) || ask)) return;
   // Read again: a change made while the question was open stops it (nothing changed).
   let again;
@@ -2019,39 +2022,59 @@ async function restoreSnapshotNow(dateStr){
   const nextTasks = Array.isArray(snap.tasks) ? snap.tasks : [];
   const sets = { clinics: nextClinics.map(c => c.id), visits: nextVisits.map(v => v.id), tasks: nextTasks.map(t => t.id) };
   const revived = tombsOf(sets); // the deletes this restore clears: put back if it stops
-  const wrote = []; // [key, text written, text before] — undone in reverse if a later step stops
+  // [key, text being written, text before] — noted BEFORE each write, so a write whose
+  // answer never came is checked too; put back in reverse if a later step stops
+  const wrote = [];
+  const kept = hasToday ? cover.sources.join(' or in ') : "today's backup (the data as it was before this restore)";
   const stop = async (why, e) => {
     if(e) console.error('restore stopped', e);
-    let undone = true;
+    // every document it touched: as it was before (nothing to do), still what the restore wrote
+    // (put back), or something else / no answer (it cannot be put back from here)
+    let clean = true;
     for(const [k, str, prev] of wrote.slice().reverse()){
-      try{ const r = await storageUpdate(k, cur => cur === str ? (prev == null ? null : prev) : null, 15000); if(r == null && prev != null) undone = false; }catch(e2){ undone = false; }
+      let state = 'unknown';
+      try{
+        await storageUpdate(k, cur => {
+          const c = cur == null ? null : String(cur);
+          state = c === prev ? 'same' : c === str ? 'ours' : 'other';
+          return state === 'ours' && prev != null ? prev : null;
+        }, 15000);
+        if(state === 'ours' && prev == null) state = 'other'; // there was no document before: nothing to write back
+      }catch(e2){ state = 'unknown'; }
+      if(state !== 'same' && state !== 'ours') clean = false;
     }
     const tb = Object.keys(revived).length ? await retombMany(revived).catch(() => false) : true;
     putBack();
-    if(undone && tb) showToast(why + ' Nothing was changed.', 8000);
-    else showToast(why + ' Part of it could not be put back (no connection?): the data as it was is in ' + (hasToday ? cover.sources.join(', or in ') : "today's backup") + '. Check the connection, then tap Restore again.', 10000);
+    if(clean && tb) showToast(why + ' Nothing was changed.', 8000);
+    else showToast(why + ' Part of what it had written could not be put back (no connection?). The data as it was is in ' + kept + '. Check the connection, then tap Restore again.', 12000);
+    return 'stopped';
   };
   try{
     // Clear the delete log for every restored record FIRST — otherwise the
     // next merge or restart would silently delete them all over again.
-    if(!await untombMany(sets)){ await stop('Restore stopped — the delete log could not be updated.'); return; }
+    if(!await untombMany(sets)) return await stop('Restore stopped — the delete log could not be updated.');
     _seedClinics = false; _bootCrashed = false;
     // A restore writes that day's copy exactly as it was — over exactly the
     // documents checked above (compare-and-set): a change in between stops it.
     for(const [k, val] of [['clinics', nextClinics], ['tasks', nextTasks]]){
       const str = JSON.stringify(val);
       let changed = false;
-      const r = await storageUpdate(k, cur => { changed = (cur == null ? null : String(cur)) !== now[k]; return changed ? null : str; }, 15000);
-      if(changed || r == null){ await stop(`Restore stopped — ${restoreKeyName(k)} changed on another phone while it ran.`); return; }
       wrote.push([k, str, now[k]]);
+      const r = await storageUpdate(k, cur => { changed = (cur == null ? null : String(cur)) !== now[k]; return changed ? null : str; }, 15000);
+      if(changed || r == null){ wrote.pop(); return await stop(`Restore stopped — ${restoreKeyName(k)} changed on another phone while it ran.`); } // (it wrote nothing there)
     }
     if(typeof hiddenPlaceholderClinics !== 'undefined') hiddenPlaceholderClinics = []; // memory holds exactly what was written
     clinics = nextClinics; hidePlaceholderClinics();
     tasks = nextTasks;
     visits = nextVisits;
+    // (the live document as an authoritative save writes it: this month's visits of the backup, none of them deleted any more)
+    wrote.push(['visits', JSON.stringify(UMCore.visitsPartition(nextVisits, todayStr()).live), now.visits]);
     try{ await persistVisits({ authoritative: true, expect: { live: now.visits } }); }
-    catch(e){ await stop(e && e.casChanged ? `Restore stopped — ${restoreKeyName('visits')} changed on another phone while it ran.` : 'Restore stopped — the visits could not be written.', e && e.casChanged ? null : e); return; }
-    for(const [k, str] of wrote){ mirrorSave(k, str); setMergeBase(k, str); } // the cloud now holds exactly this (the next merge's base)
+    catch(e){
+      if(e && e.casChanged){ wrote.pop(); return await stop(`Restore stopped — ${restoreKeyName('visits')} changed on another phone while it ran.`); } // (the first write of the visits: nothing written)
+      return await stop('Restore stopped — the visits could not be written.', e);
+    }
+    for(const [k, str] of wrote){ if(k !== 'visits'){ mirrorSave(k, str); setMergeBase(k, str); } } // the cloud now holds exactly this (the next merge's base)
     // The sales files stay as they are: an older index would drop every file
     // imported since that day from every figure. Only a wiped index (no file
     // at all) takes the backup's.
@@ -2078,8 +2101,9 @@ async function restoreSnapshotNow(dateStr){
     // the restore's own writes threw if they failed; the bin's save says what it did
     if(!rb || rb.ok) showToast(`✅ Restored ${dateStr} — ${clinics.length} clinics, ${visits.length} visits`);
     else showToast(`⚠️ Restored ${dateStr} — but the recycle bin was not updated: some restored records may still show there. Do not restore them from the bin.`, 8000);
+    return 'restored';
   }catch(e){
-    await stop('Restore failed.', e);
+    return await stop('Restore failed.', e);
   }
 }
 // "Restore from this phone's copy" (v123): the clinic list this phone kept is

@@ -130,7 +130,11 @@ function UMCoreParse(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
   // the daily backup carries this month's visits only and a restore keeps the archived months
   const snap = await A.page.evaluate(async () => { const k = 'snap_' + todayStr(); await window.storage.delete(k); try{ localStorage.removeItem('um_snapDay'); }catch(e){} await maybeSnapshot(); const s = JSON.parse((await window.storage.get(k)).value); return { visits: s.visits.length, months: s.visitsMonths, key: k }; });
   check('the daily backup holds September only (past months are their own documents)', snap.visits === doc('visits').length && snap.months && snap.months['2026-08'] > 0, snap);
-  const restored = await A.page.evaluate(async (k) => { _fullBackupSavedAt = Date.now(); /* today's own backup: a full backup first (v123 review) */ await restoreSnapshot(k.replace('snap_','')); return { n: visits.length, jul: visits.filter(v => v.date < '2026-08-01').length }; }, snap.key);
+  const restored = await A.page.evaluate(async (k) => {
+    // today's own backup: a full backup to this device first (v123 review) — a real one (round 3: the restore checks the file against the cloud)
+    await openFullBackup(); for(let i = 0; i < 400 && !document.querySelector('[data-backup-download]'); i++) await new Promise(r => setTimeout(r, 50));
+    downloadFullBackup(); closeModal();
+    await restoreSnapshot(k.replace('snap_','')); return { n: visits.length, jul: visits.filter(v => v.date < '2026-08-01').length }; }, snap.key);
   check('restoring that backup keeps July and August', restored.jul === 10 && restored.n === (await A.page.evaluate(() => visits.length)), restored);
   // ---------- month rollover: October 1 ----------
   const C = await mkPage('C', OCT_OFFSET);
