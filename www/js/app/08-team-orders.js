@@ -338,6 +338,7 @@ function openCallLog(prefillClinicId){
     <div id="clNewClinicFields" style="display:none; margin-top:10px;">
       <input type="text" id="clNewClinicName" placeholder="Clinic / customer name">
       <input type="tel" id="clNewClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+      <div id="clNewClinicAsk"></div>
       <label>Class</label>
       <div class="chip-row" id="clNewClinicClsChips"></div>
       <button class="btn ghost" onclick="cancelClNewClinic()">Cancel</button>
@@ -414,20 +415,29 @@ function pickClQuickDate(days){
   document.getElementById('clFollowUp').value = localDateStr(d);
 }
 const CHANNEL_LABELS = {call:'📞 Call', whatsapp:'💬 WhatsApp', email:'✉️ Email', other:'💭 Other'};
-async function saveCallLog(){
+async function saveCallLog(confirmed){
   let newClinicCreated = false;
   if(clNewClinicMode){
     const name = document.getElementById('clNewClinicName').value.trim();
     if(!name){ showToast('Enter the customer name'); return; }
+    if(!document.getElementById('clNotes').value.trim()){ showToast('Add a quick note about the call'); return; } // before any clinic is made
     const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
     if(dup){ clClinicId = dup.id; showToast('Customer already exists — using it'); }
     else {
       const clsEl = document.querySelector('#clNewClinicClsChips .chip.on');
-      clClinicId = uid();
-      clinics.push(normalizeClinic({id:clClinicId, name, rep: currentUser.name,
+      const nc = normalizeClinic({id:uid(), name, rep: currentUser.name,
         cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'', account:null,
         isNew:true, addedOn:todayStr(), contact:'',
-        phone: document.getElementById('clNewClinicPhone').value.trim()}));
+        phone: document.getElementById('clNewClinicPhone').value.trim()});
+      // the "+ Add clinic" sales check, as the order form does (round 3: the call log made
+      // clinics without it — a rep's new customer took another person's invoices, closed months
+      // too): nothing is saved until it passes; a rep is stopped and the form keeps what she typed
+      const askBox = document.getElementById('clNewClinicAsk');
+      const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'saveCallLog', "document.getElementById('clNewClinicAsk').innerHTML=''");
+      if(!chk.ok){ if(askBox) askBox.innerHTML = newClinicAskCard(chk.html); showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000); return; }
+      if(askBox) askBox.innerHTML = '';
+      clClinicId = nc.id;
+      clinics.push(nc);
       newClinicCreated = true;
     }
   }

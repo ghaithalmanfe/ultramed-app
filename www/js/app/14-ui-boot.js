@@ -38,17 +38,19 @@ async function bgRefresh(){
   if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
   if(refreshRunning()) return;
   if(currentUser && document.visibilityState==='visible'){
-    // Queued offline edits must reach the cloud BEFORE a refresh replaces
-    // memory with the (still-stale) cloud copy — otherwise they'd be lost.
-    // If a flush keeps failing we still refresh periodically so the device
-    // never gets pinned to stale data forever (merge-on-save protects the
-    // queued entries, and the mirror still wins for the stuck key).
+    // Queued offline edits go up first (the delete log, then each list the
+    // round may send), then the refresh — EVERY round (round 3): a list that
+    // keeps waiting (the rules refuse it, it is too large for the cloud, no
+    // answer) froze the refresh of every other list for ~5 minutes at a time,
+    // and a refused list was kept queued for good. A queued list loses nothing
+    // to the refresh: it is served from this phone's copy (cloudGet,
+    // loadVisits) until it is sent. _stuckTicks counts the rounds in a row that
+    // left a list it tried to send (not parked, not too large) unsent.
+    const sendable = () => outboxList().filter(k => !_saveBlocked.has(k) && _saveParked.get(k) !== 'refused');
     if(outboxList().length){
       await flushOutbox();
-      _stuckTicks = outboxList().length ? _stuckTicks + 1 : 0;
-      if(_stuckTicks < 15) return;   // ~5 minutes of retries before refreshing anyway
-      _stuckTicks = 0;
-    }
+      _stuckTicks = sendable().length ? _stuckTicks + 1 : 0;
+    } else _stuckTicks = 0;
     await loadAll();
     if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
   }

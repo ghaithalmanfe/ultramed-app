@@ -98,10 +98,13 @@ function seedCloud(extra){
   const browser = await chromium.launch(launchOpts());
   const errors = {};
   // opts.tombs: this phone's own delete log on the phone (um_tombs) before the app starts
+  // opts.ls: other things on the phone before the app starts ({ key: text }, set once)
   // opts.fakeAuth: a stand-in for the Firebase sign-in (onAuthStateChanged), to end a sign-in
+  // opts.ctx: browser context options (acceptDownloads)
+  // ph.shift(ms): this phone's clock moves on by ms (kept across reloads)
   const mkPhone = async (label, opts) => {
     opts = opts || {};
-    const ctx = await browser.newContext(); await blockFirebase(ctx);
+    const ctx = await browser.newContext(opts.ctx || {}); await blockFirebase(ctx);
     await ctx.route(u => !/^(http:\/\/localhost[:/]|data:|blob:)/.test(u.href), r => r.abort());
     const page = await ctx.newPage(); errors[label] = [];
     page.on('pageerror', e => errors[label].push('pageerror: ' + e.message));
@@ -109,7 +112,7 @@ function seedCloud(extra){
     await page.exposeFunction('__cGet', k => api.get(label, k)); await page.exposeFunction('__cGetTx', k => api.get(label, k, true)); await page.exposeFunction('__cSet', (k, v) => api.set(label, k, v)); await page.exposeFunction('__cDel', k => api.del(label, k));
     await page.exposeFunction('__cList', p => api.list(label, p)); await page.exposeFunction('__cSetMany', e => api.setMany(label, e));
     await page.exposeFunction('__cAcquire', acquire); await page.exposeFunction('__cRelease', release);
-    await page.addInitScript(({ clock, tombs, fakeAuth }) => {
+    await page.addInitScript(({ clock, tombs, fakeAuth, ls }) => {
       // what the Firebase SDK throws: a FirebaseError with its code
       const fail = r => { if(r && r.__err){ const e = new Error(r.__err === 'permission-denied' ? 'Missing or insufficient permissions.' : (r.msg || r.__err)); e.code = r.__err; e.name = 'FirebaseError'; throw e; } return r; };
       window.storage = {
@@ -118,6 +121,7 @@ function seedCloud(extra){
         update: async (k, fn) => { await window.__cAcquire(); try{ const cur = fail(await window.__cGetTx(k)); const next = fn(cur == null ? null : cur); if(next == null) return null; fail(await window.__cSet(k, next)); return next; } finally { await window.__cRelease(); } },
       };
       if(tombs && !sessionStorage.getItem('__tombsSet')){ try{ localStorage.setItem('um_tombs', tombs); sessionStorage.setItem('__tombsSet', '1'); }catch(e){} }
+      if(ls && !sessionStorage.getItem('__lsSet')){ try{ Object.keys(ls).forEach(k => localStorage.setItem(k, ls[k])); sessionStorage.setItem('__lsSet', '1'); }catch(e){} }
       if(fakeAuth){
         const cbs = [];
         const auth = { currentUser: null,
@@ -128,11 +132,13 @@ function seedCloud(extra){
         window.__authEnds = () => { auth.currentUser = null; cbs.forEach(cb => { try{ cb(null); }catch(e){} }); };
         window.firebase = { auth: Object.assign(() => auth, { EmailAuthProvider: { credential(){ return {}; } } }) };
       }
+      const shift = () => { try{ return parseFloat(sessionStorage.getItem('__shift') || '0') || 0; }catch(e){ return 0; } };
       const offs = clock - Date.now();
-      const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + offs); else super(...a); } static now(){ return _D.now() + offs; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
+      const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + offs + shift()); else super(...a); } static now(){ return _D.now() + offs + shift(); } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
+      window.__shiftBy = ms => { sessionStorage.setItem('__shift', String(shift() + ms)); };
       const _si = window.setInterval.bind(window);
       window.setInterval = (fn, ms, ...a) => { if(ms === 20000){ window.__bgTick = fn; return -1; } return _si(fn, ms, ...a); };
-    }, { clock: CLOCK, tombs: opts.tombs ? JSON.stringify(opts.tombs) : null, fakeAuth: !!opts.fakeAuth });
+    }, { clock: CLOCK, tombs: opts.tombs ? JSON.stringify(opts.tombs) : null, fakeAuth: !!opts.fakeAuth, ls: opts.ls || null });
     const watch = () => page.evaluate(() => { window.__toasts = []; const real = showToast; window.showToast = (m, ms) => { window.__toasts.push(String(m)); return real(m, ms); }; try{ _lastOfflineToast = 0; }catch(e){} });
     const boot = async (who, role) => {
       await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
@@ -142,7 +148,8 @@ function seedCloud(extra){
     };
     const tick = async () => { await page.waitForFunction(() => !_flushing, null, { timeout: 30000 }); await page.evaluate(async () => { await window.__bgTick(); }); await page.waitForTimeout(150); };
     const ev = (fn, arg) => page.evaluate(fn, arg);
-    return { page, boot, tick, ev, label, ctx, watch };
+    const shift = ms => page.evaluate(ms => { window.__shiftBy(ms); }, ms);
+    return { page, boot, tick, ev, label, ctx, watch, shift };
   };
   const fill = (ph, o) => ph.ev(o => { closeModal(); switchView('log'); prepLogView(o.clinicId); pickClinic(o.clinicId); pickDoctorSeen(o.docId); document.getElementById('visitNotes').value = o.note; }, o);
   const cloudList = k => parse(cloud[k]) || [];

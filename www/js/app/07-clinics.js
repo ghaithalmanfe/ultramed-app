@@ -908,6 +908,37 @@ function newClinicSalesCheck(nc, confirmed, retry, cancel){
         ${askedSince ? `<div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Count from this month: the earlier lines stay with</span> <b>${esc(prev[0])}</b>.</div>` : ''}` };
 }
 function newClinicAskCard(html){ return `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; }
+// The same check for clinics made in bulk (round 3): Admin → Manage clinics →
+// Import and the contact import made clinics with no check at all, and every
+// invoice of an ERP account their names start matching then counted for the
+// new clinic's owner — another person's, a closed month's too. Every account
+// whose invoices would move is shown in the import's own confirmation (who
+// they count for now → for whom then, lines, value, closed months), and none
+// moves without the supervisor's tap; Cancel leaves the list to untick.
+// `list`: the clinics the import would add (not on the list yet). → { ok: true } | { ok: false, html }
+function bulkClinicSalesCheck(list, confirmed, retry, cancel){
+  if(!(list || []).length || !erpPeriods().some(p => p)) return { ok: true };
+  if(!salesCheckComplete()) return { ok: false, html: '⚠️ <span>Some sales files did not load on this device, so what these names would move cannot be checked. Nothing was saved — try again with a connection.</span>' };
+  const moves = UMCore.erpAddClinicMoves({ erpSales, clinics: storedClinics(), erpMap }, list);
+  if(!moves.length) return { ok: true };
+  const sig = 'bulk:' + moves.map(m => [m.customer, m.date, m.from, m.to].join('|')).sort().join(';');
+  if(confirmed === sig) return { ok: true };
+  if(confirmed) showToast('This changed since you were asked — nothing was changed', 4000);
+  const month1 = todayStr().slice(0, 7) + '-01', by = {};
+  moves.forEach(m => {
+    const k = [m.customer, m.from || '—', m.to || '—'].join('\u0000');
+    const g = by[k] = by[k] || { customer: m.customer, from: m.from || '—', to: m.to || '—', n: 0, net: 0, closed: 0 };
+    g.n++; g.net += Number(m.net) || 0; if((m.date || '') < month1) g.closed++;
+  });
+  const rows = Object.values(by).sort((a, b) => String(a.customer).localeCompare(String(b.customer)));
+  return { ok: false, html: `<div><b>⚠️ <span>Sales would then count for another person</span></b>: ${moves.length} <span>sales lines</span> · ${rows.length} <span>accounts</span></div>
+      <div style="max-height:200px; overflow:auto; margin-top:6px; font-size:12.5px;">${rows.map(g => `<div data-bulkmove style="padding:3px 0; border-bottom:1px dashed var(--line);"><b dir="auto">${esc(g.customer)}</b>: <span dir="auto">${esc(g.from)}</span> → <span dir="auto">${esc(g.to)}</span> · ${g.n} <span>lines</span> (${money(Math.round(g.net * 1000) / 1000)})${g.closed ? ` · ${g.closed} <span>in closed months</span>` : ''}</div>`).join('')}</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-ask="${esc(sig)}" onclick="${retry}(this.dataset.ask)">✅ <span>Add them — these sales then count for the new clinics' owners</span></button>
+        <button class="chip small" onclick="${cancel}"><span>Cancel</span></button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:6px;"><span>Nothing was saved. To keep those sales where they count now, untick those clinics and add the rest.</span></div>` };
+}
 async function submitAddClinic(confirmed){
   const name = document.getElementById('mClinicName').value.trim();
   if(!name){ showToast('Enter a name'); return; }
@@ -1468,8 +1499,10 @@ function openDeletedClinic(id){
 // visits still remember its id and name, so the clinic can be RE-CREATED with
 // the SAME internal id: every past visit, plan and ERP name-match reattaches
 // to it instantly, as if it was never deleted.
+let _rcId = null; // the clinic being re-created (its sales check answers through confirmRecreateAsked)
 function openRecreateClinic(id){
   if(!requireAdmin()) return;
+  _rcId = id;
   const cVisits = visits.filter(v=>v.clinicId===id);
   const name = ((cVisits.find(v=>v.clinicName)||{}).clinicName || '').trim();
   // the rep who visited it most is almost certainly its owner
@@ -1485,18 +1518,26 @@ function openRecreateClinic(id){
     <div class="chip-row" id="rcRepChips">${REPS.map(r=>`<div class="chip ${r===guessRep?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>
     <label>Class</label>
     <div class="chip-row" id="rcClsChips">${['A','B','C'].map(k=>`<div class="chip ${k==='B'?'on':''}" data-cls="${k}" onclick="pickModalCls(this)">${k}</div>`).join('')}</div>
+    <div id="rcAsk"></div>
     <button class="btn" style="margin-top:12px;" onclick="confirmRecreateClinic('${esc(id)}')">Create</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">Cancel</button>
   `);
 }
-async function confirmRecreateClinic(id){
+function confirmRecreateAsked(ask){ if(_rcId) return confirmRecreateClinic(_rcId, ask); }
+async function confirmRecreateClinic(id, confirmed){
+  if(!requireAdmin()) return;
   const name = (document.getElementById('rcName').value||'').trim();
   if(!name){ showToast('Enter the clinic name'); return; }
   if(clinics.some(c=>c.id===id)){ showToast('This clinic is already back'); closeModal(); return; }
   const repEl = document.querySelector('#rcRepChips .chip.on');
   const clsEl = document.querySelector('#rcClsChips .chip.on');
-  clinics.push(normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
-    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() }));
+  const nc = normalizeClinic({ id, name, rep: repEl?repEl.dataset.rep:(REPS[0]||''),
+    cls: clsEl?clsEl.dataset.cls:'B', notes:'', addedOn: todayStr() });
+  // the "+ Add clinic" sales check (round 3): the invoices its name (or a link to its id) starts matching are shown first
+  const ask = document.getElementById('rcAsk');
+  const chk = newClinicSalesCheck(nc, typeof confirmed === 'string' ? confirmed : '', 'confirmRecreateAsked', "document.getElementById('rcAsk').innerHTML=''");
+  if(!chk.ok){ if(ask) ask.innerHTML = newClinicAskCard(chk.html); return; }
+  clinics.push(nc);
   untomb('clinics', id); // alive again — cleared from every delete log, team-wide
   const r = await persistTold('clinics');
   closeModal();
