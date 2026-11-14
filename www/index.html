@@ -1364,8 +1364,8 @@
         <div class="chip small" onclick="calRangePreset('next7')">Next 7 days</div>
       </div>
       <div style="display:flex; gap:10px;">
-        <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="calFrom"></div>
-        <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="calTo"></div>
+        <div style="flex:1; min-width:0;"><label style="font-size:12px;">From</label><input type="date" id="calFrom"></div>
+        <div style="flex:1; min-width:0;"><label style="font-size:12px;">To</label><input type="date" id="calTo"></div>
       </div>
       <button class="btn" style="margin-top:10px; padding:11px;" onclick="renderCalRangeSummary()">Show insights</button>
       <div id="calRangeResult" style="margin-top:4px;"></div>
@@ -1414,8 +1414,8 @@
     </div>
     <div id="repCustomRow" style="display:none; margin-bottom:16px;" class="card">
       <div style="display:flex; gap:10px;">
-        <div style="flex:1;"><label style="font-size:12px;">From</label><input type="date" id="repFrom"></div>
-        <div style="flex:1;"><label style="font-size:12px;">To</label><input type="date" id="repTo"></div>
+        <div style="flex:1; min-width:0;"><label style="font-size:12px;">From</label><input type="date" id="repFrom"></div>
+        <div style="flex:1; min-width:0;"><label style="font-size:12px;">To</label><input type="date" id="repTo"></div>
       </div>
       <button class="btn" style="margin-top:10px; padding:11px;" onclick="applyReportCustomRange()">Show this period</button>
     </div>
