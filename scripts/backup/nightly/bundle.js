@@ -18,6 +18,21 @@
 // scrypt(passphrase, random salt): 64 bytes, 32 for AES and 32 for a key
 // check (HMAC) kept in the header, so a wrong passphrase is told apart from a
 // damaged file. Salt and IV are random for every file.
+//
+// The passphrase. The repository is public, so anyone signed in to GitHub can
+// download the encrypted files and try passphrases against one for as long as
+// they like: the passphrase is the only protection, and scrypt only slows a
+// guess, it cannot save a phrase a person thought of. run.js therefore accepts
+// ONE kind of passphrase — the kind the passphrase page makes
+// (www/backup-passphrase.html, makePassphrase here): 200 random bits written
+// as 40 characters of a 32-character alphabet with no look-alikes (digits and
+// lower-case letters without i, l, o, u), then 4 check characters, in groups
+// of four:   xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-xxxx-cccc
+// The check characters are the first 20 bits of sha256("UMBACKUP passphrase
+// v1:" + the 40 characters): a phrase someone typed fails them, and so does a
+// passphrase pasted short or with a character changed. Such a passphrase is
+// read forgivingly (capitals, spaces or no hyphens, O for 0, I or L for 1,
+// Arabic digits): typed back from paper it still opens the files.
 'use strict';
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');
@@ -112,11 +127,73 @@ function buildBundle({ docs, project, createdAt, readTime, tier, database, colle
   return { plaintext: Buffer.from(text, 'utf8'), sha256, manifest, count: ids.length };
 }
 
+// ---- the passphrase (see the top of this file) ----
+const PASS_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
+const PASS_RANDOM_BYTES = 25, PASS_BODY = 40, PASS_CHECK = 4;
+const PASS_LABEL = 'UMBACKUP passphrase v1:';
+const PASS_SYMBOLS = '[0-9a-hjkmnp-tv-z]';
+const PASS_SHAPE = new RegExp('^' + PASS_SYMBOLS + '{' + (PASS_BODY + PASS_CHECK) + '}$');
+// the first n * 5 bits of bytes, five bits a character
+function passSymbols(bytes, n){
+  let out = '', acc = 0, bits = 0, i = 0;
+  while(out.length < n){
+    if(bits < 5){ acc = (acc << 8) | bytes[i++]; bits += 8; }
+    out += PASS_ALPHABET[(acc >>> (bits - 5)) & 31];
+    bits -= 5; acc &= (1 << bits) - 1;
+  }
+  return out;
+}
+const passCheck = body => passSymbols(crypto.createHash('sha256').update(PASS_LABEL + body, 'utf8').digest(), PASS_CHECK);
+const passGroups = t => t.match(/.{4}/g).join('-');
+// A new passphrase, as the passphrase page makes them. random: 25 bytes (tests only).
+function makePassphrase(random){
+  const bytes = random || crypto.randomBytes(PASS_RANDOM_BYTES);
+  if(!Buffer.isBuffer(bytes) || bytes.length !== PASS_RANDOM_BYTES) throw new BackupError('BAD_RANDOM', 'a passphrase is made from ' + PASS_RANDOM_BYTES + ' random bytes');
+  const body = passSymbols(bytes, PASS_BODY);
+  return passGroups(body + passCheck(body));
+}
+// What was typed or pasted, down to the characters of the alphabet: capitals,
+// separators and invisible marks dropped, look-alikes and Arabic digits read
+// as what they stand for. Any other character is kept, so the text then fits
+// no passphrase.
+function passTyped(text){
+  return String(text == null ? '' : text).normalize('NFKC').toLowerCase()
+    .replace(/[\u0660-\u0669]/g, d => String(d.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, d => String(d.charCodeAt(0) - 0x6f0))
+    .replace(/[\s\u200b-\u200f\u061c\u2010-\u2015\u2212\ufeff_.-]/g, '')
+    .replace(/o/g, '0').replace(/[il]/g, '1');
+}
+// → the passphrase as the page prints it, or null when the text is not one.
+function canonicalPassphrase(text){
+  const t = passTyped(text);
+  if(!PASS_SHAPE.test(t) || passCheck(t.slice(0, PASS_BODY)) !== t.slice(PASS_BODY)) return null;
+  return passGroups(t);
+}
+// Why run.js will not encrypt with this passphrase: null (it is one the page
+// made), 'miscopied' (made of the page's characters and about as long, but the
+// check characters do not fit: pasted short, or a character changed) or
+// 'not-made' (anything else — a phrase, a password, another generator's).
+function passphraseProblem(text){
+  if(canonicalPassphrase(text)) return null;
+  return new RegExp('^' + PASS_SYMBOLS + '{36,52}$').test(passTyped(text)) ? 'miscopied' : 'not-made';
+}
+// Said with "wrong passphrase" by verify.js and restore.js: the nightly
+// backups are only ever made with a passphrase the page made, so one that is
+// not whole is wrong before any file is tried — and the reader, typing from
+// paper, should know which it is. Never repeats what was typed.
+function wrongPassphraseHint(text){
+  const problem = passphraseProblem(text);
+  if(problem === 'miscopied') return ' The passphrase given is not a whole one: a character is missing or wrong (its check characters do not fit). Compare it with the copy you keep, group by group.';
+  if(problem === 'not-made') return ' The passphrase given is not one the passphrase page makes (eleven groups of four letters and digits); the nightly backups are made only with one of those.';
+  return '';
+}
 function passphraseBytes(passphrase){
   // Spaces or a line break at either end are ignored (a secret pasted with
   // a trailing newline still opens the files); Unicode is NFC-normalized so
-  // the same passphrase typed on another computer gives the same key.
-  return Buffer.from(String(passphrase == null ? '' : passphrase).trim().normalize('NFC'), 'utf8');
+  // the same passphrase typed on another computer gives the same key. A
+  // passphrase the page made is taken in its one printed form, however it
+  // was typed (capitals, no hyphens …).
+  const s = String(passphrase == null ? '' : passphrase).trim().normalize('NFC');
+  return Buffer.from(canonicalPassphrase(s) || s, 'utf8');
 }
 function checkKdf(kdf){
   const ok = kdf && kdf.name === 'scrypt' && Number.isInteger(kdf.N) && kdf.N >= 2 ** 14 && kdf.N <= 2 ** 20 && (kdf.N & (kdf.N - 1)) === 0
@@ -263,4 +340,5 @@ module.exports = {
   MAGIC, FORMAT, VERSION, DEFAULT_KDF, BackupError,
   sha256hex, parseJSON, canonicalJSON, compareIds, keyPrefix, fieldsBytes, buildManifest, buildBundle,
   encryptBundle, decryptBackup, readHeader, isBackupFile, isZip, ZIP_HINT, isPhoneBackup, checkBundle, formatBytes, prefixTable, setOwn, hasOwn,
+  PASS_ALPHABET, PASS_LABEL, makePassphrase, canonicalPassphrase, passphraseProblem, wrongPassphraseHint,
 };

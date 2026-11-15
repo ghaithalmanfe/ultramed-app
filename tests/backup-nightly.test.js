@@ -21,7 +21,16 @@ const B = require('../scripts/backup/nightly/bundle.js');
 const F = require('../scripts/backup/nightly/firestore.js');
 const APP = F.appFirebaseConfig();
 const PROD = APP.projectId;
-const PASS = 'correct horse battery staple — صحيح 2026';
+const crypto = require('node:crypto');
+// A passphrase as the passphrase page makes them (bundle.js makePassphrase) —
+// the same one at every run of these tests, built here so no file holds one.
+const PASS = B.makePassphrase(crypto.createHash('sha256').update('tests/backup-nightly.test.js').digest().subarray(0, 25));
+// Forty characters a person could think of. The backup accepted it (the rule
+// was "20 characters or more") although anyone signed in to GitHub can download
+// the encrypted files and try phrases against one.
+const OLD_PHRASE = 'correct horse battery staple — صحيح 2026';
+const otherChar = c => (c === 'a' ? 'b' : 'a');
+const changedAt = (p, i) => p.slice(0, i) + otherChar(p[i]) + p.slice(i + 1);   // i: not a hyphen
 const MARKER = 'PLAINTEXT-MARKER-q7Zx'; // in many documents: never in a file or a log
 const AR = 'مبيعات مفوترة، المحقق منذ بداية الشهر';
 const LOGIN = { email: 'backup@test.invalid', password: 'backup-pw-Qx81' };
@@ -269,7 +278,7 @@ const freshDir = name => fs.mkdtempSync(path.join(tmp, name + '-'));
 const filesIn = dir => fs.readdirSync(dir);
 function assertCleanLog(text){
   assert.doesNotMatch(text, /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/, 'an e-mail address in the log');
-  assert.ok(!text.includes(PASS.trim()) && !text.includes('correct horse'), 'the passphrase in the log');
+  assert.ok(!text.includes(PASS) && !text.includes(PASS.replace(/-/g, '')) && !text.toLowerCase().includes(PASS.slice(0, 9)) && !text.includes('correct horse'), 'the passphrase in the log');
   assert.ok(!text.includes(LOGIN.password) && !text.includes('restore-pw'), 'a password in the log');
   assert.ok(!text.includes(MARKER), 'document data in the log');
   assert.doesNotMatch(text, /[\u0600-\u06FF]/, 'Arabic text from the data in the log');
@@ -302,6 +311,16 @@ describe('backup file format (bundle.js)', () => {
     assert.ok(!B.encryptBundle(b.plaintext, PASS, {}, FAST_KDF).equals(file));
     // the passphrase is NFC-normalized and trimmed (a pasted trailing newline still opens it)
     assert.ok(B.decryptBackup(file, '  ' + PASS + '\n').plaintext.equals(b.plaintext));
+    // typed back from paper — capitals, spaces for hyphens, none at all, O for zero — it is the same key
+    for(const typed of [PASS.toUpperCase(), PASS.replace(/-/g, ' '), PASS.replace(/-/g, ''), PASS.replace(/0/g, 'O').replace(/1/g, 'l'), '\u200f' + PASS.replace(/-/g, ' \u2013 ')]){
+      assert.ok(B.decryptBackup(file, typed).plaintext.equals(b.plaintext), 'opens however it is typed');
+    }
+    // …and a file made with it typed that way opens with it as printed
+    assert.ok(B.decryptBackup(B.encryptBundle(b.plaintext, PASS.toUpperCase().replace(/-/g, ''), {}, FAST_KDF), PASS).plaintext.equals(b.plaintext));
+    // any other passphrase is taken as it is, capitals and all (files the library made before this rule still open)
+    const legacy = B.encryptBundle(b.plaintext, OLD_PHRASE, {}, FAST_KDF);
+    assert.ok(B.decryptBackup(legacy, OLD_PHRASE).plaintext.equals(b.plaintext));
+    assert.throws(() => B.decryptBackup(legacy, OLD_PHRASE.toUpperCase()), e => e.code === 'WRONG_PASSPHRASE');
   });
   test('a wrong passphrase, any changed byte, a cut file are all refused', () => {
     const b = B.buildBundle({ docs: docs(), project: 'demo', createdAt: 'x', tier: 'daily' });
@@ -352,6 +371,140 @@ describe('backup file format (bundle.js)', () => {
   });
 });
 
+// The encrypted files are workflow artifacts of a PUBLIC repository: anyone
+// signed in to GitHub can download them and try passphrases for as long as
+// they like. So the only passphrase the backup takes is one the passphrase
+// page made: 200 random bits, with check characters no typed phrase can fit.
+describe('the passphrase (bundle.js)', () => {
+  test('made: 200 random bits as 40 characters without look-alikes, 4 check characters, eleven groups of four', () => {
+    const p = B.makePassphrase();
+    assert.match(p, /^([0-9a-hjkmnp-tv-z]{4}-){10}[0-9a-hjkmnp-tv-z]{4}$/);
+    assert.doesNotMatch(p, /[ilou]/, 'no letter that reads as a digit or as another letter');
+    assert.equal(new Set(B.PASS_ALPHABET).size, 32); assert.match(B.PASS_ALPHABET, /^[0-9a-hjkmnp-tv-z]{32}$/);
+    assert.equal(B.canonicalPassphrase(p), p); assert.equal(B.passphraseProblem(p), null);
+    // random: never the same twice; every character of the alphabet is used, evenly enough
+    const many = Array.from({ length: 4000 }, () => B.makePassphrase());
+    assert.equal(new Set(many).size, 4000);
+    const count = {};
+    many.forEach(q => { for(const ch of q.replace(/-/g, '').slice(0, 40)) count[ch] = (count[ch] || 0) + 1; });
+    assert.equal(Object.keys(count).length, 32);
+    Object.values(count).forEach(n => assert.ok(n > 4500 && n < 5500, 'a character came ' + n + ' times of about 5000'));
+    // the same 25 bytes give the same passphrase; the 40 characters are those bytes, five bits each
+    const bytes = Buffer.from(Array.from({ length: 25 }, (_, i) => (i * 37 + 11) & 255));
+    assert.equal(B.makePassphrase(bytes), B.makePassphrase(Buffer.from(bytes)));
+    let bits = ''; for(const b of bytes) bits += b.toString(2).padStart(8, '0');
+    assert.equal(B.makePassphrase(bytes).replace(/-/g, '').slice(0, 40), bits.match(/.{5}/g).map(x => B.PASS_ALPHABET[parseInt(x, 2)]).join(''));
+    assert.throws(() => B.makePassphrase(Buffer.alloc(24)), e => e.code === 'BAD_RANDOM');
+  });
+  test('the check characters: one character changed, dropped, added or two swapped is never taken for a passphrase', () => {
+    const flat = PASS.replace(/-/g, '');
+    let n = 0;
+    for(let i = 0; i < flat.length; i++){
+      for(const ch of B.PASS_ALPHABET){
+        if(ch === flat[i]) continue;
+        const t = flat.slice(0, i) + ch + flat.slice(i + 1);
+        assert.equal(B.canonicalPassphrase(t), null, 'character ' + (i + 1) + ' changed'); n++;
+        assert.equal(B.passphraseProblem(t), 'miscopied');
+      }
+      assert.equal(B.passphraseProblem(flat.slice(0, i) + flat.slice(i + 1)), 'miscopied', 'character ' + (i + 1) + ' dropped');
+      assert.equal(B.passphraseProblem(flat.slice(0, i) + 'a' + flat.slice(i)), 'miscopied', 'a character added at ' + (i + 1));
+      if(i + 1 < flat.length && flat[i] !== flat[i + 1]) assert.equal(B.passphraseProblem(flat.slice(0, i) + flat[i + 1] + flat[i] + flat.slice(i + 2)), 'miscopied', 'characters ' + (i + 1) + ' and ' + (i + 2) + ' swapped');
+    }
+    assert.equal(n, 44 * 31);
+    const groups = PASS.split('-');
+    assert.equal(B.passphraseProblem([groups[1], groups[0]].concat(groups.slice(2)).join('-')), 'miscopied', 'two groups swapped');
+    assert.equal(B.passphraseProblem(groups.slice(0, 10).join('-')), 'miscopied', 'the last group missing');
+  });
+  test('typed back from paper it reads the same: capitals, spaces or no hyphens, O for 0, I or L for 1, Arabic digits', () => {
+    const forms = [PASS.toUpperCase(), PASS.replace(/-/g, ''), PASS.replace(/-/g, ' '), '  ' + PASS + '\r\n', PASS.replace(/-/g, ' \u2014 '), PASS.replace(/-/g, '\u2011'),
+      PASS.replace(/0/g, 'o').replace(/1/g, 'I'), PASS.replace(/1/g, 'l'), PASS.replace(/[0-9]/g, d => String.fromCharCode(0x660 + Number(d))), PASS.replace(/[0-9]/g, d => String.fromCharCode(0x6f0 + Number(d))),
+      '\u200f' + PASS + '\u200e', PASS.replace(/[0-9a-z]/g, c => String.fromCharCode(c.charCodeAt(0) + 0xfee0))];   // full-width, as some keyboards type
+    forms.forEach(f => { assert.equal(B.canonicalPassphrase(f), PASS, JSON.stringify(f.slice(0, 12))); assert.equal(B.passphraseProblem(f), null); });
+    // a letter the alphabet does not have is not guessed at
+    assert.equal(B.canonicalPassphrase(PASS.replace(/[a-h]/, 'u')), null);
+  });
+  // The repository is public: an example someone copies must never open, or
+  // make, a backup.
+  test('no passphrase printed anywhere in the repository is one the backup takes', () => {
+    const files = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: ROOT, encoding: 'utf8' }).stdout.split('\0').filter(f => f && !/\.(png|jpe?g|gif|webp|ico|pdf|woff2?|ttf|zip|gz|jar|xlsx)$/i.test(f) && !f.startsWith('node_modules/'));
+    assert.ok(files.includes('docs/backup.md') && files.includes('www/backup-passphrase.html'), 'the scan sees the guide and the page');
+    let seen = 0;
+    for(const f of files){
+      let text; try{ text = fs.readFileSync(path.join(ROOT, f), 'utf8'); }catch(e){ continue; }
+      for(const m of text.matchAll(/[0-9A-Za-z\u0660-\u0669]{4}(?:[-\s][0-9A-Za-z\u0660-\u0669]{4}){10}/g)){
+        seen++;
+        assert.equal(B.canonicalPassphrase(m[0]), null, f + ' prints a working passphrase');
+      }
+    }
+    assert.ok(seen >= 2, 'the guide\'s example and the format in bundle.js were checked (' + seen + ')');
+  });
+  test('nothing a person could think of, and no other generator\'s password, is one', () => {
+    const others = ['', '   ', 'short-pass-123', OLD_PHRASE, 'our dental backups are kept safe in kuwait since 2026 and nobody will ever guess it',
+      'Ultramed-Kuwait-Backup-Passphrase-2026', 'xK9#mQ2$vL7@pR4!nT6^wZ1&bY8*cF3%hJ5(dG0)', crypto.createHash('sha256').update('x').digest('hex'),
+      'fuzvo3-gyvqok-qivbex', '0123-4567-89ab-cdef-ghjk-mnpq-rstv-wxyz-0123-4567-89ab', 'a'.repeat(44), '0000-0000-0000-0000-0000-0000-0000-0000-0000-0000-0000',
+      crypto.randomBytes(32).toString('base64'), PASS + PASS, null, undefined];
+    for(const o of others){
+      assert.equal(B.canonicalPassphrase(o), null, JSON.stringify(String(o).slice(0, 20)));
+      assert.ok(['not-made', 'miscopied'].includes(B.passphraseProblem(o)));
+    }
+    assert.equal(B.passphraseProblem(OLD_PHRASE), 'not-made'); assert.equal(B.passphraseProblem('short-pass-123'), 'not-made');
+  });
+});
+
+// The ONE way to make the passphrase: a page published with the app, opened on
+// a phone or a computer, nothing installed. It runs in the browser only.
+describe('the passphrase page (www/backup-passphrase.html)', () => {
+  const html = fs.readFileSync(path.join(ROOT, 'www', 'backup-passphrase.html'), 'utf8');
+  const script = /<script>([\s\S]*?)<\/script>/.exec(html)[1];
+  test('it holds one script and a policy that lets that script alone run and nothing out; it stores nothing', () => {
+    assert.equal((html.match(/<script\b/g) || []).length, 1, 'one script block');
+    assert.doesNotMatch(html, /<script[^>]+src=/i);
+    const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(html)[1];
+    assert.match(csp, /^default-src 'none';/);
+    const hash = crypto.createHash('sha256').update(script, 'utf8').digest('base64');
+    assert.ok(csp.includes("script-src 'sha256-" + hash + "';"), "the policy allows exactly the script the page holds: script-src 'sha256-" + hash + "'");
+    assert.doesNotMatch(csp, /script-src[^;]*(unsafe|https?:|\*)|connect-src|\*/);
+    for(const re of [/\bfetch\s*\(/, /XMLHttpRequest/, /WebSocket/, /sendBeacon/, /EventSource/, /localStorage|sessionStorage|indexedDB|document\.cookie/, /serviceWorker/,
+      /<img\b/i, /<iframe\b/i, /<form\b/i, /<link[^>]+stylesheet/i, /https?:\/\//, /\bon[a-z]+\s*=\s*["']/i]) assert.doesNotMatch(html, re, 'the page holds ' + re);
+    assert.match(script, /getRandomValues/);
+    assert.doesNotMatch(html, /Math\.random/, 'only the browser\'s secure random numbers');
+    assert.match(html, /<html lang="ar" dir="rtl">/);
+    assert.match(html, /BACKUP_PASSPHRASE/);
+  });
+  test('its own code makes passphrases the backup accepts, and reads a typed one exactly as the backup does', async () => {
+    const vm = require('node:vm');
+    const ctx = vm.createContext({ crypto: crypto.webcrypto, TextEncoder });   // no document: only the code, as a browser would run it
+    vm.runInContext(script, ctx);
+    const page = ctx.UMBackupPassphrase;
+    assert.equal(page.canMake(), true);
+    const made = new Set();
+    for(let i = 0; i < 400; i++){
+      const p = await page.make();
+      assert.equal(B.canonicalPassphrase(p), p, 'the page made something the backup does not take as printed');
+      assert.equal(B.passphraseProblem(p), null);
+      made.add(p);
+    }
+    assert.equal(made.size, 400);
+    const flat = PASS.replace(/-/g, '');
+    const samples = [PASS, PASS.toUpperCase(), flat, PASS.replace(/-/g, ' '), ' ' + PASS + '\n', PASS.replace(/0/g, 'O').replace(/1/g, 'L'), PASS.replace(/[0-9]/g, d => String.fromCharCode(0x660 + Number(d))),
+      PASS.replace(/-/g, ' \u2013 '), '\u200f' + PASS, changedAt(PASS, 0), changedAt(PASS, 20), changedAt(PASS, 53), PASS.slice(0, -1), PASS + 'a', flat.slice(1) + flat[0],
+      OLD_PHRASE, '', 'a'.repeat(44), 'short-pass-123', PASS.replace(/[a-h]/, 'u'), B.makePassphrase(), B.makePassphrase().toUpperCase().replace(/-/g, '')];
+    for(const t of samples) assert.equal(await page.canonical(t), B.canonicalPassphrase(t), 'the page and the backup read ' + JSON.stringify(t.slice(0, 14)) + ' differently');
+    // a browser that cannot make secure random numbers makes nothing (the page then says so)
+    const old = vm.createContext({ crypto: {}, TextEncoder });
+    vm.runInContext(script, old);
+    assert.equal(old.UMBackupPassphrase.canMake(), false);
+  });
+  test('the build publishes it beside the app, unchanged', () => {
+    const out = freshDir('site');
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'build.js'), path.join(ROOT, 'www'), out], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(fs.readFileSync(path.join(out, 'backup-passphrase.html')).equals(Buffer.from(html, 'utf8')));
+    // the service worker does not precache it: it is not part of the app (and needs no release of its own to change)
+    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'www', 'sw.js'), 'utf8'), /backup-passphrase/);
+  });
+});
+
 describe('configuration and log hygiene (firestore.js)', () => {
   test('the Firebase config is read from the app, and matches the daily e-mails\' copy', () => {
     assert.equal(PROD, 'ultramed-field-ops');
@@ -397,20 +550,70 @@ describe('run.js: the backup', () => {
       assert.equal(r.code, 0, r.all);
       assert.match(r.out, /::warning title=Backup not configured::/);
       assert.match(r.out, /not configured, so nothing was backed up/);
+      // with no passphrase yet, the run says where one is made
+      assert.equal(/The passphrase is made with the passphrase page: /.test(r.out), !extra.BACKUP_PASSPHRASE, JSON.stringify(Object.keys(extra)));
       assert.equal(fs.existsSync(path.join(dir, 'out')), false, 'no output folder');
       assert.equal(fs.readFileSync(out, 'utf8'), 'configured=false\n');
       assertCleanLog(r.all);
     }
     assert.equal(fake.requests.length, n0, 'nothing was contacted');
   });
-  test('a passphrase that is too short is refused before anything is read (and its length is not printed)', async () => {
-    const n0 = fake.requests.length, dir = freshDir('short');
-    const r = await runNode('run.js', [], backupEnv(dir, { BACKUP_PASSPHRASE: 'short-pass-123' }));
-    assert.equal(r.code, 1);
-    assert.match(r.err, /shorter than 20 characters/);
-    assert.doesNotMatch(r.all, /\b14\b/);
-    assert.deepEqual(filesIn(dir), []);
-    assert.equal(fake.requests.length, n0);
+  test('a passphrase the passphrase page did not make is refused before anything is read — with what to do, never the value or its length', async () => {
+    const twoSwapped = (() => { const g = PASS.split('-'); return [g[1], g[0]].concat(g.slice(2)).join('-'); })();
+    const cases = [
+      ['a short password', 'short-pass-123', 'not-made'],
+      ['a phrase a person thought of, long enough for the old rule', OLD_PHRASE, 'not-made'],
+      ['a long sentence', 'our dental backups are kept safe in kuwait since 2026 and nobody will ever guess it', 'not-made'],
+      ['a company-style password', 'Ultramed-Kuwait-Backup-Passphrase-2026', 'not-made'],
+      ['a password manager\'s forty random characters', 'xK9#mQ2$vL7@pR4!nT6^wZ1&bY8*cF3%hJ5(dG0)', 'not-made'],
+      ['64 random hexadecimal characters', crypto.createHash('sha256').update('x').digest('hex'), 'not-made'],
+      ['one from the page with its last character missing', PASS.slice(0, -1), 'miscopied'],
+      ['one from the page with a character changed', changedAt(PASS, 6), 'miscopied'],
+      ['one from the page with two groups swapped', twoSwapped, 'miscopied'],
+    ];
+    const n0 = fake.requests.length;
+    for(const [what, value, kind] of cases){
+      const dir = freshDir('refused'), ghOut = path.join(dir, 'gh-output'), summary = path.join(dir, 'gh-summary');
+      const r = await runNode('run.js', [], backupEnv(path.join(dir, 'out'), { BACKUP_PASSPHRASE: value, GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'Some-Owner/some-app', GITHUB_OUTPUT: ghOut, GITHUB_STEP_SUMMARY: summary }));
+      assert.equal(r.code, 1, what + ': ' + r.all);
+      assert.match(r.err, /^::error title=Backup failed::BACKUP_PASSPHRASE /, what);
+      if(kind === 'not-made'){
+        assert.match(r.err, /is not a passphrase made by the passphrase page, so nothing was backed up/, what);
+        assert.match(r.err, /anyone signed in to GitHub can download the encrypted backups/, what);
+        assert.match(r.err, /Make one: open https:\/\/some-owner\.github\.io\/some-app\/backup-passphrase\.html on a phone or a computer/, what);
+        assert.match(r.err, /keep the passphrase in a password manager and on paper/, what);
+      }else{
+        assert.match(r.err, /looks like a passphrase made by the passphrase page, but it is incomplete or one of its characters was changed/, what);
+        assert.match(r.err, /Copy it again, whole, from where you keep it/, what);
+        assert.match(r.err, /make one there: https:\/\/some-owner\.github\.io\/some-app\/backup-passphrase\.html/, what);
+      }
+      assert.match(r.err, /the repository secret BACKUP_PASSPHRASE \(Settings → Secrets and variables → Actions\)/, what);
+      assert.match(r.err, /docs\/backup\.md, "The passphrase"/, what);
+      assert.match(r.err, /No backup file was written\./, what);
+      // never the value, any piece of it, or its length
+      assert.ok(!r.all.includes(value) && !r.all.includes(value.slice(0, 12)) && !r.all.includes(value.slice(-12)), what + ': the value is in the log');
+      assert.doesNotMatch(r.all, new RegExp('\\b' + Array.from(value).length + '\\b'), what + ': its length is in the log');
+      assert.doesNotMatch(r.all, /\d/, what + ': no figure at all');
+      assert.equal(fs.existsSync(path.join(dir, 'out')), false, what + ': no output folder');
+      assert.equal(fs.existsSync(ghOut), false, what + ': no step output, so the upload step is skipped');
+      assert.equal(fs.existsSync(summary), false, what);
+      assertCleanLog(r.all);
+    }
+    assert.equal(fake.requests.length, n0, 'nothing was contacted');
+    // outside GitHub (no repository to name) the page is still named
+    const local = await runNode('run.js', [], backupEnv(freshDir('refused-local'), { BACKUP_PASSPHRASE: OLD_PHRASE }));
+    assert.equal(local.code, 1); assert.match(local.err, /^ERROR: BACKUP_PASSPHRASE is not a passphrase made by the passphrase page/);
+    assert.match(local.err, /the page backup-passphrase\.html of the app's site/);
+  });
+  test('a passphrase from the page is taken however it was pasted — capitals, spaces — and the file opens with it as printed', async () => {
+    resetSource();
+    const dir = freshDir('typed'), typed = PASS.toUpperCase().replace(/-/g, ' ') + '\n';
+    const r = await runNode('run.js', [], backupEnv(dir, { BACKUP_PASSPHRASE: typed }));
+    assert.equal(r.code, 0, r.all);
+    const chk = B.checkBundle(B.decryptBackup(fs.readFileSync(path.join(dir, filesIn(dir)[0])), PASS).plaintext);
+    assert.equal(chk.ok, true);
+    assertCleanLog(r.all);
+    assert.ok(!r.all.includes(typed.trim()) && !r.all.includes(PASS.toUpperCase()), 'no form of the passphrase in the log');
   });
 });
 
@@ -539,6 +742,20 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
   test('verify.js refuses a wrong passphrase, a changed or cut file, and a bundle inside the repository', async () => {
     const wrong = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: PASS + '!' }));
     assert.equal(wrong.code, 1); assert.match(wrong.err, /wrong passphrase/);
+    // another passphrase from the page: wrong, and nothing more to say
+    const another = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: B.makePassphrase() }));
+    assert.equal(another.code, 1); assert.match(another.err, /wrong passphrase: this file was not made with this BACKUP_PASSPHRASE \(or its header was changed\)\n$/);
+    // typed from paper with a mistake: said as such, so the reader looks at the paper again — never repeated
+    const typo = changedAt(PASS, 11), mistyped = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: typo }));
+    assert.equal(mistyped.code, 1); assert.match(mistyped.err, /wrong passphrase/);
+    assert.match(mistyped.err, /not a whole one: a character is missing or wrong \(its check characters do not fit\)\. Compare it with the copy you keep, group by group\./);
+    assert.ok(!mistyped.all.includes(typo) && !mistyped.all.includes(typo.slice(0, 9)));
+    const phrase = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: OLD_PHRASE }));
+    assert.equal(phrase.code, 1); assert.match(phrase.err, /not one the passphrase page makes \(eleven groups of four letters and digits\)/);
+    assert.ok(!phrase.all.includes('correct horse'));
+    // typed from paper in capitals, with spaces: it opens
+    const typedOk = await runNode('verify.js', [file], env({ BACKUP_PASSPHRASE: PASS.toUpperCase().replace(/-/g, ' ') }));
+    assert.equal(typedOk.code, 0, typedOk.all); assert.match(typedOk.out, /The backup is sound\./);
     const buf = fs.readFileSync(file), hlen = buf.readUInt32BE(8);
     const changed = Buffer.from(buf); changed[12 + hlen + 1000] ^= 0x20;
     const headerChanged = Buffer.from(buf); const at = buf.indexOf('"createdAt":"') + 15; headerChanged[at] = headerChanged[at] === 0x31 ? 0x32 : 0x31;
@@ -633,7 +850,9 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
     assert.equal(r.code, 0, r.all);
     assert.deepEqual(Array.from(fake.projects['demo-only'].docs.keys()).sort(), ['clinics'].concat(Array.from({ length: 9 }, (_, i) => 'visitsArch:2026-0' + (i + 1))).sort());
     const wrong = await runNode('restore.js', [file], restoreEnv('demo-only2', { BACKUP_PASSPHRASE: 'not the passphrase at all' }));
-    assert.equal(wrong.code, 1); assert.match(wrong.err, /wrong passphrase/);
+    assert.equal(wrong.code, 1); assert.match(wrong.err, /wrong passphrase/); assert.match(wrong.err, /not one the passphrase page makes/);
+    const typo = await runNode('restore.js', [file], restoreEnv('demo-only2', { BACKUP_PASSPHRASE: PASS.slice(0, -2) }));
+    assert.equal(typo.code, 1); assert.match(typo.err, /a character is missing or wrong/);
     const z = await runNode('restore.js', [path.join(tmp, 'artifact.zip')], restoreEnv('demo-only2'));
     assert.equal(z.code, 2); assert.match(z.err, /unzip the downloaded artifact first/);
   });

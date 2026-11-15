@@ -95,7 +95,7 @@ async function restore(argv, env, log, io){
     if(!passphrase){ log.error('Restore', 'the input is encrypted: set BACKUP_PASSPHRASE or run this in a terminal to type it'); return 2; }
     log.addSecret(passphrase);
     try{ plaintext = B.decryptBackup(buf, passphrase).plaintext; }
-    catch(e){ log.error('Restore', 'the backup does not open: ' + e.message); return 1; }
+    catch(e){ log.error('Restore', 'the backup does not open: ' + e.message + (e.code === 'WRONG_PASSPHRASE' ? B.wrongPassphraseHint(passphrase) : '')); return 1; }
   }
   const chk = B.checkBundle(plaintext);
   if(!chk.ok){ log.error('Restore', 'the backup does not check out: ' + chk.problems.join('; ')); return 1; }

@@ -41,7 +41,7 @@ const NF = require(path.join(ROOT, 'scripts', 'backup', 'nightly', 'firestore.js
 const NB = require(path.join(ROOT, 'scripts', 'backup', 'nightly', 'bundle.js'));
 
 const PASSWORD = 'test-password-1';
-const PASS = 'a long test passphrase — عبارة مرور طويلة 2026';
+const PASS = NB.makePassphrase();                        // as the passphrase page makes them: the only kind the backup takes
 const OUTSIDER = 'test-outsider@example.org';            // not the company domain: the rules refuse it
 const J = JSON.stringify;
 const FS_HOST = HOST + ':' + PORT;
@@ -85,7 +85,7 @@ async function runRestore(file, args, login){
 }
 function assertCleanLog(text){
   assert.doesNotMatch(text, EMAIL, 'an e-mail address in the log');
-  assert.ok(!text.includes(PASSWORD) && !text.includes(PASS), 'a password or the passphrase in the log');
+  assert.ok(!text.includes(PASSWORD) && !text.includes(PASS) && !text.includes(PASS.replace(/-/g, '')), 'a password or the passphrase in the log');
   assert.doesNotMatch(text, /\beyJ[A-Za-z0-9_-]{4,}\./, 'a sign-in token in the log');
 }
 // every document as Firestore holds it, typed fields included (the emulator's owner access)

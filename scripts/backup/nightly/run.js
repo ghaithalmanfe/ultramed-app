@@ -15,8 +15,13 @@
 // are PUBLIC. Not configured (secrets absent) → says so, writes nothing,
 // exits 0.
 //
+// The passphrase must be one the passphrase page made (www/backup-passphrase.html,
+// bundle.js): the encrypted files are public to anyone signed in to GitHub, so
+// a phrase a person thought of is refused, and so is one pasted short or
+// changed — with what to do, and never the value or its length.
+//
 // Environment:
-//   BACKUP_PASSPHRASE                            required; 20+ characters
+//   BACKUP_PASSPHRASE                            required; made by the passphrase page
 //   BACKUP_LOGIN_EMAIL / BACKUP_LOGIN_PASSWORD   an app login that may read the data,
 //     falling back to REPORT_LOGIN_EMAIL / REPORT_LOGIN_PASSWORD (the daily e-mails' login)
 //   BACKUP_TIER        daily | weekly | monthly | manual (file name only; default manual)
@@ -35,7 +40,6 @@ const B = require('./bundle.js');
 const F = require('./firestore.js');
 
 const TIERS = ['daily', 'weekly', 'monthly', 'manual'];
-const MIN_PASSPHRASE_CHARS = 20;
 const SIZE_LIMIT = 'about 500 MB';
 const TOO_BIG = ' — the database is too large for this backup to build in memory (' + SIZE_LIMIT + ' at most; docs/backup.md, "Limits")';
 
@@ -65,6 +69,19 @@ function pickLogin(env, log){
   if(pair('REPORT_LOGIN_EMAIL', 'REPORT_LOGIN_PASSWORD')) return { email: String(env.REPORT_LOGIN_EMAIL).trim(), password: String(env.REPORT_LOGIN_PASSWORD), source: "the daily e-mails' login (REPORT_LOGIN_EMAIL)", secrets: 'REPORT_LOGIN_EMAIL and REPORT_LOGIN_PASSWORD' };
   return null;
 }
+// Where the owner makes the passphrase: the page published with the app
+// (GitHub Pages: https://<owner>.github.io/<repository>/).
+function passphrasePage(env){
+  const m = /^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)$/.exec(String(env.GITHUB_REPOSITORY || ''));
+  return m ? 'https://' + m[1].toLowerCase() + '.github.io/' + m[2] + '/backup-passphrase.html' : 'the page backup-passphrase.html of the app\'s site (the app\'s address, then backup-passphrase.html)';
+}
+const SECRET_PLACE = 'the repository secret BACKUP_PASSPHRASE (Settings → Secrets and variables → Actions)';
+const PASSPHRASE_REFUSED = {
+  'not-made': page => 'BACKUP_PASSPHRASE is not a passphrase made by the passphrase page, so nothing was backed up. The repository is public: anyone signed in to GitHub can download the encrypted backups, and only a long random passphrase protects them — one a person thought of can be guessed. Make one: open ' + page
+    + ' on a phone or a computer (nothing is installed and nothing leaves the page), press the button, keep the passphrase in a password manager and on paper, put it in ' + SECRET_PLACE + ', then run this workflow again (docs/backup.md, "The passphrase")',
+  miscopied: page => 'BACKUP_PASSPHRASE looks like a passphrase made by the passphrase page, but it is incomplete or one of its characters was changed (its check characters do not fit), so nothing was backed up. Copy it again, whole, from where you keep it into ' + SECRET_PLACE
+    + ', then run this workflow again. If it was not made by the page, make one there: ' + page + ' (docs/backup.md, "The passphrase")',
+};
 // What to do about a refusal, said with the failure (the owner reads the run's
 // page, not this file). Names secrets, never their values.
 function withHint(e, hint){ if(e && typeof e === 'object' && !e.hint) e.hint = hint; return e; }
@@ -100,17 +117,21 @@ async function backup(env, argv, log, now){
   const missing = [];
   if(!passphrase) missing.push('BACKUP_PASSPHRASE');
   if(!login) missing.push('BACKUP_LOGIN_EMAIL and BACKUP_LOGIN_PASSWORD (or REPORT_LOGIN_EMAIL and REPORT_LOGIN_PASSWORD)');
+  const page = passphrasePage(env);
+  // whatever is said from here on, no form of the passphrase is printed
+  [env.BACKUP_PASSPHRASE, passphrase, B.canonicalPassphrase(passphrase), (B.canonicalPassphrase(passphrase) || '').replace(/-/g, '')].forEach(v => log.addSecret(v));
   if(missing.length){
-    log.warn('Backup not configured', 'The database backup is not configured, so nothing was backed up. Missing repository secret(s): ' + missing.join('; ') + '. See docs/backup.md.');
+    const how = !passphrase ? ' The passphrase is made with the passphrase page: ' + page + '.' : '';
+    log.warn('Backup not configured', 'The database backup is not configured, so nothing was backed up. Missing repository secret(s): ' + missing.join('; ') + '.' + how + ' See docs/backup.md.');
     ghOutput(env, { configured: 'false' }, log);
-    ghSummary(env, '### Database backup: not configured\n\nNothing was backed up. Missing repository secret(s): ' + missing.join('; ') + '. See `docs/backup.md`.', log);
+    ghSummary(env, '### Database backup: not configured\n\nNothing was backed up. Missing repository secret(s): ' + missing.join('; ') + '.' + how + ' See `docs/backup.md`.', log);
     return 0;
   }
-  log.addSecret(passphrase); log.addSecret(login.password); log.addSecret(login.email);
-  if(Array.from(passphrase).length < MIN_PASSPHRASE_CHARS){
-    // the length itself is not printed: it would say something about the secret
-    throw new Refusal('BACKUP_PASSPHRASE is shorter than ' + MIN_PASSPHRASE_CHARS + ' characters. Use a long random one (a password manager can make 30+ characters): the encrypted files can be downloaded by anyone who can see this repository, so the passphrase is their only protection');
-  }
+  log.addSecret(login.password); log.addSecret(login.email);
+  // Only a passphrase the page made: nothing about the one given is printed,
+  // not even its length (it would say something about the secret).
+  const problem = B.passphraseProblem(passphrase);
+  if(problem) throw new Refusal(PASSPHRASE_REFUSED[problem](page));
   const app = F.appFirebaseConfig();
   const ends = F.endpoints(env);
   const retry = F.retryOptions(env);

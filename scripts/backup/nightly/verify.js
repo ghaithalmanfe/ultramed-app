@@ -2,7 +2,8 @@
 //
 // UltraMed Field Ops — checks one encrypted backup made by run.js: decrypts
 // it with the passphrase (BACKUP_PASSPHRASE, or typed at the prompt without
-// showing), checks the GCM tag, the data's sha256 and the manifest, and
+// showing — capitals, spaces or no hyphens all read the same, so it can be
+// typed from the paper copy), checks the GCM tag, the data's sha256 and the manifest, and
 // prints the counts and sizes per key prefix — never a value. With --out it
 // also writes the decrypted bundle (exactly the bytes run.js encrypted) to a
 // NEW local file, for restore.js into a SEPARATE project. That file is the
@@ -98,7 +99,7 @@ async function verify(argv, env, log, io){
   log.addSecret(passphrase);
   let plaintext;
   try{ plaintext = B.decryptBackup(buf, passphrase).plaintext; }
-  catch(e){ log.error('Backup NOT sound', e.message); return 1; }
+  catch(e){ log.error('Backup NOT sound', e.message + (e.code === 'WRONG_PASSPHRASE' ? B.wrongPassphraseHint(passphrase) : '')); return 1; }
   log.info('Decrypted: the passphrase is right and the file is exactly as it was made (AES-256-GCM tag checked).');
   const chk = B.checkBundle(plaintext);
   if(!chk.ok){ log.error('Backup NOT sound', 'decrypted, but ' + chk.problems.join('; ')); return 1; }
