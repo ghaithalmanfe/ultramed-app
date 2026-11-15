@@ -1436,7 +1436,7 @@ function erpAccountLines(name){ // one row per document: what "Show the invoices
 function elInvoicesBlock(name){
   const docs = erpAccountLines(name);
   if(!docs.length) return '';
-  return `<details style="margin:0 0 10px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:700; padding:4px 2px;"><span>Show the invoices</span> (${docs.length})</summary>
+  return `<details style="margin:0 0 10px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:700; padding:12px 2px; min-height:44px; box-sizing:border-box;"><span>Show the invoices</span> (${docs.length})</summary>
     <div style="padding:2px 4px 4px;">${docs.slice(0, 60).map(d => `<div style="display:flex; flex-wrap:wrap; gap:2px 10px; padding:4px 0; border-top:1px dashed var(--line); font-size:12px;">
       <b dir="auto" style="overflow-wrap:anywhere;">${esc(d.doc || '—')}</b><span>${fmtDate(d.date)}</span><span dir="ltr" style="font-weight:700; ${d.net < 0 ? 'color:var(--coral-ink);' : ''}">${d.type === 'return' ? '↩ ' : ''}${money(d.net)}</span><span dir="auto" style="color:var(--muted); overflow-wrap:anywhere;">${esc(d.salesman || '')}</span></div>`).join('')}
     ${docs.length > 60 ? `<div style="color:var(--muted); font-size:11.5px; padding-top:4px;">The 60 newest are shown.</div>` : ''}</div></details>`;

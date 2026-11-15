@@ -1720,11 +1720,11 @@
     .modal-foot .btn{width:auto; min-width:150px; padding-inline:26px;}
     .modal-foot .btn:not(.secondary):not(.ghost){order:2;}   /* the main action last, at the end side */
   }
+  .more-brand{display:flex; flex-direction:column; align-items:center; padding:4px 0 12px; line-height:1;}
   @media (min-width:1024px){
     input[type=text], input[type=tel], input[type=date], input[type=time], input[type=number], input[type=password], input[type=email], input[type=search], select{min-height:44px;}
-    .more-brand{display:none;}
+    .more-brand{display:none;}   /* the wordmark is the phone's; a laptop has it in the sidebar (this rule must come after the base one) */
   }
-  .more-brand{display:flex; flex-direction:column; align-items:center; padding:4px 0 12px; line-height:1;}
   /* the page head: an inner screen opens like the home screen — the title and one muted line at the start, the screen's
      actions as pills at the end; on a laptop the top bar then keeps only quick find, the bell and the account */
   .page-head{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; margin:0 0 14px;}
@@ -1743,6 +1743,12 @@
     .ph-a .chip, .ph-a .chip.small, .ph-a .btn{display:inline-flex; align-items:center; gap:10px; width:auto; height:47px; min-height:0; margin:0; padding:0 18px; border:none; border-radius:13px; background:rgba(255,255,255,.84);
       -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); color:var(--p-ink); font-size:15.6px; font-weight:600; box-shadow:0 1px 2px rgba(16,24,40,.05), 0 6px 18px rgba(16,24,40,.07); white-space:nowrap;}
     .ph-a .chip .svgi, .ph-a .btn .svgi{width:20px; height:20px; stroke-width:2.1; color:var(--p-ink2);}
+  }
+  /* a phone's thumb targets (integration sweep, phone-layout.e2e.js): no chip, labelled tick or file field under 44 px */
+  @media (max-width:600px){
+    .chip{min-width:44px;}
+    label:has(> input[type=checkbox]), label:has(> input[type=radio]){min-height:44px;}   /* the label is the tick's target */
+    input[type=file]{min-height:44px;}
   }
   /* === END COMPONENTS === */
 
@@ -1958,6 +1964,17 @@
   .lightbox .lbclose{background:#fff; color:#42506A; box-shadow:0 4px 14px rgba(0,0,0,.25);}
   /* the visit summary's labels in Arabic: a size where every letter reads */
   body.ar .lv-row .k{font-size:13px;}
+  /* a phone's thumb targets: the class mix bar and its legend, the doctor profile's links and handover quantity */
+  @media (max-width:600px){
+    .segbar{height:44px;}
+    .segbar div{min-width:44px;}
+    .seglegend{gap:0 14px;}
+    .seglegend span{min-height:44px;}
+    .dp-sub a{display:inline-flex; align-items:center; min-height:44px;}
+    div:has(> #hoWhat){flex-wrap:wrap;}
+    #hoWhat{min-width:100%;}   /* what was handed over on its own line; the quantity and the date share the next */
+    #hoQty{min-width:56px;}
+  }
   /* === END CLINICS & DOCTORS === */
 
   /* === CALENDAR, TEAM & KPI ===
@@ -2085,6 +2102,14 @@
   .modal.m-secs .cd-sec{margin-bottom:12px;}
   .modal.m-secs .cd-sec > .section-title:first-child{margin-top:0 !important;}
   .dp-head{margin-bottom:6px;}
+  /* a phone's calendar: Month / Week and every day a 44 px target — the grid takes 6 px of the card's padding on each
+     side, and each day's hit area reaches half the 4 px gap (the areas tile, never overlap) */
+  @media (max-width:600px){
+    .cal-modes .dt{min-height:44px;}
+    .cal-card .cal-dow, .cal-card .cal-grid, .cal-rail{margin-inline:-6px;}
+    .cal-cell{aspect-ratio:auto; min-height:44px; position:relative;}
+    .cal-cell::after{content:''; position:absolute; inset:-2px;}
+  }
   /* === END CALENDAR, TEAM & KPI === */
 
   /* === ERP LINKS, PRODUCTS & PLAYBOOK ===
@@ -2222,6 +2247,11 @@
   @media (min-width:900px){
     .modal.m-grid .cd-sec{grid-template-columns:repeat(2, minmax(0,1fr));}
     .modal.m-grid .cd-sec > .section-title, .modal.m-grid .cd-sec > .empty, .modal.m-grid .cd-sec > :not(.card){grid-column:1 / -1;}
+  }
+  /* the full report on a phone: its toolbar buttons 44 px, and a table wider than the page scrolls inside its section */
+  @media screen and (max-width:600px){
+    .pr-toolbar button{min-height:44px;}
+    #prDoc .mr-block{overflow-x:auto;}
   }
   /* === END REPORTS, ANALYSIS & COVERAGE === */
 

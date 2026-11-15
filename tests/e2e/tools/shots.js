@@ -8,9 +8,10 @@
 //
 // For each language × width it signs in once, then for each step opens a view or runs a snippet, saves
 // a PNG and writes what is off on that page:
-//   - horizontal overflow (document scrollWidth > innerWidth) and the elements that reach past the
-//     viewport (outside any scroll box of their own),
-//   - tap targets under 44 px on widths ≤ 600 (a ::before/::after hit area counts),
+//   - horizontal overflow (wider than the width the page was opened at — a phone widens its layout
+//     viewport to such content) and the elements that reach past it (outside any scroll box of their own),
+//   - tap targets under 44 px on widths ≤ 600 (a ::before/::after hit area counts; a checkbox is measured
+//     by its label; pointer-events:none takes no taps) — tools/audit.js,
 //   - page errors and console errors.
 // Usage (from the checkout):
 //   node tests/e2e/tools/shots.js --out <dir> [--www www|dist|<path>] [--as supervisor|rep|<name>]
@@ -82,36 +83,8 @@ const server = http.createServer((req, res) => {
 const heightFor = w => opt.height || (w <= 600 ? 844 : w < 1024 ? 1024 : 900);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// what is off on the page as it stands (runs in the page)
-function audit(phone){
-  const vw = innerWidth, out = { vw, scrollWidth: document.documentElement.scrollWidth, wide: [], small: [] };
-  const visible = el => { if(!(el instanceof Element)) return false; const cs = getComputedStyle(el); if(cs.display === 'none' || cs.visibility === 'hidden') return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && (el.offsetParent !== null || cs.position === 'fixed' || cs.position === 'sticky'); };
-  const clipped = el => { for(let p = el.parentElement; p && p !== document.body; p = p.parentElement){ const ox = getComputedStyle(p).overflowX; if(ox === 'auto' || ox === 'scroll' || ox === 'hidden' || ox === 'clip') return true; } return false; };
-  const label = el => (el.id ? '#' + el.id : el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '')) + ' "' + (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 40) + '"';
-  document.querySelectorAll('body *').forEach(el => {
-    if(!visible(el)) return;
-    const r = el.getBoundingClientRect();
-    if((r.right > vw + 1 || r.left < -1) && !clipped(el)) out.wide.push(label(el) + ' [' + Math.round(r.left) + '…' + Math.round(r.right) + ']');
-  });
-  if(phone){
-    const hit = el => {
-      const r = el.getBoundingClientRect(); let w = r.width, h = r.height;
-      ['::before', '::after'].forEach(ps => { const s = getComputedStyle(el, ps); if(s.content === 'none' || s.position !== 'absolute') return;
-        const n = x => { const v = parseFloat(x); return isNaN(v) ? 0 : Math.min(0, v); };
-        w = Math.max(w, r.width - n(s.left) - n(s.right)); h = Math.max(h, r.height - n(s.top) - n(s.bottom)); });
-      return { w: Math.round(w), h: Math.round(h) };
-    };
-    const seen = new Set();
-    document.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea, summary, [onclick], [role="button"], [role="tab"], .chip').forEach(el => {
-      if(seen.has(el) || !visible(el)) return; seen.add(el);
-      if(el.matches('[onclick]') && /^\s*event\.stopPropagation\(\)\s*;?\s*$/.test(el.getAttribute('onclick'))) return;
-      if(el.closest('[onclick]') !== el && el.closest('[onclick]') && !el.matches('button, a, input, select, textarea, summary')) return;   // a child of a tappable row is part of it
-      const s = hit(el);
-      if(s.w < 44 || s.h < 44) out.small.push(label(el) + ' ' + s.w + '×' + s.h);
-    });
-  }
-  return out;
-}
+// what is off on the page as it stands (runs in the page): tools/audit.js, the same rules phone-layout.e2e.js checks
+const { audit } = require('./audit.js');
 
 (async () => {
   await new Promise(r => server.listen(opt.port || 0, r));
@@ -167,7 +140,7 @@ function audit(phone){
         const full = st.full != null ? !!st.full : !opt.viewportOnly && !sheet;
         const file = `${lang}-${w}-${TAG}-${st.name}.png`;
         await page.screenshot({ path: path.join(OUT, file), fullPage: full });
-        const a = await page.evaluate(audit, phone);
+        const a = await page.evaluate(audit, { phone, width: w });
         report.push({ file, lang, width: w, as: WHO, step: st.name, sheet, overflow: a.scrollWidth > a.vw, scrollWidth: a.scrollWidth, wide: a.wide.slice(0, 30), small: a.small.slice(0, 60), errors: errors.splice(0) });
         if(sheet) await page.evaluate(() => { closeModal(); const lb = document.getElementById('lightbox'); if(lb) lb.classList.remove('show'); }).catch(() => {});
         process.stdout.write('.');

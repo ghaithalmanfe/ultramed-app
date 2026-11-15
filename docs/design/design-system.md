@@ -1,5 +1,14 @@
 # UltraMed design system — the base every screen builds on
 
+> **Update (15 Nov, the integration pass of `redesign-v1`).** This page describes the foundation; the screens were
+> then built to the owner's own picture (his final design decision). On top of the tokens below sit the picture's
+> `--p-*` tokens on `:root` (`--p-ink`, `--p-sub`, `--p-muted`, `--p-line`, `--p-page`, greens `--p-g5`…`--p-g9`,
+> `--p-dark`, `--p-mint` / `--p-mint-soft` — the accent of the final look; the foundation's lime is left in a few badges and aliases —, `--p-up` / `--p-down`
+> / `--p-warn`, `--p-shadow`, `--p-radius` 18px); the colours are taken from his picture. 'UM Sans' is now Inter
+> (self-hosted, OFL) — not DM Sans; IBM Plex Sans Arabic is unchanged. The logo is a wordmark with an original mark,
+> not an official logo file. Amounts: one grouped format ("12,989.00 KD", «12,989.00 د.ك» in Arabic). The shared
+> components, the sheet frame and the page head are listed in CLAUDE.md ("Premium redesign").
+
 Where it lives: the one `<style>` in `www/index.html` (fonts → tokens → base → components → shell → main screen →
 report → print → the marked sections), the icon sprite at the top of `<body>`, the shell markup (`header.top`,
 `nav#bottomNav`, `#gate`) and four small functions (`syncShell`, `syncNav`, `renderMore` in `05`, `toggleUiLang`
