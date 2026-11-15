@@ -28,7 +28,11 @@
   // Only http(s) links are ever rendered as href — blocks javascript:/data: URI injection via saved fields.
   function safeUrl(u){ u=(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
   function initials(n){ return n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
-  function money(n){ return (n||0).toFixed(2)+' KD'; }
+  // An amount as people read it: two decimals, thousands grouped ("12,989.00 KD"). The digits are toFixed's own
+  // (the same rounding to the fils as before); only the grouping is added. Files and exports never use it — a CSV
+  // or a spreadsheet writes the plain number (toFixed), so it stays machine-readable.
+  function groupThousands(s){ var p = String(s).split('.'); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ','); return p.join('.'); }
+  function money(n){ return groupThousands((n||0).toFixed(2))+' KD'; }
   function slugify(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-'); }
 
   // ---- calendar helpers ----
@@ -419,7 +423,7 @@
         const perDay = daysLeft > 0 ? Math.ceil((goal - mtd) / daysLeft) : Math.ceil(goal - mtd);
         out.push({ level: 'act', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, perDay: perDay, daysLeft: daysLeft, state: 'behind', official: official },
           title: rep + ' is behind the monthly target',
-          detail: money(mtd) + src + ' of ' + money(goal) + ' so far. Needs about ' + perDay + ' KD/day for the remaining ' + daysLeft +
+          detail: money(mtd) + src + ' of ' + money(goal) + ' so far. Needs about ' + groupThousands(String(perDay)) + ' KD/day for the remaining ' + daysLeft +
             ' working day' + (daysLeft === 1 ? '' : 's') + ' (Sun–Thu) — steer the visits toward clinics that already order.' });
       } else {
         out.push({ level: 'good', icon: '🎯', key: 'target-' + rep, data: { rep: rep, mtd: mtd, goal: goal, state: 'pace', official: official },
@@ -2528,7 +2532,7 @@
       if(x.r.date >= from && x.r.date <= to) rxNow += x.r.net; else if(x.r.date >= pf && x.r.date <= pt) rxPrev += x.r.net; });
     var g = rxPrev > 0 ? (rxNow - rxPrev) / rxPrev : null;
     items.rx = { score: g == null ? (rxNow > 0 ? 1 : null) : clamp(0.5 + g / (2 * S.rxGrowth)),
-      value: 'KD ' + Math.round(rxNow) + (g == null ? '' : ' · ' + (g >= 0 ? '+' : '') + Math.round(g * 100) + '% on the same days last month'), target: '+' + Math.round(S.rxGrowth * 100) + '% a month', detail: '' };
+      value: 'KD ' + groupThousands(String(Math.round(rxNow))) + (g == null ? '' : ' · ' + (g >= 0 ? '+' : '') + Math.round(g * 100) + '% on the same days last month'), target: '+' + Math.round(S.rxGrowth * 100) + '% a month', detail: '' };
     // 8 government accounts: every one visited every week
     var gov = clinics.filter(function(c){ return c.cls !== 'Closed' && isGovClinic(c) && (c.rep === rep || (c.sharedWith || []).indexOf(rep) >= 0); });
     var weeks = [], w0 = getWeekDates(from)[0];
@@ -3704,7 +3708,7 @@
     if(w.salesCovered && top.length){
       var lead = (w.reps || []).slice().sort(function(a, b){ return w.perRep[b].week - w.perRep[a].week; })[0];
       if(lead && w.perRep[lead].week > 0) add(60, lead + ' led the week with ' + kd(w.perRep[lead].week) + ' invoiced (' + w.perRep[lead].invoices + ' invoice' + (w.perRep[lead].invoices === 1 ? '' : 's') + ').');
-      add(58, 'Largest invoice of the week: KD ' + top[0].net.toFixed(2) + ' — ' + top[0].account + ' (' + top[0].rep + ').');
+      add(58, 'Largest invoice of the week: KD ' + groupThousands(top[0].net.toFixed(2)) + ' — ' + top[0].account + ' (' + top[0].rep + ').');
       if(cur && cur.invoices) add(50, cur.invoices + ' invoice' + (cur.invoices === 1 ? '' : 's') + ' to ' + cur.accounts + ' account' + (cur.accounts === 1 ? '' : 's') + ' this week.');
     }
     if(wins.samples.length) add(40, 'Samples placed at ' + wins.samples.length + ' account' + (wins.samples.length === 1 ? '' : 's') + ' to open the next orders.');
@@ -7394,7 +7398,7 @@
 
   return {
     uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
-    money, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
+    money, groupThousands, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems, isFieldVisit, repWasThere,
     inRange, filterVisitsByRange, rangeSummary, pctDelta, dormantClinics, missedPlans,

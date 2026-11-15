@@ -327,7 +327,7 @@ function removeDraftOrder(oid){
 }
 // An amount of the form in the screen's language: "9.81 KD" in English (harness-read), "9.81 د.ك" in Arabic, the
 // figure kept left to right inside the Arabic line.
-function moneyUi(n){ const m = money(n); return uiLang === 'ar' ? m.replace(/^(.*) KD$/, '\u2066$1\u2069 د.ك') : m; }
+function moneyUi(n){ return money(n); }   // money() itself follows the language now (one formatter)
 function orderGross(o){ return UMCore.orderGross(o, products); }
 function orderNet(o){ return UMCore.orderNet(o, products); }
 function renderOrders(){
@@ -363,7 +363,7 @@ function renderOrders(){
             const q = o.qty[key]||0;
             return `<div class="qty-row">
               ${prodThumb(p,'pthumb')}
-              <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:12px;">${p.price!=null?p.price.toFixed(2)+' KD each':'no price'}</span></div>
+              <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:12px;">${p.price!=null?money(p.price)+' each':'no price'}</span></div>
               <div class="stepper">
                 <button type="button" onclick="bumpQty('${o.id}','${key}',-1)" ${q<=0?'disabled':''} aria-label="less">−</button>
                 <input class="val" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="9999" step="1" value="${q}" id="q-${o.id}-${slugify(key)}" aria-label="quantity"

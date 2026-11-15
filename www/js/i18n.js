@@ -2308,6 +2308,8 @@
     'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
     // ERP IMPORT, ADMIN, BACKUPS & SHELL (redesign module 7)
     "Everything that isn't daily work, grouped by category.": 'كل ما ليس من العمل اليومي، مجمّعاً حسب الفئة.',
+    // the money format (redesign integration): a product with no price on the order form
+    'no price': 'بلا سعر',
     // REPORTS, ANALYSIS & COVERAGE (redesign module 6)
     "Visits, contacts, orders and sales for any period, with the coach's reading.": 'الزيارات والجهات والطلبات والمبيعات لأي فترة، مع قراءة المدرب.',
     "Each clinic's share of the target, what it bought and what to sell next.": 'حصة كل عيادة من التارغت، وما اشترته، وماذا نبيع بعد ذلك.',
@@ -2428,9 +2430,14 @@
   var SRC = {
     ' (official DSR figure)': ' (الرقم الرسمي من DSR)',
     ' (from uploaded sales)': ' (من ملف المبيعات المرفوع)',
-    ' (app-logged — upload a sales file for the official figure)': ' (مسجل في التطبيق — ارفع ملف مبيعات للرقم الرسمي)'
+    ' (app-logged — upload a sales file for the official figure)': ' (مسجل في التطبيق — ارفع ملف مبيعات للرقم الرسمي)',
+    ' (ERP sales files)': ' (ملفات مبيعات ERP)'
   };
   function srcAr(x) { return x ? (SRC[x] || x) : ''; }
+  // An amount as the core writes it ("12,989.00 KD") in the Arabic UI: the same grouping, د.ك after the figure,
+  // as on the home screen; a negative keeps its minus before its digits (a left-to-right isolate). An amount the
+  // screen already wrote in Arabic passes through unchanged.
+  function kdAr(x) { return String(x).replace(/^(-?)([\d.,]+) KD$/, function (m, neg, num) { return neg ? '\u2066-' + num + '\u2069 د.ك' : num + ' د.ك'; }); }
   // Prescription pads (دفاتر) with Arabic number agreement, as the owner
   // asked: 1 دفتر، 2 دفتران، 3–10 دفاتر، 11–99 دفتراً — and beyond 99 by the
   // last two digits, the usual rule for a counted noun (100 دفتر، 103 دفاتر،
@@ -2460,8 +2467,9 @@
   // "Oct 8" as the core writes a date → "8 أكتوبر"
   function enDateAr(s) { var mm = String(s).match(/^([A-Z][a-z]{2}) (\d{1,2})$/); return mm && EN_MON[mm[1]] ? mm[2] + ' ' + EN_MON[mm[1]] : s; }
   var AR_MONTH = '(?:يناير|فبراير|مارس|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر)';
-  var MONEY = '([\\d.,]+ KD)';
-  var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure)\\))?';
+  // an amount in English ("12,989.00 KD") or as the Arabic UI writes it ("12,989.00 د.ك", a negative in an isolate)
+  var MONEY = '((?:-|\\u2066-)?[\\d.,]+\\u2069? (?:KD|د\\.ك))';
+  var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure|ERP sales files)\\))?';
 
   // Strings that carry a number or a name are matched by shape, not by text.
   // whole-day Restore (round 3): where the data as it is now is kept, and which lists changed
@@ -2551,9 +2559,9 @@
     [/^(.+)\. Change the approach: different products, a different doctor, or a joint visit with the supervisor\.$/, function (m) { return namesAr(m[1]) + '. غيّر الأسلوب: منتجات مختلفة، طبيب آخر، أو زيارة مشتركة مع المشرف.'; }],
     [/^(.+) carries this period\. Great account — but grow 2-3 more A\/B clinics so one slow month there can’t sink the numbers\.$/, function (m) { return m[1] + ' تحمل هذه الفترة. حساب ممتاز — لكن نمِّ 2-3 عيادات A/B إضافية حتى لا يُغرق شهر بطيء واحد الأرقام.'; }],
     [/^Send them on 2-3 joint visits: (.+) watches how (.+) asks for the order\. Log them as joint visits so both get credit\.$/, function (m) { return 'أرسلهما في 2-3 زيارات مشتركة: ' + m[1] + ' تراقب كيف تطلب ' + m[2] + ' الطلبية. سجّلاها كزيارات مشتركة ليحصل الطرفان على الرصيد.'; }],
-    [new RegExp('^' + MONEY + SRCRE + ' against a ' + MONEY + ' goal\\. Everything from here is upside — a great week to push new products\\.$'), function (m) { return m[1] + srcAr(m[2]) + ' مقابل هدف ' + m[3] + '. كل ما بعد هذا مكسب إضافي — أسبوع ممتاز لدفع منتجات جديدة.'; }],
-    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + ' so far\\. Needs about (\\d+) KD/day for the remaining (\\d+) working days? \\(Sun–Thu\\) — steer the visits toward clinics that already order\\.$'), function (m) { return m[1] + srcAr(m[2]) + ' من ' + m[3] + ' حتى الآن. تحتاج نحو ' + m[4] + ' د.ك/يوم لبقية ' + m[5] + ' يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.'; }],
-    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + '\\. Keep the current rhythm and the target lands on its own\\.$'), function (m) { return m[1] + srcAr(m[2]) + ' من ' + m[3] + '. حافظ على الإيقاع الحالي والهدف يتحقق من تلقاء نفسه.'; }],
+    [new RegExp('^' + MONEY + SRCRE + ' against a ' + MONEY + ' goal\\. Everything from here is upside — a great week to push new products\\.$'), function (m) { return kdAr(m[1]) + srcAr(m[2]) + ' مقابل هدف ' + kdAr(m[3]) + '. كل ما بعد هذا مكسب إضافي — أسبوع ممتاز لدفع منتجات جديدة.'; }],
+    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + ' so far\\. Needs about ([\\d,]+) KD/day for the remaining (\\d+) working days? \\(Sun–Thu\\) — steer the visits toward clinics that already order\\.$'), function (m) { return kdAr(m[1]) + srcAr(m[2]) + ' من ' + kdAr(m[3]) + ' حتى الآن. تحتاج نحو ' + m[4] + ' د.ك/يوم لبقية ' + m[5] + ' يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.'; }],
+    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + '\\. Keep the current rhythm and the target lands on its own\\.$'), function (m) { return kdAr(m[1]) + srcAr(m[2]) + ' من ' + kdAr(m[3]) + '. حافظ على الإيقاع الحالي والهدف يتحقق من تلقاء نفسه.'; }],
     // product movement
     [/^(\d+) products? sold in (\d+) brands?$/, function (m) { return m[1] + ' منتج مُباع في ' + m[2] + ' براند'; }],
     [/^(\d+) sales files?$/, function (m) { return m[1] + ' ملف مبيعات'; }],
@@ -2573,7 +2581,9 @@
     [/^⚠️ (?:(\d+) clinics)?(?: and )?(?:(\d+) doctors)? brought back on this device — not saved to the cloud yet$/, function (m) { return '⚠️ رجع ' + [m[1] ? m[1] + ' عيادة' : '', m[2] ? m[2] + ' دكتور' : ''].filter(Boolean).join(' و') + ' على هذا الجهاز — لم يُحفظ في السحابة بعد'; }],
     [/^♻️ (\d+) clinics brought back from the daily backups$/, function (m) { return '♻️ رجعت ' + m[1] + ' عيادة من النسخ الاحتياطية اليومية'; }],
     [/^⚠️ (\d+) clinics brought back on this device — not saved to the cloud yet$/, function (m) { return '⚠️ رجعت ' + m[1] + ' عيادة على هذا الجهاز — لم تُحفظ في السحابة بعد'; }],
-    [/^(-?[\d.,]+ KD) ordered$/, function (m) { return 'طلبيات بقيمة ' + m[1]; }],
+    [/^((?:-|\u2066-)?[\d.,]+\u2069? (?:KD|د\.ك)) ordered$/, function (m) { return 'طلبيات بقيمة ' + kdAr(m[1]); }],
+    // a unit price ("9.81 KD each" — the order form, the playbook's allocation)
+    [/^((?:-|\u2066-)?[\d.,]+\u2069? (?:KD|د\.ك)) each$/, function (m) { return kdAr(m[1]) + ' للوحدة'; }],
     [/^([\d,]+) returned$/, function (m) { return m[1] + ' مرتجع'; }],
     [/^([\d,]+) free$/, function (m) { return m[1] + ' مجاني'; }],
     [/^(\d+) products?$/, function (m) { return m[1] + ' منتج'; }],

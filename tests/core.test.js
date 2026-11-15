@@ -13,6 +13,14 @@ describe('money', () => {
     assert.equal(core.money(null), '0.00 KD');
     assert.equal(core.money(undefined), '0.00 KD');
   });
+  test('groups thousands, keeps the digits to the fils', () => {
+    assert.equal(core.money(12989), '12,989.00 KD');
+    assert.equal(core.money(999.999), '1,000.00 KD');
+    assert.equal(core.money(-1234.5), '-1,234.50 KD');
+    assert.equal(core.money(1000000), '1,000,000.00 KD');
+    assert.equal(core.money(0.07), '0.07 KD');
+    assert.equal(core.groupThousands('1234567.891'), '1,234,567.891');
+  });
 });
 
 describe('esc (HTML escaping)', () => {
@@ -2837,8 +2845,12 @@ describe('UMI18N dictionary', () => {
     assert.equal(i18n.tr('3 overdue follow-ups'), '3 متابعة متأخرة');
     assert.equal(i18n.tr('5ayr Pharmacy (never visited), Sample Seaside Hospital (12d) +27 more. Class A/B clinics buy the most — put them in next week’s plan.'),
       '5ayr Pharmacy (لم تُزر أبداً), Sample Seaside Hospital (قبل 12 يوم) +27 أخرى. عيادات الفئة A/B تشتري الأكثر — ضعها في خطة الأسبوع القادم.');
-    assert.equal(i18n.tr('300.00 KD (from uploaded sales) of 1000.00 KD so far. Needs about 50 KD/day for the remaining 14 working days (Sun–Thu) — steer the visits toward clinics that already order.'),
-      '300.00 KD (من ملف المبيعات المرفوع) من 1000.00 KD حتى الآن. تحتاج نحو 50 د.ك/يوم لبقية 14 يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.');
+    assert.equal(i18n.tr('300.00 KD (from uploaded sales) of 1,000.00 KD so far. Needs about 50 KD/day for the remaining 14 working days (Sun–Thu) — steer the visits toward clinics that already order.'),
+      '300.00 د.ك (من ملف المبيعات المرفوع) من 1,000.00 د.ك حتى الآن. تحتاج نحو 50 د.ك/يوم لبقية 14 يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.');
+    // the core's own source label and a grouped per-day amount (the money format, integration pass)
+    assert.equal(i18n.tr('12,989.00 KD (ERP sales files) of 20,000.00 KD so far. Needs about 1,402 KD/day for the remaining 5 working days (Sun–Thu) — steer the visits toward clinics that already order.'),
+      '12,989.00 د.ك (ملفات مبيعات ERP) من 20,000.00 د.ك حتى الآن. تحتاج نحو 1,402 د.ك/يوم لبقية 5 يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.');
+    assert.equal(i18n.tr('Class A · 1,234.50 د.ك ordered'), 'فئة A · طلبيات بقيمة 1,234.50 د.ك');
     assert.equal(i18n.tr('0 doctors · Mariam'), '0 أطباء · Mariam');
   });
   test('data is never translated: names, numbers, unknown text return null', () => {

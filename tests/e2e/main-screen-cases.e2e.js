@@ -13,7 +13,7 @@
 // clock, a fake cloud, no network.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, blockFirebase } = require('./_env.js');
+const { WWW, launchOpts, blockFirebase, amt, amtRe } = require('./_env.js');
 const D = require('./fixtures/main-screen-data.js');
 const { G, M, R, SM, seed, filePeriods, setFiles, setTargets, monthRows, rng } = D;
 const PORT = 8278;
@@ -26,7 +26,7 @@ const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok ? '✅' : '❌') + ' ' + name + (info !== undefined ? '  → ' + JSON.stringify(info) : '')); if(!ok) failed++; }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const r2 = n => Math.round(n * 100) / 100;
-const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) : null; };
+const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].replace(/,/g, '')) : null; };   // an amount is read grouped ("1,318.42")
 
 (async () => {
   await new Promise(r => server.listen(PORT, r));
@@ -77,7 +77,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   const person = async r => { await act(r => msOpenPerson(r), r); await ready(); await sleep(120); };
   const val = (k, scope) => ev(({ k, scope }) => { const e = document.querySelector(`${scope || '#view-today'} [data-ms="${k}"]`); return e ? (e.dataset.value === '' ? null : Number(e.dataset.value)) : undefined; }, { k, scope });
   const dash = (opts) => ev(o => UMCore.execDashboard(digestData(), o), opts);
-  const week = s => ({ orders: num(s, /(\d+) orders? logged in the app \(/), value: num(s, /orders? logged in the app \(([\d.]+) KD\)/), sales: num(s, /Sales this week \(ERP-verified\): ([\d.]+) KD/), visits: num(s, /(\d+) visits?\b/) });
+  const week = s => ({ orders: num(s, /(\d+) orders? logged in the app \(/), value: num(s, /orders? logged in the app \(([\d.,]+) KD\)/), sales: num(s, /Sales this week \(ERP-verified\): ([\d.,]+) KD/), visits: num(s, /(\d+) visits?\b/) });
   const unfold = () => act(() => ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const e = document.getElementById(id); if(e && !e.classList.contains('open')) msFold(id); }));
   const english = (sel) => ev((sel) => {
     const root = document.querySelector(sel || '#view-today'), left = [];
@@ -146,7 +146,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   check('No target for Dr. Ghaith: the sales card adds up on its own — its amount ÷ the target it shows = its %, the target − the amount = remaining, the forecast ÷ the target = the forecast\'s %',
     ntS.of === 17000 && Math.round(ntS.sales / ntS.of * 100) === ntS.ach && Math.abs(r2(ntS.of - ntS.sales) - ntS.rem) < 0.011 && Math.round(ntS.fc / ntS.of * 100) === ntPct,
     { shown: ntS, forecastPct: ntPct, dashboard: { achieved: nt.achievement.achieved, target: nt.achievement.target, pct: nt.achievement.pct, forTarget: nt.forecast.forTarget, all: nt.forecast.amount } });
-  check('… his invoiced sales are said on their own line with his name and amount, and the team\'s total beside them', new RegExp('Dr\\. Ghaith[^.]*' + gAmt.toFixed(2).replace('.', '\\.') + ' KD').test(ntS.txt) && ntS.txt.includes(nt.sales.amount.toFixed(2)), ntS.txt.slice(-320));
+  check('… his invoiced sales are said on their own line with his name and amount, and the team\'s total beside them', new RegExp('Dr\\. Ghaith[^.]*' + amtRe(gAmt) + ' KD').test(ntS.txt) && ntS.txt.includes(amt(nt.sales.amount)), ntS.txt.slice(-320));
   const ch2 = await ev(() => [...document.querySelectorAll('#msDaily svg text')].map(t => t.textContent));
   const wk2 = await ev(() => ({ bar: Number((document.querySelector('#msChart rect.bar.cur') || {}).dataset?.v), dots: [...document.querySelectorAll('#msChart circle.td')].map(c => Number(c.dataset.v)) }));
   check('… Sales Performance draws the same people: the running week\'s bar is their figure, the target line ends on 17,000', wk2.bar === nt.achievement.achieved && wk2.dots[wk2.dots.length - 1] === 17000, wk2);
@@ -155,7 +155,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   const hs = await how('sales');
   const fLines = await ev(() => REPS.map(r => ({ r, a: bestMonthRevenue(r).amount })));
   check('ⓘ forecast: each person\'s line shows her own invoiced figure in the division (amount ÷ days done × days = forecast), and the % of target is worked out',
-    fLines.every(x => hs.includes(`${x.a.toFixed(2)} ÷ 6 × 21`)) && hs.includes(`${nt.forecast.forTarget.toFixed(2)} ÷ ${nt.forecast.target.toFixed(2)} × 100 = ${nt.forecast.pct}%`),
+    fLines.every(x => hs.includes(`${amt(x.a)} ÷ 6 × 21`)) && hs.includes(`${amt(nt.forecast.forTarget)} ÷ ${amt(nt.forecast.target)} × 100 = ${nt.forecast.pct}%`),
     hs.slice(hs.indexOf('Forecast for the month'), hs.indexOf('Forecast for the month') + 420));
 
   // ======================= a visits target only (Dr. Ghaith) =======================
@@ -163,7 +163,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   await boot(G, 'supervisor', 1440, 900);
   const card3 = await txt('#targetCard'), all3 = await ev(() => REPS.map(r => bestMonthRevenue(r).amount));
   const row3 = (card3.match(/Dr\. Ghaith[^]*?no sales target set/) || [''])[0];
-  check('A visits target only: his row says his invoiced sales — the rows add up to the team\'s sales', row3.includes(all3[2].toFixed(2)) && all3.every(a => card3.includes(a.toFixed(2))), { row: row3, amounts: all3 });
+  check('A visits target only: his row says his invoiced sales — the rows add up to the team\'s sales', row3.includes(amt(all3[2])) && all3.every(a => card3.includes(amt(a))), { row: row3, amounts: all3 });
 
   // ======================= a supervisor who does not sell =======================
   seed(cloud, { noSell: true, ghaithPlan: true });
@@ -224,7 +224,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   const custInfo = await act(() => { const b = document.querySelector('#msCust .ms-i'); if(!b) return 'no ⓘ'; b.click(); const t = document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); closeModal(); return t; });
   const ctot = await ev(() => { const D = UMCore.execDashboard(digestData(), { rep: 'all', reps: REPS.slice() }); const top = D.customers.accounts.filter(a => !a.channel && a.net > 0).slice(0, 5);
     return { top: Math.round(top.reduce((s, a) => s + a.net, 0) * 100) / 100, total: D.customers.totals.total }; });
-  check('The team\'s "Biggest customers this month" has its ⓘ: the source, and this view\'s numbers (the accounts shown against the month total)', /How it is calculated/.test(custInfo) && custInfo.includes(ctot.top.toFixed(2)) && custInfo.includes(ctot.total.toFixed(2)), { custInfo: String(custInfo).slice(0, 300), ctot });
+  check('The team\'s "Biggest customers this month" has its ⓘ: the source, and this view\'s numbers (the accounts shown against the month total)', /How it is calculated/.test(custInfo) && custInfo.includes(amt(ctot.top)) && custInfo.includes(amt(ctot.total)), { custInfo: String(custInfo).slice(0, 300), ctot });
   const tg7 = await act(async () => { openAdminPanel(); const el = document.getElementById('tgRev0'); if(!el) return null; el.value = '12000'; await saveTargets(); closeModal();
     await new Promise(r => setTimeout(r, 50)); await msWhenReady();
     const v = k => { const e = document.querySelector(`#msSales [data-ms="${k}"]`); return e ? Number(e.dataset.value) : null; };
@@ -312,7 +312,9 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
       const notice = [...root.querySelectorAll('.ms-cx')];
       notice.forEach(e => e.remove());
       const html = root.innerHTML;
-      const figs = ['Renova', 'Dr. Ghaith'].map(r => bestMonthRevenue(r).amount.toFixed(2)).concat([teamTargetNow().goal.toFixed(2), teamTargetNow().ach.toFixed(2)]);
+      const plain = ['Renova', 'Dr. Ghaith'].map(r => bestMonthRevenue(r).amount.toFixed(2)).concat([teamTargetNow().goal.toFixed(2), teamTargetNow().ach.toFixed(2)]);
+      // each figure as written plain and grouped ("1,318.42", the screens' form) — the harness's own grouping, not the app's
+      const figs = plain.concat(plain.map(f => { const p = f.split('.'); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ','); return p.join('.'); }));
       const names = ['Renova', 'Ghaith', 'رانوفا', 'غيث'].filter(n => html.includes(n));
       const list = UMCore.crossInvoices(digestData());
       return { notice: notice.length, names, figs: figs.filter(f => html.includes(f)),

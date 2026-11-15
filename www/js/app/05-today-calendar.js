@@ -666,7 +666,7 @@ function msT(s){ return `<span>${s}</span>`; }                                  
 // A number as it is. A negative keeps its minus before its digits in the Arabic screen too (a left-to-right
 // isolate): right to left, a bare "-14%" reads "14%-".
 function msN(x){ const s = String(x); return /(^|[\s(=])-\d/.test(s) ? `<span data-notr dir="ltr">${s}</span>` : `<span data-notr>${s}</span>`; }
-function msKd(n){ const x = Number(n) || 0, s = x.toFixed(2); return `<span class="ms-m">${x < 0 ? `<span data-notr dir="ltr">${s}</span>` : s} <span>KD</span></span>`; }  // money(): "91.00 KD", the currency its own word
+function msKd(n){ const x = Number(n) || 0, s = UMCore.groupThousands(x.toFixed(2)); return `<span class="ms-m">${x < 0 ? `<span data-notr dir="ltr">${s}</span>` : s} <span>KD</span></span>`; }  // money(): "12,989.00 KD" (grouped), the currency its own word (د.ك in Arabic)
 function msPct(p){ return p == null ? '—' : msN(p + '%'); }
 function msNames(list){ return (list || []).map(msWho).join(uiLang === 'ar' ? '، ' : ', '); }   // "Mariam, Renova" — «مريم، رانوفا»
 // The month's figures could not be worked out (execDashboard threw: odd data, an older cached core.js): said, never "Calculating…" for ever.
@@ -1543,7 +1543,7 @@ function msGrowthMark(growth, fromZero){
 function msGrowth(g){ return g && g.measured ? msGrowthMark(g.growth, g.fromZero) : null; }
 // A month in a few words: "Sep" (the month before), "Oct 2025" (a year before) — Arabic month names in the Arabic screen.
 function msMon(m, year){ try{ return new Date(m + '-01T00:00:00').toLocaleDateString(uiLocale(), year ? { month: 'short', year: 'numeric' } : { month: 'short' }); }catch(e){ return m; } }
-// against an earlier month: the growth, and in the design's few words what it is compared with ("7247.31 KD · days 1–8 Sep");
+// against an earlier month: the growth, and in the design's few words what it is compared with ("7,247.31 KD · days 1–8 Sep");
 // files that stop on different days are said so, and whoever is not in the comparison is named
 function msCmpCell(g, label, key, year){
   if(!g) return `<div><span class="ms-l">${msT(label)}</span><b>—</b></div>`;
@@ -1699,7 +1699,7 @@ function msHow(id){
   const m = msModelFor(v), D = m && msOf(m.D), sig = msSig(v);
   const kv = (a, b) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`;
   const sec = (t, src, formula, view) => `<h4>${msT(t)}</h4><div><b>${msT('Source')}:</b> ${msT(src)}</div>${formula ? `<div><b>${msT('Formula')}:</b> ${msT(formula)}</div>` : ''}${view ? `<div style="margin-top:4px;">${view}</div>` : ''}`;
-  const f2 = n => (Number(n) || 0).toFixed(2);
+  const f2 = n => UMCore.groupThousands((Number(n) || 0).toFixed(2));   // the sums are written as the amounts are shown
   const dayOf = s => parseInt(String(s || '').slice(8, 10), 10) || '';
   const GROWTH = 'Growth % = (this month − the earlier month on the same days) ÷ the earlier month × 100. From nothing to something is said as "from zero", never as a percentage.';
   // against an earlier month, with this view's numbers: whose this month is, the earlier month (person by person when

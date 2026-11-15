@@ -988,13 +988,13 @@ function openErpRecon(id){
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px; overflow-wrap:anywhere;">${esc(cust)}${tag}</td>
               <td style="text-align:end; padding:5px 6px;">${a.docs.size}</td>
-              <td style="text-align:end; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${a.net.toFixed(2)}</td>
+              <td style="text-align:end; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${amt2(a.net)}</td>
             </tr>`;
           }).join('')}
           <tr style="border-top:2px solid var(--line);">
             <td style="padding:5px 6px; font-weight:700;">Total</td>
             <td></td>
-            <td style="text-align:end; padding:5px 6px; font-weight:700;">${total.toFixed(2)}</td>
+            <td style="text-align:end; padding:5px 6px; font-weight:700;">${amt2(total)}</td>
           </tr>
         </table></div>
       </div>`;
@@ -1027,9 +1027,9 @@ function openErpRecon(id){
             const col = pct>=60?'var(--sage)':pct>=25?'#FF9500':'var(--coral)';
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(brand)}</td>
-              <td style="text-align:end; padding:5px 6px;">${tgt.toFixed(0)}</td>
-              <td style="text-align:end; padding:5px 6px;">${act.toFixed(2)}</td>
-              ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?official.toFixed(2):'—'}</td>`:''}
+              <td style="text-align:end; padding:5px 6px;">${amt2(tgt, 0)}</td>
+              <td style="text-align:end; padding:5px 6px;">${amt2(act)}</td>
+              ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?amt2(official):'—'}</td>`:''}
               <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
             </tr>`;
           }).join('')}
@@ -1080,8 +1080,8 @@ function openErpRecon(id){
             const prev = i>0 ? trend[i-1] : null;
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:6px;">${fmtDate(w.from)}–${fmtDate(w.to)}</td>
-              ${trendReps.map(r=>`<td style="text-align:end; padding:6px; white-space:nowrap;">${(w.byRep[r]||0).toFixed(2)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
-              <td style="text-align:end; padding:6px; font-weight:700; white-space:nowrap;">${w.total.toFixed(2)}${arrow(w.total, prev?prev.total:null)}</td>
+              ${trendReps.map(r=>`<td style="text-align:end; padding:6px; white-space:nowrap;">${amt2(w.byRep[r]||0)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
+              <td style="text-align:end; padding:6px; font-weight:700; white-space:nowrap;">${amt2(w.total)}${arrow(w.total, prev?prev.total:null)}</td>
             </tr>`;
           }).join('')}
         </table>

@@ -1314,7 +1314,7 @@ function renderCharts(){
     const vs = rv.filter(v=>v.rep===r);
     return {l:r.replace('Dr. ',''), v:vs.reduce((a,v)=>a+(v.orderTotal||0),0), t:'', c:CHART_COLORS[i]};
   });
-  repBars.forEach(b=>b.t=b.v.toFixed(0));
+  repBars.forEach(b=>b.t=amt2(b.v, 0));
   // 3) order vs no order donut
   const won = rv.filter(v=>v.orderTaken).length, lost = rv.length-won;
   // 4) top brands by revenue
@@ -1324,7 +1324,7 @@ function renderCharts(){
     brandRev[p.brand]=(brandRev[p.brand]||0)+p.price*it.qty*(1-(o.discountPct||0)/100);
   })));
   const brandBars=Object.entries(brandRev).sort((a,b)=>b[1]-a[1]).slice(0,5)
-    .map(([b,v],i)=>({l:b,v,t:v.toFixed(0),c:CHART_COLORS[i]}));
+    .map(([b,v],i)=>({l:b,v,t:amt2(v, 0),c:CHART_COLORS[i]}));
   // 5) no-order reasons
   const reasons={};
   rv.filter(v=>!v.orderTaken&&v.noOrderReason).forEach(v=>{reasons[v.noOrderReason]=(reasons[v.noOrderReason]||0)+1;});

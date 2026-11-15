@@ -9,7 +9,7 @@
 // page errors, and a render that stays fast.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
-const { WWW, launchOpts, blockFirebase } = require('./_env.js');
+const { WWW, launchOpts, blockFirebase, amt, amtRe } = require('./_env.js');
 const PORT = 8277;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
 const server = http.createServer((req, res) => {
@@ -136,9 +136,9 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const sum = r2(truth.reps.reduce((a, r) => a + truth.people[r].amount, 0));
   check('Team: the team figure = the sum of each person\'s month figure (bestMonthRevenue) over REPS, himself included', s.sales === sum && truth.D.sales === sum, { shown: s.sales, sum, dashboard: truth.D.sales });
   const rowsOk = truth.reps.map(r => { const p = truth.people[r], pct = Math.round(p.amount / p.target * 100);
-    return { r, ok: new RegExp(r.replace(/[.]/g, '\\.') + ' ' + pct + '% ' + p.amount.toFixed(2).replace('.', '\\.') + ' KD of ' + p.target.toFixed(2).replace('.', '\\.') + ' KD').test(s.target) }; });
+    return { r, ok: new RegExp(r.replace(/[.]/g, '\\.') + ' ' + pct + '% ' + amtRe(p.amount) + ' KD of ' + amtRe(p.target) + ' KD').test(s.target) }; });
   check('Team: each person\'s row is her own figure, "<name> <pct>% <achieved> KD of <target> KD" (Dr. Ghaith\'s own row too)', rowsOk.every(x => x.ok), { rowsOk, card: s.target.slice(0, 420) });
-  check('Team: the Team line = teamTargetNow (achieved of target, the number of people)', new RegExp(truth.tt.ach.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.tt.goal.toFixed(2).replace('.', '\\.') + ' KD · \\w[\\w ]* · ' + truth.tt.n + ' reps').test(s.target) && new RegExp('Team ' + truth.tt.pct + '%').test(s.target), { tt: truth.tt });
+  check('Team: the Team line = teamTargetNow (achieved of target, the number of people)', new RegExp(amtRe(truth.tt.ach) + ' KD of ' + amtRe(truth.tt.goal) + ' KD · \\w[\\w ]* · ' + truth.tt.n + ' reps').test(s.target) && new RegExp('Team ' + truth.tt.pct + '%').test(s.target), { tt: truth.tt });
   check('Team: the sales card says the team target it divides by (everyone with a target has a figure): teamTargetNow\'s (data-value to the fils, shown as whole KWD: "Monthly Target 21,000 KWD")', s.ofTarget === truth.tt.goal && new RegExp('Monthly Target ' + whole(truth.tt.goal) + ' KWD').test(s.view), { ofTarget: s.ofTarget, tt: truth.tt.goal });
   check('Team: achievement, remaining, per working day and forecast = UMCore.execDashboard for the team', s.achievement === truth.D.pct && s.remaining === truth.D.remaining && s.perday === truth.D.perDay && s.forecast === truth.D.forecast && truth.D.forecast != null,
     { shown: [s.achievement, s.remaining, s.perday, s.forecast], dashboard: [truth.D.pct, truth.D.remaining, truth.D.perDay, truth.D.forecast] });
@@ -154,19 +154,19 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   check('Team: each person\'s ▲/▼ against the same days last month = the growth her own screen gives (execDashboard for her) = the team\'s byPerson',
     truth.reps.every(r => truth.growth[r] != null && s.growth[r] === truth.growth[r] && truth.growth[r] === truth.ownGrowth[r]) && truth.reps.every(r => new RegExp(r.replace(/[.]/g, '\\.') + ' \\d+% [^]*?[▲▼] ' + Math.abs(truth.growth[r]) + '% vs the same days last month').test(s.target)),
     { shown: s.growth, team: truth.growth, own: truth.ownGrowth });
-  const bTxt = b => b.pct != null ? `${b.achieved.toFixed(2)} KD of ${b.goal.toFixed(2)} KD` + (Math.round(b.net * 100) !== Math.round(b.achieved * 100) ? ` · sold in all ${b.net.toFixed(2)} KD` : '') : null;
+  const bTxt = b => b.pct != null ? `${amt(b.achieved)} KD of ${amt(b.goal)} KD` + (Math.round(b.net * 100) !== Math.round(b.achieved * 100) ? ` · sold in all ${amt(b.net)} KD` : '') : null;
   check('Team: the brand rows = execDashboard.byBrand — the percentage over what the people with that brand\'s target sold of it ÷ their targets (achieved of goal)',
     truth.brands.length >= 3 && s.brands.length === truth.brands.length && truth.brands.every((b, i) => s.brands[i].brand === b.brand && s.brands[i].pct === b.pct && s.brands[i].s === bTxt(b)),
     { shown: s.brands, dashboard: truth.brands });
   check('Team: the chart\'s comparisons = execDashboard — the same days of September (growth, amount, days 1–8), no figure a year before (said with the month), year to date like for like',
-    s.cmp === truth.cmp.sd && truth.cmp.sd != null && new RegExp(truth.cmp.sdPrev.toFixed(2).replace('.', '\\.') + ' KD · days 1–' + +truth.cmp.sdTo.slice(8) + ' Sep').test(s.daily)
+    s.cmp === truth.cmp.sd && truth.cmp.sd != null && new RegExp(amtRe(truth.cmp.sdPrev) + ' KD · days 1–' + +truth.cmp.sdTo.slice(8) + ' Sep').test(s.daily)
       && !truth.cmp.ly && s.cmpYear === null && /Same month last year — No sales figure for October 2025/.test(s.daily)
-      && s.ytd === truth.cmp.ytd && new RegExp(truth.cmp.ytdSales.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.cmp.ytdTarget.toFixed(2).replace('.', '\\.') + ' KD').test(s.daily),
+      && s.ytd === truth.cmp.ytd && new RegExp(amtRe(truth.cmp.ytdSales) + ' KD of ' + amtRe(truth.cmp.ytdTarget) + ' KD').test(s.daily),
     { shown: [s.cmp, s.cmpYear, s.ytd], dashboard: truth.cmp, daily: s.daily.slice(-260) });
   check('Team: the day-by-day line is the month figure\'s own lines — its days add up to the team figure and it ends on it, on the day the files reach',
     truth.daily.sum === sum && truth.daily.to === '2026-10-08' && truth.daily.n === 8 && s.chart.includes(Math.round(sum).toLocaleString('en-US')), { daily: truth.daily, sum });
   check('Team: the biggest customers = execDashboard.customers.accounts, the same amounts as the Clinics screen\'s card',
-    truth.cust.length === 5 && truth.cust.every((a, i) => a.net === a.clinics && s.cust[i] && s.cust[i].includes(a.name) && s.cust[i].endsWith(a.net.toFixed(2) + ' KD')), { shown: s.cust, dashboard: truth.cust });
+    truth.cust.length === 5 && truth.cust.every((a, i) => a.net === a.clinics && s.cust[i] && s.cust[i].includes(a.name) && s.cust[i].endsWith(amt(a.net) + ' KD')), { shown: s.cust, dashboard: truth.cust });
 
   // ---------- layout: the owner's picture (15 Nov), the sidebar ----------
   // (the picture: the target card spans the content, the four figure cards follow in one row, Sales Performance sits beside
@@ -201,7 +201,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   // ---------- ⓘ: how it is calculated, with this view's numbers ----------
   const how = (await act(() => { msHow('sales'); const t = document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); closeModal(); return t; })) || '';
   check('ⓘ "How it is calculated": the source, the formula and this view\'s own numbers (each person, the division)', /How it is calculated/.test(how) && /The ERP sales files only/.test(how) && /Achievement % = invoiced sales ÷ target × 100/.test(how)
-    && truth.reps.every(r => how.includes(truth.people[r].amount.toFixed(2))) && new RegExp('= ' + truth.D.pct + '%').test(how), how.slice(0, 500));
+    && truth.reps.every(r => how.includes(amt(truth.people[r].amount))) && new RegExp('= ' + truth.D.pct + '%').test(how), how.slice(0, 500));
 
   // ---------- the person switch: Mariam's own screen ----------
   writes = [];
@@ -243,7 +243,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   // ---------- the Months button, the month report agrees ----------
   const months = (await act(() => { const b = [...document.querySelectorAll('#targetCard button.chip')].find(e => /Months/.test(e.textContent)); if(!b) return { list: '(no Months button)', rep: '' };
     b.click(); const list = document.getElementById('modalInner').innerText; renderMonthClose('2026-10'); const rep = document.getElementById('modalInner').innerText; closeModal(); return { list, rep }; })) || { list: '', rep: '' };
-  check('The Months button opens the month reports, and October\'s report shows each person\'s figure as the main screen does', /تقارير الشهور/.test(months.list) && truth.reps.every(r => months.rep.includes(truth.people[r].amount.toFixed(2))), months.rep.slice(0, 300));
+  check('The Months button opens the month reports, and October\'s report shows each person\'s figure as the main screen does', /تقارير الشهور/.test(months.list) && truth.reps.every(r => months.rep.includes(amt(truth.people[r].amount))), months.rep.slice(0, 300));
 
   // ---------- a brand someone sells with no target for it: the percentage counts only the people with its target ----------
   const bx = (await act(async () => {
@@ -263,7 +263,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       && bxSold.every(b => b.pct === Math.round(b.achieved / b.goal * 100) && b.pct !== Math.round(b.net / b.goal * 100) || b.achieved / b.goal === b.net / b.goal),
     { shown: bx.rows, dashboard: bx.D });
   check('… and its ⓘ shows that division with this view\'s numbers (achieved ÷ goal × 100 = %, sold in all)',
-    bx.D.every(b => b.pct == null || bx.how.includes(`${b.achieved.toFixed(2)} ÷ ${b.goal.toFixed(2)} × 100 = ${b.pct}%`)) && bxSold.every(b => bx.how.includes(`sold in all ${b.net.toFixed(2)} KD`)), bx.how.slice(0, 400));
+    bx.D.every(b => b.pct == null || bx.how.includes(`${amt(b.achieved)} ÷ ${amt(b.goal)} × 100 = ${b.pct}%`)) && bxSold.every(b => bx.how.includes(`sold in all ${amt(b.net)} KD`)), bx.how.slice(0, 400));
 
   // ---------- speed: one render of the screen, with 3 people × 12 months of lines ----------
   const speed = await ev(async () => {
@@ -334,7 +334,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     { rep: [rep.perdayVisits, rep.weekVisits, rep.doctors, rep.accounts], sup: [mSup.perdayVisits, mSup.weekVisits, mSup.doctors, mSup.accounts] });
   const kpiRow = await ev(() => { const r = document.querySelector('#msRows [data-row="kpi"]'); return r ? r.innerText.replace(/\s+/g, ' ') : ''; });
   check('Rep: the KPI score out of 100 = kpiScorecard (the phone\'s one-tap row)', new RegExp('Performance score \\(KPI\\) ' + rTruth.kpi + ' of 100').test(kpiRow), { kpiRow, kpi: rTruth.kpi });
-  const leak = t => ['Renova', 'Ghaith', 'رانوفا', 'غيث', 'Team', 'الفريق'].filter(n => t.includes(n)).concat(rTruth.others.filter(x => t.includes(x))).concat(t.includes(rTruth.tt.goal.toFixed(2)) || t.includes(rTruth.tt.ach.toFixed(2)) ? ['team total'] : []);
+  const leak = t => ['Renova', 'Ghaith', 'رانوفا', 'غيث', 'Team', 'الفريق'].filter(n => t.includes(n)).concat(rTruth.others.filter(x => t.includes(x) || t.includes(amt(+x)))).concat(t.includes(rTruth.tt.goal.toFixed(2)) || t.includes(rTruth.tt.ach.toFixed(2)) || t.includes(amt(rTruth.tt.goal)) || t.includes(amt(rTruth.tt.ach)) ? ['team total'] : []);
   check('Rep (English): only her own — no other person\'s name or figure, no team total, no leaderboard — in what shows and in the hidden parts', leak(rep.view).length === 0 && leak(rep.html).length === 0 && rep.people.length === 0 && /ms-vperson/.test(rep.grid), { shown: leak(rep.view), html: leak(rep.html) });
   await act(() => msOpenPerson('Renova')); await ready();
   const still = await shown();
@@ -442,7 +442,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     nm.ofTarget === nmT.D.target && nmT.D.target === 13000 && nmT.tt.goal === 21000 && /Target of the people with a sales figure 13,000 KWD/.test(nm.view) && !/Monthly Target/.test(nm.view)
       && nmT.D.remaining === Math.round((nmT.D.target - nmT.D.achieved) * 100) / 100 && nmT.D.achieved === nm.sales, { ofTarget: nm.ofTarget, D: nmT.D, tt: nmT.tt });
   check('… her row on the target card keeps the Today card\'s words (no figure yet, and why); the Team line stays teamTargetNow, as on every other screen',
-    /Renova 0% 0\.00 KD of 8000\.00 KD · no figure yet/.test(nm.target) && /no invoice of this rep in the ERP files uploaded/.test(nm.target) && new RegExp('Team ' + nmT.tt.pct + '%').test(nm.target),
+    /Renova 0% 0\.00 KD of 8,000\.00 KD · no figure yet/.test(nm.target) && /no invoice of this rep in the ERP files uploaded/.test(nm.target) && new RegExp('Team ' + nmT.tt.pct + '%').test(nm.target),
     nm.target.slice(0, 700));
   await act(() => msOpenPerson('Renova')); await ready();
   const nmR = await shown();

@@ -54,7 +54,7 @@ function renderProducts(){
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
       <div class="brand-body ${open?'open':''}" id="brand-${slugify(b)}">
-        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}${p.id ? ` <span data-notr>· ${esc(p.id)}</span>` : ''}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}${p.id ? ` <span data-notr>· ${esc(p.id)}</span>` : ''}</div></div><span class="product-price">${p.price!=null?money(p.price):''}</span></div>`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -146,7 +146,7 @@ function openCatalogGaps(){
       ${byB[b].map(i => { const x = g[i], p = x.product; return `<label style="display:flex; align-items:flex-start; gap:8px; font-size:12.5px; margin:7px 0 0; font-weight:400;">
         <input type="checkbox" class="cgap cgap-${slugify(b)}" data-i="${i}" checked style="margin-top:3px;">
         <span style="flex:1;">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${p.cat && p.cat !== p.brand ? esc(p.cat) + ' · ' : ''}${x.sold ? x.sold + ' sold in the files' + (x.last ? ', last ' + fmtDate(x.last) : '') : x.source === 'list' ? 'Intensiv list' : ''}</span></span>
-        <b style="white-space:nowrap;">${p.price != null ? Number(p.price).toFixed(2) + ' KD' : '—'}</b></label>`; }).join('')}
+        <b style="white-space:nowrap;">${p.price != null ? money(Number(p.price)) : '—'}</b></label>`; }).join('')}
     </div>`).join('')}
     <div style="display:flex; gap:8px; margin-top:12px;">
       <button class="btn" id="cgapAdd" onclick="addCatalogGaps()">Add selected</button>
@@ -206,7 +206,7 @@ function openProductDups(){
       <div style="font-weight:800; font-size:13px;"><span dir="ltr" data-notr>${esc(g.value)}</span> <span style="color:var(--muted); font-weight:400;" data-notr>×${g.items.length}</span></div>
       ${g.items.map(x => `<div class="row-between" style="padding:6px 0; border-top:1px solid var(--line); cursor:pointer; gap:8px;" data-key="${esc(x.key)}" onclick="openDupProduct(this.dataset.key)">
         <span style="flex:1; font-size:12.5px;" data-notr>${esc(x.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(x.brand)}${g.kind === 'sku' ? (x.barcode ? ' · ' + esc(x.barcode) : '') : (x.id ? ' · ' + esc(x.id) : '')}</span></span>
-        <b style="white-space:nowrap; font-size:12.5px;" data-notr>${x.price != null ? x.price.toFixed(2) + ' KD' : '—'}</b></div>`).join('')}
+        <b style="white-space:nowrap; font-size:12.5px;" data-notr>${x.price != null ? money(x.price) : '—'}</b></div>`).join('')}
     </div>`;
   const section = (title, list) => list.length ? `<div class="section-title" style="margin-top:6px;"><span>${title}</span> <span data-notr>(${list.length})</span></div>${list.map(group).join('')}` : '';
   showModal(`
@@ -1557,7 +1557,7 @@ function openClinicAllocDetail(clinicId){
             ${up.map(x=>`<div style="display:flex; align-items:center; gap:9px; padding:3px 0;">
               ${playbookThumb(x.product, 40)}
               <div style="flex:1; min-width:0;"><div style="font-size:12px; font-weight:600; line-height:1.25;">${esc(x.product)}${x.mine?' <span title="re-order" style="font-size:10px;">🔁</span>':''}</div>
-              <div style="font-size:11px; color:var(--muted);">${x.price.toFixed(2)} KD each</div></div>
+              <div style="font-size:11px; color:var(--muted);">${money(x.price)} each</div></div>
               <div style="font-weight:800; font-size:14px; color:var(--teal); flex-shrink:0;">×${x.units}</div>
             </div>`).join('')}
             <div style="font-size:11px; color:var(--muted); text-align:start;">= ${money(up.reduce((s2,x)=>s2+x.amount,0))}</div>
@@ -1640,7 +1640,7 @@ function openPlaybook(sp){
       return tagged.length ? `<div class="section-title">From our catalog</div>
         <div class="card">${tagged.map(p=>`<div class="qty-row" style="cursor:pointer; align-items:center; gap:10px;" onclick="closeModal(); openProductDetail('${esc(productKey(p))}')">
           ${playbookThumb(p.name, 44)}
-          <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
+          <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+money(p.price):''}</span></div>
         </div>`).join('')}</div>` : ''; })()}
 
     <div class="section-title">Tips &amp; tricks</div>
@@ -1683,7 +1683,7 @@ function openProductDetail(pid){
     <div class="card">
       <div class="spec-row"><span class="k">Item code</span><span class="v">${esc(p.id)}</span></div>
       ${p.barcode?`<div class="spec-row"><span class="k">Barcode</span><span class="v">${esc(p.barcode)}</span></div>`:''}
-      <div class="spec-row"><span class="k">Unit price</span><span class="v">${p.price!=null?p.price.toFixed(3)+' KD':'\u2014'}</span></div>
+      <div class="spec-row"><span class="k">Unit price</span><span class="v">${p.price!=null?moneyFils(p.price):'\u2014'}</span></div>
       ${p.cat?`<div class="spec-row"><span class="k">Category</span><span class="v">${esc(p.cat)}</span></div>`:''}
       ${p.stock!==undefined?`<div class="spec-row"><span class="k">Website stock</span><span class="v" style="color:${p.stock?'var(--sage-ink)':'var(--coral-ink)'}">${p.stock?'In stock':'Out of stock'}</span></div>`:''}
       ${p.case?`<div class="spec-row"><span class="k">Case count</span><span class="v">${esc(p.case)}</span></div>`:''}
@@ -1845,7 +1845,7 @@ function openCategoryGuide(cat){
     </div>`:`<div class="empty">No guide for this category yet.${currentUser.role==='supervisor'?' Tap ✏️ Edit to write one.':''}</div>`}
     ${catProds.length?`<div class="section-title">Products in this category</div>
       <div class="card">${catProds.map(p=>`<div class="qty-row" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">
-        <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
+        <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+money(p.price):''}</span></div>
         <span style="color:var(--muted);">›</span></div>`).join('')}</div>`:''}
     <button class="btn secondary" style="margin-top:12px;" onclick="openCategoryGuides()">‹ All guides</button>
   `);

@@ -188,7 +188,7 @@ function openMonthByMonth(){
   const M = T.months, team = _mbmRep === 'all';
   const of = m => team ? m.team : m.byRep[_mbmRep];
   const name = m => { const n = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m.month.slice(5, 7), 10) - 1] + ' ' + m.month.slice(2, 4); return m.partial ? n + ' (to ' + parseInt(m.to.slice(8, 10), 10) + ')' : n; };
-  const kd = n => 'KD ' + Math.round(n).toLocaleString('en-US');
+  const kd = n => moneyWhole(n);   // grouped, the currency after the figure (د.ك in Arabic)
   const arrow = (a, b) => a == null || b == null || !(b > 0) || a === b ? '' : a >= b ? `<span style="color:var(--sage-ink); font-weight:700;">▲ ${Math.round((a - b) / b * 100)}%</span>` : `<span style="color:var(--coral-ink); font-weight:700;">▼ ${Math.round((b - a) / b * 100)}%</span>`;
   const bar = (x, max, color) => `<div style="height:8px; border-radius:4px; background:var(--paper); overflow:hidden; margin-top:3px;"><div style="width:${max > 0 && x ? Math.round(Math.min(1, x / max) * 100) : 0}%; height:100%; background:${color};"></div></div>`;
   const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_mbmRep === x ? 'on' : ''}" onclick="_mbmRep='${esc(x)}'; openMonthByMonth()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
