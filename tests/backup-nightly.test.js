@@ -1121,6 +1121,25 @@ describe('the guide (docs/backup.md)', () => {
     for(const k of only) assert.ok(keys.has(k) || families.has(k), 'the guide\'s --only list names ' + k + ', which the rules do not list');
     assert.equal(new Set(only).size, only.length, 'no name twice');
   });
+  test('the owner\'s steps: the last section, numbered, in plain Arabic — no English word but the secrets he types', () => {
+    const at = guide.indexOf('\n## خطوات المالك\n');
+    assert.ok(at > 0, 'the guide has the owner\'s steps');
+    assert.equal(guide.indexOf('\n## ', at + 5), -1, 'they are the last section');
+    const steps = guide.slice(at);
+    const numbered = (steps.match(/^\d+\. /gm) || []).map(x => parseInt(x, 10));
+    assert.deepEqual(numbered, numbered.map((_, i) => i + 1), 'numbered 1, 2, 3 …');
+    assert.ok(numbered.length >= 8);
+    const words = new Set(steps.replace(/https:\/\/\S+/g, '').match(/[A-Za-z][A-Za-z_]+/g) || []);
+    words.delete('GitHub');   // a name, not an English word
+    assert.deepEqual([...words].sort(), ['BACKUP_LOGIN_EMAIL', 'BACKUP_LOGIN_PASSWORD', 'BACKUP_PASSPHRASE']);
+    assert.doesNotMatch(steps, /```|\bnode\b|--/, 'no code');
+    // the links: the passphrase page, where the secrets go, the backup's page
+    assert.match(steps, /https:\/\/ghaithalmanfe\.github\.io\/ultramed-app\/backup-passphrase\.html/);
+    assert.match(steps, /https:\/\/github\.com\/ghaithalmanfe\/ultramed-app\/settings\/secrets\/actions\/new/);
+    assert.match(steps, /https:\/\/github\.com\/ghaithalmanfe\/ultramed-app\/actions\/workflows\/backup\.yml/);
+    assert.ok(fs.existsSync(path.join(ROOT, '.github', 'workflows', 'backup.yml')) && fs.existsSync(path.join(ROOT, 'www', 'backup-passphrase.html')), 'the links name files this release publishes');
+    for(const what of [/مدير كلمات المرور/, /ورقة/, /فلن يستطيع أحد فتح النسخ/, /بيدك/, /العلامة\s+الخضراء وحدها لا تكفي/, /ينزل على جهازك/, /مشروع تجريبي منفصل/, /بموافقتك/, /خاصاً/]) assert.match(steps, what);
+  });
   test('the "Limits" section says the size the backup stops at, the warning before it, and what to do', () => {
     const at = guide.indexOf('\n## Limits\n');
     assert.ok(at > 0);
