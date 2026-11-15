@@ -476,9 +476,11 @@ function renderMore(){
       tile(I('book'),'Selling playbook','Tips per doctor specialty',"switchView('playbook')"),
       tile(I('layers'),'Category guides','How to sell every category','openCategoryGuides()'),
       sup ? tile(I('file'),'Weekly management deck','PowerPoint for the Thursday meeting (supervisor)','openWeeklyDeck()') : '']) +
-    group('Management', [
+    group('Settings', [
       sup ? tile(I('download'),'ERP import','Sales & targets files (supervisor)','openErpImport()') : '',
-      sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : '']) +
+      sup ? tile(I('settings'),'Admin panel','Team, targets & data (supervisor)','openAdminPanel()') : '',
+      tile(I('globe'),'Account & language','Language, password, sign out','openAccountMenu()'),
+      tile(I('nhelp'),'Help & Support','App version, what waits to be sent, who to ask','openHelp()')]) +
     `<div class="more-foot">UltraMed Clinical Sales Team · ${APP_REV}</div>`;
 }
 
@@ -1740,6 +1742,11 @@ function msHow(id){
   } else if(id === 'chart'){
     const Dy = D && msOf(D.daily), sd = D && msOf(D.sameDays), ly = D && msOf(D.lastYear), Y = D && msOf(D.ytd), A = D && msOf(D.achievement) || {};
     const Pr = Dy && msOf(Dy.pair), withT = A.pct != null && !!Pr && Array.isArray(Pr.days) && Pr.days.length > 0, days = withT ? Pr.days : Dy && Dy.days;
+    // Sales Performance (the weekly bars), with this view's numbers week by week
+    const Wk = Dy && Dy.measured && Array.isArray(days) && days.length ? UMCore.homeWeeks(msMonth(), days, withT ? A.target : null) : null;
+    body += sec('Sales Performance (the weekly bars)', 'The ERP sales files: the same lines as the month figure, of the people with a target and a sales figure (with no target: everyone\'s).',
+      'W1 = days 1–7, W2 = 8–14, W3 = 15–21, W4 = day 22 to the end of the month. A bar = the invoiced sales from day 1 to the last day of its week (the running week: to the last day the files cover — the month figure). The dashed line = the target × the working days (Sunday to Thursday) from day 1 to that day ÷ the working days of the month.',
+      Wk ? Wk.map(w => kv(`<span>${esc('W' + w.week)}</span> (${msDate(w.from)} – ${msDate(w.to)})`, `${w.achieved != null ? msKd(w.achieved) : '—'}${w.pace != null ? ` · ${msT('target pace')} ${msKd(w.pace)}` : ''}`)).join('') : '');
     body += sec('Sales day by day', 'The ERP sales files: the net invoiced value of each day, from day 1 to the last day the sales files cover, added up day after day.',
       'The straight line runs from 0 on day 1 to the target on the last day of the month; the dotted line is the month-end forecast at the pace so far.',
       Dy && Dy.measured && Array.isArray(days) ? kv(msT('Days'), msN(days.length)) + kv(withT ? `${msT('Total')} (${msNames(A.people)})` : msT('Total'), msKd(days.reduce((a, d) => a + (Number(d.net) || 0), 0)))
