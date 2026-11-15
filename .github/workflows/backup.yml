@@ -9,7 +9,12 @@ name: Database backup
 #   daily    '15 23 * * *'  23:15 UTC every day    = 02:15 Kuwait (the next day)  kept 14 days
 #   weekly   '45 23 * * 4'  23:45 UTC Thursday     = 02:45 Kuwait Friday          kept 60 days
 #   monthly  '15 0 1 * *'   00:15 UTC on the 1st   = 03:15 Kuwait on the 1st      kept 90 days (the artifact maximum)
-# Each is its own fresh backup. GitHub may start a scheduled run late.
+# Each is its own fresh backup. GitHub may start a scheduled run late, and runs a
+# schedule ONLY from the default branch (main): after the release that brings
+# this file, the first backup is made by hand (Actions → "Database backup" → Run
+# workflow) — docs/backup.md, "One-time setup".
+# The repository is public: the encrypted file can be downloaded by anyone signed
+# in to GitHub, so run.js takes only a passphrase made by the passphrase page.
 # Not configured (no BACKUP_PASSPHRASE or no login secret): the run says so,
 # uploads nothing and stays green. A backup that fails turns the run red.
 on:

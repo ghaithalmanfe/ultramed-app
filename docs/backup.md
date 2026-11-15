@@ -349,8 +349,9 @@ when it was first published.
 
 - `scripts/backup/nightly/bundle.js`: bundle, manifest, file format, encryption and the
   passphrase's format (pure). `scripts/backup/nightly/firestore.js`: REST sign-in, paged
-  listing, count, commits, retries and a log that scrubs the secrets, addresses and
-  tokens.
+  listing, count, commits, retries and a log that cannot leak (it scrubs the secrets,
+  addresses and tokens, and prints of a server's error only its codes, never its words:
+  a message may quote what it was sent).
   `run.js`, `verify.js`, `restore.js` in the same folder: the three commands (`--help` on
   each). The project id and API key are read from `www/js/app/01-config.js`. The phone's
   full backup has its own tools, `scripts/backup/verify.js` and

@@ -86,13 +86,22 @@ function retryOptions(env){
   const base = Number(env && env.BACKUP_RETRY_BASE_MS);
   return { attempts: 5, baseDelayMs: Number.isFinite(base) && base >= 0 ? base : 1000, timeoutMs: 120000 };
 }
-// Google APIs answer errors as {error: {code, message, status}}.
+// Google APIs answer errors as {error: {code, message, status}}. Only the
+// codes are kept: Firestore's status (PERMISSION_DENIED, INVALID_ARGUMENT …)
+// and the code the sign-in service puts first in its message
+// (INVALID_LOGIN_CREDENTIALS, USER_DISABLED, TOO_MANY_ATTEMPTS_TRY_LATER …).
+// The server's own words are never printed: the log is public, and a message
+// may quote what it was sent.
+const STATUS = /^[A-Z][A-Z_]{1,39}$/;                   // INTERNAL, PERMISSION_DENIED …
+const CODE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;          // a code word: INVALID_LOGIN_CREDENTIALS …, never "API" or "Missing"
 function errorDetail(text){
   let j;
   try{ j = JSON.parse(text); }catch(e){ return { status: '', message: '' }; }
   const e = j && (Array.isArray(j) ? j[0] && j[0].error : j.error);
   if(!e || typeof e !== 'object') return { status: '', message: '' };
-  return { status: typeof e.status === 'string' ? e.status.slice(0, 40) : '', message: typeof e.message === 'string' ? e.message.slice(0, 160) : '' };
+  const status = typeof e.status === 'string' && STATUS.test(e.status) ? e.status : '';
+  const first = typeof e.message === 'string' ? e.message.trim().split(/[\s:]/)[0] : '';
+  return { status, message: CODE.test(first) && first.length <= 60 && first !== status ? first : '' };
 }
 // One JSON request with retries (network errors, timeouts, 408/429/5xx, an
 // answer cut short). body may be a function of the attempt number.

@@ -139,7 +139,7 @@ function sortDeep(v){
   return v;
 }
 function startFake(){
-  const fake = { projects: {}, requests: [], tokens: new Map(), snapshots: new Map(), failPage: null, rejectReadTime: false, countSkew: 0, afterPage: null, denyCommit: null };
+  const fake = { projects: {}, requests: [], tokens: new Map(), snapshots: new Map(), failPage: null, rejectReadTime: false, countSkew: 0, afterPage: null, denyCommit: null, signInError: null };
   const send = (res, status, obj) => {
     const s = JSON.stringify(obj);
     res.writeHead(status, { 'content-type': 'application/json; charset=UTF-8', 'content-length': Buffer.byteLength(s) });
@@ -165,7 +165,7 @@ function startFake(){
     }
     const page = Math.floor(offset / pageSize) + 1;
     const f = fake.failPage;
-    if(f && f.project === pid && f.page === page && f.count++ < f.times) return err(res, f.status, f.statusText, 'fake failure');
+    if(f && f.project === pid && f.page === page && f.count++ < f.times) return err(res, f.status, f.statusText, f.message || 'fake failure');
     const docs = view(pid, readTime);
     const ids = Array.from(docs.keys()).sort(B.compareIds);
     const out = {};
@@ -211,6 +211,7 @@ function startFake(){
       const pid = Object.keys(fake.projects).find(id => fake.projects[id].apiKey === u.searchParams.get('key'));
       if(!pid) return err(res, 400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.');
       const b = JSON.parse(body);
+      if(fake.signInError) return send(res, fake.signInError.status, { error: { code: fake.signInError.status, message: fake.signInError.message } });
       if(!b.email || fake.projects[pid].users[b.email] !== b.password) return send(res, 400, { error: { code: 400, message: 'INVALID_LOGIN_CREDENTIALS' } });
       const tok = 'eyJhbGciOiJub25lIn0.' + Buffer.from(JSON.stringify({ p: pid, n: fake.tokens.size })).toString('base64url') + '.c2lnbmVk';
       fake.tokens.set(tok, pid);
@@ -251,7 +252,7 @@ after(() => { if(fake) fake.close(); if(tmp) fs.rmSync(tmp, { recursive: true, f
 
 function resetSource(){
   fake.projects[PROD] = { apiKey: APP.apiKey, users: { [LOGIN.email]: LOGIN.password }, docs: sourceDocs() };
-  fake.failPage = null; fake.rejectReadTime = false; fake.countSkew = 0; fake.afterPage = null;
+  fake.failPage = null; fake.rejectReadTime = false; fake.countSkew = 0; fake.afterPage = null; fake.signInError = null;
   // a read at time R sees the data as of R: changed data needs fresh snapshots
   // (two runs in the same second share a read time)
   fake.snapshots.clear();
@@ -632,7 +633,7 @@ describe('run.js → file → verify.js → restore.js (one backup, used through
     runLog = r.all;
     assert.equal(r.code, 0, r.all);
     assert.equal(fake.failPage.count, 3, 'page 3 was asked three times: two failures, then the answer');
-    assert.match(r.out, /page 3: HTTP 503 UNAVAILABLE .*trying again/);
+    assert.match(r.out, /page 3: HTTP 503 UNAVAILABLE: trying again/);
     assert.match(r.out, new RegExp('Listed ' + source.size + ' documents in ' + Math.ceil(source.size / 7) + ' pages'));
     assert.match(r.out, new RegExp('Count check: Firestore counts ' + source.size + ' documents'));
     // every page (and the count) read at the same instant
@@ -950,6 +951,74 @@ describe('run.js refuses to write a backup it cannot vouch for', () => {
   });
 });
 
+// The repository and its Actions logs are public. Whatever goes wrong, the
+// log says what failed and what to do — never a value, an address, the
+// passphrase, a password or a token. A server's own words are not printed at
+// all (only its codes): an error message may quote what it was sent.
+describe('the public log, on every path that can fail', () => {
+  const QUOTED = 'Invalid value ' + MARKER + ' ' + AR + ' for backup@test.invalid, Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0.c2lnbmVk';
+  test('a server error that quotes data — on the sign-in, a page or the count — prints only its codes', async () => {
+    resetSource();
+    fake.signInError = { status: 400, message: 'USER_DISABLED : ' + QUOTED };
+    const signIn = await runNode('run.js', [], backupEnv(freshDir('quoted-signin')));
+    assert.equal(signIn.code, 1, signIn.all);
+    assert.match(signIn.err, /sign-in: HTTP 400 \(USER_DISABLED\)/);
+    assert.match(signIn.err, /the sign-in was refused/);
+    fake.signInError = null;
+    fake.failPage = { project: PROD, page: 2, times: Infinity, status: 400, statusText: 'INVALID_ARGUMENT', message: QUOTED, count: 0 };
+    const page = await runNode('run.js', [], backupEnv(freshDir('quoted-page')));
+    assert.equal(page.code, 1, page.all);
+    assert.match(page.err, /page 2: HTTP 400 INVALID_ARGUMENT\. No backup file was written\./);
+    fake.failPage = { project: PROD, page: 1, times: Infinity, status: 503, statusText: 'UNAVAILABLE', message: QUOTED, count: 0 };
+    const retried = await runNode('run.js', [], backupEnv(freshDir('quoted-retry')));
+    assert.equal(retried.code, 1, retried.all);
+    assert.match(retried.out, /page 1: HTTP 503 UNAVAILABLE: trying again/);
+    for(const r of [signIn, page, retried]){
+      assert.ok(!r.all.includes('Invalid value'), 'the server\'s own words are not printed');
+      assertCleanLog(r.all);
+    }
+  });
+  test('a network failure — no answer from the sign-in or from Firestore — says so, and nothing else', async () => {
+    resetSource();
+    const closed = await new Promise(resolve => { const srv = http.createServer(); srv.listen(0, '127.0.0.1', () => { const port = srv.address().port; srv.close(() => resolve('127.0.0.1:' + port)); }); });
+    const fsDown = await runNode('run.js', [], backupEnv(freshDir('net-fs'), { FIRESTORE_EMULATOR_HOST: closed }));
+    assert.equal(fsDown.code, 1, fsDown.all);
+    assert.match(fsDown.err, /page 1: network error ECONNREFUSED \(gave up after 5 attempts\)\. No backup file was written\./);
+    const allDown = await runNode('run.js', [], backupEnv(freshDir('net-all'), { FIRESTORE_EMULATOR_HOST: closed, FIREBASE_AUTH_EMULATOR_HOST: closed }));
+    assert.equal(allDown.code, 1, allDown.all);
+    assert.match(allDown.err, /sign-in: network error ECONNREFUSED \(gave up after 5 attempts\)\. No backup file was written\./);
+    assert.doesNotMatch(allDown.err, /the sign-in was refused/, 'no answer is not a refusal');
+    assertCleanLog(fsDown.all + allDown.all);
+  });
+  test('every other way a run ends, in the GitHub log, its summary and its outputs: nothing secret', async () => {
+    resetSource();
+    const runs = [];
+    const go = async (name, extra, prep) => {
+      resetSource(); if(prep) prep();
+      const dir = freshDir('log-' + name), files = { GITHUB_OUTPUT: path.join(dir, 'gh-out'), GITHUB_STEP_SUMMARY: path.join(dir, 'gh-sum') };
+      const r = await runNode('run.js', [], backupEnv(path.join(dir, 'out'), Object.assign({ GITHUB_ACTIONS: 'true' }, files, extra)));
+      const side = Object.values(files).map(f => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '')).join('\n');
+      runs.push([name, r, side]);
+      return r;
+    };
+    assert.equal((await go('done', {})).code, 0);
+    assert.equal((await go('size-warning', { BACKUP_WARN_MB: '1' })).code, 0);
+    assert.equal((await go('not-configured', { BACKUP_PASSPHRASE: '' })).code, 0);
+    assert.equal((await go('phrase', { BACKUP_PASSPHRASE: OLD_PHRASE })).code, 1);
+    assert.equal((await go('miscopied', { BACKUP_PASSPHRASE: changedAt(PASS, 3) })).code, 1);
+    assert.equal((await go('wrong-password', { BACKUP_LOGIN_PASSWORD: 'wrong-password' })).code, 1);
+    assert.equal((await go('refused-read', {}, () => { fake.failPage = { project: PROD, page: 1, times: Infinity, status: 403, statusText: 'PERMISSION_DENIED', count: 0 }; })).code, 1);
+    assert.equal((await go('count-differs', {}, () => { fake.countSkew = 2; })).code, 1);
+    assert.equal((await go('read-time-refused', {}, () => { fake.rejectReadTime = true; })).code, 0);
+    for(const [name, r, side] of runs){
+      assertCleanLog(r.all); assertCleanLog(side);
+      assert.ok(!(r.all + side).includes(changedAt(PASS, 3)) && !(r.all + side).toLowerCase().includes(PASS.replace(/-/g, '').slice(0, 10)), name + ': a form of the passphrase');
+      // GitHub reads "::" at the start of a line as a command: only our own warning and error lines start so
+      (r.all.match(/^::.*$/gm) || []).forEach(l => assert.match(l, /^::(warning|error) title=[^:]+::/, name + ': ' + l.slice(0, 60)));
+    }
+  });
+});
+
 // The whole file is built in memory, and one JavaScript string holds about
 // 512 MB: past about 500 MB of data the build stops ("Invalid string length",
 // measured: 480 MB of photos back up in 33 s at 3.8 GB, 560 MB do not). Photos
@@ -1113,6 +1182,35 @@ describe('the workflow (.github/workflows/backup.yml)', () => {
     assert.ok(secretLines.length >= 5);
     secretLines.forEach(l => assert.match(l, /^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z_]+ \}\}$/, l));
     assert.match(y, /BACKUP_PASSPHRASE: \$\{\{ secrets\.BACKUP_PASSPHRASE \}\}/);
+  });
+  test('least rights: it reads the repository and nothing more, runs only on its schedule or by hand, and gives the secrets to one step', () => {
+    // the only permission, at the top, for every job: read the code
+    assert.match(y, /^permissions:\n  contents: read\n\n/m);
+    assert.equal((y.match(/^\s*permissions:/gm) || []).length, 1, 'no job widens it');
+    assert.doesNotMatch(y, /: write\b|write-all|read-all|id-token/);
+    // never on a push or a pull request (a branch or a fork cannot make it run with the secrets)
+    const on = /^on:\n([\s\S]*?)\n\S/m.exec(y)[1];
+    assert.deepEqual((on.match(/^  ([a-z_]+):/gm) || []).map(l => l.trim()), ['schedule:', 'workflow_dispatch:']);
+    assert.doesNotMatch(y, /pull_request_target|secrets: inherit/);
+    assert.match(y, /^\s+timeout-minutes: \d+$/m);
+    // the secrets: in the environment of the backup step only, which runs the tool with no argument
+    const steps = y.split(/\n      - /).slice(1);
+    const withSecrets = steps.filter(st => st.includes('secrets.'));
+    assert.equal(withSecrets.length, 1, 'one step gets the secrets');
+    assert.match(withSecrets[0], /\n        run: node scripts\/backup\/nightly\/run\.js\n/);
+    assert.deepEqual((withSecrets[0].match(/secrets\.([A-Z_]+)/g) || []).sort(), ['secrets.BACKUP_LOGIN_EMAIL', 'secrets.BACKUP_LOGIN_PASSWORD', 'secrets.BACKUP_PASSPHRASE', 'secrets.REPORT_LOGIN_EMAIL', 'secrets.REPORT_LOGIN_PASSWORD']);
+    // "not configured" uploads nothing; a failed backup step fails the run, and the upload after it does not run
+    const upload = steps.find(st => st.includes('upload-artifact'));
+    assert.match(upload, /\n        if: steps\.backup\.outputs\.file != ''\n/);
+    assert.doesNotMatch(upload, /always\(\)|failure\(\)|continue-on-error/);
+    assert.doesNotMatch(y, /continue-on-error/);
+  });
+  test('the guide tells the owner the first backup is made by hand, and how to read the result', () => {
+    const guide = fs.readFileSync(path.join(ROOT, 'docs', 'backup.md'), 'utf8');
+    assert.match(guide, /only from the default branch/);
+    assert.match(guide, /\*\*Make the first backup by hand\*\*: Actions → "Database backup" → \*\*Run workflow\*\*/);
+    assert.match(guide, /\*\*Check the result\*\*/); assert.match(guide, /A green tick alone is not the proof: the artifact is\./);
+    assert.match(y, /runs a\n# schedule ONLY from the default branch/);
   });
   test('each schedule is its kind, kept 14 / 60 / 90 days', () => {
     const lines = y.split('\n');
