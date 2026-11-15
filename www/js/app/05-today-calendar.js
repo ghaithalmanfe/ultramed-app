@@ -448,6 +448,7 @@ function switchView(name){
   // The full greeting header belongs to Today; other views keep a slim strip
   document.body.classList.toggle('not-today', name!=='today');
   document.body.classList.toggle('on-today', name==='today');
+  msTheme();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   syncShell(name);
@@ -916,6 +917,7 @@ function msPaint(v, m, sig){
   const week = msWeekLine(v, msWeek(v, sig));
   set('msWork', v.kind === 'team' ? msTeamWorkHTML(v, m, week) : msVisitsHTML(v, m, week));
   set('msNext', v.kind === 'team' ? msNeedsHTML(v, m) : msNextHTML(v));
+  set('msFcChip', msFcChipHTML(m));                  // the phone's one line for the forecast (the fourth figure card's figure)
   set('msChart', msChartHTML(v, m));
   set('msDaily', msDailyHTML(v, m));
   set('msBrands', msBrandsHTML(v, m, P));
@@ -1085,7 +1087,7 @@ function renderTargetCard(v, m, P, sig){
     const cx = msMemo(sig, 'cx\u0001' + p.rep, () => crossInvoiceNote(p.rep, msDigest(sig)));
     const stale = staleTargetNote(p.rep);
     el.innerHTML = `<div class="ms-card ms-sales ms-hero">${msHeroHTML(v, m, P)}
-      ${t.visits > 0 || stale ? `<div class="ms-hstrip">${t.visits > 0 ? `<span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}${stale}</div>` : ''}
+      ${t.visits > 0 || stale ? `<div class="ms-hstrip${stale ? '' : ' only-vis'}">${t.visits > 0 ? `<span class="ms-hvis" style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}${stale}</div>` : ''}
       <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR</div></div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
     return;
   }
@@ -1166,7 +1168,7 @@ function msTeamWorkHTML(v, m, week){
       <div><span class="ms-l">${msT('Orders logged in the app')}</span><b data-ms="orders" data-value="${O ? O.count : ''}">${O ? msT(msCount(O.count, 'order', 'orders')) : '—'}</b>${O ? `<em data-ms="orders-value" data-value="${O.value}">${msKd(O.value)}</em>` : ''}</div>
       <div><span class="ms-l">${msT('New customers')}</span><b data-ms="newcustomers" data-value="${N && N.measurable ? N.count : ''}">${N && N.measurable ? msN(N.count) : '—'}</b>${N && !N.measurable ? `<em>${msT('not measured yet')}</em>` : blocked.length ? `<em>${msT('without')} ${msNames(blocked)}</em>` : ''}</div>
     </div>
-    <div class="ms-note">${msT('Orders logged in the app are not invoiced sales: sales come from the ERP files only.')}</div>`;
+    <div class="ms-note ph-l">${msT('Orders logged in the app are not invoiced sales: sales come from the ERP files only.')}</div>`;
   return html + week;
 }
 // A person: visits a day, doctors met and new accounts — the KPI scorecard's own figures: the numbers its
@@ -1215,7 +1217,10 @@ function msWeekLine(v, W){
   if(!W) return '';
   const S = W.sales;
   const lead = S && S.measured ? `<span>Sales this week (ERP-verified)</span>: <span data-ms="week-sales" data-value="${S.amount}">${msKd(S.amount)}</span>${S.missing.length ? ` (${msT('without')} ${msNames(S.missing.map(x => x.rep))})` : ''} · ` : '<span>This week</span>: ';
-  return `<div class="ms-week" id="heroCard">${lead}<span>${msCount(W.visits, 'visit', 'visits')}</span> · <span data-ms="week-orders" data-value="${W.orders}">${msCount(W.orders, 'order logged in the app', 'orders logged in the app')}</span> (${msKd(W.value)})${S && !S.measured ? ` · <span>${msWeekWhy(v, S.missing)}</span>` : ''}</div>`;
+  const long = `${lead}<span>${msCount(W.visits, 'visit', 'visits')}</span> · <span data-ms="week-orders" data-value="${W.orders}">${msCount(W.orders, 'order logged in the app', 'orders logged in the app')}</span> (${msKd(W.value)})${S && !S.measured ? ` · <span>${msWeekWhy(v, S.missing)}</span>` : ''}`;
+  // the phone: "This week · Sales 2,397 KWD · 23 visits · 3 orders" (the full line is read out; who is left out and why: in the ⓘ)
+  const short = `<span>${msT('This week')}</span> · ${S && S.measured ? `<span>${msT('Sales')}</span> ${msWhole(S.amount)} <span>${msT('KWD')}</span> · ` : ''}<span>${msT(msCount(W.visits, 'visit', 'visits'))}</span> · <span>${msT(msCount(W.orders, 'order', 'orders'))}</span>`;
+  return `<div class="ms-week" id="heroCard">${msPh(long, short)}</div>`;
 }
 
 // ---- the sales advisor (redesign): what the app itself works out for the view — no AI is connected ----
@@ -1297,6 +1302,10 @@ function msStatusHTML(v, m, P){
 // and the e-mail's rule). No time is shown: a plan entry carries when it was planned, not an appointment.
 function planDoneKeys(day){ return UMCore.planVisitKeys(visits.filter(x => x && x.date === day)); }
 function msAct(icon, title, sub, attrs, cls){ return `<button class="ms-ac"${attrs || ''}><span class="ic${cls ? ' ' + cls : ''}">${I(icon)}</span><div class="t"><div>${title}</div><div class="s">${sub}</div></div></button>`; }
+// the phone's foot of the next actions: the whole list (the plan card, in More details) and the advisor's sheet
+function msNextFoot(){ return `<div class="ms-nfoot"><button class="ms-nva" onclick="msGo('msPlanCard')"><span>${msT('View All')}</span>${I('arrowr')}</button><button class="ms-nrec" onclick="msAdvisorSheet()">${I('bulb')}<span>${msT('Recommendations')}</span></button></div>`; }
+// a line in two lengths: the full words (wider screens; on a phone read out only), and a phone's short form beside them
+function msPh(long, short){ return `<span class="ph-l">${long}</span><span class="ph-s" aria-hidden="true">${short}</span>`; }
 function msNextHead(v){
   const own = v.kind === 'team' || v.own;
   return `<div class="ms-ct"><span class="ms-ttl"><span>${msT(own ? 'Your Next Actions' : 'Next Actions')}</span></span><span class="ms-act"><button class="ms-va" onclick="msGo('msPlanCard')"><span>${msT('View All')}</span>${I('arrowr')}</button></span></div>`;
@@ -1318,7 +1327,7 @@ function msNextHTML(v){
   html += entries.length ? `<div class="ms-sum2">${msT(`Today's plan: ${done.length} of ${entries.length} done`)}</div>` : '';
   html += rows.length ? `<div class="ms-acts">${rows.join('')}</div>` : `<div class="ms-note">${msT(entries.length ? "All of today's plan is visited" : 'No plan for today yet')}</div>`;
   if(own && !left.length) html += `<button class="ms-btn" onclick="switchView('log')">${I('plus')} ${msT('Log a visit')}</button>${entries.length ? '' : `<button class="ms-btn ghost" onclick="openPlanDay()">${I('compass')} ${msT('Plan today')}</button>`}`;
-  return html;
+  return html + msNextFoot();
 }
 // The team: the follow-ups due, the customers to act on — the supervisor's next actions (with his own plan when he has one).
 function msNeedsHTML(v, m){
@@ -1343,7 +1352,7 @@ function msNeedsHTML(v, m){
     if(u.length + p.length) more = `<button class="ms-more" onclick="msActSheet()">${[u.length ? msT(`${u.length} under-performing`) : '', p.length ? msT(msCount(p.length, 'opportunity', 'opportunities')) : ''].filter(Boolean).join(' · ')} — ${msT('see all')} ${msChev()}</button>`;
   } else if(D && act && !act.measurable) rows.push(`<div class="ms-ac static"><span class="ic">${I('info')}</span><div class="t"><div>${msT('Customers to act on')}</div><div class="s">${msT('Not measured: no sales figure for this month yet')}</div></div></div>`);
   const dueLine = `<button class="ms-more" onclick="msGo('msDueCard')">${msT(due.length ? msCount(due.length, 'follow-up due', 'follow-ups due') : 'No follow-ups due')} · ${msT(due.length ? `${over} overdue · ${due.length - over} today` : 'All caught up')} ${msChev()}</button>`;
-  return msNextHead(v) + `<div class="ms-acts">${rows.join('')}</div>${dueLine}${more}${!D ? msWait(m) : ''}`;
+  return msNextHead(v) + `<div class="ms-acts">${rows.join('')}</div>${dueLine}${more}${!D ? msWait(m) : ''}` + msNextFoot();
 }
 // one customer to act on, as an action row (the same words and the same tap as msActItem)
 function msActRow(x, kind, v){
@@ -1352,7 +1361,8 @@ function msActRow(x, kind, v){
   const sub = kind === 'under'
     ? `${msT('Under-performing')}${who} · ${x.current > 0 ? `${msKd(x.current)} ${msT('this month, against an average of')} ${msKd(x.average)}` : `${msT('no invoice this month, average')} ${msKd(x.average)}`}`
     : `${msT('Opportunity')}${who} · ${msT(x.bought ? `bought in ${x.bought} of the last ${x.months} months` : x.months ? `no invoice in the last ${x.months} months` : 'no invoice this month')}${x.lastVisit ? ` · ${msT('last visit')} ${msDate(x.lastVisit)}` : ''}`;
-  return msAct(kind === 'under' ? 'trend' : 'target', `${x.cls ? `<span class="ms-cls" data-notr>${esc(x.cls)}</span> ` : ''}${msData(x.name)}`, sub, open != null ? ` data-c="${esc(String(open))}" onclick="openClinicDetail(this.dataset.c)"` : '', kind === 'under' ? 'warn' : '');
+  const short = `${msT(kind === 'under' ? 'Under-performing' : 'Opportunity')}${who}`;   // the phone: what it is and whose (the row's figures: read out, and in the customers' sheet)
+  return msAct(kind === 'under' ? 'trend' : 'target', `${x.cls ? `<span class="ms-cls" data-notr>${esc(x.cls)}</span> ` : ''}${msData(x.name)}`, msPh(sub, short), open != null ? ` data-c="${esc(String(open))}" onclick="openClinicDetail(this.dataset.c)"` : '', kind === 'under' ? 'warn' : '');
 }
 // ---- the four figure cards (the picture's row): the KPI score, today's field visits, the follow-ups due, the forecast ----
 // Each the screen's own figure, a tap from its list; a ▲/▼ only against a fair comparison, a sparkline only from a
@@ -1379,27 +1389,49 @@ function msDelta(d, title){
   const cls = d > 0 ? '' : d < 0 ? ' down' : ' flat', s = d > 0 ? '+' + d : d < 0 ? '−' + Math.abs(d) : '0';
   return `<span class="ms-kd${cls}" title="${esc(trOf(title) || title)}"><span class="tri" aria-hidden="true">${d > 0 ? '▲' : d < 0 ? '▼' : '='}</span><span data-notr dir="ltr">${s}</span><span class="sr"> ${msT(title)}</span></span>`;
 }
+// the forecast the fourth figure card and the phone's forecast line show: execDashboard's month-end figure at the pace so
+// far — against the target (forTarget and its %) when the view's people have one, else the whole amount; none once the
+// month is closed or before the month's figures are worked out
+function msFcPick(m){
+  const D = m && msOf(m.D), A = D ? (msOf(D.achievement) || {}) : {}, F = D ? msOf(D.forecast) : null;
+  const withT = A.pct != null && !!F && F.pct != null && F.forTarget != null;
+  return { F, withT, fc: F && !F.closed ? (withT ? F.forTarget : F.amount) : null };
+}
+// the phone's one line for the forecast: "Forecast ≈ 22,174 KWD · 106% estimate" — a tap opens its working (the ⓘ of the sales card)
+function msFcChipHTML(m){
+  const P = msFcPick(m);
+  if(P.fc == null) return '';
+  return `<button class="ms-fc" onclick="msHow('sales')"><span class="ms-fci">${I('trend2')}</span><span class="ms-fct"><span>${msT('Forecast')}</span> <b>≈ ${msKwd(P.fc)}</b>${P.withT ? ` · <b>${msN(P.F.pct + '%')}</b>` : ''} <span class="ms-est">${msT('estimate')}</span></span>${msChev()}</button>`;
+}
+// today's plan, by the one rule (planDoneKeys → UMCore.planVisitKeys: a field visit she was on): her planned clinics, and those reached
+function msPlanOf(r, keys){
+  const today = todayStr(), e = (((dayPlans[today] || {})[r]) || []).map(planEntryId).filter(id => clinics.some(c => c.id === id));
+  return { n: e.length, done: e.filter(id => keys.has(today + '|' + r + '|' + id)).length };
+}
+function msPlanCount(v){ const keys = planDoneKeys(todayStr()); return v.reps.reduce((s, r) => { const p = msPlanOf(r, keys); return { n: s.n + p.n, done: s.done + p.done }; }, { n: 0, done: 0 }); }
 function msKpisHTML(v, m, sig){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own, D = m && msOf(m.D), H = (m && m.H) || {};
   const A = D ? (msOf(D.achievement) || {}) : {}, F = D ? msOf(D.forecast) : null;
   const wait = `<span class="ms-wait">${msT(m && m.failed ? 'Not worked out on this device' : 'Calculating…')}</span>`;
-  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}${spark ? ' sp' : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${icon.charAt(0) === 'n' ? IF(icon) : I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
+  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}${spark ? ' sp' : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${icon.charAt(0) === 'n' ? IF(icon) : I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>${label[2] ? `<span class="kl-p">${msT(label[2])}</span>` : ''}` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
   const out = [];
   // 1 — the KPI score (the scorecard's 10 measures): the team = the average of the people of REPS who have one
   const K = msOf(H.kpi), score = K ? K.current : null;
   out.push(card('', 'users', team ? 'Team Performance' : own ? 'My Performance' : 'Performance', team ? '(Your Team)' : '', score != null ? msN(score + '%') : '—',
-    K ? (K.delta != null ? msDelta(K.delta, 'points against the same days last month') : `<span class="ms-ks">${msT(score != null ? 'KPI score out of 100' : 'No visit logged this month yet')}</span>`) : `<span class="ms-ks">${m ? '—' : wait}</span>`,
+    K ? (K.delta != null ? msDelta(K.delta, 'points against the same days last month') : `<span class="ms-ks${score != null ? '' : ' why'}">${msT(score != null ? 'KPI score out of 100' : 'No visit logged this month yet')}</span>`) : `<span class="ms-ks why">${m ? '—' : wait}</span>`,
     K ? msSpark(K.months.map(x => x.score)) : '', team ? 'openKpiScorecard()' : 'msKpi()', 'kpi', score, 'KPI score out of 100 (the KPI scorecard), month by month'));
   // 2 — today's field visits of the view's people (a joint visit once; calls and phone orders are not visits)
   const VD = UMCore.homeVisitDays(visits || [], v.reps, todayStr(), 10);
-  out.push(card('', 'ncal', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week'), msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
+  // the phone's Today row adds today's plan under the number: planned clinics a field visit reached, of those planned (msPlanCount — the plan card's rule)
+  const PL = msPlanCount(v), planTx = PL.n ? `<span class="ms-ks ms-kplan">${msT(`Plan ${PL.done} of ${PL.n}`)}</span>` : '';
+  out.push(card('', 'ncal', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week') + planTx, msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
   // 3 — the follow-ups due (overdue + today), "Needs Attention" only when one is overdue; no sparkline (no history to rebuild it from)
   const due = team ? visibleDueClinics() : visibleDueClinics().filter(c => c.rep === v.rep), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
-  out.push(card(over ? 'att' : '', 'clip2', 'Pending Follow-ups', '', msN(due.length),
-    over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
+  out.push(card(over ? 'att' : '', 'clip2', ['Pending Follow-ups', 'Pending Follow-ups', 'Follow-ups due'], '', msN(due.length),
+    over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span><span class="ms-kdot" aria-hidden="true"></span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
     '', "msGo('msDueCard')", 'due', due.length));
   // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result
-  const withT = A.pct != null && F && F.pct != null && F.forTarget != null, fc = F && !F.closed ? (withT ? F.forTarget : F.amount) : null;
+  const FP = msFcPick(m), withT = FP.withT, fc = FP.fc;
   let fSpark = '';
   if(fc != null){
     const Dy = msOf(D.daily), Pr = Dy && msOf(Dy.pair), days = withT && Pr ? Pr.days : Dy && Dy.days;
@@ -1666,15 +1698,17 @@ function msRowsHTML(v, m){
   const sd = D && msOf(D.sameDays), g = msGrowth(sd);
   rows.push(row(own ? 'My sales day by day' : 'Sales day by day', D ? (g ? `${g} ${msT('vs the same days last month')}` : msT(sd && !sd.measured ? (sd.why === 'nocurrent' ? 'No sales figure for this month yet.' : 'No sales figure for the month before') : 'In the Report tab')) : wait, `msGoReports(this.dataset.r)`, dr));
   const B = D && msOf(D.byBrand), bp = B && Array.isArray(B.rows) ? B.rows.filter(b => b && b.pct != null).map(b => b.pct) : [];
-  rows.push(row(own ? 'My brands' : 'Brands', D ? (bp.length ? msT(bp.length === 1 ? `${bp[0]}% of the brand target` : `between ${Math.min.apply(null, bp)}% and ${Math.max.apply(null, bp)}% of the brand targets`) : msT('In the month report')) : wait, `renderMonthClose('${msMonth()}')`));
+  const bLo = bp.length ? Math.min.apply(null, bp) : null, bHi = bp.length ? Math.max.apply(null, bp) : null;
+  rows.push(row(own ? 'My brands' : 'Brands', D ? (bp.length ? (bp.length === 1 ? msT(`${bp[0]}% of the brand target`) : msPh(msT(`between ${bLo}% and ${bHi}% of the brand targets`), msT(`${bLo}%–${bHi}% of brand targets`))) : msT('In the month report')) : wait, `renderMonthClose('${msMonth()}')`));
   const C = D && msOf(D.customers), act = D && msOf(D.act);
   const top = C && Array.isArray(C.accounts) ? C.accounts.filter(a => a && !a.channel && a.net > 0)[0] : null;
   const nAct = act && act.measurable ? (act.under || []).length + (act.potential || []).length : 0;
-  rows.push(row(own ? 'My customers' : 'Customers', D ? [nAct ? msT(msCount(nAct, 'to act on', 'to act on')) : '', top ? `${msT('biggest:')} ${msData(top.name)}` : ''].filter(Boolean).join(' · ') || msT('Who bought this month, on the Clinics screen') : wait,
+  const cParts = [nAct ? msT(msCount(nAct, 'to act on', 'to act on')) : '', top ? `${msT('biggest:')} ${msData(top.name)}` : ''].filter(Boolean);
+  rows.push(row(own ? 'My customers' : 'Customers', D ? (cParts.length > 1 ? msPh(cParts.join(' · '), cParts[0]) : cParts[0] || msT('Who bought this month, on the Clinics screen')) : wait,
     nAct ? 'msActSheet()' : 'msGoClinics(this.dataset.r)', dr));
   if(!team){
     const O = D && msOf(D.orders);
-    rows.push(row(own ? 'My orders in the app' : 'Orders in the app', O ? `${msT(msCount(O.count, 'order', 'orders'))} · ${msKd(O.value)} · ${msT('not invoiced sales')}` : D ? '—' : wait, `msGoReports(this.dataset.r)`, dr));
+    rows.push(row(own ? 'My orders in the app' : 'Orders in the app', O ? msPh(`${msT(msCount(O.count, 'order', 'orders'))} · ${msKd(O.value)} · ${msT('not invoiced sales')}`, `${msT(msCount(O.count, 'order', 'orders'))} · ${msKd(O.value)}`) : D ? '—' : wait, `msGoReports(this.dataset.r)`, dr));
   }
   return `<div class="ms-items">${rows.join('')}</div>`;
 }
@@ -1685,8 +1719,24 @@ function msFold(id){
   _msOpen[id] = !el.classList.contains('open');
   el.classList.toggle('open', _msOpen[id]);
 }
+// ---- the phone (≤ 600 px): the main view ends with "More details"; everything else waits behind it until tapped ----
+let _msMoreOpen = false;
+function msPhone(){ return !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches); }
+function msMoreToggle(open){
+  _msMoreOpen = open == null ? !_msMoreOpen : !!open;
+  const g = document.getElementById('msGrid'), b = document.getElementById('msMore');
+  if(g) g.classList.toggle('ms-open', _msMoreOpen);
+  if(b){ b.setAttribute('aria-expanded', _msMoreOpen ? 'true' : 'false'); const t = b.querySelector('.mt'); if(t){ t.textContent = _msMoreOpen ? 'Fewer details' : 'More details'; translateTree(t); } }
+}
+// the phone's status bar follows the main screen's dark page (the browser's own colour everywhere else)
+function msTheme(){
+  const meta = document.querySelector('meta[name="theme-color"]'); if(!meta) return;
+  if(!meta.dataset.light) meta.dataset.light = meta.getAttribute('content') || '';
+  meta.setAttribute('content', document.body.classList.contains('on-today') && msPhone() ? '#0C2C23' : meta.dataset.light);
+}
 function msGo(id){
   const el = document.getElementById(id); if(!el) return;
+  if(msPhone() && !_msMoreOpen && el.closest('#msGrid')) msMoreToggle(true);   // a card behind "More details": open it first
   if(!el.classList.contains('open') && !(window.matchMedia && window.matchMedia('(min-width: 1024px)').matches)){ _msOpen[id] = true; el.classList.add('open'); }
   try{ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }catch(e){ el.scrollIntoView(); }
 }
@@ -1932,6 +1982,7 @@ function renderToday(){
   renderErpNudge();
   renderDocCardsNudge();
   document.body.classList.toggle('on-today', activeView === 'today');
+  msTheme();
   const v = msView();
   if(!v) return;
   const all = visibleDueClinics();
@@ -2023,8 +2074,8 @@ function msAgo(x){
 var _msNudge = { cards: 0, bdayToday: 0 };                // what the doctor-cards nudge and the occasions card hold (they fill it as they draw; a var: 10-doctors-products.js writes it)
 function msFoldSums(v, due){
   const set = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
-  const today = todayStr(), dayObj = dayPlans[today] || {}, keys = planDoneKeys(today);
-  const planOf = r => { const e = (dayObj[r] || []).map(planEntryId).filter(id => clinics.some(c => c.id === id)); return { n: e.length, done: e.filter(id => keys.has(today + '|' + r + '|' + id)).length }; };
+  const today = todayStr(), keys = planDoneKeys(today);
+  const planOf = r => msPlanOf(r, keys);
   const lr = v.kind === 'person' ? v.rep : null;
   // the missed planned visits renderMissedPlans lists for this view (before it keeps 8)
   let missed = 0;

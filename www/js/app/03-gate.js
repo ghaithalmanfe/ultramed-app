@@ -27,6 +27,7 @@ function switchUser(){
 }
 function showGateScreen(){
   document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
+  if(typeof msTheme === 'function') msTheme();   // nor its dark status bar on a phone (05, called at run time)
   renderGate();
   document.getElementById('gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';

@@ -1261,6 +1261,9 @@
   @media (min-width:1024px){ #view-today .ms-recent > .ms-ct .ms-t > span:first-child{font-size:20.3px !important; letter-spacing:-.02em;} }
   .ms-week{border-top-color:var(--p-line);}
 
+  /* the phone's own parts of the main screen (≤ 600 px, below): hidden on every wider screen */
+  .ms-fcw, .ms-dtl, .ms-nfoot, .ms-kc .ms-kplan, .ms-kc .ms-kdot, .ph-s, .ms-kl .kl-p{display:none;}
+
   /* ---- phone and tablet: one column, in the picture's order ---- */
   @media (max-width:1023px){
     #view-today .ms-head{margin:0; gap:0;}
@@ -1358,6 +1361,105 @@
     nav.bottom button.nav-tab.nav-log .nav-ic .svgi{width:26px; height:26px; stroke-width:2.5;}
     nav.bottom button.nav-tab.nav-log.active::after{display:none;}
   }
+  /* ---- the phone's main screen (≤ 600 px; the owner's review of v125): a matte dark-green page and ONE look at the month
+     and the day — the target card, the Today row (field visits with today's plan, follow-ups due, the KPI score), the
+     team ranking (supervisor), the next actions and the forecast line — then "More details", which keeps every other card
+     closed until it is tapped (#msGrid.ms-open, msMoreToggle). Each fact shows once; every line is a figure and a word or
+     two (the full words stay for a screen reader, .ph-l; the ⓘ sheets keep the explanations). Flat colours only. ---- */
+  @media (max-width:600px){
+    body.on-today{--hm-page:#0C2C23; --hm-card:#143C31; --hm-edge:rgba(255,255,255,.10); --hm-bar:#0A251D; --hm-sub:rgba(255,255,255,.74);
+      background-color:var(--hm-page); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");}
+    /* the head: the white wordmark on the page, the bell and the initials light */
+    body.on-today .tb-word{color:#fff;}
+    body.on-today .tb-tag{color:var(--hm-sub);}
+    body.on-today .top-bell{color:#fff;}
+    body.on-today .bell-n{box-shadow:0 0 0 2px var(--hm-page);}
+    body.on-today header.top .stamp, body.on-today header.top .stamp.sup{background:rgba(255,255,255,.12); color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);}
+    /* the bottom bar on the main screen: dark matte, white icons, the active tab mint */
+    body.on-today nav.bottom{background:var(--hm-bar); border-top:1px solid rgba(255,255,255,.08);}
+    body.on-today nav.bottom button.nav-tab{color:rgba(255,255,255,.78);}
+    body.on-today nav.bottom button.nav-tab.active{color:var(--p-mint);}
+    body.on-today nav.bottom button.nav-tab.active::after{background:var(--p-mint);}
+    body.on-today nav.bottom button.nav-tab.nav-log .nav-ic{background:var(--p-mint) !important; color:#05251F; border-color:var(--hm-bar); box-shadow:none;}
+    /* the order: target card, Today row, the team ranking, next actions, the forecast line, More details — then the rest */
+    .ms-grid{gap:10px;}
+    .ms-grid > *{order:40;}
+    .ms-vteam > #msSales{order:1;} .ms-vperson > #targetCard > .ms-hero{order:1;}
+    .ms-grid > #msKpis{order:2;}
+    .ms-vteam > #targetCard > .ms-people{order:3;}
+    .ms-grid > #msNext{order:4;}
+    .ms-grid > #msFcChip{order:5; display:block;} .ms-grid > #msFcChip:empty{display:none;}
+    .ms-grid > #msMore{order:6; display:flex;}
+    .ms-grid > #msRows{order:7;} .ms-grid > #msWork{order:8;} .ms-grid > #msPlanCard{order:9;} .ms-grid > #msDueCard{order:10;}
+    .ms-grid > #msTaskCard{order:11;} .ms-grid > #msRecentCard{order:12;} #targetCard > .ms-cxcard{order:13;}
+    .ms-grid > #msAdvisor{display:none;}   /* its sheet: "Recommendations" under the next actions */
+    .ms-grid:not(.ms-open) > #msRows, .ms-grid:not(.ms-open) > #msWork, .ms-grid:not(.ms-open) > .ms-fold, .ms-grid:not(.ms-open) > #targetCard > .ms-cxcard{display:none;}
+    #msRows [data-row="kpi"]{display:none;}   /* the KPI score is the Today row's */
+    body.on-today #view-today .ms-card{box-shadow:none; border-color:transparent;}
+    /* a line's phone form; its full words stay for a screen reader */
+    #view-today .ph-s{display:inline;}
+    #view-today .ph-l{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
+    /* the target card: flat matte green one step lighter than the page, a hairline edge; no gradient, no shine, no glow */
+    body.on-today #view-today .ms-hero{background:var(--hm-card); border:1px solid var(--hm-edge); box-shadow:none;}
+    body.on-today #view-today .ms-hero::before, body.on-today .ms-hdeco{display:none;}
+    body.on-today .ms-ring .trk{stroke:rgba(255,255,255,.12);}
+    body.on-today .ms-ring .val{stroke:var(--p-mint); filter:none;}
+    body.on-today .ms-hcol.m1 .ms-hbar{background:rgba(255,255,255,.14);}
+    body.on-today .ms-hbar i{background:var(--p-mint);}
+    .ms-hfoot{padding:18px 20px 20px 22px;}
+    .ms-hcol.m1{padding-inline-end:6px;}
+    .ms-hstrip .ms-hvis, .ms-hstrip.only-vis{position:absolute !important; inset-inline:0; top:0; margin:0; clip-path:inset(50%); opacity:0; pointer-events:none;}   /* her visits: the Today row */
+    /* the Today row: three white tiles — the number, its icon, a word or two (the ▲/▼ and sparklines stay on wider screens and in the ⓘ) */
+    .ms-kpis{grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
+    .ms-kc.fc{display:none;}   /* the forecast: its own line below */
+    .ms-kc{min-height:0; padding:12px 6px 11px; background:#fff; border:none; box-shadow:none; border-radius:16px; justify-content:flex-start;}
+    .ms-kc .ms-kic{width:26px; height:26px; margin-bottom:3px;}
+    .ms-kc .ms-kic .svgi, .ms-kc .ms-kic .svgf{width:24px; height:24px;}
+    .ms-kc .ms-kv{order:-1; font-size:24px; line-height:1.2; margin:0 0 2px;}
+    .ms-kc .ms-kl{font-size:12.5px; font-weight:500; color:var(--p-sub); line-height:1.3;}
+    .ms-kc .ms-kl small{display:none;}
+    .ms-kc .ms-kl .kl-d, .ms-kc .ms-kl .kl-m{display:none;} .ms-kc .ms-kl .kl-p{display:inline;}   /* (only the follow-ups and the forecast cards have the two forms; the forecast card is not on a phone) */
+    .ms-kc .ms-kd, .ms-kc .ms-chip, .ms-kc .ms-spark, .ms-kc .ms-ks:not(.why):not(.ms-kplan){display:none;}
+    .ms-kc .ms-ks.why{font-size:11.5px; margin-top:3px;}
+    .ms-kc .ms-kplan{display:block; font-size:12px; font-weight:600; color:var(--p-g6); margin-top:4px;}
+    .ms-kc .ms-kdot{display:block; position:absolute; top:10px; inset-inline-end:10px; width:10px; height:10px; border-radius:50%; background:#D92D20; box-shadow:0 0 0 2px #fff;}
+    /* the team ranking: three compact rows — initials, name, the bar, %, the amount (View All: everyone, with the full words) */
+    .ms-people{padding:14px 16px 8px !important;}
+    #view-today .ms-people > .ms-ct{font-size:16px; margin-bottom:6px; min-height:44px; flex-wrap:nowrap;}   /* View All and the ⓘ: 44 px thumb targets clear of the first row */
+    #view-today .ms-people > .ms-ct small{display:none;}
+    .ms-people .ms-lb{grid-template-columns:30px minmax(0,1fr) 52px 38px auto; column-gap:9px; min-height:50px; padding:5px 0;}
+    .ms-people .ms-lb .rk, .ms-people .ms-lb .v{display:none;}
+    .ms-people .ms-lb .bar{display:block; height:6px;}
+    .ms-people .ms-lb .det{grid-column:2 / -1;}
+    .ms-people .ms-person.team{padding-inline-start:39px;}
+    .ms-people:not(.ms-all) .ms-lbw > .ms-lb:nth-child(n+4){position:absolute !important; inset-inline:0; top:0; clip-path:inset(50%); opacity:0; pointer-events:none;}
+    /* the next actions: a white card, three rows at most, then View All and Recommendations */
+    #view-today .ms-nexta{background:#fff; border:none; box-shadow:none; border-radius:var(--p-radius); padding:14px 16px 2px;}
+    #view-today .ms-nexta > .ms-ct{font-size:16px; margin-bottom:4px;}
+    #view-today .ms-nexta > .ms-ct .ms-va, #view-today .ms-nexta .ms-sum2, #view-today .ms-nexta .ms-more{display:none;}
+    #view-today .ms-nexta .ms-acts > :nth-child(n+4){display:none;}
+    #view-today .ms-nexta .ms-ac{min-height:52px; padding:6px 0;}
+    #view-today .ms-nexta .ms-ac .ic{width:36px; height:36px;}
+    #view-today .ms-nexta .ms-ac .t > div:first-child{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}   /* one line a row: a long clinic name ends in "…" (the row opens it) */
+    .ms-nfoot{display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid var(--p-line); margin-top:4px;}
+    .ms-nfoot button{display:inline-flex; align-items:center; gap:7px; min-height:46px; padding:0 2px; border:none; background:none; font:inherit; font-size:14px; font-weight:600; cursor:pointer;}
+    .ms-nfoot .ms-nva{color:var(--p-green);}
+    .ms-nfoot .ms-nrec{color:var(--p-sub);}
+    .ms-nfoot .svgi{width:17px; height:17px; stroke-width:2.2;}
+    [dir="rtl"] .ms-nfoot .ms-nva .svgi{transform:scaleX(-1);}
+    /* the forecast: one line on the page */
+    .ms-fc{display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:8px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.07); color:#fff; font:inherit; font-size:14.5px; text-align:start; cursor:pointer;}
+    .ms-fc .ms-fci{display:flex; color:var(--p-mint);} .ms-fc .ms-fci .svgi{width:20px; height:20px; stroke-width:2.2;}
+    .ms-fc .ms-fct{flex:1; min-width:0;}
+    .ms-fc b{font-weight:700;} .ms-fc b small{font-size:inherit; font-weight:600;}
+    .ms-fc .ms-est{color:var(--hm-sub); font-size:12.5px;}
+    .ms-fc .ms-chev{color:var(--hm-sub); width:16px; height:16px;}
+    /* More details: closed, the page ends here */
+    .ms-dtl{align-items:center; justify-content:center; gap:8px; width:100%; min-height:50px; border-radius:14px; border:1px solid rgba(255,255,255,.22); background:none; color:#fff; font:inherit; font-size:15px; font-weight:600; cursor:pointer;}
+    .ms-dtl .ms-chev{color:#fff; width:18px; height:18px; transform:rotate(90deg);}
+    .ms-grid.ms-open > .ms-dtl .ms-chev{transform:rotate(-90deg);}
+    body.on-today #view-today .ms-whose{color:var(--hm-sub);}
+  }
   @media (max-width:380px){
     .ms-hin{grid-template-columns:112px minmax(0,1fr); column-gap:20px; padding-inline:16px;}
     .ms-hring{width:112px; height:112px;}
@@ -1365,6 +1467,10 @@
     .ms-hfoot{padding-inline:16px;}
     .ms-hfoot .ms-hd{font-size:14px;}
     .ms-kv{font-size:22px;}
+    .ms-rc > span{max-width:78px; line-height:1.2;}   /* "Target Achieved" on two lines inside the 112 px ring */
+    .ms-people .ms-lb{grid-template-columns:30px minmax(0,1fr) 32px 38px auto; column-gap:8px;}   /* the ranking: room for the name */
+    .ms-people .ms-lb .a{padding-inline-start:2px;}
+    .ms-people .ms-lb .n, .ms-people .ms-lb .p, .ms-people .ms-lb .a{font-size:13.5px;}
   }
 
   /* ---- desktop: the picture at 1440 × 1226 ---- */
@@ -2476,6 +2582,9 @@
       <section class="ms-card ms-chart" id="msChart"></section>
       <section class="ms-card ms-adv" id="msAdvisor"></section>
       <section class="ms-card ms-nexta" id="msNext"></section>
+      <!-- The phone (≤ 600 px): the forecast in one line, then "More details" — the cards after it stay closed until it is tapped. Hidden on wider screens. -->
+      <div class="ms-fcw" id="msFcChip"></div>
+      <button type="button" class="ms-dtl" id="msMore" aria-expanded="false" onclick="msMoreToggle()"><span class="mt">More details</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <section class="ms-card ms-photo" id="msPhoto" aria-hidden="true"><p><span>Driving</span><span>Better Oral Care</span><span>Together</span></p><i></i></section>
       <section class="ms-card ms-status" id="msStatus"></section>
       <section class="ms-card" id="msWork"></section>

@@ -104,6 +104,34 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       // the whole screen as written, hidden parts too (laptop-only cards on a phone, folded cards), less the cross-invoice notice (the owner's v100 exception)
       html: (() => { const r = document.getElementById('view-today').cloneNode(true); r.querySelectorAll('.ms-cx').forEach(e => e.remove()); return r.innerHTML; })() };
   });
+  // the phone's main view (≤ 600 px, the owner's review of v125): what is on screen — a box with a size, not clipped to a pixel
+  // for a screen reader, not see-through — and each fact's places; More details closed, none of what it holds may show
+  const phoneView = () => ev(() => {
+    const on = el => !!el && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 2 && el.getBoundingClientRect().height > 2 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+    const any = sel => [...document.querySelectorAll(sel)].some(on);
+    const box = el => { if(!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top + scrollY), w: Math.round(b.width), h: Math.round(b.height) }; };
+    const team = document.getElementById('msGrid').classList.contains('ms-vteam');
+    // each fact and every place the screen can show it: on the phone's main view exactly one of them shows
+    const FACTS = {
+      'follow-ups due': ['#msKpis [data-ms="due"]', '#msNext .ms-more', '#msDueCard', '#msAdvisor'],
+      "today's plan": ['#msKpis .ms-kplan', '#msNext .ms-sum2', '#msPlanCard'],
+      'field visits': ['#msKpis [data-ms="today-visits"]', '#targetCard .ms-hvis', '#msWork', '#targetCard .ms-lb .v'],
+      'the amount a day': ['#view-today .ms-hfoot', '#msAdvisor'],
+      'the KPI score': ['#msKpis [data-ms="kpi"]', '#msRows [data-row="kpi"]'],
+      'the forecast': ['#msFcChip .ms-fc', '#msKpis .ms-kc.fc'],
+    };
+    const facts = Object.fromEntries(Object.entries(FACTS).map(([k, sels]) => [k, sels.filter(any)]));
+    const details = ['#msRows', '#msWork', '#msPlanCard', '#msDueCard', '#msTaskCard', '#msRecentCard', '#targetCard .ms-cxcard', '#msAdvisor', '#msChart', '#msStatus'].filter(any);
+    const tiles = [...document.querySelectorAll('#msKpis .ms-kc')].filter(on).map(box);
+    const lb = [...document.querySelectorAll('#targetCard .ms-lbw > .ms-lb')].filter(on);
+    const more = document.getElementById('msMore');
+    return { team, facts, details, tiles, deltas: [...document.querySelectorAll('#msKpis .ms-kd, #msKpis .ms-spark, #msKpis .ms-chip')].filter(on).length,
+      head: box(document.querySelector('header.top')), sales: box(document.querySelector(team ? '#msSales' : '#targetCard .ms-hero')), people: team ? box(document.querySelector('#targetCard .ms-people')) : null,
+      next: box(document.getElementById('msNext')), chip: box(document.querySelector('#msFcChip .ms-fc')), more: box(more), expanded: more && more.getAttribute('aria-expanded'),
+      lbRows: lb.length, lbParts: lb.slice(0, 1).map(r => ['.rk', '.av', '.n', '.bar', '.p', '.a', '.v'].filter(s => on(r.querySelector(s))).join(' ')).join(''),
+      nextRows: [...document.querySelectorAll('#msNext .ms-ac')].filter(on).length, recs: on(document.querySelector('#msNext .ms-nrec')), viewAll: on(document.querySelector('#msNext .ms-nva')),
+      doc: document.documentElement.scrollHeight, vh: innerHeight, page: getComputedStyle(document.body).backgroundColor };
+  });
   const r2 = n => Math.round(n * 100) / 100;
   const whole = n => Math.round(n).toLocaleString('en-US');   // the picture's amounts: whole KWD with thousands separators (data-value keeps the fils)
 
@@ -344,33 +372,40 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   check('Rep: her growth against the same days last month = the supervisor\'s view of her', rep.cmp === mSup.cmp && rep.cmp != null, { rep: rep.cmp, sup: mSup.cmp });
   check('Rep: visits a day, this week, doctors, new accounts = kpiScorecard for her — and the same as on the supervisor\'s view of her', rep.perdayVisits === mSup.perdayVisits && rep.weekVisits === mSup.weekVisits && rep.doctors === mSup.doctors && rep.accounts === mSup.accounts && rep.perdayVisits === kv(mTruth.visits, /^([\d.]+) a day/),
     { rep: [rep.perdayVisits, rep.weekVisits, rep.doctors, rep.accounts], sup: [mSup.perdayVisits, mSup.weekVisits, mSup.doctors, mSup.accounts] });
-  const kpiRow = await ev(() => { const r = document.querySelector('#msRows [data-row="kpi"]'); return r ? r.innerText.replace(/\s+/g, ' ') : ''; });
-  check('Rep: the KPI score out of 100 = kpiScorecard (the phone\'s one-tap row)', new RegExp('Performance score \\(KPI\\) ' + rTruth.kpi + ' of 100').test(kpiRow), { kpiRow, kpi: rTruth.kpi });
+  const kpiRow = await ev(() => { const r = document.querySelector('#msRows [data-row="kpi"]'); return r ? r.textContent.replace(/\s+/g, ' ') : ''; });
+  check('Rep: the KPI score out of 100 = kpiScorecard — on her phone the Today row\'s figure, and the one-tap row of a wider screen (601–1023 px)', rep.kpi === rTruth.kpi && new RegExp('Performance score \\(KPI\\)\\s*' + rTruth.kpi + ' of 100').test(kpiRow), { tile: rep.kpi, kpiRow, kpi: rTruth.kpi });
   const leak = t => ['Renova', 'Ghaith', 'رانوفا', 'غيث', 'Team', 'الفريق'].filter(n => t.includes(n)).concat(rTruth.others.filter(x => t.includes(x) || t.includes(amt(+x)))).concat(t.includes(rTruth.tt.goal.toFixed(2)) || t.includes(rTruth.tt.ach.toFixed(2)) || t.includes(amt(rTruth.tt.goal)) || t.includes(amt(rTruth.tt.ach)) ? ['team total'] : []);
   check('Rep (English): only her own — no other person\'s name or figure, no team total, no leaderboard — in what shows and in the hidden parts', leak(rep.view).length === 0 && leak(rep.html).length === 0 && rep.people.length === 0 && /ms-vperson/.test(rep.grid), { shown: leak(rep.view), html: leak(rep.html) });
   await act(() => msOpenPerson('Renova')); await ready();
   const still = await shown();
   check('Rep: the switch cannot be forced (ownRepOnly): asking for another person keeps her own screen', still.sales === rTruth.amount && leak(still.view).length === 0, leak(still.view));
-  const phone = await ev(() => {
-    const r = id => { const b = (document.getElementById(id) || document.querySelector(id)).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
-    const nav = document.getElementById('bottomNav').getBoundingClientRect(), log = document.querySelector('#bottomNav button[data-view="log"]').getBoundingClientRect();
-    const kpis = [...document.querySelectorAll('#msKpis .ms-kc')].map(e => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top) }; });
-    return { sales: r('#targetCard .ms-hero'), work: r('msWork'), next: r('msNext'), adv: r('msAdvisor'), kpis, nav: { top: Math.round(nav.top), bottom: Math.round(nav.bottom), w: Math.round(nav.width), h: Math.round(nav.height) },
-      log: { top: Math.round(log.top), bottom: Math.round(log.bottom), w: Math.round(log.width), h: Math.round(log.height) }, vh: innerHeight, vw: innerWidth, sw: document.documentElement.scrollWidth };
-  });
-  // redesign (the owner's final home design): her target card first, her four figures two a row, her advisor, her next step, then her visits
-  check('Phone 390×844: one column — her target card first, then her four figures two a row, her advisor, her next actions and her visits, each the width of the screen',
-    phone.sales.x === phone.adv.x && phone.adv.x === phone.next.x && phone.next.x === phone.work.x && phone.sales.w >= 340 && phone.adv.w >= 340
-    && phone.kpis.length === 4 && phone.kpis[0].y === phone.kpis[1].y && phone.kpis[2].y === phone.kpis[3].y && phone.kpis[2].y > phone.kpis[0].y
-    && phone.sales.y < phone.kpis[0].y && phone.kpis[3].y < phone.adv.y && phone.adv.y < phone.next.y && phone.next.y < phone.work.y, phone);
-  check('Phone: the fixed bottom navigation, with "Log visit" in it (a thumb target ≥ 44 px) on the first screen', phone.nav.bottom === phone.vh && phone.nav.w === phone.vw && phone.nav.h < 120 && phone.log.top >= phone.vh - 120 && phone.log.h >= 44 && phone.log.w >= 44, phone);
+  const nav = await ev(() => { const n = document.getElementById('bottomNav').getBoundingClientRect(), l = document.querySelector('#bottomNav button[data-view="log"]').getBoundingClientRect();
+    return { nav: { top: Math.round(n.top), bottom: Math.round(n.bottom), w: Math.round(n.width), h: Math.round(n.height) }, log: { top: Math.round(l.top), w: Math.round(l.width), h: Math.round(l.height) }, vh: innerHeight, vw: innerWidth }; });
+  const pv = await phoneView();
+  const below = (a, b) => !!a && !!b && a.y + a.h <= b.y;
+  // the owner's review of v125: one column, in this order — the head, her target card, the Today row (three figures side by side),
+  // her next actions, the forecast line, then "More details"; nothing of what it holds shows, and the page ends with it
+  check('Phone 390×844 (her phone): one column in the owner\'s order — the head, her target card, the Today row (three figures side by side), her next actions, the forecast line, then "More details", each the width of the screen',
+    below(pv.head, pv.sales) && below(pv.sales, pv.tiles[0]) && pv.tiles.length === 3 && pv.tiles.every(t => t.y === pv.tiles[0].y) && below(pv.tiles[0], pv.next) && below(pv.next, pv.chip) && below(pv.chip, pv.more)
+      && [pv.sales, pv.next, pv.chip, pv.more].every(b => b.x === pv.sales.x && b.w >= 340), pv);
+  check('Phone: each fact shows once on her main view — follow-ups due, today\'s plan, field visits, the amount a day, the KPI score and the forecast each in one place; no ▲/▼ or sparkline in the Today row; the advisor not on the page (its sheet: "Recommendations" under her next actions, three rows at most, then View All)',
+    Object.values(pv.facts).every(x => x.length === 1) && pv.facts['the forecast'][0] === '#msFcChip .ms-fc' && pv.deltas === 0 && pv.recs && pv.viewAll && pv.nextRows >= 1 && pv.nextRows <= 3, { facts: pv.facts, deltas: pv.deltas, recs: pv.recs, viewAll: pv.viewAll, rows: pv.nextRows });
+  check('Phone: "More details" closed — nothing it holds shows (rows, visits card, plan, follow-ups, tasks, recent activity, the cross-invoice notice) and the page ends with it: her main view ≤ 1.3 screens (390×844)',
+    !!pv.more && pv.details.length === 0 && pv.expanded === 'false' && pv.doc <= Math.round(1.3 * pv.vh) && pv.doc - (pv.more.y + pv.more.h) < 160, { details: pv.details, doc: pv.doc, moreBottom: pv.more ? pv.more.y + pv.more.h : null, screens: Math.round(pv.doc / pv.vh * 100) / 100 });
+  check('Phone: the main screen\'s page is a flat dark green (no gradient on the page or the target card)', /^rgb\(12, 44, 35\)$/.test(pv.page) && await ev(() => !/gradient/.test(getComputedStyle(document.body).backgroundImage.replace(/url\([^)]*\)/g, '')) && getComputedStyle(document.querySelector('#targetCard .ms-hero')).backgroundImage === 'none'), pv.page);
+  check('Phone: the fixed bottom navigation, with "Log visit" in it (a thumb target ≥ 44 px) on the first screen', nav.nav.bottom === nav.vh && nav.nav.w === nav.vw && nav.nav.h < 120 && nav.log.top >= nav.vh - 120 && nav.log.h >= 44 && nav.log.w >= 44, nav);
   const fold = (await act(() => {
+    const on = el => !!el && el.getClientRects().length > 0 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+    const ids = ['msRows', 'msWork', 'msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'];
+    document.getElementById('msMore').click();
+    const opened = ids.filter(id => on(document.getElementById(id))), expanded = document.getElementById('msMore').getAttribute('aria-expanded');
     const body = () => getComputedStyle(document.querySelector('#msDueCard .ms-body')).display;
     const before = body(); document.querySelector('#msDueCard > .ms-ct').click(); const after = body();
-    const rows = [...document.querySelectorAll('#msRows .ms-item')].map(e => e.innerText.split('\n')[0]);
-    return { before, after, rows, rowsShown: getComputedStyle(document.getElementById('msRows')).display !== 'none', due: document.getElementById('dueList').innerText.length };
-  })) || { rows: [] };
-  check('Phone: the rest is one tap away — the follow-ups open in place, the other details are rows (KPI, day by day, brands, customers, orders)', fold.before === 'none' && fold.after === 'block' && fold.due > 0 && fold.rowsShown && fold.rows.length >= 5, fold);
+    const rows = [...document.querySelectorAll('#msRows .ms-item')].filter(on).map(e => e.innerText.split('\n')[0]);
+    return { opened, expanded, before, after, rows, due: document.getElementById('dueList').innerText.length };
+  })) || { rows: [], opened: [] };
+  check('Phone: "More details" opens the rest in place — the rows (day by day, brands, customers, orders), the visits card, the plan, follow-ups, tasks and recent activity; the follow-ups open in place',
+    fold.opened.length === 6 && fold.expanded === 'true' && fold.before === 'none' && fold.after === 'block' && fold.due > 0 && fold.rows.length === 4, fold);
   await page.click('#bottomNav button[data-view="log"]', { timeout: 3000 }).catch(e => errors.push('the Log visit button could not be tapped: ' + e.message.split('\n')[0]));
   await sleep(150);
   check('Phone: logging a visit is one tap from her main screen', await ev(() => activeView === 'log' && document.getElementById('view-log').classList.contains('active')));
@@ -385,9 +420,27 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   }
   check('Rep: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over2.length === 0, over2);
   check('Rep: no figure spills out of its box at any of those widths', spill2.length === 0, spill2.slice(0, 3));
-  check('Rep (English, phone): her target card and figures in the picture\'s words — achieved over the target, remaining, N Work Days Left, the amount a day (whole KWD of the same figures), the forecast % with its amount and "estimate"',
+  check('Rep (English, phone): her target card and figures in the picture\'s words — achieved over the target, remaining, N Work Days Left, the amount a day (whole KWD of the same figures); the forecast line: its amount (the figure card\'s), its % and "estimate"',
     wrap2.length === 0 && rep.remaining != null && new RegExp(whole(rep.ofTarget) + ' KWD ' + whole(rep.sales) + ' ' + whole(rep.remaining) + ' KWD Remaining \\d+ Work Days? Left ' + whole(rep.perday) + ' KWD / Day').test(rep.view)
-      && /Forecast \d+% ≈ [\d,]+ KWD estimate/.test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0] });
+      && new RegExp('Forecast ≈ ' + whole(rep.forecast) + ' KWD · \\d+% estimate').test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0], forecast: (rep.view.match(/Forecast[^]{0,60}/) || [''])[0] });
+
+  // ======================= the supervisor, phone (the owner's review of v125) =======================
+  const supPhone = async lang => {
+    await boot(G, 'supervisor', 390, 844, { lang }); await sleep(100);
+    const v = await phoneView(), below = (a, b) => !!a && !!b && a.y + a.h <= b.y;
+    return { v, order: below(v.head, v.sales) && below(v.sales, v.tiles[0]) && v.tiles.length === 3 && v.tiles.every(t => t.y === v.tiles[0].y) && below(v.tiles[0], v.people) && below(v.people, v.next) && below(v.next, v.chip) && below(v.chip, v.more) };
+  };
+  for(const lang of ['en', 'ar']){
+    const sp = await supPhone(lang);
+    check(`Supervisor's phone (${lang}): the head, the team's target card, the Today row (three figures), the team ranking, his next actions, the forecast line, then "More details"`, sp.v.team && sp.order, sp.v);
+    check(`Supervisor's phone (${lang}): the ranking is three compact rows — initials, name, the bar, % and the amount (no rank, no visits column)`, sp.v.lbRows === 3 && sp.v.lbParts === '.av .n .bar .p .a', { rows: sp.v.lbRows, parts: sp.v.lbParts });
+    check(`Supervisor's phone (${lang}): each fact once (follow-ups due, today's plan, field visits, the amount a day, the KPI score, the forecast), no ▲/▼, nothing of "More details" until it is tapped, and the main view ≤ 1.6 screens`,
+      Object.values(sp.v.facts).every(x => x.length === 1) && sp.v.deltas === 0 && sp.v.details.length === 0 && sp.v.doc <= Math.round(1.6 * sp.v.vh), { facts: sp.v.facts, details: sp.v.details, doc: sp.v.doc, screens: Math.round(sp.v.doc / sp.v.vh * 100) / 100 });
+  }
+  // a person's screen on his phone (her leaderboard row): her order, and the way back
+  await act(() => msOpenPerson('Renova')); await ready(); await sleep(120);
+  { const v = await phoneView(), below = (a, b) => !!a && !!b && a.y + a.h <= b.y;
+    check('Supervisor\'s phone on Renova\'s screen: her target card, her Today row, her next actions, the forecast line and "More details" — each fact once', !v.team && below(v.sales, v.tiles[0]) && below(v.tiles[0], v.next) && below(v.next, v.more) && Object.values(v.facts).every(x => x.length <= 1) && v.details.length === 0, v); }
 
   // ======================= Arabic: right to left, no English left =======================
   const english = () => ev(() => {
@@ -403,7 +456,11 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     return { dir: document.documentElement.dir, left: [...new Set(left)] };
   });
   await boot(M, 'rep', 390, 844, { lang: 'ar' });
-  await act(() => { ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(msFold); }); await sleep(150);
+  const arPv = await phoneView();
+  check('Arabic, rep (phone): the same order — target card, the Today row, next actions, the forecast line, More details — each fact once, ≤ 1.3 screens',
+    arPv.tiles.length === 3 && arPv.tiles.every(t => t.y === arPv.tiles[0].y) && below(arPv.sales, arPv.tiles[0]) && below(arPv.tiles[0], arPv.next) && below(arPv.next, arPv.chip) && below(arPv.chip, arPv.more)
+      && Object.values(arPv.facts).every(x => x.length === 1) && arPv.details.length === 0 && arPv.doc <= Math.round(1.3 * arPv.vh), { facts: arPv.facts, doc: arPv.doc });
+  await act(() => { msMoreToggle(true); ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(msFold); }); await sleep(150);
   let ar = await english();
   const arRep = await shown();
   check('Arabic, rep (phone): right to left, and no English left on the main screen (names, clinics and acronyms aside)', ar.dir === 'rtl' && ar.left.length === 0, ar.left.slice(0, 20));

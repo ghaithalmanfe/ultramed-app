@@ -2410,6 +2410,10 @@
     'A red bar at the bottom of the screen says when something could not be sent, and what to do.': 'يظهر شريط أحمر أسفل الشاشة عندما يتعذر إرسال شيء، ويقول ما العمل.',
     "Day's plans": 'خطط اليوم',
     'Targets': 'المستهدفات',
+    // the phone's main screen (≤ 600 px): the closed part and the advisor's sheet under the next actions
+    'More details': 'تفاصيل أكثر',
+    'Fewer details': 'تفاصيل أقل',
+    'Recommendations': 'التوصيات',
     // === END DASHBOARD ===
 
     // === SCREENS A ===
@@ -2801,6 +2805,9 @@
     [/^(\d+) clinics have follow-ups due \((\d+) overdue\)\.$/, function (m) { return countAr(m[1], ['عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة']) + ' لديها متابعات مستحقة (' + m[2] + ' متأخرة).'; }],
     [/^(\d+) clinics have follow-ups due today\.$/, function (m) { return countAr(m[1], ['عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة']) + ' لديها متابعات مستحقة اليوم.'; }],
     [/^(\S+) target$/, function (m) { return 'مستهدف ' + m[1]; }],
+    // === DASHBOARD === the phone's Today row (today's plan under the visits) and its short brands line
+    [/^Plan (\d+) of (\d+)$/, function (m) { return 'الخطة ' + m[1] + ' من ' + m[2]; }],
+    [/^(-?\d+)%–(-?\d+)% of brand targets$/, function (m) { return pctAr(m[1]) + '–' + pctAr(m[2]) + ' من مستهدفات البراندات'; }],
     // === DASHBOARD === how long ago a visit was logged (the home screen's recent visits)
     [/^(\d+) min ago$/, function (m) { return 'قبل ' + countAr(m[1], ['دقيقة', 'دقيقتين', 'دقائق', 'دقيقة']); }],
     [/^(\d+)h ago$/, function (m) { return 'قبل ' + countAr(m[1], ['ساعة', 'ساعتين', 'ساعات', 'ساعة']); }],

@@ -328,25 +328,31 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].r
 
   // ======================= thumb targets on the phone =======================
   const thumbs = () => ev(async () => {
-    ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const e = document.getElementById(id); if(e && !e.classList.contains('open')) msFold(id); });
-    const sel = '#view-today .ms-ct .link, #view-today .ms-ct button, #view-today .ms-taskadd input, #view-today .ms-taskadd button, #view-today .ms-i, #view-today .ms-back, #view-today .ms-more, #view-today .ms-btn, #view-today .ms-item, #msSwitch button';
+    // the phone's main view first (the Today row, the ranking, the next actions' foot, the forecast line, More details), then what More details holds
+    const sel = '#view-today .ms-ct .link, #view-today .ms-ct button, #view-today .ms-taskadd input, #view-today .ms-taskadd button, #view-today .ms-i, #view-today .ms-back, #view-today .ms-more, #view-today .ms-btn, #view-today .ms-item, #msSwitch button, #view-today .ms-kc, #view-today .ms-lb, #view-today .ms-nfoot button, #view-today .ms-fc, #msMore';
     const out = [];
-    for(const e of [...document.querySelectorAll(sel)].filter(x => x.offsetParent !== null)){
-      e.scrollIntoView({ block: 'center' }); await new Promise(r => requestAnimationFrame(r));
-      const b = e.getBoundingClientRect(), cx = b.left + b.width / 2, cy = b.top + b.height / 2;
-      const hits = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === e || e.contains(h)); };
-      const tall = hits(cx, cy - 21.5) && hits(cx, cy + 21.5), wide = b.width >= 44 || (hits(cx - 21.5, cy) && hits(cx + 21.5, cy));
-      if(!tall || !wide) out.push(`${(e.getAttribute('aria-label') || e.textContent || e.placeholder || e.className).trim().replace(/\s+/g, ' ').slice(0, 26)} ${Math.round(b.width)}×${Math.round(b.height)}`);
-    }
+    const measure = async () => {
+      for(const e of [...document.querySelectorAll(sel)].filter(x => x.offsetParent !== null && x.checkVisibility({ opacityProperty: true }))){   // what can be tapped: on screen, not clipped away
+        e.scrollIntoView({ block: 'center' }); await new Promise(r => requestAnimationFrame(r));
+        const b = e.getBoundingClientRect(), cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+        const hits = (x, y) => { const h = document.elementFromPoint(x, y); return !!h && (h === e || e.contains(h)); };
+        const tall = hits(cx, cy - 21.5) && hits(cx, cy + 21.5), wide = b.width >= 44 || (hits(cx - 21.5, cy) && hits(cx + 21.5, cy));
+        if(!tall || !wide) out.push(`${(e.getAttribute('aria-label') || e.textContent || e.placeholder || e.className).trim().replace(/\s+/g, ' ').slice(0, 26)} ${Math.round(b.width)}×${Math.round(b.height)}`);
+      }
+    };
+    await measure();
+    if(typeof msMoreToggle === 'function' && !_msMoreOpen) msMoreToggle(true);
+    ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const e = document.getElementById(id); if(e && !e.classList.contains('open')) msFold(id); });
+    await measure();
     window.scrollTo(0, 0);
-    return out;
+    return [...new Set(out)];
   });
   seed(cloud, { missed: true });
   await boot(M, 'rep', 390, 844);
   const th1 = await thumbs();
   await boot(G, 'supervisor', 390, 844, { lang: 'ar' });
   const th2 = await thumbs();
-  check('Phone 390: every control of the main screen (fold links, Months, the quick task, ⓘ, rows, buttons, the switch) has a 44 px hit area — her phone, and the supervisor\'s in Arabic', th1.length === 0 && th2.length === 0, { rep: th1, supervisorAr: th2 });
+  check('Phone 390: every control of the main screen (the Today row, the ranking rows, View All and Recommendations, the forecast line, More details; behind it the fold links, Months, the quick task, ⓘ, rows, buttons) has a 44 px hit area — her phone, and the supervisor\'s in Arabic', th1.length === 0 && th2.length === 0, { rep: th1, supervisorAr: th2 });
 
   // ======================= a negative in Arabic =======================
   seed(cloud, { negBrand: true });
