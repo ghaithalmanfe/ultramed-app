@@ -12,7 +12,7 @@
 //     viewport to such content) and the elements that reach past it (outside any scroll box of their own),
 //   - tap targets under 44 px on widths ≤ 600 (a ::before/::after hit area counts; a checkbox is measured
 //     by its label; pointer-events:none takes no taps) — tools/audit.js,
-//   - page errors and console errors.
+//   - targets in view that something else lies over (phone), page errors and console errors.
 // Usage (from the checkout):
 //   node tests/e2e/tools/shots.js --out <dir> [--www www|dist|<path>] [--as supervisor|rep|<name>]
 //        [--views today,log,clinics,…] [--step "name=js snippet"]… [--steps steps.json]
@@ -141,7 +141,7 @@ const { audit } = require('./audit.js');
         const file = `${lang}-${w}-${TAG}-${st.name}.png`;
         await page.screenshot({ path: path.join(OUT, file), fullPage: full });
         const a = await page.evaluate(audit, { phone, width: w });
-        report.push({ file, lang, width: w, as: WHO, step: st.name, sheet, overflow: a.scrollWidth > a.vw, scrollWidth: a.scrollWidth, wide: a.wide.slice(0, 30), small: a.small.slice(0, 60), errors: errors.splice(0) });
+        report.push({ file, lang, width: w, as: WHO, step: st.name, sheet, overflow: a.scrollWidth > a.vw, scrollWidth: a.scrollWidth, wide: a.wide.slice(0, 30), small: a.small.slice(0, 60), covered: (a.covered || []).slice(0, 30), errors: errors.splice(0) });
         if(sheet) await page.evaluate(() => { closeModal(); const lb = document.getElementById('lightbox'); if(lb) lb.classList.remove('show'); }).catch(() => {});
         process.stdout.write('.');
       }
@@ -149,7 +149,7 @@ const { audit } = require('./audit.js');
     }
   }
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
-  const lines = report.map(r => `${r.overflow || r.wide.length || r.errors.length ? '!!' : 'ok'} ${r.file}${r.overflow ? `  OVERFLOW ${r.scrollWidth}>${r.width}` : ''}${r.wide.length ? `  wide: ${r.wide.slice(0, 4).join(' | ')}` : ''}${r.small.length ? `  small targets (${r.small.length}): ${r.small.slice(0, 6).join(' | ')}` : ''}${r.errors.length ? `  ERRORS: ${r.errors.join(' | ')}` : ''}`);
+  const lines = report.map(r => `${r.overflow || r.wide.length || r.errors.length ? '!!' : 'ok'} ${r.file}${r.overflow ? `  OVERFLOW ${r.scrollWidth}>${r.width}` : ''}${r.wide.length ? `  wide: ${r.wide.slice(0, 4).join(' | ')}` : ''}${r.small.length ? `  small targets (${r.small.length}): ${r.small.slice(0, 6).join(' | ')}` : ''}${r.covered.length ? `  covered (${r.covered.length}): ${r.covered.slice(0, 4).join(' | ')}` : ''}${r.errors.length ? `  ERRORS: ${r.errors.join(' | ')}` : ''}`);
   fs.writeFileSync(path.join(OUT, 'report.txt'), lines.join('\n') + '\n');
   console.log('\n' + lines.join('\n'));
   console.log(`\n${report.length} screenshots in ${OUT}`);

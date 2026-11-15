@@ -1828,9 +1828,9 @@
   /* the phone's step rail: seven dots under the head bar, filled once the step holds an answer */
   .lv-rail{position:sticky; top:env(safe-area-inset-top, 0px); z-index:6; display:flex; justify-content:space-between; align-items:center; margin:0 -6px 10px; padding:4px 6px; background:rgba(247,248,250,.94); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); border-radius:0 0 14px 14px;}
   .lv-dot{position:relative; flex:1 1 0; min-width:44px; height:44px; padding:0; border:none; background:none; display:flex; align-items:center; justify-content:center; cursor:pointer;}
-  .lv-dot::before{content:''; position:absolute; top:50%; inset-inline:-50% 50%; height:2px; margin-top:-1px; background:#DCE3E8;}
+  .lv-dot::before{content:''; position:absolute; top:50%; inset-inline:-50% 50%; height:2px; margin-top:-1px; background:#DCE3E8; pointer-events:none; z-index:0;}   /* the line to the step before: under the circles, never in a tap's way */
   .lv-dot:first-child::before{content:none;}
-  .lv-dot > span{position:relative; width:28px; height:28px; border-radius:50%; background:#fff; border:1.5px solid #D0D9DF; color:var(--p-sub); font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;}
+  .lv-dot > span{position:relative; z-index:1; width:28px; height:28px; border-radius:50%; background:#fff; border:1.5px solid #D0D9DF; color:var(--p-sub); font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;}
   .lv-dot.done > span{background:var(--p-g6); border-color:var(--p-g6); color:#fff;}
   .lv-dot.done::before{background:#8FC9B2;}
   @media (min-width:1024px){
@@ -2119,6 +2119,7 @@
   @media (max-width:1023px){
     #teamChat .composer{bottom:calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));}
     #teamChat .composer::after{content:''; position:absolute; inset-inline:-1px; top:100%; height:28px; background:var(--p-page, #F7F8FA);}   /* under the bottom bar: no page shows through */
+    #teamChat .composer{margin-bottom:28px;}   /* in its place in the flow the shield lies over this margin, never over "Refresh messages" */
   }
   /* ERP account links: Now → After saving, the months, who it counts for, the closed months */
   .el-sides{padding:4px 12px !important;}

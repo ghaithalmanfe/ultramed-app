@@ -1,6 +1,6 @@
 // Phones (360 and 390 px), English and Arabic, the supervisor and a rep: every view and the sheets they open
 // (the screenshot sweep's steps of the redesign's integration pass) — no page that pans sideways, no tap target
-// under 44 × 44 px, no page or console error. The rules are tools/audit.js (shared with the sweep tool
+// under 44 × 44 px, nothing lying over a target in view, no page or console error. The rules are tools/audit.js (shared with the sweep tool
 // tools/shots.js): a ::before / ::after hit area counts, a checkbox is measured by its label, an element that
 // takes no taps (pointer-events: none) is not a target. Invented data only (tests/e2e/fixtures/main-screen-data.js),
 // a fixed clock (Thursday 8 October 2026, 10:00), a fake cloud; nothing leaves localhost.
@@ -98,7 +98,7 @@ const STEPS = [
   const found = {};   // "<who> <lang>" → { wide: [], small: [], errors: [] }
   for(const [who, role] of [[G, 'supervisor'], [M, 'rep']]){
     for(const lang of ['en', 'ar']){
-      const key = (role === 'rep' ? 'rep' : 'supervisor') + ' ' + lang, f = found[key] = { pages: 0, wide: [], small: [], errors: [] };
+      const key = (role === 'rep' ? 'rep' : 'supervisor') + ' ' + lang, f = found[key] = { pages: 0, wide: [], small: [], covered: [], errors: [] };
       for(const w of [360, 390]){
         seed(cloud, {});
         const ctx = await browser.newContext({ viewport: { width: w, height: 844 }, isMobile: true, hasTouch: true });
@@ -134,6 +134,7 @@ const STEPS = [
           f.pages++;
           if(a.scrollWidth > a.vw || a.wide.length) f.wide.push(at + ': ' + (a.scrollWidth > a.vw ? `scrollWidth ${a.scrollWidth} > ${a.vw} ` : '') + a.wide.slice(0, 3).join(' | '));
           a.small.forEach(s => f.small.push(at + ': ' + s));
+          a.covered.forEach(s => f.covered.push(at + ': ' + s));
           errors.splice(0).forEach(e => f.errors.push(at + ': ' + e));
           await page.evaluate(() => { closeModal(); const lb = document.getElementById('lightbox'); if(lb) lb.classList.remove('show'); try{ hideProReport(); }catch(e){} }).catch(() => {});
         }
@@ -144,6 +145,7 @@ const STEPS = [
   for(const [key, f] of Object.entries(found)){
     check(`${key} at 360 and 390 px (${f.pages} pages: every view and its sheets): no page pans sideways`, f.pages > 60 && f.wide.length === 0, f.wide.slice(0, 12));
     check(`${key}: every tap target is at least 44 × 44 px`, f.small.length === 0, f.small.slice(0, 20));
+    check(`${key}: nothing lies over a tap target in view (the chrome the page scrolls under excepted)`, f.covered.length === 0, f.covered.slice(0, 12));
     check(`${key}: no page or console error`, f.errors.length === 0, f.errors.slice(0, 10));
   }
   await browser.close(); server.close();
