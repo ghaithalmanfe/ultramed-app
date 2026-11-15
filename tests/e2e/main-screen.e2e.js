@@ -123,9 +123,16 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     const facts = Object.fromEntries(Object.entries(FACTS).map(([k, sels]) => [k, sels.filter(any)]));
     const details = ['#msRows', '#msWork', '#msPlanCard', '#msDueCard', '#msTaskCard', '#msRecentCard', '#targetCard .ms-cxcard', '#msAdvisor', '#msChart', '#msStatus'].filter(any);
     const tiles = [...document.querySelectorAll('#msKpis .ms-kc')].filter(on).map(box);
+    // the Today row by priority from the start side (right in Arabic): its figures' keys in the order the eye meets them
+    const rtl = document.documentElement.dir === 'rtl';
+    const tileOrder = [...document.querySelectorAll('#msKpis .ms-kc')].filter(on).map(e => ({ x: e.getBoundingClientRect().left, k: (e.querySelector('[data-ms]') || {}).dataset.ms }))
+      .sort((a, b) => rtl ? b.x - a.x : a.x - b.x).map(t => t.k);
+    // the overdue follow-ups of the view (the follow-ups card's own list), and what the card says of them
+    const lr = team ? null : msListRep(), dueNow = visibleDueClinics().filter(c => !lr || c.rep === lr), overNow = dueNow.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
+    const ov = document.querySelector('#msKpis .ms-kover');
     const lb = [...document.querySelectorAll('#targetCard .ms-lbw > .ms-lb')].filter(on);
     const more = document.getElementById('msMore');
-    return { team, facts, details, tiles, deltas: [...document.querySelectorAll('#msKpis .ms-kd, #msKpis .ms-spark, #msKpis .ms-chip')].filter(on).length,
+    return { team, facts, details, tiles, tileOrder, overNow, overText: on(ov) ? ov.textContent.trim() : null, overColor: on(ov) ? getComputedStyle(ov).color : null, deltas: [...document.querySelectorAll('#msKpis .ms-kd, #msKpis .ms-spark, #msKpis .ms-chip')].filter(on).length,
       head: box(document.querySelector('header.top')), sales: box(document.querySelector(team ? '#msSales' : '#targetCard .ms-hero')), people: team ? box(document.querySelector('#targetCard .ms-people')) : null,
       next: box(document.getElementById('msNext')), chip: box(document.querySelector('#msFcChip .ms-fc')), more: box(more), expanded: more && more.getAttribute('aria-expanded'),
       lbRows: lb.length, lbParts: lb.slice(0, 1).map(r => ['.rk', '.av', '.n', '.bar', '.p', '.a', '.v'].filter(s => on(r.querySelector(s))).join(' ')).join(''),
@@ -390,6 +397,17 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       && [pv.sales, pv.next, pv.chip, pv.more].every(b => b.x === pv.sales.x && b.w >= 340), pv);
   check('Phone: each fact shows once on her main view — follow-ups due, today\'s plan, field visits, the amount a day, the KPI score and the forecast each in one place; no ▲/▼ or sparkline in the Today row; the advisor not on the page (its sheet: "Recommendations" under her next actions, three rows at most, then View All)',
     Object.values(pv.facts).every(x => x.length === 1) && pv.facts['the forecast'][0] === '#msFcChip .ms-fc' && pv.deltas === 0 && pv.recs && pv.viewAll && pv.nextRows >= 1 && pv.nextRows <= 3, { facts: pv.facts, deltas: pv.deltas, recs: pv.recs, viewAll: pv.viewAll, rows: pv.nextRows });
+  check('Phone: the Today row by priority from the start side — today\'s field visits, the follow-ups due, the KPI score; under the follow-ups the overdue ones in red ("2 overdue")',
+    pv.tileOrder.join() === 'today-visits,due,kpi' && pv.overNow > 0 && pv.overText === `${pv.overNow} overdue` && pv.overColor === 'rgb(196, 50, 10)', { order: pv.tileOrder, overdue: pv.overNow, said: pv.overText, colour: pv.overColor });
+  const noOver = await act(async () => {
+    const keep = clinics.map(c => [c, c.nextFollowUp]), t = todayStr();
+    clinics.forEach(c => { if(c.nextFollowUp && c.nextFollowUp < t) c.nextFollowUp = t; });   // in memory only: nothing is saved by looking
+    renderToday(); await msWhenReady();
+    const k = document.querySelector('#msKpis .ms-kover'), r = { shown: !!k && k.checkVisibility(), due: Number(document.querySelector('#msKpis [data-ms="due"]').dataset.value) };
+    keep.forEach(([c, v]) => { c.nextFollowUp = v; }); renderToday(); await msWhenReady();
+    return r;
+  });
+  check('Phone: with no follow-up overdue, the follow-ups card says nothing more (no red line)', !!noOver && noOver.due > 0 && noOver.shown === false, noOver);
   check('Phone: "More details" closed — nothing it holds shows (rows, visits card, plan, follow-ups, tasks, recent activity, the cross-invoice notice) and the page ends with it: her main view ≤ 1.3 screens (390×844)',
     !!pv.more && pv.details.length === 0 && pv.expanded === 'false' && pv.doc <= Math.round(1.3 * pv.vh) && pv.doc - (pv.more.y + pv.more.h) < 160, { details: pv.details, doc: pv.doc, moreBottom: pv.more ? pv.more.y + pv.more.h : null, screens: Math.round(pv.doc / pv.vh * 100) / 100 });
   check('Phone: the main screen\'s page is a flat dark green (no gradient on the page or the target card)', /^rgb\(12, 44, 35\)$/.test(pv.page) && await ev(() => !/gradient/.test(getComputedStyle(document.body).backgroundImage.replace(/url\([^)]*\)/g, '')) && getComputedStyle(document.querySelector('#targetCard .ms-hero')).backgroundImage === 'none'), pv.page);
@@ -432,7 +450,8 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   };
   for(const lang of ['en', 'ar']){
     const sp = await supPhone(lang);
-    check(`Supervisor's phone (${lang}): the head, the team's target card, the Today row (three figures), the team ranking, his next actions, the forecast line, then "More details"`, sp.v.team && sp.order, sp.v);
+    check(`Supervisor's phone (${lang}): the head, the team's target card, the Today row (from the start side: field visits, follow-ups due with the overdue in red, the team's KPI score), the team ranking, his next actions, the forecast line, then "More details"`,
+      sp.v.team && sp.order && sp.v.tileOrder.join() === 'today-visits,due,kpi' && sp.v.overNow > 0 && sp.v.overText === (lang === 'ar' ? `${sp.v.overNow} متأخرة` : `${sp.v.overNow} overdue`), sp.v);
     check(`Supervisor's phone (${lang}): the ranking is three compact rows — initials, name, the bar, % and the amount (no rank, no visits column)`, sp.v.lbRows === 3 && sp.v.lbParts === '.av .n .bar .p .a', { rows: sp.v.lbRows, parts: sp.v.lbParts });
     check(`Supervisor's phone (${lang}): each fact once (follow-ups due, today's plan, field visits, the amount a day, the KPI score, the forecast), no ▲/▼, nothing of "More details" until it is tapped, and the main view ≤ 1.6 screens`,
       Object.values(sp.v.facts).every(x => x.length === 1) && sp.v.deltas === 0 && sp.v.details.length === 0 && sp.v.doc <= Math.round(1.6 * sp.v.vh), { facts: sp.v.facts, details: sp.v.details, doc: sp.v.doc, screens: Math.round(sp.v.doc / sp.v.vh * 100) / 100 });
@@ -457,9 +476,10 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   });
   await boot(M, 'rep', 390, 844, { lang: 'ar' });
   const arPv = await phoneView();
-  check('Arabic, rep (phone): the same order — target card, the Today row, next actions, the forecast line, More details — each fact once, ≤ 1.3 screens',
+  check('Arabic, rep (phone): the same order — target card, the Today row (from the right: field visits, follow-ups with «N متأخرة», the KPI score), next actions, the forecast line, More details — each fact once, ≤ 1.3 screens',
     arPv.tiles.length === 3 && arPv.tiles.every(t => t.y === arPv.tiles[0].y) && below(arPv.sales, arPv.tiles[0]) && below(arPv.tiles[0], arPv.next) && below(arPv.next, arPv.chip) && below(arPv.chip, arPv.more)
-      && Object.values(arPv.facts).every(x => x.length === 1) && arPv.details.length === 0 && arPv.doc <= Math.round(1.3 * arPv.vh), { facts: arPv.facts, doc: arPv.doc });
+      && Object.values(arPv.facts).every(x => x.length === 1) && arPv.details.length === 0 && arPv.doc <= Math.round(1.3 * arPv.vh)
+      && arPv.tileOrder.join() === 'today-visits,due,kpi' && arPv.overText === `${arPv.overNow} متأخرة`, { facts: arPv.facts, doc: arPv.doc, order: arPv.tileOrder, said: arPv.overText });
   await act(() => { msMoreToggle(true); ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(msFold); }); await sleep(150);
   let ar = await english();
   const arRep = await shown();

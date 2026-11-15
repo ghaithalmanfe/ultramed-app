@@ -1262,7 +1262,7 @@
   .ms-week{border-top-color:var(--p-line);}
 
   /* the phone's own parts of the main screen (≤ 600 px, below): hidden on every wider screen */
-  .ms-fcw, .ms-dtl, .ms-nfoot, .ms-kc .ms-kplan, .ms-kc .ms-kdot, .ph-s, .ms-kl .kl-p{display:none;}
+  .ms-fcw, .ms-dtl, .ms-nfoot, .ms-kc .ms-kplan, .ms-kc .ms-kover, .ph-s, .ms-kl .kl-p{display:none;}
 
   /* ---- phone and tablet: one column, in the picture's order ---- */
   @media (max-width:1023px){
@@ -1409,7 +1409,8 @@
     .ms-hfoot{padding:18px 20px 20px 22px;}
     .ms-hcol.m1{padding-inline-end:6px;}
     .ms-hstrip .ms-hvis, .ms-hstrip.only-vis{position:absolute !important; inset-inline:0; top:0; margin:0; clip-path:inset(50%); opacity:0; pointer-events:none;}   /* her visits: the Today row */
-    /* the Today row: three white tiles — the number, its icon, a word or two (the ▲/▼ and sparklines stay on wider screens and in the ⓘ) */
+    /* the Today row: three white tiles — the number, its icon, a word or two (the ▲/▼ and sparklines stay on wider screens and in the ⓘ);
+       the cards keep the picture's order in the page (KPI, visits, follow-ups, forecast), the phone shows them by priority */
     .ms-kpis{grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
     .ms-kc.fc{display:none;}   /* the forecast: its own line below */
     .ms-kc{min-height:0; padding:12px 6px 11px; background:#fff; border:none; box-shadow:none; border-radius:16px; justify-content:flex-start;}
@@ -1422,7 +1423,9 @@
     .ms-kc .ms-kd, .ms-kc .ms-chip, .ms-kc .ms-spark, .ms-kc .ms-ks:not(.why):not(.ms-kplan){display:none;}
     .ms-kc .ms-ks.why{font-size:11.5px; margin-top:3px;}
     .ms-kc .ms-kplan{display:block; font-size:12px; font-weight:600; color:var(--p-g6); margin-top:4px;}
-    .ms-kc .ms-kdot{display:block; position:absolute; top:10px; inset-inline-end:10px; width:10px; height:10px; border-radius:50%; background:#D92D20; box-shadow:0 0 0 2px #fff;}
+    .ms-kc .ms-kover{display:block; font-size:12px; font-weight:700; color:#C4320A; margin-top:4px;}   /* "2 overdue" in red (AA on white) */
+    /* the Today row from the start side (right in Arabic): today's field visits, the follow-ups due, the KPI score */
+    .ms-kpis > .ms-kc:nth-child(2){order:1;} .ms-kpis > .ms-kc:nth-child(3){order:2;} .ms-kpis > .ms-kc:nth-child(1){order:3;}
     /* the team ranking: three compact rows — initials, name, the bar, %, the amount (View All: everyone, with the full words) */
     .ms-people{padding:14px 16px 8px !important;}
     #view-today .ms-people > .ms-ct{font-size:16px; margin-bottom:6px; min-height:44px; flex-wrap:nowrap;}   /* View All and the ⓘ: 44 px thumb targets clear of the first row */

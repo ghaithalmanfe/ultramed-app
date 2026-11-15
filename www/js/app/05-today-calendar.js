@@ -1425,10 +1425,10 @@ function msKpisHTML(v, m, sig){
   // the phone's Today row adds today's plan under the number: planned clinics a field visit reached, of those planned (msPlanCount — the plan card's rule)
   const PL = msPlanCount(v), planTx = PL.n ? `<span class="ms-ks ms-kplan">${msT(`Plan ${PL.done} of ${PL.n}`)}</span>` : '';
   out.push(card('', 'ncal', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week') + planTx, msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
-  // 3 — the follow-ups due (overdue + today), "Needs Attention" only when one is overdue; no sparkline (no history to rebuild it from)
+  // 3 — the follow-ups due (overdue + today), "Needs Attention" only when one is overdue (a phone: "2 overdue" in red); no sparkline (no history to rebuild it from)
   const due = team ? visibleDueClinics() : visibleDueClinics().filter(c => c.rep === v.rep), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
   out.push(card(over ? 'att' : '', 'clip2', ['Pending Follow-ups', 'Pending Follow-ups', 'Follow-ups due'], '', msN(due.length),
-    over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span><span class="ms-kdot" aria-hidden="true"></span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
+    over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span><span class="ms-kover" aria-hidden="true">${msT(`${over} overdue`)}</span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
     '', "msGo('msDueCard')", 'due', due.length));
   // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result
   const FP = msFcPick(m), withT = FP.withT, fc = FP.fc;
