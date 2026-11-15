@@ -1469,7 +1469,7 @@ function renderClinicAnalysis(){
   const covered = cards.filter(cd=>cd.act>0.005).length;
 
   body.innerHTML = `
-    <div class="card" style="margin-bottom:12px;">
+    <div class="card ca-sum" style="margin-bottom:12px;">
       <div class="row-between"><div style="font-weight:800; font-size:15px;">${esc(rep)} — ${new Date(today+'T00:00:00').toLocaleDateString(uiLocale(),{month:'long'})}</div>
         <span style="color:var(--muted); font-size:11.5px;">${daysLeft} working days left</span></div>
       <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:10px; text-align:center;">
@@ -1481,7 +1481,7 @@ function renderClinicAnalysis(){
     </div>
     ${shown.map(cd=>{
       const barPct = Math.max(0, Math.min(100, cd.pct)); // returns can push actuals negative
-      return `<div class="card" style="margin-bottom:10px;">
+      return `<div class="card ca-row" style="margin-bottom:10px;">
         <div class="row-between">
           <div style="display:flex; gap:8px; align-items:center;">
             <span class="cls cls-${cd.cls}">${cd.cls||'-'}</span>
@@ -1955,9 +1955,7 @@ function renderCoverageBoard(){
   const repChips = currentUser.role === 'supervisor'
     ? `<div class="chip-row" style="margin-bottom:8px;">${['all', ...REPS].map(r =>
         `<div class="chip small ${covRep===r?'on':''}" onclick="setCovRep('${esc(r)}')">${r==='all'?'Whole team':esc(r)}</div>`).join('')}</div>` : '';
-  const tile = (n, l) => `<div style="background:var(--paper); border-radius:10px; padding:10px 6px; text-align:center;">
-    <div style="font-size:18px; font-weight:800; color:var(--green);">${n}</div>
-    <div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${l}</div></div>`;
+  const tile = (n, l) => `<div class="ins-tile"><div class="it-n">${n}</div><div class="it-l">${l}</div></div>`;
   const clinicOf = id => clinics.find(c => c.id === id);
   const visitedRows = cov.visited.map(c => {
     const cl = clinicOf(c.id);
@@ -2006,7 +2004,7 @@ function renderCoverageBoard(){
       </div>
     </div>`).join('');
   showModal(`
-    <h3 style="margin-top:0;">${I('clipboard')} Coverage review</h3>
+    <h3 style="margin-top:0;" data-wide data-sections data-grid>${I('clipboard')} Coverage review</h3>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">Everything done and still needed — last ${covDays} days${covRep!=='all'?' · '+esc(covRep):''}</div>
     ${repChips}
     <div class="chip-row" style="margin-bottom:12px;">
@@ -2014,7 +2012,7 @@ function renderCoverageBoard(){
       <div class="chip small ${covDays===30?'on':''}" onclick="setCovDays(30)">30 days</div>
       <div class="chip small ${covDays===90?'on':''}" onclick="setCovDays(90)">90 days</div>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:12px;">
+    <div class="ins-grid cov-figs">
       ${tile(cov.stats.visitedCount + '/' + cov.stats.totalClinics, 'Clinics covered (' + cov.stats.coveragePct + '%)')}
       ${tile(cov.stats.needsCount, 'Need a visit')}
       ${ew
@@ -2022,7 +2020,7 @@ function renderCoverageBoard(){
         : tile(cov.stats.orders, 'Orders logged')}
       ${ew
         ? tile(money(ew.net), 'Sales (ERP)')
-        : tile(money(cov.stats.revenue), 'Sales logged')}
+        : tile(money(cov.stats.revenue), 'Orders logged in the app')}
     </div>
     ${ew && cov.stats.revenue ? `<div style="color:var(--muted); font-size:11.5px; margin:-6px 0 10px;">App-logged in this window: ${cov.stats.orders} order${cov.stats.orders===1?'':'s'} · ${money(cov.stats.revenue)}</div>` : ''}
     ${coach.length?`<div class="section-title" style="margin-top:0;">🧭 Top advice right now</div>

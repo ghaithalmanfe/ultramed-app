@@ -132,7 +132,7 @@ function renderCompare(){
     ${fmtRow('Contacts', A.contacts, B.contacts)}
     ${fmtRow('Calls', A.calls, B.calls)}
     ${fmtRow('Orders', A.orders, B.orders)}
-    ${fmtRow('Sales', A.revenue, B.revenue, true)}
+    ${fmtRow('Orders logged in the app', A.revenue, B.revenue, true)}
     ${fmtRow('Conversion %', A.conversion, B.conversion)}
     ${fmtRow('Clinics covered', A.clinicsCovered, B.clinicsCovered)}
     ${fmtRow('Events', A.events, B.events)}`;
@@ -184,19 +184,19 @@ function renderCoach(){
     watch: {c:'var(--amber)',  ink:'var(--amber-ink)', label:'WATCH'},
     good:  {c:'var(--sage)',   ink:'var(--sage-ink)',  label:'WORKING'},
   };
-  el.innerHTML = insights.map(i=>{
+  el.innerHTML = `<div class="coach-card"><img class="coach-robot" src="img/robot.svg" alt="" width="96" height="110"><div class="coach-list">` + insights.map(i=>{
     const st = styles[i.level] || styles.watch;
-    return `<div class="card" style="border-inline-start:4px solid ${st.c}; margin-bottom:8px; padding:12px 14px;">
-      <div style="display:flex; gap:9px; align-items:baseline;">
+    return `<div class="coach-item lv-${i.level || 'watch'}">
+      <div style="display:flex; gap:10px; align-items:baseline;">
         <span style="font-size:17px;">${i.icon}</span>
-        <div style="flex:1;">
+        <div style="flex:1; min-width:0;">
           <div style="font-weight:700; font-size:13.5px;">${esc(i.title)}
-            <span style="font-size:10px; font-weight:800; color:${st.ink}; letter-spacing:.06em; margin-inline-start:4px;">${st.label}</span></div>
+            <span class="coach-tag" style="color:${st.ink};">${st.label}</span></div>
           <div style="font-size:12.5px; color:var(--muted); line-height:1.55; margin-top:3px;">${esc(i.detail)}</div>
         </div>
       </div>
     </div>`;
-  }).join('');
+  }).join('') + `</div></div>`;
 }
 function renderReports(){
   renderCoach();
@@ -211,7 +211,7 @@ function renderReports(){
   const bounds = reportRangeBounds();
   const erpRev = erpRevenueForRange(bounds.from, bounds.to, reportRepFilter);
   document.getElementById('repRevenue').textContent = money(erpRev != null ? erpRev : loggedRev);
-  document.getElementById('repRevenueLabel').textContent = erpRev != null ? 'Sales (ERP-verified)' : 'Sales';
+  document.getElementById('repRevenueLabel').textContent = erpRev != null ? 'Sales (ERP-verified)' : 'Orders logged in the app';
   const erpRow = document.getElementById('repErpRow');
   if(erpRow){
     erpRow.style.display = erpRev != null ? '' : 'none';
@@ -238,7 +238,12 @@ function renderReports(){
     const anyTgt = rows.some(r=>r.tgt != null);
     const rowCls = 'compare-row ' + (anyErp && anyTgt ? 'c5' : (anyErp || anyTgt) ? 'c4' : '');
     const tgtCell = r => anyTgt ? `<div style="font-weight:800; color:${r.tgt?(r.tgt.pct>=100?'var(--sage-ink)':r.tgt.pct>=60?'var(--ink)':'var(--amber-ink)'):'var(--muted)'};">${r.tgt?r.tgt.pct+'%':'—'}</div>` : '';
-    compareCard.innerHTML = `
+    const tt0 = rows.length > 1 ? teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount } : null)) : null;
+    const pc = (name, v, logged, erp, tgt, team) => `<div class="cmp-card${team ? ' team' : ''}"><div class="cmp-n">${name}</div><div class="cmp-g">
+      <span><span>Visits</span><b>${v}</b></span><span><span>Logged</span><b>${logged}</b></span>${anyErp ? `<span><span>ERP</span><b>${erp}</b></span>` : ''}${anyTgt ? `<span><span>Target</span><b>${tgt}</b></span>` : ''}</div></div>`;
+    const phone = `<div class="cmp-cards">${rows.map(r => pc(esc(r.rep), r.visits, money(r.revenue), r.erp != null ? money(r.erp) : '—', r.tgt ? r.tgt.pct + '%' : '—')).join('')}${rows.length > 1
+      ? pc('<span>Team</span>', rows.reduce((s2, r) => s2 + r.visits, 0), money(rows.reduce((s2, r) => s2 + r.revenue, 0)), rows.some(r => r.erp != null) ? money(rows.reduce((s2, r) => s2 + (r.erp || 0), 0)) : '—', tt0 && tt0.pct != null ? tt0.pct + '%' : '—', true) : ''}</div>`;
+    compareCard.innerHTML = phone + `<div class="cmp-table">
       <div class="${rowCls}" style="margin-bottom:8px;">
         <div class="h">Rep</div><div class="h">Visits</div><div class="h">Logged</div>${anyErp?'<div class="h">ERP</div>':''}${anyTgt?'<div class="h">Target</div>':''}
       </div>
@@ -248,7 +253,7 @@ function renderReports(){
         const erpAny = rows.some(r=>r.erp!=null);
         return `<div class="${rowCls}" style="padding:6px 0; border-top:2px solid var(--ink); font-weight:800;"><div>Team</div><div>${rows.reduce((s,r)=>s+r.visits,0)}</div><div>${money(rows.reduce((s,r)=>s+r.revenue,0))}</div>${anyErp?`<div>${erpAny?money(rows.reduce((s,r)=>s+(r.erp||0),0)):'—'}</div>`:''}${anyTgt?`<div style="color:${tt.pct!=null?pctInk(tt.pct):'var(--muted)'};">${tt.pct!=null?tt.pct+'%':'—'}</div>`:''}</div>`;
       })():''}
-    `;
+    </div>`;
   } else {
     compareTitle.style.display='none'; compareCard.style.display='none';
   }
@@ -1222,7 +1227,7 @@ function openAchievements(){
 }
 
 // ---- LIVE CHARTS ----
-const CHART_COLORS = ['#022917','#0B3D22','#FF9500','#5E5CE6','#34C759','#FF3B30','#C98A1E','#0F5257'];
+const CHART_COLORS = ['#207860','#2B7F68','#57B795','#E8762B','#5E5CE6','#E5484D','#C98A1E','#0F5257'];   // the home chart's greens first
 function svgBars(data, opts){
   opts = opts||{};
   if(!data.length) return `<div style="color:var(--muted); font-size:13px;">Not enough data yet.</div>`;
@@ -1233,9 +1238,12 @@ function svgBars(data, opts){
       const h = Math.max(2, (d.v/max)*88);
       const x = i*(320/data.length)+ (320/data.length)*0.18;
       const w = (320/data.length)*0.64;
-      return `<rect x="${x}" y="${100-h}" width="${w}" height="${h}" rx="4" fill="${d.c||'#022917'}"><title>${esc(d.l)}: ${d.t||d.v}</title></rect>
-        <text x="${x+w/2}" y="${100-h-4}" font-size="9" text-anchor="middle" fill="#3A3A3C" font-weight="700">${d.t||d.v}</text>
-        <text x="${x+w/2}" y="${114}" font-size="8.5" text-anchor="middle" fill="#8E8E93">${esc(String(d.l).slice(0,9))}</text>`;
+      // the largest bar carries its value in the home chart's dark pill; the others in plain ink
+      const top = d.v === max && d.v > 0, tx = String(d.t||d.v), pw = Math.max(26, tx.length * 5.6 + 12);
+      return `<rect x="${x}" y="${100-h}" width="${w}" height="${h}" rx="3" fill="${d.c||'#2B7F68'}"><title>${esc(d.l)}: ${d.t||d.v}</title></rect>
+        ${top ? `<rect x="${(x+w/2-pw/2).toFixed(1)}" y="${(100-h-19).toFixed(1)}" width="${pw.toFixed(1)}" height="15" rx="5" fill="#093A30"/><text x="${x+w/2}" y="${(100-h-8.5).toFixed(1)}" font-size="9" text-anchor="middle" fill="#fff" font-weight="700">${tx}</text>`
+          : `<text x="${x+w/2}" y="${100-h-4}" font-size="9" text-anchor="middle" fill="#1F2A3C" font-weight="700">${tx}</text>`}
+        <text x="${x+w/2}" y="${114}" font-size="8.5" text-anchor="middle" fill="#5B6676" font-weight="500">${esc(String(d.l).slice(0,9))}</text>`;
     }).join('')}
   </svg>`;
 }
@@ -1248,12 +1256,12 @@ function svgLine(points){
   const area = path+` L${coords[coords.length-1][0].toFixed(1)} 100 L${coords[0][0].toFixed(1)} 100 Z`;
   return `<svg viewBox="0 0 320 125" style="width:100%; height:auto;">
     <defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#022917" stop-opacity=".55"/><stop offset="100%" stop-color="#022917" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#2B7F68" stop-opacity=".35"/><stop offset="100%" stop-color="#2B7F68" stop-opacity="0"/>
     </linearGradient></defs>
     <path d="${area}" fill="url(#lg)"/>
-    <path d="${path}" fill="none" stroke="#0B3D22" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-    ${coords.map((c,i)=>`<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3" fill="#fff" stroke="#0B3D22" stroke-width="2"><title>${esc(points[i].l)}: ${points[i].t||points[i].v}</title></circle>`).join('')}
-    ${points.map((p,i)=>`<text x="${coords[i][0].toFixed(1)}" y="118" font-size="8.5" text-anchor="${i===0?'start':i===points.length-1?'end':'middle'}" fill="#8E8E93">${esc(p.l)}</text>`).join('')}
+    <path d="${path}" fill="none" stroke="#1E7360" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${coords.map((c,i)=>`<circle cx="${c[0].toFixed(1)}" cy="${c[1].toFixed(1)}" r="3" fill="#fff" stroke="#1E7360" stroke-width="2"><title>${esc(points[i].l)}: ${points[i].t||points[i].v}</title></circle>`).join('')}
+    ${points.map((p,i)=>`<text x="${coords[i][0].toFixed(1)}" y="118" font-size="8.5" text-anchor="${i===0?'start':i===points.length-1?'end':'middle'}" fill="#5B6676" font-weight="500">${esc(p.l)}</text>`).join('')}
   </svg>`;
 }
 function svgDonut(slices){
@@ -1332,11 +1340,11 @@ function renderCharts(){
   });
 
   wrap.innerHTML = `
-    <div class="chartcard"><h4>Sales trend</h4><div class="csub">${periodLabel()} · KD</div>${svgLine(pts)}</div>
-    <div class="chartcard"><h4>Sales by rep</h4><div class="csub">${periodLabel()} · KD</div>${svgBars(repBars)}</div>
+    <div class="chartcard">${secHead('trend', 'Orders logged in the app — trend')}<div class="csub">${periodLabel()} · KD</div>${svgLine(pts)}</div>
+    <div class="chartcard">${secHead('users', 'Sales by rep')}<div class="csub">${periodLabel()} · KD</div>${svgBars(repBars)}</div>
     <div class="chartcard"><h4>Visit outcome</h4><div class="csub">Orders won vs. no order</div>
       ${svgDonut([{l:'Order taken',v:won,c:'#022917'},{l:'No order',v:lost,c:'#E5E5EA'}])}</div>
-    <div class="chartcard"><h4>Sales by brand</h4><div class="csub">Top 5 · KD</div>${svgBars(brandBars)}</div>
+    <div class="chartcard">${secHead('package', 'Orders logged in the app by brand')}<div class="csub">Top 5 · KD</div>${svgBars(brandBars)}</div>
     <div class="chartcard"><h4>Why orders weren't placed</h4><div class="csub">Most common reasons</div>${svgBars(reasonBars)}</div>
     <div class="chartcard"><h4>Coverage by clinic class</h4><div class="csub">% of clinics visited</div>${svgBars(classBars)}</div>
   `;
@@ -1380,7 +1388,7 @@ function renderScorecards(){
       </div>
       <div class="kpi-grid">
         <div class="kpi"><div class="n">${s.visits}</div><div class="l">Visits</div></div>
-        <div class="kpi"><div class="n">${money(erpSales_!=null?erpSales_:s.revenue)}</div><div class="l">Sales${erpSales_!=null?' (uploaded)':' (logged)'}</div></div>
+        <div class="kpi"><div class="n">${money(erpSales_!=null?erpSales_:s.revenue)}</div><div class="l">${erpSales_!=null?'Sales (uploaded)':'Orders logged in the app'}</div></div>
         <div class="kpi"><div class="n">${s.conversion}%</div><div class="l">Conversion rate</div></div>
         <div class="kpi"><div class="n">${s.overdue}</div><div class="l">Overdue follow-ups</div></div>
       </div>

@@ -620,7 +620,7 @@
     'Coverage': 'التغطية',
     'Compare': 'مقارنة',
     'Sales trend': 'اتجاه المبيعات',
-    'Sales by rep': 'المبيعات حسب المندوبة',
+    'Sales by rep': 'الطلبات المسجّلة بالتطبيق حسب المندوبة',   // the chart counts orders logged in the app (its English is harness-read: audit-fixes RE-3)
     'Visit outcome': 'نتيجة الزيارة',
     'Orders won vs. no order': 'طلبيات مقابل بدون طلبية',
     'Sales by brand': 'المبيعات حسب البراند',
@@ -2306,6 +2306,11 @@
     // CLINICS & DOCTORS (redesign module 3): the page heads
     "Every customer: the dashboard, the list and each clinic's card.": 'كل العملاء: لوحة المعلومات والقائمة وبطاقة كل عيادة.',
     'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
+    // REPORTS, ANALYSIS & COVERAGE (redesign module 6)
+    "Visits, contacts, orders and sales for any period, with the coach's reading.": 'الزيارات والجهات والطلبات والمبيعات لأي فترة، مع قراءة المدرب.',
+    "Each clinic's share of the target, what it bought and what to sell next.": 'حصة كل عيادة من التارغت، وما اشترته، وماذا نبيع بعد ذلك.',
+    'Orders logged in the app — trend': 'الطلبات المسجّلة بالتطبيق — الاتجاه',
+    'Orders logged in the app by brand': 'الطلبات المسجّلة بالتطبيق حسب العلامة التجارية',
     // ERP LINKS, PRODUCTS & PLAYBOOK (redesign module 5)
     "The catalog by brand, with each product's specs and selling materials.": 'الكتالوج حسب العلامة التجارية، مع مواصفات كل منتج ومواد البيع.',
     'What each specialty cares about, what to lead with and how to answer.': 'ما يهم كل تخصص، وبماذا تبدأ وكيف ترد.',

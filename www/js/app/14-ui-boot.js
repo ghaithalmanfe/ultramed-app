@@ -35,7 +35,7 @@ function modalSections(inner){
 }
 function modalFrame(inner){
   try{
-    { const mc = document.getElementById('modalContent'); if(mc) mc.classList.toggle('m-wide', !!inner.querySelector(':scope > [data-wide]')); }
+    { const mc = document.getElementById('modalContent'); if(mc){ mc.classList.toggle('m-wide', !!inner.querySelector(':scope > [data-wide]')); mc.classList.toggle('m-grid', !!inner.querySelector(':scope > [data-grid]')); } }
     const h = inner.firstElementChild;
     if(h && h.tagName === 'H3' && !h.classList.contains('mh')){
       h.classList.add('mh');

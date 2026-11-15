@@ -2140,6 +2140,83 @@
   .pb-obj{border-radius:14px;}
   /* === END ERP LINKS, PRODUCTS & PLAYBOOK === */
 
+  /* === REPORTS, ANALYSIS & COVERAGE ===
+     Module 6: the Report view (one bar for the person and the period, figure cards, the coach as the home's advisor,
+     charts two a row, the team comparison as person cards on a phone and a table on a laptop, score cards), the
+     clinic sales analysis and the coverage board. */
+  .rep-bar{display:flex; flex-direction:column; gap:10px; margin:0 0 14px;}
+  .rep-periods{margin:0;}
+  .rep-periods .dt{min-height:44px; padding:6px 8px; font-size:13.5px; white-space:nowrap;}
+  @media (max-width:719px){
+    .rep-periods{overflow-x:auto; scrollbar-width:none; justify-content:flex-start;}
+    .rep-periods::-webkit-scrollbar{display:none;}
+    .rep-periods .dt{flex:0 0 auto; padding:6px 14px;}
+  }
+  #repCustomRow{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05);}
+  .rep-figs{margin-bottom:14px;}
+  .rep-figs .k{min-width:0;}
+  .rep-rev #repErpRow{grid-column:1 / -1; font-size:12px; color:var(--p-muted); line-height:1.4; margin-top:2px;}
+  @media (min-width:1024px){
+    .rep-figs{grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px;}
+    .rep-rev #repErpRow{grid-column:2;}
+    #chartsWrap{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; align-items:start;}
+    #chartsWrap > .chartcard{margin:0;}
+    #scorecards{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; align-items:start;}
+    #scorecards > .score-card{margin:0;}
+  }
+  #chartsWrap{margin-bottom:12px;}
+  /* the coach: the home screen's advisor card */
+  .coach-card{position:relative; overflow:hidden; display:grid; grid-template-columns:minmax(0,1fr); gap:10px; border-radius:var(--p-radius); padding:16px 16px 14px; box-shadow:var(--p-shadow);
+    background:linear-gradient(180deg, #FCFDFD 0%, #F6FAFA 22%, #E6F3F0 56%, #D4EBE7 86%, #CDE7E3 100%); border:1px solid rgba(16,24,40,.04);}
+  .coach-robot{display:none;}
+  .coach-list{display:flex; flex-direction:column; gap:8px; min-width:0;}
+  .coach-item{background:rgba(255,255,255,.86); border:1px solid rgba(16,24,40,.05); border-inline-start:4px solid var(--amber); border-radius:14px; padding:11px 14px;}
+  .coach-item.lv-act{border-inline-start-color:var(--coral);} .coach-item.lv-good{border-inline-start-color:var(--sage);}
+  .coach-tag{font-size:10px; font-weight:800; letter-spacing:.06em; margin-inline-start:4px;}
+  @media (min-width:720px){
+    .coach-card{grid-template-columns:110px minmax(0,1fr); align-items:start; padding:18px 18px 16px 8px;}
+    [dir="rtl"] .coach-card{padding:18px 8px 16px 18px;}
+    .coach-robot{display:block; width:110px; height:auto; position:sticky; top:120px;}
+  }
+  /* the team comparison: person cards on a phone, a table on a laptop (one of the two is display:none) */
+  .cmp-cards{display:none; flex-direction:column; gap:8px;}
+  .cmp-card{border:1px solid var(--p-line); border-radius:14px; padding:10px 12px; background:#FBFCFD;}
+  .cmp-card.team{background:var(--p-mint-soft); border-color:#CFE9DD;}
+  .cmp-n{font-weight:700; font-size:14.5px; margin-bottom:6px; color:var(--p-ink);}
+  .cmp-g{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:4px 12px;}
+  .cmp-g > span{display:flex; justify-content:space-between; gap:8px; font-size:12.5px; color:var(--p-muted);}
+  .cmp-g > span b{color:var(--p-ink);}
+  @media (max-width:719px){ .cmp-cards{display:flex;} .cmp-table{display:none;} #teamCompareCard{background:none; border:none; box-shadow:none; padding:0;} }
+  #teamCompareCard{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05);}
+  .compare-row{align-items:center;}
+  /* score cards */
+  .score-card{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05);}
+  .kpi-grid .kpi{background:#F7FAF9; border:1px solid var(--p-line); border-radius:14px;}
+  #repTopProducts, #repNoOrder{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05);}
+  /* clinic sales analysis */
+  #caRepChips:empty{display:none;}
+  .ca-sum{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05); background:linear-gradient(180deg, #FFFFFF, #F7FBF9);}
+  .ca-row{border-radius:16px; box-shadow:0 1px 2px rgba(16,24,40,.04); border-color:rgba(16,24,40,.07);}
+  @media (min-width:1024px){
+    #app > .view#view-clanalysis{width:calc(100% - 66px); max-width:1320px; margin-inline-start:36px; margin-inline-end:auto; padding:31px 0 48px;}
+    #caBody{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px; align-items:start;}
+    #caBody > .ca-sum, #caBody > .empty, #caBody > :not(.ca-row){grid-column:1 / -1;}
+    #caBody > .card{margin:0 !important;}
+  }
+  @media (min-width:1024px) and (max-width:1279px){ #app > .view#view-clanalysis{width:calc(100% - 48px); margin-inline-start:24px;} }
+  @media (min-width:1024px){ #app > .view#view-reports{width:calc(100% - 66px); max-width:1320px; margin-inline-start:36px; margin-inline-end:auto; padding:31px 0 48px;} }   /* the report's figures and charts take the home's content edges */
+  @media (min-width:1024px) and (max-width:1279px){ #app > .view#view-reports{width:calc(100% - 48px); margin-inline-start:24px;} }
+  .rep-figs .kn{overflow-wrap:normal; white-space:nowrap;}
+  /* the coverage board: a wide sheet; its rows two a row on a laptop, grouped as cards on a phone */
+  .cov-figs{margin:0 0 4px;}
+  .modal.m-grid .cd-sec{display:grid; grid-template-columns:minmax(0,1fr); gap:8px;}
+  .modal.m-grid .cd-sec > *{margin:0 !important;}
+  @media (min-width:900px){
+    .modal.m-grid .cd-sec{grid-template-columns:repeat(2, minmax(0,1fr));}
+    .modal.m-grid .cd-sec > .section-title, .modal.m-grid .cd-sec > .empty, .modal.m-grid .cd-sec > :not(.card){grid-column:1 / -1;}
+  }
+  /* === END REPORTS, ANALYSIS & COVERAGE === */
+
   /* === SCREENS A === */
   /* === END SCREENS A === */
 
@@ -2648,10 +2725,17 @@
   </div>
 
   <div class="view" id="view-clanalysis">
-    <h2 style="font-size:22px; margin:0 0 4px;"><svg class="svgi" aria-hidden="true"><use href="#i-target"/></svg> Clinic Sales Analysis</h2>
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">Clinic Sales Analysis</h2>
+        <p class="ph-sub">Each clinic's share of the target, what it bought and what to sell next.</p>
+      </div>
+    </div>
     <div class="nudge" data-nudge="clanalysis" style="margin-bottom:12px;">Each clinic's share of the monthly target, what it bought, and what to sell next — built from the DSR targets, the ERP invoices, and the team's visit reports.</div>
-    <div class="chip-row" style="margin-bottom:8px;" id="caRepChips"></div>
-    <input type="text" id="caSearch" placeholder="Search clinics…" oninput="renderClinicAnalysis()" style="margin-bottom:10px;">
+    <div class="cl-filters">
+      <div class="inp-ic"><svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="caSearch" placeholder="Search clinics…" oninput="renderClinicAnalysis()"></div>
+      <div class="cl-chipline" id="caRepChips"></div>
+    </div>
     <div id="caBody"></div>
   </div>
 
@@ -2668,17 +2752,26 @@
 
   <!-- REPORTS -->
   <div class="view" id="view-reports">
-    <div class="row-between" style="margin-bottom:14px;">
-      <h2 style="font-size:18px; margin:0;">Report</h2>
-      <button class="chip small" onclick="openMonthReports()"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg> Month reports</button>
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">Report</h2>
+        <p class="ph-sub">Visits, contacts, orders and sales for any period, with the coach's reading.</p>
+      </div>
+      <div class="ph-a">
+        <button class="chip small" onclick="openMonthReports()"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg> Month reports</button>
+        <button class="chip small" onclick="openCoverageBoard()"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg> Coverage</button>
+        <button class="chip small" onclick="openCompare()"><svg class="svgi" aria-hidden="true"><use href="#i-layers"/></svg> Compare</button>
+      </div>
     </div>
-    <div class="chip-row" style="margin-bottom:10px;" id="reportRepFilter"></div>
-    <div class="chip-row" style="margin-bottom:16px;">
-      <div class="chip" id="repWeek" onclick="setReportRange(7)">This week</div>
-      <div class="chip on" id="repMonth" onclick="setReportRange(30)">This month</div>
-      <div class="chip" id="repQuarter" onclick="setReportRange(90)">This quarter</div>
-      <div class="chip" id="repAll" onclick="setReportRange(9999)">All time</div>
-      <div class="chip" id="repCustom" onclick="toggleReportCustom()"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg> Pick dates</div>
+    <div class="rep-bar">
+      <div class="chip-row" id="reportRepFilter"></div>
+      <div class="dash-toggle rep-periods">
+        <div class="dt" id="repWeek" onclick="setReportRange(7)">This week</div>
+        <div class="dt on" id="repMonth" onclick="setReportRange(30)">This month</div>
+        <div class="dt" id="repQuarter" onclick="setReportRange(90)">This quarter</div>
+        <div class="dt" id="repAll" onclick="setReportRange(9999)">All time</div>
+        <div class="dt" id="repCustom" onclick="toggleReportCustom()"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg> Pick dates</div>
+      </div>
     </div>
     <div id="repCustomRow" style="display:none; margin-bottom:16px;" class="card">
       <div style="display:flex; gap:10px;">
@@ -2687,22 +2780,19 @@
       </div>
       <button class="btn" style="margin-top:10px; padding:11px;" onclick="applyReportCustomRange()">Show this period</button>
     </div>
-    <div class="chip-row" style="margin-bottom:16px;">
-      <div class="chip small" onclick="openCoverageBoard()"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg> Coverage</div>
-      <div class="chip small" onclick="openCompare()"><svg class="svgi" aria-hidden="true"><use href="#i-layers"/></svg> Compare</div>
-    </div>
     <div class="section-title" style="margin-top:0;"><span><svg class="svgi" aria-hidden="true"><use href="#i-compass"/></svg> Sales coach — read this first</span></div>
     <div class="nudge" data-nudge="reports-coach" style="margin-bottom:10px;">The numbers below are summarized here as actions: red = do now, orange = keep an eye, green = working, do more of it.</div>
     <div id="coachCard" style="margin-bottom:16px;"></div>
-    <div class="card">
-      <div class="report-line"><span>Visits logged</span><span class="v" id="repVisits">0</span></div>
-      <div class="report-line"><span>Contacts seen</span><span class="v" id="repContacts">0</span></div>
-      <div class="report-line"><span>Orders taken</span><span class="v" id="repOrders">0</span></div>
-      <div class="report-line"><span id="repRevenueLabel">Sales</span><span class="v" id="repRevenue">0.00 KD</span></div>
-      <div id="repErpRow" style="display:none; color:var(--muted); font-size:12px; padding:2px 0 6px;"><span id="repErpRevenue"></span></div>
-      <div class="report-line"><span>Discount given</span><span class="v" id="repDiscount">0.00 KD</span></div>
-      <div class="report-line"><span>Clinics covered</span><span class="v" id="repClinics">0</span></div>
-      <div class="report-line"><span>Overdue follow-ups</span><span class="v" id="repOverdue">0</span></div>
+    <!-- the period's figures as the home screen's figure cards (each value has its id, as before) -->
+    <div class="kpi4 rep-figs">
+      <div class="k"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg></div><div class="kn" id="repVisits">0</div><div class="kl">Visits logged</div></div>
+      <div class="k"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-users"/></svg></div><div class="kn" id="repContacts">0</div><div class="kl">Contacts seen</div></div>
+      <div class="k"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-cart"/></svg></div><div class="kn" id="repOrders">0</div><div class="kl">Orders taken</div></div>
+      <div class="k rep-rev"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></div><div class="kn" id="repRevenue">0.00 KD</div><div class="kl" id="repRevenueLabel">Orders logged in the app</div>
+        <div id="repErpRow" style="display:none;"><span id="repErpRevenue"></span></div></div>
+      <div class="k"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-gift"/></svg></div><div class="kn" id="repDiscount">0.00 KD</div><div class="kl">Discount given</div></div>
+      <div class="k"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-building"/></svg></div><div class="kn" id="repClinics">0</div><div class="kl">Clinics covered</div></div>
+      <div class="k"><div class="ki"><svg class="svgi" aria-hidden="true"><use href="#i-alert"/></svg></div><div class="kn" id="repOverdue">0</div><div class="kl">Overdue follow-ups</div></div>
     </div>
     <div id="chartsWrap"></div>
 
