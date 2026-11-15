@@ -17,6 +17,9 @@
 //   - a test cloud that already holds documents, unless --force: then every
 //     key of the backup is written over, and the documents the backup does not
 //     have are left as they are, and named.
+// A nightly encrypted backup (.umbackup, or its .zip) is refused before the
+// target is even looked at, with the command that restores it (into a separate
+// Firebase project: scripts/backup/nightly/restore.js, docs/backup.md).
 // The backup's pending changes (this phone's unsent edits) are never written:
 // they were not in the cloud. Every key is read back from the target — from
 // the file on disk for the command line — and compared byte for byte.
@@ -25,7 +28,11 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const core = require('../../www/js/core.js');
-const { sha256 } = require('./verify.js');
+const { sha256, otherKind } = require('./verify.js');
+const OTHER_KIND = {
+  nightly: 'a nightly encrypted backup (.umbackup), not a full backup taken on the phone: it is restored into a separate Firebase project with node scripts/backup/nightly/restore.js (docs/backup.md) — this tool restores only the phone\'s full backups, into a test cloud',
+  zip: 'a .zip file: unzip it first — a nightly backup downloaded from GitHub is a .zip holding one .umbackup file, restored with node scripts/backup/nightly/restore.js (docs/backup.md)',
+};
 
 const TEST_KIND = 'ultramed-test-cloud';
 const PRODUCTION = /firestore|googleapis|firebase|ultramed-field-ops/i;
@@ -110,6 +117,8 @@ async function main(argv, out){
   const file = argv.find((a, i) => !a.startsWith('--') && argv[i - 1] !== '--into');
   const i = argv.indexOf('--into'), into = i >= 0 ? argv[i + 1] : null, force = argv.includes('--force');
   if(!file){ out('usage: node scripts/backup/restore.js <ultramed-full-backup-….json> --into <name>.test-cloud.json [--force]'); return 1; }
+  const other = otherKind(file);
+  if(other){ out('refused: ' + path.basename(file) + ' is ' + OTHER_KIND[other]); return 1; }
   try{
     const target = fileTestCloud(into);
     let backup;
