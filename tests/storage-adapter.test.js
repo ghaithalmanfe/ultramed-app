@@ -19,6 +19,7 @@ function adapter(){
   return `const APP_REV = '${rev}';\n` + src.slice(a, b);
 }
 const ADAPTER = adapter();
+const REV = parseInt(ADAPTER.match(/^const APP_REV = '([^']+)'/m)[1].replace(/\D/g, ''), 10); // the revision the app writes (APP_REV_NUM)
 function world(){
   const W = { rules: 'old', min: 0, store: {}, writes: [], ls: {} };
   const refused = () => { const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; return e; };
@@ -61,16 +62,16 @@ test('the rules published before v123, then the v123 rules with the oldest versi
   W.rules = 'v123'; W.min = 123; // the owner publishes the v123 rules and raises MIN_APP_REV() that afternoon
   await s.set('tasks', '["afternoon"]');
   assert.equal(W.store.tasks.value, '["afternoon"]', 'a v123 phone that wrote without rev this morning lands its save: sent again with rev');
-  assert.equal(W.store.tasks.rev, 123);
+  assert.equal(W.store.tasks.rev, REV);
   await s.update('tasks', () => '["transaction"]');
   assert.equal(W.store.tasks.value, '["transaction"]', 'its next write carries rev at once');
-  assert.deepEqual(W.writes.slice(-1).map(w => [w.rev, w.ok]), [[123, true]], 'no refused try first: the shape that landed last is remembered');
+  assert.deepEqual(W.writes.slice(-1).map(w => [w.rev, w.ok]), [[REV, true]], 'no refused try first: the shape that landed last is remembered');
   s = W.phone(); // the app reopened the same day
   await s.update('tasks', () => '["reopened"]');
   assert.equal(W.store.tasks.value, '["reopened"]', '…and after the app is reopened the same day');
-  assert.deepEqual(W.writes.slice(-1).map(w => [w.rev, w.ok]), [[123, true]]);
+  assert.deepEqual(W.writes.slice(-1).map(w => [w.rev, w.ok]), [[REV, true]]);
   await s.setMany([['visitsIndex', '{"v":1}'], ['erpSales', '{}']]);
-  assert.equal(W.store.visitsIndex.rev, 123, 'a batch too');
+  assert.equal(W.store.visitsIndex.rev, REV, 'a batch too');
 });
 
 test('the other way: a phone that last wrote without rev under the old rules; the v123 rules (MIN 0) take it as it is, and raised to 123 it goes back to rev (v123 round 3)', async () => {
@@ -83,7 +84,7 @@ test('the other way: a phone that last wrote without rev under the old rules; th
   W.min = 123;
   await s.update('tasks', () => '["MIN 123"]');
   assert.equal(W.store.tasks.value, '["MIN 123"]', 'refused without rev → sent with rev → lands');
-  assert.equal(W.store.tasks.rev, 123);
+  assert.equal(W.store.tasks.rev, REV);
   // the old rules come back (the console's previous version re-published): sent again without rev, lands
   W.rules = 'old';
   await s.set('tasks', '["old again"]');
@@ -95,11 +96,11 @@ test('refused both ways (a rep\'s save the rules refuse anyway): thrown, and the
   W.rules = 'v123'; W.min = 0;
   const s = W.phone();
   await s.set('tasks', '["first"]');
-  assert.equal(W.store.tasks.rev, 123);
+  assert.equal(W.store.tasks.rev, REV);
   W.min = 999; // no shape can land
   await assert.rejects(s.set('tasks', '["refused"]'), e => e && e.code === 'permission-denied');
   W.min = 123;
   const n = W.writes.length;
   await s.set('tasks', '["after"]');
-  assert.deepEqual(W.writes.slice(n).map(w => [w.rev, w.ok]), [[123, true]], 'still writes rev first');
+  assert.deepEqual(W.writes.slice(n).map(w => [w.rev, w.ok]), [[REV, true]], 'still writes rev first');
 });

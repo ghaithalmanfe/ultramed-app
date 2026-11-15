@@ -7,12 +7,33 @@
 // phone's. Prints the counts per key and per data set. It never prints a value:
 // the file holds customer, sales and team data.
 //
+// A nightly encrypted backup (.umbackup, or the .zip GitHub hands one over in)
+// is another kind of file, with its own tools in scripts/backup/nightly/: it is
+// named as such, with the command that checks it (exit 2), never called broken.
+//
 // Exit code: 0 intact · 1 not intact, or not a backup file · 2 could not be read.
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const core = require('../../www/js/core.js');
 
 function sha256(s){ return crypto.createHash('sha256').update(String(s), 'utf8').digest('hex'); }
+// The other kind of backup, told by its first bytes: 'nightly' (a nightly
+// encrypted backup starts "UMBACKUP", scripts/backup/nightly/bundle.js), 'zip'
+// (a .zip — how GitHub hands a nightly backup over), else null.
+function otherKind(file){
+  let fd = null, n = 0;
+  const b = Buffer.alloc(8);
+  try{ fd = fs.openSync(file, 'r'); n = fs.readSync(fd, b, 0, 8, 0); }
+  catch(e){ return null; }
+  finally{ if(fd !== null) try{ fs.closeSync(fd); }catch(e){} }
+  if(n === 8 && b.toString('latin1') === 'UMBACKUP') return 'nightly';
+  if(n >= 4 && b.readUInt32BE(0) === 0x504B0304) return 'zip';
+  return null;
+}
+const OTHER_KIND = {
+  nightly: 'a nightly encrypted backup (.umbackup), not a full backup taken on the phone: check it with node scripts/backup/nightly/verify.js <file> (docs/backup.md)',
+  zip: 'a .zip file: unzip it first — a nightly backup downloaded from GitHub is a .zip holding one .umbackup file, checked with node scripts/backup/nightly/verify.js <file> (docs/backup.md)',
+};
 function readBackup(file){ return JSON.parse(fs.readFileSync(file, 'utf8')); }
 function verifyObject(obj){ return core.verifyBackupFile(obj, sha256); }
 
@@ -65,6 +86,11 @@ function main(argv, out){
   out = out || (s => process.stdout.write(s + '\n'));
   const json = argv.includes('--json'), file = argv.find(a => !a.startsWith('--'));
   if(!file){ out('usage: node scripts/backup/verify.js <ultramed-full-backup-….json> [--json]'); return 2; }
+  const other = otherKind(file);
+  if(other){
+    out(json ? JSON.stringify({ ok: false, error: 'another kind of backup: ' + OTHER_KIND[other] }) : path.basename(file) + ' is ' + OTHER_KIND[other]);
+    return 2;
+  }
   let obj;
   try{ obj = readBackup(file); }
   catch(e){
@@ -80,5 +106,5 @@ function main(argv, out){
   else report(res, file).forEach(l => out(l));
   return res.ok ? 0 : 1;
 }
-module.exports = { sha256, readBackup, verifyObject, report, main };
+module.exports = { sha256, readBackup, verifyObject, report, otherKind, main };
 if(require.main === module) process.exitCode = main(process.argv.slice(2));

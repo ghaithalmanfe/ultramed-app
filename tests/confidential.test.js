@@ -20,6 +20,7 @@ const SELF = new Set(['tests/confidential.test.js', ALLOW_FILE]);
 const FIXTURES = /^tests\/e2e\/fixtures\//;                      // synthetic data files may live here
 const SHEET = /\.(xlsx|xlsm|xlsb|xls|ods|numbers|csv|tsv)$/i;
 const BINARY = /\.(png|jpe?g|gif|webp|ico|bmp|pdf|woff2?|ttf|otf|eot|mp3|mp4|mov|zip|gz|jar)$/i;
+const BACKUP_FILE = /\.umbackup(\.partial)?$/i;                  // a nightly backup (scripts/backup/nightly): encrypted, still never committed
 
 const RULES = [
   { id: 'email', what: "an address at the company's e-mail domain",
@@ -99,13 +100,14 @@ function scan(files, allow, base){
       if(!allowed('sales-file', f, path.basename(f))) found.push(`${f}: a spreadsheet / CSV (sales files never go in the repository)`);
       continue;
     }
+    if(BACKUP_FILE.test(f)){ found.push(`${f}: a backup file (backups never go in the repository, even encrypted)`); continue; }
     if(BINARY.test(f)) continue;
     const buf = fs.readFileSync(full);
     if(buf.includes(0)) continue;                                  // binary
     const text = buf.toString('utf8');
     if(/\.json$/i.test(f) && !FIXTURES.test(f)){
       let v = null; try{ v = JSON.parse(text); }catch(e){}
-      if(v != null && holdsSalesLines(v) && !allowed('sales-file', f, path.basename(f))) found.push(`${f}: JSON holding ERP sales lines`);
+      if(v != null && holdsSalesLines(v) && !allowed('sales-file', f, path.basename(f))) found.push(`${f}: JSON holding ERP sales lines, or a backup of the account`);
     }
     for(const r of RULES){
       r.re.lastIndex = 0;
@@ -165,6 +167,23 @@ test('the guard catches each kind of leak (and says where, never what)', () => {
     assert.equal(left.filter(s => /\(mobile\)/.test(s)).length, 1);
     assert.equal(left.filter(s => /\(secret\)/.test(s)).length, 1);
     assert.deepEqual(allow.map(a => a.used), [1, 1, 0]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a backup is caught too: a nightly encrypted file (.umbackup), one being written, its decrypted bundle', () => {
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'um-conf-'));
+  try{
+    const NB = require('../scripts/backup/nightly/bundle.js');
+    const plain = NB.buildBundle({ docs: new Map([['clinics', { fields: { value: { stringValue: '[{"id":"c1"}]' } } }]]), project: 'demo', createdAt: 'x' }).plaintext;
+    fs.mkdirSync(path.join(dir, 'tests'));
+    fs.writeFileSync(path.join(dir, 'tests', 'night.umbackup'), NB.encryptBundle(plain, 'a passphrase of more than twenty characters', {}, { N: 2 ** 14 }));
+    fs.writeFileSync(path.join(dir, 'tests', 'night.umbackup.partial'), 'cut');
+    fs.writeFileSync(path.join(dir, 'tests', 'bundle.json'), plain);
+    const found = scan(['tests/night.umbackup', 'tests/night.umbackup.partial', 'tests/bundle.json'], [], dir);
+    assert.deepEqual(found.map(s => s.split(':')[0]).sort(), ['tests/bundle.json', 'tests/night.umbackup', 'tests/night.umbackup.partial'], found.join('\n'));
+    assert.ok(found.every(s => !s.includes('c1')), 'the report names the place, never the value');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

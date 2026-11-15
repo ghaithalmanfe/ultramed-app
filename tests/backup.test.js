@@ -31,6 +31,14 @@ function account(){
 const meta = { app: 'v120', project: 'test-project', takenAt: '2026-11-11T10:00:00.000Z', takenBy: 'Dr. Ghaith' };
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'um-backup-test-'));
 const run = (script, args) => { const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'backup', script)].concat(args), { encoding: 'utf8', cwd: ROOT }); return { status: r.status, out: (r.stdout || '') + (r.stderr || '') }; };
+// A real nightly encrypted backup (scripts/backup/nightly), made with a cheap key for speed.
+function nightlyFile(dir){
+  const NB = require('../scripts/backup/nightly/bundle.js');
+  const plain = NB.buildBundle({ docs: new Map([['clinics', { fields: { value: { stringValue: J([{ id: 'c1', notes: SECRET }]) } } }]]), project: 'test-project', createdAt: '2026-11-12T23:15:02.000Z', tier: 'daily' }).plaintext;
+  const p = path.join(dir, 'ultramed-state-daily-20261112-231502Z.umbackup');
+  fs.writeFileSync(p, NB.encryptBundle(plain, 'a passphrase of more than twenty characters', { project: 'test-project', tier: 'daily' }, { N: 2 ** 14 }));
+  return p;
+}
 function writeBackup(dir, mutate, pending){
   const f = core.fullBackupFile(account(), meta, pending);
   if(mutate) mutate(f);
@@ -74,6 +82,18 @@ describe('scripts/backup/verify.js', () => {
     const other = path.join(dir, 'other.json'); fs.writeFileSync(other, J({ kind: 'something' }));
     const r = run('verify.js', [other]);
     assert.equal(r.status, 1); assert.match(r.out, /not an UltraMed full backup file/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  test('a nightly encrypted backup (.umbackup), or the .zip GitHub hands it over in, is named and pointed to its own tool: exit 2', () => {
+    const dir = tmpDir(), um = nightlyFile(dir);
+    let r = run('verify.js', [um]);
+    assert.equal(r.status, 2, r.out);
+    assert.match(r.out, /a nightly encrypted backup \(\.umbackup\)/); assert.match(r.out, /node scripts\/backup\/nightly\/verify\.js/);
+    assert.doesNotMatch(r.out, /not a JSON file|cut short/, 'not called a broken file: it is another kind of backup');
+    const zip = path.join(dir, 'ultramed-backup-daily-20261112-231502Z.zip');
+    fs.writeFileSync(zip, Buffer.concat([Buffer.from([0x50, 0x4B, 0x03, 0x04]), Buffer.alloc(200)]));
+    r = run('verify.js', [zip]);
+    assert.equal(r.status, 2, r.out); assert.match(r.out, /a \.zip file: unzip it first/); assert.match(r.out, /scripts\/backup\/nightly\/verify\.js/);
     fs.rmSync(dir, { recursive: true, force: true });
   });
   test('--json gives the same verdict and counts for a program', () => {
@@ -134,6 +154,14 @@ describe('scripts/backup/restore.js — a test cloud only', () => {
     r = run('restore.js', [p, '--into', into, '--force']);
     assert.equal(r.status, 0, r.out); assert.match(r.out, /Written over \(--force\): 12/);
     assert.ok(!r.out.includes(SECRET));
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  test('command line: a nightly encrypted backup is refused, pointed to its own restore, and nothing is written', () => {
+    const dir = tmpDir(), um = nightlyFile(dir), into = path.join(dir, 'restored.test-cloud.json');
+    const r = run('restore.js', [um, '--into', into]);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /a nightly encrypted backup \(\.umbackup\)/); assert.match(r.out, /node scripts\/backup\/nightly\/restore\.js/);
+    assert.equal(fs.existsSync(into), false);
     fs.rmSync(dir, { recursive: true, force: true });
   });
   test('command line: the production cloud, a URL, the published folder, another file name, a file that is not a test cloud — refused, nothing written', () => {
