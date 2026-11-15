@@ -375,7 +375,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   check('Rep: no figure spills out of its box at any of those widths', spill2.length === 0, spill2.slice(0, 3));
   check('Rep (English, phone): her target card and figures in the picture\'s words — achieved over the target, remaining, N Work Days Left, the amount a day (whole KWD of the same figures), the forecast % with its amount and "estimate"',
     wrap2.length === 0 && rep.remaining != null && new RegExp(whole(rep.ofTarget) + ' KWD ' + whole(rep.sales) + ' ' + whole(rep.remaining) + ' KWD Remaining \\d+ Work Days? Left ' + whole(rep.perday) + ' KWD / Day').test(rep.view)
-      && /Forecast \d+% ≈ [\d,]+ KWD · estimate/.test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0] });
+      && /Forecast \d+% ≈ [\d,]+ KWD estimate/.test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0] });
 
   // ======================= Arabic: right to left, no English left =======================
   const english = () => ev(() => {

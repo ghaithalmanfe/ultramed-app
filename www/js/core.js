@@ -4397,6 +4397,9 @@
   // who logged no visit or call in a month has no score there (monthlyTrend's rule), and a month nobody has a score in
   // is null, never 0 — and `sameDays`: the month before from its day 1 to today's day of the month (a fair comparison
   // with a month still running). current = the running month's score (the card's figure).
+  // opts.known {month: score} / opts.knownSame {to, score}: scores of months already over (and of the same days of the
+  // month before) worked out earlier from the very same lists — taken as given, so a refresh works out the running
+  // month only. The caller keeps them only while everything they are made of is unchanged (msBuild's past key).
   function homeKpiMonths(data, opts){
     opts = opts || {};
     var reps = opts.reps || [], n = opts.months || 6, S = opts.settings || null, today = String(data.today || '');
@@ -4410,13 +4413,13 @@
       });
       return v.length ? Math.round(v.reduce(function(a, b){ return a + b; }, 0) / v.length) : null;
     };
-    var months = [];
+    var months = [], known = opts.known || null, has = function(o, k){ return !!o && Object.prototype.hasOwnProperty.call(o, k); };
     for(var i = n - 1; i >= 0; i--){
-      var m = addMonthsStr(today.slice(0, 7) + '-01', -i).slice(0, 7), end = erpMonthEnd(m);
-      months.push({ month: m, from: m + '-01', to: end > today ? today : end, score: score(m + '-01', end > today ? today : end) });
+      var m = addMonthsStr(today.slice(0, 7) + '-01', -i).slice(0, 7), end = erpMonthEnd(m), to = end > today ? today : end;
+      months.push({ month: m, from: m + '-01', to: to, score: i > 0 && has(known, m) ? known[m] : score(m + '-01', to) });   // the running month (i = 0) is always worked out
     }
     var pm = addMonthsStr(today.slice(0, 7) + '-01', -1).slice(0, 7), pTo = xdDay(pm, xdDayOf(today));
-    var cur = months[months.length - 1].score, prev = score(pm + '-01', pTo);
+    var ks = opts.knownSame, cur = months[months.length - 1].score, prev = ks && ks.to === pTo && has(ks, 'score') ? ks.score : score(pm + '-01', pTo);
     return { months: months, current: cur, sameDays: { month: pm, to: pTo, score: prev }, delta: cur != null && prev != null ? cur - prev : null };
   }
 

@@ -406,6 +406,34 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   check('Add to today\'s plan from the clinic card: a clinic already planned is not listed twice and keeps its note and time; a new one is stored with the time it was planned (as the plan picker stores it)',
     !!ap.b && ap.countA === 1 && !!ap.keptA && ap.keptA.note === 'planned in the picker' && ap.countB === 1 && !!ap.entryB && typeof ap.entryB === 'object' && typeof ap.entryB.at === 'number', ap);
 
+  // ======================= the KPI months of the first figure card: kept between refreshes only while unchanged =======================
+  await boot(G, 'supervisor', 1440, 900);
+  const kk = await ev(async () => {
+    await msWhenReady();
+    const fresh = () => { const v = msView(), d = Object.assign({}, digestData(), { today: todayStr() }); try{ d.erpShare = UMCore.erpShare(d); }catch(e){}
+      return UMCore.homeKpiMonths(d, { reps: v.reps, months: 6, settings: kpiSettings() }); };
+    const pick = K => K.months.map(x => x.month + ':' + x.score).join(',') + '|' + K.sameDays.to + ':' + K.sameDays.score + '|' + K.delta;
+    const first = { same: pick(_msModel.H.kpi) === pick(fresh()), months: _msModel.H.kpi.months.length };
+    // a visit today (her clinic's last visit and follow-up move with it, as a visit save moves them): only the running month is worked out again
+    const c = clinics.find(x => x.rep === 'Mariam'), keep = { lv: c.lastVisit, nf: c.nextFollowUp };
+    visits.push({ id: 'vkpi1', clinicId: c.id, rep: 'Mariam', date: todayStr(), ts: Date.now(), products: [], orderTaken: false, orderTotal: 0, doctorIds: [] }); c.lastVisit = todayStr(); c.nextFollowUp = '2026-10-20';
+    renderToday(); await msWhenReady();
+    const today = { kept: _msModel.H.kpiKept, same: pick(_msModel.H.kpi) === pick(fresh()) };
+    // a visit dated in a month that is over: nothing is kept
+    visits.push({ id: 'vkpi2', clinicId: c.id, rep: 'Mariam', date: '2026-09-10', ts: Date.now(), products: [], orderTaken: false, orderTotal: 0, doctorIds: [] });
+    renderToday(); await msWhenReady();
+    const past = { kept: _msModel.H.kpiKept, same: pick(_msModel.H.kpi) === pick(fresh()), sept: (_msModel.H.kpi.months.find(x => x.month === '2026-09') || {}).score };
+    // a KPI setting changed (the supervisor's "KPI settings"): nothing is kept either
+    const S0 = JSON.stringify(BENCHMARKS.kpi || null); BENCHMARKS.kpi = Object.assign({}, kpiSettings(), { visitsPerDay: (Number(kpiSettings().visitsPerDay) || 8) + 3 });
+    renderToday(); await msWhenReady();
+    const setting = { kept: _msModel.H.kpiKept, same: pick(_msModel.H.kpi) === pick(fresh()) };
+    BENCHMARKS.kpi = JSON.parse(S0); if(BENCHMARKS.kpi == null) delete BENCHMARKS.kpi;
+    visits.pop(); visits.pop(); c.lastVisit = keep.lv; c.nextFollowUp = keep.nf; renderToday(); await msWhenReady();
+    return { first, today, past, setting };
+  });
+  check('The KPI months behind "Team Performance": a visit saved today works out the running month only (the months that are over are kept); a visit dated in a past month or a changed KPI setting works every month out again — and each time the months on the card equal a calculation from nothing',
+    kk.first.same && kk.first.months === 6 && kk.today.kept === true && kk.today.same && kk.past.kept === false && kk.past.same && kk.setting.kept === false && kk.setting.same, kk);
+
   // ======================= a rep's phone at phone speed, a year of visits =======================
   seed(cloud, { yearVisits: true });
   await boot(M, 'rep', 390, 844);

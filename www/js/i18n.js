@@ -2246,7 +2246,7 @@
     // ---- the shell (premium redesign): the navigation's groups, the top bar, the More list ----
     'Overview': 'نظرة عامة',
     'Field operations': 'العمل الميداني',
-    'Intelligence': 'التقارير والتحليل',
+    'Intelligence': 'التحليلات',
     'Management': 'الإدارة',
     'Main navigation': 'القائمة الرئيسية',
     'Language': 'اللغة',
@@ -2348,7 +2348,9 @@
     'Visit logged': 'زيارة مسجلة',
     'Call logged': 'مكالمة مسجلة',
     'Order logged in the app': 'طلب مسجّل بالتطبيق',
-    'Driving Better Oral Care Together': 'معاً نحو رعاية أفضل للفم',
+    // the photo card's three lines (each its own text): «نقود رعاية أفضل للفم معاً»
+    'Driving': 'نقود',
+    'Better Oral Care': 'رعاية أفضل للفم',
     'Better Oral Care. Together.': 'رعاية أفضل للفم. معاً.',
     'Field Operations': 'العمل الميداني',
     'Settings': 'الإعدادات',

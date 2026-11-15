@@ -5365,6 +5365,20 @@ describe('management dashboard (v123)', () => {
     assert.equal(one.current, tot(M));
   });
 
+  test('home series: the KPI months with past scores handed back (known) — the same result, and only the running month is worked out again', () => {
+    const d = data(), full = core.homeKpiMonths(d, { reps, months: 3 });
+    const known = {}; full.months.slice(0, -1).forEach(m => { known[m.month] = m.score; });
+    const again = core.homeKpiMonths(d, { reps, months: 3, known, knownSame: { to: full.sameDays.to, score: full.sameDays.score } });
+    assert.deepEqual(again, full);                                              // nothing changes when the lists are the same
+    // what is handed back is taken as given for the months that are over; the running month never is
+    const forced = core.homeKpiMonths(d, { reps, months: 3, known: { '2026-08': 11, '2026-09': 22, '2026-10': 33 }, knownSame: { to: full.sameDays.to, score: 44 } });
+    assert.deepEqual(forced.months.map(m => m.score), [11, 22, full.current]);
+    assert.equal(forced.current, full.current); assert.equal(forced.sameDays.score, 44); assert.equal(forced.delta, full.current - 44);
+    // the same days kept for another day of the month are not used
+    const stale = core.homeKpiMonths(d, { reps, months: 3, known, knownSame: { to: '2026-09-07', score: 44 } });
+    assert.equal(stale.sameDays.score, full.sameDays.score);
+  });
+
   test('home series: the target card\'s ring says the achievement to one decimal (pct1), the same division as pct', () => {
     const D = core.execDashboard(data(), { reps });
     assert.equal(D.achievement.pct1, Math.round(D.achievement.achieved / D.achievement.target * 1000) / 10);

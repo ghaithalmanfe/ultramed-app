@@ -726,6 +726,32 @@ function msSig(v){
   (events || []).forEach(e => { if(e && e.kind && (team || inV(e.rep))) out.push([e.id, e.kind, e.type || '', e.rep || '', e.at || '', e.resolvedAt || '', e.removed || '', (e.checks || []).join(','), e.clinicId || ''].join('~')); });
   return out.join('\u0001');
 }
+// The KPI scores of the months that are over (and of the same days of the month before) are kept between refreshes
+// only while EVERYTHING kpiScorecard reads for them is unchanged: the people, the KPI settings, the targets, the sales
+// files (their index: a file's rows never change under its key), the ERP links, the clinics, the requests / escalations
+// / stands, the visits and the day plans dated before the running month, and the day (the months, the same days). One
+// thing moves with the clock alone — a client request still open is late once the agreed hours have passed — so nothing
+// is kept while a request of the month before could still be inside those hours (the first day or so of a month).
+// A clinic's last visit and next follow-up are left out of the fingerprint: no KPI measure reads them (kpiScorecard and
+// the sales attribution read a clinic's owner, class, doctors, name and sharing), and every visit saved today moves them.
+// null = keep nothing. The key is a fingerprint (length + hash) of those lists as text; photos are not KPI inputs.
+let _msKpiPast = null;
+function msKpiPastKey(v, S){
+  try{
+    const today = todayStr(), m0 = today.slice(0, 7) + '-01';
+    const lim = (Number(S && S.responseHours) || 24) * 3600000;
+    if(lim > 20 * 86400000 || Date.now() - new Date(m0 + 'T00:00:00').getTime() < lim + 3600000) return null;
+    const txt = [today, v.reps.join('|'), JSON.stringify(S || {}), JSON.stringify(targets || {}),
+      JSON.stringify(erpSales || {}, (k, x) => k === 'rows' && Array.isArray(x) ? x.length : x), JSON.stringify(erpMap || {}),
+      JSON.stringify(clinics || [], (k, x) => k === 'lastVisit' || k === 'nextFollowUp' ? undefined : x), JSON.stringify(events || []),
+      JSON.stringify((visits || []).filter(x => x && x.date < m0), (k, x) => k === 'photos' ? undefined : x),
+      JSON.stringify(Object.keys(dayPlans || {}).filter(d => d < m0).sort().map(d => [d, dayPlans[d]]))].join('\u0001');
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for(let i = 0; i < txt.length; i++){ const c = txt.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return txt.length + ':' + (h2 >>> 0).toString(16) + (h1 >>> 0).toString(16);
+  }catch(e){ return null; }
+}
 // The view's figures. Sales lines are attributed once and shared by both calls
 // (the same lines More → KPI scorecard and the management sheet read).
 function msBuild(v){
@@ -746,8 +772,16 @@ function msBuild(v){
     m.coach = (ins || []).filter(i => i && (i.level === 'act' || i.level === 'watch') && !/^target-/.test(i.key || '') && i.key !== 'followups' && i.title && hasAr(i.title))[0] || null;
   }catch(e){ console.error('main screen: coach', e); m.coach = null; }
   // the first figure card: the KPI score month by month (its sparkline) and against the same days of last month (its ▲/▼)
-  try{ m.H = { kpi: UMCore.homeKpiMonths(Object.assign({}, data, { today: todayStr() }), { reps: v.reps, months: 6, settings: typeof kpiSettings === 'function' ? kpiSettings() : null, rows }) }; }
-  catch(e){ console.error('main screen: KPI months', e); m.H = {}; }
+  // (the months that are over, and the same days of the month before, are kept while everything they are made of is
+  // unchanged — msKpiPastKey — so a refresh works out the running month only)
+  try{
+    const S2 = typeof kpiSettings === 'function' ? kpiSettings() : null, pk = msKpiPastKey(v, S2);
+    const hit = pk != null && _msKpiPast && _msKpiPast.key === pk ? _msKpiPast : null;
+    const K = UMCore.homeKpiMonths(Object.assign({}, data, { today: todayStr() }), { reps: v.reps, months: 6, settings: S2, rows, known: hit ? hit.months : null, knownSame: hit ? hit.same : null });
+    m.H = { kpi: K, kpiKept: !!hit };
+    if(pk != null){ const past = {}; K.months.slice(0, -1).forEach(x => { past[x.month] = x.score; }); _msKpiPast = { key: pk, months: past, same: { to: K.sameDays.to, score: K.sameDays.score } }; }
+    else _msKpiPast = null;
+  }catch(e){ console.error('main screen: KPI months', e); m.H = {}; _msKpiPast = null; }
   if(v.kind === 'person' && typeof kpiSettings === 'function' && typeof kpiRange === 'function'){
     const S = kpiSettings(), base = Object.assign({}, data, { today: todayStr() });
     const card = p => { const r = kpiRange(p); return UMCore.kpiScorecard(base, { rep: v.rep, from: r.from, to: r.to, settings: S, rows }); };
@@ -969,10 +1003,10 @@ function msHeroHTML(v, m, P, tt){
   const exp = msExpected(wd), pace = D && A.pct != null ? msPace(A.achieved, A.target, wd.done, wd.total) : null;
   const pct = A.pct != null ? A.pct : null, pct1 = A.pct1 != null ? A.pct1 : pct;
   // the ring: achieved ÷ target (execDashboard's figure, one decimal), drawn up to 100 % (beyond, full; the figure says how far)
-  const R = 87.5, C = 2 * Math.PI * R, f = pct == null ? 0 : Math.max(0, Math.min(100, pct1)) / 100;
-  const ring = `<div class="ms-hring${pct == null ? ' none' : ''}"><svg class="ms-ring" viewBox="0 0 190 190" aria-hidden="true"><defs><linearGradient id="msRingG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8FF3BF"/><stop offset=".5" stop-color="#6AEBA4"/><stop offset="1" stop-color="#46D98E"/></linearGradient></defs>`
-    + `<circle class="trk" cx="95" cy="95" r="${R}" stroke-width="15"/>`
-    + (f > 0 ? `<circle class="val" cx="95" cy="95" r="${R}" stroke-width="15" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 95 95)"/>` : '') + `</svg>`
+  const R = 86.5, C = 2 * Math.PI * R, f = pct == null ? 0 : Math.max(0, Math.min(100, pct1)) / 100;
+  const ring = `<div class="ms-hring${pct == null ? ' none' : ''}"><svg class="ms-ring" viewBox="0 0 190 190" aria-hidden="true"><defs><linearGradient id="msRingG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8CF1BB"/><stop offset=".5" stop-color="#74EBA9"/><stop offset="1" stop-color="#62E59D"/></linearGradient></defs>`
+    + `<circle class="trk" cx="95" cy="95" r="${R}" stroke-width="17"/>`
+    + (f > 0 ? `<circle class="val" cx="95" cy="95" r="${R}" stroke-width="17" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 95 95)"/>` : '') + `</svg>`
     + `<div class="ms-rc"${pct == null ? '' : ` data-ms="achievement" data-value="${pct}"`}><strong>${pct == null ? '—' : msN(String(pct1) + '%')}</strong><span>${msT('Target Achieved')}</span></div></div>`;
   const val = (k, n, cls) => n != null ? `<span class="ms-hv ${cls || ''}"${k ? ` data-ms="${k}" data-value="${n}"` : ''}>${msKwd(n)}</span>` : `<span class="ms-hv none ${cls || ''}"${k ? ` data-ms="${k}" data-value=""` : ''}>—</span>`;
   const left = wd.left != null ? wd.left : null;
@@ -994,7 +1028,7 @@ function msHeroHTML(v, m, P, tt){
   const foot = `<div class="ms-hfoot"><span class="ms-hd">${msCalY()}<span>${daysTx || '—'}</span></span><span class="ms-hd">${I('clock')}<span>${perDay != null ? `${msWhole(perDay)} ${msT('KWD / Day')}` : '—'}</span></span></div>`;
   // the pace in words, for a screen reader (the pace card below the picture shows it): one word per state (MS_PILL)
   const paceTx = pace ? `<span class="sr">${exp != null ? `<span>${msT('expected by')} ${msDate(wd.asOf)}: ${msPct(exp)}</span> ` : ''}<span class="ms-pill ${MS_PILL[pace][0]}" data-ms="pace" data-value="${pace}">${msT(MS_PILL[pace][1])}</span></span>` : '';
-  return `${msHeroDeco()}${msInfo('sales')}<div class="ms-hin"><div class="ms-hringw">${ring}</div><i class="ms-hsep" aria-hidden="true"></i>${m1}<i class="ms-hsep" aria-hidden="true"></i>${m2}</div>${foot}${paceTx}`
+  return `${msInfo('sales')}<div class="ms-hin">${msHeroDeco()}<div class="ms-hringw">${ring}</div><i class="ms-hsep" aria-hidden="true"></i>${m1}<i class="ms-hsep" aria-hidden="true"></i>${m2}</div>${foot}${paceTx}`
     + (notes.length ? `<div class="ms-hnote${amount == null && P.every(p => p.bm.basis === 'none') ? ' warn' : ''}">${notes.join('<br>')}</div>` : '');
 }
 // The forecast against the target, in words: the month-end figure at the pace so far minus the target (display
@@ -1040,8 +1074,10 @@ function renderTargetCard(v, m, P, sig){
     const p = P[0], t = p.t, vN = t.visits > 0 ? msFieldVisits(p.rep) : 0;
     // her target card (the hero); the invoices on another rep's clinic follow it, in a card of their own below the picture
     const cx = msMemo(sig, 'cx\u0001' + p.rep, () => crossInvoiceNote(p.rep, msDigest(sig)));
+    const stale = staleTargetNote(p.rep);
     el.innerHTML = `<div class="ms-card ms-sales ms-hero">${msHeroHTML(v, m, P)}
-      <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR${t.visits > 0 ? `<span> · </span><span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}</div>${staleTargetNote(p.rep)}</div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
+      ${t.visits > 0 || stale ? `<div class="ms-hstrip">${t.visits > 0 ? `<span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}${stale}</div>` : ''}
+      <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR</div></div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
     return;
   }
   const monthName = new Date(todayStr() + 'T00:00:00').toLocaleDateString(uiLocale(), { month: 'long' });
@@ -1206,9 +1242,9 @@ function msAdvisorHTML(v, m){
   else lead = msT('No working day left this month.');
   const second = due.length ? msT(due.length === 1 ? (over ? 'One clinic has a follow-up overdue.' : 'One clinic has a follow-up due today.') : over ? `${due.length} clinics have follow-ups due (${over} overdue).` : `${due.length} clinics have follow-ups due today.`)
     : m && m.coach ? `${msT('Sales coach')}: ${msT(m.coach.title)}` : msT('No follow-ups due — all caught up.');
-  return `<div class="ms-ct"><span class="ms-ttl"><span class="ms-advic">${I('spark2')}</span><span>${msT('Sales Advisor')}</span></span>${msInfo('act')}</div>
+  return `<div class="ms-ct"><span class="ms-ttl"><span class="ms-advic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.6 3.2l1.9 5.2a3 3 0 0 0 1.8 1.8l5.2 1.9-5.2 1.9a3 3 0 0 0-1.8 1.8l-1.9 5.2-1.9-5.2a3 3 0 0 0-1.8-1.8l-5.2-1.9 5.2-1.9a3 3 0 0 0 1.8-1.8z" fill="#F0D45C" stroke="#0E5A44" stroke-width="2" stroke-linejoin="round"/><circle cx="5.2" cy="18.9" r="1.5" fill="#3FA77D"/></svg></span><span>${msT('Sales Advisor')}</span></span>${msInfo('act')}</div>
     <div class="ms-advb" onclick="if(window.matchMedia('(max-width: 1023px)').matches) msAdvisorSheet()">
-      <img class="ms-robot" src="img/robot.svg" alt="" width="118" height="148">
+      <img class="ms-robot" src="img/robot.svg" alt="" width="128" height="147">
       <div class="ms-advt"><span class="ms-advh" hidden>${msT('Sales Advisor')}</span><p data-ms="adv-lead">${lead}</p><p>${second}</p>
         <button class="ms-advbtn" onclick="event.stopPropagation(); msAdvisorSheet()"><span>${msT('View Recommendations')}</span>${I('arrowr')}</button></div>
       <svg class="svgi ms-advgo" aria-hidden="true"><use href="#i-chev"/></svg>
@@ -1313,6 +1349,7 @@ function msActRow(x, kind, v){
 // Each the screen's own figure, a tap from its list; a ▲/▼ only against a fair comparison, a sparkline only from a
 // series the core rebuilds truthfully (UMCore.homeKpiMonths, homeVisitDays, homeForecastDays — their last point is the
 // card's number); none where the app cannot rebuild one (the follow-ups).
+function IF(name){ return `<svg class="svgf" aria-hidden="true"><use href="#i-${name}"/></svg>`; }   // a solid icon (the picture's filled ones)
 function msGoCal(){ calAnchor = todayStr(); calSelected = todayStr(); switchView('calendar'); }
 // a small line chart (null = no point: the line breaks there, never drops to 0)
 function msSpark(vals){
@@ -1337,7 +1374,7 @@ function msKpisHTML(v, m, sig){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own, D = m && msOf(m.D), H = (m && m.H) || {};
   const A = D ? (msOf(D.achievement) || {}) : {}, F = D ? msOf(D.forecast) : null;
   const wait = `<span class="ms-wait">${msT(m && m.failed ? 'Not worked out on this device' : 'Calculating…')}</span>`;
-  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
+  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}${spark ? ' sp' : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${icon.charAt(0) === 'n' ? IF(icon) : I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
   const out = [];
   // 1 — the KPI score (the scorecard's 10 measures): the team = the average of the people of REPS who have one
   const K = msOf(H.kpi), score = K ? K.current : null;
@@ -1346,7 +1383,7 @@ function msKpisHTML(v, m, sig){
     K ? msSpark(K.months.map(x => x.score)) : '', team ? 'openKpiScorecard()' : 'msKpi()', 'kpi', score, 'KPI score out of 100 (the KPI scorecard), month by month'));
   // 2 — today's field visits of the view's people (a joint visit once; calls and phone orders are not visits)
   const VD = UMCore.homeVisitDays(visits || [], v.reps, todayStr(), 10);
-  out.push(card('', 'cal2', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week'), msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
+  out.push(card('', 'ncal', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week'), msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
   // 3 — the follow-ups due (overdue + today), "Needs Attention" only when one is overdue; no sparkline (no history to rebuild it from)
   const due = team ? visibleDueClinics() : visibleDueClinics().filter(c => c.rep === v.rep), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
   out.push(card(over ? 'att' : '', 'clip2', 'Pending Follow-ups', '', msN(due.length),
@@ -1362,7 +1399,7 @@ function msKpisHTML(v, m, sig){
   }
   const fVal = fc == null ? '—' : withT ? msN(F.pct + '%') : msKwd(fc);
   out.push(card('fc', 'trend2', ['Sales Forecast', 'Forecast'], '', fVal,
-    fc != null ? `<span class="ms-ks">≈ ${msKwd(fc)} · ${msT('estimate')}</span>` : `<span class="ms-ks">${!D ? wait : msT(F && F.closed ? 'The month is closed' : 'No sales figure for this month yet.')}</span>`,
+    fc != null ? `<span class="ms-ks">≈ ${msKwd(fc)}</span><span class="ms-ks ms-est">${msT('estimate')}</span>` : `<span class="ms-ks">${!D ? wait : msT(F && F.closed ? 'The month is closed' : 'No sales figure for this month yet.')}</span>`,
     fSpark, "msHow('sales')", 'forecast', fc, 'The month-end figure at the pace so far (an estimate, not a result) — the ⓘ shows the working'));
   return out.join('');
 }
@@ -1386,25 +1423,27 @@ function msChartHTML(v, m){
   return html + `<div class="ms-wk">${msWeeksSVG(W)}</div>` + (withT && ((A.noTarget || []).length || (A.notMeasured || []).length) ? `<div class="ms-fine">${msT('Drawn for the people with a target and a sales figure:')} ${msNames(A.people || [])}.</div>` : '');
 }
 function msWeeksSVG(W){
-  const rtl = uiLang === 'ar', VW = 552, top = 18, base = 194;
+  const rtl = uiLang === 'ar', VW = 552, top = 18, base = 197;
   const vals = []; W.forEach(w => { if(w.achieved != null) vals.push(w.achieved); if(w.pace != null) vals.push(w.pace); });
   const step = msNiceStep(Math.max(1, Math.max.apply(null, vals.concat([1]))) / 4), maxY = step * 4;
   const y = val => base - Math.max(0, Math.min(1, val / maxY)) * (base - top), f1 = n => Math.round(n * 10) / 10;
-  const cx = i => { const c = [78, 215, 353, 493][i]; return rtl ? VW - c : c; };
-  const axX = rtl ? VW - 50 : 50, labX = rtl ? VW - 27 : 27;
-  let svg = `<svg viewBox="0 0 ${VW} 226" role="img" aria-label="${esc(trOf('Invoiced sales at the end of each week against the target pace') || 'Invoiced sales at the end of each week against the target pace')}"><defs>`
+  // the amounts' gutter: 50 px in English ("24K"), wider in Arabic (the whole number) — the labels never reach the plot
+  const g = rtl ? 66 : 50;
+  const cx = i => rtl ? VW - (g + [29, 162, 300, 436][i]) : [79, 215, 360, 500][i];
+  const axX = rtl ? VW - g : g, labX = rtl ? VW - g + 8 : g - 24;
+  let svg = `<svg viewBox="0 0 ${VW} 230" role="img" aria-label="${esc(trOf('Invoiced sales at the end of each week against the target pace') || 'Invoiced sales at the end of each week against the target pace')}"><defs>`
     + `<linearGradient id="msBarG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2B7F68"/><stop offset="1" stop-color="#1E7360"/></linearGradient>`
     + `<linearGradient id="msBarG2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A8D75"/><stop offset="1" stop-color="#227763"/></linearGradient></defs>`;
   for(let k = 0; k <= 4; k++){
     const yy = f1(y(step * k));
-    svg += `<line x1="${rtl ? 0 : axX}" y1="${yy}" x2="${rtl ? axX : VW}" y2="${yy}" stroke="${k === 0 ? '#DCE3E8' : '#EEF2F5'}"/><text class="ax" x="${labX}" y="${f1(yy + 4.5)}" text-anchor="${rtl ? 'start' : 'end'}" data-notr>${msK(step * k)}</text>`;
+    svg += `<line x1="${rtl ? 0 : axX}" y1="${yy}" x2="${rtl ? axX : VW}" y2="${yy}" stroke="${k === 0 ? '#DCE3E8' : '#EEF2F5'}"/><text class="ax" x="${labX}" y="${f1(yy + 5)}" direction="ltr" text-anchor="${rtl ? 'start' : 'end'}" data-notr>${msK(step * k)}</text>`;
   }
   svg += `<line x1="${axX}" y1="${top - 6}" x2="${axX}" y2="${base}" stroke="#DCE3E8"/>`;
-  W.forEach((w, i) => { if(w.achieved != null){ const h = Math.max(1, base - y(w.achieved)); svg += `<rect class="bar${w.current ? ' cur' : ''}" data-v="${w.achieved}" x="${f1(cx(i) - 27)}" y="${f1(base - h)}" width="54" height="${f1(h)}" rx="2"><title>${esc(msK(w.achieved))}</title></rect>`; } });
+  W.forEach((w, i) => { if(w.achieved != null){ const h = Math.max(1, base - y(w.achieved)); svg += `<rect class="bar${w.current ? ' cur' : ''}" data-v="${w.achieved}" x="${f1(cx(i) - 28.5)}" y="${f1(base - h)}" width="57" height="${f1(h)}" rx="2.5"><title>${esc(msK(w.achieved))}</title></rect>`; } });
   const pts = W.map((w, i) => w.pace != null ? { x: cx(i), y: y(w.pace), v: w.pace } : null).filter(Boolean);
   if(pts.length > 1) svg += `<polyline class="tl" points="${pts.map(p => f1(p.x) + ',' + f1(p.y)).join(' ')}"/>`;
   pts.forEach(p => { svg += `<circle class="td" data-v="${p.v}" cx="${f1(p.x)}" cy="${f1(p.y)}" r="4.6"/>`; });
-  W.forEach((w, i) => { svg += `<text class="xl" x="${f1(cx(i))}" y="219" text-anchor="middle">${esc('W' + w.week)}</text>`; });
+  W.forEach((w, i) => { svg += `<text class="xl" x="${f1(cx(i))}" y="223" text-anchor="middle">${esc('W' + w.week)}</text>`; });
   // the running week's amount over its bar (the picture's dark label)
   const ci = W.findIndex(w => w.current);
   if(ci >= 0){
@@ -1946,11 +1985,11 @@ function renderRecentVisits(v){
     // the picture's Recent Activity: what was logged (a field visit, a call, an order logged in the app — never a sale), where, how long ago
     rv.innerHTML = `<div class="ms-tl">${recent.map(x=>{
       const clinic = clinics.find(c=>c.id===x.clinicId), name = clinic ? clinic.name : clinicLabel(x.clinicId, x);
-      const kind = x.callOnly ? ['phone', 'Call logged'] : x.orderTaken ? ['cart', 'Order logged in the app'] : ['cal2', 'Visit logged'];
+      const kind = x.callOnly ? ['phone', 'Call logged'] : x.orderTaken ? ['cart', 'Order logged in the app'] : ['ncal', 'Visit logged'];
       return `<div class="card ms-tli">
-        <span class="ms-tile">${I(kind[0])}</span>
+        <span class="ms-tile">${kind[0] === 'ncal' ? IF(kind[0]) : I(kind[0])}</span>
         <div class="ms-tlt">
-          <div class="clinic-name"><span>${msT(kind[1])}</span> – <span dir="auto">${esc(name)}</span></div>
+          <div class="clinic-name"><span class="k">${msT(kind[1])}</span><span class="d" data-notr> – </span><span class="nm" dir="auto">${esc(name)}</span></div>
           <div class="clinic-sub">${x.callOnly?(CHANNEL_LABELS[x.channel]||'📞')+' · ':''}${fmtDate(x.date)}${x.orderTaken ? ' · '+msKd(x.orderTotal) : ''}${sup?' · '+msWho(x.rep):''}${rxShortHTML(x)}</div>
         </div>
         <span class="ms-ago">${msAgo(x)}</span>

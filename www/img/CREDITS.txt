@@ -6,12 +6,9 @@ clinic.webp
   Licence: the Unsplash License (https://unsplash.com/license): free to use for commercial and
   non-commercial purposes, no permission needed, attribution not required.
 
-hand.webp, tooth.webp
-  Made from Microsoft's Fluent UI Emoji, 3D style ("Waving hand", "Tooth"):
-  https://github.com/microsoft/fluentui-emoji (assets/Waving hand/3D, assets/Tooth/3D).
-  hand.webp is the waving hand resized to 112 x 112. tooth.webp is the tooth turned into a translucent
-  "glass" tooth (its edges and highlights kept, its inside made see-through, tinted mint) and drawn
-  a little taller, 240 x 280.
+hand.webp
+  Made from Microsoft's Fluent UI Emoji, 3D style ("Waving hand"):
+  https://github.com/microsoft/fluentui-emoji (assets/Waving hand/3D), resized to 112 x 112.
   Licence: MIT, as below.
 
     MIT License
@@ -36,8 +33,12 @@ hand.webp, tooth.webp
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
+tooth.webp
+  An original drawing made for this app (a glass molar: a see-through tinted body, a thin bright rim,
+  a few inner lines and sparkles), drawn with canvas paths, 256 x 296. No third-party material.
+
 robot.svg
-  An original drawing made for this app (a white robot with a dark visor and green eyes), no third-party
+  An original drawing made for this app (a glossy white robot with a glass visor and glowing green eyes), no third-party
   material. It illustrates the "Sales advisor" card; the advice itself is worked out by the app from its
   own figures (no AI service is connected).
 
