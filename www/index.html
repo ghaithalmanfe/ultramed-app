@@ -2217,6 +2217,49 @@
   }
   /* === END REPORTS, ANALYSIS & COVERAGE === */
 
+  /* === SIGN-IN, ADMIN, ERP IMPORT & BACKUPS ===
+     Module 7: the sign-in screen in the home's language (the green brand panel of the sidebar on a laptop, the wordmark
+     and white profile cards on a light page), the e-mail button as a large pill; the admin, ERP import and backup sheets
+     take the shared frame and section cards through their headings (data-ic / data-sections). Same ids and texts. */
+  .gate{background:radial-gradient(120% 55% at 100% 0%, rgba(106,235,164,.24), rgba(106,235,164,0) 62%), linear-gradient(180deg, #F2F8F5 0%, #F7F8FA 46%);}
+  .gate-card > .gate-logo{display:none;}
+  .gate-word{display:flex; flex-direction:column; align-items:center; line-height:1; margin:0 auto 10px;}
+  .gate-word .tb-word{font-size:40px;}
+  .gate-word .tb-tag{font-size:12px; margin-top:7px;}
+  .gate-tag{color:var(--p-muted); margin-bottom:26px;}
+  .gate-sub{color:var(--p-ink); font-size:20px; font-weight:700; letter-spacing:-.015em;}
+  .gate-tile{background:#fff; border:1px solid rgba(16,24,40,.06); border-radius:var(--p-radius); box-shadow:var(--p-shadow);}
+  .gate-av{background:#0B5A45 !important; color:#fff !important;}
+  .gate-tile.wide .gate-av{background:#05251F !important; color:var(--p-mint) !important;}
+  .gate-name{color:var(--p-ink); font-weight:700;}
+  #gateOther{margin-top:12px;}
+  #gateOther .link{display:flex; align-items:center; justify-content:center; width:100%; min-height:52px; border-radius:999px; background:#fff; border:1px solid #DCE2E7; color:var(--p-ink) !important; font-size:15.5px !important; font-weight:600; text-decoration:none; box-shadow:0 1px 2px rgba(16,24,40,.05), 0 6px 18px rgba(16,24,40,.06);}
+  @media (hover:hover){ #gateOther .link:hover{background:#F6F9F8;} }
+  .gate-badge .bi{border-radius:50%; background:var(--p-mint-soft); border-color:transparent; color:var(--p-g6);}
+  .gate-foot{color:var(--p-muted);}
+  .gb-word, .gb-tooth{display:none;}
+  @media (min-width:900px){
+    .gate-brand{position:relative; overflow:hidden; background:linear-gradient(180deg, #013A31 0%, #013C33 40%, #05483B 62%, #034337 82%, #023F34 100%); padding:56px 52px 44px;}
+    .gate-brand::before{content:''; position:absolute; inset:auto -10% -18% -10%; height:62%; pointer-events:none;
+      background:radial-gradient(60% 50% at 60% 40%, rgba(69,214,156,.32), rgba(69,214,156,0) 70%), linear-gradient(170deg, rgba(95,211,160,0) 30%, rgba(111,221,171,.16) 31%, rgba(95,211,160,0) 55%);}
+    .gate-brand > *{position:relative;}
+    .gate-brand-logo{display:none;}
+    .gb-word{display:flex; flex-direction:column; align-items:flex-start; line-height:1; margin-top:34px;}
+    .gb-word .nb-word{position:relative; font-size:44px; font-weight:700; letter-spacing:-.03em; color:#fff;}
+    .gb-word .nb-word b{font-weight:700;}
+    .gb-word .nb-mark{position:absolute; top:-40px; left:50%; width:42px; height:36px; margin-left:-20px; overflow:visible;}
+    .gb-word .nb-tag{font-size:14px; font-weight:500; color:#fff; margin-top:8px; white-space:nowrap;}
+    .gb-tooth{display:block; position:absolute; inset-inline-end:14%; bottom:22%; width:150px; height:auto; filter:drop-shadow(0 0 16px rgba(110,235,170,.24)) drop-shadow(0 10px 18px rgba(0,30,24,.3));}
+    .gate-brand-tag{color:var(--p-mint);}
+    .gate-brand-name{font-weight:700;}
+    .gate-card > .gate-word{display:none;}
+    .gate-card{max-width:440px;}
+  }
+  /* the admin, ERP import and backup sheets: their section titles as the cards' headings */
+  .modal.m-secs .cd-sec > .btn:first-child{margin-top:0;}
+  #apBody .card, #apDataBody .card{border-radius:14px;}
+  /* === END SIGN-IN, ADMIN, ERP IMPORT & BACKUPS === */
+
   /* === SCREENS A === */
   /* === END SCREENS A === */
 
@@ -2313,6 +2356,8 @@
 <div class="gate" id="gate">
   <div class="gate-brand">
     <img class="gate-brand-logo" src="icons/logo-white.png" alt="UltraMed">
+    <div class="gb-word" role="img" aria-label="UltraMed"><span class="nb-word" data-notr>Ultra<b>Med</b><svg class="nb-mark" viewBox="0 0 32 27" aria-hidden="true" focusable="false"><path d="M13.4 22.8 23.6 12.6c2.9.3 4.5 2.4 4.1 5.5l-4.2 4.3c-2.9 1.6-7.1 1.5-10.1.4z" fill="#5BD79F"/><path d="M3.2 20.6 11.6 12.2l4.5 4.5 9.2-10.4" fill="none" stroke="#A2F0CB" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M19.8 3.7 29.4 2.3 27.9 11.9z" fill="#A2F0CB"/></svg></span><span class="nb-tag">Better Oral Care. Together.</span></div>
+    <img class="gb-tooth" src="img/tooth.webp" alt="" width="124" height="143" aria-hidden="true">
     <div>
       <div class="gate-brand-tag">CLINICAL SALES TEAM</div>
       <div class="gate-brand-name">Field Ops</div>
@@ -2321,6 +2366,7 @@
   </div>
   <div class="gate-card">
     <img class="gate-logo" id="gateLogo" alt="UltraMed">
+    <div class="gate-word" role="img" aria-label="UltraMed"><span class="tb-word" data-notr>Ultra<b>Med</b></span><span class="tb-tag">Better Oral Care. Together.</span></div>
     <div class="gate-tag">CLINICAL SALES TEAM</div>
     <div class="gate-sub">Tap your profile to start</div>
 
@@ -2813,6 +2859,12 @@
 
   <!-- MORE: everything that isn't daily work, grouped by category -->
   <div class="view" id="view-more">
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">More</h2>
+        <p class="ph-sub">Everything that isn't daily work, grouped by category.</p>
+      </div>
+    </div>
     <div class="more-brand" role="img" aria-label="UltraMed"><span class="tb-word" data-notr>Ultra<b>Med</b></span><span class="tb-tag">Better Oral Care. Together.</span></div>
     <div id="moreContent"></div>
   </div>

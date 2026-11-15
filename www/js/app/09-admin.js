@@ -78,7 +78,7 @@ async function refreshMailStatus(){
 function previewDigest(kind, rep){
   const d = UMCore.dailyDigest({ kind, data: digestData(), reps: REPS, rep: rep || null });
   showModal(`
-    <h3 style="margin-top:0;">${kind==='morning'?'☀️':'🌙'} ${esc(d.subject)}</h3>
+    <h3 style="margin-top:0;" data-ic="chat">${kind==='morning'?'☀️':'🌙'} ${esc(d.subject)}</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;" dir="auto">هكذا تصل الرسالة بالضبط، بأرقام هذه اللحظة.</p>
     <div class="card" style="background:#fff; color:#111; max-height:60vh; overflow:auto;">${d.html}</div>
     <button class="btn secondary" onclick="openAdminPanel(); setAdminTab('mail')">Back</button>
@@ -679,7 +679,7 @@ async function deleteClinic(id){
   // invoice for whoever issued it) — said before the delete, not after.
   const nLinks = erpHandLinksTo([id]).length;
   showModal(`
-    <h3 style="margin-top:0;">Remove ${esc(c.name)}?</h3>
+    <h3 style="margin-top:0;" data-ic="alert" data-tone="danger">Remove ${esc(c.name)}?</h3>
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
     ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>

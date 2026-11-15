@@ -1307,7 +1307,7 @@ function setExportPreset(days){
 }
 function openExport(){
   showModal(`
-    <h3 style="margin-top:0;">Export &amp; backups</h3>
+    <h3 style="margin-top:0;" data-ic="database" data-sections>Export &amp; backups</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Downloads as CSV for Excel/Sheets or email. If a download doesn't start, use "Copy instead."</p>
 
     <div class="card" style="margin-bottom:14px;">
@@ -1701,7 +1701,7 @@ async function openFullBackup(){
   if(!requireAdmin()) return;
   const run = ++_fullBackupRun, by = currentUser.name;
   _fullBackup = null;
-  showModal(`<h3 style="margin-top:0;">💾 <span>Full backup</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="download">💾 <span>Full backup</span></h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;"><span>This screen only reads — nothing in the cloud changes.</span></p>
     <div id="fullBackupBody" style="font-size:13px;"><div><span>Reading every record in the cloud…</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Documents read so far:</span> <b id="fullBackupCount">0</b></div></div>`);
@@ -1793,7 +1793,7 @@ let _recov = null;
 async function openClinicRecovery(){
   if(!requireAdmin()) return;
   if(_loadFailed.clinics || _mirrorUsed.clinics){ showToast('⚠️ The clinic list did not load from the cloud — check the connection and open this again'); return; }
-  showModal(`<h3 style="margin-top:0;">🔎 <span>Missing clinics</span></h3><div id="recovBody" style="color:var(--muted); font-size:13px;"><span>Reading the daily backups…</span></div>`);
+  showModal(`<h3 style="margin-top:0;" data-ic="search">🔎 <span>Missing clinics</span></h3><div id="recovBody" style="color:var(--muted); font-size:13px;"><span>Reading the daily backups…</span></div>`);
   const snaps = [];
   try{
     const list = await window.storage.list('snap_', true);
@@ -1940,7 +1940,7 @@ function restoreAskFullBackup(sameDay, cover, saved){
       : "Today already has its backup (the daily one, or the data an earlier restore kept), and a restore never replaces it.");
   const held = _fullBackup && currentUser && _fullBackup.by === currentUser.name && !_fullBackup.savedAt ? _fullBackup : null;
   const unsaved = held ? `The full backup read at ${restoreHHMM(held.at)} was not downloaded to this device, so it does not count.` : '';
-  showModal(`<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="download" data-tone="warn">💾 <span>First, a full backup to this device</span></h3>
     <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(why) || why)}</span></p>${unsaved ? `
     <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(unsaved) || unsaved)}</span></p>` : ''}
     <p style="font-size:13px; line-height:1.6;"><span>Save a full backup to this device now: it keeps everything as it is, today's backup too. Then tap Restore again.</span></p>
@@ -2189,7 +2189,7 @@ function restoreDeviceClinics(which){
   if(!copy.length){ showToast('لا توجد نسخة صالحة على هذا الجهاز'); return; }
   const diff = UMCore.deviceCopyDiff(storedClinics(), copy, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id), tombIds: [...tombSet('clinics')], doctorTombs: [...tombSet('doctors')] });
   _devCopy = { which, diff, picked: new Set() };
-  showModal(`<h3 style="margin-top:0;">📱 <span>This phone's copy of the clinic list</span></h3><div id="devCopyBody"></div>`);
+  showModal(`<h3 style="margin-top:0;" data-ic="refresh">📱 <span>This phone's copy of the clinic list</span></h3><div id="devCopyBody"></div>`);
   renderDeviceCopy();
 }
 function renderDeviceCopy(){

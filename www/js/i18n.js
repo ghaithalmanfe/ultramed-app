@@ -2306,6 +2306,8 @@
     // CLINICS & DOCTORS (redesign module 3): the page heads
     "Every customer: the dashboard, the list and each clinic's card.": 'كل العملاء: لوحة المعلومات والقائمة وبطاقة كل عيادة.',
     'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
+    // ERP IMPORT, ADMIN, BACKUPS & SHELL (redesign module 7)
+    "Everything that isn't daily work, grouped by category.": 'كل ما ليس من العمل اليومي، مجمّعاً حسب الفئة.',
     // REPORTS, ANALYSIS & COVERAGE (redesign module 6)
     "Visits, contacts, orders and sales for any period, with the coach's reading.": 'الزيارات والجهات والطلبات والمبيعات لأي فترة، مع قراءة المدرب.',
     "Each clinic's share of the target, what it bought and what to sell next.": 'حصة كل عيادة من التارغت، وما اشترته، وماذا نبيع بعد ذلك.',

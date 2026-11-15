@@ -281,7 +281,7 @@ function openMonthReports(){
   const sorted = [...months].filter(Boolean).sort().reverse();
   if(!sorted.length){ showToast('لا توجد بيانات شهور بعد — ارفع ملف DSR أو المبيعات أولًا'); return; }
   showModal(`
-    <h3 style="margin-top:0;">📚 تقارير الشهور</h3>
+    <h3 style="margin-top:0;" data-ic="book">📚 تقارير الشهور</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">افتح أي شهر — حتى بعد انتهائه — لترى التارغت والمحقق والنسبة وكل تفاصيله. رفع ملف DSR آخر يوم بالشهر (أو بعده) يُحدّث شهرَه تلقائيًا.</p>
     ${sorted.map(m=>`<div class="card clickable row-between" onclick="renderMonthClose('${m}')">
       <span style="font-weight:700;">${monthLabel(m)}</span><span style="color:var(--muted);">›</span>
@@ -472,7 +472,7 @@ function openErpImport(){
   if(currentUser.role!=='supervisor'){ showToast('Supervisor only'); return; }
   const periods = erpPeriods().slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
   showModal(`
-    <h3 style="margin-top:0;">📥 Import — fully automatic <span style="color:var(--muted); font-size:11px; font-weight:400;">${APP_REV}</span></h3>
+    <h3 style="margin-top:0;" data-ic="download" data-sections>📥 Import — fully automatic <span style="color:var(--muted); font-size:11px; font-weight:400;">${APP_REV}</span></h3>
     <div style="color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px;">
       Drop the <b>sales-detail export</b> or the <b>DSR targets file</b> — Excel (.xlsx), CSV, or PDF text
       pasted below all work, and I detect which file is which and enter it by myself.
@@ -742,7 +742,7 @@ async function applyTargetsFile(tg){
   if(document.getElementById('coachCard')) renderCoach();
   const note = targetPctNote(pctBefore, targetPctMap());
   showModal(`
-    <h3 style="margin-top:0;">🎯 Targets entered automatically</h3>
+    <h3 style="margin-top:0;" data-ic="target">🎯 Targets entered automatically</h3>
     <div class="card" style="border-inline-start:4px solid var(--sage, #9ED0AF); margin:8px 0 10px; font-size:12.5px; line-height:1.6;">${note}</div>
     <div class="card">
       ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.visits?` · ${m.visits} visits`:''}${m.brandCount?` · ${m.brandCount} brand targets`:''}</span></div>`).join('')}
@@ -764,7 +764,7 @@ function erpParse(text){
   const guess = UMCore.guessRepMap(Object.keys(totals.bySalesman), REPS);
   _erpParsed = { rows: res.rows, totals, guess };
   showModal(`
-    <h3 style="margin-top:0;">✅ File recognized — verify before saving</h3>
+    <h3 style="margin-top:0;" data-ic="check" data-sections>✅ File recognized — verify before saving</h3>
     <div class="card">
       <div class="spec-row"><span class="k">Period found</span><span class="v">${fmtDate(totals.from)} – ${fmtDate(totals.to)}</span></div>
       <div class="spec-row"><span class="k">Lines</span><span class="v">${totals.lines}${res.skipped?` (+${res.skipped} skipped)`:''}</span></div>

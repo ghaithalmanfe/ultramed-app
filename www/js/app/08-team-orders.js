@@ -5,7 +5,7 @@ function openStaffForm(idx){
   const editing = idx!==undefined && staff[idx];
   const s = editing ? staff[idx] : {name:'', role:'rep', email:'', av:AVATARS[staff.length % AVATARS.length]};
   showModal(`
-    <h3 style="margin-top:0;">${editing?'Edit':'Add'} team member</h3>
+    <h3 style="margin-top:0;" data-ic="users">${editing?'Edit':'Add'} team member</h3>
     <label>Name (as shown in the app)</label>
     <input type="text" id="sfName" value="${esc(s.name)}" placeholder="e.g. Sara">
     <label>Login email</label>
@@ -191,7 +191,7 @@ async function removeStaff(idx){
   }
   const cCount = clinics.filter(c=>c.rep===s.name).length;
   showModal(`
-    <h3 style="margin-top:0;">Remove ${esc(s.name)}?</h3>
+    <h3 style="margin-top:0;" data-ic="alert" data-tone="danger">Remove ${esc(s.name)}?</h3>
     ${cCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;"><strong>${cCount}</strong> clinic${cCount===1?'':'s'} assigned to ${esc(s.name)} will become unassigned. Reassign them from the Territory tab afterwards.</div>`:''}
     <p style="color:var(--muted); font-size:13px;">Their past visits stay in the records. Their login must be removed separately in Firebase.</p>
     <button class="btn" style="background:var(--coral);" onclick="confirmRemoveStaff(${idx})">Yes, remove</button>
