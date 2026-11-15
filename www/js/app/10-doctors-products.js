@@ -563,7 +563,7 @@ function renderDataEntryStep(){
     <div style="color:var(--muted); font-size:11px; margin-bottom:8px;">${_dePos+1} من ${_deQueue.length}</div>`;
   if(it.kind==='clinic'){
     showModal(`${prog}
-      <h3 style="margin-top:0;">🏥 ${esc(it.c.name)}</h3>
+      <h3 style="margin-top:0;" data-sections data-ic="building">🏥 ${esc(it.c.name)}</h3>
       ${it.miss.includes('phone')?`<label>📞 هاتف العيادة</label><input type="text" id="deClinicPhone" placeholder="2XXXXXXX">`:''}
       ${it.miss.includes('contact')?`<label style="margin-top:6px;">📇 جهة الاتصال (استقبال/مسؤول)</label><input type="text" id="deClinicContact" placeholder="مثال: الاستقبال — أ. هدى">`:''}
       ${it.miss.includes('dealType')?`<label style="margin-top:6px;">🤝 طريقة التعامل</label>
@@ -572,7 +572,7 @@ function renderDataEntryStep(){
       <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">تخطّي</button>`);
   } else {
     showModal(`${prog}
-      <h3 style="margin-top:0;">👨‍⚕️ ${esc(it.d.name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">${esc(it.c.name)}</span></h3>
+      <h3 style="margin-top:0;" data-sections data-ic="stethoscope">👨‍⚕️ ${esc(it.d.name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">${esc(it.c.name)}</span></h3>
       ${it.miss.includes('title')?`<label>التخصص</label><div class="chip-row" id="deTitle">${SPECIALTIES.map(t=>`<div class="chip small" data-v="${esc(t)}" onclick="pickModalCls(this)">${SPECIALTY_PLAYBOOK[t].icon} ${esc(t)}</div>`).join('')}</div>`:''}
       ${it.miss.includes('phone')?`<label style="margin-top:6px;">📞 هاتفه</label><input type="text" id="deDocPhone" placeholder="9XXXXXXX">`:''}
       ${it.miss.includes('birthday')?`<label style="margin-top:6px;">🎂 تاريخ ميلاده</label><input type="date" id="deDocBday">`:''}
@@ -627,7 +627,7 @@ function openDoctorRecords(clinicId){
   const avg = allDocs.length ? Math.round(allDocs.reduce((t,d)=>t+UMCore.doctorRecordCompleteness(d).pct,0)/allDocs.length) : 0;
   window._drSorted = pool.slice().sort((a,b)=>drClinicPct(a)-drClinicPct(b) || a.name.localeCompare(b.name));
   showModal(`
-    <h3 style="margin-top:0;">${I('clipboard')} Doctor records</h3>
+    <h3 style="margin-top:0;" data-sections>${I('clipboard')} Doctor records</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">One card per doctor: who they are, what they decide, where the relationship stands. The coach turns the cards into next steps for every clinic.</p>
     ${currentUser.role==='supervisor'?`<div class="chip-row" style="margin-bottom:8px;">${['all',...REPS].map(r=>`<div class="chip small ${_drRep===r?'on':''}" onclick="_drRep='${r}'; openDoctorRecords();">${r==='all'?'All':esc(r)}</div>`).join('')}</div>`:''}
     <div class="card" style="padding:12px; margin-bottom:12px;">
@@ -685,7 +685,7 @@ function openDoctorRecord(clinicId, docId){
   const chips = (id, list, cur) => `<div class="chip-row" id="${id}">${list.map(([k,l])=>`<div class="chip small ${cur===k?'on':''}" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`;
   const comp = UMCore.doctorRecordCompleteness(d);
   showModal(`
-    <h3 style="margin-top:0;">${I('pencil')} Doctor card</h3>
+    <h3 style="margin-top:0;" data-sections>${I('pencil')} Doctor card</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">${esc(c.name)} · ${comp.pct}% complete</p>
     <label>Name</label>
     <input type="text" id="drName" dir="auto" value="${esc(d.name||'')}">
@@ -822,7 +822,7 @@ function openDoctorProfile(clinicId, docId){
     .sort((a,b) => b.date.localeCompare(a.date));
   const pb = SPECIALTY_PLAYBOOK[d.title];
   showModal(`
-    <div class="row-between" style="align-items:flex-start;">
+    <div class="row-between dp-head" style="align-items:flex-start;" data-sections>
       <h3 style="margin:0;">${pb?pb.icon+' ':''}${esc(d.name)}</h3>
       <div style="display:flex; gap:4px;">${canEdit?`<button class="chip small" onclick="_drBack=null; openDoctorRecord('${clinicId}','${docId}')">${I('pencil')} Edit card</button>`:''}<button class="chip small" onclick="exportDoctorReportXlsx('${clinicId}','${docId}')">📄 تقرير مفصل</button></div>
     </div>
@@ -1070,7 +1070,7 @@ function openRxTypes(){
 function renderRxTypesWaiting(ed){
   if(!ed || _rxEd !== ed) return;
   showModal(`
-    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <h3 style="margin-top:0;" data-sections>${I('pill')} <span>Prescription types</span></h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
     <div id="rxtLoadNote" class="card" style="padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.5; background:var(--amber-dim); color:var(--amber-ink); box-shadow:none;">${ed.loading
       ? 'Loading the prescription types…'
@@ -1124,7 +1124,7 @@ function renderRxTypesEditor(){
     ? `<span>Last changed by</span> <span dir="auto">${esc(rxTypesDoc.by)}</span> · <span dir="auto">${esc(when || '—')}</span>`
     : 'Not set up yet — reps see the two built-in forms.';
   showModal(`
-    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <h3 style="margin-top:0;" data-sections>${I('pill')} <span>Prescription types</span></h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
     <div id="rxtList">${active.map(t => `
       <div class="rxt-row" data-rxt="${esc(t.id)}" style="margin-bottom:12px;">

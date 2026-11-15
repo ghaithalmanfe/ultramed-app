@@ -18,6 +18,19 @@ function showModal(html){
 // own icon, else data-ic, else a neutral one) and the title — and the buttons it ends with become its foot (full
 // width on the phone; at the end side on a laptop, the main action last). Nodes are moved, never rewritten: ids,
 // handlers and texts stay as the sheet wrote them.
+function modalSections(inner){
+  const kids = Array.from(inner.children).filter(k => !k.classList.contains('modal-foot'));
+  while(kids.length && kids[kids.length - 1].tagName === 'BUTTON' && kids[kids.length - 1].classList.contains('btn')) kids.pop();   // the buttons it ends with become its foot
+  if(kids.length < 2) return;
+  const head = el => el.tagName === 'P' || el.classList.contains('badge') || (el.children.length > 0 && Array.from(el.children).every(c => c.classList.contains('badge')));
+  let i = 1; while(i < kids.length && head(kids[i])) i++;
+  let cur = null;
+  for(let k = i; k < kids.length; k++){
+    const el = kids[k];
+    if(!cur || el.classList.contains('section-title')){ cur = document.createElement('section'); cur.className = 'cd-sec'; inner.insertBefore(cur, el); }
+    cur.appendChild(el);
+  }
+}
 function modalFrame(inner){
   try{
     { const mc = document.getElementById('modalContent'); if(mc) mc.classList.toggle('m-wide', !!inner.querySelector(':scope > [data-wide]')); }
@@ -33,6 +46,8 @@ function modalFrame(inner){
       while(h.firstChild) t.appendChild(h.firstChild);
       h.appendChild(tile); h.appendChild(t);
     }
+    // a sheet that asks for it (data-sections): its header stays, the rest becomes cards — one per section title
+    { const mc = document.getElementById('modalContent'), secs = !!inner.querySelector(':scope > [data-sections], :scope > * > [data-sections]'); if(mc) mc.classList.toggle('m-secs', secs); if(secs) modalSections(inner); }
     if(!inner.querySelector(':scope > .modal-foot')){
       const kids = Array.from(inner.children); let i = kids.length;
       while(i > 0 && kids[i - 1].tagName === 'BUTTON' && kids[i - 1].classList.contains('btn') && !kids[i - 1].classList.contains('small')) i--;

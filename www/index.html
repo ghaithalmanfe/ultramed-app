@@ -1952,6 +1952,132 @@
   body.ar .lv-row .k{font-size:13px;}
   /* === END CLINICS & DOCTORS === */
 
+  /* === CALENDAR, TEAM & KPI ===
+     Module 4: the calendar (month card beside the day's agenda, a week rail on the phone), the team chat and memories,
+     the KPI scorecard, Month by month and the requests log — and the shared head's phone rule. */
+  /* the shared head on a phone: one line at most — the muted line shows only where it is short (ph-keep) */
+  @media (max-width:600px){ .page-head .ph-sub:not(.ph-keep){display:none;} }
+  /* clinics on a phone: one search and ONE row of filters that scrolls sideways (every filter, its count kept) */
+  .cl-chipline{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
+  .cl-chipline > .chip-row{display:contents;}
+  .cl-docs{display:inline-flex; align-items:center; gap:6px; color:var(--p-green); font-weight:600;}
+  @media (max-width:1023px){
+    .cl-chipline{flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; margin:0 -14px; padding:6px 14px; -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 22px), transparent); mask-image:linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 22px), transparent);}
+    .cl-chipline::-webkit-scrollbar{display:none;}
+    .cl-chipline .chip{flex:none; white-space:nowrap;}
+    .cl-filters{padding:10px 14px; gap:6px;}
+  }
+  /* calendar: the month card beside the day's agenda */
+  .cal-card{padding:14px 14px 12px; border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05);}
+  .cal-top{display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;}
+  .cal-modes{margin:0; flex:0 0 auto; width:180px;}
+  .cal-modes .dt{min-height:40px; padding:6px 10px;}
+  .cal-label{flex:1 1 auto; text-align:center; font-weight:700; font-size:16.5px; letter-spacing:-.01em; color:var(--p-ink); min-width:120px;}
+  .cal-navs{display:flex; align-items:center; gap:6px;}
+  .cal-nav{border-radius:12px; border-color:#DCE2E7; color:var(--p-ink2);}
+  .cal-nav.cal-today{width:auto; padding:0 14px; font-size:13.5px; font-weight:600;}
+  .cal-dow{color:var(--p-muted); margin-bottom:6px;}
+  .cal-grid{gap:4px;}
+  .cal-cell{border-radius:12px; border:1.5px solid transparent; background:#F8FAFB; color:var(--p-ink2); font-weight:600;}
+  .cal-cell.other{background:none;}
+  .cal-cell.today{border-color:var(--p-mint); box-shadow:0 0 0 2px rgba(106,235,164,.28); color:var(--p-ink);}
+  .cal-cell.sel{background:#0B5A45; border-color:#0B5A45; color:#fff;}
+  .cal-cell.sel.today{box-shadow:0 0 0 3px rgba(106,235,164,.45);}
+  .cal-dots{gap:3px;}
+  .cal-legend{margin-top:14px; padding-top:12px; border-top:1px solid var(--p-line); color:var(--p-muted);}
+  #calBody > .card{border-radius:14px; box-shadow:none;}
+  .cal-rail{display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:4px;}
+  .cal-cell.rail{aspect-ratio:auto; min-height:64px; padding:6px 0; gap:3px;}
+  .cal-cell.rail .rd{font-size:11px; font-weight:600; opacity:.75;}
+  .cal-side{min-width:0;}
+  .cal-agt{margin:18px 0 10px;}
+  #calAgenda > .card{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05); padding:14px 16px;}
+  .cal-acts{display:flex; gap:8px; margin-bottom:6px;}
+  .cal-acts .btn{flex:1; margin:0; min-height:44px; padding:10px 12px;}
+  .cal-item{border-bottom-color:var(--p-line); padding:12px 0; align-items:center;}
+  .cal-item .tag{border-radius:999px; font-size:11px; letter-spacing:.02em; min-width:74px; text-align:center;}
+  .cal-ins{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05);}
+  .cal-ins > summary{min-height:44px; display:flex; align-items:center; font-size:15px !important;}
+  .ins-grid{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:8px; margin-top:8px;}
+  .ins-tile{background:#F7FAF9; border:1px solid var(--p-line); border-radius:14px; padding:12px 10px; text-align:center; min-width:0;}
+  .ins-tile .it-n{font-size:21px; font-weight:700; letter-spacing:-.02em; color:var(--p-ink); overflow-wrap:anywhere;}
+  .ins-tile .it-l{font-size:12px; font-weight:600; color:var(--p-muted); line-height:1.3; margin-top:2px;}
+  @media (min-width:1024px){
+    #app > .view#view-calendar{width:calc(100% - 66px); max-width:1320px; margin-inline-start:36px; margin-inline-end:auto; padding:31px 0 48px;}
+    .cal-layout{display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:16px; align-items:start;}
+    .cal-agt{margin-top:4px;}
+    .cal-card{padding:20px 20px 16px;}
+    .cal-cell{aspect-ratio:auto; min-height:72px; font-size:15px;}
+    .cal-dots i{width:6px; height:6px;}
+    .ins-grid{grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px;}
+    .ins-tile .it-n{font-size:26px;}
+  }
+  @media (min-width:1024px) and (max-width:1279px){ #app > .view#view-calendar{width:calc(100% - 48px); margin-inline-start:24px;} }
+  /* team: the chat panel, bubbles beside the sender's initials, day lines, the composer at the panel's foot */
+  #teamChat .chatwrap{background:#fff; border:1px solid rgba(16,24,40,.05); border-radius:var(--p-radius); box-shadow:var(--p-shadow); padding:16px 14px; gap:8px; margin-bottom:0; border-end-start-radius:0; border-end-end-radius:0;}
+  .chat-day{display:flex; justify-content:center; margin:8px 0 2px;}
+  .chat-day span{font-size:11.5px; font-weight:600; color:var(--p-muted); background:#F1F4F6; border-radius:999px; padding:3px 12px;}
+  .msg-row{display:flex; align-items:flex-end; gap:8px; max-width:88%;}
+  .msg-row.them{align-self:flex-start;}
+  .msg-row.me{align-self:flex-end; flex-direction:row-reverse;}
+  .msg-av{width:32px; height:32px; border-radius:50%; background:#0B5A45; color:#fff; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .msg-row.me .msg-av{background:#E3F4ED; color:#0B5A45;}
+  .msg-row .msg{max-width:100%; align-self:auto;}
+  .msg.them{background:#fff; border:1px solid #E3E8EC; border-radius:18px; border-end-start-radius:6px; box-shadow:0 1px 2px rgba(16,24,40,.04);}
+  .msg.me{background:#0B5A45; color:#fff; border-radius:18px; border-end-end-radius:6px;}
+  .msg .who{color:#0B5A45;}
+  .msg.me .when{color:rgba(255,255,255,.72);}
+  #teamChat .composer{background:#fff; border:1px solid rgba(16,24,40,.06); border-top:1px solid var(--p-line); border-radius:0 0 var(--p-radius) var(--p-radius); padding:10px 12px; box-shadow:var(--p-shadow); z-index:3;}
+  .composer .iconbtn{border-color:#DCE2E7; color:var(--p-ink2);}
+  #teamChat .composer textarea{padding:11px 12px; font-size:15px;}
+  .composer .iconbtn.send{background:#0B5A45; border-color:#0B5A45; color:#fff;}
+  #chatPhotoPreview:not(:empty){margin-top:8px;}
+  /* memories: a card grid */
+  .mgrid{gap:12px;}
+  .mcard{border-radius:16px; border-color:rgba(16,24,40,.06); box-shadow:var(--p-shadow);}
+  @media (min-width:720px){ .mgrid{grid-template-columns:repeat(3, minmax(0,1fr));} }
+  @media (min-width:1280px){ .mgrid{grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px;} }
+  /* KPI: the score as the home screen's ring */
+  .kpi-ring{position:relative; display:inline-block; flex-shrink:0;}
+  .kpi-ring svg{width:100%; height:100%; display:block;}
+  .kpi-ring circle{fill:none; stroke-width:9;}
+  .kpi-ring .trk{stroke:#E3EBE8;}
+  .kpi-ring .val{stroke:#2FBF7F; stroke-linecap:round;}
+  .kpi-people{display:grid; grid-template-columns:minmax(0,1fr); gap:10px; margin-bottom:12px;}
+  .kpi-pc{display:flex; align-items:center; gap:14px; width:100%; padding:12px 14px; min-height:64px; background:#fff; border:1px solid rgba(16,24,40,.07); border-radius:16px; box-shadow:0 1px 2px rgba(16,24,40,.04); font:inherit; color:inherit; text-align:start; cursor:pointer;}
+  .kpi-pt{flex:1; min-width:0; display:flex; flex-direction:column;}
+  .kpi-pn{font-weight:700; font-size:15px; color:var(--p-ink);}
+  .kpi-ps{font-weight:700; font-size:20px;}
+  @media (max-width:719px){ .kpi-table{display:none;} }   /* a phone: each person's card opens the measures (the table stays for a laptop) */
+  @media (min-width:720px){ .kpi-people{grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));} }
+  .kpi-hero{display:flex; align-items:center; gap:18px; padding:16px 18px; margin-bottom:10px; border-radius:20px; color:#fff;
+    background:radial-gradient(60% 120% at 104% -10%, rgba(64,170,130,.55) 0%, rgba(30,110,85,.28) 38%, rgba(4,62,50,0) 70%), linear-gradient(100deg, #013E34 0%, #00382F 30%, #003930 58%, #05483B 100%);}
+  .kpi-hero .kpi-ring .trk{stroke:#16574A;} .kpi-hero .kpi-ring .val{stroke:#6AEBA4;}
+  .kpi-hs{font-size:12.5px; color:rgba(255,255,255,.78);}
+  .kpi-hn{font-size:40px; font-weight:700; letter-spacing:-.03em; line-height:1.1;}
+  .kpi-hn span{font-size:16px; font-weight:600; color:rgba(255,255,255,.7); margin-inline-start:2px;}
+  .kpi-hl{font-size:13px; font-weight:600; color:var(--p-mint);}
+  .kpi-items{padding:6px 16px;}
+  .kpi-it{padding:12px 0; border-top:1px solid var(--p-line);}
+  .kpi-it:first-child{border-top:none;}
+  /* Month by month: a table on a laptop, month cards on a phone (one of the two is display:none) */
+  .mbm-cards{display:none; flex-direction:column; gap:8px; margin-top:8px;}
+  .mbm-card{border:1px solid var(--p-line); border-radius:14px; padding:10px 12px; background:#FBFCFD;}
+  .mbm-m{font-weight:700; font-size:14px; margin-bottom:6px;}
+  .mbm-g{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:6px 12px;}
+  .mbm-g > span{display:flex; justify-content:space-between; gap:8px; font-size:12.5px; color:var(--p-muted);}
+  .mbm-g > span b{color:var(--p-ink);}
+  @media (max-width:719px){ .mbm-cards{display:flex;} .mbm-table{display:none;} }
+  /* requests: rows with their status badge */
+  .req-row{border-radius:14px; box-shadow:none;}
+  .req-line{display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; padding:8px 0 !important;}
+  /* the doctor sheets as header + section cards (data-sections) */
+  .modal.m-secs{background:#F7F8FA;}
+  .modal.m-secs .cd-sec{margin-bottom:12px;}
+  .modal.m-secs .cd-sec > .section-title:first-child{margin-top:0 !important;}
+  .dp-head{margin-bottom:6px;}
+  /* === END CALENDAR, TEAM & KPI === */
+
   /* === SCREENS A === */
   /* === END SCREENS A === */
 
@@ -2171,7 +2297,7 @@
     <div class="page-head lv-lock">
       <div class="ph-t">
         <h2 class="ph-title">Log a visit</h2>
-        <p class="ph-sub" id="logAsLabel">Takes about a minute.</p>
+        <p class="ph-sub ph-keep" id="logAsLabel">Takes about a minute.</p>
       </div>
       <div class="ph-a">
         <button class="chip small" onclick="openCallLog()"><svg class="svgi" aria-hidden="true"><use href="#i-phone"/></svg> Call</button>
@@ -2319,9 +2445,11 @@
     <div id="clinicListPane" style="display:none;">
       <div class="cl-filters">
         <div class="inp-ic"><svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg><input type="text" class="search-box" id="clinicSearch" placeholder="Search clinics..." oninput="renderClinics()"></div>
-        <div class="chip-row" id="clinicVisitChips"></div>
-        <div class="chip-row" id="clinicClsChips"></div>
-        <button class="tlink" onclick="switchView('doctors')"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg> <span>Doctors database</span> <svg class="svgi" aria-hidden="true"><use href="#i-arrowr"/></svg></button>
+        <div class="cl-chipline">
+          <div class="chip-row" id="clinicVisitChips"></div>
+          <div class="chip-row" id="clinicClsChips"></div>
+          <button class="chip small cl-docs" onclick="switchView('doctors')"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg> <span>Doctors database</span></button>
+        </div>
       </div>
       <div id="namelessCard"></div>
       <div id="clinicList"></div>
@@ -2342,7 +2470,12 @@
 
   <!-- TEAM -->
   <div class="view" id="view-team">
-    <h2 style="font-size:22px; margin:0 0 12px;">Team</h2>
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">Team</h2>
+        <p class="ph-sub">Messages and memories the whole team shares.</p>
+      </div>
+    </div>
     <div class="tabs2">
       <div class="t2 on" id="tabChat" onclick="setTeamTab('chat')"><svg class="svgi" aria-hidden="true"><use href="#i-chat"/></svg> Chat</div>
       <div class="t2" id="tabMem" onclick="setTeamTab('mem')"><svg class="svgi" aria-hidden="true"><use href="#i-camera"/></svg> Memories</div>
@@ -2370,22 +2503,28 @@
   <!-- PLAYBOOK -->
   <!-- CALENDAR -->
   <div class="view" id="view-calendar">
-    <h2 style="font-size:22px; margin:0 0 4px;">Calendar</h2>
-    <div class="nudge" data-nudge="calendar" style="margin-bottom:12px;">📅 Everything in one place: planned visits, logged visits, follow-ups, tasks and team events.</div>
-    <div class="chip-row" style="margin-bottom:10px;" id="calRepFilter"></div>
-    <div class="row-between" style="margin-bottom:10px;">
-      <div class="chip-row" style="margin-bottom:0;">
-        <div class="chip small on" id="calModeMonth" onclick="setCalMode('month')">Month</div>
-        <div class="chip small" id="calModeWeek" onclick="setCalMode('week')">Week</div>
-      </div>
-      <div style="display:flex; align-items:center; gap:4px;">
-        <button class="cal-nav" onclick="shiftCal(-1)" aria-label="Previous">&#8249;</button>
-        <button class="cal-nav" style="width:auto; padding:0 10px; font-size:12px;" onclick="calGoToday()">Today</button>
-        <button class="cal-nav" onclick="shiftCal(1)" aria-label="Next">&#8250;</button>
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">Calendar</h2>
+        <p class="ph-sub">Planned visits, logged visits, follow-ups, tasks and team events, day by day.</p>
       </div>
     </div>
-    <div class="card" style="padding:12px;">
-      <div style="text-align:center; font-weight:700; font-size:15px; margin-bottom:8px;" id="calRangeLabel"></div>
+    <div class="nudge" data-nudge="calendar" style="margin-bottom:12px;">📅 Everything in one place: planned visits, logged visits, follow-ups, tasks and team events.</div>
+    <div class="chip-row" style="margin-bottom:10px;" id="calRepFilter"></div>
+    <div class="cal-layout">
+    <div class="card cal-card">
+      <div class="cal-top">
+        <div class="dash-toggle cal-modes">
+          <div class="dt on" id="calModeMonth" onclick="setCalMode('month')">Month</div>
+          <div class="dt" id="calModeWeek" onclick="setCalMode('week')">Week</div>
+        </div>
+        <div class="cal-label" id="calRangeLabel"></div>
+        <div class="cal-navs">
+          <button class="cal-nav" onclick="shiftCal(-1)" aria-label="Previous">&#8249;</button>
+          <button class="cal-nav cal-today" onclick="calGoToday()">Today</button>
+          <button class="cal-nav" onclick="shiftCal(1)" aria-label="Next">&#8250;</button>
+        </div>
+      </div>
       <div id="calBody"></div>
       <div class="cal-legend">
         <span><i style="background:transparent; box-shadow:inset 0 0 0 1.5px var(--green);"></i>Planned</span>
@@ -2395,10 +2534,13 @@
         <span><i style="background:#3478F6;"></i>Event</span>
       </div>
     </div>
-    <div class="section-title" style="margin-top:18px;" id="calAgendaTitle">Selected day</div>
-    <div id="calAgenda"></div>
+    <div class="cal-side">
+      <div class="section-title cal-agt" id="calAgendaTitle">Selected day</div>
+      <div id="calAgenda"></div>
+    </div>
+    </div>
 
-    <details class="card" style="margin-top:20px; padding:12px 14px;">
+    <details class="card cal-ins" style="margin-top:20px; padding:12px 14px;">
       <summary style="cursor:pointer; list-style:none; font-weight:700; font-size:13.5px;">📊 Insights for any date range ▾</summary>
       <p style="color:var(--muted); font-size:12.5px; margin:8px 0 8px;">Pick two dates to see everything that happened (and is planned) in between.</p>
       <div class="chip-row" style="margin-bottom:8px;">

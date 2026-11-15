@@ -2306,6 +2306,9 @@
     // CLINICS & DOCTORS (redesign module 3): the page heads
     "Every customer: the dashboard, the list and each clinic's card.": 'كل العملاء: لوحة المعلومات والقائمة وبطاقة كل عيادة.',
     'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
+    // CALENDAR, TEAM & KPI (redesign module 4)
+    'Planned visits, logged visits, follow-ups, tasks and team events, day by day.': 'الزيارات المخططة والمسجّلة والمتابعات والمهام وفعاليات الفريق، يوماً بيوم.',
+    'Messages and memories the whole team shares.': 'رسائل وذكريات يتشاركها الفريق كله.',
     // VISIT (redesign module 2): the visit form's summary panel, step tags and notes
     'Required': 'مطلوب',
     'Visit summary': 'ملخص الزيارة',

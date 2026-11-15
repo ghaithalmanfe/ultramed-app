@@ -58,6 +58,15 @@ function renderCalendar(){
     const dates = getWeekDates(calAnchor);
     const f = new Date(dates[0]+'T00:00:00'), l = new Date(dates[6]+'T00:00:00');
     label.textContent = `${f.toLocaleDateString(uiLocale(),{month:'short',day:'numeric'})} – ${l.toLocaleDateString(uiLocale(),{month:'short',day:'numeric'})}`;
+    // a phone: the week as a rail of seven days (§7.5, agenda first) — the selected day's agenda follows it
+    if(window.matchMedia && window.matchMedia('(max-width: 600px)').matches){
+      body.innerHTML = `<div class="cal-rail">${dates.map((d, i) => {
+        const info = calDayData(d), cls = ['cal-cell', 'rail', d===todayStr()?'today':'', d===calSelected?'sel':'', !UMCore.isWorkday(d)?'wkend':''].join(' ');
+        return `<button class="${cls}" onclick="selectCalDay('${d}')"><span class="rd">${DOW[i]}</span><span>${parseInt(d.slice(8),10)}</span><span class="cal-dots">${calDots(info)}</span></button>`;
+      }).join('')}</div>`;
+      renderCalAgenda();
+      return;
+    }
     body.innerHTML = dates.map(d=>{
       const info = calDayData(d);
       const dt = new Date(d+'T00:00:00');
@@ -141,9 +150,9 @@ function renderCalAgenda(){
   });
   el.innerHTML = `
     <div class="card">
-      <div style="display:flex; gap:8px; margin-bottom:${rows.length?'6px':'0'};">
-        <button class="btn secondary" style="flex:1; padding:10px;" onclick="openAddEvent('${d}')">+ Event</button>
-        <button class="btn secondary" style="flex:1; padding:10px;" onclick="calOpenPlanner('${d}')">+ Plan visits</button>
+      <div class="cal-acts">
+        <button class="btn secondary" onclick="openAddEvent('${d}')">+ Event</button>
+        <button class="btn secondary" onclick="calOpenPlanner('${d}')">+ Plan visits</button>
       </div>
       ${rows.join('') || `<div style="color:var(--muted); font-size:13px; text-align:center; padding:8px 0 2px;">Nothing scheduled this day yet.</div>`}
     </div>`;
@@ -174,9 +183,7 @@ function renderCalRangeSummary(){
   if(!from || !to){ showToast('Pick both dates'); return; }
   if(from > to){ showToast('"From" must be before "To"'); return; }
   const s = UMCore.rangeSummary(from, to, calRepFilter, {visits, clinics, tasks, events, dayPlans});
-  const tile = (n, l) => `<div style="background:var(--paper); border-radius:10px; padding:10px 6px; text-align:center;">
-    <div style="font-size:19px; font-weight:800; color:var(--green);">${n}</div>
-    <div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${l}</div></div>`;
+  const tile = (n, l) => `<div class="ins-tile"><div class="it-n">${n}</div><div class="it-l">${l}</div></div>`;
   const repRows = (calRepFilter==='all' && s.perRep.length>1)
     ? `<div style="margin-top:10px;">${s.perRep.map(r=>`
         <div class="row-between" style="font-size:12.5px; padding:5px 0; border-bottom:1px solid var(--line);">
@@ -186,19 +193,19 @@ function renderCalRangeSummary(){
     : '';
   el.innerHTML = `
     <div style="font-weight:700; font-size:13px; margin:10px 0 8px;">${fmtDate(from)} – ${fmtDate(to)}${calRepFilter!=='all' ? ' · '+esc(calRepFilter) : ' · Whole team'}</div>
-    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+    <div class="ins-grid">
       ${tile(s.fieldVisits, 'Visits')}
       ${tile(s.orders, 'Orders')}
-      ${tile(money(s.revenue), 'Sales')}
+      ${tile(money(s.revenue), 'Orders logged in the app')}
       ${tile(s.conversion+'%', 'Conversion')}
     </div>
-    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:6px;">
+    <div class="ins-grid">
       ${tile(s.contacts, 'Contacts seen')}
       ${tile(s.clinicsCovered, 'Clinics covered')}
       ${tile(s.calls, 'Calls')}
       ${tile(s.planned, 'Planned visits')}
     </div>
-    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:6px;">
+    <div class="ins-grid">
       ${tile(s.events, 'Events')}
       ${tile(s.followUpsDue, 'Follow-ups due')}
       ${tile(s.tasksDue, 'Open tasks due')}

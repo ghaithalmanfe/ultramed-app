@@ -932,15 +932,21 @@ function renderChat(){
     el.innerHTML = `<div class="empty"><div class="big">\u{1F4AC} Start the conversation</div>Share a win, ask for help, or drop a photo from the road.</div>`;
     return;
   }
+  // a day line where the day changes; each message beside its sender's initials (one's own on the end side)
+  let lastDay = '';
   el.innerHTML = chatMsgs.slice(-60).map(m=>{
     const me = m.who===currentUser.name;
-    return `<div class="msg ${me?'me':'them'}">
+    const day = m.ts ? localDateStr(new Date(m.ts)) : '';
+    let sep = '';
+    if(day && day !== lastDay){ lastDay = day; sep = `<div class="chat-day"><span>${day === todayStr() ? 'Today' : esc(new Date(m.ts).toLocaleDateString(uiLocale(), { weekday: 'short', day: 'numeric', month: 'short' }))}</span></div>`; }
+    const ini = typeof msInitials === 'function' ? msInitials(typeof msName === 'function' ? msName(m.who) : m.who) : String(m.who || '?').slice(0, 1);
+    return `${sep}<div class="msg-row ${me?'me':'them'}"><span class="msg-av" data-notr aria-hidden="true">${esc(ini)}</span><div class="msg ${me?'me':'them'}">
       ${me?'':`<div class="who">${esc(m.who)}</div>`}
       ${m.text?`<div dir="auto">${esc(m.text)}</div>`:''}
       ${m.photoId?(m.thumb?`<img src="${m.thumb}" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">`
         :`<button class="chip small" style="margin-top:4px;" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">📷 <span>Photo — tap to open</span></button>`):''}
       <div class="when">${fmtWhen(m.ts)}</div>
-    </div>`;
+    </div></div>`;
   }).join('');
 }
 function pickChatPhoto(useCamera){
