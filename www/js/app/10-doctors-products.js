@@ -26,6 +26,7 @@ function renderDoctorsDirectory(){
 
 // ---- PRODUCTS ----
 let openBrands = new Set();
+function productBrandPick(b){ const e = document.getElementById('productSearch'); if(e){ e.value = b || ''; renderProducts(); } }
 function renderProducts(){
   const q = (document.getElementById('productSearch').value||'').toLowerCase();
   const wrap = document.getElementById('productListWrap');
@@ -37,6 +38,14 @@ function renderProducts(){
   const gapNote = catalogGapNote() + productDupNote();
   if(brands.length===0){ wrap.innerHTML = gapNote + `<div class="empty">No products found.</div>`; return; }
   if(q) brands.forEach(b=>openBrands.add(b));
+  // one row of brand chips (the brand's colour, its count): a tap searches that brand — the search box's own filter
+  const chipsEl = document.getElementById('productBrandChips');
+  if(chipsEl){
+    const all = {}; products.forEach(p => { const b = p.brand || 'Other'; all[b] = (all[b] || 0) + 1; });
+    const qb = q.trim();
+    chipsEl.innerHTML = `<button class="chip small ${!qb ? 'on' : ''}" onclick="productBrandPick('')">All (${products.length})</button>` + Object.keys(all).sort((a, b) => all[b] - all[a] || a.localeCompare(b))
+      .map(b => `<button class="chip small pr-chip ${qb && qb === b.toLowerCase() ? 'on' : ''}" data-brand="${esc(b)}" onclick="productBrandPick(this.dataset.brand)"><i class="swatch" style="background:${brandColor(b)}"></i><span dir="auto">${esc(b)}</span> <span data-notr>(${all[b]})</span></button>`).join('');
+  }
   wrap.innerHTML = gapNote + brands.map(b=>{
     const open = openBrands.has(b);
     return `<div class="brand-group card" style="padding:6px 12px;">
@@ -45,7 +54,7 @@ function renderProducts(){
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
       <div class="brand-body ${open?'open':''}" id="brand-${slugify(b)}">
-        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}${p.id ? ` <span data-notr>· ${esc(p.id)}</span>` : ''}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -1615,7 +1624,7 @@ function openPlaybook(sp){
   const docs = [];
   clinics.filter(c=>canViewClinic(c)).forEach(c=>(c.doctors||[]).forEach(d=>{ if(d.title===sp) docs.push({name:d.name, clinic:c.name, rep:c.rep}); }));
   showModal(`
-    <div class="pb-hero" style="background:linear-gradient(135deg,${pb.color} 0%,${pb.color}CC 100%);">
+    <div class="pb-hero" data-sections style="background:linear-gradient(135deg,${pb.color} 0%,${pb.color}CC 100%);">
       <div class="ic">${pb.icon}</div>
       <h3>${esc(sp)}</h3>
       <p>${esc(pb.angle)}</p>
@@ -1664,7 +1673,7 @@ function openProductDetail(pid){
   })));
   showModal(`
     ${p.img?`<img class="pbig" src="${p.img}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
-    <div class="row-between" style="margin:0 0 4px;">
+    <div class="row-between" style="margin:0 0 4px;" data-sections>
       <h3 style="margin:0;">${esc(p.name)}</h3>
       ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">${I('pencil')} Edit</button>`:''}
     </div>

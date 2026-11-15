@@ -2306,6 +2306,9 @@
     // CLINICS & DOCTORS (redesign module 3): the page heads
     "Every customer: the dashboard, the list and each clinic's card.": 'كل العملاء: لوحة المعلومات والقائمة وبطاقة كل عيادة.',
     'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
+    // ERP LINKS, PRODUCTS & PLAYBOOK (redesign module 5)
+    "The catalog by brand, with each product's specs and selling materials.": 'الكتالوج حسب العلامة التجارية، مع مواصفات كل منتج ومواد البيع.',
+    'What each specialty cares about, what to lead with and how to answer.': 'ما يهم كل تخصص، وبماذا تبدأ وكيف ترد.',
     // CALENDAR, TEAM & KPI (redesign module 4)
     'Planned visits, logged visits, follow-ups, tasks and team events, day by day.': 'الزيارات المخططة والمسجّلة والمتابعات والمهام وفعاليات الفريق، يوماً بيوم.',
     'Messages and memories the whole team shares.': 'رسائل وذكريات يتشاركها الفريق كله.',
@@ -2772,6 +2775,8 @@
     [/^(\d+) Work Days? Left$/, function (m) { return 'باقي ' + countAr(m[1], ['يوم عمل واحد', 'يوما عمل', 'أيام عمل', 'يوم عمل']); }],
     [/^(\d+) today$/, function (m) { return m[1] + ' اليوم'; }],
     [/^W([1-5])$/, function (m) { return 'الأسبوع ' + m[1]; }],
+    // the products list's note (redesign module 5)
+    [/^(\d+) products? missing from the catalog$/, function (m) { return countAr(m[1], ['منتج واحد ناقص من الكتالوج', 'منتجان ناقصان من الكتالوج', 'منتجات ناقصة من الكتالوج', 'منتجاً ناقصاً من الكتالوج']); }],
     // the visit form (redesign module 2)
     [/^Step (\d)$/, function (m) { return 'الخطوة ' + m[1]; }],
     [/^(\d+) of (\d+) required steps done$/, function (m) { return 'اكتمل ' + m[1] + ' من ' + m[2] + ' من الخطوات المطلوبة'; }],

@@ -22,8 +22,10 @@ function modalSections(inner){
   const kids = Array.from(inner.children).filter(k => !k.classList.contains('modal-foot'));
   while(kids.length && kids[kids.length - 1].tagName === 'BUTTON' && kids[kids.length - 1].classList.contains('btn')) kids.pop();   // the buttons it ends with become its foot
   if(kids.length < 2) return;
-  const head = el => el.tagName === 'P' || el.classList.contains('badge') || (el.children.length > 0 && Array.from(el.children).every(c => c.classList.contains('badge')));
-  let i = 1; while(i < kids.length && head(kids[i])) i++;
+  const head = el => el.tagName === 'P' || el.classList.contains('badge') || (el.children.length > 0 && Array.from(el.children).every(c => c.classList.contains('badge')))
+    || (el.tagName === 'DIV' && !el.children.length && el.textContent.trim().length > 0 && el.textContent.trim().length < 90);   // a short line under the title (a brand, a clinic)
+  let i = Math.max(0, kids.findIndex(k => k.matches('[data-sections]') || k.querySelector(':scope > [data-sections]'))) + 1;
+  while(i < kids.length && head(kids[i])) i++;
   let cur = null;
   for(let k = i; k < kids.length; k++){
     const el = kids[k];

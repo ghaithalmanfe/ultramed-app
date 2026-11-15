@@ -1727,7 +1727,7 @@ function elRenderMoves(){
       if(lines.length && t0.pct != null && t0.n > 1 && (t0.pct !== t1.pct || t0.ach !== t1.ach)) lines.push(`<div class="el-today" data-rep="@team" style="font-size:12.5px; padding:2px 0;"><b><span>Team</span></b>: <span>now</span> <span dir="ltr">${t0.pct}%</span> · <span>after saving</span> <span dir="ltr">${t1.pct}%</span></div>`);
       if(lines.length) today = `<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--line);"><div style="font-size:11.5px; color:var(--muted); font-weight:700;"><span>This month on the Today card</span></div>${lines.join('')}</div>`;
     }
-    parts.push(`<div class="section-title">Who it counts for</div><div class="card" style="padding:6px 12px 10px;">
+    parts.push(`<div class="section-title">Who it counts for</div><div class="card el-moves" style="padding:6px 12px 10px;">
       ${pv.moves.map(m => `<div class="el-move" data-month="${m.month}" style="padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; line-height:1.55;">
         <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;"><span><b>${esc(monthLabel(m.month))}</b>${m.closed ? ' ' + elClosedBadge() : ''}</span><span dir="ltr" style="font-weight:800;">${money(m.net)}</span></div>
         <div><span>From</span> ${elWho(m.from)} · <span>To</span> ${elWho(m.to)} · ${m.invoices} ×</div></div>`).join('')}
@@ -1767,7 +1767,7 @@ function elRenderMoves(){
 function elSidesHtml(pv){
   const line = (label, side, extra) => `<div class="report-line" style="gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;"><span style="color:var(--muted); flex-shrink:0;"><span>${label}</span></span>
     <span style="display:flex; flex-wrap:wrap; gap:4px 6px; justify-content:flex-end; align-items:center; min-width:0; flex:1 1 auto; text-align:end;">${elSideHtml(side, extra)}</span></div>`;
-  let h = `<div class="card" style="padding:2px 12px; margin-bottom:8px;">${pv.before ? line('Now', pv.before) : ''}${pv.after ? line('After saving', pv.after, _el.addClinic) : ''}</div>`;
+  let h = `<div class="card el-sides" style="padding:2px 12px; margin-bottom:8px;">${pv.before ? line('Now', pv.before) : ''}${pv.after ? line('After saving', pv.after, _el.addClinic) : ''}</div>`;
   const a = pv.after, why = !a ? '' : a.status === 'none' ? elNoneText(pv.people) : a.status === 'ambiguous' ? EL_TXT.ambiguous : a.status === 'ignored' ? EL_TXT.ignore : a.status === 'channel' ? EL_TXT.channel : '';
   if(why) h += `<div class="clinic-sub" style="margin:-2px 2px 8px; line-height:1.5;"><span>${why}</span></div>`;
   return h;

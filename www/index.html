@@ -2030,6 +2030,7 @@
   #teamChat .composer{background:#fff; border:1px solid rgba(16,24,40,.06); border-top:1px solid var(--p-line); border-radius:0 0 var(--p-radius) var(--p-radius); padding:10px 12px; box-shadow:var(--p-shadow); z-index:3;}
   .composer .iconbtn{border-color:#DCE2E7; color:var(--p-ink2);}
   #teamChat .composer textarea{padding:11px 12px; font-size:15px;}
+  #teamChat .composer textarea::placeholder{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .composer .iconbtn.send{background:#0B5A45; border-color:#0B5A45; color:#fff;}
   #chatPhotoPreview:not(:empty){margin-top:8px;}
   /* memories: a card grid */
@@ -2077,6 +2078,67 @@
   .modal.m-secs .cd-sec > .section-title:first-child{margin-top:0 !important;}
   .dp-head{margin-bottom:6px;}
   /* === END CALENDAR, TEAM & KPI === */
+
+  /* === ERP LINKS, PRODUCTS & PLAYBOOK ===
+     Module 5: the ERP account links' check as before → after, the closed-month warning, the products list with its
+     brand chips, product and playbook sheets as header + section cards, the playbook's tiles; the chat composer on
+     a phone (nothing shows between it and the bottom bar). */
+  @media (max-width:1023px){
+    #teamChat .composer{bottom:calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));}
+    #teamChat .composer::after{content:''; position:absolute; inset-inline:-1px; top:100%; height:28px; background:var(--p-page, #F7F8FA);}   /* under the bottom bar: no page shows through */
+  }
+  /* ERP account links: Now → After saving, the months, who it counts for, the closed months */
+  .el-sides{padding:4px 12px !important;}
+  .el-sides > .report-line{padding:9px 0;}
+  .el-sides > .report-line + .report-line{border-top:1px dashed var(--p-line);}
+  @media (min-width:720px){
+    .el-sides{display:grid; grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr); align-items:stretch; gap:0; padding:10px 12px !important;}
+    .el-sides > .report-line{flex-direction:column; align-items:flex-start !important; justify-content:flex-start; gap:6px !important; padding:4px 6px;}
+    .el-sides > .report-line > span:last-child{justify-content:flex-start !important; text-align:start !important;}
+    .el-sides > .report-line + .report-line{grid-column:3; border-top:none;}
+    .el-sides::before{content:'→'; grid-column:2; grid-row:1; align-self:center; justify-self:center; width:30px; height:30px; border-radius:50%; background:var(--p-mint-soft); color:var(--p-g6); display:flex; align-items:center; justify-content:center; font-weight:700;}
+    [dir="rtl"] .el-sides::before{content:'←';}
+    .el-sides > .report-line:first-child{grid-column:1; grid-row:1;}
+  }
+  .el-month{border-top:1px solid var(--p-line); padding:8px 0 !important;}
+  .el-moves{padding:4px 14px 10px !important;}
+  .el-move{border-bottom-color:var(--p-line) !important;}
+  @media (min-width:720px){
+    /* a laptop: one row per month — Month | From → To · invoices | Amount (the text keeps its order) */
+    .el-move{display:grid; grid-template-columns:150px minmax(0,1fr) auto; column-gap:14px; align-items:center; padding:10px 0 !important;}
+    .el-move > div:first-child{display:contents !important;}
+    .el-move > div:first-child > span:first-child{grid-column:1; grid-row:1;}
+    .el-move > div:first-child > span:last-child{grid-column:3; grid-row:1; text-align:end;}
+    .el-move > div:last-child{grid-column:2; grid-row:1;}
+  }
+  @media (max-width:719px){
+    /* a phone: each month as a card */
+    .el-moves{background:none !important; border:none !important; box-shadow:none !important; padding:0 !important;}
+    .el-move{background:#fff; border:1px solid var(--p-line) !important; border-radius:14px; padding:10px 12px !important; margin-bottom:8px;}
+  }
+  #elClosedCard{border:1.5px solid #F0B36B !important; border-inline-start:6px solid #E8762B !important; background:#FFF4E6 !important; border-radius:16px !important; padding:14px 16px !important; font-size:13px !important;}
+  #elClosedCard > div:first-child{font-size:15px; font-weight:700; color:#9A4A12;}
+  #elClosedCard label{background:#fff; border:1px solid #F0C99A; border-radius:12px; padding:10px 12px; margin-top:12px !important; min-height:44px;}
+  /* products: brand chips, the brand groups as cards with rows */
+  .pr-chip .swatch{display:inline-block; width:9px; height:9px; border-radius:50%; margin-inline-end:6px; vertical-align:middle;}
+  .pr-filters{margin-bottom:12px;}
+  .brand-group.card{border-radius:var(--p-radius); box-shadow:var(--p-shadow); border-color:rgba(16,24,40,.05); padding:4px 16px !important;}
+  .brand-head{min-height:52px; font-size:15.5px; font-weight:700; color:var(--p-ink);}
+  .product-item{padding:11px 2px; border-bottom-color:var(--p-line);}
+  .product-item .pname2{font-weight:600; color:var(--p-ink);}
+  .product-price{font-weight:700; color:var(--p-ink); white-space:nowrap;}
+  #productListWrap > .card:not(.brand-group){border-radius:14px;}
+  /* the playbook: tiles in the home's card language; its sheet's sections as cards */
+  .tile-grid{gap:12px;}
+  .tile{border-radius:var(--p-radius); border-color:rgba(16,24,40,.05); box-shadow:var(--p-shadow); padding:16px;}
+  .tile .ic{width:44px; height:44px; border-radius:50%; font-size:21px; background:var(--p-mint-soft);}
+  .tile .tname{font-size:15px; font-weight:700; color:var(--p-ink);}
+  @media (min-width:1024px){ .tile-grid{grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px;} }
+  .pb-hero{border-radius:20px; padding:20px;}
+  .pb-item{border-bottom-color:var(--p-line);}
+  .pb-bullet{background:var(--p-mint-soft); color:var(--p-g6);}
+  .pb-obj{border-radius:14px;}
+  /* === END ERP LINKS, PRODUCTS & PLAYBOOK === */
 
   /* === SCREENS A === */
   /* === END SCREENS A === */
@@ -2458,13 +2520,21 @@
 
   <!-- PRODUCTS -->
   <div class="view" id="view-products">
-    <div class="row-between" style="margin-bottom:14px;">
-      <h2 style="font-size:18px; margin:0;">Products</h2>
-      <button class="del hbtn" onclick="openAddProduct()" aria-label="Add product"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg></button>
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">Products</h2>
+        <p class="ph-sub">The catalog by brand, with each product's specs and selling materials.</p>
+      </div>
+      <div class="ph-a">
+        <button class="chip small" onclick="openCategoryGuides()"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg> <span>Selling guides</span></button>
+        <button class="chip small" onclick="openAddProduct()" aria-label="Add product"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg> <span>Add product</span></button>
+      </div>
     </div>
     <div class="nudge" data-nudge="products" style="margin-bottom:12px;">📦 Know three products cold and you can solve most conversations.</div>
-    <button class="btn secondary small" style="margin-bottom:10px;" onclick="openCategoryGuides()"><svg class="svgi" aria-hidden="true"><use href="#i-book"/></svg> Selling guides — how to sell every category</button>
-    <input type="text" class="search-box" id="productSearch" placeholder="Search products or brand..." oninput="renderProducts()">
+    <div class="cl-filters pr-filters">
+      <div class="inp-ic"><svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg><input type="text" class="search-box" id="productSearch" placeholder="Search products or brand..." oninput="renderProducts()"></div>
+      <div class="cl-chipline" id="productBrandChips"></div>
+    </div>
     <div id="productListWrap"></div>
   </div>
 
@@ -2586,7 +2656,12 @@
   </div>
 
   <div class="view" id="view-playbook">
-    <h2 style="font-size:22px; margin:0 0 4px;">Selling Playbook</h2>
+    <div class="page-head">
+      <div class="ph-t">
+        <h2 class="ph-title">Selling Playbook</h2>
+        <p class="ph-sub">What each specialty cares about, what to lead with and how to answer.</p>
+      </div>
+    </div>
     <div class="nudge" data-nudge="playbook" style="margin-bottom:14px;">🧠 Walk in knowing what they care about. Preparation is the difference between a chat and an order.</div>
     <div class="tile-grid" id="playbookGrid"></div>
   </div>
