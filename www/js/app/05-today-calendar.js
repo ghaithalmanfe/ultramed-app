@@ -1282,7 +1282,11 @@ function msNeedsHTML(v, m){
     const next = ((dayPlans[today] || {})[me] || []).map(planEntryId).filter(id => clinics.some(c => c.id === id) && !keys.has(today + '|' + me + '|' + id))[0];
     if(next){ const c = clinics.find(x => x.id === next); rows.push(msAct('pin', `${msT('Visit:')} ${msData(c.name)}`, `${msT('Today')} · ${msT("in today's plan")}`, ` data-c="${esc(c.id)}" onclick="quickLogFrom(this.dataset.c)"`)); }
   }
-  rows.push(msAct('cal2', msT(due.length ? msCount(due.length, 'follow-up due', 'follow-ups due') : 'No follow-ups due'), msT(due.length ? `${over} overdue · ${due.length - over} today` : 'All caught up'), ` onclick="msGo('msDueCard')"`, over ? 'warn' : ''));
+  // the first follow-ups due (overdue first), each a tap from its confirmation; the count of all of them under the list
+  due.slice().sort((x, y) => (followStatus(x.nextFollowUp) === 'overdue' ? 0 : 1) - (followStatus(y.nextFollowUp) === 'overdue' ? 0 : 1) || String(x.nextFollowUp).localeCompare(String(y.nextFollowUp))).slice(0, 2).forEach(c => {
+    const ov = followStatus(c.nextFollowUp) === 'overdue';
+    rows.push(msAct('cal2', `${msT('Follow-up:')} ${msData(c.name)}`, `${ov ? `${msT('Overdue since')} ${msDate(c.nextFollowUp)}` : msT('Today')}${c.rep ? ' · ' + msWho(c.rep) : ''}`, ` data-c="${esc(c.id)}" onclick="confirmFollowUp(this.dataset.c)"`, ov ? 'warn' : ''));
+  });
   let more = '';
   if(act && act.measurable){
     const u = Array.isArray(act.under) ? act.under : [], p = Array.isArray(act.potential) ? act.potential : [];
@@ -1291,7 +1295,8 @@ function msNeedsHTML(v, m){
     if(!u.length && !p.length) rows.push(`<div class="ms-ac static"><span class="ic">${I('check')}</span><div class="t"><div>${msT('No customer to act on')}</div><div class="s">${msT('Nobody under-performing, no A or B clinic waiting')}</div></div></div>`);
     if(u.length + p.length) more = `<button class="ms-more" onclick="msActSheet()">${[u.length ? msT(`${u.length} under-performing`) : '', p.length ? msT(msCount(p.length, 'opportunity', 'opportunities')) : ''].filter(Boolean).join(' · ')} — ${msT('see all')} ${msChev()}</button>`;
   } else if(D && act && !act.measurable) rows.push(`<div class="ms-ac static"><span class="ic">${I('info')}</span><div class="t"><div>${msT('Customers to act on')}</div><div class="s">${msT('Not measured: no sales figure for this month yet')}</div></div></div>`);
-  return msNextHead(v) + `<div class="ms-acts">${rows.join('')}</div>${more}${!D ? msWait(m) : ''}`;
+  const dueLine = `<button class="ms-more" onclick="msGo('msDueCard')">${msT(due.length ? msCount(due.length, 'follow-up due', 'follow-ups due') : 'No follow-ups due')} · ${msT(due.length ? `${over} overdue · ${due.length - over} today` : 'All caught up')} ${msChev()}</button>`;
+  return msNextHead(v) + `<div class="ms-acts">${rows.join('')}</div>${dueLine}${more}${!D ? msWait(m) : ''}`;
 }
 // one customer to act on, as an action row (the same words and the same tap as msActItem)
 function msActRow(x, kind, v){
@@ -1330,7 +1335,7 @@ function msKpisHTML(v, m, sig){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own, D = m && msOf(m.D), H = (m && m.H) || {};
   const A = D ? (msOf(D.achievement) || {}) : {}, F = D ? msOf(D.forecast) : null;
   const wait = `<span class="ms-wait">${msT(m && m.failed ? 'Not worked out on this device' : 'Calculating…')}</span>`;
-  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${I(icon)}</span><span class="ms-kb"><span class="ms-kl"><span>${msT(label)}</span>${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
+  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
   const out = [];
   // 1 — the KPI score (the scorecard's 10 measures): the team = the average of the people of REPS who have one
   const K = msOf(H.kpi), score = K ? K.current : null;
@@ -1354,7 +1359,7 @@ function msKpisHTML(v, m, sig){
     if(last != null && Math.abs(last - fc) <= 0.05 * Math.max(1, (F.people || []).length)) fSpark = msSpark(FD.map(x => x.forecast));   // only when it ends on the card's own figure
   }
   const fVal = fc == null ? '—' : withT ? msN(F.pct + '%') : msKwd(fc);
-  out.push(card('fc', 'trend2', 'Sales Forecast', '', fVal,
+  out.push(card('fc', 'trend2', ['Sales Forecast', 'Forecast'], '', fVal,
     fc != null ? `<span class="ms-ks">≈ ${msKwd(fc)} · ${msT('estimate')}</span>` : `<span class="ms-ks">${!D ? wait : msT(F && F.closed ? 'The month is closed' : 'No sales figure for this month yet.')}</span>`,
     fSpark, "msHow('sales')", 'forecast', fc, 'The month-end figure at the pace so far (an estimate, not a result) — the ⓘ shows the working'));
   return out.join('');
@@ -1365,7 +1370,7 @@ function msKpisHTML(v, m, sig){
 // target card's people), or — with no target — everyone's lines and no target line. The running week's bar is the
 // month's figure, marked with its amount; a week still to come has no bar, only its point on the target line.
 function msNiceStep(raw){ const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9)))), q = raw / p; return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(s => q <= s + 1e-9) * p; }
-function msK(v){ const k = v / 1000; return v >= 1000 ? (Math.round(k * 10) / 10).toLocaleString('en-US') + 'K' : String(Math.round(v)); }
+function msK(v){ const k = v / 1000; return uiLang === 'ar' ? Math.round(v).toLocaleString('en-US') : v >= 1000 ? (Math.round(k * 10) / 10).toLocaleString('en-US') + 'K' : String(Math.round(v)); }   // Arabic: the whole number (no Latin K)
 function msChartHTML(v, m){
   const D = m && msOf(m.D);
   const keys = `<span class="ms-keys"><span><i></i>${msT('Sales')}</span><span><i class="t"></i>${msT('Target')}</span></span>`;
