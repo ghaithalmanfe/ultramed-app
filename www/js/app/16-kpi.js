@@ -18,6 +18,11 @@ function kpiCards(reps, period){
   return reps.map(rep => UMCore.kpiScorecard(Object.assign({}, data, { today: todayStr() }), { rep, from: r.from, to: r.to, settings: S, rows }));
 }
 let _kpiRep = null, _kpiPeriod = 'month';
+// The score as the home screen's ring: the arc is the score out of 100 (no arc, "—", where nothing was measured).
+function kpiRing(total, size){
+  const R = 42, C = 2 * Math.PI * R, f = total == null ? 0 : Math.max(0, Math.min(1, total / 100));
+  return `<span class="kpi-ring" style="width:${size}px; height:${size}px;"><svg viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle class="trk" cx="50" cy="50" r="${R}"/>${total == null ? '' : `<circle class="val" cx="50" cy="50" r="${R}" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 50 50)"/>`}</svg></span>`;
+}
 function openKpiScorecard(){
   const sup = currentUser.role === 'supervisor';
   if(!_kpiRep || (!sup && _kpiRep !== currentUser.name)) _kpiRep = sup ? 'all' : currentUser.name;
@@ -31,7 +36,8 @@ function openKpiScorecard(){
   const per = [['month', 'This month'], ['week', 'This week'], ['last', 'Last month']].map(([k, l]) => `<div class="chip small ${_kpiPeriod === k ? 'on' : ''}" onclick="_kpiPeriod='${k}'; openKpiScorecard()">${l}</div>`).join('');
   let body;
   if(_kpiRep === 'all'){
-    body = `<div class="card" style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
+    body = `<div class="kpi-people">${cards.map(c => `<button class="kpi-pc" onclick="_kpiRep='${esc(c.rep)}'; openKpiScorecard()">${kpiRing(c.total, 64)}<span class="kpi-pt"><span class="kpi-pn">${esc(c.rep)}</span><span class="kpi-ps" style="color:${color(c.total == null ? null : c.total / 100)};">${c.total == null ? '—' : c.total + '/100'}</span></span><svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg></button>`).join('')}</div>
+    <div class="card kpi-table" style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
       <tr><th style="text-align:start; padding:4px;">KPI</th><th style="padding:4px;">Weight</th>${cards.map(c => `<th style="padding:4px;">${esc(c.rep)}</th>`).join('')}</tr>
       <tr style="font-weight:800; font-size:14px;"><td style="padding:4px;">Total score</td><td></td>${cards.map(c => `<td style="text-align:center; padding:4px; color:${color(c.total == null ? null : c.total / 100)};">${c.total == null ? '—' : c.total + '/100'}</td>`).join('')}</tr>
       ${cards[0] ? cards[0].items.map((it, i) => `<tr style="border-top:1px solid var(--line, #eee);"><td style="padding:4px;">${esc(it.label)}</td><td style="text-align:center; color:var(--muted);">${it.weight}%</td>${cards.map(c => `<td style="text-align:center; padding:4px; font-weight:700; color:${color(c.items[i].score)};">${pct(c.items[i].score)}</td>`).join('')}</tr>`).join('') : ''}
@@ -40,15 +46,15 @@ function openKpiScorecard(){
     <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Tap a name above for the detail behind every score.</div>`;
   } else {
     const c = cards.find(x => x.rep === _kpiRep) || cards[0];
-    body = `<div class="card" style="text-align:center;"><div style="font-size:12px; color:var(--muted);">${esc(c.rep)} · ${r.label} · ${c.workdays} working days</div>
-      <div style="font-size:40px; font-weight:800; color:${color(c.total == null ? null : c.total / 100)};">${c.total == null ? '—' : c.total}<span style="font-size:16px; color:var(--muted);">/100</span></div></div>
-      ${c.items.map(it => `<div class="card" style="margin-top:8px;">
+    body = `<div class="kpi-hero">${kpiRing(c.total, 112)}<div class="kpi-hc"><div class="kpi-hs">${esc(c.rep)} · ${r.label} · ${c.workdays} working days</div>
+      <div class="kpi-hn">${c.total == null ? '—' : c.total}<span>/100</span></div><div class="kpi-hl">Total score</div></div></div>
+      <div class="card kpi-items">${c.items.map(it => `<div class="kpi-it">
         <div class="row-between"><b style="font-size:13px;">${esc(it.label)}</b><span style="font-weight:800; color:${color(it.score)};">${pct(it.score)} <span style="color:var(--muted); font-weight:400; font-size:11px;">× ${it.weight}%</span></span></div>
         ${bar(it.score)}
         <div style="font-size:12px; margin-top:4px;">${esc(it.value)}</div>
         <div style="font-size:11.5px; color:var(--muted);">Target: ${esc(it.target)}</div>
         ${it.detail ? `<div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(it.detail)}</div>` : ''}
-      </div>`).join('')}
+      </div>`).join('')}</div>
       <div class="card" style="margin-top:8px;"><b style="font-size:13px;">Stands</b> <span style="font-size:12px; color:var(--muted);">(tracked, no target)</span><div style="font-size:12px;">${c.stands.active} active · ${c.stands.checked} checked in the period</div></div>`;
   }
   showModal(`
@@ -111,11 +117,11 @@ function openClientLog(){
       <div class="chip small" onclick="openClientLogForm('stand')">+ Stand</div>
     </div>
     <div class="section-title">Open requests (${open.length})</div>
-    ${open.length ? open.map(e => `<div class="card" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:${Date.now() - Date.parse(e.at) > lim * 3600000 ? 'var(--coral-ink)' : 'var(--muted)'};">${age(e)} · ${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.text || '')}</div><button class="chip small" style="margin-top:6px;" onclick="resolveClientLog('${e.id}')">✓ Answered</button></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">None open.</div>'}
+    ${open.length ? open.map(e => `<div class="card req-row" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:${Date.now() - Date.parse(e.at) > lim * 3600000 ? 'var(--coral-ink)' : 'var(--muted)'};">${age(e)} · ${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.text || '')}</div><button class="chip small" style="margin-top:6px;" onclick="resolveClientLog('${e.id}')">✓ Answered</button></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">None open.</div>'}
     <div class="section-title">This month</div>
-    ${recent.length ? recent.map(e => `<div style="font-size:12.5px; padding:4px 0; border-bottom:1px solid var(--line, #eee);">${e.type === 'escalation' ? '⚠️ Escalation' : '✓ Request'} · <b>${esc(cl(e.clinicId))}</b> · ${esc(e.rep || '')} · ${fmtDate(String(e.at).slice(0, 10))}${e.via ? ' · went to ' + esc(e.via) : ''}${e.text ? ' — ' + esc(e.text) : ''}${e.resolvedAt ? ' <span style="color:var(--muted);">(answered in ' + Math.max(0, Math.round((Date.parse(e.resolvedAt) - Date.parse(e.at)) / 3600000)) + 'h)</span>' : ''}</div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">Nothing logged this month.</div>'}
+    ${recent.length ? recent.map(e => `<div class="req-line" style="font-size:12.5px; padding:4px 0; border-bottom:1px solid var(--line, #eee);"><span class="badge ${e.type === 'escalation' ? 'overdue' : 'done'}">${e.type === 'escalation' ? '⚠️ Escalation' : '✓ Request'}</span> · <b>${esc(cl(e.clinicId))}</b> · ${esc(e.rep || '')} · ${fmtDate(String(e.at).slice(0, 10))}${e.via ? ' · went to ' + esc(e.via) : ''}${e.text ? ' — ' + esc(e.text) : ''}${e.resolvedAt ? ' <span style="color:var(--muted);">(answered in ' + Math.max(0, Math.round((Date.parse(e.resolvedAt) - Date.parse(e.at)) / 3600000)) + 'h)</span>' : ''}</div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">Nothing logged this month.</div>'}
     <div class="section-title">Stands (${stands.length})</div>
-    ${stands.length ? stands.map(e => `<div class="card" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:var(--muted);">${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.brand || '')}${e.text ? ' — ' + esc(e.text) : ''}</div><div style="font-size:11.5px; color:var(--muted);">Placed ${fmtDate(String(e.at).slice(0, 10))} · last checked ${(e.checks || []).length ? fmtDate(e.checks[e.checks.length - 1]) : 'never'}</div>
+    ${stands.length ? stands.map(e => `<div class="card req-row" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:var(--muted);">${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.brand || '')}${e.text ? ' — ' + esc(e.text) : ''}</div><div style="font-size:11.5px; color:var(--muted);">Placed ${fmtDate(String(e.at).slice(0, 10))} · last checked ${(e.checks || []).length ? fmtDate(e.checks[e.checks.length - 1]) : 'never'}</div>
       <div style="display:flex; gap:6px; margin-top:6px;"><button class="chip small" onclick="checkStand('${e.id}')">✓ Checked today</button><button class="chip small" onclick="removeStand('${e.id}')">Removed</button></div></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">No stands recorded.</div>'}
     <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn secondary" onclick="openKpiScorecard()">KPI scorecard</button><button class="btn secondary" onclick="closeModal()">Close</button></div>`);
 }
@@ -182,7 +188,7 @@ function openMonthByMonth(){
   const M = T.months, team = _mbmRep === 'all';
   const of = m => team ? m.team : m.byRep[_mbmRep];
   const name = m => { const n = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m.month.slice(5, 7), 10) - 1] + ' ' + m.month.slice(2, 4); return m.partial ? n + ' (to ' + parseInt(m.to.slice(8, 10), 10) + ')' : n; };
-  const kd = n => 'KD ' + Math.round(n).toLocaleString('en-US');
+  const kd = n => moneyWhole(n);   // grouped, the currency after the figure (د.ك in Arabic)
   const arrow = (a, b) => a == null || b == null || !(b > 0) || a === b ? '' : a >= b ? `<span style="color:var(--sage-ink); font-weight:700;">▲ ${Math.round((a - b) / b * 100)}%</span>` : `<span style="color:var(--coral-ink); font-weight:700;">▼ ${Math.round((b - a) / b * 100)}%</span>`;
   const bar = (x, max, color) => `<div style="height:8px; border-radius:4px; background:var(--paper); overflow:hidden; margin-top:3px;"><div style="width:${max > 0 && x ? Math.round(Math.min(1, x / max) * 100) : 0}%; height:100%; background:${color};"></div></div>`;
   const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_mbmRep === x ? 'on' : ''}" onclick="_mbmRep='${esc(x)}'; openMonthByMonth()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
@@ -203,6 +209,12 @@ function openMonthByMonth(){
     <td ${td}>${perDay(m)} ${i ? arrow(perDay(m), perDay(M[i - 1])) : ''}</td><td ${td}>${of(m).doctorsMet || 0}</td>
     <td ${td}>${of(m).newAccounts == null ? '—' : of(m).newAccounts}</td><td ${td}>${of(m).placements == null ? '—' : of(m).placements}</td>
     <td ${td}><b>${kpiOf(m) == null ? '—' : kpiOf(m)}</b>${i && kpiOf(m) != null && kpiOf(M[i - 1]) != null ? ' ' + arrow(kpiOf(m), kpiOf(M[i - 1])) : ''}</td></tr>`).join('');
+  const mcards = M.map((m, i) => `<div class="mbm-card"><div class="mbm-m">${name(m)}</div><div class="mbm-g">
+      <span><span>Visits a day${team ? ' (each)' : ''}</span><b>${perDay(m)} ${i ? arrow(perDay(m), perDay(M[i - 1])) : ''}</b></span>
+      <span><span>Doctors met</span><b>${of(m).doctorsMet || 0}</b></span>
+      <span><span>New accounts</span><b>${of(m).newAccounts == null ? '—' : of(m).newAccounts}</b></span>
+      <span><span>New products</span><b>${of(m).placements == null ? '—' : of(m).placements}</b></span>
+      <span><span>KPI${team ? ' (avg)' : ''}</span><b>${kpiOf(m) == null ? '—' : kpiOf(m)}${i && kpiOf(m) != null && kpiOf(M[i - 1]) != null ? ' ' + arrow(kpiOf(m), kpiOf(M[i - 1])) : ''}</b></span></div></div>`).join('');
   showModal(`
     <h3 style="margin-top:0;">${I('chart')} Month by month</h3>
     <div class="chip-row" style="margin-bottom:6px;">${chips}</div>
@@ -211,7 +223,8 @@ function openMonthByMonth(){
     <div class="card"><b style="font-size:13.5px;">Sales against target</b><div style="font-size:11.5px; color:var(--muted);">ERP invoices of each month; grey bar = that month's own DSR target</div>${sales}</div>
     <div class="card" style="margin-top:8px;"><b style="font-size:13.5px;">Same days of each month: day 1–${dayN}</b><div style="font-size:11.5px; color:var(--muted);">A fair comparison while this month is still running</div>${same}</div>
     <div class="card" style="margin-top:8px; overflow-x:auto;"><b style="font-size:13.5px;">Field work and KPI</b>
-      <table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:6px;"><tr style="color:var(--muted); font-size:11px;"><th style="text-align:start; padding:3px;">Month</th><th>Visits a day${team ? ' (each)' : ''}</th><th>Doctors met</th><th>New accounts</th><th>New products</th><th>KPI${team ? ' (avg)' : ''}</th></tr>${rows}</table>
+      <div class="mbm-cards">${mcards}</div>
+      <table class="mbm-table" style="width:100%; border-collapse:collapse; font-size:12px; margin-top:6px;"><tr style="color:var(--muted); font-size:11px;"><th style="text-align:start; padding:3px;">Month</th><th>Visits a day${team ? ' (each)' : ''}</th><th>Doctors met</th><th>New accounts</th><th>New products</th><th>KPI${team ? ' (avg)' : ''}</th></tr>${rows}</table>
       <div style="font-size:11px; color:var(--muted); margin-top:6px;">"—" = not measurable: new accounts need an earlier month in the sales files; no KPI for a month with no visit logged. The running month counts to today.</div></div>
     <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
       <button class="btn secondary" onclick="openKpiScorecard()">${I('target')} KPI scorecard</button>

@@ -11,7 +11,52 @@ function showModal(html){
   const arabic = (txt.match(/[؀-ۿﭐ-﷿ﹰ-﻿]/g)||[]).length;
   const latin = (txt.match(/[A-Za-z]/g)||[]).length;
   inner.setAttribute('dir', (uiLang==='ar' || arabic > latin) ? 'rtl' : 'ltr');
+  modalFrame(inner);
   document.getElementById('modalBack').classList.add('show');
+}
+// The sheet frame (component layer): a sheet that opens with its <h3> gets the header — an icon tile (the heading's
+// own icon, else data-ic, else a neutral one) and the title — and the buttons it ends with become its foot (full
+// width on the phone; at the end side on a laptop, the main action last). Nodes are moved, never rewritten: ids,
+// handlers and texts stay as the sheet wrote them.
+function modalSections(inner){
+  const kids = Array.from(inner.children).filter(k => !k.classList.contains('modal-foot'));
+  while(kids.length && kids[kids.length - 1].tagName === 'BUTTON' && kids[kids.length - 1].classList.contains('btn')) kids.pop();   // the buttons it ends with become its foot
+  if(kids.length < 2) return;
+  const head = el => el.tagName === 'P' || el.classList.contains('badge') || (el.children.length > 0 && Array.from(el.children).every(c => c.classList.contains('badge')))
+    || (el.tagName === 'DIV' && !el.children.length && el.textContent.trim().length > 0 && el.textContent.trim().length < 90);   // a short line under the title (a brand, a clinic)
+  let i = Math.max(0, kids.findIndex(k => k.matches('[data-sections]') || k.querySelector(':scope > [data-sections]'))) + 1;
+  while(i < kids.length && head(kids[i])) i++;
+  let cur = null;
+  for(let k = i; k < kids.length; k++){
+    const el = kids[k];
+    if(!cur || el.classList.contains('section-title')){ cur = document.createElement('section'); cur.className = 'cd-sec'; inner.insertBefore(cur, el); }
+    cur.appendChild(el);
+  }
+}
+function modalFrame(inner){
+  try{
+    { const mc = document.getElementById('modalContent'); if(mc){ mc.classList.toggle('m-wide', !!inner.querySelector(':scope > [data-wide]')); mc.classList.toggle('m-grid', !!inner.querySelector(':scope > [data-grid]')); } }
+    const h = inner.firstElementChild;
+    if(h && h.tagName === 'H3' && !h.classList.contains('mh')){
+      h.classList.add('mh');
+      // an emoji that led the title ("⚠️ …") gives way to the tile's line icon when the sheet names one (data-ic)
+      if(h.dataset.ic && h.firstChild && h.firstChild.nodeType === 3) h.firstChild.nodeValue = h.firstChild.nodeValue.replace(/^\s*(?:\p{Extended_Pictographic}|[\u2600-\u27BF\uFE0F\u200D])+\s*/u, '');
+      const tile = document.createElement('span'); tile.className = 'mh-ic' + (h.dataset.tone ? ' ' + h.dataset.tone : ''); tile.setAttribute('aria-hidden', 'true');
+      const lead = h.firstChild && h.firstChild.nodeType === 3 && !h.firstChild.nodeValue.trim() ? h.firstChild.nextSibling : h.firstChild;
+      if(lead && lead.nodeType === 1 && lead.matches('svg.svgi')) tile.appendChild(lead); else tile.innerHTML = I(h.dataset.ic || 'file');
+      const t = document.createElement('span'); t.className = 'mh-t';
+      while(h.firstChild) t.appendChild(h.firstChild);
+      h.appendChild(tile); h.appendChild(t);
+    }
+    // a sheet that asks for it (data-sections): its header stays, the rest becomes cards — one per section title
+    { const mc = document.getElementById('modalContent'), secs = !!inner.querySelector(':scope > [data-sections], :scope > * > [data-sections]'); if(mc) mc.classList.toggle('m-secs', secs); if(secs) modalSections(inner); }
+    if(!inner.querySelector(':scope > .modal-foot')){
+      const kids = Array.from(inner.children); let i = kids.length;
+      while(i > 0 && kids[i - 1].tagName === 'BUTTON' && kids[i - 1].classList.contains('btn') && !kids[i - 1].classList.contains('small')) i--;
+      const tail = kids.slice(i);
+      if(tail.length && tail.length <= 3 && i > 0){ const foot = document.createElement('div'); foot.className = 'modal-foot'; inner.appendChild(foot); tail.forEach(b => foot.appendChild(b)); }
+    }
+  }catch(e){ console.error('sheet frame', e); }
 }
 function closeModal(){ document.getElementById('modalBack').classList.remove('show'); }
 function closeModalBg(e){ if(e.target.id==='modalBack') closeModal(); }
@@ -125,7 +170,10 @@ function applyLangChrome(){
   document.documentElement.lang = uiLang;
   document.documentElement.dir = uiLang === 'ar' ? 'rtl' : 'ltr';
   document.body.classList.toggle('ar', uiLang === 'ar');
+  const lt = document.getElementById('topLangTx');   // the top bar's language button names the other language
+  if(lt) lt.textContent = uiLang === 'ar' ? 'EN' : 'ع';
 }
+function toggleUiLang(){ setUiLang(uiLang === 'ar' ? 'en' : 'ar'); }
 function trOf(text){ return (uiLang === 'ar' && window.UMI18N) ? UMI18N.tr(text) : null; }
 const TR_SKIP = '[dir="auto"], [data-notr], script, style, textarea, option:not([value]), .proreport';
 function translateTree(root){

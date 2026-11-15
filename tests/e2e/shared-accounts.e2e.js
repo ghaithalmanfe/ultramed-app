@@ -88,7 +88,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   a = await ach();
   check('after: his October = 12 + 9.25 + 100 = 121.25; Mariam keeps her own 30 + 50', a.g === 121.25 && a.m === 80, a);
   const txt = await card();
-  check('Today card shows his 121.25 of 9400.00', /Dr\. Ghaith 1% 121\.25 KD of 9400\.00 KD/.test(txt), txt.slice(0, 400));
+  check('Today card shows his 121.25 of 9,400.00', /Dr\. Ghaith 1% 121\.25 KD of 9,400\.00 KD/.test(txt), txt.slice(0, 400));
   const saved = JSON.parse(cloud.clinics).filter(x => ['dfc','moh'].includes(x.id)).map(x => [x.id, x.rep, x.shared || false]);
   check('both changes saved to the cloud', JSON.stringify(saved) === JSON.stringify([['dfc', G, false], ['moh', M, true]]), saved);
   // September never moves: the 40 at DFC on 20 Sep is still Mariam's

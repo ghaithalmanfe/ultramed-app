@@ -26,6 +26,7 @@ function switchUser(){
   showGateScreen();
 }
 function showGateScreen(){
+  document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
   renderGate();
   document.getElementById('gate').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
@@ -46,20 +47,22 @@ function signInEnded(){
 function openAccountMenu(){
   const email = (USERS[currentUser.name]||{}).email || '';
   showModal(`
-    <h3 style="margin-top:0;">${esc(currentUser.name)}</h3>
+    <h3 style="margin-top:0;" data-ic="users">${esc(currentUser.name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(email)}</p>
     <label>Language / اللغة</label>
     <div class="chip-row" data-notr>
       <div class="chip ${uiLang==='en'?'on':''}" onclick="setUiLang('en')">English</div>
       <div class="chip ${uiLang==='ar'?'on':''}" onclick="setUiLang('ar')">العربية</div>
     </div>
+    <button class="btn secondary" onclick="closeModal(); switchView('log')">${I('plus')} Log a visit</button>
+    <button class="btn secondary" onclick="openHelp()">${I('nhelp')} Help &amp; Support</button>
     ${FIREBASE_ENABLED ? `<button class="btn secondary" onclick="openChangePassword()">${I('lock')} Change password</button>` : ''}
     <button class="btn ghost" onclick="closeModal(); switchUser();">Sign out</button>
   `);
 }
 function openChangePassword(){
   showModal(`
-    <h3 style="margin-top:0;">Change password</h3>
+    <h3 style="margin-top:0;" data-ic="lock">Change password</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your current password to confirm it's you.</p>
     <label>Current password</label>
     <input type="password" id="cpCurrent" autocomplete="current-password">
@@ -118,7 +121,7 @@ function gateTap(name){
   // password that could never work. After that the phone keeps the team list.
   if(!(USERS[name] || {}).email){ openEmailLogin(name); return; }
   showModal(`
-    <h3 style="margin-top:0;">${esc(name)}</h3>
+    <h3 style="margin-top:0;" data-ic="lock">${esc(name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your password to continue.</p>
     <input type="password" id="gatePassword" placeholder="Password">
     <button class="btn" onclick="submitGateLogin('${name}')">Log in</button>
@@ -132,7 +135,7 @@ function openEmailLogin(name){
   if(!FIREBASE_ENABLED){ showToast('Offline mode — tap your name'); return; }
   const who = typeof name === 'string' && name ? name : '';
   showModal(`
-    <h3 style="margin-top:0;">${who ? esc(who) : 'Sign in'}</h3>
+    <h3 style="margin-top:0;" data-ic="lock">${who ? esc(who) : 'Sign in'}</h3>
     ${who ? `<p style="color:var(--muted); font-size:13px; margin-top:-6px;">First sign-in on this phone: enter your work email and password. After that, your name is enough.</p>`
       : `<p style="color:var(--muted); font-size:13px; margin-top:-6px;">Use your work email and password.</p>`}
     <input type="email" id="elEmail" placeholder="name@ultramed-kw.com" autocomplete="username">

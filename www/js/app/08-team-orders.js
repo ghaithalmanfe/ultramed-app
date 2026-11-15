@@ -5,7 +5,7 @@ function openStaffForm(idx){
   const editing = idx!==undefined && staff[idx];
   const s = editing ? staff[idx] : {name:'', role:'rep', email:'', av:AVATARS[staff.length % AVATARS.length]};
   showModal(`
-    <h3 style="margin-top:0;">${editing?'Edit':'Add'} team member</h3>
+    <h3 style="margin-top:0;" data-ic="users">${editing?'Edit':'Add'} team member</h3>
     <label>Name (as shown in the app)</label>
     <input type="text" id="sfName" value="${esc(s.name)}" placeholder="e.g. Sara">
     <label>Login email</label>
@@ -191,7 +191,7 @@ async function removeStaff(idx){
   }
   const cCount = clinics.filter(c=>c.rep===s.name).length;
   showModal(`
-    <h3 style="margin-top:0;">Remove ${esc(s.name)}?</h3>
+    <h3 style="margin-top:0;" data-ic="alert" data-tone="danger">Remove ${esc(s.name)}?</h3>
     ${cCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;"><strong>${cCount}</strong> clinic${cCount===1?'':'s'} assigned to ${esc(s.name)} will become unassigned. Reassign them from the Territory tab afterwards.</div>`:''}
     <p style="color:var(--muted); font-size:13px;">Their past visits stay in the records. Their login must be removed separately in Firebase.</p>
     <button class="btn" style="background:var(--coral);" onclick="confirmRemoveStaff(${idx})">Yes, remove</button>
@@ -273,9 +273,8 @@ function renderSoClinics(){
   if(soClinicId){
     const c = clinics.find(x=>x.id===soClinicId);
     if(c){
-      el.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
-        <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
-        <button class="del" onclick="soClinicId=null; renderSoClinics();">&times;</button></div></div>`;
+      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${c.cls}">${c.cls||'-'}</span><div class="clinic-name">${esc(c.name)}</div></div>
+        <button class="del" onclick="soClinicId=null; renderSoClinics();" aria-label="Change">&times;</button></div></div>`;
       return;
     }
   }
@@ -283,11 +282,12 @@ function renderSoClinics(){
   if(currentUser.role!=='supervisor') pool = pool.filter(c=>c.rep===currentUser.name);
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
-  el.innerHTML = pool.length ? pool.map(c=>`
-    <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="soClinicId='${c.id}'; renderSoClinics();">
-      <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub">${esc(c.rep||'')}</div>
-    </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
+  el.innerHTML = pool.length ? `<div class="lrows">` + pool.map(c=>`
+    <div class="lrow clickable" role="button" tabindex="0" onclick="soClinicId='${c.id}'; renderSoClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+      <div class="lr-t"><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${esc(c.rep||'')}</div></div>
+      <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
+    </div>`).join('') + `</div>` : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
 }
 function renderSoProducts(){
   const q = (document.getElementById('soProdSearch')?.value||'').toLowerCase().trim();
@@ -474,9 +474,8 @@ function renderClClinics(){
   if(clClinicId){
     const c = clinics.find(x=>x.id===clClinicId);
     if(c){
-      el.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
-        <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
-        <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();">&times;</button></div></div>`;
+      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${c.cls}">${c.cls||'-'}</span><div class="clinic-name">${esc(c.name)}</div></div>
+        <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();" aria-label="Change">&times;</button></div></div>`;
       renderClDoctors();
       return;
     }
@@ -485,11 +484,12 @@ function renderClClinics(){
   if(currentUser.role!=='supervisor') pool = pool.filter(c=>c.rep===currentUser.name);
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
-  el.innerHTML = pool.length ? pool.map(c=>`
-    <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="clClinicId='${c.id}'; renderClClinics();">
-      <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub">${esc(c.rep||'')}</div>
-    </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
+  el.innerHTML = pool.length ? `<div class="lrows">` + pool.map(c=>`
+    <div class="lrow clickable" role="button" tabindex="0" onclick="clClinicId='${c.id}'; renderClClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+      <div class="lr-t"><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${esc(c.rep||'')}</div></div>
+      <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
+    </div>`).join('') + `</div>` : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
   document.getElementById('clDoctorWrap').innerHTML = '';
 }
 function renderClDoctors(){
@@ -561,7 +561,7 @@ function openEditVisit(visitId){
   if(!canEditVisit(v)){ showToast('You can only edit your own visits'); return; }
   const c = clinics.find(x=>x.id===v.clinicId);
   showModal(`
-    <h3 style="margin-top:0;">Edit ${v.orderOnly?'order':'visit'}</h3>
+    <h3 style="margin-top:0;" data-ic="pencil">Edit ${v.orderOnly?'order':'visit'}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:clinicLabel(v.clinicId, v))}</p>
     <label>Date</label>
     <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
@@ -772,7 +772,7 @@ function showEditHistory(visitId){
     return d ? `<span dir="auto">${esc(d.name)}</span>` : '<span>A doctor no longer listed</span>';
   }).join(', ') || '<span>None</span>';
   showModal(`
-    <h3 style="margin-top:0;">Edit history</h3>
+    <h3 style="margin-top:0;" data-ic="clock">Edit history</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">What this visit looked like before each edit.</p>
     ${[...v.editHistory].reverse().map(h=>`<div class="card" style="margin-bottom:8px;">
       <div class="clinic-sub" style="margin-bottom:6px;">Edited by <strong>${esc(h.editedBy)}</strong> · ${fmtWhen(h.editedAt)}</div>
@@ -788,7 +788,7 @@ function confirmDeleteVisit(visitId){
   if(!v) return;
   const c = clinics.find(x=>x.id===v.clinicId);
   showModal(`
-    <h3 style="margin-top:0;">Delete this ${v.orderOnly?'order':'visit'}?</h3>
+    <h3 style="margin-top:0;" data-ic="alert" data-tone="danger">Delete this ${v.orderOnly?'order':'visit'}?</h3>
     <div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:14px;">
       <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}</div>
       <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}</div>

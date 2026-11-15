@@ -281,7 +281,7 @@ function openMonthReports(){
   const sorted = [...months].filter(Boolean).sort().reverse();
   if(!sorted.length){ showToast('لا توجد بيانات شهور بعد — ارفع ملف DSR أو المبيعات أولًا'); return; }
   showModal(`
-    <h3 style="margin-top:0;">📚 تقارير الشهور</h3>
+    <h3 style="margin-top:0;" data-ic="book">📚 تقارير الشهور</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">افتح أي شهر — حتى بعد انتهائه — لترى التارغت والمحقق والنسبة وكل تفاصيله. رفع ملف DSR آخر يوم بالشهر (أو بعده) يُحدّث شهرَه تلقائيًا.</p>
     ${sorted.map(m=>`<div class="card clickable row-between" onclick="renderMonthClose('${m}')">
       <span style="font-weight:700;">${monthLabel(m)}</span><span style="color:var(--muted);">›</span>
@@ -472,7 +472,7 @@ function openErpImport(){
   if(currentUser.role!=='supervisor'){ showToast('Supervisor only'); return; }
   const periods = erpPeriods().slice().sort((a,b)=>(b.from||'').localeCompare(a.from||''));
   showModal(`
-    <h3 style="margin-top:0;">📥 Import — fully automatic <span style="color:var(--muted); font-size:11px; font-weight:400;">${APP_REV}</span></h3>
+    <h3 style="margin-top:0;" data-ic="download" data-sections>📥 Import — fully automatic <span style="color:var(--muted); font-size:11px; font-weight:400;">${APP_REV}</span></h3>
     <div style="color:var(--muted); font-size:13px; line-height:1.6; margin-bottom:12px;">
       Drop the <b>sales-detail export</b> or the <b>DSR targets file</b> — Excel (.xlsx), CSV, or PDF text
       pasted below all work, and I detect which file is which and enter it by myself.
@@ -742,7 +742,7 @@ async function applyTargetsFile(tg){
   if(document.getElementById('coachCard')) renderCoach();
   const note = targetPctNote(pctBefore, targetPctMap());
   showModal(`
-    <h3 style="margin-top:0;">🎯 Targets entered automatically</h3>
+    <h3 style="margin-top:0;" data-ic="target">🎯 Targets entered automatically</h3>
     <div class="card" style="border-inline-start:4px solid var(--sage, #9ED0AF); margin:8px 0 10px; font-size:12.5px; line-height:1.6;">${note}</div>
     <div class="card">
       ${tg.matched.map(m=>`<div class="report-line"><span>${esc(m.rep)} <span style="color:var(--muted); font-size:11.5px;">(from “${esc(m.name)}”)</span></span><span class="v">${money(m.revenue)}${m.visits?` · ${m.visits} visits`:''}${m.brandCount?` · ${m.brandCount} brand targets`:''}</span></div>`).join('')}
@@ -764,7 +764,7 @@ function erpParse(text){
   const guess = UMCore.guessRepMap(Object.keys(totals.bySalesman), REPS);
   _erpParsed = { rows: res.rows, totals, guess };
   showModal(`
-    <h3 style="margin-top:0;">✅ File recognized — verify before saving</h3>
+    <h3 style="margin-top:0;" data-ic="check" data-sections>✅ File recognized — verify before saving</h3>
     <div class="card">
       <div class="spec-row"><span class="k">Period found</span><span class="v">${fmtDate(totals.from)} – ${fmtDate(totals.to)}</span></div>
       <div class="spec-row"><span class="k">Lines</span><span class="v">${totals.lines}${res.skipped?` (+${res.skipped} skipped)`:''}</span></div>
@@ -988,13 +988,13 @@ function openErpRecon(id){
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px; overflow-wrap:anywhere;">${esc(cust)}${tag}</td>
               <td style="text-align:end; padding:5px 6px;">${a.docs.size}</td>
-              <td style="text-align:end; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${a.net.toFixed(2)}</td>
+              <td style="text-align:end; padding:5px 6px; font-weight:700; ${a.net<0?'color:var(--coral-ink);':''}">${amt2(a.net)}</td>
             </tr>`;
           }).join('')}
           <tr style="border-top:2px solid var(--line);">
             <td style="padding:5px 6px; font-weight:700;">Total</td>
             <td></td>
-            <td style="text-align:end; padding:5px 6px; font-weight:700;">${total.toFixed(2)}</td>
+            <td style="text-align:end; padding:5px 6px; font-weight:700;">${amt2(total)}</td>
           </tr>
         </table></div>
       </div>`;
@@ -1027,9 +1027,9 @@ function openErpRecon(id){
             const col = pct>=60?'var(--sage)':pct>=25?'#FF9500':'var(--coral)';
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(brand)}</td>
-              <td style="text-align:end; padding:5px 6px;">${tgt.toFixed(0)}</td>
-              <td style="text-align:end; padding:5px 6px;">${act.toFixed(2)}</td>
-              ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?official.toFixed(2):'—'}</td>`:''}
+              <td style="text-align:end; padding:5px 6px;">${amt2(tgt, 0)}</td>
+              <td style="text-align:end; padding:5px 6px;">${amt2(act)}</td>
+              ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?amt2(official):'—'}</td>`:''}
               <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
             </tr>`;
           }).join('')}
@@ -1080,8 +1080,8 @@ function openErpRecon(id){
             const prev = i>0 ? trend[i-1] : null;
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:6px;">${fmtDate(w.from)}–${fmtDate(w.to)}</td>
-              ${trendReps.map(r=>`<td style="text-align:end; padding:6px; white-space:nowrap;">${(w.byRep[r]||0).toFixed(2)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
-              <td style="text-align:end; padding:6px; font-weight:700; white-space:nowrap;">${w.total.toFixed(2)}${arrow(w.total, prev?prev.total:null)}</td>
+              ${trendReps.map(r=>`<td style="text-align:end; padding:6px; white-space:nowrap;">${amt2(w.byRep[r]||0)}${arrow(w.byRep[r]||0, prev?(prev.byRep[r]||0):null)}</td>`).join('')}
+              <td style="text-align:end; padding:6px; font-weight:700; white-space:nowrap;">${amt2(w.total)}${arrow(w.total, prev?prev.total:null)}</td>
             </tr>`;
           }).join('')}
         </table>
@@ -1436,7 +1436,7 @@ function erpAccountLines(name){ // one row per document: what "Show the invoices
 function elInvoicesBlock(name){
   const docs = erpAccountLines(name);
   if(!docs.length) return '';
-  return `<details style="margin:0 0 10px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:700; padding:4px 2px;"><span>Show the invoices</span> (${docs.length})</summary>
+  return `<details style="margin:0 0 10px;"><summary style="cursor:pointer; font-size:12.5px; font-weight:700; padding:12px 2px; min-height:44px; box-sizing:border-box;"><span>Show the invoices</span> (${docs.length})</summary>
     <div style="padding:2px 4px 4px;">${docs.slice(0, 60).map(d => `<div style="display:flex; flex-wrap:wrap; gap:2px 10px; padding:4px 0; border-top:1px dashed var(--line); font-size:12px;">
       <b dir="auto" style="overflow-wrap:anywhere;">${esc(d.doc || '—')}</b><span>${fmtDate(d.date)}</span><span dir="ltr" style="font-weight:700; ${d.net < 0 ? 'color:var(--coral-ink);' : ''}">${d.type === 'return' ? '↩ ' : ''}${money(d.net)}</span><span dir="auto" style="color:var(--muted); overflow-wrap:anywhere;">${esc(d.salesman || '')}</span></div>`).join('')}
     ${docs.length > 60 ? `<div style="color:var(--muted); font-size:11.5px; padding-top:4px;">The 60 newest are shown.</div>` : ''}</div></details>`;
@@ -1727,7 +1727,7 @@ function elRenderMoves(){
       if(lines.length && t0.pct != null && t0.n > 1 && (t0.pct !== t1.pct || t0.ach !== t1.ach)) lines.push(`<div class="el-today" data-rep="@team" style="font-size:12.5px; padding:2px 0;"><b><span>Team</span></b>: <span>now</span> <span dir="ltr">${t0.pct}%</span> · <span>after saving</span> <span dir="ltr">${t1.pct}%</span></div>`);
       if(lines.length) today = `<div style="margin-top:8px; padding-top:6px; border-top:1px dashed var(--line);"><div style="font-size:11.5px; color:var(--muted); font-weight:700;"><span>This month on the Today card</span></div>${lines.join('')}</div>`;
     }
-    parts.push(`<div class="section-title">Who it counts for</div><div class="card" style="padding:6px 12px 10px;">
+    parts.push(`<div class="section-title">Who it counts for</div><div class="card el-moves" style="padding:6px 12px 10px;">
       ${pv.moves.map(m => `<div class="el-move" data-month="${m.month}" style="padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; line-height:1.55;">
         <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;"><span><b>${esc(monthLabel(m.month))}</b>${m.closed ? ' ' + elClosedBadge() : ''}</span><span dir="ltr" style="font-weight:800;">${money(m.net)}</span></div>
         <div><span>From</span> ${elWho(m.from)} · <span>To</span> ${elWho(m.to)} · ${m.invoices} ×</div></div>`).join('')}
@@ -1767,7 +1767,7 @@ function elRenderMoves(){
 function elSidesHtml(pv){
   const line = (label, side, extra) => `<div class="report-line" style="gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;"><span style="color:var(--muted); flex-shrink:0;"><span>${label}</span></span>
     <span style="display:flex; flex-wrap:wrap; gap:4px 6px; justify-content:flex-end; align-items:center; min-width:0; flex:1 1 auto; text-align:end;">${elSideHtml(side, extra)}</span></div>`;
-  let h = `<div class="card" style="padding:2px 12px; margin-bottom:8px;">${pv.before ? line('Now', pv.before) : ''}${pv.after ? line('After saving', pv.after, _el.addClinic) : ''}</div>`;
+  let h = `<div class="card el-sides" style="padding:2px 12px; margin-bottom:8px;">${pv.before ? line('Now', pv.before) : ''}${pv.after ? line('After saving', pv.after, _el.addClinic) : ''}</div>`;
   const a = pv.after, why = !a ? '' : a.status === 'none' ? elNoneText(pv.people) : a.status === 'ambiguous' ? EL_TXT.ambiguous : a.status === 'ignored' ? EL_TXT.ignore : a.status === 'channel' ? EL_TXT.channel : '';
   if(why) h += `<div class="clinic-sub" style="margin:-2px 2px 8px; line-height:1.5;"><span>${why}</span></div>`;
   return h;

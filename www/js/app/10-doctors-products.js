@@ -26,6 +26,7 @@ function renderDoctorsDirectory(){
 
 // ---- PRODUCTS ----
 let openBrands = new Set();
+function productBrandPick(b){ const e = document.getElementById('productSearch'); if(e){ e.value = b || ''; renderProducts(); } }
 function renderProducts(){
   const q = (document.getElementById('productSearch').value||'').toLowerCase();
   const wrap = document.getElementById('productListWrap');
@@ -37,6 +38,14 @@ function renderProducts(){
   const gapNote = catalogGapNote() + productDupNote();
   if(brands.length===0){ wrap.innerHTML = gapNote + `<div class="empty">No products found.</div>`; return; }
   if(q) brands.forEach(b=>openBrands.add(b));
+  // one row of brand chips (the brand's colour, its count): a tap searches that brand — the search box's own filter
+  const chipsEl = document.getElementById('productBrandChips');
+  if(chipsEl){
+    const all = {}; products.forEach(p => { const b = p.brand || 'Other'; all[b] = (all[b] || 0) + 1; });
+    const qb = q.trim();
+    chipsEl.innerHTML = `<button class="chip small ${!qb ? 'on' : ''}" onclick="productBrandPick('')">All (${products.length})</button>` + Object.keys(all).sort((a, b) => all[b] - all[a] || a.localeCompare(b))
+      .map(b => `<button class="chip small pr-chip ${qb && qb === b.toLowerCase() ? 'on' : ''}" data-brand="${esc(b)}" onclick="productBrandPick(this.dataset.brand)"><i class="swatch" style="background:${brandColor(b)}"></i><span dir="auto">${esc(b)}</span> <span data-notr>(${all[b]})</span></button>`).join('');
+  }
   wrap.innerHTML = gapNote + brands.map(b=>{
     const open = openBrands.has(b);
     return `<div class="brand-group card" style="padding:6px 12px;">
@@ -45,7 +54,7 @@ function renderProducts(){
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
       <div class="brand-body ${open?'open':''}" id="brand-${slugify(b)}">
-        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}</div></div><span class="product-price">${p.price!=null?p.price.toFixed(2)+' KD':''}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}${p.id ? ` <span data-notr>· ${esc(p.id)}</span>` : ''}</div></div><span class="product-price">${p.price!=null?money(p.price):''}</span></div>`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -137,7 +146,7 @@ function openCatalogGaps(){
       ${byB[b].map(i => { const x = g[i], p = x.product; return `<label style="display:flex; align-items:flex-start; gap:8px; font-size:12.5px; margin:7px 0 0; font-weight:400;">
         <input type="checkbox" class="cgap cgap-${slugify(b)}" data-i="${i}" checked style="margin-top:3px;">
         <span style="flex:1;">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${p.cat && p.cat !== p.brand ? esc(p.cat) + ' · ' : ''}${x.sold ? x.sold + ' sold in the files' + (x.last ? ', last ' + fmtDate(x.last) : '') : x.source === 'list' ? 'Intensiv list' : ''}</span></span>
-        <b style="white-space:nowrap;">${p.price != null ? Number(p.price).toFixed(2) + ' KD' : '—'}</b></label>`; }).join('')}
+        <b style="white-space:nowrap;">${p.price != null ? money(Number(p.price)) : '—'}</b></label>`; }).join('')}
     </div>`).join('')}
     <div style="display:flex; gap:8px; margin-top:12px;">
       <button class="btn" id="cgapAdd" onclick="addCatalogGaps()">Add selected</button>
@@ -197,7 +206,7 @@ function openProductDups(){
       <div style="font-weight:800; font-size:13px;"><span dir="ltr" data-notr>${esc(g.value)}</span> <span style="color:var(--muted); font-weight:400;" data-notr>×${g.items.length}</span></div>
       ${g.items.map(x => `<div class="row-between" style="padding:6px 0; border-top:1px solid var(--line); cursor:pointer; gap:8px;" data-key="${esc(x.key)}" onclick="openDupProduct(this.dataset.key)">
         <span style="flex:1; font-size:12.5px;" data-notr>${esc(x.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(x.brand)}${g.kind === 'sku' ? (x.barcode ? ' · ' + esc(x.barcode) : '') : (x.id ? ' · ' + esc(x.id) : '')}</span></span>
-        <b style="white-space:nowrap; font-size:12.5px;" data-notr>${x.price != null ? x.price.toFixed(2) + ' KD' : '—'}</b></div>`).join('')}
+        <b style="white-space:nowrap; font-size:12.5px;" data-notr>${x.price != null ? money(x.price) : '—'}</b></div>`).join('')}
     </div>`;
   const section = (title, list) => list.length ? `<div class="section-title" style="margin-top:6px;"><span>${title}</span> <span data-notr>(${list.length})</span></div>${list.map(group).join('')}` : '';
   showModal(`
@@ -255,6 +264,7 @@ function renderDoctorsDb(){
   if(!body) return;
   document.getElementById('ddTabDb').classList.toggle('on', ddTab==='db');
   document.getElementById('ddTabRx').classList.toggle('on', ddTab==='rx');
+  if(typeof syncNav === 'function') syncNav();   // the sidebar marks the Doctors entry of the open tab
   const q = ((document.getElementById('ddSearch')||{}).value||'').trim().toLowerCase();
   const repFilter = currentUser.role==='supervisor' ? 'all' : currentUser.name;
   const docs = UMCore.doctorAnalytics({clinics: ddPool(), visits, today: todayStr(), repFilter});
@@ -284,19 +294,20 @@ function renderDoctorsDb(){
   const totalFields = docs.length*7 + ddPool().filter(c=>c.cls!=='Closed').length*3;
   const pctDone = totalFields ? Math.max(0, Math.round((1 - dataGaps().reduce((s2,g)=>s2+g.miss.length,0)/totalFields)*100)) : 100;
   body.innerHTML = `
-    <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+    <div class="dd-tools">
       ${currentUser.role==='supervisor'?`<button class="chip small" onclick="openContactImport()">${I('download')} Import contacts</button>`:''}
       <button class="chip small" onclick="openDoctorRecords()">${I('clipboard')} Doctor records</button>
       <button class="chip small" style="${gaps?'border-color:var(--gold); color:var(--amber-ink); font-weight:700;':''}" onclick="openDataEntry()">${I('pencil')} Complete data ${gaps?`(${gaps})`:'✓'}</button>
       <button class="chip small" onclick="exportDoctorsDbXlsx()">${I('share')} Export (Excel)</button>
-      <span class="chip small" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
+      <span class="chip small dd-pct" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
     </div>
-    ` + (list.map(d=>{
+    ` + (list.length ? `<div class="lrows dd-rows">` : '') + (list.map(d=>{
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    return `<div class="card clickable" style="margin-bottom:8px;" onclick="openDoctorProfile('${d.clinicId}','${d.id}')">
-      <div class="row-between">
+    return `<div class="lrow dd-row clickable" role="button" tabindex="0" onclick="openDoctorProfile('${d.clinicId}','${d.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="lr-ic" aria-hidden="true">${pb ? `<span class="dd-emo">${pb.icon}</span>` : I('stethoscope')}</span>
+      <div class="row-between" style="flex:1; min-width:0; align-items:flex-start;">
         <div style="min-width:0;">
-          <div class="clinic-name">${pb?pb.icon+' ':''}${esc(d.name)}${d.title?` <span style="color:var(--muted); font-size:11.5px; font-weight:400;">${esc(d.title)}</span>`:''}</div>
+          <div class="clinic-name">${esc(d.name)}${d.title?` <span style="color:var(--muted); font-size:11.5px; font-weight:400;">${esc(d.title)}</span>`:''}</div>
           ${docBadges(rawOf(d))}
           <div class="clinic-sub">${esc(d.clinicName)}${currentUser.role==='supervisor'?' · '+esc(d.rep):''} · ${d.fieldVisits} visit${d.fieldVisits===1?'':'s'}${d.calls?` · ${d.calls} call${d.calls===1?'':'s'}`:''}${d.lastVisit?` · last ${fmtDate(d.lastVisit)}`:' · never visited'}</div>
         </div>
@@ -307,7 +318,7 @@ function renderDoctorsDb(){
         </div>
       </div>
     </div>`;
-  }).join('') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
+  }).join('') + (list.length ? `</div>` : '') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
 }
 // ---- PRESCRIPTIONS GIVEN: the Doctors page tab (v114) ----
 // Pads of printed prescription forms, counted from the one ledger
@@ -333,12 +344,12 @@ function renderRxStats(body){
   const g = rxGrowthNow(), T = g.totals, inc = T.incomplete || {};
   const fig = (n, incomplete) => incomplete ? '—' : n;
   const tile = (key, label, cur, curInc, prevLabel, prev, prevInc, growth) => `
-    <div class="rx-tile" style="background:var(--paper); border-radius:10px; padding:9px 5px; min-width:0;">
-      <div style="font-size:10.5px; color:var(--muted); font-weight:700;">${label}</div>
-      <div data-rx-total="${key}" style="font-size:20px; font-weight:800; line-height:1.3;">${fig(cur, curInc)}</div>
-      ${prevLabel ? `<div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${prevLabel}: ${fig(prev, prevInc)}</div>
-      <div style="font-size:12px; margin-top:2px;">${rxGrowthTag(growth, cur, prev, curInc || prevInc)}</div>`
-      : (inc.total ? '<div style="font-size:10.5px; color:var(--amber-ink); line-height:1.3;">incomplete</div>' : '')}
+    <div class="rx-tile">
+      <div class="rt-l">${label}</div>
+      <div class="rt-n" data-rx-total="${key}">${fig(cur, curInc)}</div>
+      ${prevLabel ? `<div class="rt-p">${prevLabel}: ${fig(prev, prevInc)}</div>
+      <div class="rt-g">${rxGrowthTag(growth, cur, prev, curInc || prevInc)}</div>`
+      : (inc.total ? '<div class="rt-p" style="color:var(--amber-ink);">incomplete</div>' : '')}
     </div>`;
   // the three figures of a doctor or a center, each label its own text (translated)
   const figLine = x => `<div style="display:flex; flex-wrap:wrap; gap:2px 12px; font-size:12px; color:var(--muted); margin-top:3px;">
@@ -380,12 +391,12 @@ function renderRxStats(body){
       </div>`).join('')}</div>
     <button class="chip small" style="margin-top:10px;" onclick="exportRxXlsx()">${I('share')} Export prescriptions (Excel)</button>`;
   body.innerHTML = `
-    <div class="card" style="margin-bottom:10px;">
-      <div class="row-between" style="margin-bottom:8px; flex-wrap:wrap;">
-        <div style="font-weight:800; font-size:14px;">${I('pill')} <span>Prescription pads given</span></div>
+    <div class="card rx-head" style="margin-bottom:10px;">
+      <div class="row-between" style="margin-bottom:12px; flex-wrap:wrap;">
+        <div class="sec-h"><span class="sec-ic" aria-hidden="true">${I('pill')}</span><span>Prescription pads given</span></div>
         ${sup ? `<button class="chip small" id="rxTypesBtn" onclick="openRxTypes()">Prescription types</button>` : ''}
       </div>
-      <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px; text-align:center;">
+      <div class="rx-tiles">
         ${tile('week', 'This week', T.week, inc.week, 'Same days last week', T.prevWeek, inc.prevWeek, T.weekGrowth)}
         ${tile('month', 'This month', T.month, inc.month, 'Same days last month', T.prevMonth, inc.prevMonth, T.monthGrowth)}
         ${tile('all', 'All time', T.total, false, null)}
@@ -401,7 +412,7 @@ let _contactImport = null;
 function openContactImport(){
   if(!requireAdmin()) return;
   showModal(`
-    <h3 style="margin-top:0;">📥 Import all contacts at once</h3>
+    <h3 style="margin-top:0;" data-ic="download">📥 Import all contacts at once</h3>
     <div style="color:var(--muted); font-size:12.5px; line-height:1.6; margin-bottom:10px;">
       Excel أو CSV بأعمدة مثل: <b>اسم الطبيب، العيادة، الهاتف، التخصص، تاريخ الميلاد، ملاحظات</b>
       (عربي أو إنجليزي — الترتيب لا يهم). النظام يوزّع كل طبيب على عيادته تلقائيًا،
@@ -561,7 +572,7 @@ function renderDataEntryStep(){
     <div style="color:var(--muted); font-size:11px; margin-bottom:8px;">${_dePos+1} من ${_deQueue.length}</div>`;
   if(it.kind==='clinic'){
     showModal(`${prog}
-      <h3 style="margin-top:0;">🏥 ${esc(it.c.name)}</h3>
+      <h3 style="margin-top:0;" data-sections data-ic="building">🏥 ${esc(it.c.name)}</h3>
       ${it.miss.includes('phone')?`<label>📞 هاتف العيادة</label><input type="text" id="deClinicPhone" placeholder="2XXXXXXX">`:''}
       ${it.miss.includes('contact')?`<label style="margin-top:6px;">📇 جهة الاتصال (استقبال/مسؤول)</label><input type="text" id="deClinicContact" placeholder="مثال: الاستقبال — أ. هدى">`:''}
       ${it.miss.includes('dealType')?`<label style="margin-top:6px;">🤝 طريقة التعامل</label>
@@ -570,7 +581,7 @@ function renderDataEntryStep(){
       <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">تخطّي</button>`);
   } else {
     showModal(`${prog}
-      <h3 style="margin-top:0;">👨‍⚕️ ${esc(it.d.name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">${esc(it.c.name)}</span></h3>
+      <h3 style="margin-top:0;" data-sections data-ic="stethoscope">👨‍⚕️ ${esc(it.d.name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">${esc(it.c.name)}</span></h3>
       ${it.miss.includes('title')?`<label>التخصص</label><div class="chip-row" id="deTitle">${SPECIALTIES.map(t=>`<div class="chip small" data-v="${esc(t)}" onclick="pickModalCls(this)">${SPECIALTY_PLAYBOOK[t].icon} ${esc(t)}</div>`).join('')}</div>`:''}
       ${it.miss.includes('phone')?`<label style="margin-top:6px;">📞 هاتفه</label><input type="text" id="deDocPhone" placeholder="9XXXXXXX">`:''}
       ${it.miss.includes('birthday')?`<label style="margin-top:6px;">🎂 تاريخ ميلاده</label><input type="date" id="deDocBday">`:''}
@@ -625,7 +636,7 @@ function openDoctorRecords(clinicId){
   const avg = allDocs.length ? Math.round(allDocs.reduce((t,d)=>t+UMCore.doctorRecordCompleteness(d).pct,0)/allDocs.length) : 0;
   window._drSorted = pool.slice().sort((a,b)=>drClinicPct(a)-drClinicPct(b) || a.name.localeCompare(b.name));
   showModal(`
-    <h3 style="margin-top:0;">${I('clipboard')} Doctor records</h3>
+    <h3 style="margin-top:0;" data-sections>${I('clipboard')} Doctor records</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">One card per doctor: who they are, what they decide, where the relationship stands. The coach turns the cards into next steps for every clinic.</p>
     ${currentUser.role==='supervisor'?`<div class="chip-row" style="margin-bottom:8px;">${['all',...REPS].map(r=>`<div class="chip small ${_drRep===r?'on':''}" onclick="_drRep='${r}'; openDoctorRecords();">${r==='all'?'All':esc(r)}</div>`).join('')}</div>`:''}
     <div class="card" style="padding:12px; margin-bottom:12px;">
@@ -683,7 +694,7 @@ function openDoctorRecord(clinicId, docId){
   const chips = (id, list, cur) => `<div class="chip-row" id="${id}">${list.map(([k,l])=>`<div class="chip small ${cur===k?'on':''}" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`;
   const comp = UMCore.doctorRecordCompleteness(d);
   showModal(`
-    <h3 style="margin-top:0;">${I('pencil')} Doctor card</h3>
+    <h3 style="margin-top:0;" data-sections>${I('pencil')} Doctor card</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">${esc(c.name)} · ${comp.pct}% complete</p>
     <label>Name</label>
     <input type="text" id="drName" dir="auto" value="${esc(d.name||'')}">
@@ -742,7 +753,7 @@ function decisionMapBlock(c){
   const analytics = UMCore.doctorAnalytics({clinics:[c], visits, today: todayStr(), repFilter:'all'});
   const m = UMCore.clinicDecisionMap(c, {today: todayStr(), analytics});
   const who = (label, arr) => arr.length ? `<div style="font-size:12.5px; padding:2px 0;"><span style="color:var(--muted);">${label}:</span> ${arr.map(d=>esc(d.name)).join(', ')}</div>` : '';
-  return `<div class="section-title" style="margin-top:20px;">🧭 Decision map</div>
+  return `<div class="section-title" style="margin-top:20px;">Decision map</div>
     <div class="card" style="padding:12px 14px; border-inline-start:4px solid var(--purple);">
       ${who('Decision maker', m.deciders)}${who('Influencers', m.influencers)}${who('Champions', m.champions)}${who('Blocked', m.blocked)}
       ${m.gaps.length?`<div style="margin-top:6px; font-size:12px; font-weight:700; color:var(--amber-ink);">Gaps in what we know</div>${m.gaps.map(g=>`<div style="font-size:12.5px; padding:2px 0;">• ${esc(g)}</div>`).join('')}`:''}
@@ -753,10 +764,14 @@ function decisionMapBlock(c){
 // Today: a nudge while cards are incomplete or a clinic has no known decision maker.
 function renderDocCardsNudge(){
   const el = document.getElementById('docCardsNudge'); if(!el) return;
-  const pool = clinics.filter(c=>canViewClinic(c) && c.cls!=='Closed');
+  // a person's screen counts what her phone counts — her clinics and the unassigned ones (canViewClinic for her) —
+  // so the supervisor's view of her shows her own numbers, not the team's
+  const lr = typeof msListRep === 'function' ? msListRep() : null;
+  const pool = clinics.filter(c=>(lr ? (!c.rep || c.rep===lr) : canViewClinic(c)) && c.cls!=='Closed');
   const docs = pool.flatMap(c=>c.doctors||[]);
   const inc = docs.filter(d=>UMCore.doctorRecordCompleteness(d).pct<100).length;
   const noDecider = pool.filter(c=>(c.doctors||[]).length && !(c.doctors||[]).some(d=>d.influence==='decider')).length;
+  if(typeof _msNudge !== 'undefined') _msNudge.cards = inc;      // the folded Tasks card names it (msFoldSums)
   if(!inc && !noDecider){ el.innerHTML=''; return; }
   el.innerHTML = `<div class="card clickable" style="border-inline-start:4px solid var(--purple); margin-bottom:6px;" onclick="openDoctorRecords()">
     <div style="font-weight:700; font-size:13.5px;">🧭 Doctor cards</div>
@@ -816,12 +831,12 @@ function openDoctorProfile(clinicId, docId){
     .sort((a,b) => b.date.localeCompare(a.date));
   const pb = SPECIALTY_PLAYBOOK[d.title];
   showModal(`
-    <div class="row-between" style="align-items:flex-start;">
+    <div class="row-between dp-head" style="align-items:flex-start;" data-sections>
       <h3 style="margin:0;">${pb?pb.icon+' ':''}${esc(d.name)}</h3>
       <div style="display:flex; gap:4px;">${canEdit?`<button class="chip small" onclick="_drBack=null; openDoctorRecord('${clinicId}','${docId}')">${I('pencil')} Edit card</button>`:''}<button class="chip small" onclick="exportDoctorReportXlsx('${clinicId}','${docId}')">📄 تقرير مفصل</button></div>
     </div>
     ${docBadges(d)}
-    <p style="color:var(--muted); font-size:12.5px; margin:2px 0 10px;">${esc(d.title||'—')} · <a onclick="closeModal(); openClinicDetail('${clinicId}')" style="text-decoration:underline; cursor:pointer;">${esc(c.name)}</a>${currentUser.role==='supervisor'?' · '+esc(c.rep):''}${d.phone?` · <a href="tel:${esc(d.phone)}">📞 ${esc(d.phone)}</a>`:''}</p>
+    <p class="dp-sub" style="color:var(--muted); font-size:12.5px; margin:2px 0 10px;">${esc(d.title||'—')} · <a onclick="closeModal(); openClinicDetail('${clinicId}')" style="text-decoration:underline; cursor:pointer;">${esc(c.name)}</a>${currentUser.role==='supervisor'?' · '+esc(c.rep):''}${d.phone?` · <a href="tel:${esc(d.phone)}">📞 ${esc(d.phone)}</a>`:''}</p>
 
     <div class="section-title" style="margin-top:0;">🎯 ما يجب عمله</div>
     <div class="card" style="border-inline-start:4px solid var(--teal);">${acts.map(a=>`<div style="font-size:12.5px; padding:3px 0;">${esc(a)}</div>`).join('')}</div>
@@ -1064,7 +1079,7 @@ function openRxTypes(){
 function renderRxTypesWaiting(ed){
   if(!ed || _rxEd !== ed) return;
   showModal(`
-    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <h3 style="margin-top:0;" data-sections>${I('pill')} <span>Prescription types</span></h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
     <div id="rxtLoadNote" class="card" style="padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.5; background:var(--amber-dim); color:var(--amber-ink); box-shadow:none;">${ed.loading
       ? 'Loading the prescription types…'
@@ -1118,7 +1133,7 @@ function renderRxTypesEditor(){
     ? `<span>Last changed by</span> <span dir="auto">${esc(rxTypesDoc.by)}</span> · <span dir="auto">${esc(when || '—')}</span>`
     : 'Not set up yet — reps see the two built-in forms.';
   showModal(`
-    <h3 style="margin-top:0;">${I('pill')} <span>Prescription types</span></h3>
+    <h3 style="margin-top:0;" data-sections>${I('pill')} <span>Prescription types</span></h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">The printed prescription forms we hand to doctors. Reps pick the type when they log a visit.</p>
     <div id="rxtList">${active.map(t => `
       <div class="rxt-row" data-rxt="${esc(t.id)}" style="margin-bottom:12px;">
@@ -1454,7 +1469,7 @@ function renderClinicAnalysis(){
   const covered = cards.filter(cd=>cd.act>0.005).length;
 
   body.innerHTML = `
-    <div class="card" style="margin-bottom:12px;">
+    <div class="card ca-sum" style="margin-bottom:12px;">
       <div class="row-between"><div style="font-weight:800; font-size:15px;">${esc(rep)} — ${new Date(today+'T00:00:00').toLocaleDateString(uiLocale(),{month:'long'})}</div>
         <span style="color:var(--muted); font-size:11.5px;">${daysLeft} working days left</span></div>
       <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:10px; text-align:center;">
@@ -1466,7 +1481,7 @@ function renderClinicAnalysis(){
     </div>
     ${shown.map(cd=>{
       const barPct = Math.max(0, Math.min(100, cd.pct)); // returns can push actuals negative
-      return `<div class="card" style="margin-bottom:10px;">
+      return `<div class="card ca-row" style="margin-bottom:10px;">
         <div class="row-between">
           <div style="display:flex; gap:8px; align-items:center;">
             <span class="cls cls-${cd.cls}">${cd.cls||'-'}</span>
@@ -1542,7 +1557,7 @@ function openClinicAllocDetail(clinicId){
             ${up.map(x=>`<div style="display:flex; align-items:center; gap:9px; padding:3px 0;">
               ${playbookThumb(x.product, 40)}
               <div style="flex:1; min-width:0;"><div style="font-size:12px; font-weight:600; line-height:1.25;">${esc(x.product)}${x.mine?' <span title="re-order" style="font-size:10px;">🔁</span>':''}</div>
-              <div style="font-size:11px; color:var(--muted);">${x.price.toFixed(2)} KD each</div></div>
+              <div style="font-size:11px; color:var(--muted);">${money(x.price)} each</div></div>
               <div style="font-weight:800; font-size:14px; color:var(--teal); flex-shrink:0;">×${x.units}</div>
             </div>`).join('')}
             <div style="font-size:11px; color:var(--muted); text-align:start;">= ${money(up.reduce((s2,x)=>s2+x.amount,0))}</div>
@@ -1609,7 +1624,7 @@ function openPlaybook(sp){
   const docs = [];
   clinics.filter(c=>canViewClinic(c)).forEach(c=>(c.doctors||[]).forEach(d=>{ if(d.title===sp) docs.push({name:d.name, clinic:c.name, rep:c.rep}); }));
   showModal(`
-    <div class="pb-hero" style="background:linear-gradient(135deg,${pb.color} 0%,${pb.color}CC 100%);">
+    <div class="pb-hero" data-sections style="background:linear-gradient(135deg,${pb.color} 0%,${pb.color}CC 100%);">
       <div class="ic">${pb.icon}</div>
       <h3>${esc(sp)}</h3>
       <p>${esc(pb.angle)}</p>
@@ -1625,7 +1640,7 @@ function openPlaybook(sp){
       return tagged.length ? `<div class="section-title">From our catalog</div>
         <div class="card">${tagged.map(p=>`<div class="qty-row" style="cursor:pointer; align-items:center; gap:10px;" onclick="closeModal(); openProductDetail('${esc(productKey(p))}')">
           ${playbookThumb(p.name, 44)}
-          <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
+          <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+money(p.price):''}</span></div>
         </div>`).join('')}</div>` : ''; })()}
 
     <div class="section-title">Tips &amp; tricks</div>
@@ -1658,7 +1673,7 @@ function openProductDetail(pid){
   })));
   showModal(`
     ${p.img?`<img class="pbig" src="${p.img}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
-    <div class="row-between" style="margin:0 0 4px;">
+    <div class="row-between" style="margin:0 0 4px;" data-sections>
       <h3 style="margin:0;">${esc(p.name)}</h3>
       ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">${I('pencil')} Edit</button>`:''}
     </div>
@@ -1668,7 +1683,7 @@ function openProductDetail(pid){
     <div class="card">
       <div class="spec-row"><span class="k">Item code</span><span class="v">${esc(p.id)}</span></div>
       ${p.barcode?`<div class="spec-row"><span class="k">Barcode</span><span class="v">${esc(p.barcode)}</span></div>`:''}
-      <div class="spec-row"><span class="k">Unit price</span><span class="v">${p.price!=null?p.price.toFixed(3)+' KD':'\u2014'}</span></div>
+      <div class="spec-row"><span class="k">Unit price</span><span class="v">${p.price!=null?moneyFils(p.price):'\u2014'}</span></div>
       ${p.cat?`<div class="spec-row"><span class="k">Category</span><span class="v">${esc(p.cat)}</span></div>`:''}
       ${p.stock!==undefined?`<div class="spec-row"><span class="k">Website stock</span><span class="v" style="color:${p.stock?'var(--sage-ink)':'var(--coral-ink)'}">${p.stock?'In stock':'Out of stock'}</span></div>`:''}
       ${p.case?`<div class="spec-row"><span class="k">Case count</span><span class="v">${esc(p.case)}</span></div>`:''}
@@ -1830,7 +1845,7 @@ function openCategoryGuide(cat){
     </div>`:`<div class="empty">No guide for this category yet.${currentUser.role==='supervisor'?' Tap ✏️ Edit to write one.':''}</div>`}
     ${catProds.length?`<div class="section-title">Products in this category</div>
       <div class="card">${catProds.map(p=>`<div class="qty-row" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">
-        <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+p.price.toFixed(2)+' KD':''}</span></div>
+        <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+money(p.price):''}</span></div>
         <span style="color:var(--muted);">›</span></div>`).join('')}</div>`:''}
     <button class="btn secondary" style="margin-top:12px;" onclick="openCategoryGuides()">‹ All guides</button>
   `);
@@ -1940,9 +1955,7 @@ function renderCoverageBoard(){
   const repChips = currentUser.role === 'supervisor'
     ? `<div class="chip-row" style="margin-bottom:8px;">${['all', ...REPS].map(r =>
         `<div class="chip small ${covRep===r?'on':''}" onclick="setCovRep('${esc(r)}')">${r==='all'?'Whole team':esc(r)}</div>`).join('')}</div>` : '';
-  const tile = (n, l) => `<div style="background:var(--paper); border-radius:10px; padding:10px 6px; text-align:center;">
-    <div style="font-size:18px; font-weight:800; color:var(--green);">${n}</div>
-    <div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${l}</div></div>`;
+  const tile = (n, l) => `<div class="ins-tile"><div class="it-n">${n}</div><div class="it-l">${l}</div></div>`;
   const clinicOf = id => clinics.find(c => c.id === id);
   const visitedRows = cov.visited.map(c => {
     const cl = clinicOf(c.id);
@@ -1991,7 +2004,7 @@ function renderCoverageBoard(){
       </div>
     </div>`).join('');
   showModal(`
-    <h3 style="margin-top:0;">${I('clipboard')} Coverage review</h3>
+    <h3 style="margin-top:0;" data-wide data-sections data-grid>${I('clipboard')} Coverage review</h3>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">Everything done and still needed — last ${covDays} days${covRep!=='all'?' · '+esc(covRep):''}</div>
     ${repChips}
     <div class="chip-row" style="margin-bottom:12px;">
@@ -1999,7 +2012,7 @@ function renderCoverageBoard(){
       <div class="chip small ${covDays===30?'on':''}" onclick="setCovDays(30)">30 days</div>
       <div class="chip small ${covDays===90?'on':''}" onclick="setCovDays(90)">90 days</div>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:12px;">
+    <div class="ins-grid cov-figs">
       ${tile(cov.stats.visitedCount + '/' + cov.stats.totalClinics, 'Clinics covered (' + cov.stats.coveragePct + '%)')}
       ${tile(cov.stats.needsCount, 'Need a visit')}
       ${ew
@@ -2007,7 +2020,7 @@ function renderCoverageBoard(){
         : tile(cov.stats.orders, 'Orders logged')}
       ${ew
         ? tile(money(ew.net), 'Sales (ERP)')
-        : tile(money(cov.stats.revenue), 'Sales logged')}
+        : tile(money(cov.stats.revenue), 'Orders logged in the app')}
     </div>
     ${ew && cov.stats.revenue ? `<div style="color:var(--muted); font-size:11.5px; margin:-6px 0 10px;">App-logged in this window: ${cov.stats.orders} order${cov.stats.orders===1?'':'s'} · ${money(cov.stats.revenue)}</div>` : ''}
     ${coach.length?`<div class="section-title" style="margin-top:0;">🧭 Top advice right now</div>

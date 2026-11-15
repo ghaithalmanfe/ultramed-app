@@ -83,7 +83,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   cloud.erpSales = JSON.stringify(Object.assign(JSON.parse(cloud.erpSales), { returnPolicy: 'erp' }));
   await boot();
   let s = await state();
-  check('before any September sales file the Today card says so — the DSR achieved (3000) is not used', /Achieved: no ERP sales file for this month yet · target: DSR/.test(s.target) && /0\.00 KD of 10000\.00 KD/.test(s.target), s.target.split('\n').slice(0,6));
+  check('before any September sales file the Today card says so — the DSR achieved (3000) is not used', /Achieved: no ERP sales file for this month yet · target: DSR/.test(s.target) && /0\.00 KD of 10,000\.00 KD/.test(s.target), s.target.split('\n').slice(0,6));
   const pctBefore = await page.evaluate(() => targetPctMap());
   // Independent expectation straight from the xlsx: the DSR basis is EVERY
   // line of the rep's salesman (all customers, channels included), net.
@@ -123,7 +123,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('reports: scorecards end with the Team target card', /Team · \w+ target/.test(team.sc) && new RegExp(expTeamPct + '%').test(team.sc), team.sc.split('\n').slice(-6));
   check('PDF cover: achieved sales KPI states the % of target', team.cover === String(expTeamPct), { cover: team.cover, expTeamPct });
   check('import note on the report modal shows the Today % before → after', /شاشة اليوم الآن/.test(s.modal) && new RegExp(pctBefore.Mariam.pct + '% → ' + pctAfter.Mariam.pct + '%').test(s.modal), s.modal.split('\n').slice(0,4));
-  check('Today card: achieved from ERP, target from DSR, no DSR achieved figure anywhere', /Achieved: ERP to Sep 21 · target: DSR/.test(s.target) && !/3000\.00/.test(s.target), s.target.split('\n').slice(0,8));
+  check('Today card: achieved from ERP, target from DSR, no DSR achieved figure anywhere', /Achieved: ERP to Sep 21 · target: DSR/.test(s.target) && !/3,?000\.00/.test(s.target), s.target.split('\n').slice(0,8));
   check('cloud index carries savedAt and is small', !!JSON.parse(cloud.erpSales).savedAt && cloud.erpSales.length < 3000, { bytes: cloud.erpSales.length });
 
   // ---------- 2) DSR file name sanity ----------

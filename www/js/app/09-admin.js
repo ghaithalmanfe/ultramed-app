@@ -43,7 +43,7 @@ const MAIL_WORKFLOW_URL = 'https://github.com/ghaithalmanfe/ultramed-app/actions
 function adminMailHTML(){
   const people = staff.filter(s=>s && s.email);
   return `
-    <p style="color:rgba(255,255,255,.7); font-size:13px; margin-top:0;" dir="auto">يُرسَل تلقائيًا ملخصان كل يوم عمل (الأحد–الخميس): <b>الصباح 07:30</b> و<b>نهاية اليوم 18:30</b> بتوقيت الكويت. كل مندوبة تستلم يومها، والمشرف يستلم الفريق. الأرقام هي نفسها التي تظهر في شاشة اليوم.</p>
+    <p style="color:var(--muted); font-size:13px; margin-top:0;" dir="auto">يُرسَل تلقائيًا ملخصان كل يوم عمل (الأحد–الخميس): <b>الصباح 07:30</b> و<b>نهاية اليوم 18:30</b> بتوقيت الكويت. كل مندوبة تستلم يومها، والمشرف يستلم الفريق. الأرقام هي نفسها التي تظهر في شاشة اليوم.</p>
     <div class="card" id="mailStatusCard"><div style="color:var(--muted); font-size:13px;">⏳ جارٍ قراءة حالة الإرسال…</div></div>
     <div class="section-title">Recipients · المستلمون</div>
     <div class="card">${people.length ? people.map(s=>`<div class="report-line"><span>${esc(s.name)} <span style="color:var(--muted); font-size:11.5px;">· ${s.role==='supervisor'?'الفريق':'يومها'}</span></span><span class="v" dir="ltr" style="font-size:12px;">${esc(s.email)}</span></div>`).join('') : '<div class="empty">لا توجد إيميلات في قائمة الفريق — أضفها من تبويب Team.</div>'}</div>
@@ -78,7 +78,7 @@ async function refreshMailStatus(){
 function previewDigest(kind, rep){
   const d = UMCore.dailyDigest({ kind, data: digestData(), reps: REPS, rep: rep || null });
   showModal(`
-    <h3 style="margin-top:0;">${kind==='morning'?'☀️':'🌙'} ${esc(d.subject)}</h3>
+    <h3 style="margin-top:0;" data-ic="chat">${kind==='morning'?'☀️':'🌙'} ${esc(d.subject)}</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;" dir="auto">هكذا تصل الرسالة بالضبط، بأرقام هذه اللحظة.</p>
     <div class="card" style="background:#fff; color:#111; max-height:60vh; overflow:auto;">${d.html}</div>
     <button class="btn secondary" onclick="openAdminPanel(); setAdminTab('mail')">Back</button>
@@ -89,7 +89,7 @@ function adminTeamHTML(){
   return `<div id="apStaffList"></div>
     <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>
     <div class="section-title">Evaluation targets</div>
-    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">These targets drive every rep's scorecard, the coaching guidance under it, and the professional report — set them once here and they apply team-wide.</p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">These targets drive every rep's scorecard, the coaching guidance under it, and the professional report — set them once here and they apply team-wide.</p>
     <div class="card">
       <label>Clinic coverage target (%)</label>
       <input type="number" min="0" max="100" id="bmCoverage" value="${BENCHMARKS.coverage}">
@@ -102,7 +102,7 @@ function adminTeamHTML(){
       <button class="btn secondary small" onclick="saveBenchmarks()">Save targets</button>
     </div>
     <div class="section-title">Monthly targets per rep</div>
-    <p style="color:rgba(255,255,255,.55); font-size:12.5px; margin-top:-6px;">Set a monthly sales and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Set a monthly sales and/or visit goal for each rep. Progress bars appear on their Today screen and reset every month. Leave 0 to hide.</p>
     <div class="card">
       ${REPS.map((r,i)=>{
         const t = targets[r] || {};
@@ -438,7 +438,7 @@ let visitLogRange = 30;
 function openVisitLog(){
   visitLogRange = 30;
   showModal(`
-    <h3 style="margin-top:0;">${currentUser.role==='supervisor'?'Team visit log':'My visit log'}</h3>
+    <h3 style="margin-top:0;" data-ic="clipboard">${currentUser.role==='supervisor'?'Team visit log':'My visit log'}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Every visit you've logged, newest first.</p>
     <div class="chip-row" style="margin-bottom:12px;">
       <div class="chip small" id="vlWeek" onclick="setVisitLogRange(7)">This week</div>
@@ -500,7 +500,7 @@ function renderVisitLog(){
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Contacts seen</span><span>${rows.reduce((s,v)=>s+UMCore.contactCount(v),0)}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
-      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Sales</span><span>${money(revenue)}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders logged in the app</span><span>${money(revenue)}</span></div>
     </div>`;
   const el = document.getElementById('vlBody');
   if(rows.length===0){
@@ -656,7 +656,7 @@ async function addToPlan(clinicId){
   dayPlans[today][me] = list;
   const r = await persistTold('dayPlans');
   closeModal();
-  renderPlanList();
+  msPlanChanged();
   saveToast(r, 'dayPlans', 'Added to today\'s plan');
 }
 // Resolve a clinic name for display even after the clinic was deleted: the
@@ -679,7 +679,7 @@ async function deleteClinic(id){
   // invoice for whoever issued it) — said before the delete, not after.
   const nLinks = erpHandLinksTo([id]).length;
   showModal(`
-    <h3 style="margin-top:0;">Remove ${esc(c.name)}?</h3>
+    <h3 style="margin-top:0;" data-ic="alert" data-tone="danger">Remove ${esc(c.name)}?</h3>
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
     ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
@@ -770,7 +770,7 @@ function openMissingClinics(){
   const ORDER = {bin:0, visits:1, erp:2};
   _mcCands.sort((a,b)=>ORDER[a.src]-ORDER[b.src] || a.name.localeCompare(b.name));
   showModal(`
-    <h3 style="margin-top:0;">🔍 العيادات الناقصة</h3>
+    <h3 style="margin-top:0;" data-ic="search">🔍 العيادات الناقصة</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">كل اسم يعرفه النظام وغير موجود في قائمتك الحالية. علّم ما تريد إرجاعه — عملاء الفواتير غير معلّمين تلقائيًا لأن بعضهم قد لا يكون عيادة.</p>
     ${_mcCands.length ? `
     <div class="chip-row" style="margin:8px 0;">

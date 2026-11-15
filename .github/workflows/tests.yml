@@ -16,11 +16,13 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # The browser harnesses on the source and on the published build run as two
+  # jobs side by side: one after the other they passed 45 minutes once the
+  # redesign's phone-layout checks were added (run 43713295389 was stopped by
+  # the time limit with every harness on the source green). The deploy still
+  # waits for the whole Tests run (pages.yml), so both must pass.
   e2e:
-    # The browser harnesses: every screen and role, the ERP upload and month
-    # rollover, the audit regressions, the order form — on the source, then on
-    # the built site. About 14 minutes each (28 min on 13 Nov, before
-    # sync-core.e2e.js added about 1.5 min to each pass), so the limit is 45.
+    name: e2e (source)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -33,5 +35,17 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Browser tests on the source (www, split files)
         run: npm run e2e
+  e2e-dist:
+    name: e2e (dist)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - name: Browser tests on the published build (dist, one inlined script)
         run: npm run e2e:dist

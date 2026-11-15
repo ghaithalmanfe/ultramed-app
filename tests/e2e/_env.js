@@ -32,4 +32,9 @@ function twoRepStaff(){
     {name:'Renova', role:'rep', email:'renova@example.com'},
     {name:'Dr. Ghaith', role:'supervisor', email:'ghaith@example.com', sells:false}]);
 }
-module.exports = { WWW, launchOpts, salesFixture, blockFirebase, twoRepStaff };
+// An amount as the screens write it (UMCore.money's digits: toFixed, thousands grouped): amt(12989) → "12,989.00".
+// For a check that reads an amount as text; the exact value to the fils is still what is compared.
+function amt(n, dec){ const p = (Number(n) || 0).toFixed(dec == null ? 2 : dec).split('.'); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ','); return p.join('.'); }
+// The same, escaped for a RegExp ("12,989\\.00").
+function amtRe(n, dec){ return amt(n, dec).replace('.', '\\.'); }
+module.exports = { WWW, launchOpts, salesFixture, blockFirebase, twoRepStaff, amt, amtRe };

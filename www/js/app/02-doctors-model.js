@@ -114,5 +114,14 @@ function esc(s){ return UMCore.esc(s); }
 function I(name){ return `<svg class="svgi" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
 function safeUrl(u){ return UMCore.safeUrl(u); }
 function initials(n){ return UMCore.initials(n); }
-function money(n){ return UMCore.money(n); }
+// An amount on screen (the one formatter, UMCore.money: two decimals, thousands grouped). In the Arabic UI the
+// currency is د.ك after the figure, as on the home screen; a negative figure is kept left to right in an isolate so
+// its minus stays before its digits. Files and exports never call this (they write plain numbers).
+function moneyAr(s){ return String(s).replace(/^(-?)([\d,]+(?:\.\d+)?) KD$/, (m, neg, num) => neg ? '\u2066-' + num + '\u2069 د.ك' : num + ' د.ك'); }
+function money(n){ const s = UMCore.money(n); return uiLang === 'ar' ? moneyAr(s) : s; }
+// A whole amount (Month by month's rows) and a unit price to the fils (three decimals): grouped, the same currency rule.
+function moneyWhole(n){ const v = Math.round(Number(n) || 0), s = (v < 0 ? '-' : '') + UMCore.groupThousands(String(Math.abs(v))) + ' KD'; return uiLang === 'ar' ? moneyAr(s) : s; }
+function moneyFils(n){ const v = Number(n) || 0, s = (v < 0 ? '-' : '') + UMCore.groupThousands(Math.abs(v).toFixed(3)) + ' KD'; return uiLang === 'ar' ? moneyAr(s) : s; }
+// A bare amount in a table whose header names the currency: grouped, two decimals (or none for a whole target).
+function amt2(n, dec){ return UMCore.groupThousands((Number(n) || 0).toFixed(dec == null ? 2 : dec)); }
 

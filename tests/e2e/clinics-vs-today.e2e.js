@@ -116,7 +116,7 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   const a = await ach();
   check('fixture: October figures — Mariam 91 (65 at Dental 5 + 9 unlinked + 12 online + 5 ignored), Renova 30, Dr. Ghaith 50', a.m === 91 && a.r === 30 && a.g === 50, a);
   const tdy = await today();
-  check('Today card: Mariam 91.00 KD of 1000.00 KD, Renova 30.00 KD, Team 121.00 KD (only people with a target)', /Mariam \d+% 91\.00 KD of 1000\.00 KD/.test(tdy) && /Renova \d+% 30\.00 KD of 1000\.00 KD/.test(tdy) && /121\.00 KD of 2000\.00 KD/.test(tdy), tdy.slice(0, 400));
+  check('Today card: Mariam 91.00 KD of 1,000.00 KD, Renova 30.00 KD, Team 121.00 KD (only people with a target)', /Mariam \d+% 91\.00 KD of 1,000\.00 KD/.test(tdy) && /Renova \d+% 30\.00 KD of 1,000\.00 KD/.test(tdy) && /121\.00 KD of 2,000\.00 KD/.test(tdy), tdy.slice(0, 400));
 
   // ---- v119: a phone that already holds the sales files does not download them again ----
   check('first start: the sales files are downloaded', reads.some(k => /^erpRows:/.test(k)), reads.filter(k => /^erpRows:/.test(k)));
@@ -162,7 +162,7 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
       matched: [{ rep: 'Renova', name: 'Ranova Sample', revenue: 1000, achieved: 777.77, brandCount: 2 }], unmatched: [] });
       return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); }
     finally { window.persist = realPersist; targets = JSON.parse(keep); try{ closeModal(); }catch(e){} } });
-  check('DSR upload sheet: target and brand targets only — the DSR\'s own achieved (777.77) is not shown, and it says achieved comes from ERP', !/777\.77/.test(dsr) && /1000\.00 KD/.test(dsr) && /2 brand targets/.test(dsr) && /Achieved always comes from the ERP sales files/.test(dsr), dsr.slice(0, 600));
+  check('DSR upload sheet: target and brand targets only — the DSR\'s own achieved (777.77) is not shown, and it says achieved comes from ERP', !/777\.77/.test(dsr) && /1,000\.00 KD/.test(dsr) && /2 brand targets/.test(dsr) && /Achieved always comes from the ERP sales files/.test(dsr), dsr.slice(0, 600));
   // ---- Arabic ----
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   c = await clinicsCard(M);
@@ -175,7 +175,7 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   c = await clinicsCard('all');
   check('3 Nov, everyone: October per person, each checked against the Months report', kd(c.parts.total) === 171 && /Each person's figure is the one in the Months report/.test(c.rec) && !/Today screen/.test(c.parts.total || '') && !c.team, { total: c.parts.total, team: c.team, rec: c.rec.slice(0, 300) });
   const nov = await today();
-  check('3 Nov: the Today card shows 0.00 KD for Mariam (no file for this month yet)', /Mariam \d+% 0\.00 KD of 1000\.00 KD/.test(nov), nov.slice(0, 300));
+  check('3 Nov: the Today card shows 0.00 KD for Mariam (no file for this month yet)', /Mariam \d+% 0\.00 KD of 1,000\.00 KD/.test(nov), nov.slice(0, 300));
   c = await clinicsCard(G);
   check('3 Nov, Dr. Ghaith (no sales target): "no sales file yet", never "the Today screen shows 0"', /No sales file for this month yet\./.test(c.rec) && !/shows 0/.test(c.rec), c.rec.slice(-260));
   // ---- someone the files still credit but who is off the team list (Also sells off, target kept) ----
@@ -186,7 +186,7 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
   check('off the team list: his 50 KD is listed and said to be off the Today screen; no "each as on the Today screen"', kd(gRow) === 50 && /not on the team list — not on the Today screen/.test(gRow) && !/Each person's figure/.test(c.rec), { gRow, rec: c.rec.slice(0, 400) });
   check('off the team list: the Team note names team members (121.00 KD), not a missing target', /team members with a sales target: 121\.00 KD/.test(c.team || ''), c.team);
   const t2 = await today();
-  check('off the team list: the Today card does not list him', !/Dr\. Ghaith/.test(t2) && /121\.00 KD of 2000\.00 KD/.test(t2), t2.slice(0, 300));
+  check('off the team list: the Today card does not list him', !/Dr\. Ghaith/.test(t2) && /121\.00 KD of 2,000\.00 KD/.test(t2), t2.slice(0, 300));
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

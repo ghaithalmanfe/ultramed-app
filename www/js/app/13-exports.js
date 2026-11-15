@@ -263,7 +263,7 @@ en: {
   overdue:'Overdue follow-ups', doNow:'Immediate action', watch:'Monitor', working:'Performing well',
   planIntro:'Auto-drafted from the most urgent findings — edit in the meeting and assign owners:',
   noData:'No data available for this period.', kd:'KD', week:'Week', total:'Total',
-  kVisits:'Field visits', kSales:'Achieved sales', ofTarget:'of target', kSalesLogged:'Sales (logged)', kCoverage:'Coverage', kReturns:'Returned', retDocs:'return invoices', kContacts:'Contacts seen',
+  kVisits:'Field visits', kSales:'Achieved sales', ofTarget:'of target', kSalesLogged:'Orders logged in the app', kCoverage:'Coverage', kReturns:'Returned', retDocs:'return invoices', kContacts:'Contacts seen',
   execTeam:(ach,goal,pct,fc)=>`The team has delivered <b>${ach}</b> of the <b>${goal}</b> monthly target (<b>${pct}%</b>). At the current pace the month is projected to close at <b>${fc}</b>.`,
   execStar:(rep,amt)=>`Standout performer: <b>${rep}</b> with ${amt}.`,
   execRisk:(txt)=>`Main risk to address: ${txt}`,
@@ -319,14 +319,14 @@ ar: {
   overdue:'متابعات متأخرة', doNow:'أولوية فورية', watch:'قيد المتابعة', working:'أداء جيد',
   planIntro:'مسودة آلية من أكثر النتائج إلحاحاً — تُناقش في الاجتماع ويُحدد مسؤول لكل بند:',
   noData:'لا تتوفر بيانات لهذه الفترة.', kd:'د.ك', week:'الأسبوع', total:'الإجمالي',
-  kVisits:'زيارات ميدانية', kSales:'المبيعات المحققة', ofTarget:'من التارغت', kSalesLogged:'المبيعات المسجلة', kCoverage:'التغطية', kReturns:'المرتجع', retDocs:'فاتورة مرتجع', kContacts:'جهات اتصال',
+  kVisits:'زيارات ميدانية', kSales:'المبيعات المحققة', ofTarget:'من التارغت', kSalesLogged:'الطلبات المسجّلة بالتطبيق', kCoverage:'التغطية', kReturns:'المرتجع', retDocs:'فاتورة مرتجع', kContacts:'جهات اتصال',
   execTeam:(ach,goal,pct,fc)=>`حقق الفريق <b>${ach}</b> من الهدف الشهري البالغ <b>${goal}</b> (بنسبة <b>${pct}%</b>). وبالوتيرة الحالية يُتوقع إقفال الشهر عند <b>${fc}</b>.`,
   execStar:(rep,amt)=>`الأداء الأبرز: <b>${rep}</b> بمبيعات ${amt}.`,
   execRisk:(txt)=>`أهم خطر يجب معالجته: ${txt}`,
 },
 };
 function mrMoney(n, lang){
-  const v = (Math.round((n||0)*100)/100).toFixed(2);
+  const v = UMCore.groupThousands((Math.round((n||0)*100)/100).toFixed(2));   // grouped, as every screen writes an amount
   return lang==='ar' ? `<span class="num">${v}</span> د.ك` : `${v} KD`;
 }
 // Localized coach sentences rebuilt from each insight's structured data.
@@ -337,9 +337,9 @@ const AR_COACH = {
   followups: d=>`${d.count} متابعة متأخرة (${(d.names||[]).join('، ')}) — يُوصى بجدولتها أولاً؛ الزيارة الموعودة أقرب فرصة بيع.`,
   dormant: d=>`${d.count} عيادة مهمة بلا نشاط لأكثر من 30 يوماً (${(d.names||[]).join('، ')}) — يُوصى بإدراجها في خطة الأسبوع.`,
   missed: d=>`${d.count} زيارة مخططة لم تُنفَّذ خلال آخر أسبوعين — يُوصى بإعادة جدولتها.`,
-  target: d=> d.state==='hit' ? `${d.rep}: تم تحقيق الهدف الشهري (${d.mtd.toFixed(2)} من ${d.goal.toFixed(2)} د.ك) — فرصة مناسبة للتوسع في منتجات جديدة.`
-    : d.state==='behind' ? `${d.rep}: الإنجاز دون الهدف (${d.mtd.toFixed(2)} من ${d.goal.toFixed(2)} د.ك) — المطلوب ≈${d.perDay} د.ك يومياً لبقية ${d.daysLeft} يوماً.`
-    : `${d.rep}: الأداء ضمن وتيرة الهدف (${d.mtd.toFixed(2)} من ${d.goal.toFixed(2)} د.ك) — يُوصى بالحفاظ على الإيقاع الحالي.`,
+  target: d=> d.state==='hit' ? `${d.rep}: تم تحقيق الهدف الشهري (${UMCore.groupThousands(d.mtd.toFixed(2))} من ${UMCore.groupThousands(d.goal.toFixed(2))} د.ك) — فرصة مناسبة للتوسع في منتجات جديدة.`
+    : d.state==='behind' ? `${d.rep}: الإنجاز دون الهدف (${UMCore.groupThousands(d.mtd.toFixed(2))} من ${UMCore.groupThousands(d.goal.toFixed(2))} د.ك) — المطلوب ≈${UMCore.groupThousands(String(d.perDay))} د.ك يومياً لبقية ${d.daysLeft} يوماً.`
+    : `${d.rep}: الأداء ضمن وتيرة الهدف (${UMCore.groupThousands(d.mtd.toFixed(2))} من ${UMCore.groupThousands(d.goal.toFixed(2))} د.ك) — يُوصى بالحفاظ على الإيقاع الحالي.`,
   conversion: d=> d.state==='low' ? `نسبة التحويل منخفضة: ${d.pct}% فقط من الزيارات تنتهي بطلب — يُوصى بمراجعة أدلة البيع وطرح الطلب قبل مغادرة العيادة.`
     : `نسبة تحويل قوية: ${d.pct}% من الزيارات بطلب — التوسع في عدد الزيارات هو أسرع مسار للنمو.`,
   contacts: d=> d.state==='low' ? `متوسط ${d.perVisit} جهة اتصال للزيارة — يُوصى باستهداف طبيبين أو أكثر في كل عيادة؛ كل طبيب إضافي عميل محتمل دون تكلفة.`
@@ -558,7 +558,7 @@ function buildMasterReportBody(lang, format){
       ${items.map(([br,tg])=>{
         const a = Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
         const pct = Math.round(a/tg*100);
-        return `<tr><td>${esc(br)}</td><td><span class="num">${tg.toFixed(0)}</span></td><td><span class="num">${a.toFixed(2)}</span></td>
+        return `<tr><td>${esc(br)}</td><td><span class="num">${amt2(tg, 0)}</span></td><td><span class="num">${amt2(a)}</span></td>
           <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
       }).join('')}</tbody></table>`;
   }).filter(Boolean);
@@ -1307,7 +1307,7 @@ function setExportPreset(days){
 }
 function openExport(){
   showModal(`
-    <h3 style="margin-top:0;">Export &amp; backups</h3>
+    <h3 style="margin-top:0;" data-ic="database" data-sections>Export &amp; backups</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Downloads as CSV for Excel/Sheets or email. If a download doesn't start, use "Copy instead."</p>
 
     <div class="card" style="margin-bottom:14px;">
@@ -1701,7 +1701,7 @@ async function openFullBackup(){
   if(!requireAdmin()) return;
   const run = ++_fullBackupRun, by = currentUser.name;
   _fullBackup = null;
-  showModal(`<h3 style="margin-top:0;">💾 <span>Full backup</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="download">💾 <span>Full backup</span></h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;"><span>This screen only reads — nothing in the cloud changes.</span></p>
     <div id="fullBackupBody" style="font-size:13px;"><div><span>Reading every record in the cloud…</span></div>
       <div style="color:var(--muted); font-size:12px; margin-top:4px;"><span>Documents read so far:</span> <b id="fullBackupCount">0</b></div></div>`);
@@ -1793,7 +1793,7 @@ let _recov = null;
 async function openClinicRecovery(){
   if(!requireAdmin()) return;
   if(_loadFailed.clinics || _mirrorUsed.clinics){ showToast('⚠️ The clinic list did not load from the cloud — check the connection and open this again'); return; }
-  showModal(`<h3 style="margin-top:0;">🔎 <span>Missing clinics</span></h3><div id="recovBody" style="color:var(--muted); font-size:13px;"><span>Reading the daily backups…</span></div>`);
+  showModal(`<h3 style="margin-top:0;" data-ic="search">🔎 <span>Missing clinics</span></h3><div id="recovBody" style="color:var(--muted); font-size:13px;"><span>Reading the daily backups…</span></div>`);
   const snaps = [];
   try{
     const list = await window.storage.list('snap_', true);
@@ -1940,7 +1940,7 @@ function restoreAskFullBackup(sameDay, cover, saved){
       : "Today already has its backup (the daily one, or the data an earlier restore kept), and a restore never replaces it.");
   const held = _fullBackup && currentUser && _fullBackup.by === currentUser.name && !_fullBackup.savedAt ? _fullBackup : null;
   const unsaved = held ? `The full backup read at ${restoreHHMM(held.at)} was not downloaded to this device, so it does not count.` : '';
-  showModal(`<h3 style="margin-top:0;">💾 <span>First, a full backup to this device</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="download" data-tone="warn">💾 <span>First, a full backup to this device</span></h3>
     <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(why) || why)}</span></p>${unsaved ? `
     <p style="font-size:13px; line-height:1.6;"><span>${esc(trOf(unsaved) || unsaved)}</span></p>` : ''}
     <p style="font-size:13px; line-height:1.6;"><span>Save a full backup to this device now: it keeps everything as it is, today's backup too. Then tap Restore again.</span></p>
@@ -2189,7 +2189,7 @@ function restoreDeviceClinics(which){
   if(!copy.length){ showToast('لا توجد نسخة صالحة على هذا الجهاز'); return; }
   const diff = UMCore.deviceCopyDiff(storedClinics(), copy, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id), tombIds: [...tombSet('clinics')], doctorTombs: [...tombSet('doctors')] });
   _devCopy = { which, diff, picked: new Set() };
-  showModal(`<h3 style="margin-top:0;">📱 <span>This phone's copy of the clinic list</span></h3><div id="devCopyBody"></div>`);
+  showModal(`<h3 style="margin-top:0;" data-ic="refresh">📱 <span>This phone's copy of the clinic list</span></h3><div id="devCopyBody"></div>`);
   renderDeviceCopy();
 }
 function renderDeviceCopy(){
@@ -2304,11 +2304,11 @@ async function checkWipeBanner(){
     if(!bar){
       bar = document.createElement('div');
       bar.id = 'wipeBanner';
-      bar.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:10000; background:#8B0000; color:#fff; padding:10px 14px; font-size:13px; text-align:center; box-shadow:0 2px 12px rgba(0,0,0,.4);';
+      bar.className = 'sbar';   // the look is in index.html (status bars)
       document.body.appendChild(bar);
     }
     bar.innerHTML = `⚠️ قائمة العيادات الحالية (${clinics.length}) أصغر بكثير من النسخة الاحتياطية ليوم ${esc(best.d)} (${best.n} عيادة) — البيانات ليست ضائعة.
-      <button onclick="openExport()" style="margin-inline-start:10px; background:#fff; color:#8B0000; border:0; border-radius:8px; padding:5px 12px; font-weight:700;">استرجاع الآن</button>`;
+      <button onclick="openExport()" style="margin-inline-start:10px; background:#fff; color:#8B1A0E; border:0; border-radius:999px; padding:6px 14px; font-weight:600; font-family:inherit; cursor:pointer;">استرجاع الآن</button>`;
   }catch(e){}
 }
 function copyReport(){
@@ -2320,7 +2320,7 @@ function copyReport(){
   text += `Calls: ${rv.filter(v=>v.callOnly).length}\n`;
   text += `Contacts seen: ${rv.reduce((s,v)=>s+UMCore.contactCount(v),0)}\n`;
   text += `Orders taken: ${rv.filter(v=>v.orderTaken).length}\n`;
-  text += `Sales: ${money(rv.reduce((s,v)=>s+(v.orderTotal||0),0))}\n`;
+  text += `Orders logged in the app: ${UMCore.money(rv.reduce((s,v)=>s+(v.orderTotal||0),0))}\n`;   // the copied text is English: the core's own form
   text += `Clinics covered: ${new Set(rv.map(v=>v.clinicId)).size}\n\n`;
   const b = reportRangeBounds();
   const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from:b.from, to:b.to, today:todayStr(), repFilter:reportRepFilter, visits, clinics, targets: blendedTargets(), dayPlans});
@@ -2334,7 +2334,7 @@ function copyReport(){
   [...rv].sort((a,b)=>b.date.localeCompare(a.date)).forEach(v=>{
     const c = clinics.find(x=>x.id===v.clinicId);
     const prodNames = (v.products||[]).map(pid=>productName(pid)).filter(Boolean).join(', ');
-    text += `- ${fmtDate(v.date)} · ${clinicNameOf(v.clinicId)} (${v.rep})${v.orderTaken?' · '+money(v.orderTotal):''}${prodNames?' · '+prodNames:''}\n`;
+    text += `- ${fmtDate(v.date)} · ${clinicNameOf(v.clinicId)} (${v.rep})${v.orderTaken?' · '+UMCore.money(v.orderTotal):''}${prodNames?' · '+prodNames:''}\n`;
   });
   navigator.clipboard.writeText(text).then(()=>showToast('Report copied')).catch(()=>showToast('Could not copy'));
 }

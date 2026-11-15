@@ -138,7 +138,7 @@ function erpDashReconHTML(d){
 }
 function erpDashSection(){
   const d = erpDashData();
-  if(!d.hasData) return `<div class="chartcard"><h4>🧾 Customer sales (ERP)</h4>
+  if(!d.hasData) return `<div class="chartcard">${secHead('file', 'Customer sales (ERP)')}
     <div class="csub">Upload a sales file in Report → 📥 Import and every customer's buying status appears here.</div></div>`;
   const clinicBuyers = d.buyers.filter(b=>!b.channel);
   // the tiles are the reconciliation's own lines, so they add up on screen
@@ -184,8 +184,8 @@ function erpDashSection(){
         </div>
       </div>`).join('') + (clinicBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${clinicBuyers.length-40} more</div>`:'');
   return `
-  <div class="chartcard" style="border-inline-start:4px solid var(--gold);">
-    <h4>🧾 Customer sales — who bought & who didn't</h4>
+  <div class="chartcard cs-card">
+    ${secHead('cart', "Customer sales — who bought & who didn't")}
     <div class="csub">${d.ms.current ? '<span>This month</span>' : `<b>${esc(d.periodLabel)}</b> · <span>the last month with a sales file</span>`}${d.ms.covered ? ` · <span>sales files to</span> ${fmtDate(d.ms.covered)}` : ''}</div>
     <div class="kpi4" style="margin:10px 0 4px;">
       <div class="k"><div class="ki">${I('cart')}</div><div class="kn">${clinicBuyers.length}</div><div class="kl">Bought · ${money(buyersNet)}</div></div>
@@ -196,15 +196,17 @@ function erpDashSection(){
     ${erpDashRecon(d)}
     ${donut}
   </div>
-  <div class="chartcard"><h4>🏆 Top buyers</h4><div class="csub">${d.ms.current ? 'Net KD this month' : 'Net KD in the period'}</div>${topBars}</div>
-  <div class="chartcard"><h4>⭕ Didn't buy — by class</h4><div class="csub">A/B first: the money is there</div>${clsBars}</div>
-  <div class="chip-row" style="margin:12px 0 10px;">
-    <div class="chip small ${erpDashTab==='not'?'on':''}" onclick="erpDashTab='not'; renderClinicDash();">⭕ Didn't buy (${d.nonBuyers.length})</div>
-    <div class="chip small ${erpDashTab==='bought'?'on':''}" onclick="erpDashTab='bought'; renderClinicDash();">🛒 Bought (${clinicBuyers.length})</div>
+  <div class="chartcard">${secHead('award', 'Top buyers')}<div class="csub">${d.ms.current ? 'Net KD this month' : 'Net KD in the period'}</div>${topBars}</div>
+  <div class="chartcard">${secHead('target', "Didn't buy — by class")}<div class="csub">A/B first: the money is there</div>${clsBars}</div>
+  <div class="dash-toggle cs-tabs">
+    <div class="dt ${erpDashTab==='not'?'on':''}" onclick="erpDashTab='not'; renderClinicDash();">⭕ Didn't buy (${d.nonBuyers.length})</div>
+    <div class="dt ${erpDashTab==='bought'?'on':''}" onclick="erpDashTab='bought'; renderClinicDash();">🛒 Bought (${clinicBuyers.length})</div>
   </div>
-  ${rows || '<div class="empty">Nothing here.</div>'}
+  ${rows ? `<div class="lrows cs-rows">${rows}</div>` : '<div class="empty">Nothing here.</div>'}
   <div style="height:8px;"></div>`;
 }
+// A card's heading in the home screen's language: its icon in a pale-mint circle, then the words.
+function secHead(icon, words){ return `<h4 class="sec-h"><span class="sec-ic" aria-hidden="true">${I(icon)}</span><span>${words}</span></h4>`; }
 function renderClinicDash(){
   const el = document.getElementById('clinicDash');
   let pool = clinics.filter(c=>c.cls!=='Closed');
@@ -260,7 +262,7 @@ function renderClinicDash(){
   ${erpDashSection()}
 
   <div class="chartcard">
-    <h4>Coverage</h4>
+    ${secHead('compass', 'Coverage')}
     <div class="csub">${active} of ${pool.length} clinics visited \u00b7 ${pool.length?Math.round(active/pool.length*100):0}%</div>
     <div class="bar-track" style="height:12px;"><div class="bar-fill" style="width:${pool.length?Math.round(active/pool.length*100):0}%;"></div></div>
     <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-top:7px;">
@@ -269,7 +271,7 @@ function renderClinicDash(){
   </div>
 
   <div class="chartcard">
-    <h4>Portfolio by class</h4>
+    ${secHead('layers', 'Portfolio by class')}
     <div class="csub">Sales potential mix</div>
     <div class="segbar">
       ${byCls.filter(x=>x.n).map(x=>`<div style="flex:${x.n}; background:${x.c}; cursor:pointer;" title="Class ${x.k}: ${x.n} — tap to list them" onclick="showClinicClass('${x.k}')">${x.n}</div>`).join('')}
@@ -283,7 +285,7 @@ function renderClinicDash(){
   </div>
 
   <div class="chartcard">
-    <h4>Account mix</h4>
+    ${secHead('pie', 'Account mix')}
     <div class="csub">How these clinics buy</div>
     ${svgBars([
       {l:'Credit', v:credit, c:'#5E5CE6'},
@@ -293,20 +295,20 @@ function renderClinicDash(){
     ])}
   </div>
 
-  ${topRev.length?`<div class="chartcard"><h4>\u{1F3C6} Top clinics by orders logged</h4><div class="csub">Orders typed in visits, all time — invoices are in Customer sales above</div>
+  ${topRev.length?`<div class="chartcard">${secHead('award', 'Top clinics by orders logged')}<div class="csub">Orders typed in visits, all time — invoices are in Customer sales above</div>
     ${topRev.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${x.s.orders} order${x.s.orders===1?'':'s'} \u00b7 ${x.s.conv}% conv.`, money(x.s.rev))).join('')}
   </div>`:''}
 
-  ${topVis.length?`<div class="chartcard"><h4>\u{1F45F} Most visited</h4><div class="csub">Where your time goes \u2014 compare against sales above</div>
+  ${topVis.length?`<div class="chartcard">${secHead('activity', 'Most visited')}<div class="csub">Where your time goes \u2014 compare against sales above</div>
     ${topVis.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 ${money(x.s.rev)} ordered`, x.s.visits)).join('')}
   </div>`:''}
 
-  ${dormant.length?`<div class="chartcard"><h4>\u{1F4A4} Going quiet</h4><div class="csub">Visited before, but not recently</div>
+  ${dormant.length?`<div class="chartcard">${secHead('clock', 'Going quiet')}<div class="csub">Visited before, but not recently</div>
     ${dormant.map((x,i)=>rankRow(i, x.c.name, `Class ${x.c.cls||'-'} \u00b7 last seen ${fmtDate(x.s.last)}`, x.s.daysSince+'d')).join('')}
   </div>`:''}
 
   <div class="chartcard">
-    <h4>\u{1F6A8} Needs attention</h4>
+    ${secHead('alert', 'Needs attention')}
     <div class="csub">Highest-value actions right now</div>
     ${overdue.length?`<div class="alertrow"><div class="ae">\u23F0</div><div><strong>${overdue.length} overdue follow-up${overdue.length===1?'':'s'}</strong><br><span style="color:var(--muted);">${esc(overdue.slice(0,3).map(c=>c.name).join(', '))}${overdue.length>3?' +'+(overdue.length-3)+' more':''}</span></div></div>`:''}
     ${priorityUnseen.length?`<div class="alertrow"><div class="ae">\u{1F48E}</div><div><strong>${priorityUnseen.length} A/B clinic${priorityUnseen.length===1?'':'s'} never visited</strong><br><span style="color:var(--muted);">${esc(priorityUnseen.slice(0,3).map(x=>x.c.name).join(', '))}${priorityUnseen.length>3?' +'+(priorityUnseen.length-3)+' more':''}</span></div></div>`:''}
@@ -317,7 +319,7 @@ function renderClinicDash(){
   </div>
 
   <div class="chartcard">
-    <h4>\u{1F468}\u200D\u2695\uFE0F Doctors by specialty</h4>
+    ${secHead('stethoscope', 'Doctors by specialty')}
     <div class="csub">${totDocs} recorded \u00b7 tap for the selling playbook</div>
     ${specList.length? specList.map(([sp,n])=>{
       const pb=SPECIALTY_PLAYBOOK[sp];
@@ -328,7 +330,7 @@ function renderClinicDash(){
     }).join('') : `<div style="color:var(--muted); font-size:13px;">No doctors recorded yet. Add them from any clinic to unlock specialty insights.</div>`}
   </div>
 
-  <button class="btn secondary" onclick="setClinicMode('list')">\u{1F4CB} Browse full clinic list</button>
+  <button class="btn secondary" onclick="setClinicMode('list')">${I('clipboard')} <span>Browse full clinic list</span></button>
   `;
 }
 
@@ -402,29 +404,23 @@ function renderClinics(){
     return;
   }
   const actColor = {overdue:'var(--coral)', today:'#FF9500', never:'var(--teal)', dormant:'#FF9500', ok:'var(--sage)', none:'var(--muted)'};
-  list.innerHTML = filtered.map(c=>{
+  list.innerHTML = `<div class="lrows cl-rows">` + filtered.map(c=>{
     const st = statFor[c.id];
     const act = clinicNextAction(c, st);
     const visitTxt = st.total===0 ? '⭕ no visits yet' : `${st.total} visit${st.total===1?'':'s'}`;
+    const nd = (c.doctors||[]).length;
     return `
-    <div class="card clickable" style="border-inline-start:4px solid ${clsColor(c.cls)};" onclick="openClinicDetail('${c.id}')">
-      <div class="row-between">
-        <div class="row-between" style="gap:11px;">
-          <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
-          <div>
-            <div class="clinic-name">${esc(c.name)}${c.isNew?' <span style="font-size:11px;">🆕</span>':''}</div>
-            <div class="clinic-sub">${esc(c.rep||'')} · ${visitTxt}${st.calls?` · 📞 ${st.calls} call${st.calls===1?'':'s'}`:''}${st.last?` · last ${fmtDate(st.last)}`:''}${c.account?' · '+esc(c.account):''}</div>
-            ${c.doctors.length?`<div style="margin-top:5px; font-size:15px;">${c.doctors.slice(0,6).map(d=>SPECIALTY_PLAYBOOK[d.title]?SPECIALTY_PLAYBOOK[d.title].icon:'👤').join(' ')}</div>`:''}
-          </div>
-        </div>
-        <span class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp).split('·')[0].trim()}</span>
+    <div class="lrow cl-row" role="button" tabindex="0" onclick="openClinicDetail('${c.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openClinicDetail('${c.id}');}">
+      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+      <div class="lr-t">
+        <div class="clinic-name">${esc(c.name)}${c.isNew?' <span style="font-size:11px;">🆕</span>':''}</div>
+        <div class="clinic-sub">${[`${nd} doctor${nd===1?'':'s'}`, esc(c.rep||''), visitTxt, st.calls?`📞 ${st.calls} call${st.calls===1?'':'s'}`:'', st.last?`last ${fmtDate(st.last)}`:'', c.account?esc(c.account):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('<span data-notr> · </span>')}</div>
+        ${nd?`<div class="cl-spec">${c.doctors.slice(0,6).map(d=>SPECIALTY_PLAYBOOK[d.title]?SPECIALTY_PLAYBOOK[d.title].icon:'👤').join(' ')}</div>`:''}
+        <div class="cl-act" style="color:${actColor[act.cls]||'var(--muted)'};"><span>${act.icon} ${act.text}</span>${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">${I('calendar')} Reschedule</button>`:''}</div>
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
-        <div style="flex:1; font-size:12.5px; line-height:1.45; color:${actColor[act.cls]||'var(--muted)'};">${act.icon} ${act.text}</div>
-        ${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">${I('calendar')} Reschedule</button>`:''}
-      </div>
+      <span class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp).split('·')[0].trim()}</span>
     </div>`;
-  }).join('');
+  }).join('') + `</div>`;
 }
 
 // ---- Clinics without a name (v119) ----
@@ -494,7 +490,7 @@ function openLostDoctors(scope){
       <div style="margin-top:6px;"><button class="chip small" data-c="${esc(c.id)}" data-d="${esc(e.id)}" data-scope="${esc(scope || '')}" onclick="markDoctorGone(this.dataset.c, this.dataset.d, this.dataset.scope)"><span>Left the clinic or removed on purpose</span></button></div>
     </div>`;
   }).join('')).join('');
-  showModal(`<h3 style="margin-top:0;">⚠️ <span>Doctors without a name</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="stethoscope" data-tone="warn">⚠️ <span>Doctors without a name</span></h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Your visits met them, but their names were lost (most in August–September) and no backup holds them. Use a name this phone kept or a visit recorded, or write the name you remember: their visits, orders and prescriptions join it. Nothing changes until you tap. Leave empty anyone who left or was removed on purpose.</span></p>
     ${body || '<div class="empty"><span>Nothing left to name.</span></div>'}
     <button class="btn secondary" style="margin-top:8px;" data-scope="${esc(scope || '')}" onclick="closeModal(); if(this.dataset.scope) openClinicDetail(this.dataset.scope); else renderClinics();">Done</button>`);
@@ -607,7 +603,7 @@ function openDupDoctors(scope){
       </div>
     </div>`;
   }).join('');
-  showModal(`<h3 style="margin-top:0;">⚠️ <span>Possible duplicate doctors</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="users" data-tone="warn">⚠️ <span>Possible duplicate doctors</span></h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>These doctors of one clinic have the same name once "Dr." and titles are left out. Both records are kept until you decide. Merging keeps everything either record holds: their visits, orders and prescriptions join one record. Nothing changes until you tap.</span></p>
     ${body || '<div class="empty"><span>Nothing left to check.</span></div>'}
     <button class="btn secondary" style="margin-top:8px;" data-scope="${esc(scope || '')}" onclick="closeModal(); if(this.dataset.scope) openClinicDetail(this.dataset.scope); else renderClinics();">Done</button>`);
@@ -715,7 +711,7 @@ function openNamelessClinics(){
       </div>
     </div>`;
   }).join('');
-  showModal(`<h3 style="margin-top:0;">⚠️ <span>Clinics without a name</span></h3>
+  showModal(`<h3 style="margin-top:0;" data-ic="building" data-tone="warn">⚠️ <span>Clinics without a name</span></h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-4px;"><span>Lost in August and brought back without their name. Use a name the app or this phone kept, or write it. Nothing changes until you tap; if another clinic already has the name, or sales would count for another person, you are asked first.</span></p>
     ${rows || '<div class="empty"><span>Nothing left to name.</span></div>'}
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); renderClinics();">Done</button>`);
@@ -805,7 +801,7 @@ async function nameNamelessClinic(id, raw, kind, confirmed){
 }
 function openAddClinic(){
   showModal(`
-    <h3 style="margin-top:0;">Add clinic</h3>
+    <h3 style="margin-top:0;" data-ic="building">Add clinic</h3>
     <label>Clinic name</label>
     <input type="text" id="mClinicName" placeholder="e.g. Bright Smile Dental">
     ${addClinicOwnerHTML()}
@@ -999,59 +995,65 @@ function openClinicDetail(id){
   if(!canViewClinic(c)){ showToast('🔒 This clinic belongs to '+(c.rep||'another rep')); return; }
   const cVisits = visits.filter(v=>v.clinicId===id).sort((a,b)=>b.date.localeCompare(a.date));
   const canPlan = currentUser.name===c.rep;
+  // the card's header (class, name, owner, status), the actions, then its sections as cards with icon headings:
+  // a wide sheet in two columns on a laptop, a full-height sheet on the phone (data-wide, modalFrame)
+  const sec = (icon, words, body, extra) => `<section class="cd-sec"><div class="section-title cd-st"><span class="sec-ic" aria-hidden="true">${I(icon)}</span><span>${words}</span>${extra||''}</div>${body}</section>`;
+  const ownSec = (icon, html) => html ? `<section class="cd-sec">${html.replace(/<div class="section-title"([^>]*)>/, `<div class="section-title cd-st"$1><span class="sec-ic" aria-hidden="true">${I(icon)}</span>`)}</section>` : '';
   showModal(`
-    <h3 style="margin-top:0;">${esc(c.name)}</h3>
-    <div class="clinic-sub" style="margin-bottom:12px;">${esc(c.rep||'')}${c.contact?' · '+esc(c.contact):''}${c.phone?' · '+esc(c.phone):''}</div>
-    <div class="chip-row" style="margin-bottom:14px;">
-      ${c.account?`<span class="chip small" style="background:var(--green-dim); color:var(--green-dark);">💳 ${esc(c.account)}</span>`:''}
-      ${c.dealType?`<span class="chip small" style="background:var(--teal-dim); color:var(--teal);">${dealTypeLabel(c)}</span>`:''}
-      ${c.isNew?`<span class="chip small" style="background:var(--amber-dim); color:var(--amber-ink);">${I('sparkles')} New customer</span>`:''}
+    <div class="cd-head" data-wide>
+      <span class="cls cls-${c.cls} cd-cls">${c.cls||'-'}</span>
+      <div class="cd-ht">
+        <h3 style="margin-top:0;">${esc(c.name)}</h3>
+        <div class="clinic-sub">${esc(c.rep||'')}${c.contact?' · '+esc(c.contact):''}${c.phone?' · '+esc(c.phone):''}</div>
+        <div class="cd-tags">
+          <div class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp)}</div>
+          ${c.account?`<span class="chip small" style="background:var(--green-dim); color:var(--green-dark);">💳 ${esc(c.account)}</span>`:''}
+          ${c.dealType?`<span class="chip small" style="background:var(--teal-dim); color:var(--teal);">${dealTypeLabel(c)}</span>`:''}
+          ${c.isNew?`<span class="chip small" style="background:var(--amber-dim); color:var(--amber-ink);">${I('sparkles')} New customer</span>`:''}
+        </div>
+      </div>
     </div>
-    <div style="display:flex; gap:8px; margin-bottom:16px;">
-      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
-      <div class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp)}</div>
+    <div class="cd-acts">
+      <button class="btn" onclick="quickLogFrom('${c.id}'); closeModal();">Log a visit here</button>
+      <div class="chip-row">
+        <div class="chip small" onclick="openStandaloneOrder('${c.id}')">${I('cart')} Order only</div>
+        <div class="chip small" onclick="openCallLog('${c.id}')">${I('phone')} Log a call</div>
+        ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">${I('calendar')} Today's plan</div>` : ''}
+        ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">${I('pencil')} Edit</div>` : ''}
+      </div>
     </div>
-    <button class="btn" onclick="quickLogFrom('${c.id}'); closeModal();">Log a visit here</button>
-    <div class="chip-row" style="margin-top:10px;">
-      <div class="chip small" onclick="openStandaloneOrder('${c.id}')">${I('cart')} Order only</div>
-      <div class="chip small" onclick="openCallLog('${c.id}')">${I('phone')} Log a call</div>
-      ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">${I('calendar')} Today's plan</div>` : ''}
-      ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">${I('pencil')} Edit</div>` : ''}
-    </div>
-
-    ${sellGuideBlock(c)}
-
-    <div class="section-title" style="margin-top:20px;">Clinic profile notes</div>
-    <textarea id="profileNotesEdit" dir="auto" placeholder="Preferences, competitor products in use, best time to visit...">${esc(c.profileNotes)}</textarea>
-    <button class="btn secondary small" onclick="saveProfileNotes('${c.id}')">Save notes</button>
-
-    <div class="section-title" style="margin-top:20px;">Doctors</div>
-    ${lostDoctorsLine(c)}
-    ${dupDoctorsLine(c)}
-    <div id="docListInModal">${renderDoctorRows(c)}</div>
-    <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
-    <div class="chip-row" id="newDocTitleChips" style="margin-top:8px;">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
-    <button class="btn secondary small" onclick="addDoctor('${c.id}')">Add doctor</button>
-    ${decisionMapBlock(c)}
-
-    <div class="section-title" style="margin-top:20px;">Order history</div>
-    ${renderClinicOrders(id)}
-    ${currentUser.role==='supervisor' ? clinicErpAccountsSection(c) : ''}
-    ${clinicErpSection(id)}
-
-    <div class="section-title" style="margin-top:20px;"><span>${I('chat')} No-sales reason</span></div>
-    <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">If this account isn't buying yet, note why (e.g. prescription-only, budget cycle, stock on hand) — shown in the management report.</p>
-    <div style="display:flex; gap:6px; align-items:center;">
-      <input type="text" value="${esc(c.noSaleReason||'')}" placeholder="e.g. Works on prescriptions — patients buy from pharmacy"
-        onchange="saveNoSaleReason('${c.id}', this.value)" style="flex:1; margin:0;">
-      <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${c.id}', this.parentElement.querySelector('input').value)">💾 Save</button>
-    </div>
-
-    <div class="section-title" style="margin-top:20px;">Visit history</div>
-    ${cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
+    <div class="cd-grid">
+      <div class="cd-col">
+        ${sec('stethoscope', 'Doctors', `
+          ${lostDoctorsLine(c)}
+          ${dupDoctorsLine(c)}
+          <div id="docListInModal">${renderDoctorRows(c)}</div>
+          <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
+          <div class="chip-row" id="newDocTitleChips" style="margin-top:8px;">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
+          <button class="btn secondary small" onclick="addDoctor('${c.id}')">Add doctor</button>`)}
+        ${ownSec('compass', decisionMapBlock(c))}
+        ${sec('clock', 'Visit history', cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
       cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.mood?' · '+({pleased:'😊',neutral:'😐',concerned:'😟'}[v.mood]||''):''}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber-ink); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${rxLinesHTML(v,c)}${v.notes ? (rxPadsOf(v) ? '' : '<br>')+esc(v.notes) : ''}
         ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c.name)}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
-      </div>`).join('')}
+      </div>`).join(''))}
+      </div>
+      <div class="cd-col">
+        ${ownSec('sparkles', sellGuideBlock(c))}
+        ${sec('cart', 'Order history', renderClinicOrders(id))}
+        ${currentUser.role==='supervisor' ? ownSec('file', clinicErpAccountsSection(c)) : ''}
+        ${ownSec('refresh', clinicErpSection(id))}
+        ${sec('pencil', 'Clinic profile notes', `
+          <textarea id="profileNotesEdit" dir="auto" placeholder="Preferences, competitor products in use, best time to visit...">${esc(c.profileNotes)}</textarea>
+          <button class="btn secondary small" onclick="saveProfileNotes('${c.id}')">Save notes</button>`)}
+        ${sec('chat', 'No-sales reason', `
+          <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">If this account isn't buying yet, note why (e.g. prescription-only, budget cycle, stock on hand) — shown in the management report.</p>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" value="${esc(c.noSaleReason||'')}" placeholder="e.g. Works on prescriptions — patients buy from pharmacy"
+              onchange="saveNoSaleReason('${c.id}', this.value)" style="flex:1; margin:0;">
+            <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${c.id}', this.parentElement.querySelector('input').value)">💾 Save</button>
+          </div>`)}
+      </div>
+    </div>
   `);
 }
 function renderClinicOrders(clinicId){
@@ -1285,7 +1287,7 @@ function openEditClinic(id){
   const c = clinics.find(x=>x.id===id);
   if(!c) return;
   showModal(`
-    <h3 style="margin-top:0;">Edit clinic</h3>
+    <h3 style="margin-top:0;" data-ic="pencil">Edit clinic</h3>
     <label>Clinic name</label>
     <input type="text" id="ecName" value="${esc(c.name)}">
     <label>Assigned rep</label>
@@ -1493,7 +1495,7 @@ function openDeletedClinic(id){
   const name = b ? b.name : (cVisits.find(v=>v.clinicName)||{}).clinicName || 'Deleted clinic';
   const sup = currentUser.role === 'supervisor';
   showModal(`
-    <h3 style="margin-top:0;">🗑️ ${esc(name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">(deleted)</span></h3>
+    <h3 style="margin-top:0;" data-ic="building" data-tone="danger">🗑️ ${esc(name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">(deleted)</span></h3>
     <div class="nudge" style="margin-bottom:10px;">This clinic was removed from the list, but its history is safe. ${b?'It can be restored exactly as it was.':'It is no longer in the recycle bin — only the visit history below remains.'}</div>
     ${b?`<div class="card" style="margin-bottom:10px;">
       ${b.rep?`<div class="spec-row"><span class="k">Rep</span><span class="v">${esc(b.rep)}</span></div>`:''}
@@ -1526,7 +1528,7 @@ function openRecreateClinic(id){
   cVisits.forEach(v=>{ if(v.rep) repCount[v.rep]=(repCount[v.rep]||0)+1; });
   const guessRep = Object.keys(repCount).sort((a,b)=>repCount[b]-repCount[a])[0] || REPS[0] || '';
   showModal(`
-    <h3 style="margin-top:0;">♻️ Re-create clinic</h3>
+    <h3 style="margin-top:0;" data-ic="refresh">♻️ Re-create clinic</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Its ${cVisits.length} logged visit${cVisits.length===1?'':'s'} reattach automatically.</p>
     <label>Clinic name</label>
     <input type="text" id="rcName" value="${esc(name)}" placeholder="Clinic name">

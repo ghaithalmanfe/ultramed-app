@@ -620,7 +620,7 @@
     'Coverage': 'التغطية',
     'Compare': 'مقارنة',
     'Sales trend': 'اتجاه المبيعات',
-    'Sales by rep': 'المبيعات حسب المندوبة',
+    'Sales by rep': 'الطلبات المسجّلة بالتطبيق حسب المندوبة',   // the chart counts orders logged in the app (its English is harness-read: audit-fixes RE-3)
     'Visit outcome': 'نتيجة الزيارة',
     'Orders won vs. no order': 'طلبيات مقابل بدون طلبية',
     'Sales by brand': 'المبيعات حسب البراند',
@@ -1990,7 +1990,436 @@
     'Prescription types not saved — check the connection and make the change again.': 'لم تُحفظ أنواع البريسكريبشن — تحقّق من الاتصال وأعد التعديل.',
     'The previous save is still on its way — tap Save again in a moment.': 'الحفظ السابق ما زال جارياً — اضغط «حفظ» مرة أخرى بعد قليل.',
     // the edit sheet: someone with pads on the visit who is not (or no longer) marked as met
-    '(not marked as met)': '(غير محدد ضمن من قابلتهم)'
+    '(not marked as met)': '(غير محدد ضمن من قابلتهم)',
+
+    // ---- the main screen (Today, v123): the calm design — each rep her own, the supervisor the team and each person ----
+    // The directors' words, as in the weekly deck and the management sheet: مبيعات مفوترة، المستهدف، نسبة التحقيق، المتبقي، أيام العمل.
+    // "KD" is its own text node on this screen (the amounts keep their Latin digits), so it reads د.ك there.
+    'KD': 'د.ك',
+    'Your invoiced sales from the ERP files to': 'مبيعاتك المفوترة من ملفات ERP حتى',
+    'Invoiced sales from the ERP files to': 'المبيعات المفوترة من ملفات ERP حتى',
+    'The sales files of this month hold no line of these people yet': 'ملفات مبيعات هذا الشهر لا تحتوي أي سطر لهؤلاء الأشخاص بعد',
+    'No ERP sales file for this month yet': 'لا يوجد ملف مبيعات ERP لهذا الشهر بعد',
+    'your target from the DSR': 'مستهدفك من DSR',
+    'targets from the DSR': 'المستهدف من DSR',
+    'target from the DSR': 'المستهدف من DSR',
+    'Showing the screen of': 'تعرض الآن شاشة',
+    'Back to the team': 'العودة إلى الفريق',
+    'Performance score': 'درجة الأداء',
+    'of 100': 'من 100',
+    'Account menu': 'قائمة الحساب',
+    'How it is calculated': 'كيف حُسب هذا الرقم',
+    'Months': 'الشهور',
+    // the month against the target
+    'Team sales this month': 'مبيعات الفريق هذا الشهر',
+    'My sales this month': 'مبيعاتي هذا الشهر',
+    'Sales this month': 'المبيعات هذا الشهر',
+    'of the team target': 'من مستهدف الفريق',
+    'of the target of the people with a sales figure': 'من مستهدف من لديهم رقم مبيعات',   // someone with a target is not in the sales files yet
+    'of my target': 'من مستهدفي',
+    'of the target': 'من المستهدف',
+    'No sales target on file for this month': 'لا يوجد مستهدف مبيعات محفوظ لهذا الشهر',
+    'The sales files of this month hold no line of these people yet.': 'ملفات مبيعات هذا الشهر لا تحتوي أي سطر لهؤلاء الأشخاص بعد.',
+    'The sales files of this month hold no line of this person yet.': 'ملفات مبيعات هذا الشهر لا تحتوي أي سطر لهذا الشخص بعد.',
+    'Calculating the month…': 'جارٍ حساب أرقام الشهر…',
+    'Calculating…': 'جارٍ الحساب…',
+    'achieved': 'محقق',
+    'expected by': 'المتوقع حتى',
+    'Target reached': 'تحقق المستهدف',
+    'Ahead of pace': 'أسرع من الوتيرة',
+    'On pace': 'ضمن الوتيرة',
+    'Behind pace': 'دون الوتيرة',
+    'Achieved': 'تحقق المستهدف',
+    'Behind': 'دون الوتيرة',
+    'no figure yet': 'لا رقم بعد',
+    'no sales target set': 'لا يوجد مستهدف مبيعات',
+    'a target but no sales figure in the files, so not in the percentage.': 'له مستهدف ولا رقم مبيعات له في الملفات، فلا يدخل في النسبة.',
+    'invoiced sales but no target, so not in the percentage.': 'له مبيعات مفوترة ولا مستهدف له، فلا يدخل في النسبة.',
+    'Remaining': 'المتبقي',
+    'Per work day': 'لكل يوم عمل',
+    'Forecast for the month': 'التوقع للشهر',
+    'Tap a name to open their screen': 'اضغط على اسم لفتح شاشته',
+    'The dark line on each bar = expected by': 'الخط الداكن على كل شريط = المتوقع حتى',
+    'target: DSR': 'المستهدف: DSR',
+    'of': 'من',
+    // field work, never called sales
+    'Visits & orders': 'الزيارات والطلبيات',
+    'this month, the whole team': 'هذا الشهر، للفريق كله',
+    'Conversion to an order': 'التحويل إلى طلبية',
+    'Orders logged in the app': 'الطلبات المسجّلة بالتطبيق',
+    'Orders I logged in the app': 'طلبيات سجّلتها في التطبيق',
+    'New customers': 'عملاء جدد',
+    'not measured yet': 'لم يُحسب بعد',
+    'Orders logged in the app are not invoiced sales: sales come from the ERP files only.': 'الطلبيات المسجّلة في التطبيق ليست مبيعات مفوترة: المبيعات من ملفات ERP فقط.',
+    'Sales this week (ERP-verified)': 'مبيعات هذا الأسبوع (من ملفات ERP)',
+    'This week, logged in the app': 'هذا الأسبوع، كما سُجّل في التطبيق',
+    'logged in app': 'مسجّلة في التطبيق',
+    'not invoiced sales': 'ليست مبيعات مفوترة',
+    'of my field visits': 'من زياراتي الميدانية',
+    'of the field visits': 'من الزيارات الميدانية',
+    'My visits': 'زياراتي',
+    'visits a day': 'زيارة في اليوم',
+    'Above goal': 'فوق الهدف',
+    'Below goal': 'دون الهدف',
+    'The KPI scorecard could not be read on this device.': 'تعذّرت قراءة بطاقة مؤشرات الأداء على هذا الجهاز.',
+    // what needs action
+    'Needs you today': 'يحتاجك اليوم',
+    'No follow-ups due': 'لا توجد متابعات مستحقة',
+    'All caught up': 'كل شيء تمام',
+    'No customer to act on': 'لا يوجد عميل يحتاج تحركًا',
+    'Nobody under-performing, no A or B clinic waiting': 'لا عميل ضعيف الأداء، ولا عيادة A أو B تنتظر',
+    'Customers to act on': 'عملاء يحتاجون تحركًا',
+    'My customers to act on': 'عملائي الذين يحتاجون تحركًا',
+    'Not measured: no sales figure for this month yet': 'لا يُقاس بعد: لا يوجد رقم مبيعات لهذا الشهر',
+    'Under-performing': 'ضعيف الأداء',
+    'this month, against an average of': 'هذا الشهر، مقابل معدل',
+    'no invoice this month, average': 'لا فواتير هذا الشهر، والمعدل',
+    'Opportunity': 'فرصة',
+    'no invoice this month': 'لا فواتير هذا الشهر',
+    'last visit': 'آخر زيارة',
+    'see all': 'عرض الكل',
+    'High potential': 'فرص عالية',
+    'Bought in at least 2 of the 3 months before, and this month less than half of their average on the same days.': 'اشترى في شهرين على الأقل من الأشهر الثلاثة السابقة، وهذا الشهر أقل من نصف معدله في نفس الأيام.',
+    'A clinic graded A or B with no paid invoice this month, and one in at most 1 of the 3 months before.': 'عيادة من فئة A أو B بلا فاتورة مدفوعة هذا الشهر، ولها فاتورة في شهر واحد على الأكثر من الأشهر الثلاثة السابقة.',
+    'None.': 'لا يوجد.',
+    'My next step': 'خطوتي التالية',
+    "In today's plan · not visited yet": 'في خطة اليوم · لم تُزر بعد',
+    "All of today's plan is visited": 'تمت زيارة كل خطة اليوم',
+    'No plan for today yet': 'لا توجد خطة لليوم بعد',
+    'Then': 'بعدها',
+    'Follow-up overdue since': 'متابعة متأخرة منذ',
+    'Follow-up due today': 'متابعة مستحقة اليوم',
+    'Task · overdue': 'مهمة · متأخرة',
+    'Task · today': 'مهمة · اليوم',
+    // laptop: the month day by day, the brands, the customers
+    'Sales day by day against the target': 'المبيعات يومًا بيوم مقابل المستهدف',
+    'My sales day by day against my target': 'مبيعاتي يومًا بيوم مقابل مستهدفي',
+    'Achieved so far': 'المحقق',
+    'Line to the target': 'الخط إلى المستهدف',
+    'Forecast': 'التوقع للشهر',                 // the sales card's figure and the chart's dotted line (the design's word)
+    'No sales figure for this month yet, so no day by day.': 'لا يوجد رقم مبيعات لهذا الشهر بعد، فلا تفصيل يومي.',
+    'The day-by-day figures are not available on this device yet.': 'الأرقام اليومية غير متاحة على هذا الجهاز بعد.',
+    'Cumulative invoiced sales against the straight line to the target': 'المبيعات المفوترة المتراكمة مقابل الخط المستقيم إلى المستهدف',
+    'Same days last month': 'نفس الأيام من الشهر الماضي',
+    'No sales figure for the month before': 'لا يوجد رقم مبيعات للشهر السابق',
+    'Same month last year': 'نفس الشهر من السنة الماضية',
+    'Year to date': 'منذ بداية السنة',
+    'no target saved for these months': 'لا يوجد مستهدف محفوظ لهذه الأشهر',
+    'No sales file covers any month of this year': 'لا يوجد ملف مبيعات يغطي أي شهر من هذه السنة',
+    'from zero against the same days last month': 'من الصفر مقارنة بنفس الأيام من الشهر الماضي',
+    'vs the same days last month': 'عن نفس الأيام من الشهر الماضي',
+    'No sales figure for': 'لا يوجد رقم مبيعات لشهر',          // + the month: «لا يوجد رقم مبيعات لشهر أكتوبر 2025» (no file covers it, or none of these people in it)
+    'sold in all': 'المباع كله',                               // a brand: what everyone sold of it, people with no target for it included
+    'target': 'المستهدف',
+    'no sales figure for the people with its target': 'لا يوجد رقم مبيعات لمن لديهم مستهدف لهذا البراند',
+    'days 1 to': 'الأيام من 1 إلى',
+    'Brands — sold against the brand target': 'البراندات — المباع مقابل مستهدف البراند',
+    'My brands — sold against my brand target': 'براندتي — المباع مقابل مستهدف البراند',
+    'No sales figure for this month yet.': 'لا يوجد رقم مبيعات لهذا الشهر بعد.',
+    'No brand sold and no brand target this month.': 'لا مبيعات ولا مستهدف لأي براند هذا الشهر.',
+    'no brand target': 'لا يوجد مستهدف للبراند',
+    'The dark line = expected by': 'الخط الداكن = المتوقع حتى',
+    'Biggest customers this month': 'أكبر العملاء هذا الشهر',
+    'My biggest customers this month': 'أكبر عملائي هذا الشهر',
+    'No customer invoiced this month yet.': 'لا يوجد عميل له فاتورة هذا الشهر بعد.',
+    'All customers': 'كل العملاء',
+    // phone: the rest, one tap away
+    'Performance score (KPI)': 'درجة الأداء (KPI)',
+    'My sales day by day': 'مبيعاتي يومًا بيوم',
+    'Sales day by day': 'المبيعات يومًا بيوم',
+    'In the Report tab': 'في تبويب التقرير',
+    'My brands': 'براندتي',
+    'Brands': 'البراندات',
+    'In the month report': 'في تقرير الشهر',
+    'My customers': 'عملائي',
+    'Customers': 'العملاء',
+    'biggest:': 'الأكبر:',
+    'Who bought this month, on the Clinics screen': 'من اشترى هذا الشهر، في شاشة العيادات',
+    'My orders in the app': 'طلبياتي في التطبيق',
+    'Orders in the app': 'الطلبيات في التطبيق',
+    'No plan yet': 'لا توجد خطة بعد',
+    'None due': 'لا شيء مستحق',
+    'No open tasks': 'لا توجد مهام مفتوحة',
+    // the lists the main screen keeps
+    'Tap to log visit': 'اضغط لتسجيل الزيارة',
+    'Visited today': 'تمت الزيارة اليوم',
+    'Overdue': 'متأخرة',
+    'Due today': 'مستحقة اليوم',
+    'Missed planned visits': 'زيارات مخططة لم تتم',
+    'not visited': 'لم تتم الزيارة',
+    'Occasions & follow-ups': 'المناسبات والمتابعات',
+    'birthday TODAY!': 'عيد ميلاده اليوم!',
+    // "How it is calculated" (the wording of the management sheet, where it is the same thing)
+    'Source': 'المصدر',
+    'Formula': 'طريقة الحساب',
+    'Invoiced sales': 'مبيعات مفوترة',
+    'The ERP sales files only: every invoice line, returns deducted. A line counts for the owner of the clinic; on a shared account, for the salesman who issued it.': 'ملفات مبيعات ERP فقط: كل سطر فاتورة، بعد خصم المرتجعات. السطر يُحسب لصاحب العيادة، وفي الحساب المشترك لمن أصدر الفاتورة.',
+    'The sum of the net invoiced value from day 1 of the month to the last day the sales files cover.': 'مجموع صافي قيمة الفواتير من أول يوم في الشهر إلى آخر يوم تغطيه ملفات المبيعات.',
+    'files to': 'الملفات حتى',
+    'no sales file for this month': 'لا يوجد ملف مبيعات لهذا الشهر',
+    'not in the sales files of this month': 'غير موجود في ملفات مبيعات هذا الشهر',
+    'Sales target': 'المستهدف',
+    'The DSR targets file. It gives the targets only: its achieved column is never used.': 'ملف مستهدفات DSR. نأخذ منه المستهدف فقط: عمود «المحقق» فيه لا يُستخدم أبداً.',
+    'no target on file': 'لا يوجد مستهدف محفوظ',
+    'Achievement': 'نسبة التحقيق',
+    'Invoiced sales from the ERP files and the target from the DSR, counting only the people who have both.': 'المبيعات المفوترة من ملفات ERP والمستهدف من DSR، ويُحسب فقط من له الاثنان معاً.',
+    'Achievement % = invoiced sales ÷ target × 100': 'نسبة التحقيق = المبيعات المفوترة ÷ المستهدف × 100',
+    'Needs a sales target and a sales figure for the same person': 'يحتاج مستهدفاً ورقم مبيعات للشخص نفسه',
+    'Remaining to target': 'المتبقي للمستهدف',
+    'The same target and invoiced sales as the achievement percentage.': 'نفس المستهدف والمبيعات المفوترة في نسبة التحقيق.',
+    'Remaining = max(target − invoiced sales, 0)': 'المتبقي = المستهدف − المبيعات المفوترة، ولا يقل عن صفر',
+    'Needed per working day': 'المطلوب لكل يوم عمل',
+    'The remaining target, and the working days (Sunday to Thursday) after the last day the sales files cover.': 'المتبقي من المستهدف، وأيام العمل (الأحد إلى الخميس) بعد آخر يوم تغطيه ملفات المبيعات.',
+    'Needed per working day = remaining ÷ working days left': 'المطلوب لكل يوم عمل = المتبقي ÷ أيام العمل المتبقية',
+    'Expected by now (the dark line)': 'المتوقع حتى الآن (الخط الداكن)',
+    'The working days (Sunday to Thursday) from day 1 to the last day the sales files cover, against the working days of the month.': 'أيام العمل (الأحد إلى الخميس) من أول الشهر إلى آخر يوم تغطيه ملفات المبيعات، مقابل أيام العمل في الشهر.',
+    'Expected % = working days done ÷ working days of the month × 100. On pace from 90% of the expected figure, ahead from 100% (the rule of the management report).': 'النسبة المتوقعة = أيام العمل المنقضية ÷ أيام العمل في الشهر × 100. «ضمن الوتيرة» من 90% من الرقم المتوقع، و«أسرع من الوتيرة» من 100% (قاعدة تقرير الإدارة).',
+    'The pace of invoiced sales so far in the ERP files, person by person — the formula of the management report.': 'وتيرة المبيعات المفوترة حتى الآن في ملفات ERP، لكل شخص — نفس معادلة تقرير الإدارة.',
+    'Forecast = invoiced so far ÷ working days done × working days of the month, for each person, then added up. A projection, not a sale.': 'المتوقع = المفوتر حتى الآن ÷ أيام العمل المنقضية × أيام العمل في الشهر، لكل شخص ثم يُجمع. هذا توقّع وليس مبيعات.',
+    'Against the same days of the month before': 'مقارنة بنفس الأيام من الشهر السابق',
+    'The ERP sales files of both months, for the people measured in both.': 'ملفات مبيعات ERP للشهرين، للأشخاص الذين لهم رقم في الشهرين.',
+    'Growth % = (this month − the earlier month on the same days) ÷ the earlier month × 100. From nothing to something is said as "from zero", never as a percentage.': 'نسبة النمو = (هذا الشهر − الشهر الأسبق في نفس الأيام) ÷ الشهر الأسبق × 100. الانتقال من لا شيء إلى مبيعات يُكتب «من الصفر» ولا يُكتب نسبة.',
+    'No sales figure for the month before (no sales file covers it, or the files hold none of these people), so nothing to compare with': 'لا يوجد رقم مبيعات للشهر السابق (لا يغطيه ملف مبيعات، أو لا تحمل الملفات أحدًا من هؤلاء)، فلا شيء نقارن به',
+    'Visits as logged in the app — not calls and not phone orders. A joint visit counts once for the team.': 'الزيارات كما سُجّلت في التطبيق — لا المكالمات ولا طلبيات الهاتف. الزيارة المشتركة تُحسب مرة واحدة للفريق.',
+    "The field visits a person led that took an order, against the field visits she led (a joint visit's order is its leader's).": 'الزيارات الميدانية التي قادها الشخص وانتهت بطلبية، مقابل كل الزيارات الميدانية التي قادها (طلبية الزيارة المشتركة لمن قادها).',
+    'Conversion % = led visits with an order ÷ led visits × 100': 'نسبة التحويل = الزيارات المقودة التي فيها طلبية ÷ الزيارات المقودة × 100',
+    'Every visit or phone order with an order, for the person who logged it. These are not invoiced sales: invoiced sales come from the ERP files only.': 'كل زيارة أو طلبية هاتف فيها طلبية، لمن سجّلها. هذه ليست مبيعات مفوترة: المبيعات المفوترة من ملفات ERP فقط.',
+    'Value logged': 'القيمة المسجّلة',
+    'The ERP sales files: an account whose first invoice in all the saved files falls in this month. Online and channel accounts are not counted.': 'ملفات مبيعات ERP: الحساب الذي تقع أول فاتورة له في كل الملفات المحفوظة في هذا الشهر. حسابات الأونلاين والقنوات لا تُحسب.',
+    'The number of those accounts for the people of the view.': 'عدد هذه الحسابات للأشخاص في هذا العرض.',
+    'Needs sales files that start at least a month earlier, or every account would look new': 'يحتاج ملفات مبيعات تبدأ قبل هذا الشهر بشهر على الأقل، وإلا ظهر كل حساب جديداً',
+    'Visits a day, doctors and new accounts': 'الزيارات في اليوم والأطباء والحسابات الجديدة',
+    'The KPI scorecard (More → KPI scorecard) for this person, this month, with the KPI settings of the supervisor.': 'بطاقة مؤشرات الأداء (المزيد ← بطاقة KPI) لهذا الشخص، هذا الشهر، بإعدادات المشرف.',
+    'Visits a day = field visits ÷ working days so far (a joint visit counts for both people). Doctors = different doctors met on field visits.': 'الزيارات في اليوم = الزيارات الميدانية ÷ أيام العمل حتى الآن (الزيارة المشتركة تُحسب للاثنين). الأطباء = عدد الأطباء المختلفين في الزيارات الميدانية.',
+    'Visits a day': 'الزيارات في اليوم',
+    'Goal': 'الهدف',
+    "The month's invoiced lines by brand (returns deducted), and the brand targets of the DSR.": 'أسطر فواتير الشهر حسب البراند (بعد خصم المرتجعات)، ومستهدفات البراندات في DSR.',
+    "Brand % = sold of the brand ÷ the brand's target × 100, for the people who have both.": 'نسبة البراند = مبيعات البراند ÷ مستهدف البراند × 100، لمن له الاثنان معاً.',
+    'The ERP sales files of this month and the 3 months before.': 'ملفات مبيعات ERP لهذا الشهر والأشهر الثلاثة السابقة.',
+    'The ERP sales files: the net invoiced value of each day, from day 1 to the last day the sales files cover, added up day after day.': 'ملفات مبيعات ERP: صافي قيمة فواتير كل يوم، من أول الشهر إلى آخر يوم تغطيه ملفات المبيعات، يُجمع يومًا بعد يوم.',
+    'The straight line runs from 0 on day 1 to the target on the last day of the month; the dotted line is the month-end forecast at the pace so far.': 'الخط المستقيم يمتد من الصفر في أول يوم إلى المستهدف في آخر يوم من الشهر؛ والخط المنقّط هو المتوقع بنهاية الشهر بالوتيرة الحالية.',
+    'Days': 'الأيام',
+    "The ERP sales files of each month and that month's own DSR target, from January to this month.": 'ملفات مبيعات ERP لكل شهر ومستهدف DSR الخاص بذلك الشهر، من يناير إلى هذا الشهر.',
+    "Year to date = the sum of the months' invoiced sales. The percentage counts only the months and people that have both a sales figure and a target.": 'منذ بداية السنة = مجموع المبيعات المفوترة للأشهر. النسبة تحسب فقط الأشهر والأشخاص الذين لهم رقم مبيعات ومستهدف معاً.',
+    'Where a month has both': 'حيث للشهر رقم ومستهدف معاً',
+    'Against the same month a year before': 'مقارنة بنفس الشهر من السنة السابقة',
+    'No sales figure for that month a year before (no sales file covers it, or the files hold none of these people), so nothing to compare with': 'لا يوجد رقم مبيعات لذلك الشهر من السنة السابقة (لا يغطيه ملف مبيعات، أو لا تحمل الملفات أحدًا من هؤلاء)، فلا شيء نقارن به',
+    'The clinic list (class) and the ERP sales files.': 'قائمة العيادات (الفئة) وملفات مبيعات ERP.',
+    // the review of the main screen (13 Nov): every figure true in every case
+    "The month's figures could not be worked out on this device.": 'تعذّر حساب أرقام الشهر على هذا الجهاز.',
+    'Not worked out on this device': 'تعذّر حسابه على هذا الجهاز',
+    'No sales target for the people with a sales figure': 'لا يوجد مستهدف مبيعات لمن لديهم رقم مبيعات',
+    'invoiced, no target, so not in these figures.': 'مبيعات مفوترة بلا مستهدف، فلا تدخل في هذه الأرقام.',
+    'All invoiced sales of the team:': 'كل المبيعات المفوترة للفريق:',
+    'no working day left': 'لم يبقَ يوم عمل',
+    'each person to the day her file reaches': 'كلٌّ حتى آخر يوم يصله ملفه',
+    'without': 'بدون',
+    'No sales figure for this month yet, so nothing to compare': 'لا يوجد رقم مبيعات لهذا الشهر بعد، فلا شيء نقارنه',
+    'No sales figure for this month yet, so nothing to compare with': 'لا يوجد رقم مبيعات لهذا الشهر بعد، فلا شيء نقارن به',
+    'Drawn for the people with a target and a sales figure:': 'مرسوم لمن لديهم مستهدف ورقم مبيعات:',
+    'counted as 0 (no figure in the files)': 'محسوب صفرًا (لا رقم له في الملفات)',
+    'Add a quick task for the whole team...': 'أضف مهمة سريعة للفريق كله...',
+    'no invoiced sales figure (no sales file for this month yet)': 'لا رقم مبيعات مفوترة (لا يوجد ملف مبيعات لهذا الشهر بعد)',
+    'no invoiced sales figure (the sales files do not reach the start of the week)': 'لا رقم مبيعات مفوترة (ملفات المبيعات لا تصل إلى بداية الأسبوع)',
+    'no invoiced sales figure (the sales files hold none of these people)': 'لا رقم مبيعات مفوترة (ملفات المبيعات لا تحمل أحدًا من هؤلاء)',
+    'no invoiced sales figure (the sales files hold no line of this person)': 'لا رقم مبيعات مفوترة (ملفات المبيعات لا تحتوي أي سطر لهذا الشخص)',
+    'no sales figure for': 'لا يوجد رقم مبيعات لشهر',                     // + the month (an ⓘ: who is not in a comparison)
+    ', so not in this comparison': '، فلا يدخل في هذه المقارنة',
+    'no sales file for': 'لا يوجد ملف مبيعات لشهر',
+    'the sales files do not reach the start of the week': 'ملفات المبيعات لا تصل إلى بداية الأسبوع',
+    'not in the sales files of': 'غير موجود في ملفات مبيعات شهر',
+    'This week (Sunday to today)': 'هذا الأسبوع (من الأحد إلى اليوم)',
+    'Field visits and orders as logged in the app, by the rules of the month above; invoiced sales from the ERP files, for the people the files hold this month.': 'الزيارات الميدانية والطلبيات كما سُجّلت في التطبيق، بقواعد أرقام الشهر أعلاه؛ والمبيعات المفوترة من ملفات ERP، لمن تحمل الملفات شهرهم.',
+    'No sales file reaches into this week.': 'لا يصل أي ملف مبيعات إلى هذا الأسبوع.',
+    'The ERP sales files of this month — the same lines as the month figure — by customer account, as the Clinics screen lists them. Online and channel accounts are not in this list.': 'ملفات مبيعات ERP لهذا الشهر — نفس أسطر رقم الشهر — حسب حساب العميل، كما تعرضها شاشة العيادات. حسابات الأونلاين والقنوات ليست في هذه القائمة.',
+    'The accounts shown': 'الحسابات المعروضة',
+    'All clinic accounts this month': 'كل حسابات العيادات هذا الشهر',
+    'Online and channel accounts': 'حسابات الأونلاين والقنوات',
+    'Accounts kept out of the list': 'حسابات مستبعدة من القائمة',
+    'Total invoiced this month': 'إجمالي المفوتر هذا الشهر',
+    'People counted': 'من يدخلون في الحساب',
+    '% of target': 'النسبة من المستهدف',
+    'not counted — the sales files do not hold the month before, so every account would look new': 'لا يُحسب — ملفات المبيعات لا تحمل الشهر السابق، فيظهر كل حساب جديدًا',
+    'New accounts: not measured yet — they are counted only when the sales files hold the month before for this person; otherwise every account would look new.': 'الحسابات الجديدة: لم تُحسب بعد — تُحسب فقط حين تحمل ملفات المبيعات الشهر السابق لهذا الشخص، وإلا ظهر كل حساب جديدًا.',
+    'Compared with the same days of': 'مقارنة بنفس الأيام من',
+
+    // ---- the shell (premium redesign): the navigation's groups, the top bar, the More list ----
+    'Overview': 'نظرة عامة',
+    'Field operations': 'العمل الميداني',
+    'Intelligence': 'التحليلات',
+    'Management': 'الإدارة',
+    'Main navigation': 'القائمة الرئيسية',
+    'Language': 'اللغة',
+    'Close photo': 'إغلاق الصورة',
+    'Dismiss tip': 'إخفاء الملاحظة',
+    'Prescription pads given, by doctor and by center': 'دفاتر البريسكريبشن المسلَّمة، حسب الطبيب وحسب العيادة',
+    'Visits, orders and coverage for any period, with the sales coach': 'الزيارات والطلبيات والتغطية لأي فترة، مع مدرب المبيعات',
+
+    // The screen-by-screen redesign adds its Arabic below, each part in its own marked block and nowhere else
+    // (every entry ends with a comma; a key written twice keeps the LAST value — check before adding).
+    // === DASHBOARD ===
+    // the home screen in the owner's final design (14 Nov): the shell, the figure cards, the advisor, the pace card
+    'Home': 'الرئيسية',
+    'Search clinics, doctors, or products…': 'ابحث في العيادات أو الأطباء أو المنتجات…',
+    'Quick find': 'بحث سريع',
+    'Nothing found': 'لا توجد نتائج',
+    'Team achievement': 'إنجاز الفريق',
+    "Today's field visits": 'الزيارات الميدانية اليوم',
+    'Needs attention': 'تحتاج انتباهاً',
+    'at the current pace': 'بالوتيرة الحالية',
+    'of target': 'من الهدف',
+    'Sales advisor': 'مستشار المبيعات',
+    'To reach the target:': 'لبلوغ الهدف:',
+    'per working day': 'لكل يوم عمل',
+    'Sales coach': 'مدرب المبيعات',
+    'Team leaderboard': 'ترتيب الفريق',
+    'View all': 'عرض الكل',
+    'View detailed report': 'عرض التقرير المفصل',
+    'At the current pace:': 'بالوتيرة الحالية:',
+    'above the target': 'فوق الهدف',
+    'short of the target': 'دون الهدف',
+    'an estimate, not a result': 'تقدير وليس نتيجة',
+    'Your plan, visits and events by day': 'خطتك وزياراتك وفعالياتك يوماً بيوم',
+    'just now': 'الآن',
+    'Yesterday': 'أمس',
+    // the owner's picture (15 Nov): the shell and the home screen in the picture's words
+    "Here's your performance overview for this month": 'هذه نظرة على أدائك هذا الشهر',
+    "Here's this person's performance overview for this month": 'نظرة على الأداء هذا الشهر',
+    'This Month': 'هذا الشهر',
+    'Viewing:': 'تعرض شاشة:',
+    'Monthly Target': 'المستهدف الشهري',
+    'Target of the people with a sales figure': 'مستهدف من لهم رقم مبيعات',
+    'Target Achieved': 'تحقيق المستهدف',
+    'KWD': 'د.ك',
+    'Daily Required': 'المطلوب يومياً',
+    'KWD / Day': 'د.ك / يوم',
+    'Team Performance': 'أداء الفريق',
+    '(Your Team)': '(فريقك)',
+    'My Performance': 'أدائي',
+    'Performance': 'الأداء',
+    'KPI score out of 100': 'درجة مؤشرات الأداء من 100',
+    'No visit logged this month yet': 'لا زيارة مسجلة هذا الشهر بعد',
+    'points against the same days last month': 'نقطة مقارنة بنفس أيام الشهر الماضي',
+    "Today's Visits": 'زيارات اليوم',
+    'against the same day last week': 'مقارنة بنفس اليوم من الأسبوع الماضي',
+    'Pending Follow-ups': 'المتابعات المستحقة',
+    // CLINICS & DOCTORS (redesign module 3): the page heads
+    "Every customer: the dashboard, the list and each clinic's card.": 'كل العملاء: لوحة المعلومات والقائمة وبطاقة كل عيادة.',
+    'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
+    // ERP IMPORT, ADMIN, BACKUPS & SHELL (redesign module 7)
+    "Everything that isn't daily work, grouped by category.": 'كل ما ليس من العمل اليومي، مجمّعاً حسب الفئة.',
+    // the money format (redesign integration): a product with no price on the order form
+    'no price': 'بلا سعر',
+    // REPORTS, ANALYSIS & COVERAGE (redesign module 6)
+    "Visits, contacts, orders and sales for any period, with the coach's reading.": 'الزيارات والجهات والطلبات والمبيعات لأي فترة، مع قراءة المدرب.',
+    "Each clinic's share of the target, what it bought and what to sell next.": 'حصة كل عيادة من التارغت، وما اشترته، وماذا نبيع بعد ذلك.',
+    'Orders logged in the app — trend': 'الطلبات المسجّلة بالتطبيق — الاتجاه',
+    'Orders logged in the app by brand': 'الطلبات المسجّلة بالتطبيق حسب العلامة التجارية',
+    // ERP LINKS, PRODUCTS & PLAYBOOK (redesign module 5)
+    "The catalog by brand, with each product's specs and selling materials.": 'الكتالوج حسب العلامة التجارية، مع مواصفات كل منتج ومواد البيع.',
+    'What each specialty cares about, what to lead with and how to answer.': 'ما يهم كل تخصص، وبماذا تبدأ وكيف ترد.',
+    // CALENDAR, TEAM & KPI (redesign module 4)
+    'Planned visits, logged visits, follow-ups, tasks and team events, day by day.': 'الزيارات المخططة والمسجّلة والمتابعات والمهام وفعاليات الفريق، يوماً بيوم.',
+    'Messages and memories the whole team shares.': 'رسائل وذكريات يتشاركها الفريق كله.',
+    // VISIT (redesign module 2): the visit form's summary panel, step tags and notes
+    'Required': 'مطلوب',
+    'Visit summary': 'ملخص الزيارة',
+    'People met': 'من قابلت',
+    'Prescriptions': 'البريسكريبشن',
+    'Order': 'الطلب',
+    'Next visit': 'الزيارة القادمة',
+    'Notes & photos': 'الملاحظات والصور',
+    'No order': 'بدون طلب',
+    'Joint with': 'مشتركة مع',
+    'New customer': 'عميل جديد',
+    'Steps': 'الخطوات',
+    '👨‍⚕️ Pick who you met — required': '👨‍⚕️ اختر من قابلت — مطلوب',
+    '👨‍⚕️ Add the doctor you met first (+ Add doctor)': '👨‍⚕️ أضف الطبيب الذي قابلته أولاً (+ إضافة طبيب)',
+    'Needs Attention': 'تحتاج انتباهاً',
+    'Sales Forecast': 'توقع المبيعات',
+    'estimate': 'تقدير',
+    'The month is closed': 'الشهر مغلق',
+    'KPI score out of 100 (the KPI scorecard), month by month': 'درجة مؤشرات الأداء من 100 (بطاقة مؤشرات الأداء)، شهراً بشهر',
+    'Field visits logged today; the line: each working day of the last two weeks': 'الزيارات الميدانية المسجلة اليوم؛ الخط: كل يوم عمل في آخر أسبوعين',
+    'The month-end figure at the pace so far (an estimate, not a result) — the ⓘ shows the working': 'رقم نهاية الشهر بالوتيرة الحالية (تقدير وليس نتيجة) — زر ⓘ يبيّن الحساب',
+    'Sales Performance': 'أداء المبيعات',
+    'Sales Performance (the weekly bars)': 'أداء المبيعات (الأعمدة الأسبوعية)',
+    "The ERP sales files: the same lines as the month figure, of the people with a target and a sales figure (with no target: everyone's).": 'ملفات مبيعات ERP: نفس سطور رقم الشهر، لمن لهم مستهدف ورقم مبيعات (وبلا مستهدف: للجميع).',
+    'W1 = days 1–7, W2 = 8–14, W3 = 15–21, W4 = day 22 to the end of the month. A bar = the invoiced sales from day 1 to the last day of its week (the running week: to the last day the files cover — the month figure). The dashed line = the target × the working days (Sunday to Thursday) from day 1 to that day ÷ the working days of the month.': 'الأسبوع 1 = الأيام 1–7، الأسبوع 2 = 8–14، الأسبوع 3 = 15–21، الأسبوع 4 = من اليوم 22 إلى آخر الشهر. العمود = المبيعات المفوترة من اليوم 1 حتى آخر يوم في أسبوعه (الأسبوع الجاري: حتى آخر يوم تغطيه الملفات — أي رقم الشهر). الخط المتقطع = المستهدف × أيام العمل (الأحد إلى الخميس) من اليوم 1 حتى ذلك اليوم ÷ أيام عمل الشهر.',
+    'target pace': 'وتيرة المستهدف',
+    'No sales figure for this month yet, so no weekly bars.': 'لا رقم مبيعات لهذا الشهر بعد، فلا أعمدة أسبوعية.',
+    'The weekly figures are not available on this device yet.': 'الأرقام الأسبوعية غير متاحة على هذا الجهاز بعد.',
+    'Invoiced sales at the end of each week against the target pace': 'المبيعات المفوترة في نهاية كل أسبوع مقابل وتيرة المستهدف',
+    'Team Leaderboard': 'ترتيب الفريق',
+    'View All': 'عرض الكل',
+    'Show less': 'عرض أقل',
+    'Expected by': 'المتوقع حتى',
+    'of the target (the working days so far)': 'من المستهدف (أيام العمل حتى الآن)',
+    'field visits this month': 'الزيارات الميدانية هذا الشهر',
+    'Sales Advisor': 'مستشار المبيعات',
+    'You need': 'تحتاج إلى',
+    'in daily sales to reach the team target.': 'مبيعات يومياً لبلوغ مستهدف الفريق.',
+    'in daily sales to reach your target.': 'مبيعات يومياً لبلوغ مستهدفك.',
+    'in daily sales to reach the target.': 'مبيعات يومياً لبلوغ المستهدف.',
+    'The team target is reached this month.': 'تحقق مستهدف الفريق هذا الشهر.',
+    'Your target is reached this month.': 'تحقق مستهدفك هذا الشهر.',
+    'The target is reached this month.': 'تحقق المستهدف هذا الشهر.',
+    'No working day left this month.': 'لم يبقَ يوم عمل هذا الشهر.',
+    'One clinic has a follow-up overdue.': 'عيادة واحدة متابعتها متأخرة.',
+    'One clinic has a follow-up due today.': 'عيادة واحدة متابعتها مستحقة اليوم.',
+    'No follow-ups due — all caught up.': 'لا متابعات مستحقة — كل شيء منجز.',
+    'View Recommendations': 'عرض التوصيات',
+    'Worked out by the app from its own figures: the sales files, the targets, your visits and follow-ups.': 'يحسبها التطبيق من أرقامه: ملفات المبيعات والمستهدفات وزياراتك ومتابعاتك.',
+    'Your Next Actions': 'خطواتك التالية',
+    'Next Actions': 'الخطوات التالية',
+    'Visit:': 'زيارة:',
+    'Follow-up:': 'متابعة:',
+    "in today's plan": 'في خطة اليوم',
+    'Overdue since': 'متأخرة منذ',
+    'Recent Activity': 'آخر النشاطات',
+    'Visit logged': 'زيارة مسجلة',
+    'Call logged': 'مكالمة مسجلة',
+    'Order logged in the app': 'طلب مسجّل بالتطبيق',
+    // the photo card's three lines (each its own text): «نقود رعاية أفضل للفم معاً»
+    'Driving': 'نقود',
+    'Better Oral Care': 'رعاية أفضل للفم',
+    'Better Oral Care. Together.': 'رعاية أفضل للفم. معاً.',
+    'Field Operations': 'العمل الميداني',
+    'Settings': 'الإعدادات',
+    'Account & language': 'الحساب واللغة',
+    'Language, password, sign out': 'اللغة وكلمة المرور وتسجيل الخروج',
+    'App version, what waits to be sent, who to ask': 'إصدار التطبيق وما ينتظر الإرسال ومن تسأل',
+    'Help & Support': 'المساعدة والدعم',
+    'Together for a healthier smile': 'معاً من أجل ابتسامة أكثر صحة',
+    // the sidebar's three lines of the same words (each line its own text)
+    'Together': 'معاً',
+    'for a healthier': 'من أجل ابتسامة',
+    'smile': 'أكثر صحة',
+    'Sales Manager': 'مدير المبيعات',
+    'Sales Representative': 'مندوبة مبيعات',
+    'App version': 'إصدار التطبيق',
+    'Connection': 'الاتصال',
+    'Online': 'متصل',
+    'Offline — changes are kept on this phone': 'غير متصل — التغييرات محفوظة على هذا الهاتف',
+    'Waiting to be sent': 'بانتظار الإرسال',
+    'Nothing — everything has reached the cloud': 'لا شيء — كل شيء وصل إلى السحابة',
+    'Who to ask': 'من تسأل',
+    'Your supervisor:': 'مشرفك:',
+    'write in the team chat, or call.': 'اكتب في محادثة الفريق أو اتصل.',
+    'Write in the team chat.': 'اكتب في محادثة الفريق.',
+    'A red bar at the bottom of the screen says when something could not be sent, and what to do.': 'يظهر شريط أحمر أسفل الشاشة عندما يتعذر إرسال شيء، ويقول ما العمل.',
+    "Day's plans": 'خطط اليوم',
+    'Targets': 'المستهدفات',
+    // === END DASHBOARD ===
+
+    // === SCREENS A ===
+    // === END SCREENS A ===
+
+    // === SCREENS B ===
+    // === END SCREENS B ===
+
+    // === SCREENS C ===
+    // === END SCREENS C ===
   };
 
   // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
@@ -2001,9 +2430,14 @@
   var SRC = {
     ' (official DSR figure)': ' (الرقم الرسمي من DSR)',
     ' (from uploaded sales)': ' (من ملف المبيعات المرفوع)',
-    ' (app-logged — upload a sales file for the official figure)': ' (مسجل في التطبيق — ارفع ملف مبيعات للرقم الرسمي)'
+    ' (app-logged — upload a sales file for the official figure)': ' (مسجل في التطبيق — ارفع ملف مبيعات للرقم الرسمي)',
+    ' (ERP sales files)': ' (ملفات مبيعات ERP)'
   };
   function srcAr(x) { return x ? (SRC[x] || x) : ''; }
+  // An amount as the core writes it ("12,989.00 KD") in the Arabic UI: the same grouping, د.ك after the figure,
+  // as on the home screen; a negative keeps its minus before its digits (a left-to-right isolate). An amount the
+  // screen already wrote in Arabic passes through unchanged.
+  function kdAr(x) { return String(x).replace(/^(-?)([\d.,]+) KD$/, function (m, neg, num) { return neg ? '\u2066-' + num + '\u2069 د.ك' : num + ' د.ك'; }); }
   // Prescription pads (دفاتر) with Arabic number agreement, as the owner
   // asked: 1 دفتر، 2 دفتران، 3–10 دفاتر، 11–99 دفتراً — and beyond 99 by the
   // last two digits, the usual rule for a counted noun (100 دفتر، 103 دفاتر،
@@ -2017,8 +2451,25 @@
   }
   // the lists named in "too large" (v123)
   var TOO_LARGE_AR = { 'the clinic list': 'قائمة العيادات', 'the tasks': 'المهام', 'the events': 'الأحداث', 'the day plans': 'خطط الأيام', 'the team chat': 'محادثة الفريق', 'the memories': 'الذكريات', 'the recycle bin': 'سلة المحذوفات', 'the product catalog': 'قائمة المنتجات', 'the targets': 'الأهداف', 'the sales notes': 'ملاحظات المبيعات', 'the team list': 'قائمة الفريق', 'the settings': 'الإعدادات', 'the category guides': 'أدلة الفئات', 'the delete log': 'سجل الحذف', 'the sales file': 'ملف المبيعات' };
-  var MONEY = '([\\d.,]+ KD)';
-  var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure)\\))?';
+  // A percentage in an Arabic sentence: a negative keeps its minus before its digits (a left-to-right isolate —
+  // right to left, a bare "-14%" reads "14%-"); the team writes a negative as an operator, never moved after it.
+  function pctAr(n) { return /^-/.test(String(n)) ? '\u2066' + n + '%\u2069' : n + '%'; }
+  // ---- counted nouns on the main screen (v123): the Arabic form agrees with the number ----
+  // forms = [one, two, few (3–10), many (11+)]; beyond 99 by the last two digits, as for pads.
+  function countAr(n, forms) {
+    var k = parseInt(n, 10), r = k % 100;
+    if (k === 1) return forms[0];
+    if (k === 2) return forms[1];
+    if (r >= 3 && r <= 10) return k + ' ' + forms[2];
+    return k + ' ' + forms[3];
+  }
+  var EN_MON = { Jan: 'يناير', Feb: 'فبراير', Mar: 'مارس', Apr: 'أبريل', May: 'مايو', Jun: 'يونيو', Jul: 'يوليو', Aug: 'أغسطس', Sep: 'سبتمبر', Oct: 'أكتوبر', Nov: 'نوفمبر', Dec: 'ديسمبر' };
+  // "Oct 8" as the core writes a date → "8 أكتوبر"
+  function enDateAr(s) { var mm = String(s).match(/^([A-Z][a-z]{2}) (\d{1,2})$/); return mm && EN_MON[mm[1]] ? mm[2] + ' ' + EN_MON[mm[1]] : s; }
+  var AR_MONTH = '(?:يناير|فبراير|مارس|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر)';
+  // an amount in English ("12,989.00 KD") or as the Arabic UI writes it ("12,989.00 د.ك", a negative in an isolate)
+  var MONEY = '((?:-|\\u2066-)?[\\d.,]+\\u2069? (?:KD|د\\.ك))';
+  var SRCRE = '( \\((?:official DSR figure|from uploaded sales|app-logged — upload a sales file for the official figure|ERP sales files)\\))?';
 
   // Strings that carry a number or a name are matched by shape, not by text.
   // whole-day Restore (round 3): where the data as it is now is kept, and which lists changed
@@ -2108,9 +2559,9 @@
     [/^(.+)\. Change the approach: different products, a different doctor, or a joint visit with the supervisor\.$/, function (m) { return namesAr(m[1]) + '. غيّر الأسلوب: منتجات مختلفة، طبيب آخر، أو زيارة مشتركة مع المشرف.'; }],
     [/^(.+) carries this period\. Great account — but grow 2-3 more A\/B clinics so one slow month there can’t sink the numbers\.$/, function (m) { return m[1] + ' تحمل هذه الفترة. حساب ممتاز — لكن نمِّ 2-3 عيادات A/B إضافية حتى لا يُغرق شهر بطيء واحد الأرقام.'; }],
     [/^Send them on 2-3 joint visits: (.+) watches how (.+) asks for the order\. Log them as joint visits so both get credit\.$/, function (m) { return 'أرسلهما في 2-3 زيارات مشتركة: ' + m[1] + ' تراقب كيف تطلب ' + m[2] + ' الطلبية. سجّلاها كزيارات مشتركة ليحصل الطرفان على الرصيد.'; }],
-    [new RegExp('^' + MONEY + SRCRE + ' against a ' + MONEY + ' goal\\. Everything from here is upside — a great week to push new products\\.$'), function (m) { return m[1] + srcAr(m[2]) + ' مقابل هدف ' + m[3] + '. كل ما بعد هذا مكسب إضافي — أسبوع ممتاز لدفع منتجات جديدة.'; }],
-    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + ' so far\\. Needs about (\\d+) KD/day for the remaining (\\d+) working days? \\(Sun–Thu\\) — steer the visits toward clinics that already order\\.$'), function (m) { return m[1] + srcAr(m[2]) + ' من ' + m[3] + ' حتى الآن. تحتاج نحو ' + m[4] + ' د.ك/يوم لبقية ' + m[5] + ' يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.'; }],
-    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + '\\. Keep the current rhythm and the target lands on its own\\.$'), function (m) { return m[1] + srcAr(m[2]) + ' من ' + m[3] + '. حافظ على الإيقاع الحالي والهدف يتحقق من تلقاء نفسه.'; }],
+    [new RegExp('^' + MONEY + SRCRE + ' against a ' + MONEY + ' goal\\. Everything from here is upside — a great week to push new products\\.$'), function (m) { return kdAr(m[1]) + srcAr(m[2]) + ' مقابل هدف ' + kdAr(m[3]) + '. كل ما بعد هذا مكسب إضافي — أسبوع ممتاز لدفع منتجات جديدة.'; }],
+    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + ' so far\\. Needs about ([\\d,]+) KD/day for the remaining (\\d+) working days? \\(Sun–Thu\\) — steer the visits toward clinics that already order\\.$'), function (m) { return kdAr(m[1]) + srcAr(m[2]) + ' من ' + kdAr(m[3]) + ' حتى الآن. تحتاج نحو ' + m[4] + ' د.ك/يوم لبقية ' + m[5] + ' يوم عمل (الأحد–الخميس) — وجّه الزيارات نحو العيادات التي تشتري بالفعل.'; }],
+    [new RegExp('^' + MONEY + SRCRE + ' of ' + MONEY + '\\. Keep the current rhythm and the target lands on its own\\.$'), function (m) { return kdAr(m[1]) + srcAr(m[2]) + ' من ' + kdAr(m[3]) + '. حافظ على الإيقاع الحالي والهدف يتحقق من تلقاء نفسه.'; }],
     // product movement
     [/^(\d+) products? sold in (\d+) brands?$/, function (m) { return m[1] + ' منتج مُباع في ' + m[2] + ' براند'; }],
     [/^(\d+) sales files?$/, function (m) { return m[1] + ' ملف مبيعات'; }],
@@ -2130,7 +2581,9 @@
     [/^⚠️ (?:(\d+) clinics)?(?: and )?(?:(\d+) doctors)? brought back on this device — not saved to the cloud yet$/, function (m) { return '⚠️ رجع ' + [m[1] ? m[1] + ' عيادة' : '', m[2] ? m[2] + ' دكتور' : ''].filter(Boolean).join(' و') + ' على هذا الجهاز — لم يُحفظ في السحابة بعد'; }],
     [/^♻️ (\d+) clinics brought back from the daily backups$/, function (m) { return '♻️ رجعت ' + m[1] + ' عيادة من النسخ الاحتياطية اليومية'; }],
     [/^⚠️ (\d+) clinics brought back on this device — not saved to the cloud yet$/, function (m) { return '⚠️ رجعت ' + m[1] + ' عيادة على هذا الجهاز — لم تُحفظ في السحابة بعد'; }],
-    [/^(-?[\d.,]+ KD) ordered$/, function (m) { return 'طلبيات بقيمة ' + m[1]; }],
+    [/^((?:-|\u2066-)?[\d.,]+\u2069? (?:KD|د\.ك)) ordered$/, function (m) { return 'طلبيات بقيمة ' + kdAr(m[1]); }],
+    // a unit price ("9.81 KD each" — the order form, the playbook's allocation)
+    [/^((?:-|\u2066-)?[\d.,]+\u2069? (?:KD|د\.ك)) each$/, function (m) { return kdAr(m[1]) + ' للوحدة'; }],
     [/^([\d,]+) returned$/, function (m) { return m[1] + ' مرتجع'; }],
     [/^([\d,]+) free$/, function (m) { return m[1] + ' مجاني'; }],
     [/^(\d+) products?$/, function (m) { return m[1] + ' منتج'; }],
@@ -2280,7 +2733,78 @@
     [/^Same days last month: (\d+|—)$/, function (m) { return 'نفس الأيام من الشهر الماضي: ' + m[1]; }],
     [/^incl\. (\d+) pads? left at the clinic$/, function (m) { return 'منها ' + padsAr(m[1]) + ' للعيادة (بدون شخص محدد)'; }],
     [/^incl\. (\d+) pads? to a doctor no longer listed$/, function (m) { return 'منها ' + padsAr(m[1]) + ' لطبيب لم يعد في القائمة'; }],
-    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }]
+    [/^Visits of (.+) did not load — figures that include them are incomplete\.$/, function (m) { return 'زيارات ' + m[1] + ' لم تُحمَّل — الأرقام اللي تشملها ناقصة.'; }],
+    // ---- the main screen (v123) ----
+    [/^working days: (\d+) of (\d+) done$/, function (m) { return 'أيام العمل: مضى ' + m[1] + ' من ' + m[2]; }],
+    [/^working days this month: (\d+)$/, function (m) { return 'أيام العمل هذا الشهر: ' + m[1]; }],
+    [new RegExp('^(' + AR_MONTH + ') target$'), function (m) { return 'مستهدف ' + m[1]; }],
+    [/^Visits (\d+)\/(\d+) \((\d+)%\)$/, function (m) { return 'الزيارات ' + m[1] + '/' + m[2] + ' (' + m[3] + '%)'; }],
+    [/^Visits (\d+) of (\d+) this month$/, function (m) { return 'الزيارات ' + m[1] + ' من ' + m[2] + ' هذا الشهر'; }],
+    [/^(\d+) reps?$/, function (m) { return countAr(m[1], ['شخص واحد', 'شخصان', 'أشخاص', 'شخصًا']); }],
+    [/^(\d+) working days? left$/, function (m) { return countAr(m[1], ['بقي يوم عمل واحد', 'بقي يوما عمل', 'أيام عمل متبقية', 'يوم عمل متبقٍ']); }],
+    // the figures under the sales card, the design's short words: «102% من الهدف», «15 يومًا باقية» (the per-day figure exists only while a working day is left)
+    [/^(\d+)% of target$/, function (m) { return m[1] + '% من الهدف'; }],
+    [/^(\d+) days? left$/, function (m) { return countAr(m[1], ['يوم واحد باقٍ', 'يومان باقيان', 'أيام باقية', 'يومًا باقية']); }],
+    // what a comparison is made with, in the design's few words: «7247.31 د.ك · الأيام 1–8 سبتمبر» (the month follows, in Arabic)
+    [/^days 1–(\d+)$/, function (m) { return 'الأيام 1–' + m[1]; }],
+    [/^(\d+) field visits?$/, function (m) { return countAr(m[1], ['زيارة ميدانية واحدة', 'زيارتان ميدانيتان', 'زيارات ميدانية', 'زيارة ميدانية']); }],
+    [/^(\d+) orders?$/, function (m) { return countAr(m[1], ['طلبية واحدة', 'طلبيتان', 'طلبيات', 'طلبية']); }],
+    [/^(\d+) orders? logged in the app$/, function (m) { return countAr(m[1], ['طلبية واحدة', 'طلبيتان', 'طلبيات', 'طلبية']) + ' مسجّلة في التطبيق'; }],
+    [/^goal ([\d.]+) a day$/, function (m) { return 'الهدف ' + m[1] + ' في اليوم'; }],
+    [/^([\d.]+) a day$/, function (m) { return m[1] + ' في اليوم'; }],
+    [/^(\d+) visits in (\d+) working days?$/, function (m) { return countAr(m[1], ['زيارة واحدة', 'زيارتان', 'زيارات', 'زيارة']) + ' في ' + countAr(m[2], ['يوم عمل واحد', 'يومي عمل', 'أيام عمل', 'يوم عمل']); }],
+    [/^(\d+) of (\d+)$/, function (m) { return m[1] + ' من ' + m[2]; }],
+    [/^expected (\d+)$/, function (m) { return 'المتوقع ' + m[1]; }],
+    [/^(\d+) follow-ups? due$/, function (m) { return countAr(m[1], ['متابعة واحدة مستحقة', 'متابعتان مستحقتان', 'متابعات مستحقة', 'متابعة مستحقة']); }],
+    [/^(\d+) overdue · (\d+) today$/, function (m) { return m[1] + ' متأخرة · ' + m[2] + ' اليوم'; }],
+    [/^(\d+) under-performing$/, function (m) { return countAr(m[1], ['عميل واحد ضعيف الأداء', 'عميلان ضعيفا الأداء', 'ضعيفو الأداء', 'ضعيف الأداء']); }],
+    [/^(\d+) opportunit(?:y|ies)$/, function (m) { return countAr(m[1], ['فرصة واحدة', 'فرصتان', 'فرص', 'فرصة']); }],
+    [/^bought in (\d+) of the last (\d+) months$/, function (m) { return 'اشترى في ' + m[1] + ' من آخر ' + m[2] + ' أشهر'; }],
+    [/^no invoice in the last (\d+) months$/, function (m) { return 'لا فواتير في آخر ' + m[1] + ' أشهر'; }],
+    [/^Today's plan: (\d+) of (\d+) done$/, function (m) { return 'خطة اليوم: ' + m[1] + ' من ' + m[2] + ' تمت'; }],
+    [/^(\d+) of (\d+) done$/, function (m) { return m[1] + ' من ' + m[2] + ' تمت'; }],
+    [/^(\d+) due$/, function (m) { return m[1] + ' مستحقة'; }],
+    [/^(\d+) overdue$/, function (m) { return m[1] + ' متأخرة'; }],
+    [/^(\d+) open tasks?$/, function (m) { return countAr(m[1], ['مهمة مفتوحة واحدة', 'مهمتان مفتوحتان', 'مهام مفتوحة', 'مهمة مفتوحة']); }],
+    // what a folded card holds, said in its one line: the planned visits missed lately, a birthday today, the doctor cards to complete
+    [/^(\d+) missed$/, function (m) { return countAr(m[1], ['زيارة مخططة واحدة لم تتم', 'زيارتان مخططتان لم تتما', 'زيارات مخططة لم تتم', 'زيارة مخططة لم تتم']); }],
+    [/^(\d+) birthdays? today$/, function (m) { return countAr(m[1], ['عيد ميلاد واحد اليوم', 'عيدا ميلاد اليوم', 'أعياد ميلاد اليوم', 'عيد ميلاد اليوم']); }],
+    [/^(\d+) doctor cards? to complete$/, function (m) { return countAr(m[1], ['كرت طبيب واحد للإكمال', 'كرتا طبيب للإكمال', 'كروت أطباء للإكمال', 'كرت طبيب للإكمال']); }],
+    // the quick task on a person's screen is hers (the name is already Arabic: msName)
+    [/^Add a quick task for (.+)\.\.\.$/, function (m) { return 'أضف مهمة سريعة باسم ' + m[1] + '...'; }],
+    [/^(\d+) to act on$/, function (m) { return countAr(m[1], ['عميل واحد يحتاج تحركًا', 'عميلان يحتاجان تحركًا', 'عملاء يحتاجون تحركًا', 'عميلًا يحتاجون تحركًا']); }],
+    [/^(-?\d+)% of the brand target$/, function (m) { return pctAr(m[1]) + ' من مستهدف البراند'; }],
+    [/^between (-?\d+)% and (-?\d+)% of the brand targets$/, function (m) { return 'بين ' + pctAr(m[1]) + ' و' + pctAr(m[2]) + ' من مستهدفات البراندات'; }],
+    [/^(\d+) more brands? in the month report$/, function (m) { return '+' + countAr(m[1], ['براند آخر', 'براندان آخران', 'براندات أخرى', 'براندًا آخر']) + ' في تقرير الشهر'; }],
+    [/^Working days of the month: (\d+) · done: (\d+) · left: (\d+)$/, function (m) { return 'أيام العمل في الشهر: ' + m[1] + ' · انقضى منها: ' + m[2] + ' · بقي منها: ' + m[3]; }],
+    // the lists the main screen keeps (the dates are already Arabic: the app writes them in the screen's language)
+    [/^was due (.+)$/, function (m) { return 'كانت مستحقة ' + m[1]; }],
+    [/^Due (.+)$/, function (m) { return 'مستحقة ' + m[1]; }],
+    [/^Planned (.+)$/, function (m) { return 'مخطط لها ' + m[1]; }],
+    [/^in (\d+) days?$/, function (m) { return 'بعد ' + countAr(m[1], ['يوم واحد', 'يومين', 'أيام', 'يومًا']); }],
+    [/^(\d+) doctors? overdue for a scheduled visit$/, function (m) { return countAr(m[1], ['طبيب واحد', 'طبيبان', 'أطباء', 'طبيبًا']) + ' تأخرت زيارتهم المجدولة'; }],
+    // the target card's source line (the core writes the date in English: "ERP to Oct 8")
+    [/^Achieved: ERP to ([A-Z][a-z]{2} \d{1,2})( \(partial month\))?$/, function (m) { return 'المحقق: من ملفات ERP حتى ' + enDateAr(m[1]) + (m[2] ? ' (شهر غير مكتمل)' : ''); }],
+    [/^Achieved: no ERP sales file for this month yet$/, function () { return 'المحقق: لا يوجد ملف مبيعات ERP لهذا الشهر بعد'; }],
+    [/^Achieved: no invoice of this rep in the ERP files uploaded \(to ([A-Z][a-z]{2} \d{1,2})\)$/, function (m) { return 'المحقق: لا توجد فاتورة لهذا الشخص في ملفات ERP المرفوعة (حتى ' + enDateAr(m[1]) + ')'; }],
+    [/^Target is from (.+) — upload this month's DSR$/, function (m) { return 'المستهدف من ' + m[1] + ' — ارفع ملف DSR لهذا الشهر'; }],
+    // the owner's picture (15 Nov): counted words of the home screen
+    [/^(\d+) Work Days? Left$/, function (m) { return 'باقي ' + countAr(m[1], ['يوم عمل واحد', 'يوما عمل', 'أيام عمل', 'يوم عمل']); }],
+    [/^(\d+) today$/, function (m) { return m[1] + ' اليوم'; }],
+    [/^W([1-5])$/, function (m) { return 'الأسبوع ' + m[1]; }],
+    // the products list's note (redesign module 5)
+    [/^(\d+) products? missing from the catalog$/, function (m) { return countAr(m[1], ['منتج واحد ناقص من الكتالوج', 'منتجان ناقصان من الكتالوج', 'منتجات ناقصة من الكتالوج', 'منتجاً ناقصاً من الكتالوج']); }],
+    // the visit form (redesign module 2)
+    [/^Step (\d)$/, function (m) { return 'الخطوة ' + m[1]; }],
+    [/^(\d+) of (\d+) required steps done$/, function (m) { return 'اكتمل ' + m[1] + ' من ' + m[2] + ' من الخطوات المطلوبة'; }],
+    [/^(\d+) photos?$/, function (m) { return countAr(m[1], ['صورة واحدة', 'صورتان', 'صور', 'صورة']); }],
+    [/^(\d+) clinics have follow-ups due \((\d+) overdue\)\.$/, function (m) { return countAr(m[1], ['عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة']) + ' لديها متابعات مستحقة (' + m[2] + ' متأخرة).'; }],
+    [/^(\d+) clinics have follow-ups due today\.$/, function (m) { return countAr(m[1], ['عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة']) + ' لديها متابعات مستحقة اليوم.'; }],
+    [/^(\S+) target$/, function (m) { return 'مستهدف ' + m[1]; }],
+    // === DASHBOARD === how long ago a visit was logged (the home screen's recent visits)
+    [/^(\d+) min ago$/, function (m) { return 'قبل ' + countAr(m[1], ['دقيقة', 'دقيقتين', 'دقائق', 'دقيقة']); }],
+    [/^(\d+)h ago$/, function (m) { return 'قبل ' + countAr(m[1], ['ساعة', 'ساعتين', 'ساعات', 'ساعة']); }],
+    [/^(\d+) days ago$/, function (m) { return 'قبل ' + countAr(m[1], ['يوم', 'يومين', 'أيام', 'يومًا']); }],
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
@@ -2304,11 +2828,30 @@
     return t2 != null ? t2 : r;
   }
 
+  // Words whose only entry starts with an emoji ("✅ All caught up"): the same words WITHOUT the emoji
+  // find it too (redesign: an emoji used as an interface icon becomes a line icon in the markup, and
+  // the words alone reach the dictionary). Built once, on the first miss; an exact entry always wins.
+  var BARE = null;
+  function bare(t) {
+    if (!BARE) {
+      BARE = {};
+      Object.keys(AR).forEach(function (k) {
+        var m = k.match(LEAD);
+        if (!m || Object.prototype.hasOwnProperty.call(AR, m[2]) || Object.prototype.hasOwnProperty.call(BARE, m[2])) return;
+        var v = String(AR[k]).match(LEAD);
+        BARE[m[2]] = v ? v[2] : AR[k];
+      });
+    }
+    return Object.prototype.hasOwnProperty.call(BARE, t) ? BARE[t] : null;
+  }
+
   function lookup(t) {
     if (Object.prototype.hasOwnProperty.call(AR, t)) return AR[t];
     // wrapped source lines reach the DOM with newlines and indentation in them
     var flat = t.replace(/\s+/g, ' ');
     if (flat !== t && Object.prototype.hasOwnProperty.call(AR, flat)) return AR[flat];
+    var b = bare(flat);
+    if (b != null) return b;
     for (var i = 0; i < PATTERNS.length; i++) {
       var m = t.match(PATTERNS[i][0]) || (flat !== t ? flat.match(PATTERNS[i][0]) : null);
       if (m) return PATTERNS[i][1](m);

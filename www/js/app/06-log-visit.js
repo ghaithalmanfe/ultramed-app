@@ -73,6 +73,8 @@ function prepLogView(qClinicId){
   const opts = [{l:'+3 days', d:3},{l:'+1 week', d:7},{l:'+2 weeks', d:14},{l:'+1 month', d:30}];
   qd.innerHTML = opts.map(o=>`<button data-days="${o.d}" onclick="pickQuickDate(${o.d})">${o.l}</button>`).join('');
   document.getElementById('followUpDate').value='';
+  lvClearFlags();
+  lvPaint();
 }
 function setLogAsRep(r){
   logAsRep = r;
@@ -80,6 +82,7 @@ function setLogAsRep(r){
   renderClinicSelect();
   document.getElementById('logAsChips').querySelectorAll('.chip').forEach(c=>c.classList.toggle('on', c.textContent===r));
   renderJointChips();
+  lvPaint();
 }
 // ---- JOINT (DOUBLE) VISITS ----
 function renderJointChips(){
@@ -91,7 +94,7 @@ function renderJointChips(){
   el.innerHTML = `<div class="chip small ${!jointRep?'on':''}" onclick="setJointRep(null)">Solo</div>`
     + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${esc(r)}')">🤝 ${esc(r)}</div>`).join('');
 }
-function setJointRep(r){ jointRep = r; renderJointChips(); }
+function setJointRep(r){ jointRep = r; renderJointChips(); lvPaint(); }
 function renderClinicSelect(qClinicId){
   if(qClinicId!==undefined && qClinicId!==null) selectedClinicId = qClinicId;
   const q = (document.getElementById('clinicSearchLog').value||'').toLowerCase().trim();
@@ -104,7 +107,7 @@ function renderClinicSelect(qClinicId){
       listEl.style.display='none';
       document.getElementById('newClinicBtn').style.display='none';
       cardEl.style.display='block';
-      cardEl.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
+      cardEl.innerHTML = `<div class="card">
         <div class="row-between">
           <div style="display:flex; align-items:center; gap:11px;">
             <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
@@ -118,6 +121,7 @@ function renderClinicSelect(qClinicId){
         ${sellHintLine(c)}
       </div>`;
       renderDoctorPick(c);
+      lvPaint();
       return;
     }
   }
@@ -127,7 +131,7 @@ function renderClinicSelect(qClinicId){
   // Step 2 stays visible with a hint, so the numbered steps never skip 1 → 3.
   document.getElementById('doctorPickWrap').style.display='block';
   document.getElementById('doctorPickChips').innerHTML =
-    `<div style="color:rgba(255,255,255,.5); font-size:12.5px; padding:2px 0 4px;">Pick the clinic in step 1 first — its doctors will appear here to tap.</div>`;
+    `<div style="color:var(--muted); font-size:13px; padding:2px 0 4px;">Pick the clinic in step 1 first — its doctors will appear here to tap.</div>`;
   document.getElementById('docTipLink').innerHTML = '';
   renderRxStep();
 
@@ -138,22 +142,21 @@ function renderClinicSelect(qClinicId){
               ...others.filter(filt).sort((a,b)=>a.name.localeCompare(b.name))];
   if(!q) list = list.slice(0,8);
   if(list.length===0){
-    listEl.innerHTML = `<div class="card" style="color:var(--muted); font-size:13.5px;">No clinic matches "${esc(q)}". Add it as a new customer below.</div>`;
+    listEl.innerHTML = `<div class="card" style="color:var(--muted); font-size:13.5px; margin:0;">No clinic matches "${esc(q)}". Add it as a new customer below.</div>`;
+    lvPaint();
     return;
   }
-  listEl.innerHTML = list.map(c=>`
-    <div class="card clickable" style="padding:12px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="pickClinic('${c.id}')">
-      <div class="row-between">
-        <div style="display:flex; align-items:center; gap:11px;">
-          <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
-          <div>
-            <div class="clinic-name" style="font-size:14.5px;">${esc(c.name)}</div>
-            <div class="clinic-sub">${(c.doctors||[]).length} doctor${(c.doctors||[]).length===1?'':'s'}${c.rep!==logAsRep?' · '+esc(c.rep):''}</div>
-          </div>
-        </div>
-        <span style="color:var(--muted); font-size:19px;">›</span>
+  // rows as in Recent Activity: the class badge, the name, "2 doctors · owner", a chevron
+  listEl.innerHTML = `<div class="lrows">` + list.map(c=>`
+    <div class="lrow clickable" role="button" tabindex="0" onclick="pickClinic('${c.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickClinic('${c.id}');}">
+      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+      <div class="lr-t">
+        <div class="clinic-name">${esc(c.name)}</div>
+        <div class="clinic-sub">${(c.doctors||[]).length} doctor${(c.doctors||[]).length===1?'':'s'}${c.rep!==logAsRep?' · '+esc(c.rep):''}</div>
       </div>
-    </div>`).join('') + (!q && (mine.length+others.length)>8 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Search to see all ${mine.length+others.length} clinics</div>` : '');
+      <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
+    </div>`).join('') + `</div>` + (!q && (mine.length+others.length)>8 ? `<div class="lv-more">Search to see all ${mine.length+others.length} clinics</div>` : '');
+  lvPaint();
 }
 function clsColor(cls){
   return {A:'#34C759',B:'#57B85D',C:'#FF9500',D:'#C7C7CC',F:'#FF3B30'}[cls] || '#C7C7CC';
@@ -192,6 +195,7 @@ function startNewClinic(){
   document.getElementById('newClinicClsChips').innerHTML = ['A','B','C','D','F'].map(c=>`<div class="chip small" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('');
   document.getElementById('newClinicAcctChips').innerHTML = ACCOUNT_TYPES.map(a=>`<div class="chip small" data-acct="${a}" onclick="pickModalCls(this)">${a}</div>`).join('');
   renderRxStep(); // a new customer has no people on file yet: only "the clinic (no one person)"
+  lvPaint();
 }
 function cancelNewClinic(){
   newClinicMode = false;
@@ -220,6 +224,7 @@ function renderDoctorPick(c){
     </div>`;
   } else { tip.innerHTML=''; }
   renderRxStep(); // one block per person met
+  lvPaint();
 }
 function pickDoctorSeen(id){
   if(selectedDoctorIds.includes(id)){
@@ -239,7 +244,7 @@ function visitDoctorNames(clinicId, ids){
 }
 function openQuickAddDoctor(clinicId){
   showModal(`
-    <h3 style="margin-top:0;">Add doctor</h3>
+    <h3 style="margin-top:0;" data-ic="stethoscope">Add doctor</h3>
     <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
     <label>Specialty</label>
     <div class="chip-row" id="newDocTitleChips">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
@@ -274,6 +279,7 @@ function renderProductChips(){
         ${byBrand[b].map(p=>`<div class="chip small withimg ${selectedProducts.includes(productKey(p))?'on':''}" data-id="${productKey(p)}" onclick="toggleProductChip('${productKey(p)}')">${prodThumb(p,'pthumb')}<span>${esc(p.name)}</span></div>`).join('')}
       </div>
     </div>`).join('');
+  lvPaint();
 }
 function toggleProductChip(id){
   if(selectedProducts.includes(id)){
@@ -290,6 +296,7 @@ function renderNoOrderChips(){
 function pickNoOrderReason(r){
   noOrderReason = (noOrderReason===r) ? null : r;
   renderNoOrderChips();
+  lvPaint();
 }
 function setOrder(val){
   orderTaken = val;
@@ -302,6 +309,7 @@ function setOrder(val){
     if(draftOrders.length===0) draftOrders = [newDraftOrder()];
     renderOrders();
   }
+  lvPaint();
 }
 function newDraftOrder(){
   const o = {id:uid(), qty:{}, discountPct:0, notes:''};
@@ -317,6 +325,9 @@ function removeDraftOrder(oid){
   if(draftOrders.length===0) draftOrders = [newDraftOrder()];
   renderOrders();
 }
+// An amount of the form in the screen's language: "9.81 KD" in English (harness-read), "9.81 د.ك" in Arabic, the
+// figure kept left to right inside the Arabic line.
+function moneyUi(n){ return money(n); }   // money() itself follows the language now (one formatter)
 function orderGross(o){ return UMCore.orderGross(o, products); }
 function orderNet(o){ return UMCore.orderNet(o, products); }
 function renderOrders(){
@@ -352,7 +363,7 @@ function renderOrders(){
             const q = o.qty[key]||0;
             return `<div class="qty-row">
               ${prodThumb(p,'pthumb')}
-              <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:12px;">${p.price!=null?p.price.toFixed(2)+' KD each':'no price'}</span></div>
+              <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:12px;">${p.price!=null?money(p.price)+' each':'no price'}</span></div>
               <div class="stepper">
                 <button type="button" onclick="bumpQty('${o.id}','${key}',-1)" ${q<=0?'disabled':''} aria-label="less">−</button>
                 <input class="val" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="9999" step="1" value="${q}" id="q-${o.id}-${slugify(key)}" aria-label="quantity"
@@ -371,9 +382,9 @@ function renderOrders(){
         </div>
       </div>
       <div style="font-size:13px; color:var(--muted); padding-top:10px;">
-        <div class="row-between"><span>Subtotal</span><span>${money(gross)}</span></div>
-        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${money(disc)}</span></div>
-        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${money(net)}</span></div>
+        <div class="row-between"><span>Subtotal</span><span>${moneyUi(gross)}</span></div>
+        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${moneyUi(disc)}</span></div>
+        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${moneyUi(net)}</span></div>
       </div>
       <input type="text" placeholder="Order notes (optional)" dir="auto" value="${esc(o.notes)}" oninput="setDraftNotes('${o.id}',this.value)" style="margin-top:10px;">
     </div>`;
@@ -444,22 +455,98 @@ function refreshOrderTotalsOnly(){
     const gross = orderGross(o), net = orderNet(o), disc = Math.round((gross-net)*100)/100;
     const box = card.querySelector('div[style*="font-size:13px"]');
     if(box){
-      box.innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(gross)}</span></div>
-        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${money(disc)}</span></div>
-        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${money(net)}</span></div>`;
+      box.innerHTML = `<div class="row-between"><span>Subtotal</span><span>${moneyUi(gross)}</span></div>
+        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${moneyUi(disc)}</span></div>
+        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${moneyUi(net)}</span></div>`;
     }
   });
   updateOrderTotalDisplay();
 }
 function updateOrderTotalDisplay(){
   const total = draftOrders.reduce((s,o)=>s+orderNet(o),0);
-  document.getElementById('orderTotalDisplay').textContent = money(total);
+  document.getElementById('orderTotalDisplay').textContent = moneyUi(total);
+  lvPaint();
 }
 function pickQuickDate(days){
   document.querySelectorAll('#quickDates button').forEach(b=>b.classList.toggle('on', parseInt(b.dataset.days)===days));
   const d = new Date(); d.setDate(d.getDate()+days);
   document.getElementById('followUpDate').value = localDateStr(d);
+  lvPaint();
 }
+
+// ---- The form's summary panel, the step marks and the phone's rail (redesign, module 2) ----
+// Everything shown is the form's own state — the values saveVisitNow reads — repainted on every change. Nothing is
+// worked out here: the order total is the form's own "Visit total (after discount)", the pads its own total
+// (rxDraftTotal), an order counts once a line has a quantity (as saveVisitNow saves it).
+function lvState(){
+  const val = id => { const e = document.getElementById(id); return e ? (e.value || '').trim() : ''; };
+  const c = selectedClinicId ? clinics.find(x => x.id === selectedClinicId) : null;
+  const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name;
+  return {
+    c, isNew: !!newClinicMode, newName: newClinicMode ? val('newClinicName') : '',
+    docs: c ? (c.doctors || []).filter(d => selectedDoctorIds.includes(d.id)).map(d => d.name) : [],
+    prods: selectedProducts.map(id => productName(id)).filter(Boolean),
+    pads: rxOn && rxReady() ? rxDraftTotal('log', rxRecipients('log') || []) : 0,
+    order: !!orderTaken, total: (document.getElementById('orderTotalDisplay') || {}).textContent || '',
+    hasItems: !!orderTaken && draftOrders.some(o => Object.keys(o.qty || {}).some(pid => (o.qty[pid] || 0) > 0 && selectedProducts.includes(pid))),
+    reason: orderTaken ? '' : (noOrderReason || ''), reasonTyped: orderTaken || noOrderReason ? '' : val('noOrderOther'),
+    follow: val('followUpDate'), notes: val('visitNotes'), photos: (typeof visitPhotos !== 'undefined' && visitPhotos ? visitPhotos.length : 0), mood: visitMood,
+    rep, joint: jointRep && jointRep !== rep ? jointRep : null };
+}
+// What saveVisitNow requires in the form's present state: the clinic (a new customer: its name), and who was met
+// (not asked for a new customer — no one is on file yet).
+function lvRequired(s){ return s.isNew ? [{ step: 1, ok: !!s.newName }] : [{ step: 1, ok: !!s.c }, { step: 2, ok: s.docs.length > 0 }]; }
+function lvPaint(){
+  const box = document.getElementById('lvSumRows');
+  if(!box || typeof currentUser === 'undefined' || !currentUser) return;
+  let s; try{ s = lvState(); }catch(e){ return; }
+  const none = '<span class="lv-none" data-notr>—</span>', sep = '<span data-notr> · </span>';
+  const names = (arr, max) => arr.slice(0, max).map(n => `<span dir="auto">${esc(n)}</span>`).join(`<span data-notr>${uiLang === 'ar' ? '،' : ','} </span>`) + (arr.length > max ? ` <small data-notr>+${arr.length - max}</small>` : '');
+  const row = (key, icon, label, v) => `<div class="lv-row" data-sum="${key}"><span class="ic" aria-hidden="true">${I(icon)}</span><span class="k">${label}</span><span class="v">${v || none}</span></div>`;
+  const mood = s.mood ? (VISIT_MOODS.find(m => m[0] === s.mood) || [])[1] : '';
+  const extras = [mood ? `<span>${mood}</span>` : '', s.notes ? `<span dir="auto">${esc(s.notes.length > 70 ? s.notes.slice(0, 70) + '…' : s.notes)}</span>` : '', s.photos ? `<span>${s.photos} photo${s.photos === 1 ? '' : 's'}</span>` : ''].filter(Boolean).join(sep);
+  let when = '';
+  if(s.follow){ try{ when = `<span data-notr>${esc(new Date(s.follow + 'T00:00:00').toLocaleDateString(uiLocale(), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }))}</span>`; }catch(e){ when = `<span data-notr>${esc(s.follow)}</span>`; } }
+  box.innerHTML =
+    row('clinic', 'building', 'Clinic', s.c ? `<span dir="auto">${esc(s.c.name)}</span>` : s.newName ? `<span dir="auto">${esc(s.newName)}</span><span class="lv-pill">New customer</span>` : '')
+    + row('people', 'users', 'People met', s.docs.length ? names(s.docs, 3) : '')
+    + row('products', 'package', 'Products', s.prods.length ? names(s.prods, 2) : '')
+    + row('rx', 'pill', 'Prescriptions', s.pads > 0 ? `<span>${rxPadsText(s.pads)}</span>` : '')
+    + row('order', 'cart', 'Order', s.order ? (s.hasItems ? `<span data-sum-total>${esc(s.total)}</span>` : '') : `<span>No order</span>${s.reason ? sep + `<span>${esc(s.reason)}</span>` : s.reasonTyped ? sep + `<span dir="auto">${esc(s.reasonTyped)}</span>` : ''}`)
+    + row('follow', 'calendar', 'Next visit', when)
+    + row('extras', 'camera', 'Notes & photos', extras)
+    + row('who', 'pencil', 'Logging as', `<span>${esc(s.rep || '')}</span>${s.joint ? sep + `<span>Joint with</span> <span>${esc(s.joint)}</span>` : ''}`);
+  const req = lvRequired(s), n = req.filter(r => r.ok).length, m = req.length;
+  const bar = document.getElementById('lvProgBar'); if(bar) bar.style.width = (m ? Math.round(n / m * 100) : 0) + '%';
+  const pt = document.getElementById('lvProgText'); if(pt){ const w = `${n} of ${m} required steps done`; if(pt.dataset.w !== w){ pt.dataset.w = w; pt.textContent = w; } pt.dataset.n = n; pt.dataset.m = m; }
+  // the step marks (cards and rail): filled once the step holds an answer
+  const done = { 1: s.isNew ? !!s.newName : !!s.c, 2: s.docs.length > 0, 3: s.prods.length > 0, 4: s.pads > 0, 5: s.order ? s.hasItems : !!(s.reason || s.reasonTyped), 6: !!s.follow, 7: !!(s.notes || s.photos || s.mood) };
+  document.querySelectorAll('#view-log .lv-step[data-step]').forEach(el => { const ok = !!done[el.dataset.step]; el.classList.toggle('done', ok); if(ok && el.classList.contains('err')) lvClearFlags(Number(el.dataset.step)); });
+  document.querySelectorAll('#lvRail .lv-dot').forEach(b => b.classList.toggle('done', !!done[b.dataset.go]));
+  // "Who did you meet?" is asked for a clinic on the list, not for a new customer
+  const t2 = document.getElementById('lvTag2');
+  if(t2){ const w = s.isNew ? 'Optional' : 'Required'; if(t2.dataset.w !== w){ t2.dataset.w = w; t2.textContent = w; t2.classList.toggle('req', !s.isNew); } }
+  const sr = document.getElementById('lvSearch1'); if(sr) sr.style.display = (s.c || s.isNew) ? 'none' : '';
+  const who = document.getElementById('lvWho');
+  if(who){ const a = document.getElementById('logAsWrap'), j = document.getElementById('jointWrap'); who.style.display = ((a && a.style.display !== 'none') || (j && j.style.display !== 'none')) ? '' : 'none'; }
+}
+let _lvPaintT = 0;
+function lvPaintSoon(){ clearTimeout(_lvPaintT); _lvPaintT = setTimeout(lvPaint, 0); }
+// The phone's rail: a tap goes to the step.
+function lvGo(n){ const el = document.querySelector(`#view-log .lv-step[data-step="${n}"]`); if(el){ try{ el.scrollIntoView({ block: 'start', behavior: 'smooth' }); }catch(e){ el.scrollIntoView(); } } }
+// A save that stopped at a check: the step says why, beside the toast (what is checked is saveVisitNow's own).
+function lvFlag(step, text){
+  const el = document.querySelector(`#view-log .lv-step[data-step="${step}"]`), note = document.getElementById('lvErr' + step);
+  if(!el || !note) return;
+  note.innerHTML = `${I('alert')}<span>${esc(text)}</span>`; note.hidden = false; el.classList.add('err');
+  try{ el.scrollIntoView({ block: 'center' }); }catch(e){}
+}
+function lvClearFlags(step){
+  (step ? [step] : [1, 2]).forEach(k => { const el = document.querySelector(`#view-log .lv-step[data-step="${k}"]`), note = document.getElementById('lvErr' + k);
+    if(el) el.classList.remove('err'); if(note){ note.hidden = true; note.innerHTML = ''; } });
+}
+// every tap and keystroke in the form repaints the summary (after the form's own handler has run)
+(function(){ const v = document.getElementById('view-log'); if(v) ['input', 'change', 'click'].forEach(t => v.addEventListener(t, lvPaintSoon)); })();
 
 // Double-tap guard: repeated saves created duplicate visit rows in the field
 // (verified against real exported data). It holds until the save settles —
@@ -502,9 +589,9 @@ async function saveVisitNow(gen, confirmed){
   if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ showToast('Choose which rep you are logging for'); return; }
   if(newClinicMode){
     const name = document.getElementById('newClinicName').value.trim();
-    if(!name){ showToast('Enter a clinic name'); return; }
+    if(!name){ lvFlag(1, 'Enter a clinic name'); showToast('Enter a clinic name'); return; }
     const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
-    if(dup){ showToast('A clinic with this name already exists'); return; }
+    if(dup){ lvFlag(1, 'A clinic with this name already exists'); showToast('A clinic with this name already exists'); return; }
     const clsEl = document.querySelector('#newClinicClsChips .chip.on');
     const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
     const nc = normalizeClinic({id:uid(), name, rep,
@@ -526,13 +613,15 @@ async function saveVisitNow(gen, confirmed){
     if(!await saveNewClinicFirst(nc, 'newClinicAsk')){ renderAll(); return; } // the clinic first: refused or too large → no visit either, the form keeps everything (round 4)
     clinicId = nc.id;
   }
-  if(!clinicId){ showToast('Pick a clinic first'); return; }
+  if(!clinicId){ lvFlag(1, 'Pick a clinic first'); showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be
   // followed up or verified. New inline-created clinics are exempt (no roster
   // yet) — the picker offers "+ Add doctor" for everyone else.
   if(!newClinicMode && selectedDoctorIds.length === 0){
     const cRef = clinics.find(x=>x.id===clinicId);
-    showToast((cRef && (cRef.doctors||[]).length) ? '👨‍⚕️ Pick who you met — required' : '👨‍⚕️ Add the doctor you met first (+ Add doctor)');
+    const need = (cRef && (cRef.doctors||[]).length) ? '👨‍⚕️ Pick who you met — required' : '👨‍⚕️ Add the doctor you met first (+ Add doctor)';
+    lvFlag(2, need);
+    showToast(need);
     return;
   }
   const followUp = document.getElementById('followUpDate').value || null;
@@ -669,7 +758,7 @@ function confirmFollowUp(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
   showModal(`
-    <h3 style="margin-top:0;">${esc(c.name)}</h3>
+    <h3 style="margin-top:0;" data-ic="calendar">${esc(c.name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${statusLabel(c.nextFollowUp)}. What's the next step?</p>
     <button class="btn" onclick="closeModal(); quickLogFrom('${c.id}')">${I('check')} Log the visit now</button>
     <button class="btn secondary" onclick="openRescheduleFollowUp('${c.id}')">${I('calendar')} Not yet — reschedule</button>
@@ -680,7 +769,7 @@ function openRescheduleFollowUp(clinicId){
   const c = clinics.find(x=>x.id===clinicId);
   if(!c) return;
   showModal(`
-    <h3 style="margin-top:0;">Reschedule follow-up</h3>
+    <h3 style="margin-top:0;" data-ic="calendar">Reschedule follow-up</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c.name)}</p>
     <div class="quickdate" id="rfQuickDates">
       ${[{l:'+3 days',d:3},{l:'+1 week',d:7},{l:'+2 weeks',d:14},{l:'+1 month',d:30}].map(o=>`<button data-days="${o.d}" onclick="pickRescheduleDate(${o.d})">${o.l}</button>`).join('')}
@@ -725,7 +814,7 @@ function renderMoodChips(){
   const el = document.getElementById('moodChips'); if(!el) return;
   el.innerHTML = VISIT_MOODS.map(([k, l]) => `<div class="chip small ${visitMood === k ? 'on' : ''}" onclick="pickMood('${k}')">${l}</div>`).join('');
 }
-function pickMood(k){ visitMood = visitMood === k ? null : k; renderMoodChips(); }
+function pickMood(k){ visitMood = visitMood === k ? null : k; renderMoodChips(); lvPaint(); }
 
 // ---- PRESCRIPTIONS GIVEN (v114) ----
 // The printed prescription forms left on a field visit, counted in PADS — the
@@ -822,7 +911,8 @@ function rxNoteHTML(id, text, light){
   return `<div id="${id}" class="card" style="padding:9px 12px; margin-bottom:8px; font-size:12.5px; line-height:1.45; background:var(--amber-dim); color:var(--amber-ink);${light ? '' : ' box-shadow:none;'}">${text}</div>`;
 }
 // The visit form's step: Yes/No, then the blocks (or what to do first).
-function renderRxStep(){
+function renderRxStep(){ try{ renderRxStepNow(); } finally{ lvPaint(); } }
+function renderRxStepNow(){
   const box = document.getElementById('rxBlocks');
   if(!box) return;
   const yes = document.getElementById('rxYes'), no = document.getElementById('rxNo');
@@ -832,7 +922,7 @@ function renderRxStep(){
   rxPrune('log', recips);
   box.style.display = rxOn ? 'block' : 'none';
   if(!rxOn){ box.innerHTML = ''; return; }
-  const hint = t => `<div class="rx-hint" style="color:rgba(255,255,255,.6); font-size:12.5px; padding:2px 0 8px;">${t}</div>`;
+  const hint = t => `<div class="rx-hint" style="color:var(--muted); font-size:13px; padding:2px 0 8px;">${t}</div>`;
   if(!rxReady()){ box.innerHTML = rxNoteHTML('rxStaleNote', RX_STALE_MSG); return; }
   if(recips === null){ box.innerHTML = hint('Pick the clinic in step 1 first.'); return; }
   let html = '';
@@ -844,7 +934,7 @@ function renderRxStep(){
   if(!newClinicMode && !recips.includes('')) foot.push(`<button type="button" class="chip small" id="rxAddClinic-log" onclick="rxAddClinic('log')">+ Left at the clinic (no one person)</button>`);
   if(currentUser && currentUser.role === 'supervisor') foot.push(`<button type="button" class="chip small" id="rxEditTypes" onclick="openRxTypes()">${I('pencil')} Edit types</button>`);
   if(foot.length) html += `<div class="chip-row" style="margin:2px 0 4px;">${foot.join('')}</div>`;
-  html += `<div id="rxTotal-log" style="color:#fff; font-size:13px; text-align:end; margin:4px 2px 2px;">${rxTotalHTML('log')}</div>`;
+  html += `<div id="rxTotal-log" style="color:var(--ink); font-size:13.5px; font-weight:600; text-align:end; margin:4px 2px 2px;">${rxTotalHTML('log')}</div>`;
   box.innerHTML = html;
 }
 // One block per recipient, shared by the form and the edit sheet: a row per
@@ -898,6 +988,7 @@ function rxRefresh(scope, row, q, rewrite){
   if(minus) minus.disabled = q <= 0;
   const tot = document.getElementById('rxTotal-' + scope);
   if(tot) tot.innerHTML = rxTotalHTML(scope);
+  if(scope === 'log') lvPaintSoon();
 }
 function rxBump(scope, key, type, d, row){
   const q = UMCore.rxQty(rxGet(scope, key, type) + d);
