@@ -27,7 +27,14 @@
   function esc(s){ return (s||'').replace(/[&<>"'\r]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','\r':'&#13;'}[m])); }
   // Only http(s) links are ever rendered as href — blocks javascript:/data: URI injection via saved fields.
   function safeUrl(u){ u=(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
-  function initials(n){ return n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
+  // Initials as every avatar writes them (the home screen's rule, one helper for the leaderboard, the chat, the
+  // sign-in tiles and the score cards): a title ("Dr.", "د.") is left out, then the first letters of up to two
+  // words — "Dr. Ghaith" → "G", "Mariam Ali" → "MA"; a name that is only a title keeps its own first letter.
+  function initials(n){
+    var s = String(n == null ? '' : n).trim();
+    var w = s.split(/\s+/).filter(function(x){ return x && !/^(dr|prof|mr|mrs|ms|د)\.?$/i.test(x); });
+    return (w.length ? w : [s || '?']).slice(0, 2).map(function(x){ return x.charAt(0); }).join('').toUpperCase();
+  }
   // An amount as people read it: two decimals, thousands grouped ("12,989.00 KD"). The digits are toFixed's own
   // (the same rounding to the fils as before); only the grouping is added. Files and exports never use it — a CSV
   // or a spreadsheet writes the plain number (toFixed), so it stays machine-readable.

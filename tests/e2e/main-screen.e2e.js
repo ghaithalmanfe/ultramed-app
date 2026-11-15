@@ -138,6 +138,18 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const rowsOk = truth.reps.map(r => { const p = truth.people[r], pct = Math.round(p.amount / p.target * 100);
     return { r, ok: new RegExp(r.replace(/[.]/g, '\\.') + ' ' + pct + '% ' + amtRe(p.amount) + ' KD of ' + amtRe(p.target) + ' KD').test(s.target) }; });
   check('Team: each person\'s row is her own figure, "<name> <pct>% <achieved> KD of <target> KD" (Dr. Ghaith\'s own row too)', rowsOk.every(x => x.ok), { rowsOk, card: s.target.slice(0, 420) });
+  // one initials rule for every avatar (integration pass): a title is left out — "Dr. Ghaith" is G on the leaderboard,
+  // the sign-in tiles, the chat and the score cards (the sign-in tile said "DG")
+  const avs = await page.evaluate(() => {
+    const lb = {}; document.querySelectorAll('#targetCard .ms-lb').forEach(e => { const a = e.querySelector('.av'); if(a) lb[e.dataset.person] = a.textContent.trim(); });
+    renderGate(); const gate = {}; document.querySelectorAll('#gateGrid .gate-tile').forEach(t => { gate[t.querySelector('.gate-name').textContent.trim()] = t.querySelector('.gate-av').textContent.trim(); });
+    const keep = chatMsgs; chatMsgs = [{ id: 'av1', who: 'Dr. Ghaith', text: 'hello', ts: Date.now() }, { id: 'av2', who: 'Mariam', text: 'hi', ts: Date.now() }]; renderChat();
+    const chat = [...document.querySelectorAll('#chatList .msg-av')].map(e => e.textContent.trim()); chatMsgs = keep; renderChat();
+    renderScorecards(); const score = {}; document.querySelectorAll('#scorecards .score-card').forEach(c => { score[c.querySelector('.name').textContent.trim()] = c.querySelector('.stamp').textContent.trim(); });
+    return { lb, gate, chat, score };
+  });
+  check('Avatars: one rule everywhere — "Dr. Ghaith" is G (the title left out), Mariam M, Renova R: leaderboard, sign-in tiles, chat, score cards',
+    avs.lb[G] === 'G' && avs.lb[M] === 'M' && avs.lb[R] === 'R' && avs.gate[G] === 'G' && avs.gate[M] === 'M' && avs.chat.join() === 'G,M' && avs.score[G] === 'G' && avs.score[M] === 'M', avs);
   check('Team: the Team line = teamTargetNow (achieved of target, the number of people)', new RegExp(amtRe(truth.tt.ach) + ' KD of ' + amtRe(truth.tt.goal) + ' KD · \\w[\\w ]* · ' + truth.tt.n + ' reps').test(s.target) && new RegExp('Team ' + truth.tt.pct + '%').test(s.target), { tt: truth.tt });
   check('Team: the sales card says the team target it divides by (everyone with a target has a figure): teamTargetNow\'s (data-value to the fils, shown as whole KWD: "Monthly Target 21,000 KWD")', s.ofTarget === truth.tt.goal && new RegExp('Monthly Target ' + whole(truth.tt.goal) + ' KWD').test(s.view), { ofTarget: s.ofTarget, tt: truth.tt.goal });
   check('Team: achievement, remaining, per working day and forecast = UMCore.execDashboard for the team', s.achievement === truth.D.pct && s.remaining === truth.D.remaining && s.perday === truth.D.perDay && s.forecast === truth.D.forecast && truth.D.forecast != null,

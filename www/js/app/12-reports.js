@@ -944,7 +944,7 @@ function renderChat(){
     const day = m.ts ? localDateStr(new Date(m.ts)) : '';
     let sep = '';
     if(day && day !== lastDay){ lastDay = day; sep = `<div class="chat-day"><span>${day === todayStr() ? 'Today' : esc(new Date(m.ts).toLocaleDateString(uiLocale(), { weekday: 'short', day: 'numeric', month: 'short' }))}</span></div>`; }
-    const ini = typeof msInitials === 'function' ? msInitials(typeof msName === 'function' ? msName(m.who) : m.who) : String(m.who || '?').slice(0, 1);
+    const ini = initials(msName(m.who));   // the one rule (UMCore.initials): "Dr. Ghaith" → G
     return `${sep}<div class="msg-row ${me?'me':'them'}"><span class="msg-av" data-notr aria-hidden="true">${esc(ini)}</span><div class="msg ${me?'me':'them'}">
       ${me?'':`<div class="who">${esc(m.who)}</div>`}
       ${m.text?`<div dir="auto">${esc(m.text)}</div>`:''}

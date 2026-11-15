@@ -62,6 +62,15 @@ describe('initials / slugify / uid', () => {
     assert.equal(core.initials('Renova'), 'R');
     assert.equal(core.initials('a b c'), 'AB');
   });
+  test('initials leave a title out, as every avatar writes them (the home screen\'s rule)', () => {
+    assert.equal(core.initials('Dr. Ghaith'), 'G');
+    assert.equal(core.initials('Dr. Faris Al Sample'), 'FA');
+    assert.equal(core.initials('د. غيث'), 'غ');
+    assert.equal(core.initials('dr Mariam'), 'M');
+    assert.equal(core.initials('Dr.'), 'D');
+    assert.equal(core.initials(''), '?');
+    assert.equal(core.initials(null), '?');
+  });
   test('slugify lowercases and collapses non-alphanumerics', () => {
     assert.equal(core.slugify('Ultra Med  X-2!'), 'ultra-med-x-2-');
   });

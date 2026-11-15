@@ -1065,8 +1065,9 @@ function msLbToggle(btn){
   if(c) c.classList.toggle('ms-all', _msLbAll);
   if(btn){ btn.setAttribute('aria-expanded', _msLbAll ? 'true' : 'false'); const t = btn.querySelector('span'); if(t){ t.textContent = _msLbAll ? 'Show less' : 'View All'; translateTree(t); } }
 }
-// initials as the picture writes them: a title ("Dr.") left out, the first letters of up to two words
-function msInitials(name){ const w = String(name || '').trim().split(/\s+/).filter(x => !/^(dr|prof|mr|mrs|ms|د)\.?$/i.test(x)); return (w.length ? w : [String(name || '?')]).slice(0, 2).map(x => x.charAt(0)).join('').toUpperCase(); }
+// initials as the picture writes them: a title ("Dr.") left out, the first letters of up to two words (UMCore.initials,
+// the one rule every avatar uses)
+function msInitials(name){ return UMCore.initials(name); }
 function renderTargetCard(v, m, P, sig){
   const el = document.getElementById('targetCard');
   if(!el) return;
