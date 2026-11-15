@@ -2770,6 +2770,18 @@ describe('UMI18N dictionary', () => {
     assert.equal(i18n.tr('Class B · 17 (24%)'), 'فئة B · 17 (24%)');
     assert.equal(i18n.tr('Good evening, Dr. Ghaith'), 'مساء الخير، Dr. Ghaith');
     assert.equal(i18n.tr('3 visits · 1 order'), '3 زيارة · 1 طلبية');
+    // round 3: the whole-day Restore's question and stops, the unfinished rename
+    assert.match(i18n.tr("Restore data from 2026-11-13? The clinics, tasks and this month's visits become that day's backup: 0 clinics, 0 tasks and 1 visits of this month that it does not hold are removed. Past months' visits, the sales files and the product catalog stay as they are. Everything it replaces is, as it is now, in the full backup saved to this device at 14:05 or in today's backup (the data as it was before your restore at 13:50) (checked just now). Today's backup stays as it is."),
+      /في النسخة الكاملة المحفوظة على هذا الجهاز الساعة 14:05 أو في نسخة اليوم الاحتياطية \(البيانات كما كانت قبل استرجاعك الساعة 13:50\) \(تم التحقق الآن\)\. ونسخة اليوم تبقى كما هي\.$/);
+    assert.equal(i18n.tr("this month's visits, the tasks changed after the full backup on this device was made (at 10:00): what changed since is in no backup, and this restore would remove it."),
+      'زيارات هذا الشهر، المهام تغيّرت بعد إنشاء النسخة الكاملة على هذا الجهاز (الساعة 10:00): ما تغيّر بعدها ليس في أي نسخة، وهذا الاسترجاع سيحذفه.');
+    assert.equal(i18n.tr('Restore stopped — the tasks changed on another phone while it ran. Nothing was changed.'), 'توقف الاسترجاع — المهام تغيّرت على هاتف آخر أثناء التنفيذ. لم يتغير شيء.');
+    assert.match(i18n.tr("Restore failed. Part of what it had written could not be put back (no connection?). The data as it was is in today's backup (the data as it was before this restore). Check the connection, then tap Restore again."),
+      /^فشل الاسترجاع\. تعذّر إرجاع جزء مما كتبه .* في نسخة اليوم الاحتياطية \(البيانات كما كانت قبل هذا الاسترجاع\)\. تحقق من الاتصال/);
+    assert.equal(i18n.tr('⚠️ The rename of "Renova" to "Renova K." was not finished: the team list has the new name, 2 records (clinics, visits, tasks, plans, targets) still have the old one.'),
+      '⚠️ لم تكتمل إعادة تسمية «Renova» إلى «Renova K.»: قائمة الفريق تحمل الاسم الجديد، و2 سجلاً (عيادات، زيارات، مهام، خطط، أهداف) ما زالت بالاسم القديم.');
+    assert.equal(i18n.tr('🔒 Not allowed for this login — kept on this phone, not sent (ask the supervisor)'), '🔒 غير مسموح لهذا الحساب — محفوظ على هذا الهاتف ولم يُرسل (اسأل المشرف)');
+    assert.equal(i18n.tr('✅ Rename finished'), '✅ اكتملت إعادة التسمية');
   });
   test('a leading emoji or arrow is kept and the words behind it are translated', () => {
     assert.equal(i18n.tr('📞 Call'), '📞 مكالمة');
@@ -4314,6 +4326,14 @@ describe('full backup: inventory, file, integrity', () => {
     assert.equal(s.benchmarks.records, null, 'settings: nothing to count, no number invented');
     assert.equal(s['other:someNewDoc'].docs, 1, 'a document no set claims is still listed, by name');
     assert.equal(s.events.records, 0);
+  });
+  test('the delete log as v123 writes it: only its lists\' deletes are counted — never its revivals (revived) or its revision (rev) (v123 round 3)', () => {
+    const log = { tasks: { a: 1, b: 2 }, visits: { c: 3, d: 4 }, clinics: {}, events: {}, dayPlans: {}, doctors: {},
+      revived: { tasks: { e: 5 }, clinics: { f: 6 }, visits: { g: 7 } }, rev: 123 };
+    const s = by(core.cloudInventory({ tombs: { value: J(log), updated: 1 } }));
+    assert.equal(s.tombs.records, 4, 'a log with 4 deletes (and 3 revivals) counts 4');
+    const s2 = by(core.cloudInventory({ tombs: { value: J({ doctors: { 'c1|d1': 1 }, tasks: { t: 2 }, revived: {}, rev: 123 }), updated: 1 } }));
+    assert.equal(s2.tombs.records, 2, 'doctor removals are deletes too');
   });
   test('every document belongs to exactly one line; totals add up', () => {
     const docs = team(), inv = core.cloudInventory(docs);

@@ -183,8 +183,9 @@ function seedCloud(extra){
     mode.deny = null;
     await B.ev(async () => { await retryBlockedSaves(); });
     const sent = (parse(cloud.tasks) || []).some(t => t.id === 'tA3');
-    check('A3. a queued change the rules refuse at upload stays queued and on the phone (never thrown away), says "Not allowed" and the bar says it waits; the 20-second round stops sending it; "Try again" sends it',
-      q3.queued && a3.outbox.includes('tasks') && a3.kept && a3.onScreen && /not allow this login/.test(a3.bar) && a3.toasts.includes(NOT_ALLOWED) && t1 === t0 && sent,
+    // (round 3: its words were "Not allowed, not saved" — for a change that is kept on the phone and in the queue)
+    check('A3. a queued change the rules refuse at upload stays queued and on the phone (never thrown away), says "Not allowed for this login — kept on this phone, not sent" (never "not saved") and the bar says it waits; the 20-second round stops sending it; "Try again" sends it',
+      q3.queued && a3.outbox.includes('tasks') && a3.kept && a3.onScreen && /not allow this login/.test(a3.bar) && a3.toasts.some(t => /Not allowed for this login — kept on this phone, not sent/.test(t)) && !a3.toasts.some(t => /not saved/i.test(t)) && t1 === t0 && sent,
       { q3: q3.queued, a3, triesBefore: t0, triesAfter2Rounds: t1, sentByTryAgain: sent });
     await B.ctx.close();
 
@@ -491,6 +492,168 @@ function seedCloud(extra){
       !e8.clinic && !e8.order && e8.open && e8.typed === 'Bright Smile Dental' && /count for another person now/.test(e8.ask) && JSON.stringify(w8) === RENOVAS
         && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental'), { e8, who: w8 });
     await M8.ctx.close();
+    // E9–E12 (re-review 3) — the remaining ways to make a clinic run the same check. The call
+    // log's "+ Add a new customer" made one with no check at all (Mariam's new customer took
+    // Renova's October and November invoices, toast "🌟 New customer added"); so did the two
+    // imports and "Re-create this clinic".
+    seedCloud();
+    const M9 = await mkPhone('E9-M'); await M9.boot('Mariam', 'rep');
+    const e9 = await M9.ev(async () => {
+      openCallLog(); startClNewClinic();
+      document.getElementById('clNewClinicName').value = 'Bright Smile Dental';
+      document.getElementById('clNotes').value = 'E9 first call with a new customer';
+      window.__toasts = []; await saveCallLog();
+      return { clinic: clinics.some(c => c.name === 'Bright Smile Dental'), call: visits.some(v => v && v.callOnly), open: document.getElementById('modalBack').classList.contains('show'),
+        typed: (document.getElementById('clNewClinicName') || {}).value, notes: (document.getElementById('clNotes') || {}).value, ask: (document.getElementById('clNewClinicAsk') || {}).innerText || '', toasts: window.__toasts.slice() };
+    });
+    const w9 = await whoGets(M9);
+    check('E9. the call log\'s "+ Add a new customer" checks the sales first: not saved for Mariam (no customer, no call, no "New customer added"), the form stays open with what she typed, Renova\'s invoices stay hers',
+      !e9.clinic && !e9.call && e9.open && e9.typed === 'Bright Smile Dental' && e9.notes === 'E9 first call with a new customer' && /count for another person now/.test(e9.ask) && /Renova/.test(e9.ask)
+        && !e9.toasts.some(t => /New customer added|logged/.test(t)) && JSON.stringify(w9) === RENOVAS && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental') && !cloudVisits().some(v => v.callOnly), { e9, who: w9 });
+    await M9.ctx.close();
+    seedCloud();
+    const S9 = await mkPhone('E9-S'); await S9.boot('Dr. Ghaith', 'supervisor');
+    const e9s = await S9.ev(async () => {
+      openCallLog(); startClNewClinic();
+      document.getElementById('clNewClinicName').value = 'Bright Smile Dental';
+      document.getElementById('clNotes').value = 'E9 the supervisor logs the call';
+      await saveCallLog();
+      const asked = (document.getElementById('clNewClinicAsk') || {}).innerText || '';
+      const savedBefore = clinics.some(c => c.name === 'Bright Smile Dental');
+      const btn = [...document.querySelectorAll('#clNewClinicAsk [data-ask]')].find(b => /Count from this month/.test(b.textContent));
+      if(btn) await saveCallLog(btn.dataset.ask);
+      const c = clinics.find(x => x.name === 'Bright Smile Dental');
+      return { asked, savedBefore, hadButton: !!btn, rep: c && c.rep, prevRep: c && c.prevRep, repSince: c && c.repSince, call: visits.some(v => v && v.callOnly && v.notes === 'E9 the supervisor logs the call') };
+    });
+    const w9s = await whoGets(S9);
+    check('E9s. …the supervisor logging the call is asked first; "Count from this month" keeps October with Renova, the customer and the call are saved',
+      /sales lines would count for/.test(e9s.asked) && !e9s.savedBefore && e9s.hadButton && e9s.rep === 'Dr. Ghaith' && e9s.prevRep === 'Renova' && e9s.repSince === '2026-11-01' && e9s.call
+        && JSON.stringify(w9s) === JSON.stringify([['2026-10-20', 'Renova'], ['2026-11-05', 'Dr. Ghaith']]) && (parse(cloud.clinics).find(c => c.name === 'Bright Smile Dental') || {}).prevRep === 'Renova', { e9s, who: w9s });
+    await S9.ctx.close();
+    // E10 — Admin → Manage clinics → Import: every account whose invoices would move is shown in the import's confirmation; none moves without the supervisor's tap
+    seedCloud();
+    const S10 = await mkPhone('E10-S'); await S10.boot('Dr. Ghaith', 'supervisor');
+    const e10 = await S10.ev(async () => {
+      openManageClinics();
+      const chip = [...document.querySelectorAll('#ciRepChips .chip')].find(c => c.dataset.rep === 'Mariam'); if(chip) pickModalRep(chip);
+      await handleClinicSheet({ files: [new File(['Clinic name,Phone\nBright Smile Dental,\nNew Horizon Dental,\n'], 'clinics.csv', { type: 'text/csv' })] });
+      const found = _clinicImport ? _clinicImport.rows.map(x => x.data.name) : null;
+      window.__toasts = []; await commitClinicImport();
+      const asked = (document.getElementById('ciAsk') || {}).innerText || '';
+      const rows = [...document.querySelectorAll('#ciAsk [data-bulkmove]')].map(r => r.innerText.replace(/\s+/g, ' '));
+      const savedBefore = clinics.filter(c => /Bright Smile|New Horizon/.test(c.name)).map(c => c.name);
+      // he unticks the clinic whose invoices would move and adds the rest
+      _clinicImport.rows.find(x => x.data.name === 'Bright Smile Dental').include = false;
+      await commitClinicImport();
+      return { found, asked, rows, savedBefore, after: clinics.filter(c => /Bright Smile|New Horizon/.test(c.name)).map(c => c.name + ' → ' + c.rep), toasts: window.__toasts.slice() };
+    });
+    const w10 = await whoGets(S10);
+    check('E10. the clinic import shows every account whose invoices would move (who they count for now → then, lines, closed months) before anything is saved; unticked, the rest is added and Renova\'s invoices stay hers',
+      /Sales would then count for another person/.test(e10.asked) && e10.rows.length === 1 && /Bright Smile Dental: Renova → Mariam · 2 sales lines/.test(e10.rows[0]) && /1 in closed months/.test(e10.rows[0]) && /untick those clinics and add the rest/.test(e10.asked) && !e10.savedBefore.length
+        && JSON.stringify(e10.after) === JSON.stringify(['New Horizon Dental → Mariam']) && JSON.stringify(w10) === RENOVAS && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental') && parse(cloud.clinics).some(c => c.name === 'New Horizon Dental'), { e10, who: w10 });
+    await S10.ctx.close();
+    seedCloud();
+    const S10b = await mkPhone('E10-S2'); await S10b.boot('Dr. Ghaith', 'supervisor');
+    const e10b = await S10b.ev(async () => {
+      openManageClinics();
+      const chip = [...document.querySelectorAll('#ciRepChips .chip')].find(c => c.dataset.rep === 'Mariam'); if(chip) pickModalRep(chip);
+      await handleClinicSheet({ files: [new File(['Clinic name,Phone\nBright Smile Dental,\nNew Horizon Dental,\n'], 'clinics.csv', { type: 'text/csv' })] });
+      await commitClinicImport();
+      const savedBefore = clinics.some(c => c.name === 'Bright Smile Dental');
+      const btn = document.querySelector('#ciAsk [data-ask]');
+      if(btn) await commitClinicImport(btn.dataset.ask);
+      return { savedBefore, hadButton: !!btn, after: clinics.filter(c => /Bright Smile|New Horizon/.test(c.name)).map(c => c.name + ' → ' + c.rep) };
+    });
+    const w10b = await whoGets(S10b);
+    check('E10b. …and with the supervisor\'s tap ("Add them") both are added and those invoices count for the new clinic\'s owner — never before the tap',
+      !e10b.savedBefore && e10b.hadButton && e10b.after.length === 2 && JSON.stringify(w10b) === JSON.stringify([['2026-10-20', 'Mariam'], ['2026-11-05', 'Mariam']]), { e10b, who: w10b });
+    await S10b.ctx.close();
+    // E11 — the contact import makes a clinic for a name the list does not have
+    seedCloud();
+    const S11 = await mkPhone('E11-S'); await S11.boot('Dr. Ghaith', 'supervisor');
+    const e11 = await S11.ev(async () => {
+      openContactImport();
+      await handleContactSheet({ files: [new File(['Doctor name,Clinic\nDr. Lina Sample,Bright Smile Dental\n'], 'contacts.csv', { type: 'text/csv' })] });
+      const plan = _contactImport ? _contactImport.plan.map(x => x.action.type + ':' + (x.action.clinicName || '')) : null;
+      const chip = [...document.querySelectorAll('#ciRep2 .chip')].find(c => c.dataset.rep === 'Mariam'); if(chip) pickModalRep(chip);
+      window.__toasts = []; await commitContactImport();
+      const asked = (document.getElementById('ciAsk2') || {}).innerText || '';
+      const rows = [...document.querySelectorAll('#ciAsk2 [data-bulkmove]')].map(r => r.innerText.replace(/\s+/g, ' '));
+      const savedBefore = clinics.some(c => c.name === 'Bright Smile Dental');
+      const cancel = [...document.querySelectorAll('#ciAsk2 button')].find(b => !b.dataset.ask); if(cancel) cancel.click();
+      return { plan, asked, rows, savedBefore, open: document.getElementById('modalBack').classList.contains('show'), askAfterCancel: (document.getElementById('ciAsk2') || {}).innerText || '', toasts: window.__toasts.slice() };
+    });
+    const w11 = await whoGets(S11);
+    check('E11. the contact import shows the account whose invoices its new clinic would move before anything is saved; Cancel leaves everything as it was',
+      /newClinic:Bright Smile Dental/.test((e11.plan || []).join()) && /Sales would then count for another person/.test(e11.asked) && e11.rows.length === 1 && /Bright Smile Dental: Renova → Mariam · 2 sales lines/.test(e11.rows[0]) && /add those clinics first/.test(e11.asked) && !e11.savedBefore && e11.open && !e11.askAfterCancel
+        && JSON.stringify(w11) === RENOVAS && !parse(cloud.clinics).some(c => c.name === 'Bright Smile Dental'), { e11, who: w11 });
+    await S11.ctx.close();
+    // E12 — "Re-create this clinic" (a clinic visits still name, gone from the list): its name is checked like a new clinic's
+    seedCloud({ visits: JSON.stringify([visit('vGone', 'cGone', 'Mariam', { clinicName: 'Bright Smile Dental', date: '2026-11-10', notes: 'a visit at a clinic no longer on the list' })]) });
+    const S12 = await mkPhone('E12-S'); await S12.boot('Dr. Ghaith', 'supervisor');
+    const e12 = await S12.ev(async () => {
+      openRecreateClinic('cGone');
+      const name = document.getElementById('rcName').value;
+      const chip = [...document.querySelectorAll('#rcRepChips .chip')].find(c => c.dataset.rep === 'Mariam'); if(chip) pickModalRep(chip);
+      await confirmRecreateClinic('cGone');
+      const asked = (document.getElementById('rcAsk') || {}).innerText || '';
+      const savedBefore = clinics.some(c => c.id === 'cGone');
+      const btn = [...document.querySelectorAll('#rcAsk [data-ask]')].find(b => /Count from this month/.test(b.textContent));
+      if(btn) await confirmRecreateAsked(btn.dataset.ask);
+      const c = clinics.find(x => x.id === 'cGone');
+      return { name, asked, savedBefore, hadButton: !!btn, rep: c && c.rep, prevRep: c && c.prevRep, repSince: c && c.repSince };
+    });
+    const w12 = await whoGets(S12);
+    check('E12. re-creating a clinic whose name matches another person\'s sales is asked first; "Count from this month" keeps October with Renova, and the clinic is back under its own id',
+      e12.name === 'Bright Smile Dental' && /sales lines would count for/.test(e12.asked) && !e12.savedBefore && e12.hadButton && e12.rep === 'Mariam' && e12.prevRep === 'Renova' && e12.repSince === '2026-11-01'
+        && JSON.stringify(w12) === JSON.stringify([['2026-10-20', 'Renova'], ['2026-11-05', 'Mariam']]) && (parse(cloud.clinics).find(c => c.id === 'cGone') || {}).prevRep === 'Renova', { e12, who: w12 });
+    await S12.ctx.close();
+    // E13 (round 4, finding 2) — the order form's new customer, saved with no product first: the
+    // clinic was put on the list before "Add at least one product" stopped the save, so the second
+    // Save took it for an existing customer and never saved the clinics list (the order pointed at
+    // a clinic no other phone — nor this one after a refresh — had)
+    seedCloud();
+    const M13 = await mkPhone('E13-M'); await M13.boot('Mariam', 'rep');
+    const e13 = await M13.ev(async () => {
+      openStandaloneOrder(); startSoNewClinic();
+      document.getElementById('soNewClinicName').value = 'Fresh Smile Kids Clinic';
+      document.getElementById('soNewClinicPhone').value = '12345';
+      window.__toasts = []; await saveStandaloneOrder();                 // no product yet
+      const first = { toasts: window.__toasts.slice(), onList: clinics.some(c => c.name === 'Fresh Smile Kids Clinic'), typed: (document.getElementById('soNewClinicName') || {}).value };
+      soItems[productKey(products[0])] = 1;
+      window.__toasts = []; await saveStandaloneOrder();
+      return { first, second: window.__toasts.slice() };
+    });
+    await M13.tick(); await M13.tick();
+    const order13 = cloudVisits().find(v => v && v.orderOnly), cl13 = parse(cloud.clinics).find(c => c.name === 'Fresh Smile Kids Clinic');
+    const after13 = await M13.ev(() => { const v = visits.find(x => x && x.orderOnly); return { onPhone: clinics.filter(c => c.name === 'Fresh Smile Kids Clinic').map(c => c.id), label: v ? clinicLabel(v.clinicId, v) : null }; });
+    check('E13. the order form\'s new customer saved before a product was added: "Add at least one product" adds no customer; the second Save adds the customer (with its phone) and the order together — both in the cloud, the order points at it, still there after a refresh',
+      e13.first.toasts.some(t => /Add at least one product/.test(t)) && !e13.first.onList && e13.first.typed === 'Fresh Smile Kids Clinic'
+        && e13.second.some(t => /New customer added/.test(t)) && !e13.second.some(t => /already exists/.test(t))
+        && !!order13 && !!cl13 && order13.clinicId === cl13.id && cl13.phone === '12345' && after13.onPhone.join() === cl13.id && after13.label === 'Fresh Smile Kids Clinic',
+      { e13, orderClinicId: order13 && order13.clinicId, inCloud: cl13 ? { id: cl13.id, phone: cl13.phone } : null, after: after13 });
+    await M13.ctx.close();
+    // E13b–d — the new customer's own save refused by the rules: the order, the call or the visit
+    // was saved all the same, pointing at a clinic that was never saved (gone at the next refresh)
+    for(const form of ['order', 'call', 'visit']){
+      seedCloud();
+      const P = await mkPhone('E13-' + form); await P.boot('Mariam', 'rep');
+      mode.deny = { re: /^clinics$/, ops: 'w' };
+      const r = await P.ev(async form => {
+        const NAME = 'Fresh Smile Kids Clinic';
+        if(form === 'order'){ openStandaloneOrder(); startSoNewClinic(); document.getElementById('soNewClinicName').value = NAME; soItems[productKey(products[0])] = 1; window.__toasts = []; await saveStandaloneOrder(); }
+        if(form === 'call'){ openCallLog(); startClNewClinic(); document.getElementById('clNewClinicName').value = NAME; document.getElementById('clNotes').value = 'E13 first call'; window.__toasts = []; await saveCallLog(); }
+        if(form === 'visit'){ closeModal(); switchView('log'); prepLogView(); startNewClinic(); document.getElementById('newClinicName').value = NAME; document.getElementById('visitNotes').value = 'E13 first visit'; window.__toasts = []; await saveVisit(); }
+        const typed = (document.getElementById(form === 'order' ? 'soNewClinicName' : form === 'call' ? 'clNewClinicName' : 'newClinicName') || {}).value;
+        return { toasts: window.__toasts.slice(), onList: clinics.some(c => c.name === NAME), record: visits.some(v => v && (v.orderOnly || v.callOnly || v.notes === 'E13 first visit')), typed };
+      }, form);
+      mode.deny = null;
+      const inCloud = cloudVisits().some(v => v && (v.orderOnly || v.callOnly || v.notes === 'E13 first visit'));
+      check(`E13${{ order: 'b', call: 'c', visit: 'd' }[form]}. [${form}] the rules refuse the new customer's save: the ${form} is not saved either (it would point at a clinic nobody has) — the words say not allowed, not saved; no customer on the list, the form keeps the name`,
+        !inCloud && !r.record && !r.onList && r.typed === 'Fresh Smile Kids Clinic' && r.toasts.some(t => /Not allowed, not saved/.test(t)) && !r.toasts.some(t => /New customer added|Order saved|logged|Visit saved/i.test(t)),
+        { r, inCloud });
+      await P.ctx.close();
+    }
   }
 
   // ===================== F. the Assistant =====================

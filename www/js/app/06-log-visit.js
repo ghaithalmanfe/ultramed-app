@@ -522,8 +522,9 @@ async function saveVisitNow(gen, confirmed){
       return;
     }
     if(askBox) askBox.innerHTML = '';
-    clinicId = nc.id;
     clinics.push(nc);
+    if(!await saveNewClinicFirst(nc, 'newClinicAsk')){ renderAll(); return; } // the clinic first: refused or too large → no visit either, the form keeps everything (round 4)
+    clinicId = nc.id;
   }
   if(!clinicId){ showToast('Pick a clinic first'); return; }
   // Who did you meet is required: a visit without the doctor's name can't be

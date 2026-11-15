@@ -853,8 +853,9 @@ async function persistTeamNow(key){
     // but a refusal on a phone with no access to the team's data (signed out, a sign-in that
     // ended) is kept and queued like a save with no connection (v123 review, accessLost)
     const kind = saveErrKind(e);
-    const lost = kind === 'refused' && await accessLost();
-    if(kind && !lost){ _teamLastFail[key] = saveBlocked(key, kind, e); return false; }
+    const acc = kind === 'refused' ? await accessCheck() : null;
+    const lost = acc === 'lost', unsure = acc === 'unknown'; // unsure: the cloud did not say — kept, tried again (round 3)
+    if(kind && !lost && !unsure){ _teamLastFail[key] = saveBlocked(key, kind, e); return false; }
     // queued in memory always (it uploads while the app stays open); on the phone when both fit —
     // everything memory holds, with what this save had merged from the cloud
     let onPhone = false;
@@ -865,7 +866,7 @@ async function persistTeamNow(key){
     if(lost) parkSave(key, 'noAccess');
     if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); }
     updateSyncBadge();
-    if(lost) noAccessToast(onPhone ? NO_ACCESS_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
+    if(lost || unsure) noAccessToast(onPhone ? (lost ? NO_ACCESS_KEPT : ACCESS_UNKNOWN_KEPT) : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     else offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
                               : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     return false;
