@@ -971,7 +971,7 @@ function msHeroHTML(v, m, P, tt){
   const ring = `<div class="ms-hring${pct == null ? ' none' : ''}"><svg class="ms-ring" viewBox="0 0 190 190" aria-hidden="true"><defs><linearGradient id="msRingG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8FF3BF"/><stop offset=".5" stop-color="#6AEBA4"/><stop offset="1" stop-color="#46D98E"/></linearGradient></defs>`
     + `<circle class="trk" cx="95" cy="95" r="${R}" stroke-width="15"/>`
     + (f > 0 ? `<circle class="val" cx="95" cy="95" r="${R}" stroke-width="15" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 95 95)"/>` : '') + `</svg>`
-    + `<div class="ms-rc" data-ms="achievement" data-value="${pct == null ? '' : pct}"><strong>${pct == null ? '—' : msN(String(pct1) + '%')}</strong><span>${msT('Target Achieved')}</span></div></div>`;
+    + `<div class="ms-rc"${pct == null ? '' : ` data-ms="achievement" data-value="${pct}"`}><strong>${pct == null ? '—' : msN(String(pct1) + '%')}</strong><span>${msT('Target Achieved')}</span></div></div>`;
   const val = (k, n, cls) => n != null ? `<span class="ms-hv ${cls || ''}"${k ? ` data-ms="${k}" data-value="${n}"` : ''}>${msKwd(n)}</span>` : `<span class="ms-hv none ${cls || ''}"${k ? ` data-ms="${k}" data-value=""` : ''}>—</span>`;
   const left = wd.left != null ? wd.left : null;
   const remaining = D && D.remaining != null ? D.remaining : null, perDay = D && Pd.amount != null ? Pd.amount : null;
@@ -979,7 +979,7 @@ function msHeroHTML(v, m, P, tt){
   const daysTx = left != null && D ? msT(msCount(left, 'Work Day Left', 'Work Days Left')) : null;
   const perNone = D && A.pct != null && perDay == null ? (remaining === 0 ? 'Target reached' : remaining > 0 && left === 0 ? 'no working day left' : null) : null;
   const m1 = `<div class="ms-hcol m1">
-      <span class="ms-hl htgt">${msT('Monthly Target')}</span>${goal > 0 ? `<span class="ms-hv htgt" data-ms="of-target" data-value="${goal}">${msKwd(goal)}</span>` : `<span class="ms-hv htgt none" data-ms="of-target" data-value="">—</span>`}
+      <span class="ms-hl htgt">${msT(team && pair.length && unmeas.length ? 'Target of the people with a sales figure' : 'Monthly Target')}</span>${goal > 0 ? `<span class="ms-hv htgt" data-ms="of-target" data-value="${goal}">${msKwd(goal)}</span>` : `<span class="ms-hv htgt none" data-ms="of-target" data-value="">—</span>`}
       <span class="ms-hl hach">${msLab('Achieved', 'المحقق منذ بداية الشهر')}</span>${amount != null ? `<span class="ms-hv hach" data-ms="sales" data-value="${amount}">${msKwd(amount)}</span>` : `<span class="ms-hv hach none" data-ms="sales" data-value="">—</span>`}
       <div class="ms-hbar" role="img" aria-label="${esc(pct == null ? '—' : pct1 + '%')}"><i style="width:${pct == null ? 0 : Math.max(0, Math.min(100, pct1))}%;"></i></div>
       <div class="ms-hrem">${val('', remaining)}<span class="ms-hl">${msT('Remaining')}</span></div>
@@ -1039,7 +1039,7 @@ function renderTargetCard(v, m, P, sig){
     // her target card (the hero); the invoices on another rep's clinic follow it, in a card of their own below the picture
     const cx = msMemo(sig, 'cx\u0001' + p.rep, () => crossInvoiceNote(p.rep, msDigest(sig)));
     el.innerHTML = `<div class="ms-card ms-sales ms-hero">${msHeroHTML(v, m, P)}
-      <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR${t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}</div>${staleTargetNote(p.rep)}</div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
+      <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR${t.visits > 0 ? `<span> · </span><span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}</div>${staleTargetNote(p.rep)}</div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
     return;
   }
   const monthName = new Date(todayStr() + 'T00:00:00').toLocaleDateString(uiLocale(), { month: 'long' });
@@ -1398,10 +1398,10 @@ function msWeeksSVG(W){
     svg += `<line x1="${rtl ? 0 : axX}" y1="${yy}" x2="${rtl ? axX : VW}" y2="${yy}" stroke="${k === 0 ? '#DCE3E8' : '#EEF2F5'}"/><text class="ax" x="${labX}" y="${f1(yy + 4.5)}" text-anchor="${rtl ? 'start' : 'end'}" data-notr>${msK(step * k)}</text>`;
   }
   svg += `<line x1="${axX}" y1="${top - 6}" x2="${axX}" y2="${base}" stroke="#DCE3E8"/>`;
-  W.forEach((w, i) => { if(w.achieved != null){ const h = Math.max(1, base - y(w.achieved)); svg += `<rect class="bar${w.current ? ' cur' : ''}" x="${f1(cx(i) - 27)}" y="${f1(base - h)}" width="54" height="${f1(h)}" rx="2"><title>${esc(msK(w.achieved))}</title></rect>`; } });
-  const pts = W.map((w, i) => w.pace != null ? { x: cx(i), y: y(w.pace) } : null).filter(Boolean);
+  W.forEach((w, i) => { if(w.achieved != null){ const h = Math.max(1, base - y(w.achieved)); svg += `<rect class="bar${w.current ? ' cur' : ''}" data-v="${w.achieved}" x="${f1(cx(i) - 27)}" y="${f1(base - h)}" width="54" height="${f1(h)}" rx="2"><title>${esc(msK(w.achieved))}</title></rect>`; } });
+  const pts = W.map((w, i) => w.pace != null ? { x: cx(i), y: y(w.pace), v: w.pace } : null).filter(Boolean);
   if(pts.length > 1) svg += `<polyline class="tl" points="${pts.map(p => f1(p.x) + ',' + f1(p.y)).join(' ')}"/>`;
-  pts.forEach(p => { svg += `<circle class="td" cx="${f1(p.x)}" cy="${f1(p.y)}" r="4.6"/>`; });
+  pts.forEach(p => { svg += `<circle class="td" data-v="${p.v}" cx="${f1(p.x)}" cy="${f1(p.y)}" r="4.6"/>`; });
   W.forEach((w, i) => { svg += `<text class="xl" x="${f1(cx(i))}" y="219" text-anchor="middle">${esc('W' + w.week)}</text>`; });
   // the running week's amount over its bar (the picture's dark label)
   const ci = W.findIndex(w => w.current);
@@ -1685,6 +1685,7 @@ function msHow(id){
   let body = '';
   if(id === 'sales'){
     const P = msPeople(v, sig);
+    body += `<div class="ms-src" data-ms="source">${I('info')}<span>${msSourceLine(v, P)}</span></div>`;   // where the card's numbers come from (it was the line under the greeting)
     body += sec('Invoiced sales', 'The ERP sales files only: every invoice line, returns deducted. A line counts for the owner of the clinic; on a shared account, for the salesman who issued it.',
       'The sum of the net invoiced value from day 1 of the month to the last day the sales files cover.',
       P.map(p => kv(msWho(p.rep), p.measured ? `${msKd(p.bm.amount)} · ${msT('files to')} ${msDate(p.bm.asOf)}` : `— · ${msT(p.bm.basis === 'none' ? 'no sales file for this month' : 'not in the sales files of this month')}`)).join('')

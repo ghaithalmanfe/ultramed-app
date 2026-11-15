@@ -1084,7 +1084,7 @@
   .ms-hbar{position:relative; height:14px; border-radius:7px; background:#164B43; margin-top:16px; overflow:hidden; max-width:254px;}
   .ms-hbar i{position:absolute; inset-block:0; inset-inline-start:0; border-radius:7px; background:linear-gradient(90deg, #3FD98C, var(--p-mint) 70%, #8FF3BF);}
   .ms-hbar b{position:absolute; top:0; bottom:0; width:2px; background:#fff; opacity:.75; margin-inline-start:-1px;}
-  .ms-hdays{display:flex; align-items:center; gap:12px; font-size:19px; font-weight:600; color:#fff; letter-spacing:-.015em; margin:20px 0 22px;}
+  .ms-hdays{display:flex; align-items:center; gap:12px; font-size:19px; font-weight:600; color:#fff; letter-spacing:-.015em; margin:18px 0 14px;}
   .ms-hdays .ms-cal{width:25px; height:25px; flex-shrink:0;}
   .ms-hnote{font-size:13px; color:rgba(255,255,255,.82); line-height:1.5; margin-top:12px; max-width:330px;}
   .ms-hnote.warn{color:#F7D27A;}
@@ -1153,14 +1153,16 @@
   .ms-lb .a small{font-size:inherit; font-weight:inherit;}
   .ms-lb .v{font-size:14.5px; color:var(--p-ink2); text-align:end;}
   .ms-lb .det{grid-column:3 / -1;}
-  .ms-people:not(.ms-all) .ms-lb .det, .ms-people:not(.ms-all) .ms-lbx{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
+  /* the details of the rows until "View All": read by a screen reader, laid out at their own width, out of sight */
+  .ms-people{position:relative; overflow:hidden;}
+  .ms-people:not(.ms-all) .ms-lb .det, .ms-people:not(.ms-all) .ms-lbx{position:absolute !important; inset-inline:0; top:0; clip-path:inset(50%); opacity:0; pointer-events:none;}
   .ms-people.ms-all .ms-lb .det{font-size:13px; color:var(--p-muted); line-height:1.5; margin-top:4px;}
   .ms-people.ms-all .ms-lbx{display:block; font-size:12.5px; color:var(--p-muted); margin-top:8px; line-height:1.5;}
   .ms-people .ms-person.team{display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; padding:10px 0 0 92px; border-top:1px solid var(--p-line);}
   [dir="rtl"] .ms-people .ms-person.team{padding:10px 92px 0 0;}
   .ms-people .ms-person.team .s{grid-column:1 / -1;}
   .ms-lbhint{font-size:12.5px; color:var(--p-muted); margin:-2px 0 4px;}
-  .ms-people:not(.ms-all) .ms-lbhint{position:absolute !important; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);}
+  .ms-people:not(.ms-all) .ms-lbhint{position:absolute !important; inset-inline:0; top:0; clip-path:inset(50%); opacity:0; pointer-events:none;}
   @media (hover:hover){ .ms-lb:hover .n{color:var(--p-green);} }
 
   /* next actions (a person's #msNext; the team's on a phone) */
@@ -1191,7 +1193,7 @@
   .ms-advt p{margin:0;}
   .ms-advt p + p{margin-top:2px;}
   .ms-advt b{font-weight:600;}
-  .ms-advbtn{display:inline-flex; align-items:center; gap:12px; height:42px; padding:0 22px 0 26px; margin-top:20px; border:none; border-radius:999px; background:var(--p-dark); color:#fff; font:inherit; font-size:14.5px; font-weight:600; cursor:pointer; white-space:nowrap;}
+  .ms-advbtn{display:inline-flex; align-items:center; gap:12px; height:42px; max-width:100%; padding:0 22px 0 26px; margin-top:16px; border:none; border-radius:999px; background:var(--p-dark); color:#fff; font:inherit; font-size:14.5px; font-weight:600; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   [dir="rtl"] .ms-advbtn{padding:0 26px 0 22px;}
   .ms-advbtn .svgi{width:17px; height:17px; stroke-width:2.2;}
   [dir="rtl"] .ms-advbtn .svgi{transform:scaleX(-1);}
@@ -1502,8 +1504,8 @@
     #view-today .ms-adv .ms-ct{margin:0 0 6px 9px;}
     [dir="rtl"] #view-today .ms-adv .ms-ct{margin:0 9px 6px 0;}
     .ms-advb{grid-template-columns:120px minmax(0,1fr); column-gap:10px; align-items:end; flex:1;}
-    .ms-robot{width:126px; max-width:none; margin:0 0 -2px -4px;}
-    .ms-advt{padding:0 0 24px; align-self:start; margin-top:4px;}
+    .ms-robot{width:120px; max-width:100%; margin:0 0 -2px;}
+    .ms-advt{padding:0 0 22px; align-self:start; margin-top:0;}
     .ms-recent{padding:20px 20px 12px !important;}
     #view-today .ms-recent > .ms-ct{margin-bottom:10px;}
     #view-today .ms-photo{min-height:220px;}
@@ -1521,7 +1523,7 @@
     .top-actions{gap:20px;}
     body:not(.not-today) #app > .view#view-today{width:calc(100% - 48px); margin-inline-start:24px;}
     .ms-grid > #msChart, .ms-vteam > #targetCard > .ms-people, .ms-vperson > #msNext{grid-column:1 / -1;}
-    .ms-grid > #msAdvisor{grid-column:span 21;} .ms-grid > #msRecentCard{grid-column:span 19;} .ms-grid > #msPhoto{display:none;}
+    .ms-grid > #msAdvisor{grid-column:span 20;} .ms-grid > #msRecentCard{grid-column:span 20;} .ms-grid > #msPhoto{display:none;}
     .ms-hin{grid-template-columns:250fr 1px 330fr 1px 380fr;}
     .ms-hringw{padding-inline-start:30px;}
     .ms-hcol.m1{padding-inline-start:34px;} .ms-hcol.m2{padding-inline-start:34px;}
@@ -1532,6 +1534,13 @@
     .ms-kl small{display:none;}
     .ms-kv{font-size:28px;}
     .ms-spark{width:76px; height:30px; bottom:12px;}
+  }
+  @media (min-width:1024px) and (max-width:1439px){
+    .ms-advbtn{padding:0 16px; gap:8px; font-size:14px;}
+    .ms-advb{grid-template-columns:100px minmax(0,1fr) !important;}
+  }
+  @media (min-width:1280px) and (max-width:1365px){
+    .ms-grid > #msAdvisor{grid-column:span 21;} .ms-grid > #msRecentCard{grid-column:span 19;} .ms-grid > #msPhoto{display:none;}
   }
   @media (min-width:1280px) and (max-width:1439px){
     .ms-hcol.m1{padding-inline-start:44px;} .ms-hcol.m2{padding-inline-start:44px;}

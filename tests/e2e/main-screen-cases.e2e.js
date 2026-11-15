@@ -99,20 +99,20 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   await boot(G, 'supervisor', 1440, 900);
   const sep = await ev(() => { const d = Object.assign(digestData(), { today: '2026-09-30' }); return REPS.map(r => UMCore.monthAchievement(r, d)).map(a => a.basis === 'erp' && a.asOf === '2026-09-30'); });
   const sdA = (await dash({ rep: 'all', reps: await ev(() => REPS.slice()) })).sameDays;
-  let chart = await txt('#msChart'), rows = await txt('#msRows'), hChart = await how('chart'), hSales = await how('sales');
+  let chart = await txt('#msDaily'), rows = await txt('#msRows'), hChart = await how('chart'), hSales = await how('sales');
   check('No October file, September held for everyone: the core says why there is nothing to compare (this month has no figure), not that September has none', sep.every(Boolean) && sdA.measured === false && sdA.why === 'nocurrent', { sep, sameDays: { measured: sdA.measured, why: sdA.why, people: sdA.people, left: sdA.left } });
   check('… the team\'s comparison never says "No sales figure for September 2026"; it says this month has no figure yet', !/No sales figure for September 2026/.test(chart) && /Same days last month — No sales figure for this month yet, so nothing to compare/.test(chart), chart.slice(-260));
   check('… the phone row never says "No sales figure for the month before"', !/No sales figure for the month before/.test(rows) && /No sales figure for this month yet/.test(rows), rows);
   check('… neither ⓘ says the month before has no sales figure', !/No sales figure for the month before/.test(hChart + hSales) && /No sales figure for this month yet, so nothing to compare with/.test(hChart) && /No sales figure for this month yet, so nothing to compare with/.test(hSales),
     hChart.slice(hChart.indexOf('Against the same days'), hChart.indexOf('Against the same days') + 220));
   await person(M);
-  chart = await txt('#msChart');
+  chart = await txt('#msDaily');
   check('… Mariam\'s screen (the same on her phone) never says "No sales figure for September 2026"', !/No sales figure for September 2026/.test(chart) && /No sales figure for this month yet, so nothing to compare/.test(chart), chart.slice(-220));
 
   // ======================= the 1st of a month: October's file runs to 31 Oct, no November file =======================
   seed(cloud); { const P = filePeriods(); P.find(p => p.id === 'f2026-10').to = '2026-10-31'; setFiles(cloud, P); }
   await boot(G, 'supervisor', 1440, 900, { now: '2026-11-01T10:00:00' });
-  chart = await txt('#msChart');
+  chart = await txt('#msDaily');
   const cust = await txt('#msCust');
   check('1 November, October\'s file to 31 Oct: never "No sales figure for October 2026"; November has none yet', !/No sales figure for October 2026/.test(chart) && /No sales figure for this month yet, so nothing to compare/.test(chart), chart.slice(-220));
   check('… the customers card never claims "No customer invoiced this month yet" with no file for the month; it says there is no sales figure yet', !/No customer invoiced this month yet/.test(cust) && /No sales figure for this month yet\./.test(cust), cust);
@@ -123,14 +123,16 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   // ======================= a person the month's files do not hold (no line of Renova's in October) =======================
   seed(cloud, { renovaNotInFiles: true });
   await boot(G, 'supervisor', 1440, 900);
-  const ofT = await val('of-target', '#msSales'), ch = await ev(() => [...document.querySelectorAll('#msChart svg text')].map(t => t.textContent));
+  const ofT = await val('of-target', '#msSales'), ch = await ev(() => [...document.querySelectorAll('#msDaily svg text')].map(t => t.textContent));
+  const wk = await ev(() => ({ bar: Number((document.querySelector('#msChart rect.bar.cur') || {}).dataset?.v), dots: [...document.querySelectorAll('#msChart circle.td')].map(c => Number(c.dataset.v)) }));
   const nmA = await dash({ rep: 'all', reps: await ev(() => REPS.slice()) });
   check('Renova not in the files: the chart\'s line to the target ends on the target the sales card divides by (the people with a sales figure), not the team\'s', ofT === nmA.achievement.target && ofT === 13000 && ch.includes('13,000') && !ch.includes('21,000'), { ofTarget: ofT, labels: ch });
+  check('… Sales Performance draws them too: the running week\'s bar is their figure, the target line ends on their target (13,000), not the team\'s', wk.bar === nmA.achievement.achieved && wk.dots[wk.dots.length - 1] === 13000, wk);
   check('… and its forecast and last point are those people\'s (the card\'s forecast, the card\'s figure)', ch.includes(Math.round(nmA.forecast.forTarget).toLocaleString('en-US')) && ch.includes(Math.round(nmA.achievement.achieved).toLocaleString('en-US')), { labels: ch, forTarget: nmA.forecast.forTarget, achieved: nmA.achievement.achieved });
   const teamLine = await ev(() => { const e = document.querySelector('#targetCard .ms-person.team'); return e ? e.textContent.replace(/\s+/g, ' ').trim() : ''; });
   check('… the Team line (teamTargetNow, the app-wide rule) says who it counts as 0, so its % and the sales card\'s can be told apart', /Renova counted as 0 \(no figure in the files\)/.test(teamLine), teamLine);
   await person(R);
-  chart = await txt('#msChart');
+  chart = await txt('#msDaily');
   const rw = await txt('#msWork');
   check('… her screen never says "No sales figure for September 2026" (September holds her); it says this month has none', !/No sales figure for September 2026/.test(chart) && /No sales figure for this month yet, so nothing to compare/.test(chart), chart.slice(-220));
   check('… and never "Sales this week (ERP-verified): 0.00 KD": the week has no invoiced figure of hers, said in words', !/Sales this week \(ERP-verified\): 0\.00 KD/.test(rw) && /no invoiced sales figure/.test(rw), rw.slice(-200));
@@ -139,13 +141,15 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   seed(cloud); setTargets(cloud, t => { delete t[G]; });
   await boot(G, 'supervisor', 1440, 900);
   const nt = await dash({ rep: 'all', reps: await ev(() => REPS.slice()) });
-  const ntS = { sales: await val('sales', '#msSales'), of: await val('of-target', '#msSales'), ach: await val('achievement', '#msSales'), rem: await val('remaining', '#msSales'), fc: await val('forecast', '#msSales'), txt: await txt('#msSales') };
-  const ntPct = num(ntS.txt, /Forecast [\d.]+ KD (\d+)% of target/), gAmt = await ev(() => bestMonthRevenue('Dr. Ghaith').amount);
+  const ntS = { sales: await val('sales', '#msSales'), of: await val('of-target', '#msSales'), ach: await val('achievement', '#msSales'), rem: await val('remaining', '#msSales'), fc: await val('forecast', '#msKpis'), txt: await txt('#msSales') };
+  const ntPct = num(await txt('#msKpis'), /Sales Forecast (\d+)%/), gAmt = await ev(() => bestMonthRevenue('Dr. Ghaith').amount);
   check('No target for Dr. Ghaith: the sales card adds up on its own — its amount ÷ the target it shows = its %, the target − the amount = remaining, the forecast ÷ the target = the forecast\'s %',
     ntS.of === 17000 && Math.round(ntS.sales / ntS.of * 100) === ntS.ach && Math.abs(r2(ntS.of - ntS.sales) - ntS.rem) < 0.011 && Math.round(ntS.fc / ntS.of * 100) === ntPct,
     { shown: ntS, forecastPct: ntPct, dashboard: { achieved: nt.achievement.achieved, target: nt.achievement.target, pct: nt.achievement.pct, forTarget: nt.forecast.forTarget, all: nt.forecast.amount } });
   check('… his invoiced sales are said on their own line with his name and amount, and the team\'s total beside them', new RegExp('Dr\\. Ghaith[^.]*' + gAmt.toFixed(2).replace('.', '\\.') + ' KD').test(ntS.txt) && ntS.txt.includes(nt.sales.amount.toFixed(2)), ntS.txt.slice(-320));
-  const ch2 = await ev(() => [...document.querySelectorAll('#msChart svg text')].map(t => t.textContent));
+  const ch2 = await ev(() => [...document.querySelectorAll('#msDaily svg text')].map(t => t.textContent));
+  const wk2 = await ev(() => ({ bar: Number((document.querySelector('#msChart rect.bar.cur') || {}).dataset?.v), dots: [...document.querySelectorAll('#msChart circle.td')].map(c => Number(c.dataset.v)) }));
+  check('… Sales Performance draws the same people: the running week\'s bar is their figure, the target line ends on 17,000', wk2.bar === nt.achievement.achieved && wk2.dots[wk2.dots.length - 1] === 17000, wk2);
   check('… the chart draws the same people: the line to 17,000, their forecast and their figure (not everyone\'s 22,174)', ch2.includes('17,000') && ch2.includes(Math.round(nt.forecast.forTarget).toLocaleString('en-US')) && !ch2.includes(Math.round(nt.forecast.amount).toLocaleString('en-US')) && ch2.includes(Math.round(nt.achievement.achieved).toLocaleString('en-US')),
     { labels: ch2, forTarget: nt.forecast.forTarget, all: nt.forecast.amount });
   const hs = await how('sales');
@@ -188,7 +192,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   // ======================= a person's first month (the files before October hold no line of Renova's) =======================
   seed(cloud, { renovaNew: true });
   await boot(G, 'supervisor', 1440, 900);
-  const nc = (await dash({ rep: 'all', reps: await ev(() => REPS.slice()) })), work7 = await txt('#msWork'), chart7 = await txt('#msChart'), hc7 = await how('chart'), hw7 = await how('work');
+  const nc = (await dash({ rep: 'all', reps: await ev(() => REPS.slice()) })), work7 = await txt('#msWork'), chart7 = await txt('#msDaily'), hc7 = await how('chart'), hw7 = await how('work');
   check('Her first month: the team\'s new customers leave Renova out (her September is not in the files) — the card names her', nc.newCustomers.blocked.join() === 'Renova' && /New customers \d+ without Renova/.test(work7) && /Renova/.test(hw7), { blocked: nc.newCustomers.blocked, work: work7.slice(0, 260) });
   check('… the same-days comparison leaves her out (sameDays.left) — the card names her, and the ⓘ\'s "This month" says whose it is', nc.sameDays.left.join() === 'Renova' && /Same days last month [^]*? without Renova/.test(chart7) && /This month \(Mariam, Dr\. Ghaith\)/.test(hc7), { left: nc.sameDays.left, chart: chart7.slice(-260), how: hc7.slice(hc7.indexOf('Against the same days'), hc7.indexOf('Against the same days') + 300) });
   await person(R);
@@ -200,17 +204,17 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
     setFiles(cloud, rest.concat([{ id: 'oct-mg', from: '2026-10-01', to: '2026-10-08', rows: oct.rows.filter(r => r[8] !== SM[R]), repMap: { [SM[M]]: M, [SM[G]]: G } },
       { id: 'oct-r', from: '2026-10-01', to: '2026-10-06', rows: oct.rows.filter(r => r[8] === SM[R] && r[0] <= '2026-10-06'), repMap: { [SM[R]]: R } }])); }
   await boot(G, 'supervisor', 1440, 900);
-  const mx = (await dash({ rep: 'all', reps: await ev(() => REPS.slice()) })).sameDays, chart8 = await txt('#msChart'), src8 = await txt('#msSource'), hc8 = await how('chart');
+  const mx = (await dash({ rep: 'all', reps: await ev(() => REPS.slice()) })).sameDays, chart8 = await txt('#msDaily'), src8 = await ev(() => { msHow('sales'); const e = document.querySelector('#modalInner [data-ms="source"]'); const t = e ? e.innerText.replace(/\s+/g, ' ') : ''; closeModal(); return t; }), hc8 = await how('chart');
   check('Files to different days (sameDays.mixed): the comparison does not claim "days 1–8 Sep" for all of it; it says each person to the day her file reaches, the ⓘ person by person',
     mx.mixed && !/days 1–8 Sep/.test(chart8) && /each person to the day her file reaches/.test(chart8) && /Renova: days 1 to 6 September 2026/.test(hc8) && /Mariam: days 1 to 8 September 2026/.test(hc8), { mixed: mx.mixed, chart: chart8.slice(-220), how: hc8.slice(hc8.indexOf('Against the same days'), hc8.indexOf('Against the same days') + 360) });
-  check('… and the header does not claim one day for everyone: it names the earliest and the latest', /Oct 6/.test(src8) && /Oct 8/.test(src8) && /each person to the day her file reaches/.test(src8), src8);
+  check('… and the source line (now in the target card\'s ⓘ) does not claim one day for everyone: it names the earliest and the latest', /Oct 6/.test(src8) && /Oct 8/.test(src8) && /each person to the day her file reaches/.test(src8), src8);
 
   // ======================= the last day of a month: no working day left, target not reached =======================
   seed(cloud); { const P = filePeriods(); const oct = P.find(p => p.id === 'f2026-10'); oct.rows = monthRows('2026-10', 29, rng(99)); oct.to = '2026-10-31'; setFiles(cloud, P); }
   setTargets(cloud, t => { [M, R, G].forEach(r => { t[r].revenue *= 3; }); });
   await boot(G, 'supervisor', 1440, 900, { now: '2026-10-31T10:00:00' });
   const s10 = await txt('#msSales');
-  check('31 Oct (a Saturday), files to 31 Oct, target not reached: "Per work day" says why it has no figure', /Per work day — no working day left/.test(s10), (s10.match(/Remaining[^]*?Forecast/) || [''])[0]);
+  check('31 Oct (a Saturday), files to 31 Oct, target not reached: "Daily Required" says why it has no figure', /Daily Required — no working day left/.test(s10), (s10.match(/Remaining[^]*$/) || [''])[0]);
 
   // ======================= the default month: pace words, the customers' ⓘ, targets saved from Admin, figures that fail =======================
   seed(cloud);
@@ -252,10 +256,10 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   await boot(M, 'rep', 1440, 900);
   const n13 = await txt('#msNext'), sum13 = await txt('#msPlanSum'), list13 = await ev(() => [...document.querySelectorAll('#planList .card')].map(e => e.textContent.replace(/\s+/g, ' ').trim()));
   check('Mariam only phoned Harbor (planned): her plan says 1 of 2 done and Harbor is next — the next step, the plan row and the list agree',
-    /Today's plan: 1 of 2 done/.test(n13) && /Harbor Sample Dental Clinic In today's plan · not visited yet/.test(n13) && /^1 of 2 done$/.test(sum13) && list13.some(t => /Harbor/.test(t) && !/Visited today/.test(t)), { next: n13.slice(0, 140), sum: sum13, list: list13 });
+    /Today's plan: 1 of 2 done/.test(n13) && /Visit: Harbor Sample Dental Clinic Today · in today's plan/.test(n13) && /^1 of 2 done$/.test(sum13) && list13.some(t => /Harbor/.test(t) && !/Visited today/.test(t)), { next: n13.slice(0, 140), sum: sum13, list: list13 });
   await boot(R, 'rep', 1440, 900);
   const r13 = await txt('#msNext'), rsum13 = await txt('#msPlanSum'), rlist13 = await txt('#planList');
-  check('Renova was on a joint field visit at Mira (planned): her plan counts it as visited — everywhere', /Today's plan: 1 of 1 done/.test(r13) && !/Mira Sample Dental Clinic In today's plan · not visited yet/.test(r13) && /^1 of 1 done$/.test(rsum13) && /Visited today/.test(rlist13), { next: r13.slice(0, 140), sum: rsum13, list: rlist13.slice(0, 120) });
+  check('Renova was on a joint field visit at Mira (planned): her plan counts it as visited — everywhere', /Today's plan: 1 of 1 done/.test(r13) && !/Visit: Mira Sample Dental Clinic/.test(r13) && /^1 of 1 done$/.test(rsum13) && /Visited today/.test(rlist13), { next: r13.slice(0, 140), sum: rsum13, list: rlist13.slice(0, 120) });
 
   // ======================= planning today from the main screen =======================
   seed(cloud); { const p = JSON.parse(cloud.dayPlans); delete p['2026-10-08'][M]; cloud.dayPlans = JSON.stringify(p); }
@@ -265,7 +269,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1]) 
   await sleep(400);
   const pl = { next: await txt('#msNext'), sum: await txt('#msPlanSum'), list: await txt('#planList') };
   check('Planning today from her next-step card (two clinics she has not visited today): the card names the first planned clinic and the plan row counts them at once (no wait for a refresh)',
-    /Lagoon Sample Dental Clinic In today's plan · not visited yet/.test(pl.next) && /^0 of 2 done$/.test(pl.sum) && /Lagoon/.test(pl.list) && /Harbor/.test(pl.list), pl);
+    /Visit: Lagoon Sample Dental Clinic Today · in today's plan/.test(pl.next) && /^0 of 2 done$/.test(pl.sum) && /Lagoon/.test(pl.list) && /Harbor/.test(pl.list), pl);
 
   // ======================= the supervisor's view of a person = her own phone; what the folded cards hold =======================
   const occ = [{ id: 'm7', name: 'Quay Sample Dental Clinic', rep: M, cls: 'B', market: 'A', nextFollowUp: null, doctors: [{ id: 'm7d1', name: 'Dr. Example Q', birthday: '1985-10-08', cadence: 'weekly' }] },

@@ -2288,6 +2288,7 @@
     'This Month': 'هذا الشهر',
     'Viewing:': 'تعرض شاشة:',
     'Monthly Target': 'المستهدف الشهري',
+    'Target of the people with a sales figure': 'مستهدف من لهم رقم مبيعات',
     'Target Achieved': 'تحقيق المستهدف',
     'KWD': 'د.ك',
     'Daily Required': 'المطلوب يومياً',

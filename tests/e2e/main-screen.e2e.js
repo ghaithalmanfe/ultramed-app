@@ -98,12 +98,14 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       brands: [...document.querySelectorAll('#msBrands .ms-person[data-brand]')].map(e => { const p = e.querySelector('[data-ms="brand-pct"]');
         return { brand: e.dataset.brand, pct: p && p.dataset.value !== '' ? Number(p.dataset.value) : null, s: e.querySelector('.s').innerText.replace(/\s+/g, ' ').trim() }; }),
       cust: [...document.querySelectorAll('#msCust .ms-item')].map(e => e.innerText.replace(/\s+/g, ' ').trim()),
-      chart: txt('#msChart'), brandsTxt: txt('#msBrands'),
+      chart: txt('#msChart'), daily: txt('#msDaily'), brandsTxt: txt('#msBrands'), kpi: val('kpi'),
+      people: [...document.querySelectorAll('#targetCard .ms-person[data-person]')].map(e => e.dataset.person), names: [...document.querySelectorAll('#targetCard .ms-person[data-person] .n')].map(e => e.innerText.trim()),
       target: txt('#targetCard'), view: txt('#view-today'), switch: txt('#msSwitch'), who: txt('#msWho'), work: txt('#msWork'), next: txt('#msNext'), grid: document.getElementById('msGrid').className,
       // the whole screen as written, hidden parts too (laptop-only cards on a phone, folded cards), less the cross-invoice notice (the owner's v100 exception)
       html: (() => { const r = document.getElementById('view-today').cloneNode(true); r.querySelectorAll('.ms-cx').forEach(e => e.remove()); return r.innerHTML; })() };
   });
   const r2 = n => Math.round(n * 100) / 100;
+  const whole = n => Math.round(n).toLocaleString('en-US');   // the picture's amounts: whole KWD with thousands separators (data-value keeps the fils)
 
   // ======================= the supervisor, laptop =======================
   seed(cloud);
@@ -137,7 +139,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     return { r, ok: new RegExp(r.replace(/[.]/g, '\\.') + ' ' + pct + '% ' + p.amount.toFixed(2).replace('.', '\\.') + ' KD of ' + p.target.toFixed(2).replace('.', '\\.') + ' KD').test(s.target) }; });
   check('Team: each person\'s row is her own figure, "<name> <pct>% <achieved> KD of <target> KD" (Dr. Ghaith\'s own row too)', rowsOk.every(x => x.ok), { rowsOk, card: s.target.slice(0, 420) });
   check('Team: the Team line = teamTargetNow (achieved of target, the number of people)', new RegExp(truth.tt.ach.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.tt.goal.toFixed(2).replace('.', '\\.') + ' KD · \\w[\\w ]* · ' + truth.tt.n + ' reps').test(s.target) && new RegExp('Team ' + truth.tt.pct + '%').test(s.target), { tt: truth.tt });
-  check('Team: the sales card says the team target it divides by (everyone with a target has a figure): teamTargetNow\'s', s.ofTarget === truth.tt.goal && new RegExp('of the team target ' + truth.tt.goal.toFixed(2).replace('.', '\\.') + ' KD').test(s.view), { ofTarget: s.ofTarget, tt: truth.tt.goal });
+  check('Team: the sales card says the team target it divides by (everyone with a target has a figure): teamTargetNow\'s (data-value to the fils, shown as whole KWD: "Monthly Target 21,000 KWD")', s.ofTarget === truth.tt.goal && new RegExp('Monthly Target ' + whole(truth.tt.goal) + ' KWD').test(s.view), { ofTarget: s.ofTarget, tt: truth.tt.goal });
   check('Team: achievement, remaining, per working day and forecast = UMCore.execDashboard for the team', s.achievement === truth.D.pct && s.remaining === truth.D.remaining && s.perday === truth.D.perDay && s.forecast === truth.D.forecast && truth.D.forecast != null,
     { shown: [s.achievement, s.remaining, s.perday, s.forecast], dashboard: [truth.D.pct, truth.D.remaining, truth.D.perDay, truth.D.forecast] });
   check('Team: the pace mark says "expected by" the day the sales files reach, from the working days (Sun–Thu)', new RegExp('expected by Oct 8: ' + Math.round(truth.D.done / truth.D.total * 100) + '%').test(s.view) && truth.D.done === 6 && truth.D.total === 21,
@@ -148,7 +150,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const due = await ev(() => visibleDueClinics().length);
   check('Team: "Needs you today" counts the follow-ups due (visibleDueClinics) and names a customer to act on (execDashboard.act)', new RegExp(due + ' follow-ups due').test(s.next) && (truth.D.under ? s.next.includes(truth.D.firstUnder) : true) && new RegExp(truth.D.under + ' under-performing').test(s.next),
     { due, under: truth.D.under, first: truth.D.firstUnder, next: s.next.slice(0, 300) });
-  check('Team: the person switch lists the team and every person, himself included', /^Team Mariam Renova Dr\. Ghaith$/.test(s.switch), s.switch);
+  check('Team: the leaderboard lists every person, himself included — a row opens that person\'s screen (the picture: it replaces the person switch)', s.people.slice().sort().join() === truth.reps.slice().sort().join() && s.switch === '', { people: s.people, switch: s.switch });
   check('Team: each person\'s ▲/▼ against the same days last month = the growth her own screen gives (execDashboard for her) = the team\'s byPerson',
     truth.reps.every(r => truth.growth[r] != null && s.growth[r] === truth.growth[r] && truth.growth[r] === truth.ownGrowth[r]) && truth.reps.every(r => new RegExp(r.replace(/[.]/g, '\\.') + ' \\d+% [^]*?[▲▼] ' + Math.abs(truth.growth[r]) + '% vs the same days last month').test(s.target)),
     { shown: s.growth, team: truth.growth, own: truth.ownGrowth });
@@ -157,37 +159,39 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     truth.brands.length >= 3 && s.brands.length === truth.brands.length && truth.brands.every((b, i) => s.brands[i].brand === b.brand && s.brands[i].pct === b.pct && s.brands[i].s === bTxt(b)),
     { shown: s.brands, dashboard: truth.brands });
   check('Team: the chart\'s comparisons = execDashboard — the same days of September (growth, amount, days 1–8), no figure a year before (said with the month), year to date like for like',
-    s.cmp === truth.cmp.sd && truth.cmp.sd != null && new RegExp(truth.cmp.sdPrev.toFixed(2).replace('.', '\\.') + ' KD · days 1–' + +truth.cmp.sdTo.slice(8) + ' Sep').test(s.chart)
-      && !truth.cmp.ly && s.cmpYear === null && /Same month last year — No sales figure for October 2025/.test(s.chart)
-      && s.ytd === truth.cmp.ytd && new RegExp(truth.cmp.ytdSales.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.cmp.ytdTarget.toFixed(2).replace('.', '\\.') + ' KD').test(s.chart),
-    { shown: [s.cmp, s.cmpYear, s.ytd], dashboard: truth.cmp, chart: s.chart.slice(-260) });
+    s.cmp === truth.cmp.sd && truth.cmp.sd != null && new RegExp(truth.cmp.sdPrev.toFixed(2).replace('.', '\\.') + ' KD · days 1–' + +truth.cmp.sdTo.slice(8) + ' Sep').test(s.daily)
+      && !truth.cmp.ly && s.cmpYear === null && /Same month last year — No sales figure for October 2025/.test(s.daily)
+      && s.ytd === truth.cmp.ytd && new RegExp(truth.cmp.ytdSales.toFixed(2).replace('.', '\\.') + ' KD of ' + truth.cmp.ytdTarget.toFixed(2).replace('.', '\\.') + ' KD').test(s.daily),
+    { shown: [s.cmp, s.cmpYear, s.ytd], dashboard: truth.cmp, daily: s.daily.slice(-260) });
   check('Team: the day-by-day line is the month figure\'s own lines — its days add up to the team figure and it ends on it, on the day the files reach',
     truth.daily.sum === sum && truth.daily.to === '2026-10-08' && truth.daily.n === 8 && s.chart.includes(Math.round(sum).toLocaleString('en-US')), { daily: truth.daily, sum });
   check('Team: the biggest customers = execDashboard.customers.accounts, the same amounts as the Clinics screen\'s card',
     truth.cust.length === 5 && truth.cust.every((a, i) => a.net === a.clinics && s.cust[i] && s.cust[i].includes(a.name) && s.cust[i].endsWith(a.net.toFixed(2) + ' KD')), { shown: s.cust, dashboard: truth.cust });
 
-  // ---------- layout: the owner's final home design (14 Nov), the sidebar ----------
-  // (redesign: the target card spans the content, the four figure cards follow in one row, the chart sits beside the
-  // leaderboard, then the advisor, the recent visits and the pace card — the held design had three cards in its first row)
+  // ---------- layout: the owner's picture (15 Nov), the sidebar ----------
+  // (the picture: the target card spans the content, the four figure cards follow in one row, Sales Performance sits beside
+  // the leaderboard, then the sales advisor, the recent activity and the clinic photo side by side — the 14 Nov design had
+  // the advisor, the recent visits and the pace card there; the pace card is now below the picture)
   const lay = await ev(() => {
-    const r = id => { const e = document.getElementById(id); const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
+    const q = sel => { const e = document.querySelector(sel); const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
     const nav = document.getElementById('bottomNav').getBoundingClientRect();
     const kpis = [...document.querySelectorAll('#msKpis .ms-kc')].map(e => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; });
-    return { sales: r('msSales'), work: r('msWork'), next: r('msNext'), people: r('targetCard'), chart: r('msChart'), recent: r('msRecentCard'), status: r('msStatus'), kpis,
+    return { sales: q('#msSales'), people: q('#targetCard .ms-people'), chart: q('#msChart'), adv: q('#msAdvisor'), recent: q('#msRecentCard'), photo: q('#msPhoto'), status: q('#msStatus'), next: q('#msNext'), kpis,
       nav: { x: nav.left, y: nav.top, w: nav.width, h: nav.height }, vw: innerWidth, vh: innerHeight,
       sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, dir: document.documentElement.dir };
   });
-  check('Laptop 1440×900: the target card spans the content at the top, the four figure cards in one row under it, the chart beside the leaderboard, then the advisor, the recent visits and the pace card side by side',
+  check('Laptop 1440×900: the target card spans the content at the top, the four figure cards in one row under it, Sales Performance beside the leaderboard, then the advisor, the recent activity and the photo side by side; the needs and the pace card below them',
     lay.sales.w >= 1000 && lay.kpis.length === 4 && lay.kpis.every((k, i) => k.y === lay.kpis[0].y && (!i || k.x > lay.kpis[i - 1].x)) && lay.kpis[0].y >= lay.sales.y + lay.sales.h
     && lay.chart.y === lay.people.y && lay.chart.x < lay.people.x && lay.chart.w > lay.people.w && lay.chart.y > lay.kpis[0].y
-    && lay.next.y === lay.recent.y && lay.recent.y === lay.status.y && lay.next.x < lay.recent.x && lay.recent.x < lay.status.x && lay.next.y > lay.chart.y, lay);
+    && lay.adv.y === lay.recent.y && lay.recent.y === lay.photo.y && lay.adv.x < lay.recent.x && lay.recent.x < lay.photo.x && lay.adv.y > lay.chart.y
+    && lay.next.y > lay.adv.y && lay.status.y > lay.adv.y, lay);
   // redesign: the laptop's navigation is a labelled sidebar (every destination by name) instead of the 96 px icon rail
   check('Laptop: the navigation is a sidebar (full height, at the start edge, wide enough for its labels: 200–280 px), not a bottom bar', lay.nav.h >= lay.vh - 1 && lay.nav.w >= 200 && lay.nav.w <= 280 && lay.nav.x === 0, lay.nav);
-  const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
+  const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msAdvisor', 'targetCard', 'msChart', 'msDaily', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
     open: ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].every(id => getComputedStyle(document.querySelector('#' + id + ' .ms-body')).display !== 'none'),
     rows: getComputedStyle(document.getElementById('msRows')).display }));
   // each ⓘ is wired: a tap opens "How it is calculated"
-  const infoTap = (await act(() => ['msSales', 'msWork', 'msNext', 'targetCard', 'msChart', 'msBrands', 'msCust'].map(id => {
+  const infoTap = (await act(() => ['msSales', 'msWork', 'msAdvisor', 'targetCard', 'msChart', 'msDaily', 'msBrands', 'msCust'].map(id => {
     const b = document.querySelector('#' + id + ' .ms-i'); if(!b) return id + ': no ⓘ';
     b.click(); const open = document.getElementById('modalBack').classList.contains('show'), t = document.getElementById('modalInner').innerText; closeModal();
     return open && /How it is calculated/.test(t) ? '' : id + ': ' + (open ? t.slice(0, 40) : 'nothing opened');
@@ -201,7 +205,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
 
   // ---------- the person switch: Mariam's own screen ----------
   writes = [];
-  await act(() => document.querySelector('#msSwitch button[data-r="Mariam"]').click());
+  await act(() => document.querySelector('#targetCard .ms-person[data-person="Mariam"]').click());   // her row on the leaderboard opens her screen
   await ready(); await sleep(100);
   const mTruth = await ev(() => {
     const d = digestData(), D = UMCore.execDashboard(d, { rep: 'Mariam', reps: ['Mariam'] });
@@ -211,7 +215,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       kpi: card.total, visits: it(card, 'visits').value, week: it(week, 'visits').value, doctors: it(card, 'doctors').value, newbiz: it(card, 'newbiz').value, S };
   });
   const mSup = await shown();
-  check('Switch → Mariam: her own screen (the person view), labelled with whose it is and a way back to the team', /ms-vperson/.test(mSup.grid) && /Showing the screen of Mariam/.test(mSup.view) && /Back to the team/.test(mSup.view), mSup.grid);
+  check('Switch → Mariam: her own screen (the person view), labelled with whose it is and a way back to the team', /ms-vperson/.test(mSup.grid) && /Viewing: Mariam/.test(mSup.view) && /Back to the team/.test(mSup.view), mSup.grid);
   check('Switch → Mariam: her sales, achievement, remaining, per day and forecast = bestMonthRevenue and execDashboard for her', mSup.sales === mTruth.amount && mSup.achievement === mTruth.pct && mSup.remaining === mTruth.remaining && mSup.perday === mTruth.perDay && mSup.forecast === mTruth.forecast,
     { shown: [mSup.sales, mSup.achievement, mSup.remaining, mSup.perday, mSup.forecast], truth: [mTruth.amount, mTruth.pct, mTruth.remaining, mTruth.perDay, mTruth.forecast] });
   const kv = (str, re) => { const x = String(str).match(re); return x ? Number(x[1]) : null; };
@@ -219,7 +223,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     mSup.perdayVisits === kv(mTruth.visits, /^([\d.]+) a day/) && mSup.weekVisits === kv(mTruth.week, /\((\d+) in/) && mSup.doctors === kv(mTruth.doctors, /^(\d+) doctors met/) && mSup.accounts === kv(mTruth.newbiz, /(\d+) new accounts?$/)
       && new RegExp('goal ' + mTruth.S.visitsPerDay + ' a day').test(mSup.work) && new RegExp(mSup.doctors + ' of ' + mTruth.S.doctorsPerMonth).test(mSup.work),
     { shown: [mSup.perdayVisits, mSup.weekVisits, mSup.doctors, mSup.accounts], kpi: [mTruth.visits, mTruth.week, mTruth.doctors, mTruth.newbiz] });
-  check('Switch → Mariam: the KPI score out of 100 = kpiScorecard\'s total', new RegExp('Performance score ' + mTruth.kpi + ' of 100').test(mSup.who), { who: mSup.who, kpi: mTruth.kpi });
+  check('Switch → Mariam: the KPI score out of 100 = kpiScorecard\'s total (her figure card)', mSup.kpi === mTruth.kpi && new RegExp('Performance ' + mTruth.kpi + '%').test(mSup.view), { kpi: mSup.kpi, truth: mTruth.kpi });
   check('Switch → Mariam: her growth against the same days last month = the ▲/▼ on her row in the team\'s card (one figure in both places)', mSup.cmp === truth.growth[M] && mSup.cmp === truth.ownGrowth[M], { her: mSup.cmp, row: truth.growth[M] });
   // the sheet More → KPI scorecard shows for her, opened from her score: the same total and the same figures
   const kpiSheet = (await act(() => { msKpi(); const t = document.getElementById('modalInner').innerText.replace(/\s+/g, ' ').trim(); closeModal(); return t; })) || '';
@@ -286,12 +290,12 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   await act(() => document.querySelector('#dueList .card').click()); await sleep(150);
   const fuTxt = await ev(() => { const t = document.getElementById('modalBack').classList.contains('show') ? document.getElementById('modalInner').innerText : ''; closeModal(); return t; });
   check('Kept: a follow-up opens its confirmation (log it, reschedule, clear)', /What's the next step\?/.test(fuTxt) && /Not yet — reschedule/.test(fuTxt), fuTxt.slice(0, 120));
-  await act(() => [...document.querySelectorAll('#msRecentCard .link')].find(e => /See all/.test(e.textContent)).click()); await sleep(100);
+  await act(() => [...document.querySelectorAll('#msRecentCard .link')].find(e => /View All/.test(e.textContent)).click()); await sleep(100);
   const seeAll = await ev(() => activeView);
   await ev(() => switchView('today')); await sleep(80);
   await act(() => document.getElementById('planLink').click()); await sleep(100);
   const planDay = await ev(() => { const t = document.getElementById('modalInner').innerText; closeModal(); return t; });
-  check('Kept: See all opens the visit log; Plan today opens the day planner', seeAll === 'log' && /Plan today's visits/.test(planDay), { seeAll, planDay: planDay.slice(0, 60) });
+  check('Kept: View All (recent activity) opens the visit log; Plan today opens the day planner', seeAll === 'log' && /Plan today's visits/.test(planDay), { seeAll, planDay: planDay.slice(0, 60) });
 
   // ---------- no horizontal overflow; the phone arrangement ----------
   const over = [], spill = [], wrap = [], rowsAt = {};
@@ -301,17 +305,17 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     if(m.sw > m.cw) over.push({ w, m });
     const sp = await ev(spilled); if(sp.length) spill.push({ w, sp });
     if(w >= 390){ const sw = await ev(statsWrap); if(sw.length) wrap.push({ w, sw }); }
-    if(w >= 1024) rowsAt[w] = await ev(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
-      return { sales: r('msSales'), next: r('msNext'), people: r('targetCard'), chart: r('msChart'), recent: r('msRecentCard'), status: r('msStatus'),
+    if(w >= 1024) rowsAt[w] = await ev(() => { const r = sel => { const b = document.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
+      return { sales: r('#msSales'), adv: r('#msAdvisor'), people: r('#targetCard .ms-people'), chart: r('#msChart'), recent: r('#msRecentCard'), photo: r('#msPhoto'),
         kpis: [...document.querySelectorAll('#msKpis .ms-kc')].map(e => Math.round(e.getBoundingClientRect().top)) }; });
   }
-  // redesign (the owner's final home design): the target card across the content and the four figures in one row at every
-  // laptop width; the chart beside the leaderboard from 1280 px (above it at 1024); the cards below two a row, each wide
-  // enough for its figures (≥ 360 px), up to 1366 px, and three a row (advisor, recent visits, pace) from 1440 px
-  const okAt = (x, w) => !!x && x.kpis.length === 4 && x.kpis.every(t => t === x.kpis[0]) && x.sales.w >= 1.9 * x.next.w
+  // the owner's picture: the target card across the content and the four figures in one row at every laptop width; Sales
+  // Performance beside the leaderboard from 1280 px (above it at 1024); the advisor and the recent activity side by side, each
+  // wide enough for its words (≥ 360 px); the clinic photo beside them from 1366 px (a decoration: left out below)
+  const okAt = (x, w) => !!x && x.kpis.length === 4 && x.kpis.every(t => t === x.kpis[0]) && x.sales.w >= 1.9 * x.adv.w
     && (w >= 1280 ? x.chart.y === x.people.y && x.chart.x !== x.people.x : x.people.y > x.chart.y)
-    && x.next.y === x.recent.y && (w >= 1440 ? x.status.y === x.next.y : x.status.y > x.next.y && x.next.w >= 360 && x.recent.w >= 360);
-  check('Laptop from 1024 to 1440 px: the target card across the content and the four figures in one row; the chart beside the leaderboard from 1280 px (above it at 1024); the advisor and the recent visits side by side (≥ 360 px each up to 1366 px), the pace card beside them from 1440 px', [1024, 1280, 1366, 1440].every(w => okAt(rowsAt[w], w)), rowsAt);
+    && x.adv.y === x.recent.y && x.adv.w >= 360 && x.recent.w >= 360 && (w >= 1366 ? x.photo.y === x.adv.y && x.photo.w > 0 : x.photo.w === 0);
+  check('Laptop from 1024 to 1440 px: the target card across the content and the four figures in one row; Sales Performance beside the leaderboard from 1280 px (above it at 1024); the advisor and the recent activity side by side (≥ 360 px each), the photo beside them from 1366 px', [1024, 1280, 1366, 1440].every(w => okAt(rowsAt[w], w)), rowsAt);
   check('Supervisor (team, English): the three figures under the sales card — label, amount, sub-line — each on one line from 390 px up (360 may wrap, never spill)', wrap.length === 0, wrap.slice(0, 3));
   check('Supervisor: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over.length === 0, over);
   check('Supervisor: no figure spills out of its box (cards, stats columns, rows) at any of those widths', spill.length === 0, spill.slice(0, 3));
@@ -331,19 +335,19 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const kpiRow = await ev(() => { const r = document.querySelector('#msRows [data-row="kpi"]'); return r ? r.innerText.replace(/\s+/g, ' ') : ''; });
   check('Rep: the KPI score out of 100 = kpiScorecard (the phone\'s one-tap row)', new RegExp('Performance score \\(KPI\\) ' + rTruth.kpi + ' of 100').test(kpiRow), { kpiRow, kpi: rTruth.kpi });
   const leak = t => ['Renova', 'Ghaith', 'رانوفا', 'غيث', 'Team', 'الفريق'].filter(n => t.includes(n)).concat(rTruth.others.filter(x => t.includes(x))).concat(t.includes(rTruth.tt.goal.toFixed(2)) || t.includes(rTruth.tt.ach.toFixed(2)) ? ['team total'] : []);
-  check('Rep (English): only her own — no other person\'s name or figure, no team total, no person switch — in what shows and in the hidden parts', leak(rep.view).length === 0 && leak(rep.html).length === 0 && rep.switch === '' && /ms-vperson/.test(rep.grid), { shown: leak(rep.view), html: leak(rep.html) });
+  check('Rep (English): only her own — no other person\'s name or figure, no team total, no leaderboard — in what shows and in the hidden parts', leak(rep.view).length === 0 && leak(rep.html).length === 0 && rep.people.length === 0 && /ms-vperson/.test(rep.grid), { shown: leak(rep.view), html: leak(rep.html) });
   await act(() => msOpenPerson('Renova')); await ready();
   const still = await shown();
   check('Rep: the switch cannot be forced (ownRepOnly): asking for another person keeps her own screen', still.sales === rTruth.amount && leak(still.view).length === 0, leak(still.view));
   const phone = await ev(() => {
-    const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
+    const r = id => { const b = (document.getElementById(id) || document.querySelector(id)).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
     const nav = document.getElementById('bottomNav').getBoundingClientRect(), log = document.querySelector('#bottomNav button[data-view="log"]').getBoundingClientRect();
     const kpis = [...document.querySelectorAll('#msKpis .ms-kc')].map(e => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top) }; });
-    return { sales: r('targetCard'), work: r('msWork'), next: r('msNext'), adv: r('msAdvisor'), kpis, nav: { top: Math.round(nav.top), bottom: Math.round(nav.bottom), w: Math.round(nav.width), h: Math.round(nav.height) },
+    return { sales: r('#targetCard .ms-hero'), work: r('msWork'), next: r('msNext'), adv: r('msAdvisor'), kpis, nav: { top: Math.round(nav.top), bottom: Math.round(nav.bottom), w: Math.round(nav.width), h: Math.round(nav.height) },
       log: { top: Math.round(log.top), bottom: Math.round(log.bottom), w: Math.round(log.width), h: Math.round(log.height) }, vh: innerHeight, vw: innerWidth, sw: document.documentElement.scrollWidth };
   });
   // redesign (the owner's final home design): her target card first, her four figures two a row, her advisor, her next step, then her visits
-  check('Phone 390×844: one column — her target card first, then her four figures two a row, her advisor, her next step and her visits, each the width of the screen',
+  check('Phone 390×844: one column — her target card first, then her four figures two a row, her advisor, her next actions and her visits, each the width of the screen',
     phone.sales.x === phone.adv.x && phone.adv.x === phone.next.x && phone.next.x === phone.work.x && phone.sales.w >= 340 && phone.adv.w >= 340
     && phone.kpis.length === 4 && phone.kpis[0].y === phone.kpis[1].y && phone.kpis[2].y === phone.kpis[3].y && phone.kpis[2].y > phone.kpis[0].y
     && phone.sales.y < phone.kpis[0].y && phone.kpis[3].y < phone.adv.y && phone.adv.y < phone.next.y && phone.next.y < phone.work.y, phone);
@@ -369,8 +373,9 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   }
   check('Rep: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over2.length === 0, over2);
   check('Rep: no figure spills out of its box at any of those widths', spill2.length === 0, spill2.slice(0, 3));
-  check('Rep (English): the three figures under her sales card each on one line from 390 px up, in the design\'s short words (Per work day · N days left · Forecast · N% of target)',
-    wrap2.length === 0 && /Forecast \d+\.\d\d KD \d+% of target/.test(rep.view) && /Per work day \d+\.\d\d KD \d+ days? left/.test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0] });
+  check('Rep (English, phone): her target card and figures in the picture\'s words — achieved over the target, remaining, N Work Days Left, the amount a day (whole KWD of the same figures), the forecast % with its amount and "estimate"',
+    wrap2.length === 0 && rep.remaining != null && new RegExp(whole(rep.ofTarget) + ' KWD ' + whole(rep.sales) + ' ' + whole(rep.remaining) + ' KWD Remaining \\d+ Work Days? Left ' + whole(rep.perday) + ' KWD / Day').test(rep.view)
+      && /Forecast \d+% ≈ [\d,]+ KWD · estimate/.test(rep.view), { wrap2: wrap2.slice(0, 3), card: (rep.view.match(/Remaining[^]{0,160}/) || [''])[0] });
 
   // ======================= Arabic: right to left, no English left =======================
   const english = () => ev(() => {
@@ -390,21 +395,21 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   let ar = await english();
   const arRep = await shown();
   check('Arabic, rep (phone): right to left, and no English left on the main screen (names, clinics and acronyms aside)', ar.dir === 'rtl' && ar.left.length === 0, ar.left.slice(0, 20));
-  check('Arabic, rep: still only her own — no other person in Arabic or Latin letters, no team total (hidden parts too)', leak(arRep.view).length === 0 && leak(arRep.html).length === 0 && /مبيعاتي هذا الشهر/.test(arRep.view) && /د\.ك/.test(arRep.view), { shown: leak(arRep.view), html: leak(arRep.html) });
+  check('Arabic, rep: still only her own — no other person in Arabic or Latin letters, no team total (hidden parts too)', leak(arRep.view).length === 0 && leak(arRep.html).length === 0 && /أدائي/.test(arRep.view) && /المتبقي/.test(arRep.view) && /د\.ك/.test(arRep.view), { shown: leak(arRep.view), html: leak(arRep.html) });
   const arWrap = [];
   const wrapAt = async (who, sizes) => { for(const [w, h] of sizes){ await page.setViewportSize({ width: w, height: h }); await sleep(120); const sw = await ev(statsWrap); if(sw.length) arWrap.push({ who, w, sw }); } };
-  const arWords = /التوقع للشهر/.test(arRep.view) && /\d+% من الهدف/.test(arRep.view) && /(?:يومًا|أيام) باقية|يوم واحد باقٍ|يومان باقيان/.test(arRep.view) && /لكل يوم عمل/.test(arRep.view);
+  const arWords = /التوقع للشهر/.test(arRep.view) && /د\.ك \/ يوم/.test(arRep.view) && /باقي (?:\d+ (?:يوم|أيام) عمل|يوم عمل واحد|يوما عمل)/.test(arRep.view) && /المتبقي/.test(arRep.view) && /تقدير/.test(arRep.view);
   await wrapAt('Mariam', [[390, 844], [1440, 900]]);
   await boot(G, 'supervisor', 1440, 900, { lang: 'ar' });
   ar = await english();
   const arSup = await shown();
-  check('Arabic, supervisor (laptop): right to left, no English left, the people in Arabic (مريم، رانوفا، د. غيث)', ar.dir === 'rtl' && ar.left.length === 0 && /^الفريق مريم رانوفا د\. غيث$/.test(arSup.switch) && arSup.sales === sum, { left: ar.left.slice(0, 20), sw: arSup.switch });
+  check('Arabic, supervisor (laptop): right to left, no English left, the people on the leaderboard in Arabic (مريم، رانوفا، د. غيث)', ar.dir === 'rtl' && ar.left.length === 0 && arSup.names.slice().sort().join('|') === ['مريم', 'رانوفا', 'د. غيث'].sort().join('|') && arSup.sales === sum, { left: ar.left.slice(0, 20), names: arSup.names });
   await wrapAt('team', [[390, 844], [1024, 768], [1280, 800], [1366, 768], [1440, 900]]);
   await act(() => msOpenPerson('Renova')); await ready(); await sleep(150);
   ar = await english();
   check('Arabic, supervisor on Renova\'s screen: no English left there either', ar.left.length === 0, ar.left.slice(0, 20));
   await wrapAt('Renova', [[390, 844], [1440, 900]]);
-  check('Arabic: the three figures under the sales card each on one line from 390 px up — her phone, the team (390 … 1440), another person\'s screen — in the design\'s words (التوقع للشهر · لكل يوم عمل · يومًا باقية · من الهدف)',
+  check('Arabic: the target card\'s figures in the picture\'s words — her phone, the team (390 … 1440), another person\'s screen (المتبقي · باقي … يوم عمل · د.ك / يوم · التوقع للشهر … تقدير)',
     arWrap.length === 0 && arWords, { arWrap: arWrap.slice(0, 4), arWords });
 
   // ======================= a month with no sales file =======================
@@ -434,7 +439,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       && /Renova: a target but no sales figure in the files, so not in the percentage\./.test(nm.view),
     { shown: [nm.sales, nm.achievement, nm.remaining, nm.perday, nm.forecast], truth: nmT });
   check('… the sales card adds up on its own: "of" the target its percentage divides (the people with a sales figure, not the team\'s 21000), remaining = that target − the figure',
-    nm.ofTarget === nmT.D.target && nmT.D.target === 13000 && nmT.tt.goal === 21000 && /of the target of the people with a sales figure 13000\.00 KD/.test(nm.view) && !/of the team target/.test(nm.view)
+    nm.ofTarget === nmT.D.target && nmT.D.target === 13000 && nmT.tt.goal === 21000 && /Target of the people with a sales figure 13,000 KWD/.test(nm.view) && !/Monthly Target/.test(nm.view)
       && nmT.D.remaining === Math.round((nmT.D.target - nmT.D.achieved) * 100) / 100 && nmT.D.achieved === nm.sales, { ofTarget: nm.ofTarget, D: nmT.D, tt: nmT.tt });
   check('… her row on the target card keeps the Today card\'s words (no figure yet, and why); the Team line stays teamTargetNow, as on every other screen',
     /Renova 0% 0\.00 KD of 8000\.00 KD · no figure yet/.test(nm.target) && /no invoice of this rep in the ERP files uploaded/.test(nm.target) && new RegExp('Team ' + nmT.tt.pct + '%').test(nm.target),
@@ -452,8 +457,8 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const nwT = await ev(() => { const d = digestData(), D = UMCore.execDashboard(d, { rep: 'Renova', reps: ['Renova'] });
     return { now: bestMonthRevenue('Renova').amount, sd: D.sameDays.measured, sepFile: erpPeriods().some(p => p.from <= '2026-09-30' && p.to >= '2026-09-01') }; });
   check('Her first month (a September file is loaded, but no line of hers in it): her screen says there is no sales figure of September to compare with — never "no sales file"',
-    nwT.sepFile && nwT.sd === false && nw.sales === nwT.now && nw.cmp === null && /Same days last month — No sales figure for September 2026/.test(nw.chart) && !/No sales file for/.test(nw.view),
-    { truth: nwT, chart: nw.chart.slice(-200) });
+    nwT.sepFile && nwT.sd === false && nw.sales === nwT.now && nw.cmp === null && /Same days last month — No sales figure for September 2026/.test(nw.daily) && !/No sales file for/.test(nw.view),
+    { truth: nwT, daily: nw.daily.slice(-200) });
 
   check('no page errors', errors.length === 0, errors.slice(0, 6));
   console.log(results.join('\n'));
