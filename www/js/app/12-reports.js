@@ -692,7 +692,7 @@ function lbNote(txt){
   if(!el && txt){
     el = document.createElement('div'); el.id = 'lbNote'; el.className = 'lbcap'; el.setAttribute('data-notr', '');
     el.style.cssText = 'margin-top:8px; font-size:13px; color:#FFD27A;';
-    document.getElementById('lightbox').appendChild(el);
+    (document.querySelector('#lightbox .lb-frame') || document.getElementById('lightbox')).appendChild(el);   // inside the photo's frame
   }
   if(!el) return;
   el.textContent = txt ? (trOf(txt) || txt) : '';

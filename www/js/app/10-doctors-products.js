@@ -285,19 +285,20 @@ function renderDoctorsDb(){
   const totalFields = docs.length*7 + ddPool().filter(c=>c.cls!=='Closed').length*3;
   const pctDone = totalFields ? Math.max(0, Math.round((1 - dataGaps().reduce((s2,g)=>s2+g.miss.length,0)/totalFields)*100)) : 100;
   body.innerHTML = `
-    <div style="display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap;">
+    <div class="dd-tools">
       ${currentUser.role==='supervisor'?`<button class="chip small" onclick="openContactImport()">${I('download')} Import contacts</button>`:''}
       <button class="chip small" onclick="openDoctorRecords()">${I('clipboard')} Doctor records</button>
       <button class="chip small" style="${gaps?'border-color:var(--gold); color:var(--amber-ink); font-weight:700;':''}" onclick="openDataEntry()">${I('pencil')} Complete data ${gaps?`(${gaps})`:'✓'}</button>
       <button class="chip small" onclick="exportDoctorsDbXlsx()">${I('share')} Export (Excel)</button>
-      <span class="chip small" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
+      <span class="chip small dd-pct" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
     </div>
-    ` + (list.map(d=>{
+    ` + (list.length ? `<div class="lrows dd-rows">` : '') + (list.map(d=>{
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    return `<div class="card clickable" style="margin-bottom:8px;" onclick="openDoctorProfile('${d.clinicId}','${d.id}')">
-      <div class="row-between">
+    return `<div class="lrow dd-row clickable" role="button" tabindex="0" onclick="openDoctorProfile('${d.clinicId}','${d.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="lr-ic" aria-hidden="true">${pb ? `<span class="dd-emo">${pb.icon}</span>` : I('stethoscope')}</span>
+      <div class="row-between" style="flex:1; min-width:0; align-items:flex-start;">
         <div style="min-width:0;">
-          <div class="clinic-name">${pb?pb.icon+' ':''}${esc(d.name)}${d.title?` <span style="color:var(--muted); font-size:11.5px; font-weight:400;">${esc(d.title)}</span>`:''}</div>
+          <div class="clinic-name">${esc(d.name)}${d.title?` <span style="color:var(--muted); font-size:11.5px; font-weight:400;">${esc(d.title)}</span>`:''}</div>
           ${docBadges(rawOf(d))}
           <div class="clinic-sub">${esc(d.clinicName)}${currentUser.role==='supervisor'?' · '+esc(d.rep):''} · ${d.fieldVisits} visit${d.fieldVisits===1?'':'s'}${d.calls?` · ${d.calls} call${d.calls===1?'':'s'}`:''}${d.lastVisit?` · last ${fmtDate(d.lastVisit)}`:' · never visited'}</div>
         </div>
@@ -308,7 +309,7 @@ function renderDoctorsDb(){
         </div>
       </div>
     </div>`;
-  }).join('') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
+  }).join('') + (list.length ? `</div>` : '') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
 }
 // ---- PRESCRIPTIONS GIVEN: the Doctors page tab (v114) ----
 // Pads of printed prescription forms, counted from the one ledger
@@ -334,12 +335,12 @@ function renderRxStats(body){
   const g = rxGrowthNow(), T = g.totals, inc = T.incomplete || {};
   const fig = (n, incomplete) => incomplete ? '—' : n;
   const tile = (key, label, cur, curInc, prevLabel, prev, prevInc, growth) => `
-    <div class="rx-tile" style="background:var(--paper); border-radius:10px; padding:9px 5px; min-width:0;">
-      <div style="font-size:10.5px; color:var(--muted); font-weight:700;">${label}</div>
-      <div data-rx-total="${key}" style="font-size:20px; font-weight:800; line-height:1.3;">${fig(cur, curInc)}</div>
-      ${prevLabel ? `<div style="font-size:10.5px; color:var(--muted); line-height:1.3;">${prevLabel}: ${fig(prev, prevInc)}</div>
-      <div style="font-size:12px; margin-top:2px;">${rxGrowthTag(growth, cur, prev, curInc || prevInc)}</div>`
-      : (inc.total ? '<div style="font-size:10.5px; color:var(--amber-ink); line-height:1.3;">incomplete</div>' : '')}
+    <div class="rx-tile">
+      <div class="rt-l">${label}</div>
+      <div class="rt-n" data-rx-total="${key}">${fig(cur, curInc)}</div>
+      ${prevLabel ? `<div class="rt-p">${prevLabel}: ${fig(prev, prevInc)}</div>
+      <div class="rt-g">${rxGrowthTag(growth, cur, prev, curInc || prevInc)}</div>`
+      : (inc.total ? '<div class="rt-p" style="color:var(--amber-ink);">incomplete</div>' : '')}
     </div>`;
   // the three figures of a doctor or a center, each label its own text (translated)
   const figLine = x => `<div style="display:flex; flex-wrap:wrap; gap:2px 12px; font-size:12px; color:var(--muted); margin-top:3px;">
@@ -381,12 +382,12 @@ function renderRxStats(body){
       </div>`).join('')}</div>
     <button class="chip small" style="margin-top:10px;" onclick="exportRxXlsx()">${I('share')} Export prescriptions (Excel)</button>`;
   body.innerHTML = `
-    <div class="card" style="margin-bottom:10px;">
-      <div class="row-between" style="margin-bottom:8px; flex-wrap:wrap;">
-        <div style="font-weight:800; font-size:14px;">${I('pill')} <span>Prescription pads given</span></div>
+    <div class="card rx-head" style="margin-bottom:10px;">
+      <div class="row-between" style="margin-bottom:12px; flex-wrap:wrap;">
+        <div class="sec-h"><span class="sec-ic" aria-hidden="true">${I('pill')}</span><span>Prescription pads given</span></div>
         ${sup ? `<button class="chip small" id="rxTypesBtn" onclick="openRxTypes()">Prescription types</button>` : ''}
       </div>
-      <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:6px; text-align:center;">
+      <div class="rx-tiles">
         ${tile('week', 'This week', T.week, inc.week, 'Same days last week', T.prevWeek, inc.prevWeek, T.weekGrowth)}
         ${tile('month', 'This month', T.month, inc.month, 'Same days last month', T.prevMonth, inc.prevMonth, T.monthGrowth)}
         ${tile('all', 'All time', T.total, false, null)}
@@ -402,7 +403,7 @@ let _contactImport = null;
 function openContactImport(){
   if(!requireAdmin()) return;
   showModal(`
-    <h3 style="margin-top:0;">📥 Import all contacts at once</h3>
+    <h3 style="margin-top:0;" data-ic="download">📥 Import all contacts at once</h3>
     <div style="color:var(--muted); font-size:12.5px; line-height:1.6; margin-bottom:10px;">
       Excel أو CSV بأعمدة مثل: <b>اسم الطبيب، العيادة، الهاتف، التخصص، تاريخ الميلاد، ملاحظات</b>
       (عربي أو إنجليزي — الترتيب لا يهم). النظام يوزّع كل طبيب على عيادته تلقائيًا،
@@ -743,7 +744,7 @@ function decisionMapBlock(c){
   const analytics = UMCore.doctorAnalytics({clinics:[c], visits, today: todayStr(), repFilter:'all'});
   const m = UMCore.clinicDecisionMap(c, {today: todayStr(), analytics});
   const who = (label, arr) => arr.length ? `<div style="font-size:12.5px; padding:2px 0;"><span style="color:var(--muted);">${label}:</span> ${arr.map(d=>esc(d.name)).join(', ')}</div>` : '';
-  return `<div class="section-title" style="margin-top:20px;">🧭 Decision map</div>
+  return `<div class="section-title" style="margin-top:20px;">Decision map</div>
     <div class="card" style="padding:12px 14px; border-inline-start:4px solid var(--purple);">
       ${who('Decision maker', m.deciders)}${who('Influencers', m.influencers)}${who('Champions', m.champions)}${who('Blocked', m.blocked)}
       ${m.gaps.length?`<div style="margin-top:6px; font-size:12px; font-weight:700; color:var(--amber-ink);">Gaps in what we know</div>${m.gaps.map(g=>`<div style="font-size:12.5px; padding:2px 0;">• ${esc(g)}</div>`).join('')}`:''}

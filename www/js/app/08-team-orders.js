@@ -273,9 +273,8 @@ function renderSoClinics(){
   if(soClinicId){
     const c = clinics.find(x=>x.id===soClinicId);
     if(c){
-      el.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
-        <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
-        <button class="del" onclick="soClinicId=null; renderSoClinics();">&times;</button></div></div>`;
+      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${c.cls}">${c.cls||'-'}</span><div class="clinic-name">${esc(c.name)}</div></div>
+        <button class="del" onclick="soClinicId=null; renderSoClinics();" aria-label="Change">&times;</button></div></div>`;
       return;
     }
   }
@@ -283,11 +282,12 @@ function renderSoClinics(){
   if(currentUser.role!=='supervisor') pool = pool.filter(c=>c.rep===currentUser.name);
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
-  el.innerHTML = pool.length ? pool.map(c=>`
-    <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="soClinicId='${c.id}'; renderSoClinics();">
-      <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub">${esc(c.rep||'')}</div>
-    </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
+  el.innerHTML = pool.length ? `<div class="lrows">` + pool.map(c=>`
+    <div class="lrow clickable" role="button" tabindex="0" onclick="soClinicId='${c.id}'; renderSoClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+      <div class="lr-t"><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${esc(c.rep||'')}</div></div>
+      <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
+    </div>`).join('') + `</div>` : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
 }
 function renderSoProducts(){
   const q = (document.getElementById('soProdSearch')?.value||'').toLowerCase().trim();
@@ -474,9 +474,8 @@ function renderClClinics(){
   if(clClinicId){
     const c = clinics.find(x=>x.id===clClinicId);
     if(c){
-      el.innerHTML = `<div class="card" style="border-inline-start:4px solid ${clsColor(c.cls)};">
-        <div class="row-between"><div class="clinic-name">${esc(c.name)}</div>
-        <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();">&times;</button></div></div>`;
+      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${c.cls}">${c.cls||'-'}</span><div class="clinic-name">${esc(c.name)}</div></div>
+        <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();" aria-label="Change">&times;</button></div></div>`;
       renderClDoctors();
       return;
     }
@@ -485,11 +484,12 @@ function renderClClinics(){
   if(currentUser.role!=='supervisor') pool = pool.filter(c=>c.rep===currentUser.name);
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
-  el.innerHTML = pool.length ? pool.map(c=>`
-    <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(c.cls)};" onclick="clClinicId='${c.id}'; renderClClinics();">
-      <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub">${esc(c.rep||'')}</div>
-    </div>`).join('') : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
+  el.innerHTML = pool.length ? `<div class="lrows">` + pool.map(c=>`
+    <div class="lrow clickable" role="button" tabindex="0" onclick="clClinicId='${c.id}'; renderClClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+      <div class="lr-t"><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${esc(c.rep||'')}</div></div>
+      <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
+    </div>`).join('') + `</div>` : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
   document.getElementById('clDoctorWrap').innerHTML = '';
 }
 function renderClDoctors(){

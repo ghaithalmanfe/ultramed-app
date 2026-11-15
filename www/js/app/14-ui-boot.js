@@ -20,9 +20,12 @@ function showModal(html){
 // handlers and texts stay as the sheet wrote them.
 function modalFrame(inner){
   try{
+    { const mc = document.getElementById('modalContent'); if(mc) mc.classList.toggle('m-wide', !!inner.querySelector(':scope > [data-wide]')); }
     const h = inner.firstElementChild;
     if(h && h.tagName === 'H3' && !h.classList.contains('mh')){
       h.classList.add('mh');
+      // an emoji that led the title ("⚠️ …") gives way to the tile's line icon when the sheet names one (data-ic)
+      if(h.dataset.ic && h.firstChild && h.firstChild.nodeType === 3) h.firstChild.nodeValue = h.firstChild.nodeValue.replace(/^\s*(?:\p{Extended_Pictographic}|[\u2600-\u27BF\uFE0F\u200D])+\s*/u, '');
       const tile = document.createElement('span'); tile.className = 'mh-ic' + (h.dataset.tone ? ' ' + h.dataset.tone : ''); tile.setAttribute('aria-hidden', 'true');
       const lead = h.firstChild && h.firstChild.nodeType === 3 && !h.firstChild.nodeValue.trim() ? h.firstChild.nextSibling : h.firstChild;
       if(lead && lead.nodeType === 1 && lead.matches('svg.svgi')) tile.appendChild(lead); else tile.innerHTML = I(h.dataset.ic || 'file');

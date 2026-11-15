@@ -2303,6 +2303,9 @@
     "Today's Visits": 'زيارات اليوم',
     'against the same day last week': 'مقارنة بنفس اليوم من الأسبوع الماضي',
     'Pending Follow-ups': 'المتابعات المستحقة',
+    // CLINICS & DOCTORS (redesign module 3): the page heads
+    "Every customer: the dashboard, the list and each clinic's card.": 'كل العملاء: لوحة المعلومات والقائمة وبطاقة كل عيادة.',
+    'Visits, follow-up rhythm, birthdays and prescriptions of every doctor.': 'زيارات كل طبيب وإيقاع متابعته وعيد ميلاده والبريسكريبشن.',
     // VISIT (redesign module 2): the visit form's summary panel, step tags and notes
     'Required': 'مطلوب',
     'Visit summary': 'ملخص الزيارة',

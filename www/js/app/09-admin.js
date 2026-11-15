@@ -770,7 +770,7 @@ function openMissingClinics(){
   const ORDER = {bin:0, visits:1, erp:2};
   _mcCands.sort((a,b)=>ORDER[a.src]-ORDER[b.src] || a.name.localeCompare(b.name));
   showModal(`
-    <h3 style="margin-top:0;">🔍 العيادات الناقصة</h3>
+    <h3 style="margin-top:0;" data-ic="search">🔍 العيادات الناقصة</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">كل اسم يعرفه النظام وغير موجود في قائمتك الحالية. علّم ما تريد إرجاعه — عملاء الفواتير غير معلّمين تلقائيًا لأن بعضهم قد لا يكون عيادة.</p>
     ${_mcCands.length ? `
     <div class="chip-row" style="margin:8px 0;">

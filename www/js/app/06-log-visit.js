@@ -325,6 +325,9 @@ function removeDraftOrder(oid){
   if(draftOrders.length===0) draftOrders = [newDraftOrder()];
   renderOrders();
 }
+// An amount of the form in the screen's language: "9.81 KD" in English (harness-read), "9.81 د.ك" in Arabic, the
+// figure kept left to right inside the Arabic line.
+function moneyUi(n){ const m = money(n); return uiLang === 'ar' ? m.replace(/^(.*) KD$/, '\u2066$1\u2069 د.ك') : m; }
 function orderGross(o){ return UMCore.orderGross(o, products); }
 function orderNet(o){ return UMCore.orderNet(o, products); }
 function renderOrders(){
@@ -379,9 +382,9 @@ function renderOrders(){
         </div>
       </div>
       <div style="font-size:13px; color:var(--muted); padding-top:10px;">
-        <div class="row-between"><span>Subtotal</span><span>${money(gross)}</span></div>
-        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${money(disc)}</span></div>
-        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${money(net)}</span></div>
+        <div class="row-between"><span>Subtotal</span><span>${moneyUi(gross)}</span></div>
+        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${moneyUi(disc)}</span></div>
+        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${moneyUi(net)}</span></div>
       </div>
       <input type="text" placeholder="Order notes (optional)" dir="auto" value="${esc(o.notes)}" oninput="setDraftNotes('${o.id}',this.value)" style="margin-top:10px;">
     </div>`;
@@ -452,16 +455,16 @@ function refreshOrderTotalsOnly(){
     const gross = orderGross(o), net = orderNet(o), disc = Math.round((gross-net)*100)/100;
     const box = card.querySelector('div[style*="font-size:13px"]');
     if(box){
-      box.innerHTML = `<div class="row-between"><span>Subtotal</span><span>${money(gross)}</span></div>
-        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${money(disc)}</span></div>
-        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${money(net)}</span></div>`;
+      box.innerHTML = `<div class="row-between"><span>Subtotal</span><span>${moneyUi(gross)}</span></div>
+        <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${moneyUi(disc)}</span></div>
+        <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${moneyUi(net)}</span></div>`;
     }
   });
   updateOrderTotalDisplay();
 }
 function updateOrderTotalDisplay(){
   const total = draftOrders.reduce((s,o)=>s+orderNet(o),0);
-  document.getElementById('orderTotalDisplay').textContent = money(total);
+  document.getElementById('orderTotalDisplay').textContent = moneyUi(total);
   lvPaint();
 }
 function pickQuickDate(days){
