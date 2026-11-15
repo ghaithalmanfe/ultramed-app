@@ -418,6 +418,7 @@ function qfClose(clear){
 }
 function syncShell(name){
   document.body.dataset.view = name;
+  { const pv = document.getElementById('view-' + name); document.body.classList.toggle('has-ph', !!(pv && pv.querySelector(':scope > .page-head'))); }   // a screen with its own page head: the top bar keeps quick find, the bell, the account
   const t = document.getElementById('topTitle');
   if(t && VIEW_TITLES[name] && t.dataset.for !== name){ t.dataset.for = name; t.textContent = VIEW_TITLES[name]; }   // a new text node: the translator picks it up
   syncNav();

@@ -678,6 +678,7 @@ function addVisitPhoto(){
   pickImage(({full,thumb})=>{
     visitPhotos.push({id:uid(), full, thumb});
     renderVisitPhotos();
+    if(typeof lvPaint === 'function') lvPaint();
     showToast('\u{1F4F8} Photo added');
   }, true);
 }

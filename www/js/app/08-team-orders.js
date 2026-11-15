@@ -561,7 +561,7 @@ function openEditVisit(visitId){
   if(!canEditVisit(v)){ showToast('You can only edit your own visits'); return; }
   const c = clinics.find(x=>x.id===v.clinicId);
   showModal(`
-    <h3 style="margin-top:0;">Edit ${v.orderOnly?'order':'visit'}</h3>
+    <h3 style="margin-top:0;" data-ic="pencil">Edit ${v.orderOnly?'order':'visit'}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:clinicLabel(v.clinicId, v))}</p>
     <label>Date</label>
     <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
@@ -772,7 +772,7 @@ function showEditHistory(visitId){
     return d ? `<span dir="auto">${esc(d.name)}</span>` : '<span>A doctor no longer listed</span>';
   }).join(', ') || '<span>None</span>';
   showModal(`
-    <h3 style="margin-top:0;">Edit history</h3>
+    <h3 style="margin-top:0;" data-ic="clock">Edit history</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">What this visit looked like before each edit.</p>
     ${[...v.editHistory].reverse().map(h=>`<div class="card" style="margin-bottom:8px;">
       <div class="clinic-sub" style="margin-bottom:6px;">Edited by <strong>${esc(h.editedBy)}</strong> · ${fmtWhen(h.editedAt)}</div>
@@ -788,7 +788,7 @@ function confirmDeleteVisit(visitId){
   if(!v) return;
   const c = clinics.find(x=>x.id===v.clinicId);
   showModal(`
-    <h3 style="margin-top:0;">Delete this ${v.orderOnly?'order':'visit'}?</h3>
+    <h3 style="margin-top:0;" data-ic="alert" data-tone="danger">Delete this ${v.orderOnly?'order':'visit'}?</h3>
     <div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:14px;">
       <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}</div>
       <div class="clinic-sub">${fmtDate(v.date)}${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}</div>

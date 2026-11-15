@@ -258,7 +258,7 @@
   .step-h .hint{font-weight:400; color:var(--text-muted); font-size:13px;}
   #productChips{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent); mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent); padding-bottom:6px;}
   /* v122: a visit being saved locks its form (saveVisit, 06) — nothing can be added to it and then lost */
-  #view-log.log-saving > *:not(.btn):not(#logSavingNote):not(#logHistory):not(.section-title){pointer-events:none; opacity:.5;}
+  #view-log.log-saving .lv-lock{pointer-events:none; opacity:.5;}
   .log-saving-note{margin-top:10px; padding:10px 12px; border-radius:var(--radius-md); background:var(--brand-secondary-soft); color:var(--text-primary); font-size:14px; font-weight:600; text-align:center;}
   .qty-row{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border-subtle); gap:10px;}
   .qty-row:last-child{border-bottom:none;}
@@ -590,9 +590,6 @@
   }
 
   /* ---- More (the phone's list of everything else, in the navigation's groups) ---- */
-  .more-brand{text-align:center; padding:6px 0 4px;}
-  .more-brand img{height:34px; width:auto; max-width:70%;}
-  .more-brand div{font-size:11.5px; font-weight:600; letter-spacing:.14em; color:var(--text-secondary); margin-top:8px;}
   .navlist{background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); overflow:hidden;}
   .navrow{display:flex; align-items:center; gap:14px; width:100%; min-height:64px; padding:11px 14px; background:none; border:none; border-top:1px solid var(--border-subtle); font-family:inherit; color:var(--text-primary); text-align:start; cursor:pointer; transition:background var(--dur-fast) ease;}
   .navrow:first-child{border-top:none;}
@@ -647,7 +644,7 @@
   body.ar .hero .htitle, body.ar .guidance-head, body.ar .focus-label, body.ar .gate-tag,
   body.ar .chip-brand-label, body.ar .pr-kpi .l, body.ar .nav-gl{text-transform:none;}
   body.ar .section-title{font-size:13.5px;}
-  body.ar .nav-gl, body.ar .gate-tag, body.ar .more-brand div, body.ar .gate-brand-tag{font-size:13px;}
+  body.ar .nav-gl, body.ar .gate-tag, body.ar .gate-brand-tag{font-size:13px;}
   body.ar .chip, body.ar .btn, body.ar .quickdate button{line-height:22px;}
 
   /* ---- Motion ---- */
@@ -1339,7 +1336,7 @@
     /* the bottom bar: Home · Customers · (+) Log visit · Sales · More */
     nav.bottom{background:#fff; border-top:1px solid #E9EDF1; padding-top:4px;}
     nav.bottom .nav-gb{display:contents;}
-    nav.bottom .nav-sep, nav.bottom .nt-d, nav.bottom .nav-art, nav.bottom .nav-help, nav.bottom .nb-line{display:none !important;}
+    nav.bottom .nav-sep, nav.bottom .nt-d, nav.bottom .nav-art, nav.bottom .nav-room, nav.bottom .nav-help, nav.bottom .nb-line{display:none !important;}
     nav.bottom button[data-view="today"]{order:1;} nav.bottom button[data-view="clinics"]{order:2;} nav.bottom button[data-view="log"]{order:3;}
     nav.bottom button[data-view="sales"]{order:4;} nav.bottom button[data-view="more"]{order:5;}
     nav.bottom button.nav-tab{color:#5B6676; font-size:11.5px; font-weight:500; gap:4px; min-height:56px;}
@@ -1375,7 +1372,7 @@
     .nb-word b{font-weight:700;}
     .nb-mark{position:absolute; top:-33px; left:50%; width:35px; height:30px; margin-left:-17px; overflow:visible;}
     .nb-tag{font-size:11.8px; font-weight:500; color:#fff; margin-top:5px; margin-inline-start:2px; letter-spacing:0; white-space:nowrap;}
-    nav.bottom .nav-scroll{flex:none; overflow:visible; padding:49px 14px 0 0;}
+    nav.bottom .nav-scroll{flex:0 1 auto; min-height:0; overflow-x:hidden; overflow-y:auto; padding:49px 14px 0 0;}
     [dir="rtl"] nav.bottom .nav-scroll{padding:49px 0 0 14px;}
     nav.bottom .nav-scroll > button, nav.bottom .nav-gh{position:relative; min-height:56px; padding:0 14px 0 30px; margin:1px 0; gap:26px; font-size:15.5px; font-weight:500; color:#DFF6EE; border-radius:0 13px 13px 0;}
     [dir="rtl"] nav.bottom .nav-scroll > button, [dir="rtl"] nav.bottom .nav-gh{padding:0 30px 0 14px; border-radius:13px 0 0 13px;}
@@ -1405,8 +1402,13 @@
     nav.bottom .nav-scroll{position:relative; z-index:1;}
     .na-waves{position:absolute; inset:0; width:100%; height:100%;}
     [dir="rtl"] .na-waves{transform:scaleX(-1);}
-    .na-tooth{position:absolute; top:201px; inset-inline-start:86px; width:124px; height:143px; filter:drop-shadow(0 0 14px rgba(110,235,170,.22)) drop-shadow(0 10px 18px rgba(0,30,24,.3));}
-    .na-tx{position:absolute; top:373px; inset-inline-start:30px; margin:0; font-size:18.3px; font-weight:500; line-height:24.5px; color:#fff; letter-spacing:-.012em;}
+    /* the room the rows leave (the nav never runs under the decoration): the tooth only when it fits, then the slogan */
+    nav.bottom .nav-room{flex:1 1 0; min-height:0; position:relative; z-index:1; pointer-events:none; container-type:size; container-name:navroom;}
+    .na-tooth{position:absolute; bottom:256px; inset-inline-start:86px; width:124px; height:143px; filter:drop-shadow(0 0 14px rgba(110,235,170,.22)) drop-shadow(0 10px 18px rgba(0,30,24,.3));}
+    .na-tx{position:absolute; bottom:153.5px; inset-inline-start:30px; margin:0; font-size:18.3px; font-weight:500; line-height:24.5px; color:#fff; letter-spacing:-.012em;}
+    @container navroom (max-height: 411px){ .na-tooth{display:none;} }
+    @container navroom (max-height: 250px){ .na-tx{bottom:30px;} }
+    @container navroom (max-height: 122px){ .na-tx{display:none;} }
     .na-tx > span{display:block;}
     /* the top bar: glass over the page, quick find, the bell, the account */
     #app.wrap{position:relative;}
@@ -1622,13 +1624,9 @@
   /* a shorter laptop screen: the sidebar's art shrinks, then leaves (the rows always come first) */
   @media (min-width:1024px) and (max-height:1150px){
     nav.bottom .nav-art{height:470px;}
-    .na-tooth{top:120px; width:108px; height:125px; inset-inline-start:94px;}
-    .na-tx{top:262px;}
   }
   @media (min-width:1024px) and (max-height:1000px){
     nav.bottom .nav-art{height:300px;}
-    .na-tooth{display:none;}
-    .na-tx{top:150px;}
   }
   @media (min-width:1024px) and (max-height:900px){
     nav.bottom .nav-brand{padding-top:40px;}
@@ -1636,10 +1634,208 @@
     nav.bottom .nav-scroll > button, nav.bottom .nav-gh{min-height:46px;}
     nav.bottom .nav-sep ~ .nav-group > .nav-gh, nav.bottom .nav-help{min-height:42px;}
     nav.bottom .nav-art{height:220px;}
-    .na-tx{top:110px;}
   }
   @media (min-width:1024px) and (max-height:790px){ nav.bottom .nav-art{display:none;} }
   /* === END DASHBOARD === */
+
+  /* === COMPONENTS ===
+     The home screen's look on the classes every screen already uses (module 2 of the redesign): buttons, fields,
+     chips, cards and section titles, list rows, badges, empty states, the sheet frame, the page head. Tokens only
+     (--p-*). Names are unchanged, so screens not redesigned yet take the look without a change to their markup. */
+  .btn{border-radius:999px; background:var(--p-dark); color:#fff; min-height:48px; letter-spacing:-.005em; box-shadow:0 1px 2px rgba(5,37,31,.16);}
+  .btn:active{background:#03201A;}
+  .btn.secondary{background:#fff; color:var(--p-ink); border-color:#E1E7EB; box-shadow:0 1px 2px rgba(16,24,40,.05), 0 4px 14px rgba(16,24,40,.05);}
+  .btn.secondary:active{background:var(--p-mint-soft);}
+  .btn.ghost{background:transparent; box-shadow:none;}
+  .btn.danger{background:#C8372D; color:#fff; box-shadow:0 1px 2px rgba(120,20,14,.2);}
+  .btn.danger:active{background:#A92C23;}
+  @media (hover:hover){ .btn:hover{background:#0B3B31;} .btn.secondary:hover{background:#F6F9F8;} .btn.ghost:hover{background:rgba(229,72,77,.07);} .btn.danger:hover{background:#B53128;} }
+  .btn:focus-visible, .chip:focus-visible, .lrow:focus-visible{outline:2px solid #57B795; outline-offset:2px;}
+  .tlink{display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 2px; border:none; background:none; color:var(--p-green); font:inherit; font-weight:600; font-size:14.5px; cursor:pointer;}
+  [dir="rtl"] .tlink .svgi{transform:scaleX(-1);}
+  input[type=text], input[type=tel], input[type=date], input[type=time], input[type=number], input[type=password], input[type=email], input[type=search], textarea, select{border-color:#DCE2E7; border-radius:14px; background-color:#fff; color:var(--p-ink);}
+  input:focus, textarea:focus, select:focus, input:focus-visible, textarea:focus-visible, select:focus-visible{border-color:#57B795; box-shadow:0 0 0 3px rgba(106,235,164,.3);}
+  input::placeholder, textarea::placeholder{color:#8792A0;}
+  input.is-err, textarea.is-err, select.is-err{border-color:#E5484D; box-shadow:0 0 0 3px rgba(229,72,77,.14);}
+  label{color:var(--p-ink2);}
+  .field-hint{font-size:12.5px; line-height:1.45; color:var(--p-muted); margin-top:5px;}
+  .field-err{display:flex; align-items:flex-start; gap:8px; margin-top:8px; padding:9px 12px; border-radius:12px; background:#FDECEC; color:#B4231A; font-size:13.5px; font-weight:500; line-height:1.45;}
+  .field-err .svgi{width:17px; height:17px; flex-shrink:0; margin-top:1px;}
+  .inp-ic{position:relative;}
+  .inp-ic > .svgi{position:absolute; inset-inline-start:15px; top:50%; transform:translateY(-50%); width:18px; height:18px; color:#7A8594; pointer-events:none; stroke-width:2.1;}
+  .inp-ic > input{padding-inline-start:44px; margin:0;}
+  .chip{border-color:#DCE2E7; background:#fff; color:var(--p-ink2);}
+  .chip.on{background:#0B5A45; border-color:#0B5A45; color:#fff;}
+  .quickdate button{border-color:#DCE2E7; background:#fff; color:var(--p-ink2);}
+  .quickdate button.on{background:#0B5A45; border-color:#0B5A45; color:#fff;}
+  .disc-chips .disc-other.on{background:#0B5A45; border-color:#0B5A45;}
+  .card{background:#fff; border-color:rgba(16,24,40,.07); border-radius:16px; box-shadow:0 1px 2px rgba(16,24,40,.035);}
+  .section-title{font-size:15.5px; font-weight:700; text-transform:none; letter-spacing:-.01em; color:var(--p-ink);}
+  body.ar .section-title{letter-spacing:0;}
+  .sec-h{display:flex; align-items:center; gap:12px; font-size:16.5px; font-weight:700; letter-spacing:-.01em; color:var(--p-ink);}
+  .sec-ic{width:36px; height:36px; border-radius:50%; background:var(--p-mint-soft); color:var(--p-g6); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .sec-ic .svgi{width:18px; height:18px; stroke-width:2.2;}
+  /* list rows, as in Recent Activity: icon circle or badge, title, a second line, meta at the end, a hairline between */
+  .lrows{background:#fff; border:1px solid rgba(16,24,40,.07); border-radius:16px; overflow:hidden;}
+  .lrow{display:flex; align-items:center; gap:13px; width:100%; min-height:60px; padding:9px 14px; border:none; border-top:1px solid var(--p-line); background:none; font:inherit; color:inherit; text-align:start; cursor:pointer;}
+  .lrow:first-child{border-top:none;}
+  .lr-ic{width:40px; height:40px; border-radius:50%; background:#E3F4ED; color:#2F8F6F; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .lr-ic .svgi{width:20px; height:20px; stroke-width:2.2;}
+  .lr-t{flex:1; min-width:0;}
+  .lr-t .clinic-name{font-size:14.5px; font-weight:600; color:var(--p-ink); overflow-wrap:anywhere;}
+  .lr-t .clinic-sub{font-size:12.5px; color:var(--p-muted);}
+  .lr-m{font-size:12.5px; color:#7A8594; white-space:nowrap; flex-shrink:0;}
+  .lr-go{width:18px; height:18px; color:#A0AAB6; flex-shrink:0;}
+  [dir="rtl"] .lr-go{transform:scaleX(-1);}
+  @media (hover:hover){ .lrow:hover{background:#F7FAF9;} }
+  .navlist{border-color:rgba(16,24,40,.07); border-radius:16px; box-shadow:0 1px 2px rgba(16,24,40,.035);}
+  .navrow .ri{border-radius:50%; background:#E3F4ED; color:#2F8F6F;}
+  .cls{width:28px; height:28px; border-radius:9px; font-size:12.5px;}
+  .stepper input.val{min-height:44px;}   /* the quantity box is a 44 px target too */
+  .rep-tag{background:#EEF3F6; color:#42506A;}
+  .empty::before{content:''; display:block; width:52px; height:52px; margin:0 auto 12px; border-radius:16px;
+    background:var(--p-mint-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23106752' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-6l-2 3h-4l-2-3H2'/%3E%3Cpath d='M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z'/%3E%3C/svg%3E") center / 24px no-repeat;}
+  #view-today .empty::before{content:none;}   /* the home screen stays as it is */
+  /* the sheet frame: phone = bottom sheet with its grabber and full-width actions; desktop = a centred dialog */
+  .modal{background:#fff; border-radius:24px 24px 0 0;}
+  .modal h3.mh{display:flex; align-items:center; gap:12px; font-size:19px; font-weight:700; letter-spacing:-.015em; color:var(--p-ink); margin:4px 0 12px; padding-inline-end:44px; overflow-wrap:anywhere;}
+  .mh-ic{width:40px; height:40px; border-radius:13px; background:var(--p-mint-soft); color:var(--p-g6); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .mh-ic .svgi{width:20px; height:20px; stroke-width:2.2;}
+  .mh-ic.danger{background:#FDECEC; color:#C8372D;}
+  .mh-t{min-width:0;}
+  .modal-close{background:#F1F4F6; color:#42506A;}
+  .modal-foot{display:flex; flex-direction:column; gap:8px; margin-top:16px;}
+  .modal-foot .btn{margin-top:0;}
+  @media (min-width:720px){
+    .modal{border-radius:24px; padding:24px 28px 26px;}
+    .modal-foot{flex-direction:row; justify-content:flex-end; flex-wrap:wrap; gap:10px; margin-top:20px;}
+    .modal-foot .btn{width:auto; min-width:150px; padding-inline:26px;}
+    .modal-foot .btn:not(.secondary):not(.ghost){order:2;}   /* the main action last, at the end side */
+  }
+  @media (min-width:1024px){
+    input[type=text], input[type=tel], input[type=date], input[type=time], input[type=number], input[type=password], input[type=email], input[type=search], select{min-height:44px;}
+    .more-brand{display:none;}
+  }
+  .more-brand{display:flex; flex-direction:column; align-items:center; padding:4px 0 12px; line-height:1;}
+  /* the page head: an inner screen opens like the home screen — the title and one muted line at the start, the screen's
+     actions as pills at the end; on a laptop the top bar then keeps only quick find, the bell and the account */
+  .page-head{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 14px; margin:0 0 14px;}
+  .ph-t{min-width:0;}
+  .ph-title{font-size:19px; font-weight:700; letter-spacing:-.02em; line-height:1.2; margin:0; color:var(--p-ink);}
+  .ph-sub{margin:2px 0 0; font-size:13.5px; line-height:1.45; color:var(--p-muted);}
+  .ph-a{display:flex; flex-wrap:wrap; gap:8px;}
+  @media (max-width:1023px){ .page-head .ph-title{display:none;} .page-head .ph-sub{margin:0; font-size:14px;} }   /* the phone's head bar already carries the title */
+  @media (min-width:1024px){
+    body.has-ph header.top .top-title{display:none;}
+    .page-head{align-items:flex-start; margin:0 0 24px; position:relative; z-index:1;}
+    .ph-t{padding-inline-start:16px;}
+    .ph-title{font-size:40.8px; letter-spacing:-.03em; line-height:1.1;}
+    .ph-sub{font-size:18.6px; margin-top:4px; letter-spacing:-.005em; color:#3D4859;}
+    .ph-a{gap:12px; margin-top:14px;}
+    .ph-a .chip, .ph-a .chip.small, .ph-a .btn{display:inline-flex; align-items:center; gap:10px; width:auto; height:47px; min-height:0; margin:0; padding:0 18px; border:none; border-radius:13px; background:rgba(255,255,255,.84);
+      -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); color:var(--p-ink); font-size:15.6px; font-weight:600; box-shadow:0 1px 2px rgba(16,24,40,.05), 0 6px 18px rgba(16,24,40,.07); white-space:nowrap;}
+    .ph-a .chip .svgi, .ph-a .btn .svgi{width:20px; height:20px; stroke-width:2.1; color:var(--p-ink2);}
+  }
+  /* === END COMPONENTS === */
+
+  /* === VISIT ===
+     Logging a visit (06-log-visit.js): the seven steps as cards, the summary panel with the one Save button, the
+     phone's step rail. Every id and the save path are the form's own; the panel shows what the form holds (lvPaint). */
+  @media (min-width:1024px){
+    #app > .view#view-log{width:calc(100% - 66px); max-width:1320px; margin-inline-start:36px; margin-inline-end:auto; padding:31px 0 48px;}
+  }
+  @media (min-width:1024px) and (max-width:1279px){ #app > .view#view-log{width:calc(100% - 48px); margin-inline-start:24px;} }
+  .lv-grid{display:flex; flex-direction:column; gap:14px;}
+  .lv-main{display:flex; flex-direction:column; gap:12px; min-width:0;}
+  .lv-side{min-width:0;}
+  .lv-step{background:#fff; border:1px solid rgba(16,24,40,.06); border-radius:var(--p-radius); box-shadow:var(--p-shadow); padding:16px 16px 18px; scroll-margin-top:72px; min-width:0;}
+  .lv-step > label:first-child{margin-top:0;}
+  .lv-who{padding:14px 16px 16px;}
+  .lv-who > div + div{margin-top:12px;}
+  .lv-soft{color:var(--p-muted); font-weight:400;}
+  .lv-step .step-h{display:grid; grid-template-columns:auto minmax(0,1fr) auto; column-gap:12px; row-gap:1px; align-items:center; margin:0 0 14px; font-size:16.5px; font-weight:700; letter-spacing:-.01em; color:var(--p-ink);}
+  body.ar .lv-step .step-h{letter-spacing:0;}
+  .lv-step .step-h .n{grid-row:1 / span 2; align-self:start; position:relative; width:36px; height:36px; border-radius:50%; background:var(--p-mint-soft); color:var(--p-g6); font-size:15px; font-weight:700;}
+  .lv-step .step-h .st{min-width:0;}
+  .lv-step .step-h .hint{grid-column:2 / -1; font-size:13.5px; font-weight:400; letter-spacing:0; color:var(--p-muted);}
+  .lv-tag{font-size:11.5px; font-weight:600; letter-spacing:0; line-height:1.3; padding:3px 10px; border-radius:999px; background:#F1F4F6; color:#5B6676; white-space:nowrap;}
+  .lv-tag.req{background:var(--p-warn-soft); color:#B4541A;}
+  .lv-step.done .step-h .n{background:var(--p-g6); color:transparent;}
+  .lv-step.done .step-h .n::after{content:''; position:absolute; left:50%; top:50%; width:13px; height:7px; border-left:2.4px solid #fff; border-bottom:2.4px solid #fff; transform:translate(-50%,-70%) rotate(-45deg);}
+  .lv-step.err{border-color:#F2B8B5; box-shadow:0 0 0 3px rgba(229,72,77,.1), var(--p-shadow);}
+  .lv-err{display:flex; align-items:flex-start; gap:8px; margin-top:12px; padding:10px 12px; border-radius:12px; background:#FDECEC; color:#B4231A; font-size:13.5px; font-weight:500; line-height:1.45;}
+  .lv-err[hidden]{display:none;}
+  .lv-err .svgi{width:17px; height:17px; flex-shrink:0; margin-top:1px;}
+  /* step 1: the clinics as rows, the chosen clinic as a compact card, "new customer" as a dashed row */
+  #clinicPickList{margin-top:10px;}
+  #clinicPickList .lrow .cls{align-self:center;}
+  .lv-more{text-align:center; color:var(--p-muted); font-size:12.5px; padding:8px 6px 0;}
+  #selectedClinicCard .card{margin:0; padding:12px 14px; border-radius:14px; background:#F7FBF9; border-color:#CFE9DD; box-shadow:none;}
+  .lv-newrow{display:block; width:100%; min-height:48px; margin-top:10px; padding:0 14px; border:1.5px dashed #C3CED6; border-radius:14px; background:none; color:var(--p-g6); font:inherit; font-size:14.5px; font-weight:600; text-align:start; cursor:pointer;}
+  @media (hover:hover){ .lv-newrow:hover{background:#F7FBF9; border-color:#8FC9B2;} }
+  #newClinicFields{margin-top:10px;}
+  #newClinicAsk > .card{margin:10px 0 0; border:1px solid #F3D6B4 !important; border-inline-start:4px solid var(--p-warn) !important; background:#FFF6EC !important; border-radius:14px; box-shadow:none; color:var(--p-ink2);}
+  #newClinicAsk .btn{width:auto; min-width:140px; margin:8px 8px 0 0;}
+  [dir="rtl"] #newClinicAsk .btn{margin:8px 0 0 8px;}
+  .lv-step .toggle-row .chip{min-height:48px; display:flex; align-items:center; justify-content:center; font-weight:600;}
+  #orderItemsWrap{margin-top:12px;}
+  #noOrderWrap{margin-top:12px;}
+  .lv-total{border-top:1px solid var(--p-line); margin-top:14px; padding-top:14px; font-size:16px; font-weight:700; color:var(--p-ink);}
+  #ordersContainer .card{box-shadow:none; border-color:var(--p-line); background:#FBFCFD; border-radius:14px;}
+  #rxBlocks .card.rx-doc{box-shadow:none; border-color:var(--p-line); background:#FBFCFD; border-radius:14px;}
+  /* the summary: the target card's dark green, what the form holds, the one Save button */
+  .lv-sum{position:relative; overflow:hidden; color:#fff; border-radius:22px; padding:18px 18px 18px; box-shadow:0 10px 30px rgba(0,57,48,.18);
+    background:radial-gradient(60% 120% at 104% -10%, rgba(64,170,130,.55) 0%, rgba(30,110,85,.28) 38%, rgba(4,62,50,0) 70%),
+      radial-gradient(40% 70% at 100% 100%, rgba(20,110,82,.5) 0%, rgba(4,62,50,0) 75%),
+      linear-gradient(100deg, #013E34 0%, #00382F 30%, #003930 58%, #05483B 100%);}
+  .lv-sum::before{content:''; position:absolute; inset:0; pointer-events:none;
+    background:radial-gradient(closest-side, rgba(255,255,255,.05), rgba(255,255,255,0)) 78% 160% / 70% 90% no-repeat,
+      linear-gradient(160deg, rgba(255,255,255,0) 55%, rgba(255,255,255,.035) 56%, rgba(255,255,255,0) 72%);}
+  .lv-sum > *{position:relative;}
+  .lv-sum-t{font-size:18px; font-weight:700; letter-spacing:-.015em; margin:0 0 8px;}
+  body.ar .lv-sum-t{letter-spacing:0;}
+  .lv-row{display:grid; grid-template-columns:34px minmax(0,1fr); column-gap:12px; align-items:center; padding:8px 0; border-top:1px solid rgba(255,255,255,.12);}
+  .lv-row:first-child{border-top:none;}
+  .lv-row .ic{grid-row:1 / span 2; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.1); color:var(--p-mint); display:flex; align-items:center; justify-content:center;}
+  .lv-row .ic .svgi{width:17px; height:17px; stroke-width:2.2;}
+  .lv-row .k{font-size:12px; line-height:1.3; color:rgba(255,255,255,.7);}
+  .lv-row .v{font-size:14.5px; font-weight:600; line-height:1.4; min-width:0; overflow-wrap:anywhere;}
+  .lv-row .v .lv-none{color:rgba(255,255,255,.5); font-weight:400;}
+  .lv-row .v small{font-size:12.5px; font-weight:500; color:rgba(255,255,255,.78);}
+  .lv-pill{display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; background:rgba(106,235,164,.18); color:var(--p-mint); margin-inline-start:6px; white-space:nowrap;}
+  .lv-prog{margin-top:10px; padding-top:12px; border-top:1px solid rgba(255,255,255,.12);}
+  .lv-bar{display:block; height:6px; border-radius:3px; background:rgba(255,255,255,.18); overflow:hidden;}
+  .lv-bar i{display:block; height:100%; width:0; border-radius:3px; background:var(--p-mint); transition:width var(--dur-base, .2s) ease;}
+  .lv-prog-t{display:block; margin-top:7px; font-size:12.5px; color:rgba(255,255,255,.82);}
+  .lv-sum .btn.lv-save{background:var(--p-mint); color:#05251F; min-height:52px; font-size:16px; font-weight:700; margin-top:14px; box-shadow:0 6px 18px rgba(0,0,0,.18);}
+  .lv-sum .btn.lv-save:active{background:#4FDC92;}
+  @media (hover:hover){ .lv-sum .btn.lv-save:hover{background:#7DF0B2;} }
+  .lv-sum .log-saving-note{background:rgba(255,255,255,.12); color:#fff;}
+  /* the phone's step rail: seven dots under the head bar, filled once the step holds an answer */
+  .lv-rail{position:sticky; top:env(safe-area-inset-top, 0px); z-index:6; display:flex; justify-content:space-between; align-items:center; margin:0 -6px 10px; padding:4px 6px; background:rgba(247,248,250,.94); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); border-radius:0 0 14px 14px;}
+  .lv-dot{position:relative; flex:1 1 0; min-width:44px; height:44px; padding:0; border:none; background:none; display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .lv-dot::before{content:''; position:absolute; top:50%; inset-inline:-50% 50%; height:2px; margin-top:-1px; background:#DCE3E8;}
+  .lv-dot:first-child::before{content:none;}
+  .lv-dot > span{position:relative; width:28px; height:28px; border-radius:50%; background:#fff; border:1.5px solid #D0D9DF; color:var(--p-sub); font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;}
+  .lv-dot.done > span{background:var(--p-g6); border-color:var(--p-g6); color:#fff;}
+  .lv-dot.done::before{background:#8FC9B2;}
+  @media (min-width:1024px){
+    .lv-rail{display:none;}
+    .lv-grid{display:grid; grid-template-columns:minmax(0,62fr) minmax(0,38fr); gap:16px; align-items:start;}
+    .lv-main{gap:16px;}
+    .lv-step{padding:20px 22px 22px; scroll-margin-top:118px;}
+    .lv-who{padding:16px 22px 18px;}
+    .lv-who{display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px 28px;}
+    .lv-who > div + div{margin-top:0;}
+    .lv-step .step-h{font-size:18px; margin-bottom:16px;}
+    #productChips{max-height:264px !important;}
+    .lv-side{position:sticky; top:114px;}
+    .lv-sum{padding:22px 22px 22px; max-height:calc(100vh - 132px); max-height:calc(100dvh - 132px); overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent;}
+    .lv-sum-t{font-size:20px; margin-bottom:10px;}
+    .lv-row{padding:9px 0;}
+  }
+  @media (min-width:1024px) and (max-height:820px){ .lv-row{padding:5px 0;} .lv-row .ic{width:30px; height:30px;} .lv-row{grid-template-columns:30px minmax(0,1fr);} .lv-sum{padding:16px 20px 18px;} .lv-sum .btn.lv-save{margin-top:10px; min-height:48px;} }
+  /* === END VISIT === */
 
   /* === SCREENS A === */
   /* === END SCREENS A === */
@@ -1856,89 +2052,128 @@
 
   <!-- LOG VISIT -->
   <div class="view" id="view-log">
-    <div class="row-between" style="margin:0 0 4px;">
-      <h2 style="font-size:18px; margin:0;">Log a visit</h2>
-      <div style="display:flex; gap:8px;">
+    <!-- Page head (shared component): title + one line at the start, the screen's actions as pills at the end. -->
+    <div class="page-head lv-lock">
+      <div class="ph-t">
+        <h2 class="ph-title">Log a visit</h2>
+        <p class="ph-sub" id="logAsLabel">Takes about a minute.</p>
+      </div>
+      <div class="ph-a">
         <button class="chip small" onclick="openCallLog()"><svg class="svgi" aria-hidden="true"><use href="#i-phone"/></svg> Call</button>
         <button class="chip small" onclick="openStandaloneOrder()"><svg class="svgi" aria-hidden="true"><use href="#i-cart"/></svg> Order only</button>
       </div>
     </div>
-    <p style="color:var(--muted); font-size:13.5px; margin:0 0 16px;" id="logAsLabel">Takes about a minute.</p>
-    <div id="logAsWrap" style="display:none;">
-      <label>Logging as</label>
-      <div class="chip-row" id="logAsChips"></div>
+    <!-- Phone: the seven steps as dots (filled once the step holds an answer); a tap goes to the step. -->
+    <div class="lv-rail lv-lock" id="lvRail" role="navigation" aria-label="Steps">
+      <button type="button" class="lv-dot" data-go="1" onclick="lvGo(1)" aria-label="Step 1"><span data-notr>1</span></button>
+      <button type="button" class="lv-dot" data-go="2" onclick="lvGo(2)" aria-label="Step 2"><span data-notr>2</span></button>
+      <button type="button" class="lv-dot" data-go="3" onclick="lvGo(3)" aria-label="Step 3"><span data-notr>3</span></button>
+      <button type="button" class="lv-dot" data-go="4" onclick="lvGo(4)" aria-label="Step 4"><span data-notr>4</span></button>
+      <button type="button" class="lv-dot" data-go="5" onclick="lvGo(5)" aria-label="Step 5"><span data-notr>5</span></button>
+      <button type="button" class="lv-dot" data-go="6" onclick="lvGo(6)" aria-label="Step 6"><span data-notr>6</span></button>
+      <button type="button" class="lv-dot" data-go="7" onclick="lvGo(7)" aria-label="Step 7"><span data-notr>7</span></button>
     </div>
+    <div class="lv-grid">
+      <div class="lv-main lv-lock">
+        <section class="lv-step lv-who" id="lvWho">
+          <div id="logAsWrap" style="display:none;">
+            <label>Logging as</label>
+            <div class="chip-row" id="logAsChips"></div>
+          </div>
+          <div id="jointWrap" style="display:none;">
+            <label>Joint visit with <span class="lv-soft">(a colleague who was with you)</span></label>
+            <div class="chip-row" id="jointChips"></div>
+          </div>
+        </section>
 
-    <div class="step-h" style="margin-top:8px;"><span class="n">1</span> Where were you? <span class="hint">pick the clinic</span></div>
-    <input type="text" id="clinicSearchLog" placeholder="Search clinics..." oninput="renderClinicSelect()" style="margin-bottom:10px;">
-    <div id="clinicPickList"></div>
-    <div id="selectedClinicCard" style="display:none;"></div>
-    <button class="btn secondary small" id="newClinicBtn" onclick="startNewClinic()">+ Add a new customer</button>
-    <div id="newClinicFields" style="display:none; margin-top:10px;">
-      <input type="text" id="newClinicName" placeholder="Clinic / customer name">
-      <input type="text" id="newClinicContact" placeholder="Contact person (optional)" style="margin-top:8px;">
-      <input type="tel" id="newClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
-      <div id="newClinicAsk"></div>
-      <label>Class</label>
-      <div class="chip-row" id="newClinicClsChips"></div>
-      <label>Account type</label>
-      <div class="chip-row" id="newClinicAcctChips"></div>
-      <button class="btn ghost" onclick="cancelNewClinic()">Cancel</button>
-    </div>
+        <section class="lv-step" id="lvStep1" data-step="1">
+          <div class="step-h"><span class="n">1</span><span class="st">Where were you?</span><span class="lv-tag req">Required</span><span class="hint">pick the clinic</span></div>
+          <div class="inp-ic" id="lvSearch1"><svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="clinicSearchLog" placeholder="Search clinics..." oninput="renderClinicSelect()"></div>
+          <div id="clinicPickList"></div>
+          <div id="selectedClinicCard" style="display:none;"></div>
+          <button class="lv-newrow" id="newClinicBtn" onclick="startNewClinic()">+ Add a new customer</button>
+          <div id="newClinicFields" style="display:none;">
+            <input type="text" id="newClinicName" placeholder="Clinic / customer name">
+            <input type="text" id="newClinicContact" placeholder="Contact person (optional)" style="margin-top:8px;">
+            <input type="tel" id="newClinicPhone" placeholder="Phone (optional)" style="margin-top:8px;">
+            <div id="newClinicAsk"></div>
+            <label>Class</label>
+            <div class="chip-row" id="newClinicClsChips"></div>
+            <label>Account type</label>
+            <div class="chip-row" id="newClinicAcctChips"></div>
+            <button class="btn ghost" onclick="cancelNewClinic()">Cancel</button>
+          </div>
+          <div class="lv-err" id="lvErr1" role="alert" hidden></div>
+        </section>
 
-    <div id="doctorPickWrap">
-      <div class="step-h"><span class="n">2</span> Who did you meet? <span class="hint">tap everyone — each counts as a contact</span></div>
-      <div class="chip-row" id="doctorPickChips"></div>
-      <div id="docTipLink"></div>
-    </div>
+        <section class="lv-step" id="doctorPickWrap" data-step="2">
+          <div class="step-h"><span class="n">2</span><span class="st">Who did you meet?</span><span class="lv-tag req" id="lvTag2">Required</span><span class="hint">tap everyone — each counts as a contact</span></div>
+          <div class="chip-row" id="doctorPickChips"></div>
+          <div id="docTipLink"></div>
+          <div class="lv-err" id="lvErr2" role="alert" hidden></div>
+        </section>
 
-    <div class="step-h"><span class="n">3</span> What did you discuss? <span class="hint">products you presented</span></div>
-    <input type="text" id="prodSearchLog" placeholder="Search products..." oninput="renderProductChips()" style="margin-bottom:8px;">
-    <div class="chip-row" id="productChips" style="max-height:180px; overflow-y:auto;"></div>
+        <section class="lv-step" id="lvStep3" data-step="3">
+          <div class="step-h"><span class="n">3</span><span class="st">What did you discuss?</span><span class="lv-tag">Optional</span><span class="hint">products you presented</span></div>
+          <div class="inp-ic"><svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="prodSearchLog" placeholder="Search products..." oninput="renderProductChips()"></div>
+          <div class="chip-row" id="productChips" style="max-height:180px; overflow-y:auto;"></div>
+        </section>
 
-    <div id="rxWrap">
-      <div class="step-h"><span class="n">4</span> Prescriptions given? <span class="hint">the pads you left today</span></div>
-      <div class="toggle-row">
-        <div class="chip" id="rxYes" onclick="setRx(true)">Yes</div>
-        <div class="chip on" id="rxNo" onclick="setRx(false)">No</div>
+        <section class="lv-step" id="rxWrap" data-step="4">
+          <div class="step-h"><span class="n">4</span><span class="st">Prescriptions given?</span><span class="lv-tag">Optional</span><span class="hint">the pads you left today</span></div>
+          <div class="toggle-row">
+            <div class="chip" id="rxYes" onclick="setRx(true)">Yes</div>
+            <div class="chip on" id="rxNo" onclick="setRx(false)">No</div>
+          </div>
+          <div id="rxBlocks" style="display:none; margin-top:10px;"></div>
+        </section>
+
+        <section class="lv-step" id="lvStep5" data-step="5">
+          <div class="step-h"><span class="n">5</span><span class="st">Any order?</span><span class="lv-tag">Optional</span></div>
+          <div class="toggle-row">
+            <div class="chip" id="orderYes" onclick="setOrder(true)">Yes</div>
+            <div class="chip on" id="orderNo" onclick="setOrder(false)">No</div>
+          </div>
+          <div id="noOrderWrap">
+            <label>Why no order this visit?</label>
+            <div class="chip-row" id="noOrderChips"></div>
+            <input type="text" id="noOrderOther" placeholder="Other reason (optional)" style="margin-top:8px;">
+          </div>
+          <div id="orderItemsWrap" style="display:none;">
+            <div id="ordersContainer"></div>
+            <button class="btn secondary small" onclick="addAnotherOrder()">+ Add another order</button>
+            <div class="total-row lv-total">
+              <span>Visit total (after discount)</span><span id="orderTotalDisplay">0.00 KD</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="lv-step" id="lvStep6" data-step="6">
+          <div class="step-h"><span class="n">6</span><span class="st">When is the next visit?</span><span class="lv-tag">Optional</span><span class="hint">a promise is a pipeline</span></div>
+          <div class="quickdate" id="quickDates"></div>
+          <input type="date" id="followUpDate">
+        </section>
+
+        <section class="lv-step" id="lvStep7" data-step="7">
+          <div class="step-h"><span class="n">7</span><span class="st">Notes &amp; extras</span><span class="lv-tag">Optional</span></div>
+          <label style="margin-top:2px;">How did the doctor feel about us today?</label>
+          <div class="chip-row" id="moodChips" style="margin-bottom:10px;"></div>
+          <textarea id="visitNotes" dir="auto" placeholder="Anything worth remembering next visit..."></textarea>
+          <label style="margin-top:10px;">Photos from this visit</label>
+          <div class="photo-row" id="visitPhotoRow"></div>
+        </section>
       </div>
-      <div id="rxBlocks" style="display:none; margin-top:10px;"></div>
-    </div>
 
-    <div class="step-h"><span class="n">5</span> Any order?</div>
-    <div class="toggle-row">
-      <div class="chip" id="orderYes" onclick="setOrder(true)">Yes</div>
-      <div class="chip on" id="orderNo" onclick="setOrder(false)">No</div>
+      <!-- The summary: what the form holds now (the values saveVisit reads), then the one Save button. -->
+      <aside class="lv-side">
+        <div class="lv-sum" id="logSummary">
+          <div class="lv-sum-t">Visit summary</div>
+          <div class="lv-rows lv-lock" id="lvSumRows"></div>
+          <div class="lv-prog lv-lock"><span class="lv-bar" aria-hidden="true"><i id="lvProgBar"></i></span><span class="lv-prog-t" id="lvProgText" role="status"></span></div>
+          <button class="btn lv-save" onclick="saveVisit()">Save visit</button>
+        </div>
+      </aside>
     </div>
-    <div id="noOrderWrap">
-      <label>Why no order this visit?</label>
-      <div class="chip-row" id="noOrderChips"></div>
-      <input type="text" id="noOrderOther" placeholder="Other reason (optional)" style="margin-top:8px;">
-    </div>
-    <div id="orderItemsWrap" style="display:none;">
-      <div id="ordersContainer"></div>
-      <button class="btn secondary small" onclick="addAnotherOrder()">+ Add another order</button>
-      <div class="total-row" style="border-top:2px solid var(--ink); margin-top:12px; padding-top:12px;">
-        <span>Visit total (after discount)</span><span id="orderTotalDisplay">0.00 KD</span>
-      </div>
-    </div>
-
-    <div class="step-h"><span class="n">6</span> When is the next visit? <span class="hint">a promise is a pipeline</span></div>
-    <div class="quickdate" id="quickDates"></div>
-    <input type="date" id="followUpDate">
-
-    <div class="step-h"><span class="n">7</span> Notes &amp; extras <span class="hint">optional</span></div>
-    <label style="margin-top:2px;">How did the doctor feel about us today?</label>
-    <div class="chip-row" id="moodChips" style="margin-bottom:10px;"></div>
-    <textarea id="visitNotes" dir="auto" placeholder="Anything worth remembering next visit..."></textarea>
-    <label style="margin-top:10px;">Photos from this visit</label>
-    <div class="photo-row" id="visitPhotoRow"></div>
-    <div id="jointWrap" style="display:none;">
-      <label style="margin-top:10px;">Joint visit with <span style="color:var(--muted); font-weight:400; text-transform:none;">(a colleague who was with you)</span></label>
-      <div class="chip-row" id="jointChips" style="margin-bottom:14px;"></div>
-    </div>
-
-    <button class="btn" onclick="saveVisit()">Save visit</button>
 
     <div class="section-title" style="margin-top:22px;">My visit log <span class="link" onclick="openVisitLog()">Full log &amp; search</span></div>
     <div id="logHistory"></div>
@@ -2142,10 +2377,7 @@
 
   <!-- MORE: everything that isn't daily work, grouped by category -->
   <div class="view" id="view-more">
-    <div class="more-brand">
-      <img src="icons/logo-green.png" alt="UltraMed">
-      <div>CLINICAL SALES TEAM</div>
-    </div>
+    <div class="more-brand" role="img" aria-label="UltraMed"><span class="tb-word" data-notr>Ultra<b>Med</b></span><span class="tb-tag">Better Oral Care. Together.</span></div>
     <div id="moreContent"></div>
   </div>
 </div>
@@ -2247,6 +2479,9 @@
       <path d="M-10 600V548C70 498 160 472 250 460V600Z" fill="url(#naW2)"/>
       <path d="M-10 600V578C80 532 170 510 250 504V600Z" fill="#0E5A45" fill-opacity=".55"/>
     </svg>
+  </div>
+  <!-- the room the rows leave: the tooth shows only when it fits, then the slogan (the nav never runs under them) -->
+  <div class="nav-room" aria-hidden="true">
     <img class="na-tooth" src="img/tooth.webp" alt="" width="124" height="143">
     <p class="na-tx"><span>Together</span><span>for a healthier</span><span>smile</span></p>
   </div>

@@ -438,7 +438,7 @@ let visitLogRange = 30;
 function openVisitLog(){
   visitLogRange = 30;
   showModal(`
-    <h3 style="margin-top:0;">${currentUser.role==='supervisor'?'Team visit log':'My visit log'}</h3>
+    <h3 style="margin-top:0;" data-ic="clipboard">${currentUser.role==='supervisor'?'Team visit log':'My visit log'}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Every visit you've logged, newest first.</p>
     <div class="chip-row" style="margin-bottom:12px;">
       <div class="chip small" id="vlWeek" onclick="setVisitLogRange(7)">This week</div>
@@ -500,7 +500,7 @@ function renderVisitLog(){
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Contacts seen</span><span>${rows.reduce((s,v)=>s+UMCore.contactCount(v),0)}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:4px;"><span>Clinics covered</span><span>${uniqueClinics}</span></div>
       <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders taken</span><span>${orders.length}</span></div>
-      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Sales</span><span>${money(revenue)}</span></div>
+      <div class="row-between" style="font-size:12.5px; color:var(--muted); margin-top:2px;"><span>Orders logged in the app</span><span>${money(revenue)}</span></div>
     </div>`;
   const el = document.getElementById('vlBody');
   if(rows.length===0){

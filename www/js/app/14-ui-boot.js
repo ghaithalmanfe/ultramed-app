@@ -11,7 +11,32 @@ function showModal(html){
   const arabic = (txt.match(/[؀-ۿﭐ-﷿ﹰ-﻿]/g)||[]).length;
   const latin = (txt.match(/[A-Za-z]/g)||[]).length;
   inner.setAttribute('dir', (uiLang==='ar' || arabic > latin) ? 'rtl' : 'ltr');
+  modalFrame(inner);
   document.getElementById('modalBack').classList.add('show');
+}
+// The sheet frame (component layer): a sheet that opens with its <h3> gets the header — an icon tile (the heading's
+// own icon, else data-ic, else a neutral one) and the title — and the buttons it ends with become its foot (full
+// width on the phone; at the end side on a laptop, the main action last). Nodes are moved, never rewritten: ids,
+// handlers and texts stay as the sheet wrote them.
+function modalFrame(inner){
+  try{
+    const h = inner.firstElementChild;
+    if(h && h.tagName === 'H3' && !h.classList.contains('mh')){
+      h.classList.add('mh');
+      const tile = document.createElement('span'); tile.className = 'mh-ic' + (h.dataset.tone ? ' ' + h.dataset.tone : ''); tile.setAttribute('aria-hidden', 'true');
+      const lead = h.firstChild && h.firstChild.nodeType === 3 && !h.firstChild.nodeValue.trim() ? h.firstChild.nextSibling : h.firstChild;
+      if(lead && lead.nodeType === 1 && lead.matches('svg.svgi')) tile.appendChild(lead); else tile.innerHTML = I(h.dataset.ic || 'file');
+      const t = document.createElement('span'); t.className = 'mh-t';
+      while(h.firstChild) t.appendChild(h.firstChild);
+      h.appendChild(tile); h.appendChild(t);
+    }
+    if(!inner.querySelector(':scope > .modal-foot')){
+      const kids = Array.from(inner.children); let i = kids.length;
+      while(i > 0 && kids[i - 1].tagName === 'BUTTON' && kids[i - 1].classList.contains('btn') && !kids[i - 1].classList.contains('small')) i--;
+      const tail = kids.slice(i);
+      if(tail.length && tail.length <= 3 && i > 0){ const foot = document.createElement('div'); foot.className = 'modal-foot'; inner.appendChild(foot); tail.forEach(b => foot.appendChild(b)); }
+    }
+  }catch(e){ console.error('sheet frame', e); }
 }
 function closeModal(){ document.getElementById('modalBack').classList.remove('show'); }
 function closeModalBg(e){ if(e.target.id==='modalBack') closeModal(); }

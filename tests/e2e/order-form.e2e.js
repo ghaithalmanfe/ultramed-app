@@ -127,6 +127,59 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
     return { gross: v.orderGross, disc: v.orderDiscount, total: v.orderTotal, o: v.orders[0], sum: Math.round((v.orderGross - v.orderDiscount)*100)/100 };
   }, { price: df.price });
   check('an edited order total re-derives the discount so gross − discount = net in every export', ev.sum === ev.total && ev.o.discountAmount === ev.disc && Math.abs(ev.o.discountPct - ev.disc/ev.gross*100) < 0.01, ev);
+  // ======================= the redesigned visit form (module 2): summary panel, one Save button, the sidebar =======================
+  const sum = await page.evaluate(async () => {
+    switchView('log');
+    const c = clinics.find(x => x.rep === 'Mariam' && x.cls !== 'Closed' && (x.doctors || []).length);
+    const q = k => ((document.querySelector(`#lvSumRows [data-sum="${k}"] .v`) || {}).innerText || '').trim();
+    const prog = () => { const e = document.getElementById('lvProgText'); return e ? [Number(e.dataset.n), Number(e.dataset.m)].join(' of ') : ''; };
+    const wait = () => new Promise(r => setTimeout(r, 40));
+    const empty = { clinic: q('clinic'), people: q('people'), prog: prog() };
+    pickClinic(c.id); await wait();
+    const one = { clinic: q('clinic'), prog: prog() };
+    pickDoctorSeen(c.doctors[0].id);
+    const ps = products.filter(p => p.price > 0).slice(0, 2); ps.forEach(p => toggleProductChip(productKey(p)));
+    setRx(true); const t = rxActiveTypes()[0]; if(t){ rxPut('log', c.doctors[0].id, t.id, 3); renderRxStep(); }
+    setOrder(true); setDraftDiscount(draftOrders[0].id, 20); await wait();
+    const full = { clinic: q('clinic'), people: q('people'), rx: q('rx'), order: q('order'), form: document.getElementById('orderTotalDisplay').textContent.trim(), prog: prog(),
+      name: c.name, doc: c.doctors[0].name, pads: rxDraftTotal('log', rxRecipients('log') || []), expected: Math.round((ps[0].price + ps[1].price) * 0.8 * 100) / 100 };
+    setDraftDiscount(draftOrders[0].id, 0); await wait();
+    const noDisc = { order: q('order'), form: document.getElementById('orderTotalDisplay').textContent.trim() };
+    clearClinicPick(); startNewClinic(); await wait();
+    const fresh = prog(); const nm = document.getElementById('newClinicName'); nm.value = 'Check Clinic'; nm.dispatchEvent(new Event('input', { bubbles: true })); await wait(); await wait();
+    const named = { clinic: q('clinic'), prog: prog() };
+    cancelNewClinic(); switchView('today');
+    return { empty, one, full, noDisc, fresh, named };
+  });
+  check('Visit summary: it shows what the form holds — the clinic, who was met, the pads, the order total after discount (the form\'s own figure, and it follows the discount) — and "n of m required steps done" follows the form (0 of 2 → 1 of 2 → 2 of 2; a new customer: its name only, 0 of 1 → 1 of 1)',
+    sum.empty.clinic === '—' && sum.empty.people === '—' && sum.empty.prog === '0 of 2' && sum.one.clinic.includes(sum.full.name) && sum.one.prog === '1 of 2'
+    && sum.full.people.includes(sum.full.doc) && sum.full.pads === 3 && /3/.test(sum.full.rx) && sum.full.order === sum.full.form && parseFloat(sum.full.form) === sum.full.expected && sum.full.prog === '2 of 2'
+    && sum.noDisc.order === sum.noDisc.form && parseFloat(sum.noDisc.form) > sum.full.expected && sum.fresh === '0 of 1' && sum.named.prog === '1 of 1' && sum.named.clinic.includes('Check Clinic'), sum);
+  const saveBtns = async (w, h) => { await page.setViewportSize({ width: w, height: h }); await page.waitForTimeout(200);
+    return page.evaluate(() => { switchView('log');
+      const all = [...document.querySelectorAll('#view-log button')].filter(b => (b.getAttribute('onclick') || '').trim() === 'saveVisit()');
+      const vis = all.filter(b => b.offsetParent !== null && b.getClientRects().length > 0 && getComputedStyle(b).visibility !== 'hidden');
+      let fixed = false; for(let e = vis[0]; e && e !== document.body; e = e.parentElement) if(getComputedStyle(e).position === 'fixed') fixed = true;
+      const r = vis[0] ? vis[0].getBoundingClientRect() : { height: 0, width: 0 };
+      return { all: all.length, visible: vis.length, fixed, h: Math.round(r.height), w: Math.round(r.width), inSummary: !!(vis[0] && vis[0].closest('#logSummary')) }; }); };
+  const b390 = await saveBtns(390, 844), b1440 = await saveBtns(1440, 900);
+  check('Log a visit: exactly one visible Save visit button, in the flow (never fixed), in the summary panel — at 390 and at 1440', [b390, b1440].every(x => x.all === 1 && x.visible === 1 && !x.fixed && x.inSummary && x.h >= 44), { b390, b1440 });
+  const nav = await page.evaluate(async () => {
+    switchView('today');
+    document.querySelectorAll('nav.bottom .nav-group > .nav-gh').forEach(b => navGroup(b, true));
+    await new Promise(r => setTimeout(r, 150));
+    const shown = e => !!e && getComputedStyle(e).display !== 'none' && e.getClientRects().length > 0;
+    const scroll = document.querySelector('nav.bottom .nav-scroll'), sb = scroll.getBoundingClientRect();
+    // a row counts for the part of it its scroll box shows
+    const rows = [...scroll.querySelectorAll('button')].filter(shown).map(b => b.getBoundingClientRect()).filter(r => r.top < sb.bottom && r.bottom > sb.top).map(r => ({ top: Math.max(r.top, sb.top), bottom: Math.min(r.bottom, sb.bottom), left: r.left, right: r.right }));
+    const under = sel => { const d = document.querySelector(sel); if(!shown(d)) return 0; const b = d.getBoundingClientRect(); return rows.filter(r => !(r.bottom <= b.top || r.top >= b.bottom || r.right <= b.left || r.left >= b.right)).length; };
+    const out = { open: document.querySelectorAll('nav.bottom .nav-group.open').length, rows: rows.length, slogan: shown(document.querySelector('.na-tx')), tooth: shown(document.querySelector('.na-tooth')),
+      underSlogan: under('.na-tx'), underTooth: under('.na-tooth'), navBottom: Math.round(sb.bottom), vh: innerHeight, vw: innerWidth };
+    document.querySelectorAll('nav.bottom .nav-group.open:not(.has-active) > .nav-gh').forEach(b => navGroup(b));
+    return out;
+  });
+  check('Sidebar at 1440 × 900 with every group open: no row runs under the slogan or the tooth (they show only in the room the rows leave), and the rows end inside the window', nav.vw === 1440 && nav.open >= 4 && nav.rows >= 12 && nav.underSlogan === 0 && nav.underTooth === 0 && nav.navBottom <= nav.vh, nav);
+  await page.setViewportSize({ width: 390, height: 844 });
   check('no page errors', errors.length === 0, errors.slice(0, 4));
   console.log(results.join('\n')); console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
   await browser.close(); server.close();
