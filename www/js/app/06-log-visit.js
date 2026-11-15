@@ -498,7 +498,7 @@ function lvPaint(){
   if(!box || typeof currentUser === 'undefined' || !currentUser) return;
   let s; try{ s = lvState(); }catch(e){ return; }
   const none = '<span class="lv-none" data-notr>—</span>', sep = '<span data-notr> · </span>';
-  const names = (arr, max) => arr.slice(0, max).map(n => `<span dir="auto">${esc(n)}</span>`).join('<span data-notr>، </span>'.replace('،', uiLang === 'ar' ? '،' : ',')) + (arr.length > max ? ` <small data-notr>+${arr.length - max}</small>` : '');
+  const names = (arr, max) => arr.slice(0, max).map(n => `<span dir="auto">${esc(n)}</span>`).join(`<span data-notr>${uiLang === 'ar' ? '،' : ','} </span>`) + (arr.length > max ? ` <small data-notr>+${arr.length - max}</small>` : '');
   const row = (key, icon, label, v) => `<div class="lv-row" data-sum="${key}"><span class="ic" aria-hidden="true">${I(icon)}</span><span class="k">${label}</span><span class="v">${v || none}</span></div>`;
   const mood = s.mood ? (VISIT_MOODS.find(m => m[0] === s.mood) || [])[1] : '';
   const extras = [mood ? `<span>${mood}</span>` : '', s.notes ? `<span dir="auto">${esc(s.notes.length > 70 ? s.notes.slice(0, 70) + '…' : s.notes)}</span>` : '', s.photos ? `<span>${s.photos} photo${s.photos === 1 ? '' : 's'}</span>` : ''].filter(Boolean).join(sep);
