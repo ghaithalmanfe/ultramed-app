@@ -4022,7 +4022,8 @@
     // counts a person the files do not hold as 0; here she is left out, named)
     var pair = withT.filter(function(r){ return fig[r].measured; });
     var goal = sum(pair, tAmt), ach = sum(pair, function(r){ return fig[r].amount; });
-    var achievement = { pct: goal > 0 ? Math.round(ach / goal * 100) : null, achieved: pair.length ? xdR2(ach) : null, target: pair.length ? xdR2(goal) : null, people: pair,
+    var achievement = { pct: goal > 0 ? Math.round(ach / goal * 100) : null, pct1: goal > 0 ? Math.round(ach / goal * 1000) / 10 : null,   // pct1: the same division to one decimal (the target card's ring)
+      achieved: pair.length ? xdR2(ach) : null, target: pair.length ? xdR2(goal) : null, people: pair,
       notMeasured: withT.filter(function(r){ return !fig[r].measured; }), noTarget: got.filter(function(f){ return tAmt(f.rep) == null; }).map(repOf) };
     var remaining = goal > 0 ? xdR2(Math.max(goal - ach, 0)) : null;
     var pCut = xdMax(pair.map(function(r){ return fig[r].asOf; })), wd = monthWorkdays(month, current ? pCut : mEnd);
@@ -4349,6 +4350,76 @@
   //     customers list) is a line of its own under its ERP name, key null,
   //     ignored true.
   // null when the month is not measured or the row is not in it.
+  // ---- THE HOME SCREEN'S SERIES (the owner's picture, 15 Nov) ----
+  // Pure views of figures the screen already gives (execDashboard, kpiScorecard, the field visits of a day), drawn as the
+  // picture's weekly bars, sparklines and small ▲/▼: each one's last point is that very figure (tests: "home series").
+
+  // The weekly bars of Sales Performance: the month cut in four — days 1–7, 8–14, 15–21 and 22 to its end (the picture's
+  // W1–W4). A week's bar = the invoiced sales from day 1 to its last day (the running week: to the last day of the lines,
+  // so its bar is the month's figure); its target point = where the target pace stands that day — target × the working
+  // days (Sun–Thu) from day 1 to that day ÷ the working days of the month. A week after the last line has no bar (null).
+  // days: execDashboard's daily lines ({date, net}, day 1 to the last day of the files, adding up to the figure).
+  function homeWeeks(month, days, target){
+    var from = month + '-01', end = erpMonthEnd(month), total = workingDaysBetween(from, end);
+    var list = (days || []).filter(function(d){ return d && String(d.date).slice(0, 7) === month; });
+    var last = list.length ? list[list.length - 1].date : null, cum = 0, i = 0;
+    return [[1, 7], [8, 14], [15, 21], [22, xdDayOf(end)]].map(function(b, k){
+      var wFrom = xdDay(month, b[0]), wTo = xdDay(month, b[1]), has = !!last && last >= wFrom, at = has && last < wTo ? last : wTo;
+      while(has && i < list.length && list[i].date <= at){ cum += Number(list[i].net) || 0; i++; }
+      return { week: k + 1, from: wFrom, to: wTo, at: at, achieved: has ? xdR2(cum) : null, current: has && last <= wTo,
+        pace: target > 0 && total > 0 ? xdR2(target * workingDaysBetween(from, at) / total) : null };
+    });
+  }
+  // Field visits a working day over the last `n` working days to `today` (today included even on a Friday or a
+  // Saturday — the card's own day): a visit counts once when one of `people` was on it (the one who logged it or the
+  // colleague on a joint visit; a call or a phone order is not a visit). today = the last point (the figure card's
+  // number); weekAgo = the same weekday a week before (its ▲/▼).
+  function homeVisitDays(visits, people, today, n){
+    var P = people || [], inP = function(r){ return !!r && P.indexOf(r) >= 0; }, want = n || 10, days = [];
+    for(var d = today; days.length < want && d > addDaysStr(today, -70); d = addDaysStr(d, -1)) if(d === today || isWorkday(d)) days.unshift(d);
+    var wk = addDaysStr(today, -7), count = Object.create(null); days.concat([wk]).forEach(function(x){ count[x] = 0; });
+    (visits || []).forEach(function(v){ if(v && Object.prototype.hasOwnProperty.call(count, v.date) && isFieldVisit(v) && (inP(v.rep) || inP(v.withRep))) count[v.date]++; });
+    return { days: days.map(function(x){ return { date: x, count: count[x] }; }), today: count[today], weekAgo: count[wk], weekAgoDate: wk };
+  }
+  // The month-end forecast as it stood on each day of the lines: the invoiced sales from day 1 to that day ÷ the working
+  // days from day 1 to it × the working days of the month — the management report's formula, the one execDashboard
+  // applies to each person. A day before the first working day has none (null). When everyone's lines run to the same
+  // day, its last point is execDashboard's forecast for those people (each person's share is rounded there: a cent or so).
+  function homeForecastDays(month, days){
+    var from = month + '-01', total = workingDaysBetween(from, erpMonthEnd(month)), cum = 0;
+    return (days || []).filter(function(d){ return d && String(d.date).slice(0, 7) === month; }).map(function(d){
+      cum += Number(d.net) || 0; var done = workingDaysBetween(from, d.date);
+      return { date: d.date, forecast: done > 0 ? xdR2(cum / done * total) : null };
+    });
+  }
+  // The KPI score month by month (the first figure card's sparkline and its ▲/▼): for each of the last `months` months
+  // to today, the average of the people's kpiScorecard totals over that month (the running month: to today) — a person
+  // who logged no visit or call in a month has no score there (monthlyTrend's rule), and a month nobody has a score in
+  // is null, never 0 — and `sameDays`: the month before from its day 1 to today's day of the month (a fair comparison
+  // with a month still running). current = the running month's score (the card's figure).
+  function homeKpiMonths(data, opts){
+    opts = opts || {};
+    var reps = opts.reps || [], n = opts.months || 6, S = opts.settings || null, today = String(data.today || '');
+    var rows = opts.rows || erpAttributedRows(data), visits = data.visits || [];
+    var score = function(from, to){
+      var v = [];
+      reps.forEach(function(r){
+        if(!visits.some(function(x){ return x && x.date >= from && x.date <= to && repWasThere(x, r); })) return;
+        var t = kpiScorecard(data, { rep: r, from: from, to: to, settings: S, rows: rows }).total;
+        if(t != null) v.push(t);
+      });
+      return v.length ? Math.round(v.reduce(function(a, b){ return a + b; }, 0) / v.length) : null;
+    };
+    var months = [];
+    for(var i = n - 1; i >= 0; i--){
+      var m = addMonthsStr(today.slice(0, 7) + '-01', -i).slice(0, 7), end = erpMonthEnd(m);
+      months.push({ month: m, from: m + '-01', to: end > today ? today : end, score: score(m + '-01', end > today ? today : end) });
+    }
+    var pm = addMonthsStr(today.slice(0, 7) + '-01', -1).slice(0, 7), pTo = xdDay(pm, xdDayOf(today));
+    var cur = months[months.length - 1].score, prev = score(pm + '-01', pTo);
+    return { months: months, current: cur, sameDays: { month: pm, to: pTo, score: prev }, delta: cur != null && prev != null ? cur - prev : null };
+  }
+
   function execDrill(data, opts){
     data = Object.assign({}, data || {}); opts = opts || {};
     data.erpShare = erpShare(data);
@@ -7332,7 +7403,7 @@
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
     unionDoctorsById, possibleDuplicateDoctors, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpPrepClinics, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
-    monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys,
+    monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
     forecastMonthEnd, returnsAnalysis, returnValue, focAnalysis, isMarketingRow, isFocRow, clinicFamilies, allocateClinicTargets, unitSellPlan, doctorAnalytics, rxGrowth,

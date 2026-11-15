@@ -5301,4 +5301,73 @@ describe('management dashboard (v123)', () => {
     assert.match(ev.text, /مخطط: 2 · تمت: 0 · لم تتم: Amber Dental Clinic، Birch Dental Center/);
     assert.match(ev.text, /مخطط: 1 · تمت: 1/);
   });
+
+  // ---- the home screen's series (the owner's picture, 15 Nov): each one's last point is the figure the screen gives ----
+  test('home series: the weekly bars — the month in four weeks (1–7, 8–14, 15–21, 22–end), the running week\'s bar is the month figure, the target point the pace that day', () => {
+    const d = data(), D = core.execDashboard(d, { reps }), days = D.daily.pair.days;
+    const W = core.homeWeeks('2026-10', days, D.achievement.target);
+    assert.deepEqual(W.map(w => [w.week, w.from, w.to]), [[1, '2026-10-01', '2026-10-07'], [2, '2026-10-08', '2026-10-14'], [3, '2026-10-15', '2026-10-21'], [4, '2026-10-22', '2026-10-31']]);
+    assert.equal(W[1].current, true); assert.equal(W[1].at, '2026-10-08');
+    assert.equal(W[1].achieved, D.achievement.achieved);                     // the running week's bar = the month's figure (the people with a target)
+    assert.equal(W[0].achieved, Math.round(days.filter(x => x.date <= '2026-10-07').reduce((a, x) => a + x.net, 0) * 100) / 100);
+    assert.deepEqual([W[2].achieved, W[3].achieved], [null, null]);            // weeks after the last line: no bar
+    const wd = D.perDay.workdays;                                               // the pace on the day of the figure: target × done ÷ total
+    assert.equal(W[1].pace, Math.round(D.achievement.target * wd.done / wd.total * 100) / 100);
+    assert.equal(W[3].pace, D.achievement.target);                              // at the month's end the line reaches the target
+    assert.equal(W[0].pace, Math.round(D.achievement.target * core.workingDaysBetween('2026-10-01', '2026-10-07') / 21 * 100) / 100);
+    // the team's lines (everyone's, no target): the bars still add up to the figure, no target points
+    const all = core.homeWeeks('2026-10', D.daily.days, null);
+    assert.equal(all[1].achieved, D.sales.amount); assert.equal(all[0].pace, null);
+    // February: the fourth week runs to the 28th; a file that ends in week 3 leaves week 4 empty
+    const feb = core.homeWeeks('2026-02', [{ date: '2026-02-01', net: 10 }, { date: '2026-02-16', net: 5 }], 100);
+    assert.deepEqual(feb.map(w => [w.to, w.achieved, w.current]), [['2026-02-07', 10, false], ['2026-02-14', 10, false], ['2026-02-21', 15, true], ['2026-02-28', null, false]]);
+    assert.equal(feb[3].pace, 100);
+    assert.deepEqual(core.homeWeeks('2026-10', [], 500).map(w => w.achieved), [null, null, null, null]);   // no lines: no bar at all
+  });
+
+  test('home series: field visits a working day — the last point is today\'s field visits of the view\'s people, a joint visit once, Fri/Sat skipped', () => {
+    const vs = VISITS.concat([{ id: 'w1', clinicId: 'm1', rep: M, date: '2026-10-08' }, { id: 'w2', clinicId: 'r1', rep: R, withRep: M, date: '2026-10-08' },
+      { id: 'w3', clinicId: 'm2', rep: M, date: '2026-10-08', callOnly: true }, { id: 'w4', clinicId: 'm2', rep: M, date: '2026-10-01' }]);
+    const H = core.homeVisitDays(vs, [M, R], '2026-10-08', 10);
+    assert.equal(H.days.length, 10); assert.equal(H.days[9].date, '2026-10-08');
+    assert.ok(H.days.every(x => x.date === '2026-10-08' || core.isWorkday(x.date)));
+    assert.equal(H.today, 2); assert.equal(H.days[9].count, 2);                // the joint visit once for the team; the call is not a visit
+    assert.equal(H.today, vs.filter(v => v.date === '2026-10-08' && core.isFieldVisit(v) && ([M, R].includes(v.rep) || [M, R].includes(v.withRep))).length);
+    assert.equal(H.weekAgoDate, '2026-10-01'); assert.equal(H.weekAgo, 2);     // v1 and w4 on Thursday 1 October
+    assert.equal(core.homeVisitDays(vs, [R], '2026-10-08', 10).today, 1);      // Renova: the joint visit she led
+    assert.equal(core.homeVisitDays(vs, [M], '2026-10-10', 10).days[9].date, '2026-10-10');   // a Saturday: today is still the last point
+  });
+
+  test('home series: the forecast day by day — the last point is execDashboard\'s forecast when everyone\'s lines end on the same day', () => {
+    const d = data(), D = core.execDashboard(d, { reps });
+    const F = core.homeForecastDays('2026-10', D.daily.pair.days);
+    assert.equal(F[F.length - 1].date, D.daily.to);
+    assert.ok(Math.abs(F[F.length - 1].forecast - D.forecast.forTarget) <= 0.02, F[F.length - 1].forecast + ' vs ' + D.forecast.forTarget);
+    const all = core.homeForecastDays('2026-10', D.daily.days);
+    assert.ok(Math.abs(all[all.length - 1].forecast - D.forecast.amount) <= 0.03);
+    assert.equal(core.homeForecastDays('2026-11', [{ date: '2026-11-01', net: 5 }])[0].forecast, Math.round(5 / 1 * core.workingDaysBetween('2026-11-01', '2026-11-30') * 100) / 100);   // 1 Nov 2026 is a Sunday
+    assert.equal(core.homeForecastDays('2026-08', [{ date: '2026-08-01', net: 5 }])[0].forecast, null);   // a Saturday before any working day
+  });
+
+  test('home series: the KPI score month by month — the running month is the average of the people\'s kpiScorecard totals, a month without a visit has none', () => {
+    const d = data(), K = core.homeKpiMonths(d, { reps, months: 3 });
+    assert.deepEqual(K.months.map(m => m.month), ['2026-08', '2026-09', '2026-10']);
+    const tot = r => core.kpiScorecard(d, { rep: r, from: '2026-10-01', to: '2026-10-08' }).total;
+    const cur = reps.map(tot).filter(x => x != null);
+    assert.equal(K.current, Math.round(cur.reduce((a, b) => a + b, 0) / cur.length));
+    assert.equal(K.months[2].score, K.current);
+    assert.equal(K.months[0].score, null);                                      // nobody logged a visit or a call in August
+    const sep = [M, R].map(r => core.kpiScorecard(d, { rep: r, from: '2026-09-01', to: '2026-09-30' }).total);   // Dr. Ghaith logged nothing in September
+    assert.equal(K.months[1].score, Math.round((sep[0] + sep[1]) / 2));
+    // the same days of September (1–8): nobody logged anything then — no comparison, no ▲/▼
+    assert.deepEqual([K.sameDays.month, K.sameDays.to, K.sameDays.score, K.delta], ['2026-09', '2026-09-08', null, null]);
+    const one = core.homeKpiMonths(d, { reps: [M], months: 2 });
+    assert.equal(one.current, tot(M));
+  });
+
+  test('home series: the target card\'s ring says the achievement to one decimal (pct1), the same division as pct', () => {
+    const D = core.execDashboard(data(), { reps });
+    assert.equal(D.achievement.pct1, Math.round(D.achievement.achieved / D.achievement.target * 1000) / 10);
+    assert.equal(Math.round(D.achievement.pct1), D.achievement.pct);
+  });
 });

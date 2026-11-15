@@ -1,7 +1,7 @@
 const CACHE = 'ultramed-field-ops-v123';
 const SHELL = ['./', './index.html', './js/core.js', './js/i18n.js', './manifest.json', './icons/icon-192.png', './icons/logo-green.png', './icons/icon-512.png',
-  './icons/logo-white.png', './icons/mark-green.png',
-  './fonts/dm-sans-latin-var.woff2', './fonts/ibm-plex-sans-arabic-arabic-400.woff2', './fonts/ibm-plex-sans-arabic-arabic-600.woff2',
+  './icons/logo-white.png', './icons/mark-green.png', './img/clinic.webp', './img/hand.webp', './img/tooth.webp', './img/robot.svg',
+  './fonts/inter-latin-var.woff2', './fonts/ibm-plex-sans-arabic-arabic-400.woff2', './fonts/ibm-plex-sans-arabic-arabic-600.woff2',
   './fonts/ibm-plex-sans-arabic-latin-400.woff2', './fonts/ibm-plex-sans-arabic-latin-600.woff2'];
 // The Firebase SDK lives on gstatic; without it a cached session cannot boot
 // offline at all, so precache it too (no-cors -> opaque, cached all the same).

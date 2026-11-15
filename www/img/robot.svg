@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 150" width="120" height="150">
+  <defs>
+    <radialGradient id="rbHead" cx="40%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".55" stop-color="#F2F5F5"/><stop offset="1" stop-color="#C9D3D2"/>
+    </radialGradient>
+    <radialGradient id="rbBody" cx="38%" cy="25%" r="85%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".6" stop-color="#EEF2F2"/><stop offset="1" stop-color="#C3CECD"/>
+    </radialGradient>
+    <linearGradient id="rbVisor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2B3A40"/><stop offset=".45" stop-color="#121B1F"/><stop offset="1" stop-color="#060B0D"/>
+    </linearGradient>
+    <radialGradient id="rbEar" cx="35%" cy="35%" r="75%">
+      <stop offset="0" stop-color="#5FD3A4"/><stop offset=".55" stop-color="#1F8F69"/><stop offset="1" stop-color="#0B5A41"/>
+    </radialGradient>
+    <radialGradient id="rbEye" cx="50%" cy="45%" r="60%">
+      <stop offset="0" stop-color="#E9FFF4"/><stop offset=".35" stop-color="#7BF5BD"/><stop offset="1" stop-color="#22C47F"/>
+    </radialGradient>
+    <filter id="rbGlow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="2.6"/></filter>
+    <filter id="rbSoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3"/></filter>
+    <linearGradient id="rbShine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".55"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="60" cy="144" rx="34" ry="5" fill="#0B3B30" opacity=".16" filter="url(#rbSoft)"/>
+  <!-- arms -->
+  <path d="M30 96c-9 4-13 15-12 27 0 5 4 8 8 7 4-1 6-5 6-9 0-7 2-13 6-17z" fill="url(#rbBody)"/>
+  <path d="M90 96c9 4 13 15 12 27 0 5-4 8-8 7-4-1-6-5-6-9 0-7-2-13-6-17z" fill="url(#rbBody)"/>
+  <!-- body -->
+  <path d="M60 86c-17 0-29 8-30 24-1 14 5 28 13 31 5 2 12 3 17 3s12-1 17-3c8-3 14-17 13-31-1-16-13-24-30-24z" fill="url(#rbBody)"/>
+  <ellipse cx="60" cy="112" rx="13" ry="10" fill="#E2E9E8" opacity=".9"/>
+  <ellipse cx="60" cy="112" rx="8" ry="6" fill="#D2DCDB" opacity=".7"/>
+  <!-- neck -->
+  <rect x="50" y="80" width="20" height="9" rx="4" fill="#B9C5C4"/>
+  <!-- ears -->
+  <ellipse cx="19" cy="49" rx="8.5" ry="12" fill="url(#rbEar)"/>
+  <ellipse cx="101" cy="49" rx="8.5" ry="12" fill="url(#rbEar)"/>
+  <ellipse cx="17.5" cy="45" rx="2.5" ry="4" fill="#BFF5DD" opacity=".55"/>
+  <ellipse cx="99.5" cy="45" rx="2.5" ry="4" fill="#BFF5DD" opacity=".45"/>
+  <!-- head -->
+  <path d="M60 8c-25 0-42 15-42 40 0 22 16 35 42 35s42-13 42-35C102 23 85 8 60 8z" fill="url(#rbHead)"/>
+  <path d="M60 11c-19 0-33 9-37 24 9-9 22-13 37-13s28 4 37 13c-4-15-18-24-37-24z" fill="url(#rbShine)"/>
+  <!-- visor -->
+  <rect x="27" y="30" width="66" height="38" rx="19" fill="url(#rbVisor)"/>
+  <path d="M38 34c12-3 32-3 44 0" stroke="#FFFFFF" stroke-opacity=".22" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <!-- eyes -->
+  <ellipse cx="47" cy="50" rx="7.5" ry="8.5" fill="#3BEA9B" opacity=".75" filter="url(#rbGlow)"/>
+  <ellipse cx="73" cy="50" rx="7.5" ry="8.5" fill="#3BEA9B" opacity=".75" filter="url(#rbGlow)"/>
+  <ellipse cx="47" cy="50" rx="5.2" ry="6.2" fill="url(#rbEye)"/>
+  <ellipse cx="73" cy="50" rx="5.2" ry="6.2" fill="url(#rbEye)"/>
+  <!-- smile -->
+  <path d="M53 75c4 2.6 10 2.6 14 0" stroke="#7E8C8B" stroke-width="2" fill="none" stroke-linecap="round"/>
+</svg>

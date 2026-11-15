@@ -54,6 +54,8 @@ function openAccountMenu(){
       <div class="chip ${uiLang==='en'?'on':''}" onclick="setUiLang('en')">English</div>
       <div class="chip ${uiLang==='ar'?'on':''}" onclick="setUiLang('ar')">العربية</div>
     </div>
+    <button class="btn secondary" onclick="closeModal(); switchView('log')">${I('plus')} Log a visit</button>
+    <button class="btn secondary" onclick="openHelp()">${I('nhelp')} Help &amp; Support</button>
     ${FIREBASE_ENABLED ? `<button class="btn secondary" onclick="openChangePassword()">${I('lock')} Change password</button>` : ''}
     <button class="btn ghost" onclick="closeModal(); switchUser();">Sign out</button>
   `);

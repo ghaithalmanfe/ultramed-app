@@ -338,6 +338,41 @@ function msBell(){
   if(b){ b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n); }
 }
 function bellOpen(){ if(activeView !== 'today') switchView('today'); msGo('msDueCard'); }
+// Help & Support (the sidebar's last entry): the app's version, what this phone still has to send, and who to ask.
+function openHelp(){
+  let queued = [];
+  try{ queued = outboxList(); }catch(e){}
+  const online = navigator.onLine !== false;
+  const sups = (staff || []).filter(s => s && s.role === 'supervisor' && s.active !== false).map(s => s.name);
+  const names = { clinics: 'Clinics', visits: 'Visits', tasks: 'Tasks', events: 'Events', dayPlans: "Day's plans", products: 'Products & prices', targets: 'Targets', chat: 'Team chat', memories: 'Memories' };
+  const list = queued.map(k => esc(trOf(names[k] || '') || names[k] || k)).join(uiLang === 'ar' ? '، ' : ', ');
+  showModal(`<h3 style="margin-top:0;">${I('nhelp')} ${msT('Help & Support')}</h3>
+    <div class="ms-how">
+      <div class="kv"><span>${msT('App version')}</span><span data-notr>${esc(APP_REV)}</span></div>
+      <div class="kv"><span>${msT('Connection')}</span><span>${msT(online ? 'Online' : 'Offline — changes are kept on this phone')}</span></div>
+      <div class="kv"><span>${msT('Waiting to be sent')}</span><span>${queued.length ? `${msN(queued.length)} · ${list}` : msT('Nothing — everything has reached the cloud')}</span></div>
+      <h4>${msT('Who to ask')}</h4>
+      <div>${sups.length ? `${msT('Your supervisor:')} <b>${msNames(sups)}</b> — ${msT('write in the team chat, or call.')}` : msT('Write in the team chat.')}</div>
+      <div class="ms-note">${msT('A red bar at the bottom of the screen says when something could not be sent, and what to do.')}</div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+      <button class="btn secondary" onclick="closeModal(); switchView('team')">${I('chat')} ${msT('Team chat')}</button>
+      <button class="btn secondary" onclick="closeModal()">Close</button>
+    </div>`);
+}
+// Ctrl+K / ⌘+K: the quick find of the top bar (a wide screen; the key's label follows the keyboard)
+(function(){
+  try{
+    const mac = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+    document.addEventListener('DOMContentLoaded', () => { const k = document.getElementById('quickFindKey'); if(k) k.textContent = mac ? '⌘ K' : 'Ctrl K'; });
+    document.addEventListener('keydown', e => {
+      if(!(e.key === 'k' || e.key === 'K') || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const q = document.getElementById('quickFind');
+      if(!q || !q.offsetParent || !currentUser) return;
+      e.preventDefault(); q.focus(); q.select();
+    });
+  }catch(e){}
+})();
 // ---- Quick find (the top bar of a wide screen): clinics, doctors and products already on this phone ----
 // Only what the role may see (a rep: her clinics and their doctors; the catalog is everyone's); each result opens
 // the item's own screen. Ids reach the handler through data attributes only.
@@ -462,12 +497,13 @@ function renderAll(){
     now.toLocaleDateString(uiLang==='ar' ? 'ar-KW-u-nu-latn' : 'en-US', {weekday:'long', month:'long', day:'numeric'});
   const hr = now.getHours();
   const greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
-  // "Dr. Ghaith" must greet as "Dr. Ghaith", not a bare "Dr."
-  const firstWord = currentUser.name.split(' ')[0];
-  const shortName = /^(dr|prof|mr|mrs|ms)\.?$/i.test(firstWord) ? currentUser.name : firstWord;
-  document.getElementById('greeting').textContent = `${greet}, ${uiLang === 'ar' ? wdArNames(shortName) : shortName}`;
+  // the picture's greeting: the first name, without a title ("Dr. Ghaith" → "Ghaith"; Arabic «غيث»)
+  const words = String(currentUser.name).trim().split(/\s+/), title = /^(dr|prof|mr|mrs|ms)\.?$/i.test(words[0]) && words[1];
+  const first = title ? words[1] : words[0];
+  const arFull = wdArNames(currentUser.name), arFirst = arFull !== currentUser.name ? arFull.replace(/^د\.\s*/, '').split(/\s+/)[0] : first;
+  document.getElementById('greeting').textContent = `${greet}, ${uiLang === 'ar' ? arFirst : first}`;
   const stamp = document.getElementById('headerStamp');
-  stamp.childNodes[0].textContent = initials(currentUser.name);
+  stamp.childNodes[0].textContent = msInitials(msName(currentUser.name));
   stamp.classList.toggle('sup', currentUser.role==='supervisor');
   const adminBtn = document.getElementById('adminPanelBtn');
   if(adminBtn) adminBtn.style.display = currentUser.role==='supervisor' ? 'block' : 'none';
@@ -478,7 +514,7 @@ function renderAll(){
   // the shell: who is signed in (top bar), the supervisor's own entries (navigation), the title and active item
   const un = document.getElementById('topUserName'), ur = document.getElementById('topUserRole');
   if(un) un.textContent = msName(currentUser.name);
-  if(ur) ur.textContent = currentUser.role === 'supervisor' ? 'Supervisor' : 'Sales Rep';
+  if(ur) ur.textContent = currentUser.role === 'supervisor' ? 'Sales Manager' : 'Sales Representative';
   document.querySelectorAll('#bottomNav [data-sup]').forEach(el => { el.hidden = currentUser.role !== 'supervisor'; });
   syncShell(activeView);
   msBell();
@@ -707,6 +743,9 @@ function msBuild(v){
     const hasAr = t => !window.UMI18N || !!UMI18N.tr(t);
     m.coach = (ins || []).filter(i => i && (i.level === 'act' || i.level === 'watch') && !/^target-/.test(i.key || '') && i.key !== 'followups' && i.title && hasAr(i.title))[0] || null;
   }catch(e){ console.error('main screen: coach', e); m.coach = null; }
+  // the first figure card: the KPI score month by month (its sparkline) and against the same days of last month (its ▲/▼)
+  try{ m.H = { kpi: UMCore.homeKpiMonths(Object.assign({}, data, { today: todayStr() }), { reps: v.reps, months: 6, settings: typeof kpiSettings === 'function' ? kpiSettings() : null, rows }) }; }
+  catch(e){ console.error('main screen: KPI months', e); m.H = {}; }
   if(v.kind === 'person' && typeof kpiSettings === 'function' && typeof kpiRange === 'function'){
     const S = kpiSettings(), base = Object.assign({}, data, { today: todayStr() });
     const card = p => { const r = kpiRange(p); return UMCore.kpiScorecard(base, { rep: v.rep, from: r.from, to: r.to, settings: S, rows }); };
@@ -825,15 +864,16 @@ function msPaint(v, m, sig){
   const P = msPeople(v, sig), tt = v.kind === 'team' ? msTeamTotal(v, P, sig) : null;   // a person's screen has no team total
   msHead(v, m, P);
   const set = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
-  set('msSales', v.kind === 'team' ? msSalesHTML(v, m, P, tt) : '');
+  set('msSales', v.kind === 'team' ? msHeroHTML(v, m, P, tt) : '');
   renderTargetCard(v, m, P, sig);
   set('msKpis', msKpisHTML(v, m, sig));
-  set('msAdvisor', v.kind === 'person' ? msAdvisorHTML(v, m) : '');   // the team's advice is its "needs you" card (msNext)
+  set('msAdvisor', msAdvisorHTML(v, m));
   set('msStatus', msStatusHTML(v, m, P));
   const week = msWeekLine(v, msWeek(v, sig));
   set('msWork', v.kind === 'team' ? msTeamWorkHTML(v, m, week) : msVisitsHTML(v, m, week));
   set('msNext', v.kind === 'team' ? msNeedsHTML(v, m) : msNextHTML(v));
   set('msChart', msChartHTML(v, m));
+  set('msDaily', msDailyHTML(v, m));
   set('msBrands', msBrandsHTML(v, m, P));
   set('msCust', msCustHTML(v, m));
   set('msRows', msRowsHTML(v, m));
@@ -846,43 +886,34 @@ function msPaint(v, m, sig){
 }
 function msHead(v, m, P){
   const set = (id, html) => { const el = document.getElementById(id); if(el) el.innerHTML = html; };
-  const g = document.getElementById('greeting'), dl = document.getElementById('dateLabel');
-  set('msHello', g ? esc(g.textContent) : '');
-  set('msDate', dl ? esc(dl.textContent) : '');
-  // where the numbers come from, and the working days counted to the day the sales files reach (the people's files
-  // may stop on different days: then the earliest and the latest, said as such)
-  const meas = P.filter(p => p.measured), cuts = meas.map(p => p.bm.asOf).sort(), asOf = cuts[cuts.length - 1] || null, first = cuts[0] || null;
-  const wd = UMCore.monthWorkdays(msMonth(), asOf);
+  const g = document.getElementById('greeting');
+  // the picture's greeting: "Good morning, Ghaith" and the waving hand (an image, the same on every phone and PC)
+  set('msHello', `<span>${g ? esc(g.textContent) : ''}</span><img class="ms-wave" src="img/hand.webp" alt="👋" width="56" height="56">`);
   const own = v.kind === 'person' && v.own;
-  const segs = [
-    asOf ? `${msT(own ? 'Your invoiced sales from the ERP files to' : 'Invoiced sales from the ERP files to')} <b>${msDay(first !== asOf ? first : asOf)}</b>${first !== asOf ? ` – <b>${msDay(asOf)}</b> (${msT('each person to the day her file reaches')})` : ''}`
-         : msT(P.some(p => p.bm.basis === 'erp') ? 'The sales files of this month hold no line of these people yet' : 'No ERP sales file for this month yet'),
-    msT(own ? 'your target from the DSR' : v.kind === 'team' ? 'targets from the DSR' : 'target from the DSR'),
-    msT(asOf ? `working days: ${wd.done} of ${wd.total} done` : `working days this month: ${wd.total}`)
-  ];
-  set('msSource', `${I('info')}<span>${segs.join(' · ')}</span>`);
+  set('msSubtitle', msT(v.kind === 'team' ? "Here's your performance overview for this month" : own ? "Here's your performance overview for this month" : "Here's this person's performance overview for this month"));
   // the period the screen shows: this month (its figures are the month's); earlier months open in the month reports
   const mName = (() => { try{ return new Date(todayStr() + 'T00:00:00').toLocaleDateString(uiLocale(), { month: 'long', year: 'numeric' }); }catch(e){ return msMonth(); } })();
-  set('msPeriod', `<button class="ms-period" onclick="openMonthReports()" aria-label="Months" title="Months">${I('calendar')}<span data-notr>${esc(mName)}</span><svg class="svgi ms-pchev" aria-hidden="true"><use href="#i-chev"/></svg></button>`);
-  // the person switch: the team and each person, himself included (Arabic names in the Arabic screen)
-  const sw = document.getElementById('msSwitch');
-  if(sw){
-    sw.innerHTML = currentUser.role === 'supervisor' && REPS.length
-      ? [`<button role="tab" class="${v.kind === 'team' ? 'on' : ''}" aria-selected="${v.kind === 'team'}" onclick="msOpenPerson(null)">Team</button>`]
-        .concat(REPS.map(r => `<button role="tab" class="${v.rep === r ? 'on' : ''}" aria-selected="${v.rep === r}" data-r="${esc(r)}" onclick="msOpenPerson(this.dataset.r)">${msWho(r)}</button>`)).join('')
-      : '';
-  }
+  set('msPeriod', `<button class="ms-period" onclick="openMonthReports()" aria-label="${esc(trOf('Months') || 'Months')}: ${esc(mName)}" title="${esc(mName)}">${I('cal2')}<span>${msT('This Month')}</span><svg class="svgi ms-pchev" aria-hidden="true"><use href="#i-chevd"/></svg></button>`);
+  // the supervisor on a person's screen (opened from her leaderboard row): whose it is, and the way back to the team
   const whose = document.getElementById('msWhose');
   if(whose){
     const other = v.kind === 'person' && !v.own;
     whose.style.display = other ? '' : 'none';
-    whose.innerHTML = other ? `<span>${msT('Showing the screen of')} <b>${msWho(v.rep)}</b></span><button class="ms-back" onclick="msOpenPerson(null)">${msT('Back to the team')}</button>` : '';
+    whose.innerHTML = other ? `<span class="ms-vchip"><span>${msT('Viewing:')} <b>${msWho(v.rep)}</b></span><button class="ms-back" onclick="msOpenPerson(null)">${msT('Back to the team')}</button></span>` : '';
   }
-  // laptop: the KPI score of a person's screen, and the account button
-  const K = m && msOf(m.K), due = visibleDueClinics().length > 0;
-  const kpi = v.kind === 'person'
-    ? `<button class="ms-kpi" onclick="msKpi()"><span>${msT('Performance score')}</span> <b>${K && K.total != null ? msN(K.total) : '—'}</b> <span>${msT('of 100')}</span> ${I('info')}</button>` : '';
-  set('msWho', `${kpi}<button class="ms-av" onclick="openAccountMenu()" aria-label="Account menu"><span data-notr>${esc(initials(currentUser.name))}</span><span class="dot${due ? ' show' : ''}"></span></button>`);
+}
+// The source of the month's figures in words (the target card's ⓘ): the ERP files to the day they reach (the people's
+// files may stop on different days: then the earliest and the latest, said as such), the DSR targets, the working days.
+function msSourceLine(v, P){
+  const meas = P.filter(p => p.measured), cuts = meas.map(p => p.bm.asOf).sort(), asOf = cuts[cuts.length - 1] || null, first = cuts[0] || null;
+  const wd = UMCore.monthWorkdays(msMonth(), asOf);
+  const own = v.kind === 'person' && v.own;
+  return [
+    asOf ? `${msT(own ? 'Your invoiced sales from the ERP files to' : 'Invoiced sales from the ERP files to')} <b>${msDay(first !== asOf ? first : asOf)}</b>${first !== asOf ? ` – <b>${msDay(asOf)}</b> (${msT('each person to the day her file reaches')})` : ''}`
+         : msT(P.some(p => p.bm.basis === 'erp') ? 'The sales files of this month hold no line of these people yet' : 'No ERP sales file for this month yet'),
+    msT(own ? 'your target from the DSR' : v.kind === 'team' ? 'targets from the DSR' : 'target from the DSR'),
+    msT(asOf ? `working days: ${wd.done} of ${wd.total} done` : `working days this month: ${wd.total}`)
+  ].join(' · ');
 }
 
 // ---- the month against the target (the team's card; a person's card is the target card itself) ----
@@ -891,7 +922,26 @@ function msHead(v, m, P){
 // "of" their target; someone selling with no target is said on a line of their own with the amount, the team's
 // whole figure beside it; someone with a target and no sales figure is named. With no target at all, the amount
 // is everyone's month figure, with no percentage.
-function msSalesHTML(v, m, P, tt){
+// ---- the target card (the owner's picture): the ring, the month against the target, what is left ----
+// The card is of ONE set of people from top to bottom: those with a target and a sales figure (execDashboard's
+// achievement — what its %, remaining and per working day are worked out for). Its amount is theirs, its target
+// theirs; someone selling with no target is said on a line of their own with the amount, the team's whole figure
+// beside it; someone with a target and no sales figure is named. With no target at all, the amount is everyone's
+// month figure, with no percentage. Amounts as the picture writes them: whole KWD with thousands separators (the ⓘ
+// and the leaderboard's details keep the fils); the ring's % to one decimal (execDashboard's pct1).
+function msWhole(n){ const x = Math.round(Number(n) || 0); return x < 0 ? `<span data-notr dir="ltr">${'-' + Math.abs(x).toLocaleString('en-US')}</span>` : `<span data-notr>${x.toLocaleString('en-US')}</span>`; }
+function msKwd(n){ return `${msWhole(n)} <small>${msT('KWD')}</small>`; }
+// a label whose English word means something else elsewhere in the app (the dictionary is one entry per English string)
+function msLab(en, ar){ return uiLang === 'ar' ? `<span data-notr>${ar}</span>` : `<span>${en}</span>`; }
+// the yellow calendar of the picture (a flat icon, drawn here: its colours are its own)
+function msCalY(){ return `<svg class="ms-cal" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="17.5" rx="3.2" fill="#F5C445"/><path d="M2.5 9.2h19V7.2A3.2 3.2 0 0 0 18.3 4H5.7a3.2 3.2 0 0 0-3.2 3.2z" fill="#E6A928"/><rect x="6.6" y="2" width="2.3" height="4.6" rx="1.1" fill="#F5C445"/><rect x="15.1" y="2" width="2.3" height="4.6" rx="1.1" fill="#F5C445"/><g fill="#7B5A12"><rect x="6.3" y="11.6" width="2.6" height="2.4" rx=".6"/><rect x="10.7" y="11.6" width="2.6" height="2.4" rx=".6"/><rect x="15.1" y="11.6" width="2.6" height="2.4" rx=".6"/><rect x="6.3" y="15.6" width="2.6" height="2.4" rx=".6"/><rect x="10.7" y="15.6" width="2.6" height="2.4" rx=".6"/></g></svg>`; }
+// the picture's faded rising bars and arrow at the card's end (decoration only: it shows no figure)
+function msHeroDeco(){
+  return `<svg class="ms-hdeco" viewBox="0 0 156 166" aria-hidden="true" focusable="false"><defs><linearGradient id="msDecoG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8BEABD" stop-opacity=".85"/><stop offset=".55" stop-color="#4FC08E" stop-opacity=".42"/><stop offset="1" stop-color="#3FA77D" stop-opacity=".04"/></linearGradient></defs>`
+    + [[19, 27], [48, 44], [77, 60], [106, 80], [135, 102]].map(([x, h]) => `<rect x="${x}" y="${166 - h}" width="20" height="${h}" rx="2" fill="url(#msDecoG)"/>`).join('')
+    + `<path d="M1 128 31 104l22 7 31-37 22 7 38-48" fill="none" stroke="#8CF0BF" stroke-opacity=".95" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M131 30.5 146 18l-1.8 19.6z" fill="#86EBBA" fill-opacity=".9"/></svg>`;
+}
+function msHeroHTML(v, m, P, tt){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own;
   const D = m && msOf(m.D);
   const r2 = n => Math.round(n * 100) / 100;
@@ -902,82 +952,77 @@ function msSalesHTML(v, m, P, tt){
   const goal = pair.length ? r2(pair.reduce((s, p) => s + p.goal, 0)) : meas.length ? null : team ? (tt || teamTargetNow()).goal : (P[0] && P[0].goal);
   const why = P.length && P.every(p => p.bm.basis === 'none') ? 'No ERP sales file for this month yet'
     : team ? 'The sales files of this month hold no line of these people yet.' : 'The sales files of this month hold no line of this person yet.';
-  const title = team ? 'Team sales this month' : own ? 'My sales this month' : 'Sales this month';
-  const ofT = !team ? (own ? 'of my target' : 'of the target') : pair.length && unmeas.length ? 'of the target of the people with a sales figure' : 'of the team target';
   const noGoal = meas.length && P.some(p => p.goal) ? 'No sales target for the people with a sales figure' : 'No sales target on file for this month';
-  const ct = `<div class="ms-ct"><span>${msT(title)}</span><span class="ms-act">${team ? '' : `<button class="chip small" onclick="event.stopPropagation(); openMonthReports()">${I('book')} Months</button>`}${msInfo('sales')}</span></div>`;
-  const head = ct + `<div class="ms-big${amount == null ? ' none' : ''}" data-ms="sales" data-value="${amount == null ? '' : amount}">${amount == null ? '—' : `${msN(amount.toFixed(2))} <small>KD</small>`}</div>
-    <div class="ms-of" data-ms="of-target" data-value="${goal > 0 ? goal : ''}">${goal > 0 ? `${msT(ofT)} ${msKd(goal)}` : msT(noGoal)}${!team && P[0] && P[0].t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${msFieldVisits(P[0].rep)}/${P[0].t.visits} (${Math.round(msFieldVisits(P[0].rep) / P[0].t.visits * 100)}%)</span>` : ''}</div>`;
-  // what the card's figures leave out, in words — said at once, before the figures below arrive
+  // what the card's figures leave out, in words
   const notes = [];
   if(team){
     unmeas.forEach(p => notes.push(`${msWho(p.rep)}: ${msT('a target but no sales figure in the files, so not in the percentage.')}`));
     if(pair.length) noT.forEach(p => notes.push(`${msWho(p.rep)}: ${msKd(p.bm.amount)} ${msT('invoiced, no target, so not in these figures.')}`));
     if(pair.length && noT.length) notes.push(`${msT('All invoiced sales of the team:')} <b data-ms="sales-all" data-value="${all}">${msKd(all)}</b>`);
   }
-  const noteHTML = notes.length ? `<div class="ms-note">${notes.join('<br>')}</div>` : '';
-  // the target card (redesign): the ring (achievement, with the expected-by mark), the month's figure against the target,
-  // then remaining · per work day (the working days left) · the forecast, drawn apart (dashed) as an estimate
-  const hero = (ring, main, stats, after) => `<div class="ms-hin">${ring}<div class="ms-hmain">${main}</div>${stats}</div>${after || ''}`;
-  const noRing = `<div class="ms-ringc none" aria-hidden="true"><span class="ms-rt">${I('target')}</span></div>`;
-  if(amount == null) return hero(noRing, head + `<div class="ms-note">${msT(why)}</div>`, msSalesStats(null), noteHTML);
-  if(!D) return hero(noRing, head + msWait(m), m && m.failed ? msSalesStats(null) : '', noteHTML);
-  const A = msOf(D.achievement) || {}, Pd = msOf(D.perDay) || {}, wd = msOf(Pd.workdays) || {};
-  const exp = msExpected(wd), pace = A.pct != null ? msPace(A.achieved, A.target, wd.done, wd.total) : null;
-  let main = head, ring = noRing;
-  if(A.pct != null){
-    ring = msRing(A.pct, exp);
-    main += msBar(A.pct, exp, false)
-      + `<div class="ms-legend">${exp != null ? `<span>${msT('expected by')} ${msDate(wd.asOf)}: ${msPct(exp)}</span>` : ''}${pace ? `<span class="ms-pill ${MS_PILL[pace][0]}" data-ms="pace" data-value="${pace}">${msT(MS_PILL[pace][1])}</span>` : ''}</div>`;
-  }
-  return hero(ring, main, msSalesStats(D), msFcNote(D) + noteHTML);
-}
-// The ring of the target card: achieved ÷ target (execDashboard's %), with a mark where the working days say it
-// should be. Drawn up to 100 % (beyond, the ring is full and the figure says how far); the % is the card's own figure.
-function msRing(pct, exp){
-  const R = 50, C = 2 * Math.PI * R, f = Math.max(0, Math.min(100, pct)) / 100;
-  let mk = '';
-  if(exp != null){
-    const t = (Math.max(0, Math.min(100, exp)) / 100) * 2 * Math.PI - Math.PI / 2, c = Math.cos(t), sn = Math.sin(t);
-    mk = `<line class="mk" x1="${(60 + (R - 9) * c).toFixed(1)}" y1="${(60 + (R - 9) * sn).toFixed(1)}" x2="${(60 + (R + 9) * c).toFixed(1)}" y2="${(60 + (R + 9) * sn).toFixed(1)}"/>`;
-  }
-  return `<div class="ms-ringc"><svg class="ms-ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="trk" cx="60" cy="60" r="${R}"/>`
-    + (f > 0 ? `<circle class="val" cx="60" cy="60" r="${R}" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 60 60)"/>` : '') + mk + `</svg>`
-    + `<div class="ms-rc" data-ms="achievement" data-value="${pct}"><strong>${msPct(pct)}</strong><span>${msT('achieved')}</span></div></div>`;
+  if(amount == null) notes.unshift(`<span>${msT(why)}</span>`);
+  else if(!D) notes.unshift(m && m.failed ? `<span>${msT("The month's figures could not be worked out on this device.")}</span>` : `<span>${msT('Calculating the month…')}</span>`);
+  if(!(goal > 0) && amount != null) notes.push(`<span data-ms="no-goal">${msT(noGoal)}</span>`);
+  const A = D ? (msOf(D.achievement) || {}) : {}, Pd = D ? (msOf(D.perDay) || {}) : {}, wd = msOf(Pd.workdays) || {};
+  const exp = msExpected(wd), pace = D && A.pct != null ? msPace(A.achieved, A.target, wd.done, wd.total) : null;
+  const pct = A.pct != null ? A.pct : null, pct1 = A.pct1 != null ? A.pct1 : pct;
+  // the ring: achieved ÷ target (execDashboard's figure, one decimal), drawn up to 100 % (beyond, full; the figure says how far)
+  const R = 87.5, C = 2 * Math.PI * R, f = pct == null ? 0 : Math.max(0, Math.min(100, pct1)) / 100;
+  const ring = `<div class="ms-hring${pct == null ? ' none' : ''}"><svg class="ms-ring" viewBox="0 0 190 190" aria-hidden="true"><defs><linearGradient id="msRingG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8FF3BF"/><stop offset=".5" stop-color="#6AEBA4"/><stop offset="1" stop-color="#46D98E"/></linearGradient></defs>`
+    + `<circle class="trk" cx="95" cy="95" r="${R}" stroke-width="15"/>`
+    + (f > 0 ? `<circle class="val" cx="95" cy="95" r="${R}" stroke-width="15" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 95 95)"/>` : '') + `</svg>`
+    + `<div class="ms-rc" data-ms="achievement" data-value="${pct == null ? '' : pct}"><strong>${pct == null ? '—' : msN(String(pct1) + '%')}</strong><span>${msT('Target Achieved')}</span></div></div>`;
+  const val = (k, n, cls) => n != null ? `<span class="ms-hv ${cls || ''}"${k ? ` data-ms="${k}" data-value="${n}"` : ''}>${msKwd(n)}</span>` : `<span class="ms-hv none ${cls || ''}"${k ? ` data-ms="${k}" data-value=""` : ''}>—</span>`;
+  const left = wd.left != null ? wd.left : null;
+  const remaining = D && D.remaining != null ? D.remaining : null, perDay = D && Pd.amount != null ? Pd.amount : null;
+  // the days line: the working days (Sun–Thu) left after the day the files reach — what "Daily Required" divides by
+  const daysTx = left != null && D ? msT(msCount(left, 'Work Day Left', 'Work Days Left')) : null;
+  const perNone = D && A.pct != null && perDay == null ? (remaining === 0 ? 'Target reached' : remaining > 0 && left === 0 ? 'no working day left' : null) : null;
+  const m1 = `<div class="ms-hcol m1">
+      <span class="ms-hl htgt">${msT('Monthly Target')}</span>${goal > 0 ? `<span class="ms-hv htgt" data-ms="of-target" data-value="${goal}">${msKwd(goal)}</span>` : `<span class="ms-hv htgt none" data-ms="of-target" data-value="">—</span>`}
+      <span class="ms-hl hach">${msLab('Achieved', 'المحقق منذ بداية الشهر')}</span>${amount != null ? `<span class="ms-hv hach" data-ms="sales" data-value="${amount}">${msKwd(amount)}</span>` : `<span class="ms-hv hach none" data-ms="sales" data-value="">—</span>`}
+      <div class="ms-hbar" role="img" aria-label="${esc(pct == null ? '—' : pct1 + '%')}"><i style="width:${pct == null ? 0 : Math.max(0, Math.min(100, pct1))}%;"></i></div>
+      <div class="ms-hrem">${val('', remaining)}<span class="ms-hl">${msT('Remaining')}</span></div>
+    </div>`;
+  const m2 = `<div class="ms-hcol m2">
+      <span class="ms-hl">${msT('Remaining')}</span>${val('remaining', remaining)}
+      <div class="ms-hdays">${msCalY()}<span>${daysTx || '—'}</span></div>
+      <span class="ms-hl hdr">${msT('Daily Required')}</span>${perDay != null ? `<span class="ms-hv" data-ms="perday" data-value="${perDay}">${msKwd(perDay)}</span>` : `<span class="ms-hv none" data-ms="perday" data-value="">—${perNone ? ` <small>${msT(perNone)}</small>` : ''}</span>`}
+    </div>`;
+  const foot = `<div class="ms-hfoot"><span class="ms-hd">${msCalY()}<span>${daysTx || '—'}</span></span><span class="ms-hd">${I('clock')}<span>${perDay != null ? `${msWhole(perDay)} ${msT('KWD / Day')}` : '—'}</span></span></div>`;
+  // the pace in words, for a screen reader (the pace card below the picture shows it): one word per state (MS_PILL)
+  const paceTx = pace ? `<span class="sr">${exp != null ? `<span>${msT('expected by')} ${msDate(wd.asOf)}: ${msPct(exp)}</span> ` : ''}<span class="ms-pill ${MS_PILL[pace][0]}" data-ms="pace" data-value="${pace}">${msT(MS_PILL[pace][1])}</span></span>` : '';
+  return `${msHeroDeco()}${msInfo('sales')}<div class="ms-hin"><div class="ms-hringw">${ring}</div><i class="ms-hsep" aria-hidden="true"></i>${m1}<i class="ms-hsep" aria-hidden="true"></i>${m2}</div>${foot}${paceTx}`
+    + (notes.length ? `<div class="ms-hnote${amount == null && P.every(p => p.bm.basis === 'none') ? ' warn' : ''}">${notes.join('<br>')}</div>` : '');
 }
 // The forecast against the target, in words: the month-end figure at the pace so far minus the target (display
-// arithmetic of execDashboard's forecast and target) — an estimate, never a result.
+// arithmetic of execDashboard's forecast and target) — an estimate, never a result. (The pace card says it.)
 function msFcNote(D){
   const A = msOf(D && D.achievement) || {}, F = msOf(D && D.forecast);
   if(!F || F.closed || A.pct == null || F.forTarget == null || !(A.target > 0)) return '';
   const diff = Math.round((F.forTarget - A.target) * 100) / 100;
   return `<div class="ms-fcnote">${I('trend')}<span><span>${msT('At the current pace:')}</span> <b>${msKd(Math.abs(diff))}</b> <span>${msT(diff >= 0 ? 'above the target' : 'short of the target')}</span> · <span>${msT('an estimate, not a result')}</span></span></div>`;
 }
-// Remaining, per working day and the forecast — of the card's people: with a target, the forecast is theirs
-// (forecast.forTarget) beside its % of their target; with none, everyone's month-end projection.
-function msSalesStats(D){
-  const dash = k => `<b data-ms="${k}" data-value="">—</b>`;
-  if(!D) return `<div class="ms-stats"><div><span class="ms-l">${msT('Remaining')}</span>${dash('remaining')}</div><div><span class="ms-l">${msT('Per work day')}</span>${dash('perday')}</div><div class="fc"><span class="ms-l">${msT('Forecast')}</span>${dash('forecast')}</div></div>`;
-  const A = msOf(D.achievement) || {}, Pd = msOf(D.perDay) || {}, wd = msOf(Pd.workdays) || {}, F = msOf(D.forecast);
-  const left = wd.left != null ? wd.left : null;
-  const remaining = D.remaining != null ? `<b data-ms="remaining" data-value="${D.remaining}">${msKd(D.remaining)}</b>` : dash('remaining');
-  const perDay = Pd.amount != null ? `<b data-ms="perday" data-value="${Pd.amount}">${msKd(Pd.amount)}</b>` : dash('perday');
-  // the design's short words: "15 days left" under "Per working day" — the working days (Sun–Thu), as the ⓘ says
-  const perSub = Pd.amount != null && left != null ? `<em>${msT(msCount(left, 'day left', 'days left'))}</em>`
-    : D.remaining === 0 && A.pct != null ? `<em>${msT('Target reached')}</em>`
-    : D.remaining > 0 && left === 0 ? `<em>${msT('no working day left')}</em>` : '';
-  const cells = [`<div><span class="ms-l">${msT('Remaining')}</span>${remaining}</div>`, `<div class="pd"><span class="ms-l">${msT('Per work day')}</span>${perDay}${perSub}</div>`];
-  if(F){
-    const fc = A.pct != null && F.forTarget != null ? F.forTarget : F.amount;
-    cells.push(`<div class="fc"><span class="ms-l">${msT('Forecast')}</span>${fc != null ? `<b data-ms="forecast" data-value="${fc}">${msKd(fc)}</b>${A.pct != null && F.pct != null ? `<em>${msT(F.pct + '% of target')}</em>` : ''}` : dash('forecast')}</div>`);
-  }
-  return `<div class="ms-stats${cells.length === 2 ? ' two' : ''}">${cells.join('')}</div>`;
-}
 
 // ---- the target card: the team's people rows, or a person's own month ----
 // Six harnesses read this card's words — "<achieved> of <target> · <state>",
 // "Achieved: <source> · target: DSR", the stale-target note, the Team line,
 // "Months" and the invoices on another rep's clinic — so it keeps them all.
+// ---- the target card: the team's leaderboard, or a person's own month ----
+// Six harnesses read this card's words — "<name> <pct>% <achieved> KD of <target> KD · <state>", "Achieved: <source> ·
+// target: DSR", the stale-target note, the Team line, "Months" and the invoices on another rep's clinic — so it keeps
+// them all: the picture's compact rows show rank, initials, name, bar, %, the amount in KWD and the field visits of the
+// month; each row's full words follow it (on screen once "View All" opens the details; read out by a screen reader
+// always). #targetCard is display:contents: its cards are the grid's own (the cross-invoice notice below the picture).
+let _msLbAll = false;
+function msLbToggle(btn){
+  _msLbAll = !_msLbAll;
+  const c = btn && btn.closest('.ms-people');
+  if(c) c.classList.toggle('ms-all', _msLbAll);
+  if(btn){ btn.setAttribute('aria-expanded', _msLbAll ? 'true' : 'false'); const t = btn.querySelector('span'); if(t){ t.textContent = _msLbAll ? 'Show less' : 'View All'; translateTree(t); } }
+}
+// initials as the picture writes them: a title ("Dr.") left out, the first letters of up to two words
+function msInitials(name){ const w = String(name || '').trim().split(/\s+/).filter(x => !/^(dr|prof|mr|mrs|ms|د)\.?$/i.test(x)); return (w.length ? w : [String(name || '?')]).slice(0, 2).map(x => x.charAt(0)).join('').toUpperCase(); }
 function renderTargetCard(v, m, P, sig){
   const el = document.getElementById('targetCard');
   if(!el) return;
@@ -990,40 +1035,38 @@ function renderTargetCard(v, m, P, sig){
   sig = sig || msSig(v);                                   // called on its own (after a change): the data as it is now
   P = P || msPeople(v, sig);
   if(v.kind === 'person'){
-    const p = P[0];
-    // her target card (the hero); the invoices on another rep's clinic follow it, in a light card of their own
+    const p = P[0], t = p.t, vN = t.visits > 0 ? msFieldVisits(p.rep) : 0;
+    // her target card (the hero); the invoices on another rep's clinic follow it, in a card of their own below the picture
     const cx = msMemo(sig, 'cx\u0001' + p.rep, () => crossInvoiceNote(p.rep, msDigest(sig)));
-    el.innerHTML = `<div class="ms-card ms-sales ms-hero">${msSalesHTML(v, m, P)}
-      <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR</div>${staleTargetNote(p.rep)}</div>${cx ? `<div class="ms-cxw">${cx}</div>` : ''}`;
+    el.innerHTML = `<div class="ms-card ms-sales ms-hero">${msHeroHTML(v, m, P)}
+      <div class="ms-fine ms-src2">Achieved: ${esc(p.bm.src)} · target: DSR${t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}</div>${staleTargetNote(p.rep)}</div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
     return;
   }
   const monthName = new Date(todayStr() + 'T00:00:00').toLocaleDateString(uiLocale(), { month: 'long' });
   const D = m && msOf(m.D), by = D && Array.isArray(D.byPerson) ? D.byPerson : [];
   const srcs = P.filter(p => p.goal || p.t.visits > 0).map(p => p.bm.src), oneSrc = srcs.length > 1 && srcs.every(s => s === srcs[0]);
   const stale = P.map(p => staleTargetNote(p.rep)), oneStale = stale.length > 1 && stale.every(s => s && s === stale[0]);
-  // the leaderboard: ranked by achievement (people with a sales target and a figure, highest first; a quiet mark for
-  // the first), then those with a target and no figure yet, a visits target only, none — each row as before
+  // ranked by achievement (people with a sales target and a figure, highest first; the crown for the first), then those
+  // with a target and no figure yet, a visits target only, none — each row's words as before
   const tier = p => p.goal ? (p.measured ? 0 : 1) : p.t.visits > 0 ? 2 : 3;
   const order = P.map((p, i) => ({ p, i })).sort((a, b) => tier(a.p) - tier(b.p) || (tier(a.p) === 0 ? b.p.pct - a.p.pct : 0) || a.i - b.i);
   let rank = 0;
   const rows = order.map(({ p, i }) => {
-    const r = p.rep, t = p.t, extra = msPersonExtra(by.find(x => x && x.rep === r));
+    const r = p.rep, t = p.t, extra = msPersonExtra(by.find(x => x && x.rep === r)), vN = msFieldVisits(r);
     const rk = tier(p) === 0 ? ++rank : null;
-    const head = `<div class="ms-person open" data-person="${esc(r)}" onclick="msOpenPerson(this.dataset.person)"><span class="rk${rk === 1 ? ' first' : ''}" data-notr>${rk === 1 ? I('award') : rk || ''}</span><span class="av" data-notr aria-hidden="true">${esc(initials(msName(r)))}</span>`;
+    const rkHTML = `<span class="rk${rk === 1 ? ' first' : rk && rk % 2 === 1 ? ' ring' : ''}" data-notr aria-hidden="true">${rk === 1 ? I('crown') : rk || ''}</span>`;
+    const head = (pctTx, bar, amt) => `<div class="ms-person ms-lb open" data-person="${esc(r)}" role="button" tabindex="0" onclick="msOpenPerson(this.dataset.person)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();msOpenPerson(this.dataset.person);}">${rkHTML}<span class="av" data-notr aria-hidden="true">${esc(msInitials(msName(r)))}</span><div class="n" aria-hidden="true">${msWho(r)}</div>${bar}<div class="p${pctTx == null ? ' none' : ''}" aria-hidden="true">${pctTx == null ? '—' : msN(pctTx + '%')}</div><div class="a" aria-hidden="true">${amt}</div><div class="v" aria-hidden="true" title="${esc(trOf('field visits this month') || 'field visits this month')}">${msN(vN)}</div>`;
+    const lbBar = pct => `<div class="bar" aria-hidden="true"><i style="width:${pct == null ? 0 : Math.max(0, Math.min(100, pct))}%;"></i></div>`;
+    const tail = `${extra}${oneSrc ? '' : `<div class="ms-fine">Achieved: ${esc(p.bm.src)} · target: DSR</div>`}${oneStale ? '' : stale[i] ? `<div class="ms-fine">${stale[i]}</div>` : ''}`;
     if(p.goal){
-      const exp = msExpected(p.wd), st = p.measured ? msPace(p.bm.amount, p.goal, p.wd.done, p.wd.total) : null;
-      const vN = t.visits > 0 ? msFieldVisits(r) : 0;
-      return head + `<div class="n">${msWho(r)}</div> ${msBar(p.pct, exp, true)} <div class="p">${p.pct}%</div>
-        <div class="s">${msKd(p.bm.amount)} <span>of</span> ${msKd(p.goal)} · <span>${st ? MS_STATE[st] : 'no figure yet'}</span>${t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}</div>
-        ${extra}${oneSrc ? '' : `<div class="ms-fine">Achieved: ${esc(p.bm.src)} · target: DSR</div>`}${oneStale ? '' : stale[i] ? `<div class="ms-fine">${stale[i]}</div>` : ''}</div>`;
+      const st = p.measured ? msPace(p.bm.amount, p.goal, p.wd.done, p.wd.total) : null;
+      return head(p.pct, lbBar(p.pct), p.measured ? msKwd(p.bm.amount) : '—') + `<div class="det"><div class="s"><span>${msWho(r)}</span> <span data-notr>${p.pct}%</span> ${msKd(p.bm.amount)} <span>of</span> ${msKd(p.goal)} · <span>${st ? MS_STATE[st] : 'no figure yet'}</span>${t.visits > 0 ? ` · <span style="white-space:nowrap;">Visits ${vN}/${t.visits} (${Math.round(vN / t.visits * 100)}%)</span>` : ''}</div>${tail}</div></div>`;
     }
     if(t.visits > 0){                                   // a visits-only target still deserves its row — and its sales, which the team figure counts
-      const vN = msFieldVisits(r), vp = Math.round(vN / t.visits * 100);
-      return head + `<div class="n">${msWho(r)}</div> ${msBar(vp, null, true)} <div class="p">${vp}%</div>
-        <div class="s">${p.measured ? `${msKd(p.bm.amount)} · ` : ''}<span>Visits ${vN} of ${t.visits} this month</span> · <span>no sales target set</span></div>${extra}</div>`;
+      const vp = Math.round(vN / t.visits * 100);
+      return head(vp, lbBar(vp), p.measured ? msKwd(p.bm.amount) : '—') + `<div class="det"><div class="s"><span>${msWho(r)}</span> <span data-notr>${vp}%</span> ${p.measured ? `${msKd(p.bm.amount)} · ` : ''}<span>Visits ${vN} of ${t.visits} this month</span> · <span>no sales target set</span></div>${extra}</div></div>`;
     }
-    return head + `<div class="n">${msWho(r)}</div> <div></div> <div class="p none">—</div>
-      <div class="s">${p.measured ? `${msKd(p.bm.amount)} · ` : ''}<span>no sales target set</span></div>${extra}</div>`;
+    return head(null, '<div class="bar none" aria-hidden="true"></div>', p.measured ? msKwd(p.bm.amount) : '—') + `<div class="det"><div class="s"><span>${msWho(r)}</span> ${p.measured ? `${msKd(p.bm.amount)} · ` : ''}<span>no sales target set</span></div>${extra}</div></div>`;
   });
   const tt = msTeamTotal(v, P, sig), withGoal = P.filter(p => p.goal);
   let teamRow = '';
@@ -1032,19 +1075,20 @@ function renderTargetCard(v, m, P, sig){
     const st = asOf ? msPace(tt.ach, tt.goal, wd.done, wd.total) : null;
     // teamTargetNow (the app-wide rule) counts someone with a target and no sales figure as 0: said, so its % and the sales card's can be told apart
     const zero = meas.length ? withGoal.filter(p => !p.measured) : [];
-    teamRow = `<div class="ms-person team"><span class="rk"></span><span class="av tm" aria-hidden="true">${I('users')}</span><div class="n">Team</div> ${msBar(tt.pct, msExpected(wd), true)} <div class="p">${tt.pct}%</div>
+    teamRow = `<div class="ms-person team ms-lbx"><div class="n">Team</div> <div class="p">${tt.pct}%</div>
       <div class="s">${msKd(tt.ach)} <span>of</span> ${msKd(tt.goal)} · <span>${st ? MS_STATE[st] : 'no figure yet'}</span> · <span>${tt.n} rep${tt.n === 1 ? '' : 's'}</span>${zero.length ? ` · ${msNames(zero.map(p => p.rep))} <span>counted as 0 (no figure in the files)</span>` : ''}</div></div>`;
   }
   const meas = withGoal.filter(p => p.measured), asOf = meas.map(p => p.bm.asOf).sort().pop() || null, wdT = UMCore.monthWorkdays(msMonth(), asOf), expT = msExpected(wdT);
-  el.innerHTML = `<div class="ms-card ms-people">
-    <div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-gold">${I('award')}</span><span class="ms-tt"><span>${msT('Team leaderboard')}</span><small>${monthName} target</small></span></span><span class="ms-act"><button class="ms-va" onclick="event.stopPropagation(); openKpiScorecard()">${msT('View all')}</button><button class="chip small" onclick="event.stopPropagation(); openMonthReports()">${I('book')} Months</button>${msInfo('sales')}</span></div>
-    <div class="ms-hint">${msT('Tap a name to open their screen')}</div>
-    ${rows.join('')}${teamRow}
+  const cx = msMemo(sig, 'cx', () => crossInvoiceNote(null, msDigest(sig)));
+  el.innerHTML = `<div class="ms-card ms-people${_msLbAll ? ' ms-all' : ''}">
+    <div class="ms-ct"><span class="ms-ttl"><span>${msT('Team Leaderboard')} <small>${msT('(Your Team)')}</small></span></span><span class="ms-act"><button class="ms-va" aria-expanded="${_msLbAll}" onclick="event.stopPropagation(); msLbToggle(this)"><span>${_msLbAll ? 'Show less' : 'View All'}</span>${I('arrowr')}</button>${msInfo('sales')}</span></div>
+    <div class="ms-lbhint">${msT('Tap a name to open their screen')} · <span>${monthName} target</span></div>
+    <div class="ms-lbw">${rows.join('')}</div>${teamRow}
     ${!withGoal.length && !P.some(p => p.t.visits > 0) ? `<div class="ms-note">${msT('Set sales and visit targets per rep in the admin panel to see live progress here.')} <span class="link" onclick="openAdminPanel()">${msT('Admin panel')}</span></div>` : ''}
-    ${expT != null && withGoal.length ? `<div class="ms-fine">${msT('The dark line on each bar = expected by')} ${msDate(wdT.asOf)} (${msPct(expT)}).</div>` : ''}
+    <div class="ms-lbx">${expT != null && withGoal.length ? `<div class="ms-fine">${msT('Expected by')} ${msDate(wdT.asOf)}: ${msPct(expT)} ${msT('of the target (the working days so far)')}.</div>` : ''}
     ${oneSrc ? `<div class="ms-fine">Achieved: ${esc(srcs[0])} · target: DSR</div>` : ''}${oneStale ? `<div class="ms-fine">${stale[0]}</div>` : ''}
-    ${msMemo(sig, 'cx', () => crossInvoiceNote(null, msDigest(sig)))}
-  </div>`;
+    <button class="chip small" onclick="event.stopPropagation(); openMonthReports()">${I('book')} Months</button></div>
+  </div>${cx ? `<div class="ms-card ms-cxcard">${cx}</div>` : ''}`;
 }
 // what the team's figures add for one person: her growth on the same days of last month (execDashboard's
 // byPerson[i].sameDays — the growth her own screen shows), field visits and orders logged in the app
@@ -1130,6 +1174,10 @@ function msWeekLine(v, W){
 // ---- the sales advisor (redesign): what the app itself works out for the view — no AI is connected ----
 // Its first line is the amount a working day the target needs (execDashboard's perDay); then the follow-ups due and the
 // customers to act on (execDashboard.act); then the first point of the Report's sales coach (UMCore.coachInsights, m.coach).
+// ---- the sales advisor (the picture's card with its robot): what the app itself works out for the view — no AI ----
+// Two lines: the amount a working day the target needs (execDashboard's perDay) and the follow-ups due; "View
+// Recommendations" opens the whole advice: the follow-ups, the customers to act on (execDashboard.act) and the first
+// point of the Report's sales coach (UMCore.coachInsights, m.coach). The robot is an illustration.
 function msAdvHead(){ return `<div class="ms-ct"><span class="ms-ttl"><span class="ms-tile t-lime">${I('bulb')}</span><span>${msT('Sales advisor')}</span></span>${msInfo('act')}</div>`; }
 function msAdvLead(m){
   const D = m && msOf(m.D); if(!D) return '';
@@ -1143,22 +1191,49 @@ function msAdvTip(m){
   const c = m && m.coach; if(!c) return '';
   return `<div class="ms-tip">${I('activity')}<span><span class="k">${msT('Sales coach')}</span> · <span>${msT(c.title)}</span></span></div>`;
 }
-// A person's advisor (her own figures only): her follow-ups due, her first customer to act on, the coach's point.
+function msAdvDue(v){ const all = visibleDueClinics(); return v.kind === 'person' ? all.filter(c => c.rep === v.rep) : all; }
 function msAdvisorHTML(v, m){
-  const r = v.rep, D = m && msOf(m.D), act = D && msOf(D.act);
-  const due = visibleDueClinics().filter(c => c.rep === r), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
-  let html = msAdvHead() + msAdvLead(m);
-  if(!m) return html + msWait(m);
-  const items = [];
-  if(due.length) items.push(`<button class="ms-item" onclick="msGo('msDueCard')"><span class="ms-dot ${over ? 'bad' : 'warn'}"></span><div class="t"><div>${msT(msCount(due.length, 'follow-up due', 'follow-ups due'))}</div><div class="s">${msT(`${over} overdue · ${due.length - over} today`)}</div></div>${msChev()}</button>`);
-  const u = act && act.measurable && Array.isArray(act.under) ? act.under : [], p = act && act.measurable && Array.isArray(act.potential) ? act.potential : [];
-  if(u[0]) items.push(msActItem(u[0], 'under', v)); else if(p[0]) items.push(msActItem(p[0], 'potential', v));
-  html += items.length ? `<div class="ms-items">${items.join('')}</div>` : `<div class="ms-note">${msT('All caught up')}</div>`;
-  html += msAdvTip(m);
-  if(u.length + p.length) html += `<button class="ms-more" onclick="msActSheet()">${msT('See all')} ${msChev()}</button>`;
-  return html;
+  const team = v.kind === 'team', own = v.kind === 'person' && v.own, D = m && msOf(m.D);
+  const A = D ? (msOf(D.achievement) || {}) : {}, Pd = D ? (msOf(D.perDay) || {}) : {};
+  const due = msAdvDue(v), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
+  let lead;
+  if(!D) lead = m && m.failed ? msT("The month's figures could not be worked out on this device.") : msT('Calculating the month…');
+  else if(A.pct == null) lead = msT(D.sales && D.sales.measured ? 'No sales target on file for this month' : 'No sales figure for this month yet.');
+  else if(D.remaining === 0) lead = msT(team ? 'The team target is reached this month.' : own ? 'Your target is reached this month.' : 'The target is reached this month.');
+  else if(Pd.amount != null) lead = `<span>${msT('You need')}</span> <b>${msKwd(Pd.amount)}</b> <span>${msT(team ? 'in daily sales to reach the team target.' : own ? 'in daily sales to reach your target.' : 'in daily sales to reach the target.')}</span>`;
+  else lead = msT('No working day left this month.');
+  const second = due.length ? msT(due.length === 1 ? (over ? 'One clinic has a follow-up overdue.' : 'One clinic has a follow-up due today.') : over ? `${due.length} clinics have follow-ups due (${over} overdue).` : `${due.length} clinics have follow-ups due today.`)
+    : m && m.coach ? `${msT('Sales coach')}: ${msT(m.coach.title)}` : msT('No follow-ups due — all caught up.');
+  return `<div class="ms-ct"><span class="ms-ttl"><span class="ms-advic">${I('spark2')}</span><span>${msT('Sales Advisor')}</span></span>${msInfo('act')}</div>
+    <div class="ms-advb" onclick="if(window.matchMedia('(max-width: 1023px)').matches) msAdvisorSheet()">
+      <img class="ms-robot" src="img/robot.svg" alt="" width="118" height="148">
+      <div class="ms-advt"><span class="ms-advh" hidden>${msT('Sales Advisor')}</span><p data-ms="adv-lead">${lead}</p><p>${second}</p>
+        <button class="ms-advbtn" onclick="event.stopPropagation(); msAdvisorSheet()"><span>${msT('View Recommendations')}</span>${I('arrowr')}</button></div>
+      <svg class="svgi ms-advgo" aria-hidden="true"><use href="#i-chev"/></svg>
+    </div>`;
 }
-// ---- the pace card: on pace or behind, with the real figures, and the month's detailed report one tap away ----
+// The whole advice of the view: the amount a working day, the follow-ups due, the customers to act on, the coach's point.
+function msAdvisorSheet(){
+  const v = msView(); if(!v) return;
+  const m = msModelFor(v), D = m && msOf(m.D), act = D && msOf(D.act);
+  const due = msAdvDue(v), team = v.kind === 'team';
+  const dueRows = due.slice(0, 6).map(c => { const ov = followStatus(c.nextFollowUp) === 'overdue';
+    return `<button class="ms-item" data-c="${esc(c.id)}" onclick="closeModal(); confirmFollowUp(this.dataset.c)"><span class="ms-dot ${ov ? 'bad' : 'warn'}"></span><div class="t"><div>${msData(c.name)}</div><div class="s">${ov ? `${msT('Follow-up overdue since')} ${msDate(c.nextFollowUp)}` : msT('Follow-up due today')}${team && c.rep ? ' · ' + msWho(c.rep) : ''}</div></div>${msChev()}</button>`; }).join('');
+  const u = act && act.measurable && Array.isArray(act.under) ? act.under : [], p = act && act.measurable && Array.isArray(act.potential) ? act.potential : [];
+  showModal(`<h3 style="margin-top:0;">${I('spark2')} ${msT('Sales Advisor')}</h3>
+    <div class="ms-how ms-advsheet">
+      <div class="ms-note" style="margin-top:0;">${msT('Worked out by the app from its own figures: the sales files, the targets, your visits and follow-ups.')}</div>
+      ${msAdvLead(m)}
+      <h4>${msT('Follow-ups due')} (${due.length})</h4>
+      <div class="ms-items">${dueRows || `<div class="ms-note">${msT('All caught up')}</div>`}</div>${due.length > 6 ? `<button class="ms-more" onclick="closeModal(); msGo('msDueCard')">${msT('See all')} ${msChev()}</button>` : ''}
+      <h4>${msT('Customers to act on')} (${u.length + p.length})</h4>
+      ${act && act.measurable ? `<div class="ms-items">${u.slice(0, 3).map(x => msActItem(x, 'under', v)).concat(p.slice(0, 3).map(x => msActItem(x, 'potential', v))).join('') || `<div class="ms-note">${msT('Nobody under-performing, no A or B clinic waiting')}</div>`}</div>${u.length + p.length > 6 ? `<button class="ms-more" onclick="msActSheet()">${msT('See all')} ${msChev()}</button>` : ''}`
+        : `<div class="ms-note">${msT(D ? 'Not measured: no sales figure for this month yet' : 'Calculating the month…')}</div>`}
+      ${msAdvTip(m)}
+    </div>
+    <button class="btn secondary" onclick="closeModal()">Close</button>`);
+}
+// ---- the pace card: on pace or behind, with the real figures, the forecast note, and the month's report one tap away ----
 function msStatusHTML(v, m, P){
   const D = m && msOf(m.D); if(!D) return '';
   const A = msOf(D.achievement) || {}, Pd = msOf(D.perDay) || {}, wd = msOf(Pd.workdays) || {};
@@ -1167,58 +1242,176 @@ function msStatusHTML(v, m, P){
   const title = pace ? MS_STATE[pace] : D.sales && D.sales.measured ? 'No sales target on file for this month' : 'No sales figure for this month yet.';
   const sub = A.pct != null ? `${msPct(A.pct)} ${msT('achieved')}${exp != null ? ` · ${msT('expected by')} ${msDate(wd.asOf)}: ${msPct(exp)}` : ''}` : '';
   return `<div class="ms-st ${tone}"><span class="ms-stic">${I(pace === 'behind' ? 'alert' : pace ? 'trend' : 'info')}</span>
-    <div class="ms-stt">${msT(title)}</div>${sub ? `<div class="ms-sts">${sub}</div>` : ''}
+    <div class="ms-stt">${msT(title)}</div>${sub ? `<div class="ms-sts">${sub}</div>` : ''}${msFcNote(D)}
     <button class="ms-stb" onclick="renderMonthClose('${msMonth()}')"><span>${msT('View detailed report')}</span>${msChev()}</button></div>`;
 }
-// ---- the four figures under the target card: the month against the target (a person: her performance score),
-// today's field visits, the follow-ups due, the forecast — each the screen's own figure, a tap from its list ----
-function msGoCal(){ calAnchor = todayStr(); calSelected = todayStr(); switchView('calendar'); }
-function msKpisHTML(v, m, sig){
-  const team = v.kind === 'team', D = m && msOf(m.D);
-  const A = D ? (msOf(D.achievement) || {}) : {}, Pd = D ? (msOf(D.perDay) || {}) : {}, wd = msOf(Pd.workdays) || {}, F = D ? msOf(D.forecast) : null;
-  const wait = `<span class="ms-wait">${msT(m && m.failed ? 'Not worked out on this device' : 'Calculating…')}</span>`;
-  const bar = (pct, exp) => `<span class="ms-kbar"><i style="width:${Math.max(0, Math.min(100, pct || 0))}%;"></i>${exp != null ? `<b style="inset-inline-start:${Math.max(0, Math.min(100, exp))}%;"></b>` : ''}</span>`;
-  const card = (cls, tile, icon, label, value, sub, action, extra) => `<button class="ms-kc${cls ? ' ' + cls : ''}" onclick="${action}"><span class="ms-tile ${tile}">${I(icon)}</span><span class="ms-kb"><span class="ms-kl">${msT(label)}</span><span class="ms-kv">${value}</span>${extra || ''}<span class="ms-ks">${sub}</span></span></button>`;
-  const out = [];
-  if(team){
-    const exp = msExpected(wd), pace = A.pct != null ? msPace(A.achieved, A.target, wd.done, wd.total) : null;
-    const why = !D ? wait : msT(D.sales && D.sales.measured ? 'No sales target on file for this month' : 'No sales figure for this month yet.');
-    out.push(card('', 't-green', 'target', 'Team achievement', A.pct != null ? msPct(A.pct) : '—', A.pct != null ? msT(pace ? MS_STATE[pace] : 'achieved') : why, 'openMonthReports()', A.pct != null ? bar(A.pct, exp) : ''));
-  } else {
-    const K = m && msOf(m.K), tot = K && K.total != null ? K.total : null;
-    out.push(card('', 't-green', 'target', 'Performance score', tot != null ? `${msN(tot)}<small> ${msT('of 100')}</small>` : '—', tot != null ? msT('KPI scorecard') : m ? '—' : wait, 'msKpi()', tot != null ? bar(tot, null) : ''));
-  }
-  const today = todayStr(), inV = r => !!r && v.reps.indexOf(r) >= 0;
-  const nToday = (visits || []).filter(x => x && x.date === today && isFieldVisit(x) && (inV(x.rep) || inV(x.withRep))).length;   // a joint visit once
-  const W = msWeek(v, sig);
-  out.push(card('', 't-blue', 'calendar', "Today's field visits", msN(nToday), W ? `${msT('This week')}: ${msT(msCount(W.visits, 'visit', 'visits'))}` : '', 'msGoCal()'));
-  const due = team ? visibleDueClinics() : visibleDueClinics().filter(c => c.rep === v.rep), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
-  out.push(card(over ? 'att' : '', 't-amber', 'clipboard', 'Follow-ups due', msN(due.length), msT(due.length ? `${over} overdue · ${due.length - over} today` : 'All caught up'), "msGo('msDueCard')",
-    over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs attention')}</span></span>` : ''));
-  const withT = A.pct != null && F && F.pct != null;
-  const fcV = F && !F.closed ? (withT ? msPct(F.pct) : F.amount != null ? msKd(F.amount) : null) : null;
-  out.push(card('fc', 't-lime', 'trend', 'Forecast', fcV != null ? fcV + (withT ? `<small> ${msT('of target')}</small>` : '') : '—', fcV != null ? msT('at the current pace') : !D ? wait : msT('No sales figure for this month yet.'), "msHow('sales')"));
-  return out.join('');
+// ---- your next actions (the phone's list in the picture; a person's card beside the chart on a laptop) ----
+// A planned clinic is visited by a field visit that day with the person on it (UMCore.planVisitKeys, the missed plans'
+// and the e-mail's rule). No time is shown: a plan entry carries when it was planned, not an appointment.
+function planDoneKeys(day){ return UMCore.planVisitKeys(visits.filter(x => x && x.date === day)); }
+function msAct(icon, title, sub, attrs, cls){ return `<button class="ms-ac"${attrs || ''}><span class="ic${cls ? ' ' + cls : ''}">${I(icon)}</span><div class="t"><div>${title}</div><div class="s">${sub}</div></div></button>`; }
+function msNextHead(v){
+  const own = v.kind === 'team' || v.own;
+  return `<div class="ms-ct"><span class="ms-ttl"><span>${msT(own ? 'Your Next Actions' : 'Next Actions')}</span></span><span class="ms-act"><button class="ms-va" onclick="msGo('msPlanCard')"><span>${msT('View All')}</span>${I('arrowr')}</button></span></div>`;
 }
-// ---- what needs action ----
-// The team: follow-ups due (overdue + today) and the customers to act on.
+function msNextHTML(v){
+  const r = v.rep, own = v.own, today = todayStr(), keys = planDoneKeys(today);
+  const entries = ((dayPlans[today] || {})[r] || []).map(e => ({ id: planEntryId(e), note: planEntryNote(e) })).filter(e => clinics.some(c => c.id === e.id));
+  const done = entries.filter(e => keys.has(today + '|' + r + '|' + e.id));
+  const left = entries.filter(e => !done.includes(e));
+  const rows = [];
+  left.slice(0, 3).forEach(e => { const c = clinics.find(x => x.id === e.id);
+    rows.push(msAct('pin', `${msT('Visit:')} ${msData(c.name)}`, `${msT('Today')} · ${msT("in today's plan")}${e.note ? ` · ${msData(e.note)}` : ''}`, own ? ` data-c="${esc(c.id)}" onclick="quickLogFrom(this.dataset.c)"` : ` data-c="${esc(c.id)}" onclick="openClinicDetail(this.dataset.c)"`)); });
+  const fu = visibleDueClinics().filter(x => x.rep === r);
+  fu.slice(0, Math.max(1, 3 - rows.length)).forEach(c => { const ov = followStatus(c.nextFollowUp) === 'overdue';
+    rows.push(msAct('cal2', `${msT('Follow-up:')} ${msData(c.name)}`, ov ? `${msT('Overdue since')} ${msDate(c.nextFollowUp)}` : msT('Today'), ` data-c="${esc(c.id)}" onclick="confirmFollowUp(this.dataset.c)"`, ov ? 'warn' : '')); });
+  const task = visibleTasks().filter(t => !t.done && (t.rep === r || t.rep === 'Team') && t.dueDate && ['overdue', 'today'].includes(followStatus(t.dueDate)))[0];
+  if(task && rows.length < 4) rows.push(msAct('clip2', `<span dir="auto">${esc(task.text || task.title || '')}</span>`, msT(followStatus(task.dueDate) === 'overdue' ? 'Task · overdue' : 'Task · today'), ` onclick="msGo('msTaskCard')"`));
+  let html = msNextHead(v);
+  html += entries.length ? `<div class="ms-sum2">${msT(`Today's plan: ${done.length} of ${entries.length} done`)}</div>` : '';
+  html += rows.length ? `<div class="ms-acts">${rows.join('')}</div>` : `<div class="ms-note">${msT(entries.length ? "All of today's plan is visited" : 'No plan for today yet')}</div>`;
+  if(own && !left.length) html += `<button class="ms-btn" onclick="switchView('log')">${I('plus')} ${msT('Log a visit')}</button>${entries.length ? '' : `<button class="ms-btn ghost" onclick="openPlanDay()">${I('compass')} ${msT('Plan today')}</button>`}`;
+  return html;
+}
+// The team: the follow-ups due, the customers to act on — the supervisor's next actions (with his own plan when he has one).
 function msNeedsHTML(v, m){
   const due = visibleDueClinics(), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
-  const D = m && msOf(m.D), act = D && msOf(D.act);
-  const items = [];
-  items.push(`<button class="ms-item" onclick="msGo('msDueCard')"><span class="ms-dot ${over ? 'bad' : due.length ? 'warn' : 'grey'}"></span><div class="t"><div>${msT(due.length ? msCount(due.length, 'follow-up due', 'follow-ups due') : 'No follow-ups due')}</div><div class="s">${msT(due.length ? `${over} overdue · ${due.length - over} today` : 'All caught up')}</div></div>${msChev()}</button>`);
+  const D = m && msOf(m.D), act = D && msOf(D.act), rows = [];
+  const me = currentUser.name, today = todayStr(), keys = planDoneKeys(today);
+  if(REPS.includes(me)){
+    const next = ((dayPlans[today] || {})[me] || []).map(planEntryId).filter(id => clinics.some(c => c.id === id) && !keys.has(today + '|' + me + '|' + id))[0];
+    if(next){ const c = clinics.find(x => x.id === next); rows.push(msAct('pin', `${msT('Visit:')} ${msData(c.name)}`, `${msT('Today')} · ${msT("in today's plan")}`, ` data-c="${esc(c.id)}" onclick="quickLogFrom(this.dataset.c)"`)); }
+  }
+  rows.push(msAct('cal2', msT(due.length ? msCount(due.length, 'follow-up due', 'follow-ups due') : 'No follow-ups due'), msT(due.length ? `${over} overdue · ${due.length - over} today` : 'All caught up'), ` onclick="msGo('msDueCard')"`, over ? 'warn' : ''));
+  let more = '';
   if(act && act.measurable){
     const u = Array.isArray(act.under) ? act.under : [], p = Array.isArray(act.potential) ? act.potential : [];
-    if(u[0]) items.push(msActItem(u[0], 'under', v));
-    if(p[0]) items.push(msActItem(p[0], 'potential', v));
-    if(!u.length && !p.length) items.push(`<div class="ms-item static"><span class="ms-dot grey"></span><div class="t"><div>${msT('No customer to act on')}</div><div class="s">${msT('Nobody under-performing, no A or B clinic waiting')}</div></div></div>`);
-    let html = msAdvHead() + msAdvLead(m) + `<div class="ms-items">${items.join('')}</div>` + msAdvTip(m);
-    if(u.length + p.length) html += `<button class="ms-more" onclick="msActSheet()">${[u.length ? msT(`${u.length} under-performing`) : '', p.length ? msT(msCount(p.length, 'opportunity', 'opportunities')) : ''].filter(Boolean).join(' · ')} — ${msT('see all')} ${msChev()}</button>`;
-    return html;
-  }
-  if(D && act && !act.measurable) items.push(`<div class="ms-item static"><span class="ms-dot grey"></span><div class="t"><div>${msT('Customers to act on')}</div><div class="s">${msT('Not measured: no sales figure for this month yet')}</div></div></div>`);
-  return msAdvHead() + msAdvLead(m) + `<div class="ms-items">${items.join('')}</div>${!D ? msWait(m) : ''}` + msAdvTip(m);
+    if(u[0]) rows.push(msActRow(u[0], 'under', v));
+    if(p[0]) rows.push(msActRow(p[0], 'potential', v));
+    if(!u.length && !p.length) rows.push(`<div class="ms-ac static"><span class="ic">${I('check')}</span><div class="t"><div>${msT('No customer to act on')}</div><div class="s">${msT('Nobody under-performing, no A or B clinic waiting')}</div></div></div>`);
+    if(u.length + p.length) more = `<button class="ms-more" onclick="msActSheet()">${[u.length ? msT(`${u.length} under-performing`) : '', p.length ? msT(msCount(p.length, 'opportunity', 'opportunities')) : ''].filter(Boolean).join(' · ')} — ${msT('see all')} ${msChev()}</button>`;
+  } else if(D && act && !act.measurable) rows.push(`<div class="ms-ac static"><span class="ic">${I('info')}</span><div class="t"><div>${msT('Customers to act on')}</div><div class="s">${msT('Not measured: no sales figure for this month yet')}</div></div></div>`);
+  return msNextHead(v) + `<div class="ms-acts">${rows.join('')}</div>${more}${!D ? msWait(m) : ''}`;
 }
+// one customer to act on, as an action row (the same words and the same tap as msActItem)
+function msActRow(x, kind, v){
+  const team = v.kind === 'team', open = x.clinicId != null ? x.clinicId : x.id;
+  const who = team ? (x.owner || x.rep ? ' · ' + msWho(x.owner || x.rep) : '') : '';
+  const sub = kind === 'under'
+    ? `${msT('Under-performing')}${who} · ${x.current > 0 ? `${msKd(x.current)} ${msT('this month, against an average of')} ${msKd(x.average)}` : `${msT('no invoice this month, average')} ${msKd(x.average)}`}`
+    : `${msT('Opportunity')}${who} · ${msT(x.bought ? `bought in ${x.bought} of the last ${x.months} months` : x.months ? `no invoice in the last ${x.months} months` : 'no invoice this month')}${x.lastVisit ? ` · ${msT('last visit')} ${msDate(x.lastVisit)}` : ''}`;
+  return msAct(kind === 'under' ? 'trend' : 'target', `${x.cls ? `<span class="ms-cls" data-notr>${esc(x.cls)}</span> ` : ''}${msData(x.name)}`, sub, open != null ? ` data-c="${esc(String(open))}" onclick="openClinicDetail(this.dataset.c)"` : '', kind === 'under' ? 'warn' : '');
+}
+// ---- the four figure cards (the picture's row): the KPI score, today's field visits, the follow-ups due, the forecast ----
+// Each the screen's own figure, a tap from its list; a ▲/▼ only against a fair comparison, a sparkline only from a
+// series the core rebuilds truthfully (UMCore.homeKpiMonths, homeVisitDays, homeForecastDays — their last point is the
+// card's number); none where the app cannot rebuild one (the follow-ups).
+function msGoCal(){ calAnchor = todayStr(); calSelected = todayStr(); switchView('calendar'); }
+// a small line chart (null = no point: the line breaks there, never drops to 0)
+function msSpark(vals){
+  let arr = (vals || []).slice(); while(arr.length && (arr[0] == null || !isFinite(arr[0]))) arr.shift();   // months before any score: not drawn (never as 0)
+  const pts = arr.map((v, i) => v == null || !isFinite(v) ? null : { i, v: Number(v) });
+  const real = pts.filter(Boolean); if(real.length < 2) return '';
+  const W = 104, H = 40, n = Math.max(1, pts.length - 1), lo = Math.min.apply(null, real.map(p => p.v)), hi = Math.max.apply(null, real.map(p => p.v));
+  const x = i => (i / n * (W - 4) + 2).toFixed(1), y = v => (hi === lo ? H / 2 : H - 4 - (v - lo) / (hi - lo) * (H - 12)).toFixed(1);
+  const segs = []; let cur = [];
+  pts.forEach(p => { if(p) cur.push(p); else if(cur.length){ segs.push(cur); cur = []; } }); if(cur.length) segs.push(cur);
+  const line = segs.filter(s => s.length > 1).map(s => 'M' + s.map(p => x(p.i) + ' ' + y(p.v)).join('L')).join('');
+  const area = segs.filter(s => s.length > 1).map(s => 'M' + x(s[0].i) + ' ' + H + 'L' + s.map(p => x(p.i) + ' ' + y(p.v)).join('L') + 'L' + x(s[s.length - 1].i) + ' ' + H + 'Z').join('');
+  return `<svg class="ms-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false"><defs><linearGradient id="msSpG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22B07A" stop-opacity=".22"/><stop offset="1" stop-color="#22B07A" stop-opacity="0"/></linearGradient></defs><path d="${area}" fill="url(#msSpG)"/><path d="${line}" fill="none" stroke="#22B07A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+// ▲ +4 / ▼ −2 / = 0 against the comparison named in the title (points for a score, visits for the visits)
+function msDelta(d, title){
+  if(d == null || !isFinite(d)) return '';
+  const cls = d > 0 ? '' : d < 0 ? ' down' : ' flat', s = d > 0 ? '+' + d : d < 0 ? '−' + Math.abs(d) : '0';
+  return `<span class="ms-kd${cls}" title="${esc(trOf(title) || title)}"><span class="tri" aria-hidden="true">${d > 0 ? '▲' : d < 0 ? '▼' : '='}</span><span data-notr dir="ltr">${s}</span><span class="sr"> ${msT(title)}</span></span>`;
+}
+function msKpisHTML(v, m, sig){
+  const team = v.kind === 'team', own = v.kind === 'person' && v.own, D = m && msOf(m.D), H = (m && m.H) || {};
+  const A = D ? (msOf(D.achievement) || {}) : {}, F = D ? msOf(D.forecast) : null;
+  const wait = `<span class="ms-wait">${msT(m && m.failed ? 'Not worked out on this device' : 'Calculating…')}</span>`;
+  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${I(icon)}</span><span class="ms-kb"><span class="ms-kl"><span>${msT(label)}</span>${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
+  const out = [];
+  // 1 — the KPI score (the scorecard's 10 measures): the team = the average of the people of REPS who have one
+  const K = msOf(H.kpi), score = K ? K.current : null;
+  out.push(card('', 'users', team ? 'Team Performance' : own ? 'My Performance' : 'Performance', team ? '(Your Team)' : '', score != null ? msN(score + '%') : '—',
+    K ? (K.delta != null ? msDelta(K.delta, 'points against the same days last month') : `<span class="ms-ks">${msT(score != null ? 'KPI score out of 100' : 'No visit logged this month yet')}</span>`) : `<span class="ms-ks">${m ? '—' : wait}</span>`,
+    K ? msSpark(K.months.map(x => x.score)) : '', team ? 'openKpiScorecard()' : 'msKpi()', 'kpi', score, 'KPI score out of 100 (the KPI scorecard), month by month'));
+  // 2 — today's field visits of the view's people (a joint visit once; calls and phone orders are not visits)
+  const VD = UMCore.homeVisitDays(visits || [], v.reps, todayStr(), 10);
+  out.push(card('', 'cal2', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week'), msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
+  // 3 — the follow-ups due (overdue + today), "Needs Attention" only when one is overdue; no sparkline (no history to rebuild it from)
+  const due = team ? visibleDueClinics() : visibleDueClinics().filter(c => c.rep === v.rep), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
+  out.push(card(over ? 'att' : '', 'clip2', 'Pending Follow-ups', '', msN(due.length),
+    over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
+    '', "msGo('msDueCard')", 'due', due.length));
+  // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result
+  const withT = A.pct != null && F && F.pct != null && F.forTarget != null, fc = F && !F.closed ? (withT ? F.forTarget : F.amount) : null;
+  let fSpark = '';
+  if(fc != null){
+    const Dy = msOf(D.daily), Pr = Dy && msOf(Dy.pair), days = withT && Pr ? Pr.days : Dy && Dy.days;
+    const FD = days ? UMCore.homeForecastDays(msMonth(), days) : [], last = FD.length ? FD[FD.length - 1].forecast : null;
+    if(last != null && Math.abs(last - fc) <= 0.05 * Math.max(1, (F.people || []).length)) fSpark = msSpark(FD.map(x => x.forecast));   // only when it ends on the card's own figure
+  }
+  const fVal = fc == null ? '—' : withT ? msN(F.pct + '%') : msKwd(fc);
+  out.push(card('fc', 'trend2', 'Sales Forecast', '', fVal,
+    fc != null ? `<span class="ms-ks">≈ ${msKwd(fc)} · ${msT('estimate')}</span>` : `<span class="ms-ks">${!D ? wait : msT(F && F.closed ? 'The month is closed' : 'No sales figure for this month yet.')}</span>`,
+    fSpark, "msHow('sales')", 'forecast', fc, 'The month-end figure at the pace so far (an estimate, not a result) — the ⓘ shows the working'));
+  return out.join('');
+}
+
+// ---- Sales Performance (the picture's weekly bars): the invoiced sales to each week's end against the target pace ----
+// UMCore.homeWeeks over execDashboard's day-by-day lines: of the people with a target and a sales figure (the
+// target card's people), or — with no target — everyone's lines and no target line. The running week's bar is the
+// month's figure, marked with its amount; a week still to come has no bar, only its point on the target line.
+function msNiceStep(raw){ const p = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9)))), q = raw / p; return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(s => q <= s + 1e-9) * p; }
+function msK(v){ const k = v / 1000; return v >= 1000 ? (Math.round(k * 10) / 10).toLocaleString('en-US') + 'K' : String(Math.round(v)); }
+function msChartHTML(v, m){
+  const D = m && msOf(m.D);
+  const keys = `<span class="ms-keys"><span><i></i>${msT('Sales')}</span><span><i class="t"></i>${msT('Target')}</span></span>`;
+  let html = `<div class="ms-ct"><span class="ms-ttl"><span>${msT('Sales Performance')}</span></span><span class="ms-act">${keys}${msInfo('chart')}</span></div>`;
+  if(!D) return html + msWait(m);
+  const Dy = msOf(D.daily), A = msOf(D.achievement) || {}, Pr = Dy && msOf(Dy.pair);
+  const withT = A.pct != null && !!Pr && Array.isArray(Pr.days) && Pr.days.length > 0;
+  if(!Dy || !Dy.measured || !Array.isArray(Dy.days) || !Dy.days.length)
+    return html + `<div class="ms-note">${msT(Dy ? 'No sales figure for this month yet, so no weekly bars.' : 'The weekly figures are not available on this device yet.')}</div>`;
+  const W = UMCore.homeWeeks(msMonth(), withT ? Pr.days : Dy.days, withT ? A.target : null);
+  return html + `<div class="ms-wk">${msWeeksSVG(W)}</div>` + (withT && ((A.noTarget || []).length || (A.notMeasured || []).length) ? `<div class="ms-fine">${msT('Drawn for the people with a target and a sales figure:')} ${msNames(A.people || [])}.</div>` : '');
+}
+function msWeeksSVG(W){
+  const rtl = uiLang === 'ar', VW = 552, top = 18, base = 194;
+  const vals = []; W.forEach(w => { if(w.achieved != null) vals.push(w.achieved); if(w.pace != null) vals.push(w.pace); });
+  const step = msNiceStep(Math.max(1, Math.max.apply(null, vals.concat([1]))) / 4), maxY = step * 4;
+  const y = val => base - Math.max(0, Math.min(1, val / maxY)) * (base - top), f1 = n => Math.round(n * 10) / 10;
+  const cx = i => { const c = [78, 215, 353, 493][i]; return rtl ? VW - c : c; };
+  const axX = rtl ? VW - 50 : 50, labX = rtl ? VW - 27 : 27;
+  let svg = `<svg viewBox="0 0 ${VW} 226" role="img" aria-label="${esc(trOf('Invoiced sales at the end of each week against the target pace') || 'Invoiced sales at the end of each week against the target pace')}"><defs>`
+    + `<linearGradient id="msBarG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2B7F68"/><stop offset="1" stop-color="#1E7360"/></linearGradient>`
+    + `<linearGradient id="msBarG2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A8D75"/><stop offset="1" stop-color="#227763"/></linearGradient></defs>`;
+  for(let k = 0; k <= 4; k++){
+    const yy = f1(y(step * k));
+    svg += `<line x1="${rtl ? 0 : axX}" y1="${yy}" x2="${rtl ? axX : VW}" y2="${yy}" stroke="${k === 0 ? '#DCE3E8' : '#EEF2F5'}"/><text class="ax" x="${labX}" y="${f1(yy + 4.5)}" text-anchor="${rtl ? 'start' : 'end'}" data-notr>${msK(step * k)}</text>`;
+  }
+  svg += `<line x1="${axX}" y1="${top - 6}" x2="${axX}" y2="${base}" stroke="#DCE3E8"/>`;
+  W.forEach((w, i) => { if(w.achieved != null){ const h = Math.max(1, base - y(w.achieved)); svg += `<rect class="bar${w.current ? ' cur' : ''}" x="${f1(cx(i) - 27)}" y="${f1(base - h)}" width="54" height="${f1(h)}" rx="2"><title>${esc(msK(w.achieved))}</title></rect>`; } });
+  const pts = W.map((w, i) => w.pace != null ? { x: cx(i), y: y(w.pace) } : null).filter(Boolean);
+  if(pts.length > 1) svg += `<polyline class="tl" points="${pts.map(p => f1(p.x) + ',' + f1(p.y)).join(' ')}"/>`;
+  pts.forEach(p => { svg += `<circle class="td" cx="${f1(p.x)}" cy="${f1(p.y)}" r="4.6"/>`; });
+  W.forEach((w, i) => { svg += `<text class="xl" x="${f1(cx(i))}" y="219" text-anchor="middle">${esc('W' + w.week)}</text>`; });
+  // the running week's amount over its bar (the picture's dark label)
+  const ci = W.findIndex(w => w.current);
+  if(ci >= 0){
+    const w = W[ci], label = Math.round(w.achieved).toLocaleString('en-US'), bw = label.length * 8.6 + 22, bx = f1(cx(ci) - bw / 2), by = Math.max(2, Math.min(y(w.achieved), w.pace != null ? y(w.pace) : 1e9) - 40);
+    svg += `<g class="tip"><rect x="${bx}" y="${f1(by)}" width="${f1(bw)}" height="27" rx="7" fill="#093A30"/><path d="M${f1(cx(ci) - 6)} ${f1(by + 26.5)}l6 7 6-7z" fill="#093A30"/><text class="tipt" x="${f1(cx(ci))}" y="${f1(by + 18.5)}" text-anchor="middle" data-notr>${label}</text></g>`;
+  }
+  return svg + '</svg>';
+}
+// A person's advisor (her own figures only): her follow-ups due, her first customer to act on, the coach's point.
+// ---- the pace card: on pace or behind, with the real figures, and the month's detailed report one tap away ----
+// ---- the four figures under the target card: the month against the target (a person: her performance score),
+// today's field visits, the follow-ups due, the forecast — each the screen's own figure, a tap from its list ----
+// ---- what needs action ----
+// The team: follow-ups due (overdue + today) and the customers to act on.
 function msActItem(x, kind, v){
   const team = v.kind === 'team', open = x.clinicId != null ? x.clinicId : x.id;
   const who = team ? (x.owner || x.rep ? ' · ' + msWho(x.owner || x.rep) : '') : '';
@@ -1246,39 +1439,13 @@ function msActSheet(){
 // A planned clinic is visited by a field visit that day with the person on it — the one who logged it or the
 // colleague on a joint visit; a call or a phone order is not a visit (UMCore.planVisitKeys: the missed plans and
 // the e-mail count the same). The keys 'date|person|clinicId' of the plans fulfilled on a day.
-function planDoneKeys(day){ return UMCore.planVisitKeys(visits.filter(x => x && x.date === day)); }
 // A person: the next clinic of today's plan, with logging a visit one tap away, then a follow-up and a task.
-function msNextHTML(v){
-  const r = v.rep, own = v.own, today = todayStr(), keys = planDoneKeys(today);
-  const entries = ((dayPlans[today] || {})[r] || []).map(e => ({ id: planEntryId(e), note: planEntryNote(e) })).filter(e => clinics.some(c => c.id === e.id));
-  const done = entries.filter(e => keys.has(today + '|' + r + '|' + e.id));
-  const next = entries.find(e => !done.includes(e)), c = next ? clinics.find(x => x.id === next.id) : null;
-  let html = `<div class="ms-ct"><span>${msT(own ? 'My next step' : 'Next step')}</span>${entries.length ? `<span class="ms-hint">${msT(`Today's plan: ${done.length} of ${entries.length} done`)}</span>` : ''}</div>`;
-  if(c){
-    html += `<div class="ms-next">${c.cls ? `<span class="ms-cls" data-notr>${esc(c.cls)}</span>` : ''}<span class="nm">${msData(c.name)}</span></div>
-      <div class="ms-of">${msT("In today's plan · not visited yet")}${next.note ? ` · ${msData(next.note)}` : ''}</div>
-      ${own ? `<button class="ms-btn" data-c="${esc(c.id)}" onclick="quickLogFrom(this.dataset.c)">${I('plus')} ${msT('Log a visit')}</button>` : ''}`;
-  } else {
-    html += `<div class="ms-of">${msT(entries.length ? "All of today's plan is visited" : 'No plan for today yet')}</div>
-      ${own ? `<button class="ms-btn" onclick="switchView('log')">${I('plus')} ${msT('Log a visit')}</button>${entries.length ? '' : `<button class="ms-btn ghost" onclick="openPlanDay()">${I('compass')} ${msT('Plan today')}</button>`}` : ''}`;
-  }
-  const then = [];
-  const fu = visibleDueClinics().filter(x => x.rep === r)[0];
-  if(fu){
-    const ov = followStatus(fu.nextFollowUp) === 'overdue';
-    then.push(`<button class="ms-item" data-c="${esc(fu.id)}" onclick="confirmFollowUp(this.dataset.c)"><span class="ms-dot ${ov ? 'bad' : 'warn'}"></span><div class="t"><div>${msData(fu.name)}</div><div class="s">${ov ? `${msT('Follow-up overdue since')} ${msDate(fu.nextFollowUp)}` : msT('Follow-up due today')}</div></div>${msChev()}</button>`);
-  }
-  const task = visibleTasks().filter(t => !t.done && (t.rep === r || t.rep === 'Team') && t.dueDate && ['overdue', 'today'].includes(followStatus(t.dueDate)))[0];
-  if(task) then.push(`<button class="ms-item" onclick="msGo('msTaskCard')"><span class="ms-dot warn"></span><div class="t"><div dir="auto">${esc(task.text || task.title || '')}</div><div class="s">${msT(followStatus(task.dueDate) === 'overdue' ? 'Task · overdue' : 'Task · today')}</div></div>${msChev()}</button>`);
-  if(then.length) html += `<div class="ms-sub">${msT('Then')}</div><div class="ms-items">${then.join('')}</div>`;
-  return html;
-}
 
 // ---- laptop: the month day by day, the brands, the customers ----
 // The cumulative invoiced sales against the straight line to the target, and
 // the forecast at the pace so far. Time runs with the reading direction (right
 // to left in Arabic); the axis says which day is where.
-function msChartHTML(v, m){
+function msDailyHTML(v, m){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own;
   const D = m && msOf(m.D);
   const title = team ? 'Sales day by day against the target' : own ? 'My sales day by day against my target' : 'Sales day by day against the target';
@@ -1759,19 +1926,19 @@ function renderRecentVisits(v){
   const rv = document.getElementById('recentVisits');
   if(!rv) return;
   const r = v && v.kind === 'person' ? v.rep : null, sup = currentUser.role==='supervisor' && !r;
-  const recent = visibleVisits().filter(x => !r || x.rep === r || x.withRep === r).sort((a,b)=>b.date.localeCompare(a.date) || (b.ts||0) - (a.ts||0)).slice(0,4);
+  const recent = visibleVisits().filter(x => !r || x.rep === r || x.withRep === r).sort((a,b)=>b.date.localeCompare(a.date) || (b.ts||0) - (a.ts||0)).slice(0,3);
   if(recent.length===0){
     rv.innerHTML = `<div class="empty">🌱 Your first logged visit starts the story.</div>`;
   } else {
-    // a timeline: what kind of contact (a field visit, a call, an order), the clinic, and how long ago
+    // the picture's Recent Activity: what was logged (a field visit, a call, an order logged in the app — never a sale), where, how long ago
     rv.innerHTML = `<div class="ms-tl">${recent.map(x=>{
-      const clinic = clinics.find(c=>c.id===x.clinicId);
-      const kind = x.callOnly ? ['phone', 't-blue'] : x.orderTaken ? ['cart', 't-lime'] : ['calendar', 't-green'];
+      const clinic = clinics.find(c=>c.id===x.clinicId), name = clinic ? clinic.name : clinicLabel(x.clinicId, x);
+      const kind = x.callOnly ? ['phone', 'Call logged'] : x.orderTaken ? ['cart', 'Order logged in the app'] : ['cal2', 'Visit logged'];
       return `<div class="card ms-tli">
-        <span class="ms-tile ${kind[1]}">${I(kind[0])}</span>
+        <span class="ms-tile">${I(kind[0])}</span>
         <div class="ms-tlt">
-          <div class="clinic-name">${x.callOnly?(CHANNEL_LABELS[x.channel]||'📞')+' ':''}<span dir="auto">${esc(clinic ? clinic.name : clinicLabel(x.clinicId, x))}</span></div>
-          <div class="clinic-sub">${fmtDate(x.date)}${x.orderTaken ? ' · '+msKd(x.orderTotal) : ''}${sup?' · '+msWho(x.rep):''}${rxShortHTML(x)}</div>
+          <div class="clinic-name"><span>${msT(kind[1])}</span> – <span dir="auto">${esc(name)}</span></div>
+          <div class="clinic-sub">${x.callOnly?(CHANNEL_LABELS[x.channel]||'📞')+' · ':''}${fmtDate(x.date)}${x.orderTaken ? ' · '+msKd(x.orderTotal) : ''}${sup?' · '+msWho(x.rep):''}${rxShortHTML(x)}</div>
         </div>
         <span class="ms-ago">${msAgo(x)}</span>
       </div>`;

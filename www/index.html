@@ -12,7 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Field Ops">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
-<link rel="preload" href="fonts/dm-sans-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
@@ -26,9 +26,9 @@
      classes keep their names and meaning (.on = selected, .show = shown, .active = current).
      ================================================================================================ */
 
-  /* ---- Fonts: self-hosted (OFL). DM Sans = Latin, IBM Plex Sans Arabic = Arabic and the tabular digits ---- */
-  @font-face{font-family:'UM Sans'; font-style:normal; font-weight:100 1000; font-display:swap;
-    src:url('fonts/dm-sans-latin-var.woff2') format('woff2');
+  /* ---- Fonts: self-hosted (OFL). Inter = Latin (tabular figures with tnum), IBM Plex Sans Arabic = Arabic and its digits ---- */
+  @font-face{font-family:'UM Sans'; font-style:normal; font-weight:100 900; font-display:swap;
+    src:url('fonts/inter-latin-var.woff2') format('woff2');
     unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
   @font-face{font-family:'UM Arabic'; font-style:normal; font-weight:400 500; font-display:swap;
     src:url('fonts/ibm-plex-sans-arabic-arabic-400.woff2') format('woff2');
@@ -36,7 +36,7 @@
   @font-face{font-family:'UM Arabic'; font-style:normal; font-weight:600 700; font-display:swap;
     src:url('fonts/ibm-plex-sans-arabic-arabic-600.woff2') format('woff2');
     unicode-range:U+0600-06FF,U+0750-077F,U+0870-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC;}
-  /* digits only: tabular figures in every amount and percentage, in both languages (DM Sans has none).
+  /* digits only, for the Arabic screens (body.ar puts this face first): IBM Plex Sans Arabic's tabular figures beside its letters.
      Never add the space to this range: the first face that covers the space sets the line metrics. */
   @font-face{font-family:'UM Figures'; font-style:normal; font-weight:400 500; font-display:swap;
     src:url('fonts/ibm-plex-sans-arabic-latin-400.woff2') format('woff2'); unicode-range:U+0030-0039,U+0025,U+002B,U+2212;}
@@ -74,7 +74,7 @@
     /* layout */
     --sidebar-w:248px; --topbar-h:64px; --bottomnav-h:64px; --content-max:880px; --content-wide:1320px; --gutter:16px; --tap-min:44px;
     /* type */
-    --font-sans:'UM Figures','UM Sans','UM Arabic',system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans Arabic',Tahoma,sans-serif;
+    --font-sans:'UM Sans','UM Arabic',system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans Arabic',Tahoma,sans-serif;
     --fs-display:32px; --fs-title:22px; --fs-section:17px; --fs-card-title:15px; --fs-kpi:24px;
     --fs-body:16px; --fs-small:14px; --fs-label:13.5px; --fs-caption:12.5px; --fs-overline:11px;
     --lh-tight:1.15; --lh-title:1.25; --lh-body:1.5; --lh-body-ar:1.7; --track-overline:.1em;
@@ -106,7 +106,7 @@
   html{font-family:var(--font-sans); font-synthesis-weight:none; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%; text-size-adjust:100%;}
   body{margin:0; background:var(--surface-page); color:var(--text-primary); font-family:var(--font-sans); font-size:var(--fs-body); line-height:var(--lh-body);
     padding-bottom:calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + 32px); -webkit-tap-highlight-color:transparent;}
-  body.ar{line-height:var(--lh-body-ar);}
+  body.ar{line-height:var(--lh-body-ar); --font-sans:'UM Figures','UM Sans','UM Arabic',system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans Arabic',Tahoma,sans-serif;}
   button, input, select, textarea{font-family:inherit;}
   /* headings and links: only what is safe inside the report documents too (they bring their own CSS) */
   h1,h2,h3,h4,.disp{font-family:inherit; font-weight:600; letter-spacing:-0.01em;}
@@ -968,331 +968,573 @@
      (Tokens and the classes above are shared: change them only in the design-system part.)
      ================================================================================================ */
   /* === DASHBOARD === */
-  /* The home screen in the owner's final design (14 Nov): the deep-green target card with its ring, four figure cards
-     with soft icon tiles, the chart beside the leaderboard (a person: her own performance), the sales advisor, the
-     recent visits as a timeline and the pace card. Phone: the target card first, the figures two a row, the advisor,
-     the next actions, the bottom bar Home · Customers · (+) · Sales · More. Every figure is the screen's own (05). */
+  /* The shell and the home screen as the owner's picture (15 Nov: "the same picture, every millimetre"): the teal-green
+     sidebar with its glass tooth, the glass top bar (quick find, the bell, the account), the greeting, the deep-green
+     target card with its mint ring, four figure cards with sparklines, the weekly bars beside the leaderboard, the sales
+     advisor with its robot, the recent activity and the clinic photo. Phone: the brand, the target card, the figures two
+     a row, the advisor, the next actions, the bottom bar with (+). Everything the picture has no room for follows below
+     it, in the same cards. Every figure is the screen's own (05-today-calendar.js); the measures are the picture's at
+     1440 × 1226 (desktop) and 390 wide (phone). */
+  :root{
+    --p-ink:#0F1A2C; --p-ink2:#1D2939; --p-sub:#485470; --p-muted:#6B7585; --p-faint:#8A94A3; --p-line:#E9EDF1; --p-page:#F7F8FA;
+    --p-g9:#013A31; --p-g8:#00352D; --p-g7:#09684C; --p-g6:#106752; --p-g5:#207860; --p-dark:#05251F;
+    --p-mint:#6AEBA4; --p-mint2:#59E89E; --p-mint-soft:#E8F6F0; --p-up:#13BA6F; --p-down:#E5484D; --p-warn:#E8762B; --p-warn-soft:#FDEFE5;
+    --p-yel:#F5C445; --p-edge:#EEEDA2; --p-green:#0E7A55;
+    --p-shadow:0 1px 2px rgba(16,24,40,.04), 0 4px 16px rgba(16,24,40,.055);
+    --p-radius:18px;
+  }
+  .svgf{width:1.05em; height:1.05em; fill:currentColor; stroke:none; display:inline-block; vertical-align:-0.15em; flex-shrink:0;}
+  #view-today, header.top, nav.bottom, .qf-list{font-feature-settings:'cv11' 1;}
+  #view-today .ms-num, #view-today .ms-kv, #view-today .ms-hv, #view-today .ms-lb .p, #view-today .ms-lb .a, #view-today .ms-lb .v{font-variant-numeric:tabular-nums;}
+  .sr{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
 
-  /* ---- the top bar: quick find, the bell, the account ---- */
-  header.top .logo-word{display:none; height:22px; width:auto; flex-shrink:0;}
-  body:not(.not-today) header.top .logo, body:not(.not-today) header.top .top-text{display:none;}
-  body:not(.not-today) header.top .logo-word{display:block;}
+  /* ---- the top bar ---- */
+  header.top .logo{display:none;}
+  .top-brand{display:none; flex-direction:column; line-height:1; min-width:0;}
+  .tb-word{font-size:27px; font-weight:700; letter-spacing:-.025em; color:#0B4636; line-height:1.05;}
+  .tb-word b{font-weight:700;}
+  .tb-tag{font-size:10.5px; font-weight:500; color:#26332F; margin-top:5px; letter-spacing:-.005em; white-space:nowrap;}
+  body:not(.not-today) .top-brand{display:flex;}
+  body:not(.not-today) header.top .top-text{display:none;}
   .top-search{display:none;}
-  .top-bell{position:relative; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex-shrink:0; border:1px solid var(--border-subtle); border-radius:var(--radius-pill); background:var(--surface-card); color:var(--text-primary); cursor:pointer; font-family:inherit;}
-  .top-bell .svgi{width:20px; height:20px;}
-  .bell-n{position:absolute; top:-3px; inset-inline-end:-4px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--status-danger); color:#fff; font-size:10.5px; font-weight:700; line-height:16px; text-align:center; border:2px solid var(--surface-page); box-sizing:content-box;}
+  .top-bell{position:relative; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex-shrink:0; border:none; border-radius:50%; background:none; color:var(--p-ink); cursor:pointer; font-family:inherit; padding:0;}
+  .top-bell .svgi{width:26px; height:26px; stroke-width:1.9;}
+  .bell-n{position:absolute; top:3px; inset-inline-end:2px; min-width:19px; height:19px; padding:0 5px; border-radius:10px; background:#E0453A; color:#fff; font-size:11.5px; font-weight:700; line-height:19px; text-align:center; box-sizing:border-box; border:none;}
   .bell-n[hidden]{display:none;}
-  @media (max-width:1023px){ .top-lang{display:none;} }   /* the language is in the account menu */
+  .userchip{display:flex; align-items:center; gap:12px; border:none; background:none; padding:0; font:inherit; color:inherit; cursor:pointer; min-width:44px; min-height:44px; border-radius:24px; text-align:start;}
+  header.top .stamp{width:42px; height:42px; background:var(--p-g8); color:#fff; font-size:16px; font-weight:600; letter-spacing:.01em;}
+  header.top .stamp.sup{background:var(--p-g8); color:#fff;}
+  header.top .stamp .dot{display:none !important;}
+  .top-chev{display:none; width:18px; height:18px; color:var(--p-ink2); stroke-width:2.1;}
+  @media (max-width:1023px){
+    header.top{min-height:64px; padding-top:calc(env(safe-area-inset-top, 0px) + 12px); padding-bottom:8px; margin-bottom:4px;}
+    body:not(.not-today) header.top{padding-top:calc(env(safe-area-inset-top, 0px) + 20px); margin-bottom:10px;}
+    .top-actions{gap:10px;}
+    .top-lang{display:none;}
+  }
 
-  /* ---- the head: the date, the greeting, the one line, the person switch and the period ---- */
-  #view-today .ms-head{display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px 16px; margin:2px 0 16px;}
-  #view-today .ms-hi{display:block; flex:1 1 300px; min-width:0; order:1;}
-  #view-today .ms-date{font-size:13px; color:var(--text-muted); font-weight:500; margin:0 0 2px;}
-  #view-today .ms-hello{font-size:24px; font-weight:600; letter-spacing:-.015em; line-height:1.25;}
-  #view-today .ms-src{order:3; flex:1 0 100%; margin:0;}
-  #view-today .ms-hr{order:2; display:flex; align-items:center; flex-wrap:wrap; gap:10px; min-width:0; flex:1 0 100%;}
-  #view-today .ms-hr:empty{display:none;}
-  #view-today .ms-switch{flex:1 1 auto; margin:0;}
-  #view-today .ms-whose{order:4;}
-  .ms-per{display:none;}
-  .ms-period{display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 14px; border:1px solid var(--border-subtle); border-radius:var(--radius-md); background:var(--surface-card); font:inherit; font-weight:600; font-size:14px; color:var(--text-primary); cursor:pointer; white-space:nowrap; box-shadow:var(--shadow-sm);}
-  .ms-period .svgi{width:18px; height:18px;}
-  .ms-period .ms-pchev{width:15px; height:15px; transform:rotate(90deg); color:var(--text-muted);}
+  /* ---- the head: the greeting, the line under it, This Month, whose screen it is ---- */
+  #view-today .ms-head{display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:10px 16px; margin:0 0 16px; position:relative; z-index:1;}
+  #view-today .ms-hi{display:block; flex:1 1 300px; min-width:0;}
+  #view-today .ms-hello{font-size:26px; font-weight:700; letter-spacing:-.025em; line-height:1.2; color:var(--p-ink); margin:0; display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .ms-wave{width:36px; height:36px; flex-shrink:0; margin-top:-4px;}
+  #view-today .ms-subt{font-size:15px; color:var(--p-sub); line-height:1.35; margin-top:6px;}
+  #view-today .ms-per{display:block; flex:none;}
+  .ms-period{display:inline-flex; align-items:center; gap:10px; height:46px; padding:0 18px; border:none; border-radius:13px; background:#fff; font:inherit; font-weight:600; font-size:15px; color:var(--p-ink); cursor:pointer; white-space:nowrap;
+    box-shadow:0 1px 2px rgba(16,24,40,.05), 0 6px 18px rgba(16,24,40,.07);}
+  .ms-period .svgi{width:21px; height:21px; stroke-width:1.8; color:var(--p-ink2);}
+  .ms-period .ms-pchev{width:16px; height:16px; color:var(--p-ink2); stroke-width:2.1;}
+  #view-today .ms-whose{display:flex; align-items:center; gap:10px; flex:1 0 100%; margin:2px 0 0; font-size:14px; color:var(--p-sub);}
+  .ms-vchip{display:inline-flex; align-items:center; gap:10px; background:#fff; border-radius:999px; padding:5px 6px 5px 14px; box-shadow:var(--p-shadow); min-height:44px;}
+  [dir="rtl"] .ms-vchip{padding:5px 14px 5px 6px;}
+  .ms-vchip b{color:var(--p-ink); font-weight:600;}
+  #view-today .ms-back{border:none; background:var(--p-mint-soft); color:var(--p-green); font:inherit; font-weight:600; font-size:13.5px; cursor:pointer; min-height:34px; padding:0 14px; border-radius:999px; position:relative;}
+  #view-today .ms-back::after{content:''; position:absolute; inset:-6px -4px;}
 
-  /* ---- the cards: white, a soft lift (the reference's liveliness), titles in the text colour ---- */
-  #view-today .ms-card{box-shadow:0 1px 2px rgba(2,41,23,.04), 0 8px 24px rgba(2,41,23,.05);}
-  #view-today .ms-card > .ms-ct{color:var(--text-primary); font-size:15.5px;}
-  .ms-ttl{display:inline-flex; align-items:center; gap:11px; min-width:0; color:var(--text-primary); font-weight:600;}
-  .ms-tt{display:flex; flex-direction:column; line-height:1.3; min-width:0;}
-  .ms-tt small{font-size:12.5px; color:var(--text-muted); font-weight:500;}
-  /* soft icon tiles: a few calm colours, always beside a word */
-  .ms-tile{display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; flex-shrink:0; background:var(--brand-secondary-soft); color:var(--brand-primary);}
+  /* ---- the cards ---- */
+  #view-today .ms-card{background:#fff; border:1px solid rgba(16,24,40,.04); border-radius:var(--p-radius); box-shadow:var(--p-shadow); padding:20px; min-width:0;}
+  #view-today .ms-card > .ms-ct, #view-today .ms-ct{color:var(--p-ink); font-size:19px; font-weight:700; letter-spacing:-.015em; margin-bottom:14px; min-height:26px; gap:10px;}
+  #view-today .ms-ct .ms-act{display:flex; align-items:center; gap:4px;}
+  #view-today .ms-ct small{font-weight:400; font-size:inherit; letter-spacing:-.01em; color:var(--p-ink);}
+  .ms-ttl{display:inline-flex; align-items:center; gap:10px; min-width:0; color:inherit;}
+  .ms-va{display:inline-flex; align-items:center; gap:6px; border:none; background:none; color:var(--p-green); font:inherit; font-weight:600; font-size:14.5px; letter-spacing:0; cursor:pointer; padding:6px 2px; white-space:nowrap; position:relative;}
+  .ms-va .svgi{width:17px; height:17px; stroke-width:2.2;}
+  [dir="rtl"] .ms-va .svgi{transform:scaleX(-1);}
+  .ms-va::after{content:''; position:absolute; inset:-8px -4px;}
+  #view-today .ms-i{color:#A0AAB6;}
+  #view-today .ms-i svg{width:18px; height:18px;}
+  .ms-tile{display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:12px; flex-shrink:0; background:var(--p-mint-soft); color:var(--p-g6);}
   .ms-tile .svgi{width:20px; height:20px;}
-  .ms-ttl .ms-tile{width:36px; height:36px; border-radius:11px;}
-  .ms-ttl .ms-tile .svgi{width:18px; height:18px;}
-  .ms-tile.t-green{background:#E2F0E7; color:#1C6A45;}
-  .ms-tile.t-blue{background:#E6EEFB; color:#2A58B3;}
-  .ms-tile.t-amber{background:#FBEFD9; color:#8F5B00;}
-  .ms-tile.t-lime{background:var(--brand-secondary-soft); color:#3B6912;}
-  .ms-tile.t-gold{background:#FAF0D7; color:#8C640D;}
+  .ms-tile.t-green{background:var(--p-mint-soft); color:var(--p-g6);} .ms-tile.t-blue{background:#E9F0FB; color:#2A58B3;} .ms-tile.t-amber{background:#FDF1E4; color:#B35F12;}
+  .ms-tile.t-lime{background:var(--p-mint-soft); color:var(--p-g6);} .ms-tile.t-gold{background:#FBF1DC; color:#9A6A0B;}
+  .ms-ttl .ms-tile{width:36px; height:36px; border-radius:11px;} .ms-ttl .ms-tile .svgi{width:18px; height:18px;}
 
-  /* ---- the target card (team: #msSales; a person: #targetCard's card): deep green, the ring, the three figures ---- */
-  #view-today .ms-hero{background:radial-gradient(circle at 100% 100%, transparent 0 92px, rgba(255,255,255,.035) 93px 120px, transparent 121px), radial-gradient(90% 120% at 100% 0%, rgba(165,207,99,.16) 0%, rgba(165,207,99,0) 55%), linear-gradient(140deg, #064027 0%, #022917 55%, #011D10 100%);
-    color:#fff; border:none; padding:18px; position:relative; overflow:hidden; box-shadow:0 12px 32px rgba(2,41,23,.20);}
+  /* ---- the target card: deep green, the mint ring, the month against the target, what is left ---- */
+  #view-today .ms-hero{background:
+      radial-gradient(60% 120% at 104% -10%, rgba(64,170,130,.55) 0%, rgba(30,110,85,.28) 38%, rgba(4,62,50,0) 70%),
+      radial-gradient(40% 70% at 100% 100%, rgba(20,110,82,.5) 0%, rgba(4,62,50,0) 75%),
+      linear-gradient(100deg, #0F5243 0%, #023A31 32%, #003930 58%, #04473A 100%);
+    color:#fff; border:none; padding:0; position:relative; overflow:hidden; border-radius:22px; box-shadow:0 10px 30px rgba(0,57,48,.18);}
+  .ms-hero::before{content:''; position:absolute; inset:0; pointer-events:none; z-index:0;
+    background:radial-gradient(closest-side, rgba(255,255,255,.05), rgba(255,255,255,0)) 78% 160% / 70% 90% no-repeat,
+      linear-gradient(160deg, rgba(255,255,255,0) 55%, rgba(255,255,255,.035) 56%, rgba(255,255,255,0) 72%);}
   .ms-hero > *{position:relative; z-index:1;}
-  .ms-hero .ms-ct{color:rgba(255,255,255,.8) !important; font-size:14.5px !important; margin-bottom:4px;}
-  .ms-hero .ms-i{color:rgba(255,255,255,.72);}
-  .ms-hero .ms-ct .chip.small{background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.28);}
-  .ms-hero .ms-big{color:#fff; font-size:32px;}
-  .ms-hero .ms-big small{color:rgba(255,255,255,.72);}
-  .ms-hero .ms-big.none{color:rgba(255,255,255,.7);}
-  .ms-hero .ms-of{color:rgba(255,255,255,.8); font-size:14px;}
-  .ms-hero .ms-bar{background:rgba(255,255,255,.16); height:8px; margin:12px 0 8px;}
-  .ms-hero .ms-bar i{background:var(--brand-secondary);}
-  .ms-hero .ms-bar b{background:#fff;}
-  .ms-hero .ms-legend{color:rgba(255,255,255,.78); align-items:center; font-size:13px;}
-  .ms-hero .ms-pill{margin-top:0;}
-  .ms-hero .ms-pill.good{background:rgba(165,207,99,.2); color:#D4EBAE;}
-  .ms-hero .ms-pill.warn{background:rgba(246,200,95,.18); color:#F6D27A;}
-  .ms-hero .ms-note, .ms-hero .ms-fine, .ms-hero .ms-wait{color:rgba(255,255,255,.74);}
-  .ms-hero .ms-note.warn{color:#F6D27A;}
-  .ms-hero .ms-note b, .ms-hero .ms-fine b{color:#fff;}
-  .ms-hero > div[style*="amber-ink"]{color:#F6D27A !important;}
-  .ms-hero .ms-src2{margin-top:12px;}
-  .ms-hin{display:grid; grid-template-columns:auto minmax(0,1fr); gap:14px 16px; align-items:center;}
-  .ms-hin > .ms-stats{grid-column:1 / -1;}
-  .ms-hmain{min-width:0;}
-  .ms-ringc{position:relative; width:104px; height:104px; flex-shrink:0; align-self:start;}
+  .ms-hin{display:grid; grid-template-columns:auto; align-items:center;}
+  .ms-hdeco{position:absolute; z-index:0; pointer-events:none; inset-inline-end:28px; bottom:22px; width:170px; height:170px; opacity:.95;}
+  [dir="rtl"] .ms-hdeco{transform:scaleX(-1);}
+  .ms-hring{position:relative; flex-shrink:0;}
   .ms-ring{width:100%; height:100%; display:block;}
   [dir="rtl"] .ms-ring{transform:scaleX(-1);}
-  .ms-ring circle{fill:none; stroke-width:10;}
-  .ms-ring .trk{stroke:rgba(255,255,255,.14);}
-  .ms-ring .val{stroke:var(--brand-secondary); stroke-linecap:round;}
-  .ms-ring .mk{stroke:#fff; stroke-width:2.5; stroke-linecap:round; opacity:.85;}
-  .ms-rc{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; line-height:1.1;}
-  .ms-rc strong{font-size:24px; font-weight:600; color:#fff; letter-spacing:-.01em;}
-  .ms-rc > span{font-size:11.5px; color:rgba(255,255,255,.76); margin-top:3px;}
-  .ms-ringc.none{display:flex; align-items:center; justify-content:center; width:56px; height:56px; border-radius:16px; background:rgba(255,255,255,.09);}
-  .ms-rt .svgi{width:26px; height:26px; color:var(--brand-secondary);}
-  .ms-hero .ms-stats{margin-top:2px; border-top:1px solid rgba(255,255,255,.14); padding-top:12px;}
-  .ms-hero .ms-stats > div + div{border-inline-start-color:rgba(255,255,255,.14);}
-  .ms-hero .ms-stats > div.fc{border-inline-start:1.5px dashed rgba(165,207,99,.7);}
-  .ms-hero .ms-stats .ms-l{color:rgba(255,255,255,.72);}
-  .ms-hero .ms-stats b{color:#fff;}
-  .ms-hero .ms-stats .fc b{color:var(--brand-secondary);}
-  .ms-hero .ms-stats em{color:rgba(255,255,255,.72);}
-  .ms-fcnote{display:flex; align-items:flex-start; gap:8px; margin-top:14px; padding:9px 12px; border:1.5px dashed rgba(165,207,99,.55); border-radius:var(--radius-md); font-size:13px; color:rgba(255,255,255,.86); line-height:1.5;}
-  .ms-fcnote .svgi{width:17px; height:17px; color:var(--brand-secondary); flex-shrink:0; margin-top:1px;}
-  .ms-fcnote b{color:#fff; font-weight:600;}
-  .ms-cxw{margin-top:12px;}
-  .ms-hero .ms-ct .chip.small{white-space:nowrap; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;}
-  .ms-fold > .ms-ct{gap:12px;}
-  .ms-fold > .ms-ct > .ms-t{flex:1 1 auto;}
-  .ms-fold > .ms-ct > .ms-tile{width:36px; height:36px; border-radius:11px;}
-  .ms-fold > .ms-ct > .ms-tile .svgi{width:18px; height:18px;}
-  .ms-cxw:empty{display:none;}
+  .ms-ring circle{fill:none;}
+  .ms-ring .trk{stroke:#1A5649;}
+  .ms-ring .val{stroke:url(#msRingG); stroke-linecap:round; filter:drop-shadow(0 0 6px rgba(106,235,164,.35));}
+  .ms-ring .mk{stroke:#fff; stroke-width:2.5; stroke-linecap:round; opacity:.8;}
+  .ms-rc{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; line-height:1.05;}
+  .ms-rc strong{font-size:40px; font-weight:700; color:#fff; letter-spacing:-.03em;}
+  .ms-rc strong small{font-size:.8em; font-weight:700; letter-spacing:-.02em;}
+  .ms-rc > span{font-size:13px; color:rgba(255,255,255,.92); margin-top:7px; font-weight:500;}
+  .ms-hring.none{display:flex; align-items:center; justify-content:center; border-radius:50%; border:14px solid #164E44; box-sizing:border-box;}
+  .ms-hring.none .ms-rc strong{font-size:30px; color:rgba(255,255,255,.75);}
+  .ms-hcol{min-width:0;}
+  .ms-hl{display:block; font-size:18px; font-weight:500; color:rgba(255,255,255,.93); line-height:1.25; letter-spacing:-.01em;}
+  .ms-hv{display:block; font-size:30px; font-weight:700; color:#fff; letter-spacing:-.025em; line-height:1.2; margin-top:4px; white-space:nowrap;}
+  .ms-hv small{font-size:21px; font-weight:600; letter-spacing:-.01em;}
+  .ms-hv.none{color:rgba(255,255,255,.6);}
+  .ms-hbar{position:relative; height:14px; border-radius:7px; background:#164B43; margin-top:16px; overflow:hidden; max-width:254px;}
+  .ms-hbar i{position:absolute; inset-block:0; inset-inline-start:0; border-radius:7px; background:linear-gradient(90deg, #3FD98C, var(--p-mint) 70%, #8FF3BF);}
+  .ms-hbar b{position:absolute; top:0; bottom:0; width:2px; background:#fff; opacity:.75; margin-inline-start:-1px;}
+  .ms-hdays{display:flex; align-items:center; gap:12px; font-size:19px; font-weight:600; color:#fff; letter-spacing:-.015em; margin:20px 0 22px;}
+  .ms-hdays .ms-cal{width:25px; height:25px; flex-shrink:0;}
+  .ms-hnote{font-size:13px; color:rgba(255,255,255,.82); line-height:1.5; margin-top:12px; max-width:330px;}
+  .ms-hnote.warn{color:#F7D27A;}
+  .ms-hero .ms-i{color:rgba(255,255,255,.62); position:absolute; top:14px; inset-inline-end:14px; margin:0; z-index:2;}
+  .ms-hero .ms-pill{display:none;}
+  .ms-hero .ms-fine, .ms-hero .ms-note{color:rgba(255,255,255,.78);}
+  .ms-hero .ms-note b, .ms-hero .ms-fine b{color:#fff;}
+  .ms-hero .ms-src2{margin:0; font-size:12px;}
+  .ms-hfoot{position:relative; z-index:1;}
 
   /* ---- the four figure cards ---- */
   .ms-kpis{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;}
   .ms-kpis:empty{display:none;}
-  .ms-kc{display:flex; flex-direction:column; align-items:flex-start; gap:10px; min-width:0; text-align:start; background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-lg); padding:14px; font:inherit; color:inherit; cursor:pointer;
-    box-shadow:0 1px 2px rgba(2,41,23,.04), 0 8px 24px rgba(2,41,23,.05); transition:border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;}
-  .ms-kc .ms-tile{width:38px; height:38px;}
-  .ms-kb{display:flex; flex-direction:column; gap:2px; min-width:0; width:100%;}
-  .ms-kl{font-size:13px; color:var(--text-secondary); font-weight:500; line-height:1.3;}
-  .ms-kv{font-size:26px; font-weight:600; color:var(--text-primary); line-height:1.15; letter-spacing:-.01em; overflow-wrap:anywhere;}
-  .ms-kv small{font-size:13px; color:var(--text-muted); font-weight:500; letter-spacing:0;}
+  .ms-kc{position:relative; display:flex; flex-direction:column; align-items:center; text-align:center; min-width:0; background:#fff; border:1px solid rgba(16,24,40,.045); border-radius:var(--p-radius); padding:16px 10px 14px; font:inherit; color:inherit; cursor:pointer; box-shadow:var(--p-shadow); overflow:hidden;}
+  .ms-kc .ms-kic{display:flex; align-items:center; justify-content:center; width:30px; height:30px; color:var(--p-g6); margin-bottom:8px;}
+  .ms-kc .ms-kic .svgi{width:28px; height:28px; stroke-width:2;}
+  .ms-kb{display:flex; flex-direction:column; align-items:inherit; gap:0; min-width:0; width:100%;}
+  .ms-kl{font-size:15px; font-weight:600; color:var(--p-ink); line-height:1.3; letter-spacing:-.01em;}
+  .ms-kl small{display:none; font-size:inherit; font-weight:400;}
+  .ms-kv{font-size:24px; font-weight:700; color:var(--p-ink); line-height:1.25; letter-spacing:-.025em; margin-top:2px; overflow-wrap:anywhere;}
+  .ms-kv small{font-size:14px; font-weight:600; letter-spacing:-.01em;}
   .ms-kv .ms-m{white-space:normal;}
-  .ms-ks{font-size:12.5px; color:var(--text-muted); line-height:1.4;}
-  .ms-kbar{display:block; position:relative; height:6px; border-radius:3px; background:var(--surface-sunken); margin:6px 0 4px;}
-  .ms-kbar i{display:block; height:100%; border-radius:3px; background:#1C6A45; max-width:100%;}
-  .ms-kbar b{position:absolute; top:-3px; bottom:-3px; width:2px; border-radius:2px; background:var(--text-muted); margin-inline-start:-1px;}
-  .ms-chip{display:inline-flex; align-items:center; gap:5px; width:max-content; max-width:100%; font-size:12px; font-weight:600; border-radius:var(--radius-pill); padding:3px 9px; margin:3px 0 1px;}
-  .ms-chip.warn{background:var(--status-warning-soft); color:var(--status-warning);}
-  .ms-chip .svgi{width:13px; height:13px; flex-shrink:0;}
-  .ms-kc.fc{border:1.5px dashed var(--border-default); box-shadow:none; background:linear-gradient(180deg, #FBFDF8, #FFFFFF);}
-  @media (hover:hover){ .ms-kc:hover{border-color:var(--border-default); box-shadow:var(--shadow-md);} }
+  .ms-kd{display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:600; color:var(--p-up); margin-top:5px; line-height:1.3; letter-spacing:0; white-space:nowrap;}
+  .ms-kd.down{color:var(--p-down);} .ms-kd.flat{color:var(--p-muted);}
+  .ms-kd .tri{font-size:10px;}
+  .ms-ks{font-size:12.5px; color:var(--p-muted); line-height:1.35; margin-top:5px;}
+  .ms-chip{display:inline-flex; align-items:center; gap:6px; width:max-content; max-width:100%; font-size:12.5px; font-weight:600; border-radius:999px; padding:4px 10px; margin-top:6px; line-height:1.3;}
+  .ms-chip.warn{background:var(--p-warn-soft); color:var(--p-warn);}
+  .ms-chip .svgi{width:14px; height:14px; stroke-width:2.2;}
+  .ms-spark{display:none; position:absolute; inset-inline-end:14px; bottom:14px; width:104px; height:40px; overflow:visible;}
+  [dir="rtl"] .ms-spark{transform:scaleX(-1);}
+  .ms-kc.fc .ms-kv::after{content:none;}
+  @media (hover:hover){ .ms-kc:hover{box-shadow:0 2px 4px rgba(16,24,40,.05), 0 10px 26px rgba(16,24,40,.09);} }
 
-  /* ---- the leaderboard (the team's #targetCard) ---- */
-  .ms-people > .ms-ct{flex-wrap:wrap; row-gap:4px;}
-  .ms-people > .ms-ct > .ms-ttl{flex:1 1 auto;}
-  .ms-tt > span{white-space:nowrap;}
-  .ms-people .ms-bar i{background:#1C6A45;}
-  .ms-chart > .ms-ct{flex-wrap:wrap; row-gap:6px;}
-  .ms-chart > .ms-ct > .ms-ttl{flex:1 1 240px;}
-  .ms-chart > .ms-ct > .ms-act{margin-inline-start:auto;}
-  .ms-chart svg [stroke="#1E7A55"]{stroke:#1C6A45;} .ms-chart svg [fill="#1E7A55"]{fill:#1C6A45;}
-  .ms-people > .ms-ct .ms-act{flex-shrink:0;}
-  .ms-people > .ms-hint{font-size:12.5px; font-weight:500; color:var(--text-muted); margin:-2px 0 6px; text-align:start;}
-  .ms-va{display:inline-flex; align-items:center; border:none; background:none; color:#1C6A45; font:inherit; font-weight:600; font-size:13.5px; cursor:pointer; padding:6px 4px; white-space:nowrap;}
-  .ms-people .ms-person{grid-template-columns:24px 34px minmax(0,1fr) 48px; gap:3px 10px; padding:11px 0;}
-  .ms-people .ms-person > .rk{grid-column:1; grid-row:1; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13.5px; color:var(--text-muted);}
-  .ms-people .ms-person > .rk.first .svgi{width:18px; height:18px; color:var(--accent-gold);}
-  .ms-people .ms-person > .av{grid-column:2; grid-row:1; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#E2F0E7; color:#1C6A45; font-size:12.5px; font-weight:700;}
-  .ms-people .ms-person > .av.tm{background:var(--surface-sunken); color:var(--text-primary);}
-  .ms-people .ms-person > .av.tm .svgi{width:17px; height:17px;}
-  .ms-people .ms-person > .n{grid-column:3; grid-row:1;}
-  .ms-people .ms-person > .p{grid-column:4; grid-row:1;}
-  .ms-people .ms-person > .ms-bar, .ms-people .ms-person > div:not([class]){grid-column:3 / 5; grid-row:2;}
-  .ms-people .ms-person > .s, .ms-people .ms-person > .ms-fine{grid-column:3 / 5;}
-  .ms-people .ms-person > div:not([class]):empty{display:none;}
+  /* ---- Sales Performance: the weekly bars against the target pace ---- */
+  .ms-chart > .ms-ct{flex-wrap:wrap; row-gap:6px; margin-bottom:6px;}
+  .ms-keys{display:flex; flex-wrap:wrap; align-items:center; gap:4px 22px; font-size:14px; color:var(--p-sub); font-weight:500; letter-spacing:0;}
+  .ms-keys i{display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--p-g5); vertical-align:middle; margin-inline-end:9px; margin-top:-2px; border:none;}
+  .ms-keys i.t{background:#CBD5DC;}
+  .ms-wk svg{display:block; width:100%; height:auto; overflow:visible;}
+  .ms-wk .ax{font-size:13px; fill:#5D6878;}
+  .ms-wk .xl{font-size:13.5px; fill:var(--p-ink2);}
+  .ms-wk .tipt{font-size:14px; font-weight:700; fill:#fff;}
+  .ms-wk .bar{fill:url(#msBarG);}
+  .ms-wk .bar.cur{fill:url(#msBarG2);}
+  .ms-wk .tl{stroke:#57B795; stroke-width:2; stroke-dasharray:5 6; fill:none;}
+  .ms-wk .td{fill:#fff; stroke:#57B795; stroke-width:2;}
 
-  /* ---- the sales advisor (the team's #msNext, a person's #msAdvisor) ---- */
-  .ms-vteam > #msNext, #view-today .ms-adv{background:linear-gradient(165deg, #F1F8E9 0%, #FFFFFF 58%);}
-  .ms-lead{display:flex; align-items:flex-start; gap:10px; background:rgba(165,207,99,.2); border-radius:var(--radius-md); padding:11px 13px; margin:2px 0 6px; font-size:14px; line-height:1.5; color:var(--text-primary);}
-  .ms-lead .svgi{width:18px; height:18px; flex-shrink:0; margin-top:2px; color:#3B6912;}
-  .ms-lead b{font-weight:700;}
-  .ms-tip{display:flex; gap:9px; align-items:flex-start; font-size:13px; color:var(--text-secondary); margin-top:8px; padding-top:10px; border-top:1px dashed var(--border-default); line-height:1.5;}
-  .ms-tip .svgi{width:16px; height:16px; flex-shrink:0; margin-top:2px; color:var(--text-muted);}
-  .ms-tip .k{font-weight:600; color:var(--text-primary);}
+  /* ---- the leaderboard (the team's #targetCard) and a person's next actions ---- */
+  #targetCard{display:contents;}
+  .ms-people .ms-ct{margin-bottom:6px;}
+  .ms-people .ms-lb{display:grid; grid-template-columns:44px 34px minmax(0,1fr) minmax(48px,68px) 40px minmax(64px,auto) 26px; align-items:center; column-gap:14px; row-gap:0; padding:11px 0; border-top:1px solid var(--p-line); cursor:pointer; position:relative;}
+  .ms-lb:first-of-type{border-top-color:transparent;}
+  .ms-people .ms-lbh{border-bottom:1px solid var(--p-line); margin:0 0 0; }
+  .ms-lb .rk{width:43px; height:43px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; color:var(--p-ink2);}
+  .ms-lb .rk.first{background:#FCF0E3; color:#E2A33B;} .ms-lb .rk.first .svgi{width:20px; height:20px; stroke-width:2; fill:#F2C25B; stroke:#E1A23A;}
+  .ms-lb .rk.ring{background:#EEF3F3;}
+  .ms-lb .av{width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#0B5A45; color:#fff; font-size:12.5px; font-weight:700; letter-spacing:.02em;}
+  .ms-lb .n{font-size:14.5px; font-weight:500; color:var(--p-ink2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ms-lb .bar{position:relative; height:7px; border-radius:4px; background:#E2E8EC;}
+  .ms-lb .bar i{position:absolute; inset-block:0; inset-inline-start:0; border-radius:4px; background:var(--p-g6); max-width:100%;}
+  .ms-lb .p{font-size:14.5px; font-weight:700; color:var(--p-ink); text-align:end;}
+  .ms-lb .p.none{color:var(--p-faint); font-weight:500;}
+  .ms-lb .a{font-size:14.5px; color:#3B4656; white-space:nowrap; text-align:start;}
+  .ms-lb .a small{font-size:inherit; font-weight:inherit;}
+  .ms-lb .v{font-size:14.5px; color:var(--p-ink2); text-align:end;}
+  .ms-lb .det{grid-column:3 / -1;}
+  .ms-people:not(.ms-all) .ms-lb .det, .ms-people:not(.ms-all) .ms-lbx{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
+  .ms-people.ms-all .ms-lb .det{font-size:13px; color:var(--p-muted); line-height:1.5; margin-top:4px;}
+  .ms-people.ms-all .ms-lbx{display:block; font-size:12.5px; color:var(--p-muted); margin-top:8px; line-height:1.5;}
+  .ms-people .ms-person.team{display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:12px; padding:10px 0 0 92px; border-top:1px solid var(--p-line);}
+  [dir="rtl"] .ms-people .ms-person.team{padding:10px 92px 0 0;}
+  .ms-people .ms-person.team .s{grid-column:1 / -1;}
+  .ms-lbhint{font-size:12.5px; color:var(--p-muted); margin:-2px 0 4px;}
+  .ms-people:not(.ms-all) .ms-lbhint{position:absolute !important; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);}
+  @media (hover:hover){ .ms-lb:hover .n{color:var(--p-green);} }
 
-  /* ---- the pace card ---- */
-  #view-today .ms-status{background:radial-gradient(80% 90% at 100% 100%, rgba(165,207,99,.28) 0%, rgba(165,207,99,0) 70%), linear-gradient(160deg, #EEF6E8 0%, #F8FBF5 70%);}
-  .ms-st{display:flex; flex-direction:column; align-items:flex-start; gap:6px; height:100%;}
-  .ms-stic{width:52px; height:52px; border-radius:16px; background:var(--surface-card); display:flex; align-items:center; justify-content:center; box-shadow:var(--shadow-sm); margin-bottom:6px;}
-  .ms-stic .svgi{width:26px; height:26px; color:#1C6A45;}
-  .ms-st.warn .ms-stic .svgi{color:var(--status-warning);}
-  .ms-st.none .ms-stic .svgi{color:var(--text-muted);}
-  .ms-stt{font-size:21px; font-weight:600; letter-spacing:-.01em; line-height:1.3; color:var(--text-primary);}
-  .ms-sts{font-size:13.5px; color:var(--text-secondary); line-height:1.5;}
-  .ms-stb{margin-top:auto; display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 16px 0 18px; border:none; border-radius:var(--radius-md); background:var(--brand-primary); color:#fff; font:inherit; font-weight:600; font-size:14px; cursor:pointer;}
-  .ms-stb .ms-chev{color:var(--brand-secondary);}
-  .ms-st > .ms-stb{margin-top:14px;}
+  /* next actions (a person's #msNext; the team's on a phone) */
+  .ms-acts{display:flex; flex-direction:column;}
+  .ms-ac{display:flex; align-items:center; gap:14px; width:100%; padding:10px 0; border:none; border-top:1px solid var(--p-line); background:none; font:inherit; color:inherit; text-align:start; cursor:pointer; min-height:56px;}
+  .ms-ac:first-child{border-top:none; padding-top:2px;}
+  .ms-ac .ic{width:40px; height:40px; border-radius:50%; background:var(--p-mint-soft); color:#4E9C80; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .ms-ac .ic .svgi{width:20px; height:20px;}
+  .ms-ac .ic.warn{background:var(--p-warn-soft); color:var(--p-warn);}
+  .ms-ac .t{flex:1; min-width:0;}
+  .ms-ac .t > div:first-child{font-size:14.5px; font-weight:600; color:var(--p-ink2); line-height:1.35;}
+  .ms-ac .t .s{font-size:13px; color:var(--p-muted); line-height:1.4; margin-top:1px;}
+  .ms-ac > b{font-size:14px; font-weight:600; white-space:nowrap;}
+  .ms-next .ms-btn{min-height:46px; border-radius:999px; background:var(--p-dark); font-size:15px; margin-top:12px;}
+  .ms-next .ms-btn.ghost{background:var(--p-mint-soft); color:var(--p-green);}
 
-  /* ---- the recent visits, as a timeline ---- */
+  /* ---- the sales advisor ---- */
+  #view-today .ms-adv{background:linear-gradient(28deg, #C6EEDD 0%, #DDF3EA 34%, #EFF8F5 62%, #F7FAFB 100%); border-color:rgba(16,24,40,.03); position:relative; overflow:hidden; padding:19px 22px 0;}
+  .ms-adv::before{content:''; position:absolute; inset-inline-start:-60px; bottom:-90px; width:300px; height:220px; border-radius:50%; background:radial-gradient(closest-side, rgba(150,225,195,.55), rgba(150,225,195,0)); pointer-events:none;}
+  .ms-adv > *{position:relative;}
+  .ms-adv .ms-ct{margin-bottom:6px;}
+  .ms-advic{width:46px; height:46px; border-radius:50%; background:#fff; color:var(--p-g6); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 2px 8px rgba(16,24,40,.06);}
+  .ms-advic .svgi{width:24px; height:24px; stroke-width:1.8;}
+  .ms-advb{display:grid; grid-template-columns:118px minmax(0,1fr); column-gap:20px; align-items:end;}
+  .ms-robot{width:118px; height:auto; display:block; align-self:end; margin-bottom:-8px;}
+  .ms-advt{font-size:14.5px; line-height:1.4; color:var(--p-ink2); min-width:0;}
+  .ms-advt p{margin:0;}
+  .ms-advt p + p{margin-top:2px;}
+  .ms-advt b{font-weight:600;}
+  .ms-advbtn{display:inline-flex; align-items:center; gap:12px; height:42px; padding:0 22px 0 26px; margin-top:20px; border:none; border-radius:999px; background:var(--p-dark); color:#fff; font:inherit; font-size:14.5px; font-weight:600; cursor:pointer; white-space:nowrap;}
+  [dir="rtl"] .ms-advbtn{padding:0 26px 0 22px;}
+  .ms-advbtn .svgi{width:17px; height:17px; stroke-width:2.2;}
+  [dir="rtl"] .ms-advbtn .svgi{transform:scaleX(-1);}
+  .ms-advgo{display:none; width:22px; height:22px; color:var(--p-ink2);}
+  [dir="rtl"] .ms-advgo{transform:scaleX(-1);}
+  .ms-lead, .ms-tip{display:none;}
+  .ms-advsheet .ms-lead{display:flex; align-items:flex-start; gap:10px; background:var(--p-mint-soft); border-radius:12px; padding:11px 13px; margin:2px 0 8px; font-size:14px; line-height:1.5;}
+  .ms-advsheet .ms-lead .svgi{width:18px; height:18px; flex-shrink:0; margin-top:2px; color:var(--p-g6);}
+  .ms-advsheet .ms-tip{display:flex; gap:9px; align-items:flex-start; font-size:13px; color:var(--p-sub); margin-top:10px; padding-top:10px; border-top:1px dashed var(--border-default); line-height:1.5;}
+  .ms-advsheet .ms-tip .svgi{width:16px; height:16px; flex-shrink:0; margin-top:2px;}
+  .ms-advsheet .ms-tip .k{font-weight:600; color:var(--p-ink);}
+
+  /* ---- the needs card (the team's #msNext below the picture) ---- */
+  .ms-needs .ms-lead{display:flex; align-items:flex-start; gap:10px; background:var(--p-mint-soft); border-radius:12px; padding:11px 13px; margin:0 0 8px; font-size:14px; line-height:1.5; color:var(--p-ink2);}
+  .ms-needs .ms-lead .svgi{width:18px; height:18px; flex-shrink:0; margin-top:2px; color:var(--p-g6);}
+  .ms-needs .ms-tip{display:flex; gap:9px; align-items:flex-start; font-size:13px; color:var(--p-sub); margin-top:8px; padding-top:10px; border-top:1px dashed var(--border-default); line-height:1.5;}
+  .ms-needs .ms-tip .svgi{width:16px; height:16px; flex-shrink:0; margin-top:2px;}
+  .ms-needs .ms-tip .k{font-weight:600; color:var(--p-ink);}
+
+  /* ---- recent activity ---- */
+  .ms-recent .ms-ct .ms-tile{display:none;}
+  #view-today .ms-recent .ms-va{color:var(--p-green); font-size:14.5px; text-decoration:none; font-weight:600;}
+  #view-today .ms-recent .ms-va .svgi{width:17px; height:17px;}
   .ms-tl{position:relative;}
-  .ms-tl::before{content:''; position:absolute; inset-inline-start:17px; top:20px; bottom:20px; width:2px; border-radius:1px; background:var(--border-subtle);}
-  #view-today .ms-body .card.ms-tli{display:flex; align-items:center; gap:12px; padding:9px 0; border-top:none; position:relative;}
-  .ms-tli .ms-tile{width:36px; height:36px; border-radius:50%; position:relative; z-index:1; box-shadow:0 0 0 3px var(--surface-card);}
-  .ms-tli .ms-tile .svgi{width:17px; height:17px;}
+  .ms-tl::before{content:none;}
+  #view-today .ms-body .card.ms-tli{display:flex; align-items:center; gap:14px; padding:7px 0; border-top:1px solid var(--p-line); position:relative; margin:0;}
+  #view-today .ms-body .card.ms-tli:first-child{border-top:none; padding-top:0;}
+  .ms-tli .ms-tile{width:40px; height:40px; border-radius:50%; background:var(--p-mint-soft); color:#55A287;}
+  .ms-tli .ms-tile .svgi{width:19px; height:19px; stroke-width:1.9;}
+  .ms-tli .ms-tile.done{color:#089C5C;} .ms-tli .ms-tile.done .svgi{width:22px; height:22px;}
   .ms-tlt{flex:1; min-width:0;}
-  .ms-tlt .clinic-name{font-weight:600; font-size:14.5px; line-height:1.35;}
-  .ms-tlt .clinic-sub{font-size:12.5px;}
-  .ms-ago{font-size:12.5px; color:var(--text-muted); white-space:nowrap; align-self:flex-start; margin-top:3px;}
+  .ms-tlt .clinic-name{font-weight:500; font-size:13.5px; line-height:1.4; color:var(--p-ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ms-tlt .clinic-sub{font-size:12px; color:var(--p-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .ms-ago{font-size:12.5px; color:#7A8594; white-space:nowrap;}
 
-  /* ---- the chart card ---- */
-  .ms-chart .ms-keys{gap:4px 14px;}
-  .ms-chart .ms-keys i{width:16px; border-top-width:3px; border-radius:2px;}
-  .ms-chart svg .ax{font-variant-numeric:tabular-nums;}
+  /* ---- the clinic photo ---- */
+  #view-today .ms-photo{display:none; position:relative; padding:0; overflow:hidden; border:none; background:#0B3F35 url('img/clinic.webp') center 30% / cover no-repeat; min-height:200px;}
+  .ms-photo::before{content:''; position:absolute; inset:0; background:linear-gradient(200deg, rgba(4,52,44,0) 30%, rgba(4,52,44,.55) 55%, rgba(3,48,40,.92) 100%), linear-gradient(90deg, rgba(4,54,45,.55), rgba(4,54,45,0) 70%);}
+  .ms-photo p{position:absolute; inset-inline-start:22px; bottom:40px; margin:0; font-size:19px; font-weight:600; line-height:1.32; letter-spacing:-.015em; color:#fff; max-width:150px;}
+  .ms-photo i{position:absolute; inset-inline-start:22px; bottom:26px; width:40px; height:3px; border-radius:2px; background:var(--p-mint);}
 
-  /* ---- phone and tablet: one column in the order of the reference ---- */
+  /* ---- the cards below the picture keep the same look ---- */
+  #view-today .ms-status{background:linear-gradient(28deg, #DDF3EA 0%, #F2F9F6 60%, #FFFFFF 100%);}
+  .ms-stb{background:var(--p-dark); border-radius:999px;}
+  .ms-stb .ms-chev{color:var(--p-mint);}
+  .ms-cxcard{padding:4px 6px !important;}
+  .ms-cxcard .ms-cx{margin:0 !important;}
+  .ms-daily svg{width:100%; height:auto; display:block;}
+  .ms-stats .ms-l{color:var(--p-muted);}
+  #view-today .ms-fold > .ms-ct .ms-t > span:first-child{color:var(--p-ink); font-size:15.5px; font-weight:700;}
+  @media (min-width:1024px){ #view-today .ms-recent > .ms-ct .ms-t > span:first-child{font-size:19px !important; letter-spacing:-.015em;} }
+  .ms-week{border-top-color:var(--p-line);}
+
+  /* ---- phone and tablet: one column, in the picture's order ---- */
   @media (max-width:1023px){
+    #view-today .ms-head{margin:0 0 12px;}
+    #view-today .ms-hi{display:none;}
+    #view-today .ms-per{display:none;}
+    #view-today .ms-head:not(:has(.ms-whose[style*="display: none"])) {margin-bottom:12px;}
+    .ms-grid{gap:12px;}
     .ms-grid > *{order:30;}
-    .ms-vteam > #msSales{order:1;} .ms-grid > #msKpis{order:2;} .ms-vteam > #msNext{order:3;} .ms-vteam > #targetCard{order:4;} .ms-vteam > #msWork{order:5;}
-    .ms-vteam > #msPlanCard{order:6;} .ms-vteam > #msDueCard{order:7;} .ms-vteam > #msTaskCard{order:8;} .ms-vteam > #msRecentCard{order:9;} .ms-vteam > #msRows{order:10;}
-    .ms-vperson > #targetCard{order:1;} .ms-vperson > #msAdvisor{order:3;} .ms-vperson > #msNext{order:4;} .ms-vperson > #msWork{order:5;}
-    .ms-vperson > #msRows{order:6;} .ms-vperson > #msPlanCard{order:7;} .ms-vperson > #msDueCard{order:8;} .ms-vperson > #msTaskCard{order:9;} .ms-vperson > #msRecentCard{order:10;}
+    .ms-vteam > #msSales{order:1;} .ms-vperson > #targetCard > .ms-hero{order:1;}
+    .ms-grid > #msKpis{order:2;} .ms-grid > #msAdvisor{order:3;} .ms-grid > #msNext{order:4;}
+    .ms-vteam > #targetCard > .ms-people{order:5;} .ms-grid > #msRows{order:6;} .ms-grid > #msWork{order:7;}
+    .ms-grid > #msPlanCard{order:8;} .ms-grid > #msDueCard{order:9;} .ms-grid > #msTaskCard{order:10;} .ms-grid > #msRecentCard{order:11;}
+    #targetCard > .ms-cxcard{order:12;}
+    .ms-grid > #msStatus, .ms-grid > #msChart, .ms-grid > #msPhoto{display:none;}
     .ms-vperson > #msSales{display:none;}
-    .ms-grid > #msStatus{display:none;}
-    #view-today .ms-switch{flex:1 1 100%; order:2;}
-    #view-today .ms-hr{display:contents;}   /* a phone shows only the person switch from that row */
-    /* the target card on a phone: its title across, the ring beside the figure, the bar and the three figures across */
-    .ms-hin{column-gap:16px; row-gap:0;}
-    .ms-hmain{display:contents;}
-    .ms-hmain > *{grid-column:1 / -1;}
-    .ms-hin > .ms-ringc{grid-column:1; grid-row:2 / span 2; align-self:center;}
-    .ms-hmain > .ms-ct{grid-row:1; margin-bottom:12px;}
-    .ms-hmain > .ms-big{grid-column:2; grid-row:2; align-self:end;}
-    .ms-hmain > .ms-of{grid-column:2; grid-row:3; align-self:start;}
-    .ms-hin > .ms-stats{margin-top:14px;}
-    #view-today .ms-who{display:none;}
-    .ms-people .ms-ct .ms-va{min-height:44px;}
+    /* the target card on a phone: the ring at the start, the figures beside it, the working days and the amount a day under them */
+    .ms-hin{grid-template-columns:132px minmax(0,1fr); column-gap:30px; padding:22px 18px 0 22px; align-items:center;}
+    [dir="rtl"] .ms-hin{padding:22px 22px 0 18px;}
+    .ms-hringw{grid-column:1; grid-row:1;}
+    .ms-hring{width:132px; height:132px;}
+    .ms-ring circle{stroke-width:11;}
+    .ms-rc strong{font-size:28px;}
+    .ms-rc > span{font-size:11px; margin-top:5px;}
+    .ms-hcol.m1{grid-column:2; display:flex; flex-direction:column;}
+    .ms-hcol.m1 .ms-hl{order:2; font-size:13px; font-weight:500; margin-top:3px;}
+    .ms-hcol.m1 .ms-hl.hach{display:none;}
+    .ms-hcol.m1{grid-row:1;}
+    .ms-hcol.m1 .ms-hv.hach{order:1; font-size:22px; margin-top:0;}
+    .ms-hcol.m1 .ms-hv.hach small{display:none;}
+    .ms-hcol.m1 .ms-hv.htgt{order:3; font-size:13px; font-weight:500; margin-top:0;}
+    .ms-hcol.m1 .ms-hv.htgt small{font-size:13px; font-weight:500; margin-inline-start:3px;}
+    .ms-hcol.m1 .ms-hl.htgt{display:none;}
+    .ms-hcol.m1 .ms-hbar{order:4; height:3px; margin-top:12px; max-width:100px; background:rgba(255,255,255,.18);}
+    .ms-hcol.m1 .ms-hbar b{display:none;}
+    .ms-hcol.m1 .ms-hrem{order:5; margin-top:12px;}
+    .ms-hcol.m1 .ms-hrem .ms-hv{font-size:20px; margin:0;}
+    .ms-hcol.m1 .ms-hrem .ms-hv small{font-size:14px;}
+    .ms-hcol.m1 .ms-hrem .ms-hl{font-size:13px; margin-top:2px;}
+    .ms-hsep, .ms-hcol.m2{display:none;}
+    .ms-hfoot{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:16px 22px 18px;}
+    .ms-hfoot .ms-hd{display:flex; align-items:center; gap:9px; font-size:15px; font-weight:600; color:#fff; letter-spacing:-.01em; white-space:nowrap;}
+    .ms-hfoot .ms-hd .ms-cal, .ms-hfoot .ms-hd .svgi{width:20px; height:20px; flex-shrink:0;}
+    .ms-hfoot .ms-hd .svgi{color:var(--p-mint); stroke-width:2;}
+    .ms-hdeco{width:58px; height:96px; inset-inline-end:14px; bottom:84px; opacity:.6;}
+    .ms-hnote{padding:0 22px; margin:-4px 0 16px; max-width:none;}
+    .ms-hero .ms-fine.ms-src2{padding:0 22px 14px;}
+    .ms-kc{padding:16px 8px 14px;}
+    .ms-kl{font-size:14px;}
+    .ms-adv{padding:14px 16px !important;}
+    .ms-adv .ms-ct{display:none;}
+    .ms-advb{grid-template-columns:86px minmax(0,1fr) 22px; column-gap:12px; align-items:center;}
+    .ms-robot{width:86px; margin:-4px 0 -14px;}
+    .ms-advt .ms-advh{display:block; font-size:16px; font-weight:700; color:var(--p-ink); letter-spacing:-.015em; margin-bottom:6px;}
+    .ms-advt p{font-size:13.5px;}
+    .ms-advt p + p{display:none;}
+    .ms-advbtn{display:none;}
+    .ms-advgo{display:block;}
+    #view-today .ms-next{background:none; border:none; box-shadow:none; padding:4px 2px 0;}
+    #view-today .ms-next > .ms-ct{font-size:17px; margin-bottom:8px;}
+    .ms-ac{min-height:52px;}
+    .ms-recent .ms-ct .ms-tile{display:inline-flex;}
     /* the bottom bar: Home · Customers · (+) Log visit · Sales · More */
+    nav.bottom{background:#fff; border-top:1px solid #E9EDF1; padding-top:4px;}
     nav.bottom .nav-gb{display:contents;}
-    nav.bottom .nav-sep, nav.bottom .nt-d{display:none;}
+    nav.bottom .nav-sep, nav.bottom .nt-d, nav.bottom .nav-art, nav.bottom .nav-help, nav.bottom .nb-line{display:none !important;}
     nav.bottom button[data-view="today"]{order:1;} nav.bottom button[data-view="clinics"]{order:2;} nav.bottom button[data-view="log"]{order:3;}
     nav.bottom button[data-view="sales"]{order:4;} nav.bottom button[data-view="more"]{order:5;}
+    nav.bottom button.nav-tab{color:#5B6676; font-size:11.5px; font-weight:500; gap:4px; min-height:56px;}
+    nav.bottom button.nav-tab .nav-ic{width:auto; height:28px; background:none !important;}
+    nav.bottom button.nav-tab .nav-ic .svgi, nav.bottom button.nav-tab .nav-ic .svgf{width:25px; height:25px;}
+    nav.bottom button.nav-tab.active{color:var(--p-g8); font-weight:600;}
+    nav.bottom button.nav-tab.active::after{content:''; position:absolute; bottom:2px; left:50%; width:34px; height:3px; border-radius:2px; background:var(--p-g8); transform:translateX(-50%);}
     nav.bottom button.nav-tab.nav-log .nav-tx{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;}
-    nav.bottom button.nav-tab.nav-log .nav-ic{width:56px; height:56px; border-radius:50%; margin-top:-24px; border:4px solid #fff; box-sizing:content-box; box-shadow:0 8px 18px rgba(2,41,23,.26);}
-    nav.bottom button.nav-tab.nav-log .nav-ic .svgi{width:26px; height:26px;}
+    nav.bottom button.nav-tab.nav-log .nav-ic{width:58px; height:58px; border-radius:50%; margin-top:-26px; background:#0B4A3B !important; color:#fff; border:5px solid #fff; box-sizing:content-box; box-shadow:0 8px 20px rgba(0,53,45,.28);}
+    nav.bottom button.nav-tab.nav-log .nav-ic .svgi{width:28px; height:28px; stroke-width:2.4;}
+    nav.bottom button.nav-tab.nav-log.active::after{display:none;}
   }
   @media (max-width:380px){
-    .ms-ringc{width:92px; height:92px;}
-    .ms-rc strong{font-size:21px;}
-    .ms-hero .ms-big{font-size:28px;}
-    .ms-kv{font-size:23px;}
+    .ms-hin{grid-template-columns:112px minmax(0,1fr); column-gap:20px; padding-inline:16px;}
+    .ms-hring{width:112px; height:112px;}
+    .ms-rc strong{font-size:24px;}
+    .ms-hfoot{padding-inline:16px;}
+    .ms-hfoot .ms-hd{font-size:14px;}
+    .ms-kv{font-size:22px;}
   }
 
-  /* ---- desktop ---- */
+  /* ---- desktop: the picture at 1440 × 1226 ---- */
   @media (min-width:1024px){
-    .nt-m, nav.bottom button.nav-sales{display:none;}
-    /* the top bar: quick find at the start (Today: in place of the title), then the actions */
+    :root{--sidebar-w:226px;}
+    body{background:var(--p-page);}
+    .nt-m, nav.bottom button.nav-sales, nav.bottom .nb-bar{display:none;}
+    /* the sidebar */
+    nav.bottom{background:linear-gradient(180deg, #013A31 0%, #013C33 40%, #05483B 62%, #034337 82%, #023F34 100%); overflow:hidden;}
+    nav.bottom .nav-brand{display:flex; flex-direction:column; align-items:flex-start; height:auto; padding:73px 0 0 40px; flex:none;}
+    [dir="rtl"] nav.bottom .nav-brand{padding:72px 39px 0 0;}
+    .nb-word{position:relative; font-size:35px; font-weight:700; letter-spacing:-.03em; color:#fff; line-height:1;}
+    .nb-word b{font-weight:700;}
+    .nb-mark{position:absolute; top:-31px; inset-inline-start:58%; width:28px; height:24px; background:var(--p-mint); -webkit-mask:url('icons/mark-green.png') center / contain no-repeat; mask:url('icons/mark-green.png') center / contain no-repeat; transform:rotate(-8deg);}
+    .nb-tag{font-size:11.5px; font-weight:500; color:#fff; margin-top:11px; letter-spacing:0; white-space:nowrap;}
+    nav.bottom .nav-scroll{flex:none; overflow:visible; padding:44px 14px 0 0;}
+    [dir="rtl"] nav.bottom .nav-scroll{padding:44px 0 0 14px;}
+    nav.bottom .nav-scroll > button, nav.bottom .nav-gh{position:relative; min-height:56px; padding:0 14px 0 30px; margin:2px 0; gap:28px; font-size:15.5px; font-weight:500; color:#DFF6EE; border-radius:0 13px 13px 0;}
+    [dir="rtl"] nav.bottom .nav-scroll > button, [dir="rtl"] nav.bottom .nav-gh{padding:0 30px 0 14px; border-radius:13px 0 0 13px;}
+    nav.bottom .nav-scroll > button .nav-ic, nav.bottom .nav-gh .nav-ic{width:26px; height:26px;}
+    nav.bottom .nav-scroll > button .nav-ic .svgf, nav.bottom .nav-gh .nav-ic .svgf, nav.bottom .nav-help .nav-ic .svgi{width:25px; height:25px;}
+    nav.bottom .nav-help .nav-ic .svgi{stroke-width:1.8;}
+    nav.bottom .nav-scroll > button.active, nav.bottom .nav-group.has-active:not(.open) > .nav-gh{background:linear-gradient(90deg, #0B6D50, #09684C 70%, #0A6A4E); color:#fff; font-weight:500;}
+    nav.bottom .nav-scroll > button.active::before, nav.bottom .nav-group.has-active:not(.open) > .nav-gh::before{content:''; position:absolute; inset-inline-start:0; top:2px; bottom:2px; width:5px; border-radius:0 4px 4px 0; background:var(--p-edge);}
+    [dir="rtl"] nav.bottom .nav-scroll > button.active::before, [dir="rtl"] nav.bottom .nav-group.has-active:not(.open) > .nav-gh::before{border-radius:4px 0 0 4px;}
+    nav.bottom .nav-scroll > button.nav-home.active .nav-ic{color:#F4E7A6;}
+    nav.bottom button.active:hover{background:linear-gradient(90deg, #0B6D50, #09684C 70%, #0A6A4E); color:#fff;}
+    nav.bottom .nav-gh .nav-chev{display:none; width:15px; height:15px; margin-inline-start:auto; transform:rotate(90deg); opacity:.6;}
+    nav.bottom .nav-group.open > .nav-gh .nav-chev{display:block; transform:rotate(-90deg);}
+    nav.bottom .nav-gb{display:none; margin:0 0 6px; margin-inline-start:42px; padding-inline-start:10px; border-inline-start:1px solid rgba(255,255,255,.14);}
+    nav.bottom .nav-group.open > .nav-gb{display:block;}
+    nav.bottom .nav-gb button{min-height:36px; padding:6px 10px; font-size:13.5px; color:#CFE9DF; border-radius:10px; gap:12px;}
+    nav.bottom .nav-gb button .nav-ic .svgi{width:17px; height:17px;}
+    nav.bottom .nav-gb button.active{background:rgba(106,235,164,.16); color:#fff;}
+    nav.bottom .nav-group + .nav-group{margin-top:0;}
+    nav.bottom .nav-sep{height:1px; background:rgba(223,246,238,.16); margin:13px 16px 20px 30px;}
+    [dir="rtl"] nav.bottom .nav-sep{margin:13px 30px 20px 16px;}
+    nav.bottom .nav-sep ~ .nav-group > .nav-gh, nav.bottom .nav-help{min-height:48px;}
+    nav.bottom #navDotToday{display:none !important;}
+    nav.bottom .nav-art{position:absolute; inset-inline:0; bottom:0; height:600px; pointer-events:none; z-index:0;}
+    nav.bottom .nav-scroll{position:relative; z-index:1;}
+    .na-waves{position:absolute; inset:0; width:100%; height:100%;}
+    [dir="rtl"] .na-waves{transform:scaleX(-1);}
+    .na-tooth{position:absolute; top:192px; inset-inline-start:76px; width:142px; height:166px; filter:drop-shadow(0 0 16px rgba(110,235,170,.32)) drop-shadow(0 10px 18px rgba(0,30,24,.35));}
+    .na-tx{position:absolute; top:369px; inset-inline-start:30px; margin:0; font-size:16.5px; font-weight:500; line-height:24.5px; color:#fff; letter-spacing:-.01em;}
+    /* the top bar: glass over the page, quick find, the bell, the account */
+    #app.wrap{position:relative;}
+    #app.wrap::before{content:''; position:absolute; top:0; inset-inline-end:0; width:min(760px, 62%); height:330px; pointer-events:none; z-index:0;
+      background:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20760%20330'%20preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient%20id='a'%20x1='0'%20y1='0'%20x2='1'%20y2='0'%3E%3Cstop%20offset='0'%20stop-color='#CFE7E2'%20stop-opacity='0'/%3E%3Cstop%20offset='.3'%20stop-color='#CFE7E2'%20stop-opacity='.9'/%3E%3Cstop%20offset='1'%20stop-color='#C7E3DD'/%3E%3C/linearGradient%3E%3ClinearGradient%20id='b'%20x1='0'%20y1='0'%20x2='0'%20y2='1'%3E%3Cstop%20offset='0'%20stop-color='#FFFFFF'%20stop-opacity='0'/%3E%3Cstop%20offset='1'%20stop-color='#F7F8FA'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath%20d='M40%200H760V330H700C570%20252%20430%20196%20330%20186C220%20176%20130%20120%2040%200Z'%20fill='url(#a)'/%3E%3Cpath%20d='M230%20236C410%20166%20590%20124%20760%20114'%20fill='none'%20stroke='#EEF7F4'%20stroke-width='22'%20stroke-opacity='.85'/%3E%3Cpath%20d='M150%20150C370%2092%20560%2072%20760%2064'%20fill='none'%20stroke='#E1F0EC'%20stroke-width='9'%20stroke-opacity='.9'/%3E%3Crect%20y='262'%20width='760'%20height='68'%20fill='url(#b)'/%3E%3C/svg%3E") right top / 100% 100% no-repeat;}
+    [dir="rtl"] #app.wrap::before{transform:scaleX(-1);}
+    header.top{z-index:var(--z-topbar); min-height:98px; padding:16px 58px 0 50px; align-items:center; gap:24px; background:rgba(247,248,251,.72); -webkit-backdrop-filter:blur(14px) saturate(140%); backdrop-filter:blur(14px) saturate(140%); border-bottom:none; border-end-end-radius:28px;
+      box-shadow:0 1px 0 rgba(16,24,40,.035), 0 8px 24px rgba(16,24,40,.035);}
+    [dir="rtl"] header.top{padding:16px 50px 0 58px;}
     body:not(.not-today) header.top .top-title{display:none;}
-    header.top{gap:16px;}
-    .top-search{display:flex; align-items:center; gap:10px; position:relative; flex:0 1 500px; min-width:220px; height:44px; padding:0 14px; margin-inline-end:auto; background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:var(--radius-md); color:var(--text-muted); box-shadow:var(--shadow-sm);}
-    .top-search > .svgi{width:18px; height:18px; flex-shrink:0;}
-    .top-search:focus-within{border-color:var(--border-strong); box-shadow:0 0 0 3px rgba(165,207,99,.35);}
-    .top-search input, .top-search input[type=search]{flex:1; min-width:0; height:100%; min-height:0; border:none; background:none; padding:0; font-size:14.5px; box-shadow:none; outline:none; color:var(--text-primary);}
+    .top-search{display:flex; align-items:center; gap:20px; position:relative; flex:0 1 504px; min-width:240px; height:53px; padding:0 14px 0 21px; margin-inline-end:auto; background:#F1F3F6; border:1px solid #E7EAEF; border-radius:27px; color:#5F6B7A;
+      box-shadow:inset 0 1px 2px rgba(16,24,40,.03);}
+    [dir="rtl"] .top-search{padding:0 21px 0 14px;}
+    .top-search > .svgi{width:19px; height:19px; flex-shrink:0; stroke-width:2.1; color:#4A5565;}
+    .top-search:focus-within{border-color:#B9D9CD; box-shadow:0 0 0 3px rgba(106,235,164,.28);}
+    .top-search input, .top-search input[type=search]{flex:1; min-width:0; height:100%; min-height:0; border:none; background:none; padding:0; font-size:15px; box-shadow:none; outline:none; color:var(--p-ink);}
+    .top-search input::placeholder{color:#5F6B7A; opacity:1;}
     .top-search input:focus{box-shadow:none; outline:none;}
-    .qf-list{position:absolute; top:calc(100% + 6px); inset-inline:0; background:var(--surface-card); border:1px solid var(--border-subtle); border-radius:14px; box-shadow:var(--shadow-lg); padding:6px; max-height:min(440px, 70vh); overflow:auto; z-index:30;}
+    .qf-k{display:inline-flex; align-items:center; justify-content:center; height:30px; padding:0 11px; border-radius:9px; background:#E4E8EE; color:#4A5565; font:inherit; font-size:13.5px; font-weight:500; letter-spacing:.04em; white-space:nowrap; flex-shrink:0;}
+    .top-actions{gap:34px;}
+    .top-bell .svgi{width:28px; height:28px;}
+    .bell-n{top:1px; inset-inline-end:1px;}
+    .userchip{gap:14px;}
+    header.top .stamp{width:46px; height:46px; font-size:17px;}
+    .top-user{display:flex; flex-direction:column; align-items:flex-start; line-height:1.3; white-space:nowrap;}
+    .top-name{font-size:15.5px; font-weight:600; color:var(--p-ink);}
+    .top-role{font-size:14px; color:#5F6B7A; margin-top:1px;}
+    .top-chev{display:block; margin-inline-start:18px;}
+    .qf-list{position:absolute; top:calc(100% + 8px); inset-inline:0; background:#fff; border:1px solid var(--p-line); border-radius:16px; box-shadow:0 18px 44px rgba(16,24,40,.16); padding:6px; max-height:min(440px, 70vh); overflow:auto; z-index:30;}
     .qf-list[hidden]{display:none;}
-    .qf-h{font-size:11.5px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; padding:8px 10px 4px;}
+    .qf-h{font-size:11.5px; font-weight:600; color:var(--p-muted); text-transform:uppercase; letter-spacing:.06em; padding:8px 10px 4px;}
     body.ar .qf-h{text-transform:none; font-size:12.5px;}
-    .qf-item{display:flex; align-items:center; gap:10px; width:100%; padding:7px 10px; border:none; background:none; border-radius:10px; text-align:start; font:inherit; color:var(--text-primary); cursor:pointer;}
-    .qf-item:hover, .qf-item.sel{background:var(--surface-page);}
-    .qf-ic{width:32px; height:32px; border-radius:9px; background:var(--brand-secondary-soft); color:var(--brand-primary); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+    .qf-item{display:flex; align-items:center; gap:10px; width:100%; padding:7px 10px; border:none; background:none; border-radius:10px; text-align:start; font:inherit; color:var(--p-ink); cursor:pointer;}
+    .qf-item:hover, .qf-item.sel{background:#F3F6F8;}
+    .qf-ic{width:32px; height:32px; border-radius:9px; background:var(--p-mint-soft); color:var(--p-g6); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
     .qf-ic .svgi{width:16px; height:16px;}
     .qf-t{display:flex; flex-direction:column; min-width:0;}
     .qf-t > span:first-child{font-weight:600; font-size:14px;}
-    .qf-s{font-size:12.5px; color:var(--text-muted);}
-    .qf-none{padding:14px; color:var(--text-muted); font-size:13.5px;}
-    /* the sidebar: the dashboard, then groups that open onto their entries */
-    nav.bottom .nav-scroll{padding-top:10px;}
-    nav.bottom .nav-scroll > button, nav.bottom .nav-gh{min-height:44px; padding:8px 14px; font-size:14.5px; margin:2px 0;}
-    nav.bottom .nav-gh .nav-chev{width:15px; height:15px; transform:rotate(90deg); opacity:.55; transition:transform var(--dur-fast) ease;}
-    nav.bottom .nav-group.open > .nav-gh .nav-chev{transform:rotate(-90deg);}
-    nav.bottom .nav-group + .nav-group{margin-top:0;}
-    nav.bottom .nav-gb{display:none; margin:2px 0 8px; margin-inline-start:23px; padding-inline-start:8px; border-inline-start:1px solid rgba(255,255,255,.12);}
-    nav.bottom .nav-group.open > .nav-gb{display:block;}
-    nav.bottom .nav-gb button{min-height:36px; padding:6px 10px; font-size:13.5px; color:var(--text-on-inverse);}
-    nav.bottom .nav-gb button .nav-ic .svgi{width:17px; height:17px;}
-    nav.bottom .nav-group.has-active:not(.open) > .nav-gh{background:rgba(165,207,99,.14); color:#fff;}
-    nav.bottom .nav-group.open > .nav-gh{color:#fff;}
-    nav.bottom .nav-sep{height:1px; background:rgba(255,255,255,.12); margin:12px 14px;}
-    nav.bottom .nav-brand{height:72px; padding:0 26px;}
-    nav.bottom .nav-brand img{height:26px;}
+    .qf-s{font-size:12.5px; color:var(--p-muted);}
+    .qf-none{padding:14px; color:var(--p-muted); font-size:13.5px;}
+    /* the content column: the picture's margins */
+    #app > .view{position:relative; z-index:1;}
+    body:not(.not-today) #app > .view#view-today{width:calc(100% - 66px); max-width:1320px; margin-inline-start:36px; margin-inline-end:auto; padding:31px 0 22px;}
     /* the head */
-    #view-today .ms-head{margin:0 0 20px; align-items:center;}
-    #view-today .ms-hello{font-size:30px;}
-    #view-today .ms-hr{flex:0 1 auto; justify-content:flex-end;}
-    #view-today .ms-switch{flex:none;}
-    .ms-per{display:block;}
-    /* the target card */
-    #view-today .ms-hero{padding:24px 28px;}
-    .ms-hin{grid-template-columns:auto minmax(0,1.1fr) minmax(0,1fr); gap:0 28px;}
-    .ms-hin > .ms-stats{grid-column:auto; display:block; margin:0; border-top:none; padding:0; padding-inline-start:26px; border-inline-start:1px solid rgba(255,255,255,.14);}
-    .ms-hin > .ms-stats > div{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; column-gap:12px; padding:8px 0; border-inline-start:none !important; padding-inline-start:0 !important; padding-inline-end:0;}
-    .ms-hin > .ms-stats > div + div{border-top:1px solid rgba(255,255,255,.1);}
-    .ms-hin > .ms-stats > div > .ms-l{font-size:13.5px;}
-    .ms-hin > .ms-stats > div > b{grid-column:2; font-size:18px; text-align:end; margin:0; white-space:nowrap;}
-    .ms-hin > .ms-stats > div > em{grid-column:1 / -1; text-align:end;}
-    .ms-hin > .ms-stats > div.fc{border:1.5px dashed rgba(165,207,99,.6) !important; border-radius:12px; padding:8px 12px !important; margin-top:8px;}
-    .ms-hin > .ms-stats .ms-m{white-space:nowrap;}
-    .ms-ringc{width:132px; height:132px; align-self:center;}
-    .ms-rc strong{font-size:30px;}
-    .ms-rc > span{font-size:12.5px;}
-    .ms-ringc.none{width:72px; height:72px; border-radius:20px;}
-    .ms-hero .ms-big{font-size:38px;}
-    /* the figure cards: four a row */
-    .ms-kpis{grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px;}
-    .ms-kc{flex-direction:row; gap:14px; padding:18px;}
-    .ms-kc .ms-tile{width:44px; height:44px; border-radius:50%;}
-    .ms-kc .ms-tile .svgi{width:21px; height:21px;}
-    .ms-kv{font-size:28px;}
-    /* the grid: the target card, the figures, the chart beside the leaderboard (a person: her performance),
-       then the advisor, the recent visits and the pace card, then the rest of the month and the day's lists */
-    .ms-grid{display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:20px; align-items:stretch;}
-    .ms-grid > *{grid-column:span 6; order:30;}
-    .ms-grid > #msSales, .ms-vperson > #targetCard, .ms-grid > #msKpis{grid-column:1 / -1;}
-    .ms-grid > #msSales, .ms-vperson > #targetCard{order:1;}
+    #view-today .ms-head{align-items:flex-start; margin:0 0 26px;}
+    #view-today .ms-hello{font-size:38px; letter-spacing:-.03em; line-height:1.15; gap:14px;}
+    .ms-wave{width:56px; height:56px; margin:-10px 0 -8px;}
+    #view-today .ms-subt{font-size:18px; margin-top:4px; letter-spacing:-.005em;}
+    #view-today .ms-per{margin:8px 17px 0 0;}
+    [dir="rtl"] #view-today .ms-per{margin:8px 0 0 17px;}
+    /* the grid: the picture's rows, then the rest of the month and the day's lists */
+    .ms-grid{display:grid; grid-template-columns:repeat(40, minmax(0,1fr)); column-gap:16px; row-gap:26px; align-items:stretch;}
+    .ms-grid > *{grid-column:span 20; order:30;}
+    .ms-grid > #msSales, .ms-vperson > #targetCard > .ms-hero, .ms-grid > #msKpis{grid-column:1 / -1;}
+    .ms-grid > #msSales, .ms-vperson > #targetCard > .ms-hero{order:1;}
     .ms-grid > #msKpis{order:2;}
-    .ms-grid > #msChart{grid-column:1 / -1; order:3;}
-    .ms-vteam > #targetCard, .ms-vperson > #msWork{grid-column:1 / -1; order:4;}
-    .ms-vteam > #msNext, .ms-vperson > #msAdvisor{order:5;}
-    .ms-grid > #msRecentCard{order:6;}
-    .ms-grid > #msStatus{order:7;}
-    .ms-vteam > #msWork, .ms-vperson > #msNext{order:8;}
-    .ms-grid > #msBrands{order:9;} .ms-grid > #msCust{order:10;} .ms-grid > #msPlanCard{order:11;} .ms-grid > #msDueCard{order:12;} .ms-grid > #msTaskCard{order:13;}
-    .ms-vperson > #msSales, .ms-vteam > #msAdvisor{display:none;}
-    .ms-vperson > #targetCard > .ms-card{height:auto;}
-    .ms-people .ms-person{grid-template-columns:26px 36px minmax(0,1fr) minmax(64px,120px) 52px; gap:3px 12px;}
-    .ms-people .ms-person > .ms-bar, .ms-people .ms-person > div:not([class]){grid-column:4; grid-row:1;}
-    .ms-people .ms-person > .p{grid-column:5;}
-    .ms-people .ms-person > .s, .ms-people .ms-person > .ms-fine{grid-column:3 / 6;}
-    .ms-people .ms-person > .av{width:36px; height:36px;}
-    #view-today .ms-card > .ms-ct, .ms-fold > .ms-ct .ms-t > span:first-child{color:var(--text-primary) !important; font-size:16px !important;}
+    .ms-grid > #msChart{grid-column:span 21; order:3;}
+    .ms-vteam > #targetCard > .ms-people, .ms-vperson > #msNext{grid-column:span 19; order:4;}
+    .ms-grid > #msAdvisor{grid-column:span 16; order:5;}
+    .ms-grid > #msRecentCard{grid-column:span 14; order:6;}
+    .ms-grid > #msPhoto{grid-column:span 10; order:7; display:block;}
+    .ms-vteam > #msNext{order:8;} .ms-grid > #msStatus{order:9;} .ms-grid > #msWork{order:10;}
+    .ms-grid > #msDaily{order:11; grid-column:1 / -1;} .ms-grid > #msBrands{order:12;} .ms-grid > #msCust{order:13;}
+    #targetCard > .ms-cxcard{order:14; grid-column:1 / -1;}
+    .ms-grid > #msPlanCard{order:15;} .ms-grid > #msDueCard{order:16;} .ms-grid > #msTaskCard{order:17; grid-column:1 / -1;}
+    .ms-vteam > #msNext, .ms-grid > #msStatus, .ms-grid > #msWork{grid-column:span 40;}
+    .ms-vperson > #msSales{display:none;}
+    /* the target card: the picture's three columns and the faded bars */
+    #view-today .ms-hero{min-height:233px;}
+    .ms-hin{grid-template-columns:306fr 1px 362fr 1px 467fr; column-gap:0; padding:0; min-height:233px; align-items:start;}
+    .ms-hringw{padding:21px 0 0 42px;}
+    [dir="rtl"] .ms-hringw{padding:21px 42px 0 0;}
+    .ms-hring{width:190px; height:190px;}
+    .ms-ring circle{stroke-width:15;}
+    .ms-hsep{display:block; align-self:stretch; width:1px; background:rgba(255,255,255,.24); margin:27px 0 28px;}
+    .ms-hcol.m1{padding:25px 24px 0 56px;}
+    [dir="rtl"] .ms-hcol.m1{padding:25px 56px 0 24px;}
+    .ms-hcol.m2{padding:33px 24px 0 59px;}
+    [dir="rtl"] .ms-hcol.m2{padding:33px 59px 0 24px;}
+    .ms-hcol .ms-hl + .ms-hv{margin-top:6px;}
+    .ms-hcol.m1 .ms-hl.hach{margin-top:24px;}
+    .ms-hcol.m1 .ms-hrem{display:none;}
+    .ms-hcol.m2 .ms-hv{font-size:29px;}
+    .ms-hfoot{display:none;}
+    .ms-hdeco{width:160px; height:166px; inset-inline-end:32px; bottom:26px;}
+    .ms-hnote{margin-top:10px;}
+    .ms-hero .ms-fine.ms-src2{position:absolute; inset-inline-start:43px; bottom:10px; font-size:11.5px; opacity:.8;}
+    /* the figure cards: four a row, the icon in its mint circle, the sparkline at the corner */
+    .ms-kpis{grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px;}
+    .ms-kc{flex-direction:row; align-items:flex-start; text-align:start; padding:14px 16px 14px 16px; height:150px; gap:15px;}
+    .ms-kc .ms-kic{width:56px; height:56px; border-radius:50%; background:var(--p-mint-soft); margin:0; flex-shrink:0;}
+    .ms-kc .ms-kic .svgi{width:27px; height:27px;}
+    .ms-kb{align-items:flex-start; padding-top:8px;}
+    .ms-kl{font-size:16px;}
+    .ms-kl small{display:block; font-weight:400;}
+    .ms-kv{font-size:32px; margin-top:6px; letter-spacing:-.03em; line-height:1.15;}
+    .ms-kd{margin-top:9px;}
+    .ms-spark{display:block;}
+    /* Sales Performance beside the leaderboard */
+    .ms-chart{padding:22px 20px 14px 21px !important;}
+    #view-today .ms-chart > .ms-ct{margin-bottom:4px;}
+    .ms-people{padding:22px 22px 12px !important;}
+    #view-today .ms-people > .ms-ct{margin-bottom:12px;}
+    .ms-people .ms-lbw{border-top:1px solid var(--p-line);}
+    .ms-people .ms-lb{padding:10px 0; min-height:65px;}
+    /* the advisor, the recent activity, the photo */
+    .ms-adv{padding:19px 22px 0 13px !important; display:flex; flex-direction:column;}
+    [dir="rtl"] .ms-adv{padding:19px 13px 0 22px !important;}
+    #view-today .ms-adv .ms-ct{margin:0 0 6px 9px;}
+    [dir="rtl"] #view-today .ms-adv .ms-ct{margin:0 9px 6px 0;}
+    .ms-advb{grid-template-columns:120px minmax(0,1fr); column-gap:10px; align-items:end; flex:1;}
+    .ms-robot{width:126px; max-width:none; margin:0 0 -2px -4px;}
+    .ms-advt{padding:0 0 24px; align-self:start; margin-top:4px;}
+    .ms-recent{padding:20px 20px 12px !important;}
+    #view-today .ms-recent > .ms-ct{margin-bottom:10px;}
+    #view-today .ms-photo{min-height:220px;}
+    /* the cards below the picture */
+    .ms-grid > #msWork .ms-stats, .ms-grid > #msNext .ms-items{max-width:900px;}
   }
   @media (min-width:1280px){
-    .ms-grid > #msChart{grid-column:span 7;}
-    .ms-vteam > #targetCard, .ms-vperson > #msWork{grid-column:span 5;}
-    .ms-ringc{width:148px; height:148px;}
-    .ms-rc strong{font-size:34px;}
+    :root{--sidebar-w:238px;}
   }
-  @media (min-width:1440px){
-    .ms-grid > *{grid-column:span 4;}
-    .ms-grid > #msChart{grid-column:span 7;}
-    .ms-vteam > #targetCard, .ms-vperson > #msWork{grid-column:span 5;}
+  @media (min-width:1024px) and (max-width:1279px){
+    nav.bottom .nav-brand{padding:56px 0 0 30px;}
+    .nb-word{font-size:29px;}
+    nav.bottom .nav-scroll > button, nav.bottom .nav-gh{padding-inline-start:24px; gap:18px;}
+    header.top{padding:0 28px 0 32px; gap:18px;}
+    .top-actions{gap:20px;}
+    body:not(.not-today) #app > .view#view-today{width:calc(100% - 48px); margin-inline-start:24px;}
+    .ms-grid > #msChart, .ms-vteam > #targetCard > .ms-people, .ms-vperson > #msNext{grid-column:1 / -1;}
+    .ms-grid > #msAdvisor{grid-column:span 21;} .ms-grid > #msRecentCard{grid-column:span 19;} .ms-grid > #msPhoto{display:none;}
+    .ms-hin{grid-template-columns:250fr 1px 330fr 1px 380fr;}
+    .ms-hringw{padding-inline-start:30px;}
+    .ms-hcol.m1{padding-inline-start:34px;} .ms-hcol.m2{padding-inline-start:34px;}
+    .ms-hv{font-size:26px;} .ms-hv small{font-size:18px;} .ms-hcol.m2 .ms-hv{font-size:26px;}
+    .ms-hdeco{display:none;}
+    .ms-kc{flex-direction:column; gap:8px;}
+    .ms-spark{width:80px; height:32px;}
   }
+  @media (min-width:1280px) and (max-width:1439px){
+    .ms-hcol.m1{padding-inline-start:44px;} .ms-hcol.m2{padding-inline-start:44px;}
+    .ms-hdeco{width:130px; inset-inline-end:20px;}
+    .ms-spark{width:84px;}
+    .ms-kc .ms-kic{width:50px; height:50px;}
+  }
+  /* a shorter laptop screen: the sidebar's art shrinks, then leaves (the rows always come first) */
+  @media (min-width:1024px) and (max-height:1150px){
+    nav.bottom .nav-art{height:470px;}
+    .na-tooth{top:116px; width:112px; height:131px; inset-inline-start:90px;}
+    .na-tx{top:262px;}
+  }
+  @media (min-width:1024px) and (max-height:1000px){
+    nav.bottom .nav-art{height:300px;}
+    .na-tooth{display:none;}
+    .na-tx{top:150px;}
+  }
+  @media (min-width:1024px) and (max-height:900px){
+    nav.bottom .nav-brand{padding-top:40px;}
+    nav.bottom .nav-scroll{padding-top:26px;}
+    nav.bottom .nav-scroll > button, nav.bottom .nav-gh{min-height:46px;}
+    nav.bottom .nav-sep ~ .nav-group > .nav-gh, nav.bottom .nav-help{min-height:42px;}
+    nav.bottom .nav-art{height:220px;}
+    .na-tx{top:110px;}
+  }
+  @media (min-width:1024px) and (max-height:790px){ nav.bottom .nav-art{display:none;} }
   /* === END DASHBOARD === */
 
   /* === SCREENS A === */
@@ -1367,6 +1609,25 @@
   <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <!-- the home screen (owner's picture, 15 Nov): solid navigation icons (drawn with class svgf) and the cards' line icons -->
+  <symbol id="i-nhome" viewBox="0 0 24 24"><path d="M12.7 2.9a1.1 1.1 0 0 0-1.4 0L2.9 10a1 1 0 0 0 .64 1.77H5V20a1 1 0 0 0 1 1h4v-5.4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V21h4a1 1 0 0 0 1-1v-8.23h1.46A1 1 0 0 0 21.1 10z"/></symbol>
+  <symbol id="i-nusers" viewBox="0 0 24 24"><circle cx="9" cy="7.6" r="3.7"/><path d="M1.8 19.3c0-3.7 3.2-6.4 7.2-6.4s7.2 2.7 7.2 6.4c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/><circle cx="17.2" cy="8.4" r="3"/><path d="M17.7 13.2c2.7.3 4.5 2.4 4.5 5.2 0 .6-.4 1-1 1h-3.6c.1-.4.1-.8.1-1.2 0-1.9-.7-3.6-1.9-4.9.6-.1 1.2-.1 1.9-.1z"/></symbol>
+  <symbol id="i-nbars" viewBox="0 0 24 24"><rect x="3" y="11" width="4.6" height="10" rx="1.1"/><rect x="9.7" y="3.5" width="4.6" height="17.5" rx="1.1"/><rect x="16.4" y="7.5" width="4.6" height="13.5" rx="1.1"/></symbol>
+  <symbol id="i-ncal" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M7 2.4a1 1 0 0 1 1 1V5h8V3.4a1 1 0 1 1 2 0V5h1.1A2.4 2.4 0 0 1 21.5 7.4v11.2A2.4 2.4 0 0 1 19.1 21H4.9a2.4 2.4 0 0 1-2.4-2.4V7.4A2.4 2.4 0 0 1 4.9 5H6V3.4a1 1 0 0 1 1-1zM4.5 10v8.6c0 .2.2.4.4.4h14.2c.2 0 .4-.2.4-.4V10z"/><rect x="6.4" y="11.8" width="2.8" height="2.6" rx=".6"/><rect x="10.6" y="11.8" width="2.8" height="2.6" rx=".6"/><rect x="14.8" y="11.8" width="2.8" height="2.6" rx=".6"/><rect x="6.4" y="15.4" width="2.8" height="2.6" rx=".6"/><rect x="10.6" y="15.4" width="2.8" height="2.6" rx=".6"/></symbol>
+  <symbol id="i-nspark" viewBox="0 0 24 24"><path d="M12 1.8l2 6.3a2.4 2.4 0 0 0 1.6 1.6l6.3 2-6.3 2a2.4 2.4 0 0 0-1.6 1.6l-2 6.3-2-6.3a2.4 2.4 0 0 0-1.6-1.6l-6.3-2 6.3-2a2.4 2.4 0 0 0 1.6-1.6z"/></symbol>
+  <symbol id="i-npie" viewBox="0 0 24 24"><path d="M10.8 3.1A9 9 0 1 0 20.9 13.2H10.8z"/><path d="M13 1.9v9.1h9.1A9.1 9.1 0 0 0 13 1.9z"/></symbol>
+  <symbol id="i-ngear" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M13.9 2.2l.4 2.4a7.7 7.7 0 0 1 1.9 1.1l2.3-.9 1.9 3.3-1.9 1.5a7.8 7.8 0 0 1 0 2.2l1.9 1.5-1.9 3.3-2.3-.9a7.7 7.7 0 0 1-1.9 1.1l-.4 2.4h-3.8l-.4-2.4a7.7 7.7 0 0 1-1.9-1.1l-2.3.9-1.9-3.3 1.9-1.5a7.8 7.8 0 0 1 0-2.2L3.6 8.1l1.9-3.3 2.3.9a7.7 7.7 0 0 1 1.9-1.1l.4-2.4zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z"/></symbol>
+  <symbol id="i-nhelp" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.3.8c0 1.9-2.7 2.3-2.7 4.1"/><path d="M12 17.4h.01"/></symbol>
+  <symbol id="i-cal2" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/><path d="M8 13.6h.01M12 13.6h.01M16 13.6h.01M8 17.1h.01M12 17.1h.01"/></symbol>
+  <symbol id="i-clip2" viewBox="0 0 24 24"><path d="M9 4H7.2A2.2 2.2 0 0 0 5 6.2v12.6A2.2 2.2 0 0 0 7.2 21h9.6a2.2 2.2 0 0 0 2.2-2.2V6.2A2.2 2.2 0 0 0 16.8 4H15"/><rect x="9" y="2.5" width="6" height="3.6" rx="1.1"/><path d="M9 11h6M9 15h4"/></symbol>
+  <symbol id="i-trend2" viewBox="0 0 24 24"><path d="M3 16.5l5.5-5.5 4 4L20 7.5"/><path d="M14.5 7.5H20V13"/><path d="M3 20.5h18"/></symbol>
+  <symbol id="i-crown" viewBox="0 0 24 24"><path d="M3.5 8.2l4.3 3.9L12 5.6l4.2 6.5 4.3-3.9-1.7 9.6H5.2z"/><path d="M5.4 20.4h13.2"/></symbol>
+  <symbol id="i-checkc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor" stroke="none"/><path d="M7.6 12.3l3 3 5.9-6.2" stroke="#FFFFFF" stroke-width="2.3"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21.2s-6.6-5.7-6.6-11.1a6.6 6.6 0 0 1 13.2 0c0 5.4-6.6 11.1-6.6 11.1z"/><circle cx="12" cy="10.1" r="2.5"/></symbol>
+  <symbol id="i-arrowr" viewBox="0 0 24 24"><path d="M5 12h14M13.5 6.5 19 12l-5.5 5.5"/></symbol>
+  <symbol id="i-chevd" viewBox="0 0 24 24"><path d="M6.5 9.5 12 15l5.5-5.5"/></symbol>
+  <symbol id="i-spark2" viewBox="0 0 24 24"><path d="M10.2 3.6l1.5 4.6a2.4 2.4 0 0 0 1.5 1.5l4.6 1.5-4.6 1.5a2.4 2.4 0 0 0-1.5 1.5l-1.5 4.6-1.5-4.6a2.4 2.4 0 0 0-1.5-1.5L2.6 11.2l4.6-1.5a2.4 2.4 0 0 0 1.5-1.5z"/><path d="M18.6 2.8v4.2M16.5 4.9h4.2"/></symbol>
+  <symbol id="i-nbag" viewBox="0 0 24 24"><path d="M7 7.5V7a5 5 0 0 1 10 0v.5"/><path d="M4.6 7.5h14.8l-1 12.1a1.6 1.6 0 0 1-1.6 1.4H7.2a1.6 1.6 0 0 1-1.6-1.4z"/><path d="M9 11v.4a3 3 0 0 0 6 0V11"/></symbol>
 </svg>
 
 <div class="gate" id="gate">
@@ -1398,12 +1659,13 @@
 </div>
 
 <div class="wrap" id="app" style="display:none;">
-  <!-- The top bar: the page's title (Today: the greeting and the date), then language and the account.
-       It is inside #app, so the sign-in screen and the full-screen report hide it with the app. -->
+  <!-- The top bar. A view other than Today: its title. Today: on a phone the brand (wordmark and tagline), on a laptop
+       quick find (Ctrl/⌘+K). Then the bell (the follow-ups due) and the account: initials, name and role; its menu holds
+       the language, Log a visit, the password and Sign out. Inside #app: the sign-in screen and the full report hide it. -->
   <header class="top">
     <div class="top-title">
       <img class="logo" src="icons/mark-green.png" alt="UltraMed">
-      <img class="logo-word" src="icons/logo-green.png" alt="UltraMed">
+      <div class="top-brand" role="img" aria-label="UltraMed"><span class="tb-word" data-notr>Ultra<b>Med</b></span><span class="tb-tag">Better Oral Care. Together.</span></div>
       <div class="top-text">
         <div class="top-page" id="topTitle">Today</div>
         <h1 id="greeting">Field Ops</h1>
@@ -1413,17 +1675,17 @@
     <!-- Quick find (wide screens): the clinics, doctors and products this phone already holds; each opens its own screen. -->
     <div class="top-search" role="search">
       <svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg>
-      <input type="search" id="quickFind" autocomplete="off" placeholder="Search clinics, doctors, or products…" aria-label="Quick find" oninput="quickFind(this.value)" onfocus="quickFind(this.value)" onkeydown="quickFindKey(event)" onblur="setTimeout(qfClose, 180)">
+      <input type="search" id="quickFind" autocomplete="off" placeholder="Search clinics, doctors, or products…" aria-label="Quick find" aria-keyshortcuts="Control+K Meta+K" oninput="quickFind(this.value)" onfocus="quickFind(this.value)" onkeydown="quickFindKey(event)" onblur="setTimeout(qfClose, 180)">
+      <kbd class="qf-k" id="quickFindKey" data-notr aria-hidden="true">Ctrl K</kbd>
       <div class="qf-list" id="quickFindList" role="listbox" hidden></div>
     </div>
     <div class="top-actions">
-      <button class="top-cta" onclick="switchView('log')"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg><span>Log visit</span></button>
-      <button class="top-lang" onclick="toggleUiLang()" aria-label="Language"><svg class="svgi" aria-hidden="true"><use href="#i-globe"/></svg><span id="topLangTx" data-notr>ع</span></button>
       <button class="top-bell" onclick="bellOpen()" aria-label="Follow-ups due" title="Follow-ups due"><svg class="svgi" aria-hidden="true"><use href="#i-bell"/></svg><span class="bell-n" id="bellCount" data-notr hidden></span></button>
-      <div class="userchip" onclick="openAccountMenu()" aria-label="Account menu">
-        <div class="top-user"><span class="top-name" id="topUserName" data-notr></span><span class="top-role" id="topUserRole"></span></div>
-        <div class="stamp" id="headerStamp">•••<div class="dot" id="headerDot"></div></div>
-      </div>
+      <button class="userchip" onclick="openAccountMenu()" aria-label="Account menu" aria-haspopup="dialog">
+        <span class="stamp" id="headerStamp">•••<span class="dot" id="headerDot"></span></span>
+        <span class="top-user"><span class="top-name" id="topUserName" data-notr></span><span class="top-role" id="topUserRole"></span></span>
+        <svg class="svgi top-chev" aria-hidden="true"><use href="#i-chevd"/></svg>
+      </button>
     </div>
   </header>
 
@@ -1433,26 +1695,26 @@
          A rep sees only her own; the supervisor sees the team and opens any person's own screen.
          Cards are drawn by renderToday (05-today-calendar.js); the shells below keep the inputs that must survive a redraw. -->
     <div class="ms-head" id="msHead">
-      <div class="ms-hi"><div class="ms-date" id="msDate"></div><div class="ms-hello" id="msHello"></div></div>
-      <div class="ms-src" id="msSource"></div>
-      <div class="ms-hr">
-        <div class="ms-switch" id="msSwitch" role="tablist"></div>
-        <div class="ms-who" id="msWho"></div>
-        <div class="ms-per" id="msPeriod"></div>
-      </div>
+      <div class="ms-hi"><h2 class="ms-hello" id="msHello"></h2><div class="ms-subt" id="msSubtitle"></div></div>
+      <div class="ms-per" id="msPeriod"></div>
       <div class="ms-whose" id="msWhose" style="display:none;"></div>
     </div>
     <div id="erpNudge" style="display:none;"></div>
     <div id="visitsNudge" style="display:none;"></div>
+    <!-- The owner's picture (15 Nov): the target card, the four figures, Sales Performance beside the leaderboard (a person:
+         her next actions), the sales advisor, the recent activity and the clinic photo; then, in the same cards, everything
+         else the screen has (needs, pace, visits & orders, the month day by day, brands, customers, the day's lists). -->
     <div class="ms-grid ms-vteam" id="msGrid">
       <section class="ms-card ms-hero" id="msSales"></section>
       <div id="targetCard"></div>
       <section class="ms-kpis" id="msKpis"></section>
-      <section class="ms-card" id="msWork"></section>
-      <section class="ms-card" id="msNext"></section>
+      <section class="ms-card ms-chart" id="msChart"></section>
       <section class="ms-card ms-adv" id="msAdvisor"></section>
-      <section class="ms-card ms-laptop ms-chart" id="msChart"></section>
+      <section class="ms-card ms-next" id="msNext"></section>
+      <section class="ms-card ms-photo" id="msPhoto" aria-hidden="true"><p>Driving Better Oral Care Together</p><i></i></section>
       <section class="ms-card ms-status" id="msStatus"></section>
+      <section class="ms-card" id="msWork"></section>
+      <section class="ms-card ms-laptop ms-daily" id="msDaily"></section>
       <section class="ms-card ms-laptop" id="msBrands"></section>
       <section class="ms-card ms-laptop" id="msCust"></section>
       <section class="ms-card ms-rows" id="msRows"></section>
@@ -1481,8 +1743,8 @@
           <div id="occasionsCard"></div>
         </div>
       </section>
-      <section class="ms-card ms-fold" id="msRecentCard">
-        <div class="ms-ct" onclick="msFold('msRecentCard')"><span class="ms-tile t-lime" aria-hidden="true"><svg class="svgi"><use href="#i-clock"/></svg></span><span class="ms-t"><span>Recent visits</span><span class="ms-sum" id="msRecentSum"></span></span><span class="ms-act"><span class="link" onclick="event.stopPropagation(); switchView('log')">See all</span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
+      <section class="ms-card ms-fold ms-recent" id="msRecentCard">
+        <div class="ms-ct" onclick="msFold('msRecentCard')"><span class="ms-tile t-lime" aria-hidden="true"><svg class="svgi"><use href="#i-clock"/></svg></span><span class="ms-t"><span>Recent Activity</span><span class="ms-sum" id="msRecentSum"></span></span><span class="ms-act"><span class="link ms-va" onclick="event.stopPropagation(); switchView('log')"><span>View All</span><svg class="svgi" aria-hidden="true"><use href="#i-arrowr"/></svg></span><svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg></span></div>
         <div class="ms-body"><div id="recentVisits"></div></div>
       </section>
     </div>
@@ -1800,22 +2062,23 @@
      From 1024 px it is the sidebar: every destination, in the groups the More screen uses on a phone.
      data-sup = supervisor only (renderAll shows them to a supervisor; a rep never sees them). -->
 <nav class="bottom" id="bottomNav" style="display:none;" aria-label="Main navigation">
-  <!-- One navigation for every width. From 1024 px the deep-green sidebar: the dashboard, then groups that open onto
-       every existing entry (the group of the open screen opens by itself). Below 1024 px only the .nav-tab buttons show,
-       as the bottom bar: Home · Customers · (+) Log visit · Sales · More (CSS order). -->
-  <div class="nav-brand"><img src="icons/logo-white.png" alt="UltraMed"></div>
+  <!-- One navigation for every width. From 1024 px the deep-green sidebar of the owner's picture (15 Nov): the brand, the
+       dashboard, groups that open onto every existing entry (the group of the open screen opens by itself), Help & Support,
+       and the picture's art at the foot (a glass tooth, waves). Below 1024 px only the .nav-tab buttons show, as the bottom
+       bar: Home · Customers · (+) Log visit · Sales · More (CSS order). -->
+  <div class="nav-brand" role="img" aria-label="UltraMed"><span class="nb-word" data-notr>Ultra<b>Med</b><i class="nb-mark" aria-hidden="true"></i></span><span class="nb-tag">Better Oral Care. Together.</span></div>
   <div class="nav-scroll">
-    <button class="nav-tab nav-home active" data-view="today" onclick="switchView('today')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-home"/></svg></span><span class="nav-tx"><span class="nt-d">Dashboard</span><span class="nt-m">Home</span></span><span class="navdot" id="navDotToday"></span></button>
+    <button class="nav-tab nav-home active" data-view="today" onclick="switchView('today')"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-nhome"/></svg></span><span class="nav-tx"><span class="nt-d">Dashboard</span><span class="nt-m">Home</span></span><span class="navdot" id="navDotToday"></span></button>
     <div class="nav-group" data-g="customers">
-      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-users"/></svg></span><span class="nav-tx">Customers</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-nusers"/></svg></span><span class="nav-tx">Customers</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <div class="nav-gb">
-        <button class="nav-tab nav-cust" data-view="clinics" onclick="switchView('clinics')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-building"/></svg></span><span class="nav-tx"><span class="nt-d">Clinics</span><span class="nt-m">Customers</span></span></button>
+        <button class="nav-tab nav-cust" data-view="clinics" onclick="switchView('clinics')"><span class="nav-ic"><svg class="svgi nb-line" aria-hidden="true"><use href="#i-building"/></svg><svg class="svgi nb-bar" aria-hidden="true"><use href="#i-users"/></svg></span><span class="nav-tx"><span class="nt-d">Clinics</span><span class="nt-m">Customers</span></span></button>
         <button data-view="doctors" data-tab="db" onclick="ddTab='db'; switchView('doctors')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg></span><span class="nav-tx">Doctors database</span></button>
         <button onclick="openDoctorRecords()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-clipboard"/></svg></span><span class="nav-tx">Doctor records</span></button>
       </div>
     </div>
     <div class="nav-group" data-g="sales">
-      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="nav-tx">Sales</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-nbars"/></svg></span><span class="nav-tx">Sales</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <div class="nav-gb">
         <button data-view="products" onclick="switchView('products')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-package"/></svg></span><span class="nav-tx">Products &amp; prices</span></button>
         <button data-view="clanalysis" onclick="switchView('clanalysis')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pie"/></svg></span><span class="nav-tx">Clinic sales analysis</span></button>
@@ -1824,7 +2087,7 @@
       </div>
     </div>
     <div class="nav-group" data-g="field">
-      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg></span><span class="nav-tx">Field operations</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-ncal"/></svg></span><span class="nav-tx">Field Operations</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <div class="nav-gb">
         <button class="nav-tab nav-log" data-view="log" onclick="switchView('log')" aria-label="Log visit"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-plus"/></svg></span><span class="nav-tx">Log visit</span></button>
         <button data-view="calendar" onclick="switchView('calendar')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-calendar"/></svg></span><span class="nav-tx">Calendar</span></button>
@@ -1833,7 +2096,7 @@
       </div>
     </div>
     <div class="nav-group" data-g="intel">
-      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-compass"/></svg></span><span class="nav-tx">Intelligence</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-nspark"/></svg></span><span class="nav-tx">Intelligence</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <div class="nav-gb">
         <button onclick="openKpiScorecard()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-target"/></svg></span><span class="nav-tx">KPI scorecard</span></button>
         <button onclick="openMonthByMonth()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-trend"/></svg></span><span class="nav-tx">Month by month</span></button>
@@ -1844,22 +2107,41 @@
     </div>
     <div class="nav-sep"></div>
     <div class="nav-group" data-g="reports">
-      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-pie"/></svg></span><span class="nav-tx">Reports</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-npie"/></svg></span><span class="nav-tx">Reports</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <div class="nav-gb">
         <button data-view="reports" onclick="switchView('reports')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-chart"/></svg></span><span class="nav-tx">Report</span></button>
         <button onclick="openExport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-share"/></svg></span><span class="nav-tx">Export &amp; share</span></button>
         <button data-sup hidden onclick="openWeeklyDeck()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-file"/></svg></span><span class="nav-tx">Weekly management deck</span></button>
       </div>
     </div>
-    <div class="nav-group" data-g="mgmt" data-sup hidden>
-      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="nav-tx">Management</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
+    <div class="nav-group" data-g="settings">
+      <button class="nav-gh" onclick="navGroup(this)" aria-expanded="false"><span class="nav-ic"><svg class="svgf" aria-hidden="true"><use href="#i-ngear"/></svg></span><span class="nav-tx">Settings</span><svg class="svgi nav-chev" aria-hidden="true"><use href="#i-chev"/></svg></button>
       <div class="nav-gb">
-        <button onclick="openErpImport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nav-tx">ERP import</span></button>
-        <button onclick="openAdminPanel()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="nav-tx">Admin panel</span></button>
+        <button data-sup hidden onclick="openErpImport()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-download"/></svg></span><span class="nav-tx">ERP import</span></button>
+        <button data-sup hidden onclick="openAdminPanel()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-settings"/></svg></span><span class="nav-tx">Admin panel</span></button>
+        <button onclick="openAccountMenu()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-globe"/></svg></span><span class="nav-tx">Account &amp; language</span></button>
       </div>
     </div>
-    <button class="nav-tab nav-sales" data-view="sales" onclick="openSalesHub()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-bag"/></svg></span><span class="nav-tx">Sales</span></button>
+    <button class="nav-help" onclick="openHelp()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-nhelp"/></svg></span><span class="nav-tx">Help &amp; Support</span></button>
+    <button class="nav-tab nav-sales" data-view="sales" onclick="openSalesHub()"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-nbag"/></svg></span><span class="nav-tx">Sales</span></button>
     <button class="nav-tab" data-view="more" onclick="switchView('more')"><span class="nav-ic"><svg class="svgi" aria-hidden="true"><use href="#i-more"/></svg></span><span class="nav-tx">More</span><span class="navdot" id="navDotTeam"></span></button>
+  </div>
+  <div class="nav-art" aria-hidden="true">
+    <svg class="na-waves" viewBox="0 0 240 600" preserveAspectRatio="none" focusable="false">
+      <defs>
+        <linearGradient id="naW1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#5FD3A0" stop-opacity=".05"/><stop offset=".5" stop-color="#6FDDAB" stop-opacity=".13"/><stop offset="1" stop-color="#8FE8BF" stop-opacity=".2"/></linearGradient>
+        <linearGradient id="naW2" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#3FB98A" stop-opacity=".34"/><stop offset="1" stop-color="#1F8A66" stop-opacity=".14"/></linearGradient>
+        <radialGradient id="naGlow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#3CCB92" stop-opacity=".30"/><stop offset=".6" stop-color="#2BAA78" stop-opacity=".10"/><stop offset="1" stop-color="#2BAA78" stop-opacity="0"/></radialGradient>
+      </defs>
+      <path d="M-10 132C62 86 150 56 250 42V98C160 110 72 144-10 196Z" fill="url(#naW1)"/>
+      <path d="M-10 132C62 86 150 56 250 42" fill="none" stroke="#A6EECB" stroke-opacity=".2" stroke-width="1.6"/>
+      <path d="M-10 214C70 160 160 128 250 118" fill="none" stroke="#8FE6BF" stroke-opacity=".08" stroke-width="2"/>
+      <ellipse cx="146" cy="292" rx="165" ry="112" fill="url(#naGlow)"/>
+      <path d="M-10 600V548C70 498 160 472 250 460V600Z" fill="url(#naW2)"/>
+      <path d="M-10 600V578C80 532 170 510 250 504V600Z" fill="#0E5A45" fill-opacity=".55"/>
+    </svg>
+    <img class="na-tooth" src="img/tooth.webp" alt="" width="122" height="142">
+    <p class="na-tx">Together<br>for a healthier<br>smile</p>
   </div>
 </nav>
 
