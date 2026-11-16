@@ -1171,6 +1171,8 @@
   [dir="rtl"] .ms-people .ms-person.team{padding:10px 92px 0 0;}
   .ms-people .ms-person.team .s{grid-column:1 / -1;}
   .ms-lbhint{font-size:12.5px; color:var(--p-muted); margin:-2px 0 4px;}
+  /* the leaderboard's figures named once, over them at the row's end, in the rows' order (a phone shows no visits column: no line) */
+  .ms-lbcols{text-align:end; font-size:12px; font-weight:500; color:var(--p-muted); margin:0 0 4px; line-height:1.4;}
   .ms-people:not(.ms-all) .ms-lbhint{position:absolute !important; inset-inline:0; top:0; clip-path:inset(50%); opacity:0; pointer-events:none;}
   @media (hover:hover){ .ms-lb:hover .n{color:var(--p-green);} }
 
@@ -1262,7 +1264,7 @@
   .ms-week{border-top-color:var(--p-line);}
 
   /* the phone's own parts of the main screen (≤ 600 px, below): hidden on every wider screen */
-  .ms-fcw, .ms-dtl, .ms-nfoot, .ms-kc .ms-kplan, .ms-kc .ms-kover, .ph-s, .ms-kl .kl-p{display:none;}
+  .ms-fcw, .ms-dtl, .ms-nfoot, .ms-kc .ms-kplan, .ms-kc .ms-kover, .ph-s{display:none;}
 
   /* ---- phone and tablet: one column, in the picture's order ---- */
   @media (max-width:1023px){
@@ -1403,7 +1405,6 @@
     .ms-kc .ms-kic .svgi, .ms-kc .ms-kic .svgf{width:24px; height:24px;}
     .ms-kc .ms-kv{order:-1; font-size:24px; line-height:1.2; margin:0 0 2px;}
     .ms-kc .ms-kl{font-size:12.5px; font-weight:500; line-height:1.3;}
-    .ms-kc .ms-kl .kl-d, .ms-kc .ms-kl .kl-m{display:none;} .ms-kc .ms-kl .kl-p{display:inline;}   /* (only the follow-ups and the forecast cards have the two forms; the forecast card is not on a phone) */
     .ms-kc .ms-ks.why{font-size:11.5px; margin-top:3px;}
     .ms-kc .ms-kplan, .ms-kc .ms-kover{font-size:12px; margin-top:4px;}
     /* the team ranking: three compact rows — initials, name, the bar, %, the amount (View All: everyone, with the full words) */
@@ -1411,7 +1412,7 @@
     #view-today .ms-people > .ms-ct{font-size:16px; margin-bottom:6px; min-height:44px; flex-wrap:nowrap;}   /* View All and the ⓘ: 44 px thumb targets clear of the first row */
     #view-today .ms-people > .ms-ct small{display:none;}
     .ms-people .ms-lb{grid-template-columns:30px minmax(0,1fr) 52px 38px auto; column-gap:9px; min-height:50px; padding:5px 0;}
-    .ms-people .ms-lb .rk, .ms-people .ms-lb .v{display:none;}
+    .ms-people .ms-lb .rk, .ms-people .ms-lb .v, .ms-people .ms-lbcols{display:none;}
     .ms-people .ms-lb .bar{display:block; height:6px;}
     .ms-people .ms-lb .det{grid-column:2 / -1;}
     .ms-people .ms-person.team{padding-inline-start:39px;}
@@ -1731,14 +1732,14 @@
     body.on-today #view-today{color:#fff;
       --p-ink:#fff; --p-ink2:rgba(255,255,255,.95); --p-sub:rgba(255,255,255,.76); --p-muted:rgba(255,255,255,.72); --p-faint:rgba(255,255,255,.64);
       --p-line:rgba(255,255,255,.14); --p-mint-soft:rgba(106,235,164,.15); --p-g6:#6AEBA4; --p-g5:#56DE98; --p-green:#7FF0B6;
-      --p-up:#6AEBA4; --p-down:#FF9A8C; --p-warn:#FFC46B; --p-warn-soft:rgba(255,196,107,.15);
+      --p-up:#6AEBA4; --p-down:#FFB0A3; --p-warn:#FFC46B; --p-warn-soft:rgba(255,196,107,.15);
       --text-primary:#fff; --text-secondary:rgba(255,255,255,.82); --text-muted:rgba(255,255,255,.72); --border-subtle:rgba(255,255,255,.14); --border-default:rgba(255,255,255,.22);
       --ink:#fff; --ink-2:rgba(255,255,255,.82); --muted:rgba(255,255,255,.72); --soft:rgba(255,255,255,.55); --line:rgba(255,255,255,.14); --hair:rgba(255,255,255,.14);
       --surface:rgba(255,255,255,.06); --card:rgba(255,255,255,.06); --surface-card:rgba(255,255,255,.06); --paper:rgba(255,255,255,.06); --surface-sunken:rgba(255,255,255,.08); --track:rgba(255,255,255,.12);
       --accent:#7FF0B6; --accent-soft:rgba(106,235,164,.15);
-      --status-success:#6AEBA4; --status-success-soft:rgba(106,235,164,.15); --sage:#6AEBA4; --sage-ink:#6AEBA4; --sage-dim:rgba(106,235,164,.15);
-      --status-warning:#FFD08A; --status-warning-soft:rgba(255,196,107,.11); --amber-ink:#FFD08A; --amber-dim:rgba(255,196,107,.11); --gold-ink:#FFD08A;
-      --status-danger:#FFB2A6; --status-danger-soft:rgba(255,130,110,.11); --coral:#FFB2A6; --coral-ink:#FFB2A6; --coral-dim:rgba(255,130,110,.11);
+      --status-success:#8FF2BD; --status-success-soft:rgba(106,235,164,.08); --sage:#8FF2BD; --sage-ink:#8FF2BD; --sage-dim:rgba(106,235,164,.08);
+      --status-warning:#FFDCA6; --status-warning-soft:rgba(255,196,107,.06); --amber-ink:#FFDCA6; --amber-dim:rgba(255,196,107,.06); --gold-ink:#FFDCA6;
+      --status-danger:#FFD0C8; --status-danger-soft:rgba(255,130,110,.06); --coral:#FFD0C8; --coral-ink:#FFD0C8; --coral-dim:rgba(255,130,110,.06);
       --brand-primary:#fff; --brand-secondary-soft:rgba(165,207,99,.11); --page:rgba(255,255,255,.06); --green-dark:rgba(255,255,255,.92); --status-info:#A9C4FF; --purple:#A9C4FF; --purple-ink:#A9C4FF; --purple-dim:rgba(169,196,255,.15);}
     /* the glass */
     body.on-today #view-today .ms-card, body.on-today #view-today .ms-kc, body.on-today #view-today .ms-fc, body.on-today #view-today .ms-vchip, body.on-today #view-today .ms-period{
@@ -1797,7 +1798,7 @@
     body.on-today #view-today .ms-kc .ms-kic{color:var(--p-mint);}
     body.on-today #view-today .ms-kc .ms-kl{color:rgba(255,255,255,.8);}
     .ms-kc .ms-kplan{display:block; font-weight:600; color:var(--p-mint);}
-    .ms-kc .ms-kover{display:block; font-weight:700; color:#FF9A8C;}   /* "2 overdue" in red, tuned for glass */
+    .ms-kc .ms-kover{display:block; font-weight:700; color:#FFB0A3;}   /* "2 overdue" in red, tuned for glass */
     #view-today .ph-s{display:inline;}
     #view-today .ph-l{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
     .ms-hstrip .ms-hvis, .ms-hstrip.only-vis{position:absolute !important; inset-inline:0; top:0; margin:0; clip-path:inset(50%); opacity:0; pointer-events:none;}   /* her visits: the Today row */
@@ -1895,7 +1896,6 @@
     body.on-today .ms-kc .ms-kic{width:44px; height:44px;}
     body.on-today .ms-kc .ms-kic .svgi, body.on-today .ms-kc .ms-kic .svgf{width:24px; height:24px;}
     body.on-today .ms-kc .ms-kl{font-size:14px;}
-    body.on-today .ms-kc .ms-kl .kl-d, body.on-today .ms-kc .ms-kl .kl-m{display:none;} body.on-today .ms-kc .ms-kl .kl-p{display:inline;}
     body.on-today .ms-kv{font-size:30px;}
   }
   /* === END DASHBOARD === */

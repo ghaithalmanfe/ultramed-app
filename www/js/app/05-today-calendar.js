@@ -1132,6 +1132,7 @@ function renderTargetCard(v, m, P, sig){
   el.innerHTML = `<div class="ms-card ms-people${_msLbAll ? ' ms-all' : ''}">
     <div class="ms-ct"><span class="ms-ttl"><span>${msT('Team Leaderboard')} <small>${msT('(Your Team)')}</small></span></span><span class="ms-act"><button class="ms-va" aria-expanded="${_msLbAll}" onclick="event.stopPropagation(); msLbToggle(this)"><span>${_msLbAll ? 'Show less' : 'View All'}</span>${I('arrowr')}</button>${msInfo('sales')}</span></div>
     <div class="ms-lbhint">${msT('Tap a name to open their screen')} · <span>${monthName} target</span></div>
+    <div class="ms-lbcols" aria-hidden="true"><span>%</span> · <span>${msT('KWD')}</span> · <span>${msT('Visits')}</span></div>
     <div class="ms-lbw">${rows.join('')}</div>${teamRow}
     ${!withGoal.length && !P.some(p => p.t.visits > 0) ? `<div class="ms-note">${msT('Set sales and visit targets per rep in the admin panel to see live progress here.')} <span class="link" onclick="openAdminPanel()">${msT('Admin panel')}</span></div>` : ''}
     <div class="ms-lbx">${expT != null && withGoal.length ? `<div class="ms-fine">${msT('Expected by')} ${msDate(wdT.asOf)}: ${msPct(expT)} ${msT('of the target (the working days so far)')}.</div>` : ''}
@@ -1413,7 +1414,7 @@ function msKpisHTML(v, m, sig){
   const team = v.kind === 'team', own = v.kind === 'person' && v.own, D = m && msOf(m.D), H = (m && m.H) || {};
   const A = D ? (msOf(D.achievement) || {}) : {}, F = D ? msOf(D.forecast) : null;
   const wait = `<span class="ms-wait">${msT(m && m.failed ? 'Not worked out on this device' : 'Calculating…')}</span>`;
-  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}${spark ? ' sp' : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${icon.charAt(0) === 'n' ? IF(icon) : I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>${label[2] ? `<span class="kl-p">${msT(label[2])}</span>` : ''}` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
+  const card = (cls, icon, label, small, value, below, spark, action, k, kv, title) => `<button class="ms-kc${cls ? ' ' + cls : ''}${spark ? ' sp' : ''}" onclick="${action}"${title ? ` title="${esc(trOf(title) || title)}"` : ''}><span class="ms-kic">${icon.charAt(0) === 'n' ? IF(icon) : I(icon)}</span><span class="ms-kb"><span class="ms-kl">${Array.isArray(label) ? `<span class="kl-d">${msT(label[0])}</span><span class="kl-m">${msT(label[1])}</span>` : `<span>${msT(label)}</span>`}${small ? `<small>${msT(small)}</small>` : ''}</span><span class="ms-kv"${k ? ` data-ms="${k}" data-value="${kv == null ? '' : kv}"` : ''}>${value}</span>${below || ''}</span>${spark || ''}</button>`;
   const out = [];
   // 1 — the KPI score (the scorecard's 10 measures): the team = the average of the people of REPS who have one
   const K = msOf(H.kpi), score = K ? K.current : null;
@@ -1427,7 +1428,7 @@ function msKpisHTML(v, m, sig){
   out.push(card('', 'ncal', "Today's Visits", '', msN(VD.today), msDelta(VD.today - VD.weekAgo, 'against the same day last week') + planTx, msSpark(VD.days.map(x => x.count)), 'msGoCal()', 'today-visits', VD.today, 'Field visits logged today; the line: each working day of the last two weeks'));
   // 3 — the follow-ups due (overdue + today), "Needs Attention" only when one is overdue (a phone: "2 overdue" in red); no sparkline (no history to rebuild it from)
   const due = team ? visibleDueClinics() : visibleDueClinics().filter(c => c.rep === v.rep), over = due.filter(c => followStatus(c.nextFollowUp) === 'overdue').length;
-  out.push(card(over ? 'att' : '', 'clip2', ['Pending Follow-ups', 'Pending Follow-ups', 'Follow-ups due'], '', msN(due.length),
+  out.push(card(over ? 'att' : '', 'clip2', 'Follow-ups due', '', msN(due.length),
     over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span><span class="ms-kover" aria-hidden="true">${msT(`${over} overdue`)}</span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
     '', "msGo('msDueCard')", 'due', due.length));
   // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result

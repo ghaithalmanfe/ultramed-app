@@ -160,7 +160,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
       const rg = document.createRange(); rg.selectNodeContents(n); if(![...rg.getClientRects()].some(x => x.width > 2 && x.height > 2)) continue;
       let hidden = false, alpha = 1; for(let a = el; a && a !== document.body; a = a.parentElement){ const c = getComputedStyle(a); if(/inset\(50%/.test(c.clipPath) || a.getBoundingClientRect().width < 3){ hidden = true; break; } alpha *= parseFloat(c.opacity); }
       if(hidden) continue;
-      const cs = getComputedStyle(el), fg = parse(cs.color), layers = []; for(let a = el; a; a = a.parentElement){ const bg = parse(getComputedStyle(a).backgroundColor); if(bg && bg.a > 0) layers.push(bg); if(a === document.body) break; }
+      const cs = getComputedStyle(el), fg = parse(cs.color), layers = []; for(let a = el; a && a !== document.body; a = a.parentElement){ const bg = parse(getComputedStyle(a).backgroundColor); if(bg && bg.a > 0) layers.push(bg); }   // over the page itself: its colour, and its lightest glow
       const size = parseFloat(cs.fontSize), need = size >= 24 || (parseInt(cs.fontWeight, 10) >= 700 && size >= 18.66) ? 3 : 4.5;
       const min = Math.min.apply(null, pages.map(pg => { let bg = pg; for(let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg); return ratio(over({ r: fg.r, g: fg.g, b: fg.b, a: fg.a * alpha }, bg), bg); }));
       if(min < need) out.push(t.slice(0, 30) + ' ' + Math.round(min * 100) / 100);
@@ -454,7 +454,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   check('Phone: each fact shows once on her main view — follow-ups due, today\'s plan, field visits, the amount a day, the KPI score and the forecast each in one place; no ▲/▼ or sparkline in the Today row; the advisor not on the page (its sheet: "Recommendations" under her next actions, three rows at most, then View All)',
     Object.values(pv.facts).every(x => x.length === 1) && pv.facts['the forecast'][0] === '#msFcChip .ms-fc' && pv.deltas === 0 && pv.recs && pv.viewAll && pv.nextRows >= 1 && pv.nextRows <= 3, { facts: pv.facts, deltas: pv.deltas, recs: pv.recs, viewAll: pv.viewAll, rows: pv.nextRows });
   check('Phone: the Today row by priority from the start side — today\'s field visits, the follow-ups due, the KPI score; under the follow-ups the overdue ones in red ("2 overdue")',
-    pv.tileOrder.join() === 'today-visits,due,kpi' && pv.overNow > 0 && pv.overText === `${pv.overNow} overdue` && pv.overColor === 'rgb(255, 154, 140)', { order: pv.tileOrder, overdue: pv.overNow, said: pv.overText, colour: pv.overColor });
+    pv.tileOrder.join() === 'today-visits,due,kpi' && pv.overNow > 0 && pv.overText === `${pv.overNow} overdue` && pv.overColor === 'rgb(255, 176, 163)', { order: pv.tileOrder, overdue: pv.overNow, said: pv.overText, colour: pv.overColor });
   const noOver = await act(async () => {
     const keep = clinics.map(c => [c, c.nextFollowUp]), t = todayStr();
     clinics.forEach(c => { if(c.nextFollowUp && c.nextFollowUp < t) c.nextFollowUp = t; });   // in memory only: nothing is saved by looking
