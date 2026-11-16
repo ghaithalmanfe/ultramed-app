@@ -498,7 +498,7 @@ const CHUNKS = Object.keys(FIX.docs).filter(k => k.startsWith('erpRows:')).lengt
 
   console.log(results.join('\n'));
   if(errors.length) console.log('page errors:\n' + errors.slice(0, 10).join('\n'));
-  console.log(failed ? `\n${failed} check(s) FAILED` : '\nall checks passed');
+  console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED'); // the words tests/e2e/run-all.js reads
   await browser.close(); server.close();
   process.exit(failed ? 1 : 0);
-})().catch(e => { console.error(e); process.exit(2); });
+})().catch(e => { console.error('HARNESS ERROR', e); process.exit(2); });
