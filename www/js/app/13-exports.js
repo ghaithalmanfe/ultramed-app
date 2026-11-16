@@ -440,6 +440,7 @@ function mrChartSvg(trend, lang){
   return `<div class="mr-chart"><svg viewBox="0 0 ${W} ${H+6}" style="width:100%; height:auto;">${grid}${bars}${labels}${legend}</svg></div>`;
 }
 function buildMasterReportBody(lang, format){
+  const mtd = erpMtdMap(); // the month's lines of everyone, once for the whole report (each figure worked them out again, v126 speed)
   const L = REPORT_I18N[lang] || REPORT_I18N.en;
   const rtl = lang === 'ar';
   const b = reportRangeBounds();
@@ -466,11 +467,12 @@ function buildMasterReportBody(lang, format){
   //     customers excluded).
   // The old salesman-based sum over raw rows double-counted channel revenue and
   // mis-credited territory sales, so the big cover number came out too high.
+  const match = erpMatchFn();
   const rows = allRows.filter(r => {
     if(!UMCore.inRange(r.date, b.from, b.to)) return false;
-    const mc = UMCore.matchCustomer((r.customer||'').trim(), clinics, erpMap);
+    const mc = match((r.customer||'').trim());
     if(mc.ignored || mc.channel) return false;
-    const rrep = UMCore.erpRowRep(r, clinics, erpMap, repMapAll);
+    const rrep = UMCore.erpRowRep(r, clinics, erpMap, repMapAll, match);
     if(!rrep) return false;
     if(repFilter !== 'all' && rrep !== repFilter) return false;
     return true;
@@ -483,7 +485,7 @@ function buildMasterReportBody(lang, format){
   const recTo = b.to ? (psTo && psTo < b.to ? psTo : b.to) : psTo;
   const rec = ps.length ? UMCore.reconcileErp({rows: allRows, visits, clinics, erpMap, repMap: repMapAll, from: recFrom, to: recTo, isExchange: isExchangeLine}) : null;
   const trend = ps.length ? UMCore.erpWeeklyTrend(rows, repMapAll) : [];
-  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from: b.from, to: b.to, today, repFilter, visits, clinics, targets: blendedTargets(), dayPlans});
+  const coach = UMCore.coachInsights({ erpMtd: mtd,from: b.from, to: b.to, today, repFilter, visits, clinics, targets: blendedTargets(mtd), dayPlans});
   const cov = UMCore.clinicCoverage({from: b.from || m[0], to: b.to || today, today, repFilter, visits, clinics, dayPlans});
   const returns = UMCore.returnsAnalysis(rows, {clinics, erpMap, isExchange: isExchangeLine}); // branches unified; exchanges excluded
   const dateStr = new Date().toLocaleDateString(rtl ? 'ar' : 'en-US', {year:'numeric', month:'long', day:'numeric'});
@@ -506,7 +508,7 @@ function buildMasterReportBody(lang, format){
   const tstats = repsList.map(rep => {
     const t = targets[rep] || {};
     if(!(t.revenue > 0)) return null;
-    const bm = officialRevenue(rep);
+    const bm = officialRevenue(rep, mtd);
     if(!bm.has) return { rep, goal: t.revenue, ach: null, src: null, fc: null, pace: null, state: 'nodata' };
     // Pace/forecast run on WORKING days (Sun–Thu) at the winning source's
     // as-of day, so a mid-month upload isn't measured against the calendar.
@@ -552,7 +554,7 @@ function buildMasterReportBody(lang, format){
     if(!items.length) return '';
     // Target per brand from the DSR, achieved per brand from the ERP sales files only.
     const eb = erpBrandMtd(rep);
-    const bm = bestMonthRevenue(rep);
+    const bm = bestMonthRevenue(rep, mtd);
     return `<h3 class="mr-rep">${esc(rep)}</h3><table class="mr-tbl">
       <thead><tr><th>${L.brandCol}</th><th>${L.target} (DSR)</th><th>${L.achieved} (${esc(bm.basis === 'erp' ? bm.src : 'ERP')})</th><th>${L.ach}</th></tr></thead><tbody>
       ${items.map(([br,tg])=>{
@@ -721,7 +723,7 @@ function buildMasterReportBody(lang, format){
   // and it never uses the raw invoice sum, which ignored the DSR entirely and
   // showed "awaiting ERP" when only the DSR had been uploaded.
   let officialSum = 0, officialAny = false;
-  repsList.forEach(rep => { const o = officialRevenue(rep); if(o.has){ officialSum += o.amount; officialAny = true; } });
+  repsList.forEach(rep => { const o = officialRevenue(rep, mtd); if(o.has){ officialSum += o.amount; officialAny = true; } });
   const erpSalesVal = officialAny ? Math.round(officialSum*100)/100 : null;
   const callsN = periodVisits.filter(v=>v.callOnly).length;
   const loggedOrdersN = periodVisits.filter(v=>v.orderTaken).length;

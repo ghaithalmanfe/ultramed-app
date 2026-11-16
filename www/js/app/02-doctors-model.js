@@ -96,10 +96,17 @@ let calRepFilter = 'all';
 function uid(){ return UMCore.uid(); }
 function todayStr(){ return UMCore.todayStr(); }
 function uiLocale(){ return uiLang === 'ar' ? 'ar-KW-u-nu-latn' : 'en-US'; }
+const _fmtDatesAr = new Map(); // each date written once in Arabic (as UMCore.fmtDate does in English, v126 speed)
 function fmtDate(d){
   if(uiLang !== 'ar') return UMCore.fmtDate(d);
-  try{ return new Date(d+'T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', {month:'short', day:'numeric'}); }
+  const k = String(d), had = _fmtDatesAr.get(k);
+  if(had !== undefined) return had;
+  let v;
+  try{ v = new Date(d+'T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', {month:'short', day:'numeric'}); }
   catch(e){ return UMCore.fmtDate(d); }
+  if(_fmtDatesAr.size > 4000) _fmtDatesAr.clear();
+  _fmtDatesAr.set(k, v);
+  return v;
 }
 function daysBetween(a,b){ return UMCore.daysBetween(a,b); }
 const SAVE_MSGS = ['\u2705 Visit logged \u2014 momentum','\u{1F4AA} Logged. Onto the next one','\u{1F525} Another one in the books','\u2728 Saved \u2014 consistency wins','\u{1F680} Logged. Keep rolling','\u{1F3AF} Visit captured \u2014 nice work'];

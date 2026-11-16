@@ -5,7 +5,7 @@ const EVENT_TYPES = ['Meeting','Training','Conference','Marketing','Personal','O
 function calDayData(d){
   return UMCore.calendarDayItems(d, calRepFilter, {visits, clinics, tasks, events, dayPlans});
 }
-function setCalRepFilter(r){ calRepFilter = ownRepOnly(r); renderAll(); renderCalendar(); }
+function setCalRepFilter(r){ calRepFilter = ownRepOnly(r); renderAll(); if(activeView !== 'calendar') renderCalendar(); } // (renderAll draws the open view: once, not twice)
 function setCalMode(m){
   calMode = m;
   document.getElementById('calModeMonth').classList.toggle('on', m==='month');
@@ -430,7 +430,9 @@ function syncShell(name){
   if(t && VIEW_TITLES[name] && t.dataset.for !== name){ t.dataset.for = name; t.textContent = VIEW_TITLES[name]; }   // a new text node: the translator picks it up
   syncNav();
 }
-function renderView(name){
+// again: a redraw of the screen already open (renderAll) — the Team screen is not read again for it: the refresh that
+// brought something reads its lists while it is open (teamDue, v126 speed); its tap (switchView) reads them at once.
+function renderView(name, again){
   if(name==='today') renderToday();
   if(name==='log') prepLogView();
   if(name==='calendar') renderCalendar();
@@ -439,7 +441,7 @@ function renderView(name){
   if(name==='playbook') renderPlaybookGrid();
   if(name==='clanalysis') renderClinicAnalysis();
   if(name==='doctors') renderDoctorsDb();
-  if(name==='team'){ setTeamTab(teamTab); loadTeam().then(()=>{ if(teamTab==='mem') renderMemories(); else renderChat(); }); }
+  if(name==='team'){ setTeamTab(teamTab); if(!again) loadTeam().then(()=>{ if(teamTab==='mem') renderMemories(); else renderChat(); }); }
   if(name==='reports') renderReports();
   if(name==='more') renderMore();
 }
@@ -501,17 +503,31 @@ function statusLabel(dateStr){
   return `Due ${fmtDate(dateStr)}`;
 }
 
-function renderAll(){
+// The date and the greeting of the hour (renderAll; msClock when the hour turns and nothing else changed).
+function renderGreeting(){
   const now = new Date();
-  document.getElementById('dateLabel').textContent =
-    now.toLocaleDateString(uiLang==='ar' ? 'ar-KW-u-nu-latn' : 'en-US', {weekday:'long', month:'long', day:'numeric'});
+  const dl = document.getElementById('dateLabel'), dt = now.toLocaleDateString(uiLang==='ar' ? 'ar-KW-u-nu-latn' : 'en-US', {weekday:'long', month:'long', day:'numeric'});
+  if(dl.textContent !== dt) dl.textContent = dt;
   const hr = now.getHours();
   const greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   // the picture's greeting: the first name, without a title ("Dr. Ghaith" → "Ghaith"; Arabic «غيث»)
   const words = String(currentUser.name).trim().split(/\s+/), title = /^(dr|prof|mr|mrs|ms)\.?$/i.test(words[0]) && words[1];
   const first = title ? words[1] : words[0];
   const arFull = wdArNames(currentUser.name), arFirst = arFull !== currentUser.name ? arFull.replace(/^د\.\s*/, '').split(/\s+/)[0] : first;
-  document.getElementById('greeting').textContent = `${greet}, ${uiLang === 'ar' ? arFirst : first}`;
+  const g = document.getElementById('greeting'), gt = `${greet}, ${uiLang === 'ar' ? arFirst : first}`;
+  if(g.textContent !== gt) g.textContent = gt;
+}
+// A refresh that brought nothing new does not draw the screen again (loadAllNow, v126 speed): only the words that move
+// with the clock do — the hour's greeting and, on the home screen, the figures of the hour (msSig counts it) when the
+// hour turns; else how long ago the latest visits were logged ("5 min ago"), if that changed.
+function msClock(){
+  if(!currentUser) return;
+  const hr = new Date().getHours();
+  if(_onScreen.hour !== hr){ _onScreen.hour = hr; renderGreeting(); if(activeView === 'today') renderToday(); return; }
+  if(activeView === 'today' && !_msHeld){ const v = msView(); if(v) renderRecentVisits(v, true); } // (a frame kept whole while new figures are worked out: the swap draws it)
+}
+function renderAll(){
+  renderGreeting();
   const stamp = document.getElementById('headerStamp');
   stamp.childNodes[0].textContent = msInitials(msName(currentUser.name));
   stamp.classList.toggle('sup', currentUser.role==='supervisor');
@@ -544,10 +560,10 @@ function renderAll(){
   // made each interaction slower as the data grew. The visit form is state,
   // not a projection, so on the Log tab only its history list refreshes.
   if(activeView === 'log') renderLogHistory();
-  else renderView(activeView);
+  else renderView(activeView, true);
 }
-function setClinicRepFilter(v){ clinicRepFilter=ownRepOnly(v); renderAll(); setClinicMode(clinicMode); }
-function setReportRepFilter(v){ reportRepFilter=ownRepOnly(v); renderAll(); renderReports(); }
+function setClinicRepFilter(v){ clinicRepFilter=ownRepOnly(v); renderAll(); if(activeView !== 'clinics') setClinicMode(clinicMode); } // (renderAll draws the open view: once, not twice)
+function setReportRepFilter(v){ reportRepFilter=ownRepOnly(v); renderAll(); if(activeView !== 'reports') renderReports(); }
 
 function visibleDueClinics(){
   let list = clinics.filter(c => c.cls !== 'Closed' && ['overdue','today'].includes(followStatus(c.nextFollowUp)));
@@ -655,6 +671,13 @@ function crossInvoiceNoteHTML(rep, data){
 // Nothing here writes to storage.
 let _msPerson = null, _msFor = null;                    // the supervisor's person switch (null = the team), and whose session it belongs to
 let _msModel = null, _msJob = null, _msTimer = null, _msWaiters = [];
+// The frame on the home screen (v126 speed): the view it shows, the data state (msSig) it was drawn from, and whether it
+// is whole — every figure and row of that one state drawn (no "Calculating…"). When the data changes, a whole frame of the
+// view stays exactly as it is while the new state's figures are worked out — nothing of the new state is drawn beside it —
+// and the new frame replaces it at once, in one task (msRun). "Calculating the month…" shows only for a view with no
+// earlier frame on screen (the first one of a session, another person's screen opened). _msHeld: a frame is kept so.
+let _msFrame = null, _msHeld = false;
+const _msModels = new Map();                            // view key → its last model (a few views: going back to one whose data did not change draws it at once)
 let _msMemo = { sig: null, v: Object.create(null) };    // the cheap parts of one data state (each person's month, the team line, the week), reused until the data changes
 const _msOpen = Object.create(null);                   // phone: the folded cards opened in this session
 
@@ -848,6 +871,8 @@ function msEnsure(v, sig){
   sig = sig || msSig(v);
   const key = msKey(v);
   if(_msModel && _msModel.sig === sig && _msModel.key === key) return _msModel;
+  const had = _msModels.get(key);
+  if(had && had.sig === sig){ _msModel = had; return had; }   // that view's figures of the data as it is now, worked out before
   if(!_msJob || _msJob.sig !== sig){
     _msJob = { sig, key };
     msSchedule();
@@ -865,7 +890,7 @@ function msSchedule(){
   const go = () => { if(_msTimer === tok){ clearTimeout(tok); _msTimer = setTimeout(msRun, 0); } };
   requestAnimationFrame(go);
 }
-function msModelFor(v, sig){ return _msModel && v && _msModel.key === msKey(v) && _msModel.sig === (sig || msSig(v)) ? _msModel : null; } // the data as it is now only (msEnsure)
+function msModelFor(v, sig){ if(!v) return null; const s = sig || msSig(v), m = _msModel && _msModel.key === msKey(v) ? _msModel : _msModels.get(msKey(v)); return m && m.sig === s ? m : null; } // the data as it is now only (msEnsure)
 function msRun(){
   _msTimer = null;
   const job = _msJob; _msJob = null;
@@ -877,7 +902,10 @@ function msRun(){
     const sig = msSig(v), m = msBuild(v, sig);
     m.sig = sig; m.ms = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - t0);
     _msModel = m;
-    if(activeView === 'today') msPaint(v, m, sig);
+    _msModels.delete(m.key); _msModels.set(m.key, m); if(_msModels.size > 4) _msModels.delete(_msModels.keys().next().value);
+    // the whole frame kept on screen, or lists drawn from another state than these figures: the screen is drawn again as
+    // one, now (renderToday finds the figures ready); else the figures join the lists drawn from this same state
+    if(activeView === 'today'){ if(_msHeld || !_msFrame || _msFrame.key !== m.key || _msFrame.sig !== sig) renderToday(); else { msPaint(v, m, sig); _msFrame.whole = true; } }
   }catch(e){ console.error('main screen', e); }
   finally{ msSettle(); }                                    // whoever waits is told, whatever happened
 }
@@ -1851,6 +1879,7 @@ function msHow(id){
 
 // ---- MISSED PLANNED VISITS ----
 function renderMissedPlans(){
+  if(_msHeld) return; // a home frame kept whole while its new figures are worked out: the swap draws this card too (v126 speed)
   const el = document.getElementById('missedList');
   const title = document.getElementById('missedTitle');
   if(!el || !title) return;
@@ -1946,11 +1975,18 @@ function renderDormant(){
 }
 
 function renderToday(){
-  renderErpNudge();
-  renderDocCardsNudge();
   document.body.classList.toggle('on-today', activeView === 'today');
   const v = msView();
   if(!v) return;
+  // the figures: the ones of the data as it is now, or (msEnsure) worked out a moment later
+  let m = null, sig = null;
+  try{ sig = msSig(v); m = msEnsure(v, sig); }catch(e){ console.error('main screen', e); }
+  // a whole frame of this view is on screen and the data changed: it stays as it is until the new figures are ready,
+  // then the whole screen is drawn again at once (msRun) — never a frame of two states, never "Calculating…" over it
+  if(!m && sig && activeView === 'today' && _msFrame && _msFrame.whole && _msFrame.key === msKey(v) && _msFrame.sig !== sig && (_msJob || _msTimer)){ _msHeld = true; return; }
+  _msHeld = false;
+  renderErpNudge();
+  renderDocCardsNudge();
   const all = visibleDueClinics();
   const due = v.kind === 'person' ? all.filter(c => c.rep === v.rep) : all;   // a person's screen: her follow-ups
   const tts = document.getElementById('tileTeamSub');
@@ -1973,10 +2009,8 @@ function renderToday(){
   renderRecentVisits(v);
   msFoldSums(v, due);
   ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const el = document.getElementById(id); if(el) el.classList.toggle('open', !!_msOpen[id]); });
-  // the figures: the last ones of this view at once, the fresh ones a moment later (msRun)
-  let m = null, sig = null;
-  try{ sig = msSig(v); m = msEnsure(v, sig); }catch(e){ console.error('main screen', e); }
   msPaint(v, m, sig);
+  _msFrame = { key: msKey(v), sig, whole: !!m };
 }
 function renderDueList(due){
   const dueList = document.getElementById('dueList');
@@ -2000,16 +2034,18 @@ function renderDueList(due){
       </div>`).join('');
   }
 }
-function renderRecentVisits(v){
+// onlyIfChanged: the clock's redraw (msClock) — nothing is touched unless a word changed
+function renderRecentVisits(v, onlyIfChanged){
   const rv = document.getElementById('recentVisits');
   if(!rv) return;
+  const set = html => { if(onlyIfChanged && rv.__html === html) return; rv.__html = html; rv.innerHTML = html; };
   const r = v && v.kind === 'person' ? v.rep : null, sup = currentUser.role==='supervisor' && !r;
   const recent = visibleVisits().filter(x => !r || x.rep === r || x.withRep === r).sort((a,b)=>b.date.localeCompare(a.date) || (b.ts||0) - (a.ts||0)).slice(0,3);
   if(recent.length===0){
-    rv.innerHTML = `<div class="empty">🌱 Your first logged visit starts the story.</div>`;
+    set(`<div class="empty">🌱 Your first logged visit starts the story.</div>`);
   } else {
     // the picture's Recent Activity: what was logged (a field visit, a call, an order logged in the app — never a sale), where, how long ago
-    rv.innerHTML = `<div class="ms-tl">${recent.map(x=>{
+    set(`<div class="ms-tl">${recent.map(x=>{
       const clinic = clinics.find(c=>c.id===x.clinicId), name = clinic ? clinic.name : clinicLabel(x.clinicId, x);
       const kind = x.callOnly ? ['phone', 'Call logged'] : x.orderTaken ? ['cart', 'Order logged in the app'] : ['ncal', 'Visit logged'];
       return `<div class="card ms-tli">
@@ -2020,7 +2056,7 @@ function renderRecentVisits(v){
         </div>
         <span class="ms-ago">${msAgo(x)}</span>
       </div>`;
-    }).join('')}</div>`;
+    }).join('')}</div>`);
   }
 }
 // how long ago a visit was logged: minutes or hours on its day (its own time stamp), else days

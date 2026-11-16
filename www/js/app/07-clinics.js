@@ -1201,14 +1201,15 @@ function clinicErpLedger(clinicId){
   const ret = [], all = [];
   erpPeriods().forEach(p => erpViewRows(p).forEach(r => all.push(r)));
   const focAll = UMCore.focLinesAnnotated(all);
+  const match = erpMatchFn();
   all.forEach(r => {
-    const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
+    const m = match((r.customer||'').trim() || '(no name)');
     if(m.clinicId !== clinicId) return;
     const rv = UMCore.returnValue(r);
     if(rv > 0) ret.push(Object.assign({}, r, {retAmount: Math.round(rv*1000)/1000}));
   });
   const foc = focAll.filter(r => {
-    const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
+    const m = match((r.customer||'').trim() || '(no name)');
     return m.clinicId === clinicId;
   });
   const byDate = (a,b)=>(b.date||'').localeCompare(a.date||'');

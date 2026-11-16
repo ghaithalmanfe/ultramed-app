@@ -19,7 +19,10 @@
   // Local calendar date, NOT toISOString(): Kuwait is UTC+3, so the UTC date
   // is still "yesterday" between midnight and 3 AM local time.
   function todayStr(){ return localDateStr(new Date()); }
-  function fmtDate(d){ const dt = new Date(d + 'T00:00:00'); return dt.toLocaleDateString('en-US',{month:'short', day:'numeric'}); }
+  // A list writes the same few dates many times (520 tasks, a year of visits): each one is formatted once (v126 speed;
+  // toLocaleDateString is slow) — the same words, the date string is the key.
+  var _fmtDates = new Map();
+  function fmtDate(d){ var k = String(d), v = _fmtDates.get(k); if(v === undefined){ v = new Date(d + 'T00:00:00').toLocaleDateString('en-US',{month:'short', day:'numeric'}); if(_fmtDates.size > 4000) _fmtDates.clear(); _fmtDates.set(k, v); } return v; }
   function daysBetween(a,b){ return Math.round((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000); }
   // A CR becomes &#13;: the HTML parser turns a raw CR (or CR LF) into a line
   // feed, so a name carried in a data-* attribute (an ERP cell can hold a
@@ -949,8 +952,11 @@
     }
     return (repMap || {})[r.salesman] || null;
   }
-  function erpRowRep(r, clinics, erpMap, repMap){
-    return erpRepOfMatch(matchCustomer((r.customer || '').trim(), clinics, erpMap), r, clinics, repMap);
+  // match (optional): erpMatcher(clinics, erpMap) — a caller crediting many lines in one pass matches each distinct
+  // name once (the same answer: matchCustomer's), instead of normalizing every clinic's name again for every line.
+  function erpRowRep(r, clinics, erpMap, repMap, match){
+    var name = (r.customer || '').trim();
+    return erpRepOfMatch(match ? match(name) : matchCustomer(name, clinics, erpMap), r, clinics, repMap);
   }
   // Split a rep's monthly brand targets (from the uploaded DSR) across her
   // clinics: each clinic's share of a brand's target follows its share of that
@@ -968,9 +974,10 @@
     clinics.forEach(function(c){ out.byClinic[c.id] = { total: 0, byBrand: {} }; });
     // Brand sales per clinic from the ERP rows (invoice lines only).
     var salesByBrand = {}; // brand -> {clinicId: net}
+    var match = erpMatcher(clinics, opts.erpMap); // each customer name once (v126 speed)
     (opts.erpRows || []).forEach(function(r){
       if(r.type === 'return') return;
-      var m = matchCustomer((r.customer || '').trim(), clinics, opts.erpMap);
+      var m = match((r.customer || '').trim());
       if(!m.clinicId || !out.byClinic[m.clinicId]) return;
       var b = normBrand(r.brand);
       (salesByBrand[b] = salesByBrand[b] || {})[m.clinicId] =
@@ -1006,6 +1013,46 @@
   // last resort. Unit prices are the REAL average invoice prices. The plan
   // always covers the gap (units are rounded up), and a small gap gets a
   // single product instead of a scatter of one-unit lines.
+  // The lines of one list that a plan for a brand reads (invoices with a value and units, of that brand, naming a
+  // product), in the list's order: worked out once per list and brand — a screen asks for a plan per clinic and brand
+  // over the same year of lines (v126 speed; checked by the list's length, as erpWinsIndex). Nothing in it is handed out.
+  var _unitLines = new WeakMap();
+  function unitLinesOf(rows, target){
+    var e = _unitLines.get(rows);
+    if(!e || e.n !== rows.length){ e = { n: rows.length, by: new Map() }; _unitLines.set(rows, e); }
+    var out = e.by.get(target);
+    if(!out){
+      out = [];
+      rows.forEach(function(r){
+        if(r.type === 'return' || !(r.net > 0) || !(r.qty > 0)) return;
+        if(normBrand(r.brand) !== target) return;
+        if(!(r.product || '').trim()) return;
+        out.push(r);
+      });
+      e.by.set(target, out);
+    }
+    return out;
+  }
+  // The market's side of a plan (every line of the list, of that brand) is the same for every clinic a screen asks
+  // about: summed once per list and brand, product by product in the order the lines first name them, each product's
+  // lines kept beside its sums (v126 speed: the clinic analysis went over the year's lines once per clinic and brand).
+  var _unitMarket = new WeakMap();
+  function unitMarketOf(rows, target){
+    var e = _unitMarket.get(rows);
+    if(!e || e.n !== rows.length){ e = { n: rows.length, by: new Map() }; _unitMarket.set(rows, e); }
+    var m = e.by.get(target);
+    if(!m){
+      m = { order: [], sums: new Map() };
+      unitLinesOf(rows, target).forEach(function(r){
+        var pn = (r.product || '').trim();
+        var s = m.sums.get(pn);
+        if(!s){ s = { q: 0, v: 0, lines: [] }; m.sums.set(pn, s); m.order.push(pn); }
+        s.q += r.qty; s.v += r.net; s.lines.push(r);
+      });
+      e.by.set(target, m);
+    }
+    return m;
+  }
   function unitSellPlan(opts){
     var target = normBrand(opts.brand);
     var gap = opts.gap || 0;
@@ -1020,8 +1067,18 @@
         a.q += r.qty; a.v += r.net; if(mine) a.mine = true;
       });
     };
-    add(opts.clinicRows, true);
-    add(opts.allRows, false);
+    add(Array.isArray(opts.clinicRows) ? unitLinesOf(opts.clinicRows, target) : opts.clinicRows, true); // (the same lines, in the same order)
+    if(Array.isArray(opts.allRows)){
+      // the very sums of adding the market's lines one by one after the clinic's: a product the clinic did not buy
+      // starts at 0 and takes the market's lines in their order (its kept sums are exactly that); one it bought takes
+      // them one by one after its own; the products join in the order the lines first name them
+      var mk = unitMarketOf(opts.allRows, target);
+      mk.order.forEach(function(pn){
+        var s = mk.sums.get(pn), a = stats[pn];
+        if(!a){ stats[pn] = { q: s.q, v: s.v, mine: false }; return; }
+        s.lines.forEach(function(r){ a.q += r.qty; a.v += r.net; });
+      });
+    } else add(opts.allRows, false);
     var cands = Object.keys(stats).map(function(pn){
       var a = stats[pn];
       return { product: pn, price: Math.round(a.v / a.q * 100) / 100, popularity: a.q, mine: a.mine };
@@ -1053,12 +1110,22 @@
 
   // Invoice product names are free text; the catalog is the source of brand,
   // category and list price. Token overlap is enough to bridge the two.
+  // A product's name and brand as tokens, kept beside the product and worked out again when either changes (v126 speed:
+  // every invoice line's product was compared with every product of the catalog, each tokenized again each time).
+  var _catToks = new WeakMap();
+  function catTokensOf(pr){
+    var e = _catToks.get(pr);
+    if(e && e.n === pr.name && e.b === pr.brand) return e.t;
+    var t = ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+    _catToks.set(pr, { n: pr.name, b: pr.brand, t: t });
+    return t;
+  }
   function matchCatalogProduct(name, products){
     var nt = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
     if(!nt.length) return null;
     var best = null, bestScore = 0;
     (products || []).forEach(function(pr){
-      var pt = ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+      var pt = pr && typeof pr === 'object' ? catTokensOf(pr) : ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
       var ov = nt.filter(function(t){ return pt.indexOf(t) >= 0; }).length;
       var score = ov / Math.max(1, Math.max(nt.length, Math.min(pt.length, nt.length + 2)));
       if(ov >= Math.min(2, nt.length) && score > bestScore){ best = pr; bestScore = score; }
@@ -1088,10 +1155,11 @@
     // Purchase lines: ERP invoices are authoritative; app-logged orders keep
     // the guide alive for clinics whose invoices have not been imported yet.
     var lines = [];
+    var match = erpMatcher(clinics, opts.erpMap); // each customer name once (v126 speed)
     (opts.erpRows || []).forEach(function(r){
       if(!r || r.type === 'return') return;
       if(!(r.net > 0) && !(r.qty > 0)) return;
-      var m = matchCustomer((r.customer || '').trim(), clinics, opts.erpMap);
+      var m = match((r.customer || '').trim());
       if(!m.clinicId) return;
       var pn = (r.product || '').trim();
       if(!pn) return;
@@ -1695,15 +1763,27 @@
     var policy = (es && es.returnPolicy) === 'erp' ? 'erp' : 'origin';
     return applyReturnPolicy(unpackErpRows(p.rows), policy, ctx);
   }
-  function erpCtxOf(es){ var all = []; erpPeriodsOf(es).forEach(function(p){ unpackErpRows(p.rows).forEach(function(r){ all.push(r); }); }); return returnContext(all); }
+  // The returns context of the files that loaded, once per set of files (v126 speed: every month figure rebuilt it from
+  // every line — 100–350 ms each on a slower phone with a heavy year). A file's rows are never edited in place, only
+  // replaced (a new array: an upload, a purge, rows read again), so the same rows arrays at the same lengths are the
+  // same lines; anything else builds it again. Read only (returnOrigin).
+  var _erpCtxs = new WeakMap();
+  function erpCtxOf(es){
+    var ps = erpPeriodsOf(es), e = es && typeof es === 'object' ? _erpCtxs.get(es) : null;
+    if(e && e.rows.length === ps.length && ps.every(function(p, i){ return p.rows === e.rows[i] && (p.rows || []).length === e.lens[i]; })) return e.ctx;
+    var all = []; ps.forEach(function(p){ unpackErpRows(p.rows).forEach(function(r){ all.push(r); }); });
+    var ctx = returnContext(all);
+    if(es && typeof es === 'object') _erpCtxs.set(es, { rows: ps.map(function(p){ return p.rows; }), lens: ps.map(function(p){ return (p.rows || []).length; }), ctx: ctx });
+    return ctx;
+  }
   // Net ERP sales in a range per rep (null when no file covers the range).
   function erpRevenueRange(data, from, to, repFilter){
     var es = data.erpSales, ps = erpPeriodsOf(es).filter(function(p){ return (!from || p.to >= from) && (!to || p.from <= to); });
     if(!ps.length) return null;
-    var ctx = erpCtxOf(es), sum = 0;
+    var ctx = erpCtxOf(es), sum = 0, match = erpMatcher(data.clinics || [], data.erpMap || {});
     ps.forEach(function(p){ erpViewRowsOf(es, p, ctx).forEach(function(r){
       if(!inRange(r.date, from, to)) return;
-      var rep = erpRowRep(r, data.clinics || [], data.erpMap || {}, p.repMap || {});
+      var rep = erpRowRep(r, data.clinics || [], data.erpMap || {}, p.repMap || {}, match);
       if(!rep) return;
       if(repFilter !== 'all' && rep !== repFilter) return;
       sum += r.net; // DSR basis: every line of the rep's salesman, channels included
@@ -2194,9 +2274,12 @@
     });
   }
   // matchCustomer once per distinct name, for one state (clinics + erpMap).
+  // One pass's matcher: each distinct customer name matched once, the clinics' names normalized once (erpPrepClinics) —
+  // matchCustomer's very answers, for a pass over many lines against one clinic list and one link map that do not
+  // change while it runs. A pass makes its own: nothing is kept between calls.
   function erpMatcher(clinics, erpMap){
-    var memo = Object.create(null);
-    return function(name){ return memo[name] || (memo[name] = matchCustomer(name, clinics, erpMap)); };
+    var memo = Object.create(null), prep = null;
+    return function(name){ return memo[name] || (memo[name] = matchCustomer(name, clinics, erpMap, prep || (prep = erpPrepClinics(clinics)))); };
   }
   // The clinic a match counts at, or null — then each line counts for the
   // salesman who issued it. A link to a removed clinic counts at no clinic.
@@ -2574,7 +2657,9 @@
     items.gov = { score: cov, value: gov.length ? Math.round(cov * 100) + '% of ' + gov.length + ' government accounts visited per week' : 'no government accounts assigned',
       target: '100% every week', detail: lastW && lastW.missing.length ? 'this week still to visit: ' + lastW.missing.slice(0, 6).join(', ') : '' };
     // 9 new business: products bought by an account for the first time, and new accounts
-    var w = erpWinsInRange(rows, from, to, clinics);
+    // opts.wins: the same range's wins a caller already worked out from these very lines and clinics (monthlyTrend: one
+    // per month for every person, v126 speed) — else worked out here
+    var wg = opts.wins, w = wg && wg.rows === rows && wg.from === from && wg.to === to && wg.clinics === clinics && wg.w ? wg.w : erpWinsInRange(rows, from, to, clinics);
     var pl = w.placements.filter(function(x){ return x.rep === rep; }), na = w.newAccounts.filter(function(x){ return x.rep === rep; });
     var plT = Math.max(1, Math.round(S.newProducts * share)), naT = Math.max(1, Math.round(S.newAccounts * share));
     items.newbiz = { score: clamp(0.5 * Math.min(1, pl.length / plT) + 0.5 * Math.min(1, na.length / naT)),
@@ -2966,6 +3051,10 @@
   // with no data at all are dropped. Pure.
   function monthlyTrend(data, opts){
     opts = opts || {};
+    // one shared pass of the lines for every month and person below (erpShare: each customer matched once, each
+    // file's rows read once, one returns context) — the same lines each erpMtd read on its own (v126 speed: 2.5 s on a
+    // slower phone with a heavy year); a caller's own pass of the same lists is used as it is
+    if(!erpShareOf(data)){ var dShare = {}; for(var kS in data) dShare[kS] = data[kS]; dShare.erpShare = erpShare(data); data = dShare; }
     var reps = opts.reps || [], end = opts.end || data.today; if(end > data.today) end = data.today;
     var n = opts.months || 6, rows = opts.rows || erpAttributedRows(data), S = opts.settings || null;
     var clinics = data.clinics || [], es = data.erpSales, dayN = parseInt(end.slice(8, 10), 10);
@@ -2997,7 +3086,7 @@
           fieldVisits: mine.length, perDay: wd ? Math.round(mine.length / wd * 10) / 10 : 0, doctorsMet: Object.keys(docs).length,
           newAccounts: newOk ? wins.newAccounts.filter(function(x){ return x.rep === rep; }).length : null,
           placements: newOk ? wins.placements.filter(function(x){ return x.rep === rep; }).length : null,
-          kpi: S && logged ? kpiScorecard(data, { rep: rep, from: from, to: to, settings: S, rows: rows }).total : null   // no visit or call logged that month: the app was not in use, no score
+          kpi: S && logged ? kpiScorecard(data, { rep: rep, from: from, to: to, settings: S, rows: rows, wins: { rows: rows, from: from, to: to, clinics: clinics, w: wins } }).total : null   // no visit or call logged that month: the app was not in use, no score
         };
       });
       var sumOf = function(f){ var any = false, s = 0; reps.forEach(function(r){ var v = row.byRep[r][f]; if(v != null){ any = true; s += v; } }); return any ? rnd(s) : null; };
@@ -5273,13 +5362,17 @@
       var byDoc = rxBy[r.clinicId] || (rxBy[r.clinicId] = Object.create(null));
       (byDoc[r.doctorId] || (byDoc[r.doctorId] = [])).push(r);
     });
+    // each clinic's visits, in the order of the list (v126 speed: every doctor went over every visit of the year)
+    var visBy = Object.create(null);
+    vis.forEach(function(v){ var k = String(v.clinicId); (visBy[k] || (visBy[k] = [])).push(v); });
     (opts.clinics || []).forEach(function(c){
       if(opts.repFilter && opts.repFilter !== 'all' && c.rep !== opts.repFilter) return;
+      var cv = visBy[String(c.id)] || [];
       (c.doctors || []).forEach(function(d){
         // Every doctor picked on the visit counts — the multi-select list when
         // present, else the legacy single doctorId — so a two-doctor visit
         // shows in BOTH doctors' reports and old records aren't lost.
-        var dv = vis.filter(function(v){
+        var dv = cv.filter(function(v){
           if(v.clinicId !== c.id) return false;
           var ids = (Array.isArray(v.doctorIds) && v.doctorIds.length) ? v.doctorIds : (v.doctorId ? [v.doctorId] : []);
           return ids.indexOf(d.id) >= 0;
@@ -5554,7 +5647,9 @@
     var clinics = opts.clinics || [];
     var dd = dedupeVisits(filterVisitsByRange(opts.visits, opts.from, opts.to));
     var out = { perRep: [], unmatchedCustomers: [], window: { from: opts.from, to: opts.to } };
-    var attr = function(r){ return erpRowRep(r, clinics, opts.erpMap, repMap); };
+    // each customer name matched once, each line's person worked out once (v126 speed: once per line per person before)
+    var match = erpMatcher(clinics, opts.erpMap), repOf = new Map();
+    var attr = function(r){ if(repOf.has(r)) return repOf.get(r); var v = erpRowRep(r, clinics, opts.erpMap, repMap, match); repOf.set(r, v); return v; };
     // every map here is keyed by a name or a number (customers from the file,
     // reps, clinic ids, documents): no prototype, so a customer named
     // "constructor" or "__proto__" is a key like any other — never a crash,
@@ -5582,7 +5677,7 @@
       var matched = [], invoicedNoVisit = [], channelNet = 0, ignoredNet = 0;
       var matchedClinicIds = Object.create(null);
       Object.keys(byCust).forEach(function(cust){
-        var m = matchCustomer(cust, clinics, opts.erpMap);
+        var m = match(cust);
         var agg = byCust[cust];
         if(m.ignored){ ignoredNet += agg.net; return; }
         if(m.channel){ channelNet += agg.net; return; }
@@ -6294,9 +6389,17 @@
     });
     return lines.join('\n');
   }
+  // Each brand spelling worked out once (v126 speed: a pass over a year's lines asked again for every line); the same
+  // answer — a pure function of the text.
+  var _normBrands = new Map();
   function normBrand(s){
-    var key = String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    return BRAND_ALIASES[key] || String(s || '').toLowerCase().trim();
+    var raw = String(s || ''), had = _normBrands.get(raw);
+    if(had !== undefined) return had;
+    var key = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+    var out = BRAND_ALIASES[key] || raw.toLowerCase().trim();
+    if(_normBrands.size > 20000) _normBrands.clear();
+    _normBrands.set(raw, out);
+    return out;
   }
 
   // Parses the DSR targets workbook: blocks of rows per salesman (name in the
@@ -6473,9 +6576,9 @@
     // multi-branch clinic never looks like it returned twice.
     var unify = null;
     if(opts && opts.clinics){
-      var fmap = clinicFamilies(opts.clinics);
+      var fmap = clinicFamilies(opts.clinics), match = erpMatcher(opts.clinics, opts.erpMap);
       unify = function(cust){
-        var m = matchCustomer(String(cust || '').trim(), opts.clinics, opts.erpMap);
+        var m = match(String(cust || '').trim());
         if(m.method === 'map') return null; // an explicit override stays its own line
         var famKey = m.clinicId ? (m.family || fmap.byClinic[m.clinicId]) : null;
         if(famKey && fmap.fams[famKey]){
@@ -7439,7 +7542,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
     unionDoctorsById, possibleDuplicateDoctors, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpPrepClinics, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,

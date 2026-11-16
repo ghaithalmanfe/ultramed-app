@@ -86,6 +86,7 @@ function previewDigest(kind, rep){
 }
 // -- Team tab (performance + roster management in one place) --
 function adminTeamHTML(){
+  const mtd = erpMtdMap(); // every person's month figure and the team's: one pass of the month's lines (v126 speed)
   return `<div id="apStaffList"></div>
     <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>
     <div class="section-title">Evaluation targets</div>
@@ -106,14 +107,14 @@ function adminTeamHTML(){
     <div class="card">
       ${REPS.map((r,i)=>{
         const t = targets[r] || {};
-        const tp = targetPct(r);
+        const tp = targetPct(r, mtd);
         return `<div style="font-weight:700; font-size:13.5px; margin:${i?'14px':'0'} 0 4px;">${esc(r)}${tp?` <span style="font-weight:600; font-size:12px; color:var(--muted);">· ${tp.pct}% achieved this month (${money(tp.amount)})</span>`:''}</div>
         <div style="display:flex; gap:10px;">
           <div style="flex:1;"><label style="font-size:12px;">Sales (KD)</label><input type="number" min="0" id="tgRev${i}" value="${t.revenue||0}"></div>
           <div style="flex:1;"><label style="font-size:12px;">Visits</label><input type="number" min="0" id="tgVis${i}" value="${t.visits||0}"></div>
         </div>`;
       }).join('')}
-      ${(()=>{ const tt = teamTargetNow(); return tt.pct != null ? `<div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-weight:700; font-size:13.5px;">Team total <span style="font-weight:600; font-size:12px; color:var(--muted);">· ${tt.pct}% achieved this month (${money(tt.ach)} of ${money(tt.goal)})</span></div>` : ''; })()}
+      ${(()=>{ const tt = teamTargetNow(mtd); return tt.pct != null ? `<div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-weight:700; font-size:13.5px;">Team total <span style="font-weight:600; font-size:12px; color:var(--muted);">· ${tt.pct}% achieved this month (${money(tt.ach)} of ${money(tt.goal)})</span></div>` : ''; })()}
       <button class="btn secondary small" style="margin-top:12px;" onclick="saveTargets()">Save monthly targets</button>
     </div>`;
 }
@@ -751,12 +752,13 @@ function missingClinicCandidates(){
   });
   // 3. invoice customers that match no clinic (may include non-clinic accounts — unticked by default)
   const custs = {};
+  const match = erpMatchFn();
   erpPeriods().forEach(p=>erpViewRows(p).forEach(r=>{
     const cu = (r.customer||'').trim(); if(!cu) return;
     const key = _mcNorm(cu); if(!key || custs[key]) { if(custs[key]) custs[key].n++; return; }
-    const m = UMCore.matchCustomer(cu, clinics, erpMap);
+    const m = match(cu);
     if(m.clinicId || m.ignored || m.channel){ custs[key] = {skip:true, n:1}; return; }
-    custs[key] = {name:cu, n:1, rep: UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}) || ''};
+    custs[key] = {name:cu, n:1, rep: UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match) || ''};
   }));
   Object.values(custs).forEach(cu=>{ if(!cu.skip) take({src:'erp', label:`🧾 عميل بالفواتير (${cu.n} سطر)`, name:cu.name, rep:cu.rep, key:'erp:'+_mcNorm(cu.name)}); });
   return out;

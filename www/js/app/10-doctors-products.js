@@ -234,12 +234,15 @@ function copyProductDupReport(){
 // Visual guidance: every product suggestion carries its PHOTO. ERP product
 // names differ slightly from catalog names, so match by token overlap; when
 // no photo exists (e.g. professional Univet gear) show a branded tile.
+// a product's name and brand as tokens, kept beside it and worked out again when either changes (v126 speed)
+const _findCatToks = new WeakMap();
 function findCatalogProduct(name){
   const nt = String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean);
   if(!nt.length) return null;
   let best = null, bestScore = 0;
   products.forEach(pr => {
-    const pt = (pr.name+' '+(pr.brand||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/);
+    const obj = pr && typeof pr === 'object', e = obj ? _findCatToks.get(pr) : null;
+    const pt = e && e.n === pr.name && e.b === pr.brand ? e.t : (() => { const t = (pr.name+' '+(pr.brand||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/); if(obj) _findCatToks.set(pr, { n: pr.name, b: pr.brand, t }); return t; })();
     const ov = nt.filter(t=>pt.includes(t)).length;
     const score = ov / Math.max(1, Math.max(nt.length, Math.min(pt.length, nt.length+2)));
     if(ov >= Math.min(2, nt.length) && score > bestScore){ best = pr; bestScore = score; }
@@ -1371,8 +1374,9 @@ function caAllRowsByClinic(){
   const by = {};
   let all = [];
   erpPeriods().forEach(p2=>{ all = all.concat(erpViewRows(p2)); });
+  const match = erpMatchFn();
   all.forEach(r=>{
-    const m = UMCore.matchCustomer((r.customer||'').trim(), clinics, erpMap);
+    const m = match((r.customer||'').trim());
     if(!m.clinicId) return;
     (by[m.clinicId] = by[m.clinicId] || []).push(r);
   });
@@ -1381,9 +1385,10 @@ function caAllRowsByClinic(){
 function caMonthClinicSales(){
   const today = todayStr(), mStart = today.slice(0,7)+'-01';
   const byClinic = {};
+  const match = erpMatchFn();
   erpPeriods().filter(p2=>p2.to>=mStart && p2.from<=today).forEach(p2=>erpViewRows(p2).forEach(r=>{
     if(r.date < mStart || r.date > today) return;
-    const m = UMCore.matchCustomer((r.customer||'').trim(), clinics, erpMap);
+    const m = match((r.customer||'').trim());
     if(!m.clinicId) return;
     const a = byClinic[m.clinicId] || (byClinic[m.clinicId]={net:0, byBrand:{}, brandRaw:{}, docs:new Set()});
     a.net += r.net; if(r.doc) a.docs.add(r.doc);
@@ -1933,13 +1938,14 @@ function erpWindowStats(from, to, repFilter){
   if(!ps.length) return null;
   const byClinic = {}, docs = {};
   let net = 0;
+  const match = erpMatchFn();
   ps.forEach(p => erpViewRows(p).forEach(r => {
     if(!UMCore.inRange(r.date, from, to)) return;
-    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{});
+    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match);
     if(!rep || (repFilter !== 'all' && rep !== repFilter)) return;
     net += r.net;
     if(r.type !== 'return') docs[r.doc] = 1;
-    const m = UMCore.matchCustomer(r.customer, clinics, erpMap);
+    const m = match(r.customer);
     if(m.clinicId) byClinic[m.clinicId] = (byClinic[m.clinicId]||0) + r.net;
   }));
   Object.keys(byClinic).forEach(k => byClinic[k] = Math.round(byClinic[k]*100)/100);
@@ -1950,7 +1956,8 @@ function renderCoverageBoard(){
   const from = UMCore.localDateStr(d), to = todayStr();
   const cov = UMCore.clinicCoverage({ from, to, today: to, repFilter: covRep, visits, clinics, dayPlans });
   const ew = erpWindowStats(from, to, covRep);
-  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(), from, to, today: to, repFilter: covRep, visits, clinics, targets: blendedTargets(), dayPlans })
+  const covMtd = erpMtdMap(); // one pass of the month's lines for the coach and the targets it reads (v126 speed)
+  const coach = UMCore.coachInsights({ erpMtd: covMtd, from, to, today: to, repFilter: covRep, visits, clinics, targets: blendedTargets(covMtd), dayPlans })
     .filter(i => i.level !== 'good').slice(0, 3);
   const repChips = currentUser.role === 'supervisor'
     ? `<div class="chip-row" style="margin-bottom:8px;">${['all', ...REPS].map(r =>

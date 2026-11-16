@@ -171,13 +171,15 @@ function reportRangeBounds(){
   const d = new Date(todayStr()+'T00:00:00'); d.setDate(d.getDate()-(reportRange-1));
   return {from: UMCore.localDateStr(d), to: todayStr()};
 }
-function renderCoach(){
+// mtd (optional): the month's lines of everyone, worked out once by the Report's draw (renderReports, v126 speed)
+function renderCoach(mtd){
   const el = document.getElementById('coachCard');
   if(!el) return;
   const b = reportRangeBounds();
-  const insights = UMCore.coachInsights({ erpMtd: erpMtdMap(),
+  mtd = mtd || erpMtdMap();
+  const insights = UMCore.coachInsights({ erpMtd: mtd,
     from: b.from, to: b.to, today: todayStr(), repFilter: reportRepFilter,
-    visits, clinics, targets: blendedTargets(), dayPlans,
+    visits, clinics, targets: blendedTargets(mtd), dayPlans,
   });
   const styles = {
     act:   {c:'var(--coral)',  ink:'var(--coral-ink)', label:'DO NOW'},
@@ -199,7 +201,10 @@ function renderCoach(){
   }).join('') + `</div></div>`;
 }
 function renderReports(){
-  renderCoach();
+  // the month's lines of everyone, once for the whole screen: the coach, each person's target row and the team's (each
+  // of them worked them out again before — about a second on a slower phone with a heavy year, v126 speed)
+  const mtd = erpMtdMap();
+  renderCoach(mtd);
   let rv = reportVisitsBase();
   if(reportRepFilter !== 'all') rv = rv.filter(v=>v.rep===reportRepFilter);
   document.getElementById('repVisits').textContent = rv.filter(isFieldVisit).length;
@@ -232,7 +237,7 @@ function renderReports(){
     const rows = REPS.map(r=>{
       const rvr = base.filter(v=>v.rep===r);
       return {rep:r, visits:rvr.length, revenue:rvr.reduce((s,v)=>s+(v.orderTotal||0),0),
-        erp: erpRevenueForRange(cmpBounds.from, cmpBounds.to, r), tgt: targetPct(r)};
+        erp: erpRevenueForRange(cmpBounds.from, cmpBounds.to, r), tgt: targetPct(r, mtd)};
     });
     const anyErp = rows.some(r=>r.erp != null);
     const anyTgt = rows.some(r=>r.tgt != null);
@@ -284,7 +289,7 @@ function renderReports(){
     </div>`).join('');
   }
   renderCharts();
-  renderScorecards();
+  renderScorecards(mtd);
 }
 
 
@@ -775,6 +780,51 @@ function teamMerge(key, a, b){
   if(key === 'chat' && v.length > 300) v = v.slice(-300);
   return v;
 }
+// ---- When chat and memories are read (v126 speed) ----
+// They were downloaded at every start (before the screen was drawn) and every
+// 20-second round: about 1 MB a time on a heavy year, more than every other
+// list together. Now: every refresh while their screen (Team) is open, at once
+// when it opens and on "Refresh messages", and otherwise once every
+// TEAM_PACE_MS since the last real read (um_teamReadAt, kept on the phone across
+// starts) — never at a start, which draws this phone's copy of the last read
+// (teamFromPhone; a list this phone never read is read just after the first
+// paint). Nothing waits for them. What the screens say stays true: a list never
+// read here and still empty says it is loading (never "Start the conversation"),
+// and "Refresh messages" still says "Up to date" only after a real read.
+const TEAM_PACE_MS = 15 * 60000;
+const TEAM_READ_AT = 'um_teamReadAt';
+const _teamFrom = {};   // key → 'phone' (this phone's copy of the last read) | 'cloud' (read this session) | 'tried' (a read answered from neither)
+const _teamShown = {};  // key → { text, ref }: the cloud's text the list on screen was taken from (the same read again keeps it)
+function teamReadAt(key){ try{ const o = JSON.parse(localStorage.getItem(TEAM_READ_AT) || '{}'); return +(o && o[key]) || 0; }catch(e){ return 0; } }
+function teamReadNow(key){ try{ const o = JSON.parse(localStorage.getItem(TEAM_READ_AT) || '{}') || {}; o[key] = Date.now(); localStorage.setItem(TEAM_READ_AT, JSON.stringify(o)); }catch(e){} }
+// The lists the screens show until a read this session: this phone's copy of the last one (once per session; memory
+// that already holds a list — a sign-in after another — keeps it).
+function teamFromPhone(){
+  ['chat', 'memories'].forEach(key => {
+    if(_teamFrom[key]) return;
+    if(teamList(key).length){ _teamFrom[key] = 'phone'; return; }
+    const a = UMCore.safeParse(mirrorGet(key), null);
+    // no copy on this phone (never read here, or it did not fit: a full phone): unknown until a read — read just after the
+    // first paint (teamDue), its screens say it is loading meanwhile
+    if(Array.isArray(a)){ setTeamList(key, teamMerge(key, a, null)); _teamFrom[key] = 'phone'; }
+  });
+}
+// The lists a refresh reads: both while the Team screen is open; at a start only a list this phone never read (just
+// after the first paint, never waited for); otherwise those whose last real read is TEAM_PACE_MS old.
+function teamDue(boot){
+  const keys = ['chat', 'memories'];
+  if(typeof activeView !== 'undefined' && activeView === 'team') return keys;
+  if(boot) return keys.filter(k => !_teamFrom[k]);
+  const now = Date.now();
+  return keys.filter(k => { const t = teamReadAt(k); return !t || Math.abs(now - t) >= TEAM_PACE_MS; });
+}
+// A refresh's read of them is in (loadAllNow): drawn where they show, only if it changed what memory holds.
+function teamRead(before){
+  const chatNew = chatMsgs !== before.chat, memNew = memories !== before.memories;
+  if(!chatNew && !memNew) return;
+  if(typeof activeView !== 'undefined' && activeView === 'team'){ if(teamTab === 'mem'){ if(memNew) renderMemories(); } else if(chatNew) renderChat(); }
+  if(memNew && typeof activeView !== 'undefined' && activeView === 'today' && !_msHeld) renderBadges(); // the Memory Maker badge counts them (a home frame kept whole meanwhile: its swap draws them)
+}
 // keys: the lists to read (both when left out).
 async function loadTeam(keys){
   // each list is taken (or kept) the moment its own read is back: nothing runs between
@@ -794,17 +844,23 @@ async function loadTeam(keys){
     const src = {};
     const r = await cloudGet(key, src).catch(() => null);
     how[key] = src.cloud && !(r == null && !navigator.onLine) ? 'cloud' : 'phone';
+    if(how[key] === 'cloud'){ teamReadNow(key); _teamFrom[key] = 'cloud'; } else if(!_teamFrom[key]) _teamFrom[key] = 'tried';
     try{
       const mine = teamList(key);
       if(_teamGen[key] !== gen0 || _teamSaving[key] > 0){
         console.warn(key + ': a save ran while the refresh read — the list on screen is kept');
         mirrorSave(key, JSON.stringify(teamMerge(key, mine, UMCore.safeParse(mirrorGet(key), null))));
         how[key] = 'kept'; // "Refresh messages" reads it again once that save is over (it said "Up to date" here)
+        delete _teamShown[key];
         return;
       }
+      // v126 speed: the very text the list on screen was taken from, nothing of this phone's waiting: kept as it is
+      const txt = r && typeof r.value === 'string' ? r.value : null, sh = _teamShown[key];
+      if(how[key] === 'cloud' && !outboxHas(key) && sh && sh.text === txt && sh.ref === mine) return;
       const read = UMCore.safeParse(r && r.value, null);
       const got = Array.isArray(read) ? read : [];
-      if(!outboxHas(key)){ setTeamList(key, teamMerge(key, got, null)); return; } // one entry per id
+      if(!outboxHas(key)){ setTeamList(key, teamMerge(key, got, null)); if(how[key] === 'cloud') _teamShown[key] = { text: txt, ref: teamList(key) }; else delete _teamShown[key]; return; } // one entry per id
+      delete _teamShown[key];
       how[key] = 'queued'; // the queue as the read came back, not as it began
       const all = teamMerge(key, mine, got); // queued: nothing memory holds is dropped, nor left off the phone's copy
       setTeamList(key, all);
@@ -940,6 +996,7 @@ function fmtWhen(ts){
 }
 function renderChat(){
   const el = document.getElementById('chatList');
+  if(!chatMsgs.length && !_teamFrom.chat){ el.innerHTML = `<div class="empty">Loading messages…</div>`; return; } // never read on this phone yet (v126 speed)
   if(!chatMsgs.length){
     el.innerHTML = `<div class="empty"><div class="big">\u{1F4AC} Start the conversation</div>Share a win, ask for help, or drop a photo from the road.</div>`;
     return;
@@ -1071,6 +1128,7 @@ async function saveMemory(){
 }
 function renderMemories(){
   const el = document.getElementById('memGrid');
+  if(!memories.length && !_teamFrom.memories){ el.innerHTML = `<div class="empty" style="grid-column:1/-1;">Loading memories…</div>`; return; } // never read on this phone yet (v126 speed)
   if(!memories.length){
     el.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div class="big">\u{1F4F8} No memories yet</div>Every team has a story. Add the first photo.</div>`;
     return;
@@ -1189,6 +1247,7 @@ function achievements(rep){
   ];
 }
 function renderBadges(){
+  if(typeof _msHeld !== 'undefined' && _msHeld) return; // a home frame kept whole meanwhile: its swap draws the badges (v126 speed)
   const list = achievements(currentUser.name);
   const earned = list.filter(a=>a.earned);
   const next = list.filter(a=>!a.earned).sort((a,b)=>(b.cur/b.goal)-(a.cur/a.goal));
@@ -1363,14 +1422,14 @@ function computeRepScore(repName){
 }
 // Month-to-date achievement against the rep's monthly sales target, as the
 // same official figure the Today card and the month reports use.
-function targetPct(rep){
+function targetPct(rep, mtd){
   const t = targets[rep] || {};
   if(!(t.revenue>0)) return null;
-  const bm = bestMonthRevenue(rep);
+  const bm = bestMonthRevenue(rep, mtd);
   return { pct: Math.round(bm.amount/t.revenue*100), amount: bm.amount, target: t.revenue, src: bm.src };
 }
-function targetBarRow(rep){
-  const tp = targetPct(rep);
+function targetBarRow(rep, mtd){
+  const tp = targetPct(rep, mtd);
   if(!tp) return '';
   const monthName = new Date(todayStr()+'T00:00:00').toLocaleDateString(uiLocale(),{month:'short'});
   return `<div class="bar-row">
@@ -1378,8 +1437,9 @@ function targetBarRow(rep){
         <div class="bar-track"><div class="bar-fill ${tp.pct<60?'coral':''}" style="width:${Math.min(100,tp.pct)}%;"></div></div>
       </div>`;
 }
-function renderScorecards(){
+function renderScorecards(mtd){
   const wrap = document.getElementById('scorecards');
+  mtd = mtd || erpMtdMap(); // every person's target row and the team's: one pass of the month's lines
   const repsToShow = currentUser.role==='supervisor' ? REPS : [currentUser.name];
   const sb = reportRangeBounds();
   wrap.innerHTML = repsToShow.map(r=>{
@@ -1399,7 +1459,7 @@ function renderScorecards(){
         <div class="kpi"><div class="n">${s.conversion}%</div><div class="l">Conversion rate</div></div>
         <div class="kpi"><div class="n">${s.overdue}</div><div class="l">Overdue follow-ups</div></div>
       </div>
-      ${targetBarRow(r)}
+      ${targetBarRow(r, mtd)}
       <div class="bar-row">
         <div class="bar-label"><span>Clinic coverage</span><span>${s.covered}/${s.assignedCount} (${s.coveragePct}%)</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${s.coveragePct}%;"></div></div>
@@ -1416,7 +1476,7 @@ function renderScorecards(){
     </div>`;
   }).join('') + (()=>{ // team target card under the scorecards, supervisor view
     if(currentUser.role!=='supervisor') return '';
-    const tt = teamTargetNow();
+    const tt = teamTargetNow(mtd);
     if(tt.pct == null || tt.n < 2) return '';
     const monthName = new Date(todayStr()+'T00:00:00').toLocaleDateString(uiLocale(),{month:'short'});
     return `<div class="card score-card"><div class="score-head"><div class="stamp">${I('target')}</div><div class="name">Team · ${monthName} target</div></div>${teamTargetRow(tt, { label: 'Team' })}</div>`;

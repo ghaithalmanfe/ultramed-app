@@ -1441,6 +1441,8 @@
     'Browse full clinic list': 'تصفح قائمة العيادات الكاملة',
     'Import all contacts at once': 'استيراد كل جهات الاتصال مرة واحدة',
     'Start the conversation': 'ابدأ المحادثة',
+    'Loading messages…': 'جارٍ تحميل الرسائل…',   // a list this phone never read yet (v126 speed: chat and memories are read when their screen opens)
+    'Loading memories…': 'جارٍ تحميل الذكريات…',
     'Date range for exports': 'نطاق التاريخ للتصدير',
     'WhatsApp': 'واتساب',
     'Email': 'إيميل',

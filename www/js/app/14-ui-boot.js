@@ -97,9 +97,8 @@ async function bgRefresh(){
       // never starts while the last one is still on its way (_roundBusy) — a
       // phone closed right after a round leaves nothing of it half-sent.
       if(outboxList().length) await flushOutbox();
-      await loadAll();
+      await loadAll(); // (its read of chat and memories, while their screen is open, draws them when they changed: teamRead)
       if(_refreshFlush){ try{ await _refreshFlush; }catch(e){} }
-      if(document.getElementById('view-team').classList.contains('active')){ if(teamTab==='mem') renderMemories(); else renderChat(); }
     } finally { _roundBusy = false; }
   }
 }

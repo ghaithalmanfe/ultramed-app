@@ -109,15 +109,21 @@ function returnPolicyChips(reopenId){
 // / target figure below therefore counts every line; only the buyers and
 // reconciliation lists stay clinic-only.
 function erpRowCountsAsSales(r){ return true; }
+// One pass's customer matcher (v126 speed): each distinct ERP customer name matched once against the clinics and the
+// account links as they are now — matchCustomer's very answer (UMCore.erpMatcher; an older cached core.js matches each
+// line as before). Made at the start of a pass over many lines, never kept between passes: a rename or a new link
+// changes the answers. Matching every line again had made a clinic's card take 24 s on a slower phone with a heavy year.
+function erpMatchFn(){ return typeof UMCore.erpMatcher === 'function' ? UMCore.erpMatcher(clinics, erpMap) : name => UMCore.matchCustomer(name, clinics, erpMap); }
 // Sums imported ERP net for a range/rep. Returns null when no imported
 // period overlaps the range, so callers can fall back to app-logged numbers.
 function erpRevenueForRange(from, to, repFilter){
   const ps = erpPeriods().filter(p => (!from || p.to >= from) && (!to || p.from <= to));
   if(!ps.length) return null;
   let sum = 0;
+  const match = erpMatchFn();
   ps.forEach(p => erpViewRows(p).forEach(r => {
     if(!UMCore.inRange(r.date, from, to)) return;
-    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{});
+    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match);
     if(!rep) return;
     if(repFilter !== 'all' && rep !== repFilter) return;
     if(!erpRowCountsAsSales(r)) return;
@@ -164,8 +170,9 @@ function staleTargetNote(rep){
   const m = targetStaleMonth(rep);
   return m ? `<div style="font-size:11px; color:var(--amber-ink); margin-top:1px;">⚠️ Target is from ${monthLabel(m)} — upload this month's DSR</div>` : '';
 }
-function teamTargetNow(){
-  return teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: bestMonthRevenue(r).amount } : null; }));
+// mtd (optional): the month's lines of everyone, worked out once by the caller's draw from the same data (UMCore.erpMtd)
+function teamTargetNow(mtd){
+  return teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: bestMonthRevenue(r, mtd).amount } : null; }));
 }
 function pctInk(p){ return p >= 100 ? 'var(--sage-ink)' : p >= 60 ? 'var(--ink)' : 'var(--amber-ink)'; }
 // One compact "Team" bar row, same look as the per-rep rows on the Today card.
@@ -185,12 +192,13 @@ function teamTargetRow(tt, opts){
 // Target % per rep exactly as the Today card shows it — captured before and
 // after every upload so the import can SAY what it changed ("Mariam 40% →
 // 45%"), and say why when nothing moved.
-function targetPctMap(){
+function targetPctMap(mtd){
   const out = {};
+  mtd = mtd || erpMtdMap(); // every person's figure from one pass of the month's lines (v126 speed)
   REPS.forEach(r => {
     const t = targets[r] || {};
     if(!(t.revenue > 0)) return;
-    const bm = bestMonthRevenue(r);
+    const bm = bestMonthRevenue(r, mtd);
     out[r] = { pct: Math.round(bm.amount / t.revenue * 100), amount: bm.amount, goal: t.revenue, src: bm.src, asOf: bm.asOf };
   });
   return out;
@@ -226,8 +234,8 @@ function erpShowImportNote(html){
 
 // The report's ONLY sales source: the ERP sales files (owner's rule) — never
 // the DSR's achieved column, never app-logged orders.
-function officialRevenue(rep){
-  const bm = bestMonthRevenue(rep);
+function officialRevenue(rep, mtd){
+  const bm = bestMonthRevenue(rep, mtd);
   if(bm.basis !== 'erp') return { amount: null, src: null, asOf: null, has: false };
   return { amount: bm.amount, src: bm.src, asOf: bm.asOf, has: true, basis: bm.basis };
 }
@@ -248,10 +256,11 @@ function blendedTargets(mtd){
 // "achieved per brand" figure (the DSR gives the brand targets).
 function erpBrandRange(rep, from, to){
   const out = {}; let asOf = null;
+  const match = erpMatchFn();
   erpPeriods().filter(p => p.to >= from && p.from <= to).forEach(p => {
     erpViewRows(p).forEach(r => {
       if(r.date < from || r.date > to) return;
-      if(UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}) !== rep) return;
+      if(UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match) !== rep) return;
       const b = UMCore.normBrand(r.brand);
       out[b] = (out[b]||0) + r.net;
       if(!asOf || r.date > asOf) asOf = r.date;
@@ -378,11 +387,12 @@ function pmRows(){
   const sup = currentUser.role === 'supervisor';
   const rep = sup ? _pmRep : currentUser.name;
   const out = [];
+  const match = erpMatchFn();
   erpPeriods().forEach(p => {
     const map = p.repMap || {};
     unpackErpRows(p.rows).forEach(rw => {
-      if(UMCore.matchCustomer((rw.customer || '').trim(), clinics, erpMap).ignored) return; // accounts the supervisor set to ignore
-      if(rep !== 'all' && UMCore.erpRowRep(rw, clinics, erpMap, map) !== rep) return;
+      if(match((rw.customer || '').trim()).ignored) return; // accounts the supervisor set to ignore
+      if(rep !== 'all' && UMCore.erpRowRep(rw, clinics, erpMap, map, match) !== rep) return;
       out.push(rw);
     });
   });
@@ -739,8 +749,9 @@ async function applyTargetsFile(tg){
     return;
   }
   renderToday();
-  if(document.getElementById('coachCard')) renderCoach();
-  const note = targetPctNote(pctBefore, targetPctMap());
+  const mtdNow = erpMtdMap(); // the data as it is now (a refresh may have landed while the targets saved): one pass for both
+  if(document.getElementById('coachCard')) renderCoach(mtdNow);
+  const note = targetPctNote(pctBefore, targetPctMap(mtdNow));
   showModal(`
     <h3 style="margin-top:0;" data-ic="target">🎯 Targets entered automatically</h3>
     <div class="card" style="border-inline-start:4px solid var(--sage, #9ED0AF); margin:8px 0 10px; font-size:12.5px; line-height:1.6;">${note}</div>
@@ -855,13 +866,14 @@ function erpFileAudit(p){
   const salesmen = Object.values(bySales).map(a=>({...a, net:Math.round(a.net*100)/100})).sort((a,b)=>b.net-a.net);
   // 3) customer -> classification
   const byCust = Object.create(null);
+  const match = erpMatchFn();
   rows.forEach(r=>{
     const k=(r.customer||'').trim()||'(no name)';
-    const a=byCust[k]||(byCust[k]={name:k, rep:UMCore.erpRowRep(r, clinics, erpMap, repMap)||null, docs:new Set(), net:0});
+    const a=byCust[k]||(byCust[k]={name:k, rep:UMCore.erpRowRep(r, clinics, erpMap, repMap, match)||null, docs:new Set(), net:0});
     a.docs.add(r.doc); a.net+=r.net;
   });
   const customers = Object.values(byCust).map(a=>{
-    const m = UMCore.matchCustomer(a.name, clinics, erpMap);
+    const m = match(a.name);
     let kind, label, clinicName='';
     const closedTag = id => { const c = clinics.find(x=>x.id===id); return c && c.cls==='Closed' ? ' · مغلقة' : ''; };
     if(m.ignored){ kind='ignored'; label='⛔ متجاهَل'; }
@@ -931,7 +943,10 @@ function openErpRecon(id){
   const rec = UMCore.reconcileErp({ rows, visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to, isExchange: isExchangeLine });
   _erpUnmatched = rec.unmatchedCustomers.slice();
   const priorRows = erpPriorReturns(p);
-  const priorFor = rep => priorRows.filter(rw => UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) === rep);
+  // each line's person worked out once for the whole sheet (it was once per line per person per table, v126 speed)
+  const match = erpMatchFn(), repOfRow = new Map();
+  const rowRep = rw => { if(repOfRow.has(rw)) return repOfRow.get(rw); const v = UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}, match); repOfRow.set(rw, v); return v; };
+  const priorFor = rep => priorRows.filter(rw => rowRep(rw) === rep);
   const kdRow = (label, val, color) => `<div class="report-line"><span>${label}</span><span class="v" ${color?`style="color:${color};"`:''}>${val}</span></div>`;
   const monthPrefix = todayStr().slice(0,7);
   const repCard = r => {
@@ -966,7 +981,7 @@ function openErpRecon(id){
       const acc = Object.create(null); // keyed by customer names: no prototype
       rows.forEach(rw => {
         if(!UMCore.inRange(rw.date, p.from, p.to)) return; // a prior-invoice return re-dated to its own month leaves this period's table
-        if(UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) !== r.rep) return;
+        if(rowRep(rw) !== r.rep) return;
         const key = (rw.customer || '').trim() || '(no account name)';
         const a = acc[key] || (acc[key] = { net: 0, docs: new Set() });
         a.net += rw.net; a.docs.add(rw.doc);
@@ -981,7 +996,7 @@ function openErpRecon(id){
             <th style="text-align:end; padding:4px 6px; color:var(--muted);">Invoices</th>
             <th style="text-align:end; padding:4px 6px; color:var(--muted);">Net sales</th></tr>
           ${items.map(([cust, a])=>{
-            const m = UMCore.matchCustomer(cust, clinics, erpMap);
+            const m = match(cust);
             const clinic = m.clinicId ? clinics.find(x=>x.id===m.clinicId) : null;
             const tag = m.channel ? '<span style="color:var(--muted); font-size:11px;"> · 🌐 channel</span>'
               : clinic ? `<span style="color:var(--muted); font-size:11px;"> · ${esc(clinic.name)}</span>` : '';
@@ -1004,7 +1019,7 @@ function openErpRecon(id){
       if(!bt || !Object.keys(bt).length) return '';
       const actual = Object.create(null);
       rows.forEach(rw => {
-        if(UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) !== r.rep) return;
+        if(rowRep(rw) !== r.rep) return;
         const b = UMCore.normBrand(rw.brand);
         actual[b] = (actual[b]||0) + rw.net;
       });
@@ -1719,8 +1734,8 @@ function elRenderMoves(){
       const d1 = Object.assign({}, digestData(), pv.draft), withGoal = REPS.filter(r => (targets[r] || {}).revenue > 0);
       const nowKey = JSON.stringify([withGoal, erpReturnPolicy(), erpPeriods().map(p => p.id + ':' + (p.rev || '') + ':' + (p.rows || []).length), erpMap,
         clinics.map(c => [c.id, c.rep, c.prevRep, c.repSince, !!c.shared, c.sharedSince])]);
-      if(!_el.nowAch || _el.nowAch.key !== nowKey){ const v = {}; withGoal.forEach(r => { v[r] = bestMonthRevenue(r).amount; }); _el.nowAch = { key: nowKey, v }; } // unchanged while the name is typed
-      const now = _el.nowAch.v, aft = {}; withGoal.forEach(r => { aft[r] = UMCore.monthAchievement(r, d1).amount; });
+      if(!_el.nowAch || _el.nowAch.key !== nowKey){ const v = {}, mtd0 = erpMtdMap(); withGoal.forEach(r => { v[r] = bestMonthRevenue(r, mtd0).amount; }); _el.nowAch = { key: nowKey, v }; } // unchanged while the name is typed
+      const now = _el.nowAch.v, aft = {}, mtd1 = UMCore.erpMtd(d1); withGoal.forEach(r => { aft[r] = UMCore.monthAchievement(r, d1, mtd1).amount; }); // (each person's month from one pass of the draft's lines)
       const pct = (a, g) => `<span dir="ltr">${Math.round(a / g * 100)}%</span>`;
       const lines = withGoal.filter(r => Math.abs(now[r] - aft[r]) >= 0.005).map(r => `<div class="el-today" data-rep="${esc(r)}" style="font-size:12.5px; padding:2px 0;">${elWho(r)}: <span>now</span> ${pct(now[r], targets[r].revenue)} · <span>after saving</span> ${pct(aft[r], targets[r].revenue)}</div>`);
       const t0 = teamTargetTotal(withGoal.map(r => ({ goal: targets[r].revenue, ach: now[r] }))), t1 = teamTargetTotal(withGoal.map(r => ({ goal: targets[r].revenue, ach: aft[r] })));

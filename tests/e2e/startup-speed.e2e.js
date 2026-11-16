@@ -108,7 +108,19 @@ const ARCH_MONTHS = Object.keys(JSON.parse(FIX.docs.visitsIndex).months).length;
 let acct = null; // the open being measured: what the cloud served and took
 function freshAcct(){ return { reads: 0, readBytes: 0, readKeys: {}, writes: 0, writeBytes: 0, writeKeys: {}, queries: 0, http: 0, httpBytes: 0, httpWire: 0, setupAt: null }; }
 let cloudSetup = null; // the cloud's first request of a page pays the set-up
-function onCloud(){ if(!NET) return Promise.resolve(); if(!cloudSetup){ cloudSetup = sleep((NET.newConnRtts + NET.cloudSetupRtts) * NET.rtt); if(acct) acct.setupAt = Date.now(); } return cloudSetup; }
+// <link rel="preconnect"> (v126 speed): the stand-in SDK makes no real request, so what a preconnect buys is modelled —
+// the new connection's set-up (newConnRtts) is paid from the moment the page's parser met the hint, beside the page's
+// own work, and is lost if Chrome closed the idle socket (~10 s) before the first request; the requests themselves
+// (cloudSetupRtts: the token refreshed, the channel opened; the sign-in's own) are paid as before.
+let preconnect = null; // { at: epoch ms the hints were parsed, hosts: [..] } of the page being measured
+const PRECONNECT_IDLE_MS = 10000;
+function connLeft(host){
+  const conn = NET.newConnRtts * NET.rtt;
+  if(!preconnect || !preconnect.hosts.includes(host) || Date.now() - preconnect.at > PRECONNECT_IDLE_MS) return conn;
+  return Math.max(0, preconnect.at + conn - Date.now());
+}
+function onCloud(){ if(!NET) return Promise.resolve(); if(!cloudSetup){ const warm = ['firestore.googleapis.com', 'securetoken.googleapis.com'].every(h => connLeft(h) < NET.newConnRtts * NET.rtt);
+  cloudSetup = sleep((warm ? connLeft('firestore.googleapis.com') : NET.newConnRtts * NET.rtt) + NET.cloudSetupRtts * NET.rtt); if(acct) acct.setupAt = Date.now(); } return cloudSetup; }
 const group = k => k.replace(/^(erpRows|visitsArch|photo):.*/, '$1:*').replace(/^snap_.*/, 'snap_*');
 function countRead(k, n){ if(!acct) return; acct.reads++; acct.readBytes += n; const g = group(k); const e = acct.readKeys[g] = acct.readKeys[g] || [0, 0]; e[0]++; e[1] += n; }
 function countWrite(k, n){ if(!acct) return; acct.writes++; acct.writeBytes += n; const g = group(k); const e = acct.writeKeys[g] = acct.writeKeys[g] || [0, 0]; e[0]++; e[1] += n; }
@@ -145,7 +157,7 @@ const api = {
   },
   async txGet(k){ down(); const release = await lockKey(k); const id = ++txSeq; held[id] = release; const d = await api.get(k); return { id, doc: d }; },
   async txEnd(id, k, v){ try{ if(v != null) await api.set(k, v); } finally { if(held[id]){ held[id](); delete held[id]; } } return true; },
-  async signIn(email, pwd){ if(NET){ await netDown(2000, NET.newConnRtts); await netDown(1500); } return !!pwd && STAFF.some(s => (s.email || '').toLowerCase() === String(email || '').toLowerCase()); },
+  async signIn(email, pwd){ if(NET){ await sleep(connLeft('identitytoolkit.googleapis.com')); await netDown(2000); await netDown(1500); } return !!pwd && STAFF.some(s => (s.email || '').toLowerCase() === String(email || '').toLowerCase()); },
 };
 
 // ---------- the Firebase stand-in (served at the SDK's addresses) ----------
@@ -264,6 +276,8 @@ function initScript(arg){
     }
   }catch(e){}
   const U = window.__um = { marks: {}, longtasks: [], cloud: [], timeline: [], fns: {}, loadAlls: 0, renders: 0, msRuns: [], unshared: 0, inBuild: 0 };
+  // whether this phone kept a copy of chat and memories when the open began (a full phone may not have room for one)
+  try{ U.teamCopy = { chat: localStorage.getItem('um_mirror:chat') != null, memories: localStorage.getItem('um_mirror:memories') != null }; }catch(e){ U.teamCopy = {}; }
   const now = () => performance.now();
   const mark = (n, t) => { if(U.marks[n] == null) U.marks[n] = Math.round(t == null ? now() : t); };
   U.mark = mark;
@@ -284,7 +298,7 @@ function initScript(arg){
     if(window.UMCore && typeof UMCore.monthAchievement === 'function'){ const f = UMCore.monthAchievement; UMCore.monthAchievement = function(rep, data, mtd){ if(U.inBuild && mtd === undefined) U.unshared++; return f.apply(this, arguments); }; }
     if(typeof window.msRun === 'function'){ const f = window.msRun; window.msRun = function(){ const t0 = now(); try{ return f.apply(this, arguments); } finally { const d = now() - t0; U.msRuns.push([Math.round(t0), Math.round(now())]); const e = U.fns.msRun = U.fns.msRun || [0, 0, 0]; e[0]++; e[1] += d; if(d > e[2]) e[2] = d;
       try{ if(typeof _msModel !== 'undefined' && _msModel && _msModel.D && _msModel.key === msKey(msView()) && U.marks.figures == null){ mark('figures'); requestAnimationFrame(() => requestAnimationFrame(() => mark('figuresVisible'))); } }catch(err){} } }; }
-    SYNC.forEach(n => { const f = window[n]; if(typeof f !== 'function') return; window[n] = function(){ const t0 = now(); try{ return f.apply(this, arguments); } finally { const d = now() - t0; const e = U.fns[n] = U.fns[n] || [0, 0, 0]; e[0]++; e[1] += d; if(d > e[2]) e[2] = d; } }; });
+    SYNC.forEach(n => { const f = window[n]; if(typeof f !== 'function') return; window[n] = function(){ const t0 = now(); if(n === 'renderAll') mark('firstDraw', t0); try{ return f.apply(this, arguments); } finally { const d = now() - t0; const e = U.fns[n] = U.fns[n] || [0, 0, 0]; e[0]++; e[1] += d; if(d > e[2]) e[2] = d; } }; });
   };
   // the person's own data on the Today screen: her greeting, her follow-ups, her month figure
   const ex = arg.expect;
@@ -310,6 +324,11 @@ function initScript(arg){
   const start = () => { new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] }); schedule(); };
   if(document.documentElement) start(); else document.addEventListener('readystatechange', start, { once: true });
   document.addEventListener('DOMContentLoaded', () => { mark('dcl'); window.__umWrap(); });
+  // the preconnect hints, when the parser met them (the network model pays their set-up from then)
+  { let sent = false; const seen = () => { if(sent) return; const ls = [...document.querySelectorAll('link[rel="preconnect"]')]; if(!ls.length) return; sent = true;
+      U.preconnect = ls.map(l => l.href.replace(/^https?:\/\//, '').replace(/\/.*$/, '') + (l.crossOrigin != null ? ' (crossorigin)' : ''));
+      try{ window.__fbPreconnect({ at: performance.timeOrigin + performance.now(), hosts: [...new Set(ls.map(l => l.href.replace(/^https?:\/\//, '').replace(/\/.*$/, '')))] }); }catch(e){} };
+    const mo = new MutationObserver(seen); mo.observe(document, { childList: true, subtree: true }); document.addEventListener('DOMContentLoaded', () => { seen(); mo.disconnect(); }, { once: true }); }
   document.addEventListener('click', e => { const b = e.target && e.target.closest && e.target.closest('button'); if(b && /submitEmailLogin|submitGateLogin/.test(b.getAttribute('onclick') || '')) mark('signInTap'); }, true);
 }
 
@@ -349,6 +368,7 @@ async function launch(dir, prof, ctxOpts){
     }
     return route.abort();
   });
+  await ctx.exposeFunction('__fbPreconnect', info => { if(info && !preconnect) preconnect = { at: info.at, hosts: info.hosts || [] }; });
   for(const [n, fn] of Object.entries({ __fbGet: api.get, __fbSet: api.set, __fbDel: api.del, __fbCommit: api.commit, __fbQuery: api.query, __fbTxGet: api.txGet, __fbTxEnd: api.txEnd, __fbSignIn: api.signIn })) await ctx.exposeFunction(n, fn);
   return ctx;
 }
@@ -371,7 +391,7 @@ async function openOnce(ctx, prof, who, kind, opts){
     await cdp.send('Tracing.start', { transferMode: 'ReportEvents', traceConfig: { recordMode: 'recordAsMuchAsPossible',
       includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'v8', 'v8.execute', 'disabled-by-default-v8.compile', 'blink.user_timing', 'loading', 'toplevel', 'blink', 'ServiceWorker'] } });
   }
-  acct = freshAcct(); cloudSetup = null; link.down = link.up = Date.now();
+  acct = freshAcct(); cloudSetup = null; preconnect = null; link.down = link.up = Date.now();
   const t0 = Date.now();
   await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'commit', timeout: 120000 });
   if(kind === 'first'){
@@ -410,7 +430,7 @@ async function openOnce(ctx, prof, who, kind, opts){
     const due = document.getElementById('dueList'), tc = document.getElementById('targetCard'), g = document.getElementById('greeting');
     const dueText = due ? due.textContent : '';
     return {
-      marks: U.marks, paint, longtasks: U.longtasks, timeline: U.timeline, fns: U.fns, cloudOps: U.cloud.length, cloudLog: U.cloud.slice(0, 400), msRuns: U.msRuns, unshared: U.unshared,
+      marks: U.marks, preconnect: U.preconnect || [], teamCopy: U.teamCopy || {}, paint, longtasks: U.longtasks, timeline: U.timeline, fns: U.fns, cloudOps: U.cloud.length, cloudLog: U.cloud.slice(0, 400), msRuns: U.msRuns, unshared: U.unshared,
       nav: { workerStart: Math.round(nav.workerStart || 0), responseStart: Math.round(nav.responseStart || 0), responseEnd: Math.round(nav.responseEnd || 0), domInteractive: Math.round(nav.domInteractive || 0), dcl: Math.round(nav.domContentLoadedEventEnd || 0), load: Math.round(nav.loadEventEnd || 0), transfer: nav.transferSize, sw: !!navigator.serviceWorker.controller },
       res, ls, lsKB: Math.round(lsTotal / 1024),
       shown: { greeting: g ? g.textContent : '', who: typeof currentUser !== 'undefined' && currentUser ? currentUser.name : null, amountOnCard: tc ? window.__um.amountShown(tc) : false,
@@ -826,7 +846,15 @@ function rowOf(r){
     }
     const tl = r.page.timeline, first = name => tl.find(x => x[0] === name);
     const team = first('loadTeam'), lists = [first('loadVisits'), first('loadErpSales')].filter(Boolean);
-    check(`${tag}: chat and memories are read beside the other lists, not after them`, !!team && lists.length === 2 && team[1] < Math.min(...lists.map(x => x[2])), { team, lists });
+    // v126 speed: chat and memories never hold back the first draw; a daily open does not read them at all (the phone keeps
+    // their last read; they are read when their screen opens, and every 15 minutes) — a new device reads them beside the lists
+    const listsEnd = lists.length ? Math.max(...lists.map(x => x[2])) : null, fd = r.page.marks.firstDraw;
+    const tc = r.page.teamCopy || {};
+    if(r.kind === 'daily') check(`${tag}: a daily open reads neither chat nor memories when this phone kept their copy (chat read ${n('chat')}, memories ${n('memories')} times; copies kept: ${!!tc.chat}, ${!!tc.memories})`,
+      (n('chat') === 0 || !tc.chat) && (n('memories') === 0 || !tc.memories) && (tc.chat || tc.memories) && fd != null && (!team || team[2] <= listsEnd || fd < team[2]), { chat: rk.chat, memories: rk.memories, copies: tc, team, firstDraw: fd });
+    else check(`${tag}: chat and memories are read beside the other lists, and the first draw does not wait for them`, !!team && lists.length === 2 && team[1] < listsEnd && fd != null && (team[2] <= listsEnd || fd < team[2]), { team, lists, firstDraw: fd });
+    check(`${tag}: the page connects early to the hosts its first reads go to (the sign-in's, the cloud's)`,
+      ['securetoken.googleapis.com (crossorigin)', 'identitytoolkit.googleapis.com (crossorigin)', 'firestore.googleapis.com', 'firestore.googleapis.com (crossorigin)'].every(h => (r.page.preconnect || []).includes(h)), r.page.preconnect);
     check(`${tag}: the figures (msBuild) work out the month's lines once — no month figure worked out again without them`, r.page.unshared === 0, { unshared: r.page.unshared });
     if(r.refresh) check(`${tag}: the 20-second refresh downloads no sales file it keeps`, r.refresh.erpRows === 0, r.refresh);
   });
