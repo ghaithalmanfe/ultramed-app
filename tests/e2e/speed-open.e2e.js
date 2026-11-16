@@ -11,10 +11,13 @@
 //   F  the read fails: the line says so; a later read clears it
 //   A  Arabic: the line in Arabic, no English left
 //   N  something changed on another phone: the whole frame is swapped once (every painted frame one data state)
-//   S2 saves made in the window take the copy as their base and merge three ways — a visit, a clinic edit, a day plan,
-//      the catalog and the targets, each changed meanwhile on another device, all land with both changes (the same
-//      part of a whole document changed on both is refused and said, the other's kept; a change made here again while
-//      the merged save was on its way stays on the screen and lands with its own save, S2i)
+//   S2 saves made in the window are an offline start's: a visit, a clinic edit and a day plan merge three ways against
+//      the copy (each changed meanwhile on another device, all land with both changes); a whole document (the catalog,
+//      the targets) is ONE compare-and-set against the exact text the copy came from — changed on another device since,
+//      refused and said ("Changed on another device — reopen the app, then save again", the bar), nothing written, the
+//      screen then the cloud's (part 4: part 3 merged it); a second edit made while a save is on its way is never
+//      dropped — its save runs after the first, against what it landed, in the window and after it, and also when the
+//      first had no answer within 12 s (S2i–S2k)
 //   S3 the window is never taken for a cloud read: the daily backup, the whole-day Restore, the held deletes,
 //      salesCheckComplete / visitsComplete, the nameless-clinic and lost-doctor flows, the clinic-recovery sheets and the
 //      factory defaults
@@ -393,7 +396,8 @@ const LINE_RE = /This phone's copy, saved\s+(\S.*?)\s+— updating from the clou
   }
 
   // =====================================================================================================
-  // S2 — saves made in the window merge three ways against the copy (each changed meanwhile on another device)
+  // S2 — saves made in the window are an offline start's: lists merge three ways against the copy, a whole document is
+  //      one compare-and-set against the copy's text (each changed meanwhile on another device)
   // =====================================================================================================
   if(want('S2')){
     // lists: a visit, a clinic edit, a day plan — Mariam's phone and her laptop
@@ -438,53 +442,101 @@ const LINE_RE = /This phone's copy, saved\s+(\S.*?)\s+— updating from the clou
     check('S2c: a day plan changed in the window lands with both clinics', outs[2].ok && ids.includes(other.id) && ids.includes(third.id), { out: outs[2], plan: ids });
     check('S2d: …and the phone\'s screen shows both changes of each', shown.notes === 'corrected on the laptop' && (shown.products || []).includes('window-product') && shown.phone === '+000 1111 2222' && shown.cnotes === 'edited on the phone in the first second' && shown.plan.includes(other.id) && shown.plan.includes(third.id), shown);
     await done(P); await done(L);
-    // whole documents: the catalog and the targets — the supervisor's phone and his laptop
+    // whole documents: the catalog and the targets — the supervisor's phone and his laptop. A whole document saved in
+    // the window is an offline start's save (v126 speed, part 4): ONE compare-and-set against the exact text the copy on
+    // screen came from — it lands while the cloud still holds that text; changed on another device since, it is refused
+    // and said, nothing written (part 3 merged it with the other device's change: never, by the owner's rule)
     seed(SMALL);
     const P2 = await mkDevice('S2-sup-phone'), L2 = await mkDevice('S2-sup-laptop');
     await P2.firstOpen(G); await L2.firstOpen(G);
     const prods = doc('products'), pa = prods[0], pb = prods[1];
     await L2.ev(async o => { products.find(x => x.id === o.a).price = 77.5; targets[o.m].revenue = 22222; targets[o.r] = targets[o.r] || {}; targets[o.r].visits = 33;
       const a = await persistTold('products'), b = await persistTold('targets'); return [a.ok, b.ok]; }, { a: pa.id, m: M, r: R });
+    const lapProducts = cloud.get('products').value, lapTargets = cloud.get('targets').value; // what the laptop saved, as text
+    const t2 = Date.now();
     await P2.restart({ hold: true });
     const inWin2 = await waitEarly(P2);
-    await P2.ev(o => { try{ products.find(x => x.id === o.b).name = 'Renamed in the first second'; targets[o.r] = targets[o.r] || {}; targets[o.r].revenue = 15000;
+    await P2.ev(o => { try{ window.__um.toasts.length = 0; products.find(x => x.id === o.b).name = 'Renamed in the first second'; targets[o.r] = targets[o.r] || {}; targets[o.r].revenue = 15000;
       window.__saves = Promise.all([persistTold('products'), persistTold('targets')]); }catch(e){ window.__saves = Promise.resolve([]); } }, { b: pb.id, r: R });
     releaseAuth(P2.label, 'ok');
     const outs2 = await P2.ev(async () => (await window.__saves).map(r => ({ ok: r.ok, refused: !!(r.outcome && r.outcome.refused) })));
     while(outs2.length < 2) outs2.push({ ok: false, none: true });
+    const said2 = await P2.ev(() => ({ toasts: window.__um.toasts.slice(), bar: (document.getElementById('refusedPill') || {}).textContent || '' }));
     await P2.settled(); await P2.tick();
-    const cpr = doc('products'), ctg = doc('targets');
-    const shown2 = await P2.ev(o => ({ price: (products.find(x => x.id === o.a) || {}).price, name: (products.find(x => x.id === o.b) || {}).name, m: (targets[o.m] || {}).revenue, r: (targets[o.r] || {}).revenue, rv: (targets[o.r] || {}).visits }), { a: pa.id, b: pb.id, m: M, r: R });
-    check('S2e: the catalog saved in the window lands with the laptop\'s price and the phone\'s new name (a whole document: this phone\'s change put on the cloud\'s)',
-      inWin2 && outs2[0].ok && (cpr.find(x => x.id === pa.id) || {}).price === 77.5 && (cpr.find(x => x.id === pb.id) || {}).name === 'Renamed in the first second', { inWin2, out: outs2[0] });
-    check('S2f: the targets saved in the window land with both — Mariam\'s from the laptop, Renova\'s revenue from the phone, her visits target from the laptop',
-      outs2[1].ok && ctg[M].revenue === 22222 && ctg[R].revenue === 15000 && ctg[R].visits === 33, { out: outs2[1], m: ctg[M].revenue, r: ctg[R].revenue, rv: ctg[R].visits });
-    check('S2g: …and the phone shows the merged documents', shown2.price === 77.5 && shown2.name === 'Renamed in the first second' && shown2.m === 22222 && shown2.r === 15000 && shown2.rv === 33, shown2);
-    // the same part changed on both: refused and said, the laptop's kept
-    await L2.tick(); // (the laptop reads the merged targets first)
-    const l2ok = await L2.ev(async o => { targets[o.r].revenue = 11111; return (await persistTold('targets')).ok; }, { r: R });
+    const wrote2 = writesBy(P2.label, t2).filter(o => /(^|,)(products|targets)(,|$)/.test(o.k)).map(o => o.op + ' ' + o.k);
+    const shown2 = await P2.ev(o => ({ price: (products.find(x => x.id === o.a) || {}).price, name: (products.find(x => x.id === o.b) || {}).name, m: (targets[o.m] || {}).revenue, r: (targets[o.r] || {}).revenue, rv: (targets[o.r] || {}).visits,
+      bar: (document.getElementById('refusedPill') || {}).textContent || '' }), { a: pa.id, b: pb.id, m: M, r: R });
+    const ELSEWHERE = /Changed on another device — reopen the app, then save again/;
+    check('S2e: the catalog saved in the window, changed on another device since the copy: refused and said ("Changed on another device — reopen the app, then save again", the bar), nothing written — the cloud holds the laptop\'s catalog exactly',
+      inWin2 && !outs2[0].ok && outs2[0].refused && said2.toasts.some(t => ELSEWHERE.test(t)) && /changed on another device/i.test(said2.bar) && cloud.get('products').value === lapProducts && !wrote2.some(w => /products/.test(w)),
+      { inWin2, out: outs2[0], said: said2, wrote: wrote2, cloudIsLaptops: cloud.get('products').value === lapProducts });
+    check('S2f: the targets saved in the window, changed on another device since the copy: refused and said, nothing written — the cloud holds the laptop\'s targets exactly (Mariam\'s 22,222, Renova\'s visits target 33, not the phone\'s 15,000)',
+      !outs2[1].ok && outs2[1].refused && cloud.get('targets').value === lapTargets && !wrote2.some(w => /targets/.test(w)),
+      { out: outs2[1], wrote: wrote2, cloud: { m: doc('targets')[M].revenue, r: (doc('targets')[R] || {}).revenue, rv: (doc('targets')[R] || {}).visits } });
+    const cloudR2 = (doc('targets')[R] || {}).revenue;
+    check('S2g: …and once the read is in the phone shows the cloud\'s documents (the laptop\'s price and targets; its refused change is not shown as saved), the bar still saying it was not saved',
+      shown2.price === 77.5 && shown2.name === pb.name && shown2.m === 22222 && shown2.r === cloudR2 && shown2.r !== 15000 && shown2.rv === 33 && /changed on another device/i.test(shown2.bar), Object.assign({ cloudR: cloudR2 }, shown2));
+    // the same target changed on both (a guard — refused on 7256c04 too): refused and said, the laptop's 11,111 kept
+    await L2.tick();
+    const l2ok = await L2.ev(async o => { targets[o.r] = targets[o.r] || {}; targets[o.r].revenue = 11111; return (await persistTold('targets')).ok; }, { r: R });
     await P2.restart({ hold: true });
     const inWin3 = await waitEarly(P2);
-    await P2.ev(o => { try{ targets[o.r].revenue = 15500; window.__saves = persistTold('targets'); }catch(e){ window.__saves = Promise.resolve({ ok: false, outcome: {} }); } }, { r: R });
+    await P2.ev(o => { try{ targets[o.r] = targets[o.r] || {}; targets[o.r].revenue = 15500; window.__saves = persistTold('targets'); }catch(e){ window.__saves = Promise.resolve({ ok: false, outcome: {} }); } }, { r: R });
     releaseAuth(P2.label, 'ok');
     const out3 = await P2.ev(async () => { const r = (await window.__saves) || {}; return { ok: r.ok, refused: !!(r.outcome && r.outcome.refused), bar: (document.getElementById('refusedPill') || {}).textContent || '', toasts: window.__um.toasts.slice(-3) }; });
-    check('S2h: the same target changed on both: the phone\'s save is refused and said ("Changed on another device"), the laptop\'s 11,111 stays',
+    check('S2h: the same target changed on both: the phone\'s save is refused and said ("Changed on another device"), the laptop\'s 11,111 stays (a guard)',
       l2ok && inWin3 && !out3.ok && out3.refused && /changed on another device/i.test(out3.bar + ' ' + out3.toasts.join(' ')) && doc('targets')[R].revenue === 11111, Object.assign({ l2ok, inWin3, cloud: doc('targets')[R].revenue }, out3));
-    // changed here again while the merged save was on its way (its text already taken): the later change stays on the
-    // screen when the merged document lands, and its own save lands with everything
-    await P2.settled(); await P2.tick(); await L2.tick();
-    const l2ok4 = await L2.ev(async o => { targets[o.m].revenue = 23456; return (await persistTold('targets')).ok; }, { m: M });
+    await P2.settled(); await P2.tick();
+    // A second edit made while a save is on its way is never dropped, on the screen or in the cloud: the cloud unchanged
+    // since the copy, an edit and its save, a second edit and its save at once (before the first answered) — both land,
+    // in order (the second against what the first landed); in the window (both wait for the sign-in), then once the read
+    // is in (on 7256c04 the second was refused there as "Changed on another device", and its edit went at the next round)
     await P2.restart({ hold: true });
     const inWin4 = await waitEarly(P2);
-    await P2.ev(o => { try{ targets[o.r].revenue = 16000; window.__saves = persistTold('targets'); targets[o.r].visits = 44; }catch(e){ window.__saves = Promise.resolve({ ok: false, outcome: {} }); } }, { r: R });
+    await P2.ev(o => { try{ window.__um.toasts.length = 0; targets[o.r] = targets[o.r] || {}; targets[o.r].revenue = 16000; window.__s1 = persistTold('targets'); targets[o.r].visits = 44; window.__s2 = persistTold('targets'); }
+      catch(e){ window.__s1 = window.__s2 = Promise.resolve({ ok: false, outcome: {} }); } }, { r: R });
     releaseAuth(P2.label, 'ok');
-    const out4 = await P2.ev(async o => { const r = (await window.__saves) || {}; const t = targets[o.r] || {}, mem = { r: t.revenue, rv: t.visits, m: (targets[o.m] || {}).revenue };
-      let ok2 = false; try{ ok2 = (await persistTold('targets')).ok; }catch(e){} return { ok: r.ok, mem, ok2 }; }, { r: R, m: M });
-    await P2.settled();
-    const ctg4 = doc('targets');
-    check('S2i: changed here again while the merged save was on its way: the later change stays on the screen, and its own save lands with everything (Mariam\'s 23,456 from the laptop, Renova\'s 16,000 and visits target 44 from the phone)',
-      l2ok4 && inWin4 && out4.ok && out4.mem.r === 16000 && out4.mem.rv === 44 && out4.mem.m === 23456 && out4.ok2 && ctg4[M].revenue === 23456 && ctg4[R].revenue === 16000 && ctg4[R].visits === 44,
-      Object.assign({ l2ok4, inWin4, cloud: { m: ctg4[M].revenue, r: ctg4[R].revenue, rv: ctg4[R].visits } }, out4));
+    const w4 = await P2.ev(async o => { const a = await window.__s1, b = await window.__s2; const t = targets[o.r] || {}; return { ok1: a.ok, ok2: b.ok, mem: { r: t.revenue, rv: t.visits } }; }, { r: R });
+    const c4 = doc('targets')[R] || {};
+    await P2.settled(); await P2.tick();
+    const after4 = await P2.ev(o => { const t = targets[o.r] || {}; return { r: t.revenue, rv: t.visits }; }, { r: R });
+    const r5 = await P2.ev(async o => { targets[o.r].revenue = 17000; const s3 = persistTold('targets'); targets[o.r].visits = 55; const s4 = persistTold('targets');
+      const a = await s3, b = await s4; const t = targets[o.r] || {};
+      return { ok3: a.ok, ok4: b.ok, mem: { r: t.revenue, rv: t.visits }, toasts: window.__um.toasts.slice(), bar: (document.getElementById('refusedPill') || {}).textContent || '' }; }, { r: R });
+    const c5 = doc('targets')[R] || {};
+    await P2.tick();
+    const after5 = await P2.ev(o => { const t = targets[o.r] || {}; return { r: t.revenue, rv: t.visits }; }, { r: R });
+    check('S2i: a second edit made while a save is on its way is never dropped — its save started at once, both land in order and the cloud and the screen hold both edits, nothing said refused: in the window (16,000 and 44) and once the read is in (17,000 and 55)',
+      inWin4 && w4.ok1 && w4.ok2 && c4.revenue === 16000 && c4.visits === 44 && w4.mem.r === 16000 && w4.mem.rv === 44 && after4.r === 16000 && after4.rv === 44
+        && r5.ok3 && r5.ok4 && c5.revenue === 17000 && c5.visits === 55 && after5.r === 17000 && after5.rv === 55 && !r5.toasts.some(t => /another device/i.test(t)) && !r5.bar,
+      { inWin4, window: Object.assign({ cloud: { r: c4.revenue, rv: c4.visits }, afterRound: after4 }, w4), afterRead: Object.assign({ cloud: { r: c5.revenue, rv: c5.visits }, afterRound: after5 }, r5) });
+    // no answer from the cloud within 12 s (the first save may still land): the second save, started while the first is
+    // still on its way, lands on top of it when the cloud answers — the first's text is this phone's own (on 7256c04: refused)
+    holdReads(P2.label, k => k === 'targets');
+    const r6 = await P2.ev(async o => { window.__um.toasts.length = 0; targets[o.r].revenue = 18000; const a = await persistTold('targets');
+      targets[o.r].visits = 66; window.__s6 = persistTold('targets');
+      return { ok5: a.ok, timeout: !!(a.outcome && a.outcome.timeout), toasts: window.__um.toasts.slice() }; }, { r: R });
+    await sleep(300); releaseReads(P2.label);
+    const r6b = await P2.ev(async o => { const b = await window.__s6; await new Promise(r => setTimeout(r, 300)); const t = targets[o.r] || {};
+      return { ok6: b.ok, mem: { r: t.revenue, rv: t.visits }, toasts: window.__um.toasts.slice(), bar: (document.getElementById('refusedPill') || {}).textContent || '' }; }, { r: R });
+    const c6 = doc('targets')[R] || {};
+    check('S2j: no answer within 12 s (told as such: the screen says "No answer from the cloud yet"), and the second edit\'s save, started while the first was still on its way, lands on top of it when the cloud answers — the cloud and the screen hold both (18,000 and 66), nothing said refused',
+      !r6.ok5 && r6.timeout && r6b.ok6 && c6.revenue === 18000 && c6.visits === 66 && r6b.mem.r === 18000 && r6b.mem.rv === 66 && !r6b.toasts.some(t => /another device/i.test(t)) && !r6b.bar,
+      Object.assign({ cloud: { r: c6.revenue, rv: c6.visits } }, r6, r6b));
+    // the other order (a guard — it held on 7256c04 too): the first save's answer is late, the second lands first; when the
+    // first then reaches the cloud it writes nothing over the second (an earlier save never writes over a later one)
+    let firstHeld = 0;
+    holdReads(P2.label, k => k === 'targets' && firstHeld++ === 0);
+    const r7 = await P2.ev(async o => { window.__um.toasts.length = 0; targets[o.r].revenue = 19000; const a = await persistTold('targets'); targets[o.r].visits = 77; const b = await persistTold('targets');
+      return { ok7: a.ok, timeout: !!(a.outcome && a.outcome.timeout), ok8: b.ok }; }, { r: R });
+    const c7a = doc('targets')[R] || {};
+    releaseReads(P2.label);
+    await sleep(500);
+    const c7 = doc('targets')[R] || {};
+    const r7b = await P2.ev(o => { const t = targets[o.r] || {}; return { mem: { r: t.revenue, rv: t.visits }, toasts: window.__um.toasts.slice(), bar: (document.getElementById('refusedPill') || {}).textContent || '' }; }, { r: R });
+    check('S2k: the first save\'s answer late, the second landed first: when the first reaches the cloud it writes nothing over the second (19,000 and 77 stay), nothing said refused (a guard)',
+      !r7.ok7 && r7.timeout && r7.ok8 && c7a.revenue === 19000 && c7a.visits === 77 && c7.revenue === 19000 && c7.visits === 77 && r7b.mem.r === 19000 && r7b.mem.rv === 77 && !r7b.toasts.some(t => /another device/i.test(t)) && !r7b.bar,
+      Object.assign({ cloudBefore: { r: c7a.revenue, rv: c7a.visits }, cloud: { r: c7.revenue, rv: c7.visits } }, r7, r7b));
     await done(P2); await done(L2);
   }
 

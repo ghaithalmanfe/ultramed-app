@@ -1408,8 +1408,10 @@ async function cloudGet(key, src, run){
 // an offline start in every respect: every list drawn counts as served from the phone's copy (_mirrorUsed) until a
 // read from the cloud replaces it — so the daily backup, the whole-day Restore, the held deletes, salesCheckComplete
 // and visitsComplete, the nameless-clinic and lost-doctor flows, the recovery sheets and the factory defaults never
-// take it for a cloud read; a save made in it merges three ways against that copy (a whole document too: merge3Doc
-// in persistNow); nothing of it is read from the cloud or written, and nothing reaches the cloud before the sign-in is
+// take it for a cloud read; a save made in it is an offline start's save: a list merges three ways against that copy,
+// a whole document is ONE compare-and-set against the exact text that copy came from (persistNow: changed on another
+// device since → refused and said, nothing written — never merged, part 4); nothing of it is read from the cloud or
+// written, and nothing reaches the cloud before the sign-in is
 // confirmed (the 20-second round, the queue's upload and the 'online' upload wait for it). A small line (#copyLine)
 // says the screen is this phone's copy, when it was saved and that it is updating — or that the read failed — until
 // a read from the cloud is in. Only for the person this phone last signed in (um_lastUser, 03-gate.js) while
@@ -1458,8 +1460,6 @@ function copyMark(run, docs){
   try{ localStorage.setItem(COPY_AT, JSON.stringify({ at: Date.now(), none })); }catch(e){}
 }
 function earlyFor(name, role){ return !!_early && _early.state !== 'gone' && _early.name === name && _early.role === role; }
-// the window: the screen is this phone's copy and this session's first read from the cloud is not in yet
-function earlyWindow(){ return !!_early && _early.state === 'drawn' && !_early.done; }
 // nothing reaches the cloud from the early open until the sign-in is confirmed (the round, the queue's upload)
 function earlyUnconfirmed(){ return !!_early && _early.state !== 'gone' && !_early.confirmed; }
 function earlyOpen(){
@@ -1815,6 +1815,7 @@ async function loadAllNow(opts){
     // (a copy served from the phone takes what the phone kept beside it after a save
     // that did not land, else that copy itself).
     [['products', p], ['targets', tg], ['staff', st], ['recycleBin', rb], ['benchmarks', bm], ['categoryGuides', cg], ['erpNotes', en]].forEach(([k, r]) => {
+      wholeDocSentForget(k); // what memory holds is this read's from here on (persistNowInner's own texts no longer in it)
       if(lf[k]){ delete _docLoaded[k]; return; }
       if(mu[k]){ const kept = docBaseFromPhone(k); _docLoaded[k] = kept !== undefined ? kept : (r && r.value != null ? r.value : null); return; }
       _docLoaded[k] = r && r.value != null ? r.value : null;
@@ -2994,7 +2995,30 @@ async function persist(key, opts){
   try{ const ok = await persistNow(key, opts); if(ok === true) memOnlyLanded(key); return ok; }
   finally{ _localSaving--; _localGen++; }
 }
-async function persistNow(key, opts){
+// A whole document saved by compare-and-set (the catalog, the targets, the team list, the KPI settings, the selling
+// guides): one save of it at a time, each against what the one before it landed (v126 speed, part 4) — two saves of
+// one document started together met in the cloud as "Changed on another device" (the second was refused, and its edit
+// went at the next refresh). A save with none of its document on its way starts at once, as before.
+// What this phone's saves of a document sent (wholeDocSent: text → the save's number): a text an earlier save sent —
+// on its way, or landed late — is this phone's own, already in what memory holds, so the cloud holding it is a later
+// save's base. Let go when a later save lands (the cloud moved past it), when a save ends without writing, and when a
+// refresh takes the document anew (memory is then the cloud's text: the earlier texts are no longer in it).
+const WHOLE_CAS = { products: 1, targets: 1, staff: 1, benchmarks: 1, categoryGuides: 1 };
+const _wholeDocChain = Object.create(null), _wholeDocBusy = Object.create(null), _wholeDocSentBy = Object.create(null);
+let _wholeDocSeq = 0;
+function wholeDocSent(key){ return _wholeDocSentBy[key] || (_wholeDocSentBy[key] = new Map()); }
+function wholeDocSentLanded(key, seq){ const m = _wholeDocSentBy[key]; if(m) m.forEach((n, t) => { if(n < seq) m.delete(t); }); }
+function wholeDocSentForget(key){ const m = _wholeDocSentBy[key]; if(m) m.clear(); }
+function persistNow(key, opts){
+  if(!WHOLE_CAS[key]) return persistNowInner(key, opts);
+  const run = () => persistNowInner(key, opts);
+  const p = _wholeDocBusy[key] ? _wholeDocChain[key].then(run) : run();
+  _wholeDocBusy[key] = (_wholeDocBusy[key] || 0) + 1;
+  const tail = _wholeDocChain[key] = p.then(() => {}, () => {});
+  tail.then(() => { _wholeDocBusy[key]--; });
+  return p;
+}
+async function persistNowInner(key, opts){
   opts = opts || {};
   // What THIS call did — kept for persistOutcome, and told to its own caller
   // (opts.told, see persistFor / persistTold): another save of the same key
@@ -3117,19 +3141,22 @@ async function persistNow(key, opts){
     // notes, which every phone writes, are merged three ways instead (an entry
     // added or removed on another phone is kept so). A document larger than the
     // cloud stores is never sent: said, never queued (saveBlocked).
+    // The same holds for a save made while the screen still shows this phone's copy at a start (the early open's
+    // window, v126 speed): the copy's text is the base, as after a start without a connection — never merged with
+    // what another phone saved meanwhile (part 4: part 3 merged it, against the owner's rule of no automatic merges).
+    // One save of a document at a time (wholeDocChain): a save started while an earlier one of the same document is
+    // on its way runs after it, against what that one landed — this phone's second edit is never refused as another
+    // device's change. The text of an earlier save of this phone whose answer did not come in time (it may still land:
+    // wholeDocSent) is this phone's own: the cloud holding it is the base, never the other way round (an earlier
+    // save never writes over a later one).
     const loaded = _loadFailed[key] ? undefined : _docLoaded[key];
     const merged3 = key === 'recycleBin' || key === 'erpNotes';
     const str = merged3 ? null : JSON.stringify(value);
     if(!merged3 && !UMCore.fitsBytes(str, DOC_MAX_BYTES)) throw tooLargeError(key, null, UMCore.utf8Len(str));
-    // A save made while the screen still shows this phone's copy at a start (the early open's window, v126 speed part
-    // 3: the copy is the base, the start's read not in yet): when another phone changed the document since that copy,
-    // this phone's change is put on the cloud's document as it is now — wherever the other did not change the same
-    // part (UMCore.merge3Doc); the same part changed on both is refused and said, as the compare-and-set refuses it.
-    const rebase = !merged3 && typeof loaded === 'string' && !!_mirrorUsed[key] && earlyWindow() && typeof UMCore.merge3Doc === 'function';
-    const baseDoc = rebase ? UMCore.safeParse(loaded, undefined) : undefined;
-    let conflict = false, big = 0, rebased = null;
+    const sent = merged3 ? null : wholeDocSent(key), seq = ++_wholeDocSeq;
+    let conflict = false, big = 0;
     const fn = cur => {
-      conflict = false; big = 0; rebased = null; // a transaction may run more than once: each run starts clean
+      conflict = false; big = 0; // a transaction may run more than once: each run starts clean
       if(merged3){
         const c = cur != null ? UMCore.safeParse(cur, null) : null;
         const s = JSON.stringify(c && typeof c === 'object' ? mergeWholeDoc(key, key === 'recycleBin' ? recycleBin : erpNotes, c, loaded) : (key === 'recycleBin' ? recycleBin : erpNotes));
@@ -3137,26 +3164,19 @@ async function persistNow(key, opts){
         return s;
       }
       if(cur === str) return str; // already there (a run of the transaction whose answer was lost)
-      if(cur !== (loaded === undefined ? null : loaded)){
-        const theirs = rebase && typeof cur === 'string' ? UMCore.safeParse(cur, undefined) : undefined;
-        const m = baseDoc !== undefined && theirs !== undefined ? UMCore.merge3Doc(baseDoc, JSON.parse(str), theirs) : null;
-        if(m && m.ok){
-          const s = JSON.stringify(m.value);
-          if(!UMCore.fitsBytes(s, DOC_MAX_BYTES)){ big = UMCore.utf8Len(s); return null; }
-          rebased = m.value;
-          return s;
-        }
-        conflict = true; return null;
-      }
+      const mine = typeof cur === 'string' && sent.has(cur) && sent.get(cur) < seq; // an earlier save of this phone landed it
+      if(cur !== (loaded === undefined ? null : loaded) && !mine){ conflict = true; return null; }
       return str;
     };
+    if(sent) sent.set(str, seq);
     const op = typeof window.storage.update === 'function' ? window.storage.update(key, fn) : storageUpdate(key, fn, 12000);
+    if(sent) Promise.resolve(op).then(v => { if(v == null && sent.get(str) === seq) sent.delete(str); }, () => {}); // ended without writing: never in the cloud
     let written;
     try{ written = await withTimeout(op, 12000); }
     catch(e){
       // no answer in time: if the transaction does land after all, the phone follows it
       // (opts.onLate: what the screen still had to do once it landed — the rename's other lists, v123 review)
-      if(/timeout/.test(String(e && e.message))) Promise.resolve(op).then(late => { if(late != null){ wholeDocLanded(key, late, loaded, true); saveUnblocked(key); showToast('✅ Saved — it reached the cloud late', 5000); if(typeof opts.onLate === 'function'){ try{ opts.onLate(late); }catch(e2){ console.warn('after a late save', e2); } } } }, () => {});
+      if(/timeout/.test(String(e && e.message))) Promise.resolve(op).then(late => { if(late != null){ if(sent) wholeDocSentLanded(key, seq); wholeDocLanded(key, late, loaded, true); saveUnblocked(key); showToast('✅ Saved — it reached the cloud late', 5000); if(typeof opts.onLate === 'function'){ try{ opts.onLate(late); }catch(e2){ console.warn('after a late save', e2); } } } }, () => {});
       throw e; // → "No connection — retry" below (never queued)
     }
     if(conflict){
@@ -3170,12 +3190,11 @@ async function persistNow(key, opts){
     }
     if(big) throw tooLargeError(key, null, big);
     if(written == null) throw new Error('update failed');
+    if(sent) wholeDocSentLanded(key, seq);
     wholeDocLanded(key, written, loaded);
-    if(rebased && written === JSON.stringify(rebased)){ wholeDocTake(key, rebased, str); console.log('saved over another phone\'s change of ' + key + ' (both kept)'); }
     if(outboxHas(key)) outboxRemove(key);
     saveUnblocked(key);
     tell({ ok: true });
-    if(rebased) setTimeout(() => { if(currentUser) renderAll(); }, 0); // the other phone's change shows too
     return true;
   }catch(e){
     // Refused by the security rules, or larger than the cloud can store: it
@@ -3241,23 +3260,6 @@ function mergeWholeDoc(key, mine, cloud, loaded){
     return m;
   }
   return typeof UMCore.mergeKeyed3 === 'function' ? UMCore.mergeKeyed3(mine, cloud, base) : Object.assign({}, cloud, mine);
-}
-// A whole document that landed merged over another phone's change (the early open's window, v126 speed part 3): the
-// screen takes the merged document — the one the cloud now holds. Changed here again while that save was on its way
-// (`saved`: what it wrote from memory): the later change stays, on top of the merged document; the same part changed
-// again here → memory as it is (its own save meets the cloud's and is told).
-function wholeDocTake(key, v, saved){
-  const mem = { products, targets, staff, benchmarks: BENCHMARKS, categoryGuides }[key];
-  if(typeof saved === 'string' && JSON.stringify(mem) !== saved){
-    const m = UMCore.merge3Doc(JSON.parse(saved), mem, v);
-    if(!m.ok) return;
-    v = m.value;
-  }
-  if(key === 'products'){ products = v; if(typeof assignProductKeys === 'function') assignProductKeys(); }
-  else if(key === 'targets') targets = v;
-  else if(key === 'staff'){ staff = v; refreshStaff(); }
-  else if(key === 'benchmarks') BENCHMARKS = Object.assign({}, BENCHMARKS, v);
-  else if(key === 'categoryGuides') categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), v || {});
 }
 // The cloud now holds `str` for a whole document: it is the base of the next
 // compare-and-set and the phone's copy; a merged document's screen copy takes
