@@ -1251,7 +1251,7 @@
 
   /* ---- the cards below the picture keep the same look ---- */
   #view-today .ms-status{background:linear-gradient(28deg, #DDF3EA 0%, #F2F9F6 60%, #FFFFFF 100%);}
-  .ms-stb{background:var(--p-dark); border-radius:999px;}
+  .ms-stb{background:var(--p-dark); border-radius:999px; color:#fff;}   /* its words were the button's black on the dark pill */
   .ms-stb .ms-chev{color:var(--p-mint);}
   .ms-cxcard{padding:4px 6px !important;}
   .ms-cxcard .ms-cx{margin:0 !important;}
@@ -1361,71 +1361,51 @@
     nav.bottom button.nav-tab.nav-log .nav-ic .svgi{width:26px; height:26px; stroke-width:2.5;}
     nav.bottom button.nav-tab.nav-log.active::after{display:none;}
   }
-  /* ---- the phone's main screen (≤ 600 px; the owner's review of v125): a matte dark-green page and ONE look at the month
-     and the day — the target card, the Today row (field visits with today's plan, follow-ups due, the KPI score), the
-     team ranking (supervisor), the next actions and the forecast line — then "More details", which keeps every other card
-     closed until it is tapped (#msGrid.ms-open, msMoreToggle). Each fact shows once; every line is a figure and a word or
-     two (the full words stay for a screen reader, .ph-l; the ⓘ sheets keep the explanations). Flat colours only. ---- */
+  /* ---- the phone's main screen (≤ 600 px; the owner's review of v125): one column — the target card, the Today row
+     (field visits with today's plan, follow-ups due with the overdue in red, the KPI score), the team ranking (supervisor),
+     the next actions, the forecast line, the cross-invoice notice, then "More details" (closed until tapped:
+     #msGrid.ms-open, msMoreToggle). The look — the matte page and the glass cards — is the laptop's too ("the home: a matte
+     page, glass cards" at the end of this section). ---- */
   @media (max-width:600px){
-    body.on-today{--hm-page:#0C2C23; --hm-card:#143C31; --hm-edge:rgba(255,255,255,.10); --hm-bar:#0A251D; --hm-sub:rgba(255,255,255,.74);
-      background-color:var(--hm-page); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");}
     /* the head: the white wordmark on the page, the bell and the initials light */
     body.on-today .tb-word{color:#fff;}
-    body.on-today .tb-tag{color:var(--hm-sub);}
+    body.on-today .tb-tag{color:rgba(255,255,255,.74);}
     body.on-today .top-bell{color:#fff;}
-    body.on-today .bell-n{box-shadow:0 0 0 2px var(--hm-page);}
+    body.on-today .bell-n{box-shadow:0 0 0 2px #0C2C23;}
     body.on-today header.top .stamp, body.on-today header.top .stamp.sup{background:rgba(255,255,255,.12); color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);}
     /* the bottom bar on the main screen: dark matte, white icons, the active tab mint */
-    body.on-today nav.bottom{background:var(--hm-bar); border-top:1px solid rgba(255,255,255,.08);}
+    body.on-today nav.bottom{background:#0A251D; border-top:1px solid rgba(255,255,255,.08);}
     body.on-today nav.bottom button.nav-tab{color:rgba(255,255,255,.78);}
     body.on-today nav.bottom button.nav-tab.active{color:var(--p-mint);}
     body.on-today nav.bottom button.nav-tab.active::after{background:var(--p-mint);}
-    body.on-today nav.bottom button.nav-tab.nav-log .nav-ic{background:var(--p-mint) !important; color:#05251F; border-color:var(--hm-bar); box-shadow:none;}
-    /* the order: target card, Today row, the team ranking, next actions, the forecast line, More details — then the rest */
+    body.on-today nav.bottom button.nav-tab.nav-log .nav-ic{background:var(--p-mint) !important; color:#05251F; border-color:#0A251D; box-shadow:none;}
+    /* the order: target card, Today row, the team ranking, next actions, the forecast line, the cross-invoice notice, More details — then the rest */
     .ms-grid{gap:10px;}
     .ms-grid > *{order:40;}
     .ms-vteam > #msSales{order:1;} .ms-vperson > #targetCard > .ms-hero{order:1;}
     .ms-grid > #msKpis{order:2;}
     .ms-vteam > #targetCard > .ms-people{order:3;}
     .ms-grid > #msNext{order:4;}
-    .ms-grid > #msFcChip{order:5; display:block;} .ms-grid > #msFcChip:empty{display:none;}
-    .ms-grid > #msMore{order:6; display:flex;}
-    .ms-grid > #msRows{order:7;} .ms-grid > #msWork{order:8;} .ms-grid > #msPlanCard{order:9;} .ms-grid > #msDueCard{order:10;}
-    .ms-grid > #msTaskCard{order:11;} .ms-grid > #msRecentCard{order:12;} #targetCard > .ms-cxcard{order:13;}
-    .ms-grid > #msAdvisor{display:none;}   /* its sheet: "Recommendations" under the next actions */
-    .ms-grid:not(.ms-open) > #msRows, .ms-grid:not(.ms-open) > #msWork, .ms-grid:not(.ms-open) > .ms-fold, .ms-grid:not(.ms-open) > #targetCard > .ms-cxcard{display:none;}
+    .ms-grid > #msFcChip{order:5;}
+    #targetCard > .ms-cxcard{order:6;}
+    .ms-grid > #msMore{order:7;}
+    .ms-grid > #msRows{order:8;} .ms-grid > #msWork{order:9;} .ms-grid > #msPlanCard{order:10;} .ms-grid > #msDueCard{order:11;}
+    .ms-grid > #msTaskCard{order:12;} .ms-grid > #msRecentCard{order:13;}
+    .ms-grid:not(.ms-open) > #msRows{display:none;}
     #msRows [data-row="kpi"]{display:none;}   /* the KPI score is the Today row's */
-    body.on-today #view-today .ms-card{box-shadow:none; border-color:transparent;}
-    /* a line's phone form; its full words stay for a screen reader */
-    #view-today .ph-s{display:inline;}
-    #view-today .ph-l{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
-    /* the target card: flat matte green one step lighter than the page, a hairline edge; no gradient, no shine, no glow */
-    body.on-today #view-today .ms-hero{background:var(--hm-card); border:1px solid var(--hm-edge); box-shadow:none;}
-    body.on-today #view-today .ms-hero::before, body.on-today .ms-hdeco{display:none;}
-    body.on-today .ms-ring .trk{stroke:rgba(255,255,255,.12);}
-    body.on-today .ms-ring .val{stroke:var(--p-mint); filter:none;}
-    body.on-today .ms-hcol.m1 .ms-hbar{background:rgba(255,255,255,.14);}
-    body.on-today .ms-hbar i{background:var(--p-mint);}
+    /* the target card */
     .ms-hfoot{padding:18px 20px 20px 22px;}
     .ms-hcol.m1{padding-inline-end:6px;}
-    .ms-hstrip .ms-hvis, .ms-hstrip.only-vis{position:absolute !important; inset-inline:0; top:0; margin:0; clip-path:inset(50%); opacity:0; pointer-events:none;}   /* her visits: the Today row */
-    /* the Today row: three white tiles — the number, its icon, a word or two (the ▲/▼ and sparklines stay on wider screens and in the ⓘ);
-       the cards keep the picture's order in the page (KPI, visits, follow-ups, forecast), the phone shows them by priority */
+    /* the Today row: three tiles — the number, its icon, a word or two */
     .ms-kpis{grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px;}
-    .ms-kc.fc{display:none;}   /* the forecast: its own line below */
-    .ms-kc{min-height:0; padding:12px 6px 11px; background:#fff; border:none; box-shadow:none; border-radius:16px; justify-content:flex-start;}
-    .ms-kc .ms-kic{width:26px; height:26px; margin-bottom:3px;}
+    .ms-kc{min-height:0; padding:12px 6px 11px; border-radius:16px; justify-content:flex-start;}
+    .ms-kc .ms-kic{width:26px; height:26px; margin-bottom:3px; background:none;}
     .ms-kc .ms-kic .svgi, .ms-kc .ms-kic .svgf{width:24px; height:24px;}
     .ms-kc .ms-kv{order:-1; font-size:24px; line-height:1.2; margin:0 0 2px;}
-    .ms-kc .ms-kl{font-size:12.5px; font-weight:500; color:var(--p-sub); line-height:1.3;}
-    .ms-kc .ms-kl small{display:none;}
+    .ms-kc .ms-kl{font-size:12.5px; font-weight:500; line-height:1.3;}
     .ms-kc .ms-kl .kl-d, .ms-kc .ms-kl .kl-m{display:none;} .ms-kc .ms-kl .kl-p{display:inline;}   /* (only the follow-ups and the forecast cards have the two forms; the forecast card is not on a phone) */
-    .ms-kc .ms-kd, .ms-kc .ms-chip, .ms-kc .ms-spark, .ms-kc .ms-ks:not(.why):not(.ms-kplan){display:none;}
     .ms-kc .ms-ks.why{font-size:11.5px; margin-top:3px;}
-    .ms-kc .ms-kplan{display:block; font-size:12px; font-weight:600; color:var(--p-g6); margin-top:4px;}
-    .ms-kc .ms-kover{display:block; font-size:12px; font-weight:700; color:#C4320A; margin-top:4px;}   /* "2 overdue" in red (AA on white) */
-    /* the Today row from the start side (right in Arabic): today's field visits, the follow-ups due, the KPI score */
-    .ms-kpis > .ms-kc:nth-child(2){order:1;} .ms-kpis > .ms-kc:nth-child(3){order:2;} .ms-kpis > .ms-kc:nth-child(1){order:3;}
+    .ms-kc .ms-kplan, .ms-kc .ms-kover{font-size:12px; margin-top:4px;}
     /* the team ranking: three compact rows — initials, name, the bar, %, the amount (View All: everyone, with the full words) */
     .ms-people{padding:14px 16px 8px !important;}
     #view-today .ms-people > .ms-ct{font-size:16px; margin-bottom:6px; min-height:44px; flex-wrap:nowrap;}   /* View All and the ⓘ: 44 px thumb targets clear of the first row */
@@ -1436,32 +1416,13 @@
     .ms-people .ms-lb .det{grid-column:2 / -1;}
     .ms-people .ms-person.team{padding-inline-start:39px;}
     .ms-people:not(.ms-all) .ms-lbw > .ms-lb:nth-child(n+4){position:absolute !important; inset-inline:0; top:0; clip-path:inset(50%); opacity:0; pointer-events:none;}
-    /* the next actions: a white card, three rows at most, then View All and Recommendations */
-    #view-today .ms-nexta{background:#fff; border:none; box-shadow:none; border-radius:var(--p-radius); padding:14px 16px 2px;}
+    /* the next actions: three rows at most, then View All and Recommendations */
+    #view-today .ms-nexta{padding:14px 16px 2px;}
     #view-today .ms-nexta > .ms-ct{font-size:16px; margin-bottom:4px;}
-    #view-today .ms-nexta > .ms-ct .ms-va, #view-today .ms-nexta .ms-sum2, #view-today .ms-nexta .ms-more{display:none;}
-    #view-today .ms-nexta .ms-acts > :nth-child(n+4){display:none;}
     #view-today .ms-nexta .ms-ac{min-height:52px; padding:6px 0;}
     #view-today .ms-nexta .ms-ac .ic{width:36px; height:36px;}
     #view-today .ms-nexta .ms-ac .t > div:first-child{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}   /* one line a row: a long clinic name ends in "…" (the row opens it) */
-    .ms-nfoot{display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid var(--p-line); margin-top:4px;}
-    .ms-nfoot button{display:inline-flex; align-items:center; gap:7px; min-height:46px; padding:0 2px; border:none; background:none; font:inherit; font-size:14px; font-weight:600; cursor:pointer;}
-    .ms-nfoot .ms-nva{color:var(--p-green);}
-    .ms-nfoot .ms-nrec{color:var(--p-sub);}
-    .ms-nfoot .svgi{width:17px; height:17px; stroke-width:2.2;}
-    [dir="rtl"] .ms-nfoot .ms-nva .svgi{transform:scaleX(-1);}
-    /* the forecast: one line on the page */
-    .ms-fc{display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:8px 14px; border-radius:14px; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.07); color:#fff; font:inherit; font-size:14.5px; text-align:start; cursor:pointer;}
-    .ms-fc .ms-fci{display:flex; color:var(--p-mint);} .ms-fc .ms-fci .svgi{width:20px; height:20px; stroke-width:2.2;}
-    .ms-fc .ms-fct{flex:1; min-width:0;}
-    .ms-fc b{font-weight:700;} .ms-fc b small{font-size:inherit; font-weight:600;}
-    .ms-fc .ms-est{color:var(--hm-sub); font-size:12.5px;}
-    .ms-fc .ms-chev{color:var(--hm-sub); width:16px; height:16px;}
-    /* More details: closed, the page ends here */
-    .ms-dtl{align-items:center; justify-content:center; gap:8px; width:100%; min-height:50px; border-radius:14px; border:1px solid rgba(255,255,255,.22); background:none; color:#fff; font:inherit; font-size:15px; font-weight:600; cursor:pointer;}
-    .ms-dtl .ms-chev{color:#fff; width:18px; height:18px; transform:rotate(90deg);}
-    .ms-grid.ms-open > .ms-dtl .ms-chev{transform:rotate(-90deg);}
-    body.on-today #view-today .ms-whose{color:var(--hm-sub);}
+    .ms-nfoot button{font-size:14px;}
   }
   @media (max-width:380px){
     .ms-hin{grid-template-columns:112px minmax(0,1fr); column-gap:20px; padding-inline:16px;}
@@ -1753,6 +1714,190 @@
     nav.bottom .nav-art{height:220px;}
   }
   @media (min-width:1024px) and (max-height:790px){ nav.bottom .nav-art{display:none;} }
+  /* ---- the home on a phone and a laptop (the owner's review of v125, 16 Nov: "the computer too, by the same principle …
+     and the cards that carry the information glass, like Apple's system"): a matte dark-green page with a faint grain and a
+     few very soft deep-green glows (nothing glossy, no hard shapes), and every card of the home as frosted glass — white at
+     9 % (the target card 14 %, so it leads), a 20 px backdrop blur, a hairline light edge, a faint top highlight, a soft
+     shadow; white words, secondary words white at ~72 %, the ring and the accents mint, status colours tuned for glass (AA,
+     checked in main-screen.e2e.js). The page's own colours are re-pointed inside the home (#view-today), so every list the
+     cards hold follows. Where the browser has no backdrop blur, or the viewer asks for less transparency, the cards are an
+     opaque matte of the same tone. Tablets (601–1023 px) keep v125. ---- */
+  @media (max-width:600px), (min-width:1024px){
+    body.on-today{background-color:#0C2C23; background-repeat:no-repeat, no-repeat, no-repeat, repeat;
+      background-image:radial-gradient(70vmax 46vmax at 92% 0%, rgba(28,132,106,.30), rgba(28,132,106,0) 70%),
+        radial-gradient(56vmax 40vmax at 2% 46%, rgba(16,108,100,.22), rgba(16,108,100,0) 70%),
+        radial-gradient(62vmax 40vmax at 80% 100%, rgba(36,120,88,.20), rgba(36,120,88,0) 72%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='.035'/%3E%3C/svg%3E");}
+    body.on-today #view-today{color:#fff;
+      --p-ink:#fff; --p-ink2:rgba(255,255,255,.95); --p-sub:rgba(255,255,255,.76); --p-muted:rgba(255,255,255,.72); --p-faint:rgba(255,255,255,.64);
+      --p-line:rgba(255,255,255,.14); --p-mint-soft:rgba(106,235,164,.15); --p-g6:#6AEBA4; --p-g5:#56DE98; --p-green:#7FF0B6;
+      --p-up:#6AEBA4; --p-down:#FF9A8C; --p-warn:#FFC46B; --p-warn-soft:rgba(255,196,107,.15);
+      --text-primary:#fff; --text-secondary:rgba(255,255,255,.82); --text-muted:rgba(255,255,255,.72); --border-subtle:rgba(255,255,255,.14); --border-default:rgba(255,255,255,.22);
+      --ink:#fff; --ink-2:rgba(255,255,255,.82); --muted:rgba(255,255,255,.72); --soft:rgba(255,255,255,.55); --line:rgba(255,255,255,.14); --hair:rgba(255,255,255,.14);
+      --surface:rgba(255,255,255,.06); --card:rgba(255,255,255,.06); --surface-card:rgba(255,255,255,.06); --paper:rgba(255,255,255,.06); --surface-sunken:rgba(255,255,255,.08); --track:rgba(255,255,255,.12);
+      --accent:#7FF0B6; --accent-soft:rgba(106,235,164,.15);
+      --status-success:#6AEBA4; --status-success-soft:rgba(106,235,164,.15); --sage:#6AEBA4; --sage-ink:#6AEBA4; --sage-dim:rgba(106,235,164,.15);
+      --status-warning:#FFD08A; --status-warning-soft:rgba(255,196,107,.11); --amber-ink:#FFD08A; --amber-dim:rgba(255,196,107,.11); --gold-ink:#FFD08A;
+      --status-danger:#FFB2A6; --status-danger-soft:rgba(255,130,110,.11); --coral:#FFB2A6; --coral-ink:#FFB2A6; --coral-dim:rgba(255,130,110,.11);
+      --brand-primary:#fff; --brand-secondary-soft:rgba(165,207,99,.11); --page:rgba(255,255,255,.06); --green-dark:rgba(255,255,255,.92); --status-info:#A9C4FF; --purple:#A9C4FF; --purple-ink:#A9C4FF; --purple-dim:rgba(169,196,255,.15);}
+    /* the glass */
+    body.on-today #view-today .ms-card, body.on-today #view-today .ms-kc, body.on-today #view-today .ms-fc, body.on-today #view-today .ms-vchip, body.on-today #view-today .ms-period{
+      background:rgba(255,255,255,.09); -webkit-backdrop-filter:blur(20px) saturate(150%); backdrop-filter:blur(20px) saturate(150%);
+      border:1px solid rgba(255,255,255,.16); box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 10px 28px rgba(0,0,0,.22); color:#fff;}
+    body.on-today #view-today .ms-card, body.on-today #view-today .ms-kc{border-radius:22px;}
+    body.on-today #view-today .ms-hero{background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.22); box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 14px 34px rgba(0,0,0,.26);}
+    body.on-today #view-today .ms-hero::before, body.on-today .ms-hdeco{display:none;}
+    body.on-today .ms-ring .trk{stroke:rgba(255,255,255,.14);}
+    body.on-today .ms-ring .val{stroke:var(--p-mint); filter:none;}
+    body.on-today .ms-hring.none{border-color:rgba(255,255,255,.14);}
+    body.on-today .ms-hbar, body.on-today .ms-hcol.m1 .ms-hbar{background:rgba(255,255,255,.14);}
+    body.on-today .ms-hbar i{background:var(--p-mint);}
+    body.on-today #view-today .ms-hnote.warn{color:#FFD27A;}
+    body.on-today #view-today .ms-i{color:rgba(255,255,255,.72);}
+    /* the lists the cards hold */
+    body.on-today #view-today .card{background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.12); box-shadow:none; color:#fff;}
+    body.on-today #view-today .chip{background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.2); color:#fff;}
+    body.on-today #view-today input[type=text]{background-color:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2); color:#fff;}
+    body.on-today #view-today input::placeholder{color:rgba(255,255,255,.62);}
+    body.on-today #view-today .ms-tile{background:rgba(255,255,255,.1); color:var(--p-mint);}
+    body.on-today #view-today .ms-tile.t-blue{color:#A9C4FF;} body.on-today #view-today .ms-tile.t-amber{color:#FFC46B;} body.on-today #view-today .ms-tile.t-gold{color:#F2C25B;}
+    body.on-today #view-today .ms-ac .ic{background:rgba(106,235,164,.14); color:var(--p-mint);}
+    body.on-today #view-today .ms-ac .ic.warn{background:rgba(255,196,107,.15); color:#FFC46B;}
+    body.on-today #view-today .ms-lb .av{background:rgba(106,235,164,.2); color:#fff;}
+    body.on-today #view-today .ms-lb .bar{background:rgba(255,255,255,.14);}
+    body.on-today #view-today .ms-lb .a{color:rgba(255,255,255,.82);}
+    body.on-today #view-today .ms-lb .rk.ring{background:rgba(255,255,255,.1);}
+    body.on-today #view-today .ms-lb .rk.first{background:rgba(242,194,91,.16);}
+    body.on-today #view-today .ms-keys{color:rgba(255,255,255,.82);}
+    body.on-today #view-today .ms-wk .ax, body.on-today #view-today .ms-wk .xl{fill:rgba(255,255,255,.8);}
+    body.on-today #view-today .ms-wk line{stroke:rgba(255,255,255,.14);}
+    body.on-today #view-today .ms-wk .bar{fill:rgba(106,235,164,.5);} body.on-today #view-today .ms-wk .bar.cur{fill:#6AEBA4;}
+    body.on-today #view-today .ms-wk .tl{stroke:#A8F0CB;} body.on-today #view-today .ms-wk .td{fill:#0C2C23; stroke:#A8F0CB;}
+    body.on-today #view-today .ms-daily svg line[stroke="#EDF1EE"], body.on-today #view-today .ms-daily svg line[stroke="#D5DED8"]{stroke:rgba(255,255,255,.14);}
+    body.on-today #view-today .ms-daily svg [stroke="#C9D3CD"]{stroke:rgba(255,255,255,.34);}
+    body.on-today #view-today .ms-daily svg [stroke="#9AA8A0"]{stroke:rgba(255,255,255,.6);}
+    body.on-today #view-today .ms-daily svg [stroke="#1E7A55"]{stroke:#6AEBA4;}
+    body.on-today #view-today .ms-daily svg polygon{fill:rgba(106,235,164,.14);}
+    body.on-today #view-today .ms-daily svg text[fill="#5C6962"], body.on-today #view-today .ms-daily svg text[fill="#7A867F"], body.on-today #view-today .ms-daily svg text[fill="#17201B"]{fill:rgba(255,255,255,.82);}
+    body.on-today #view-today .ms-daily svg text[fill="#1E7A55"]{fill:#6AEBA4;}
+    body.on-today #view-today .ms-cx{color:#fff;}
+    body.on-today #view-today .ms-body .card.dim{opacity:1;}   /* a visited plan entry: its tick and "Visited today" say so (dimmed text fell under AA on glass) */
+    body.on-today #view-today .ms-ago, body.on-today #view-today .lr-m{color:rgba(255,255,255,.72);}
+    body.on-today #view-today .ms-whose{color:rgba(255,255,255,.76);}
+    body.on-today #view-today .ms-vchip b{color:#fff;}
+    body.on-today #view-today .ms-period .svgi, body.on-today #view-today .ms-period .ms-pchev{color:#fff;}
+    /* one look, then More details: the Today row (no ▲/▼, no sparklines — wider data in the ⓘ), the forecast line, More details */
+    .ms-grid > #msAdvisor, .ms-grid > #msPhoto, .ms-kc.fc{display:none !important;}   /* the advisor's sheet: "Recommendations" under the next actions; the photo is a decoration */
+    .ms-grid > #msFcChip{display:block;} .ms-grid > #msFcChip:empty{display:none;}
+    .ms-grid > #msMore{display:flex;}
+    .ms-grid:not(.ms-open) > #msWork, .ms-grid:not(.ms-open) > #msStatus, .ms-grid:not(.ms-open) > #msDaily, .ms-grid:not(.ms-open) > #msBrands, .ms-grid:not(.ms-open) > #msCust, .ms-grid:not(.ms-open) > .ms-fold{display:none !important;}
+    .ms-kpis > .ms-kc:nth-child(2){order:1;} .ms-kpis > .ms-kc:nth-child(3){order:2;} .ms-kpis > .ms-kc:nth-child(1){order:3;}   /* from the start side (right in Arabic): field visits, follow-ups due, the KPI score */
+    .ms-kc .ms-kd, .ms-kc .ms-chip, .ms-kc .ms-spark, .ms-kc .ms-ks:not(.why):not(.ms-kplan){display:none !important;}
+    .ms-kc .ms-kl small{display:none !important;}
+    body.on-today #view-today .ms-kc .ms-kic{color:var(--p-mint);}
+    body.on-today #view-today .ms-kc .ms-kl{color:rgba(255,255,255,.8);}
+    .ms-kc .ms-kplan{display:block; font-weight:600; color:var(--p-mint);}
+    .ms-kc .ms-kover{display:block; font-weight:700; color:#FF9A8C;}   /* "2 overdue" in red, tuned for glass */
+    #view-today .ph-s{display:inline;}
+    #view-today .ph-l{position:absolute !important; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
+    .ms-hstrip .ms-hvis, .ms-hstrip.only-vis{position:absolute !important; inset-inline:0; top:0; margin:0; clip-path:inset(50%); opacity:0; pointer-events:none;}   /* her visits: the Today row */
+    #view-today .ms-nexta > .ms-ct .ms-va, #view-today .ms-nexta .ms-sum2, #view-today .ms-nexta .ms-more{display:none;}
+    #view-today .ms-nexta .ms-acts > :nth-child(n+4){display:none;}
+    .ms-nfoot{display:flex; align-items:center; justify-content:space-between; gap:8px; border-top:1px solid var(--p-line); margin-top:4px;}
+    .ms-nfoot button{display:inline-flex; align-items:center; gap:7px; min-height:46px; padding:0 2px; border:none; background:none; font:inherit; font-size:14.5px; font-weight:600; cursor:pointer;}
+    .ms-nfoot .ms-nva{color:var(--p-green);}
+    .ms-nfoot .ms-nrec{color:rgba(255,255,255,.8);}
+    .ms-nfoot .svgi{width:17px; height:17px; stroke-width:2.2;}
+    [dir="rtl"] .ms-nfoot .ms-nva .svgi{transform:scaleX(-1);}
+    .ms-fc{display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:8px 16px; border-radius:16px !important; font:inherit; font-size:14.5px; text-align:start; cursor:pointer;}
+    .ms-fc .ms-fci{display:flex; color:var(--p-mint);} .ms-fc .ms-fci .svgi{width:20px; height:20px; stroke-width:2.2;}
+    .ms-fc .ms-fct{flex:1; min-width:0;}
+    .ms-fc b{font-weight:700;} .ms-fc b small{font-size:inherit; font-weight:600;}
+    .ms-fc .ms-est{color:rgba(255,255,255,.74); font-size:12.5px;}
+    .ms-fc .ms-chev{color:rgba(255,255,255,.74); width:16px; height:16px;}
+    .ms-dtl{align-items:center; justify-content:center; gap:8px; width:100%; min-height:50px; border-radius:16px; border:1px solid rgba(255,255,255,.24); background:none; color:#fff; font:inherit; font-size:15px; font-weight:600; cursor:pointer;}
+    .ms-dtl .ms-chev{color:#fff; width:18px; height:18px; transform:rotate(90deg);}
+    .ms-grid.ms-open > .ms-dtl .ms-chev{transform:rotate(-90deg);}
+  }
+  /* no backdrop blur in this browser, or the viewer asks for less transparency: an opaque matte card of the same tone */
+  @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+    @media (max-width:600px), (min-width:1024px){
+      body.on-today #view-today .ms-card, body.on-today #view-today .ms-kc, body.on-today #view-today .ms-fc, body.on-today #view-today .ms-vchip, body.on-today #view-today .ms-period{background:#223F37;}
+      body.on-today #view-today .ms-hero{background:#2E4A42;}
+      body.on-today header.top{background:#0C2C23;}
+    }
+  }
+  @media (prefers-reduced-transparency:reduce) and (max-width:600px), (prefers-reduced-transparency:reduce) and (min-width:1024px){
+    body.on-today #view-today .ms-card, body.on-today #view-today .ms-kc, body.on-today #view-today .ms-fc, body.on-today #view-today .ms-vchip, body.on-today #view-today .ms-period{background:#223F37; -webkit-backdrop-filter:none; backdrop-filter:none;}
+    body.on-today #view-today .ms-hero{background:#2E4A42;}
+    body.on-today header.top{background:#0C2C23; -webkit-backdrop-filter:none; backdrop-filter:none;}
+  }
+  /* ---- the home on a laptop (≥ 1024 px), by the same principle: the greeting and This Month; the target card; the Today
+     row; the team ranking beside the next actions (a person: her next actions beside Sales Performance); the team's Sales
+     Performance across the row (a chart, kept on screen); the forecast line; the cross-invoice notice; then "More details"
+     (closed): pace, visits & orders, day by day, brands, customers, plan, follow-ups, tasks, recent activity. The advisor
+     card and the clinic photo are not on the home (the advisor's sheet: "Recommendations"). A darker matte sidebar with a
+     hairline edge, the top bar as glass. ---- */
+  @media (min-width:1024px){
+    body.on-today nav.bottom{background:#071D17; border-inline-end:1px solid rgba(255,255,255,.08); box-shadow:none;}
+    body.on-today nav.bottom .nav-art{display:none;}
+    body.on-today nav.bottom .nav-scroll > button.active, body.on-today nav.bottom .nav-group.has-active:not(.open) > .nav-gh{background:rgba(106,235,164,.13);}
+    body.on-today nav.bottom button.active:hover{background:rgba(106,235,164,.18);}
+    body.on-today #app.wrap::before{display:none;}
+    body.on-today header.top{background:rgba(12,44,35,.6); -webkit-backdrop-filter:blur(18px) saturate(150%); backdrop-filter:blur(18px) saturate(150%); box-shadow:none; border-bottom:1px solid rgba(255,255,255,.08);}
+    body.on-today .top-search{background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.16); color:rgba(255,255,255,.76); box-shadow:none;}
+    body.on-today .top-search > .svgi{color:rgba(255,255,255,.8);}
+    body.on-today .top-search input, body.on-today .top-search input[type=search]{color:#fff;}
+    body.on-today .top-search input::placeholder{color:rgba(255,255,255,.66);}
+    body.on-today .qf-k{background:rgba(255,255,255,.12); color:rgba(255,255,255,.86);}
+    body.on-today .top-bell{color:#fff;}
+    body.on-today .bell-n{box-shadow:0 0 0 2px #0C2C23;}
+    body.on-today .top-name{color:#fff;} body.on-today .top-role{color:rgba(255,255,255,.72);} body.on-today .top-chev{color:#fff;}
+    body.on-today header.top .stamp, body.on-today header.top .stamp.sup{background:rgba(106,235,164,.2); color:#fff; box-shadow:inset 0 0 0 1px rgba(255,255,255,.22);}
+    body.on-today #view-today .ms-subt{display:none;}   /* the head: the greeting and This Month */
+    /* the order */
+    body.on-today .ms-grid{row-gap:20px;}
+    body.on-today .ms-grid > *{order:40; grid-column:1 / -1; margin-inline:0;}
+    body.on-today .ms-grid > #msSales, body.on-today .ms-vperson > #targetCard > .ms-hero{order:1;}
+    body.on-today .ms-grid > #msKpis{order:2; margin-top:0;}
+    body.on-today .ms-vteam > #targetCard > .ms-people{order:3; grid-column:span 20;}
+    body.on-today .ms-grid > #msNext{order:4; grid-column:span 20;}
+    body.on-today .ms-vperson > #msNext{order:3;}
+    body.on-today .ms-grid > #msChart{order:5; grid-column:1 / -1;}
+    body.on-today .ms-grid > #msChart, body.on-today .ms-grid > #msRecentCard, body.on-today .ms-vteam > #targetCard > .ms-people, body.on-today .ms-vperson > #msNext{margin-inline:0; margin-top:0;}
+    body.on-today .ms-vperson > #msChart{order:4; grid-column:span 20;}
+    body.on-today .ms-grid > #msFcChip{order:6;}
+    body.on-today #targetCard > .ms-cxcard{order:7;}
+    body.on-today .ms-grid > #msMore{order:8;}
+    body.on-today .ms-grid > #msStatus{order:9;} body.on-today .ms-grid > #msWork{order:10;} body.on-today .ms-grid > #msDaily{order:11;}
+    body.on-today .ms-grid > #msBrands{order:12; grid-column:span 20;} body.on-today .ms-grid > #msCust{order:13; grid-column:span 20;}
+    body.on-today .ms-grid > #msPlanCard{order:14; grid-column:span 20;} body.on-today .ms-grid > #msDueCard{order:15; grid-column:span 20;}
+    body.on-today .ms-grid > #msTaskCard{order:16;} body.on-today .ms-grid > #msRecentCard{order:17; grid-column:1 / -1; padding-inline:20px !important;}
+    /* the Today row: three tiles, the icon in its mint circle, the figure, a word or two, the line under it */
+    body.on-today .ms-kpis{grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px;}
+    body.on-today .ms-kc{flex-direction:row; align-items:center; text-align:start; height:auto; min-height:128px; padding:16px 20px; gap:18px;}
+    body.on-today .ms-kc .ms-kic{width:54px; height:54px; border-radius:50%; background:rgba(106,235,164,.14); align-self:center; margin:0;}
+    body.on-today .ms-kc .ms-kic .svgi, body.on-today .ms-kc .ms-kic .svgf{width:30px; height:30px;}
+    body.on-today .ms-kb{align-items:flex-start; padding:0; flex:1; width:auto;}
+    body.on-today .ms-kl{font-size:15px; font-weight:600; line-height:1.3; min-height:0; position:static;}
+    body.on-today .ms-kv{font-size:34px; line-height:1.15; margin-top:2px;}
+    body.on-today .ms-kv + *{margin-top:2px;}
+    body.on-today .ms-kc .ms-kplan, body.on-today .ms-kc .ms-kover{font-size:13.5px; white-space:nowrap;}
+    /* the two cards of the fourth row keep one height; the next actions keep their foot at the bottom */
+    body.on-today #view-today .ms-nexta{display:flex; flex-direction:column;}
+    body.on-today #view-today .ms-nexta .ms-nfoot{margin-top:auto;}
+    body.on-today #view-today .ms-nexta .ms-ac .t > div:first-child{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  }
+  @media (min-width:1024px) and (max-width:1279px){
+    body.on-today .ms-vteam > #targetCard > .ms-people, body.on-today .ms-grid > #msNext, body.on-today .ms-vperson > #msChart{grid-column:1 / -1;}
+    /* narrower tiles: a smaller icon, the short label ("Follow-ups due"), the line under the figure on one line */
+    body.on-today .ms-kc{padding:14px; gap:12px; min-height:112px;}
+    body.on-today .ms-kc .ms-kic{width:44px; height:44px;}
+    body.on-today .ms-kc .ms-kic .svgi, body.on-today .ms-kc .ms-kic .svgf{width:24px; height:24px;}
+    body.on-today .ms-kc .ms-kl{font-size:14px;}
+    body.on-today .ms-kc .ms-kl .kl-d, body.on-today .ms-kc .ms-kl .kl-m{display:none;} body.on-today .ms-kc .ms-kl .kl-p{display:inline;}
+    body.on-today .ms-kv{font-size:30px;}
+  }
   /* === END DASHBOARD === */
 
   /* === COMPONENTS ===

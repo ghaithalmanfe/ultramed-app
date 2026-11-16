@@ -69,6 +69,8 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     await sleep(300);
     await page.evaluate(() => msWhenReady());
     await sleep(120);                                                       // the translation runs as the nodes arrive
+    // a laptop's home keeps the rest behind "More details" (closed at first — checked below); the checks that read those cards open it as a person would
+    if(w >= 1024 && !(opts && opts.closed)) await page.evaluate(() => { if(typeof msMoreToggle === 'function') msMoreToggle(true); });
   };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   // a tap or a sheet the screen offers: what it throws is a page error (red below), never the end of the harness
@@ -106,7 +108,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   });
   // the phone's main view (≤ 600 px, the owner's review of v125): what is on screen — a box with a size, not clipped to a pixel
   // for a screen reader, not see-through — and each fact's places; More details closed, none of what it holds may show
-  const phoneView = () => ev(() => {
+  const homeView = laptop => ev(laptop => {
     const on = el => !!el && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 2 && el.getBoundingClientRect().height > 2 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
     const any = sel => [...document.querySelectorAll(sel)].some(on);
     const box = el => { if(!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top + scrollY), w: Math.round(b.width), h: Math.round(b.height) }; };
@@ -115,13 +117,14 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     const FACTS = {
       'follow-ups due': ['#msKpis [data-ms="due"]', '#msNext .ms-more', '#msDueCard', '#msAdvisor'],
       "today's plan": ['#msKpis .ms-kplan', '#msNext .ms-sum2', '#msPlanCard'],
-      'field visits': ['#msKpis [data-ms="today-visits"]', '#targetCard .ms-hvis', '#msWork', '#targetCard .ms-lb .v'],
-      'the amount a day': ['#view-today .ms-hfoot', '#msAdvisor'],
+      'field visits': ['#msKpis [data-ms="today-visits"]', '#targetCard .ms-hvis', '#msWork'],
+      'the amount a day': ['#view-today .ms-hfoot', '#view-today .ms-hcol.m2 [data-ms="perday"]', '#msAdvisor'],
       'the KPI score': ['#msKpis [data-ms="kpi"]', '#msRows [data-row="kpi"]'],
       'the forecast': ['#msFcChip .ms-fc', '#msKpis .ms-kc.fc'],
     };
     const facts = Object.fromEntries(Object.entries(FACTS).map(([k, sels]) => [k, sels.filter(any)]));
-    const details = ['#msRows', '#msWork', '#msPlanCard', '#msDueCard', '#msTaskCard', '#msRecentCard', '#targetCard .ms-cxcard', '#msAdvisor', '#msChart', '#msStatus'].filter(any);
+    const details = (laptop ? ['#msWork', '#msStatus', '#msDaily', '#msBrands', '#msCust', '#msPlanCard', '#msDueCard', '#msTaskCard', '#msRecentCard', '#msAdvisor', '#msPhoto']
+      : ['#msRows', '#msWork', '#msPlanCard', '#msDueCard', '#msTaskCard', '#msRecentCard', '#msAdvisor', '#msChart', '#msStatus']).filter(any);
     const tiles = [...document.querySelectorAll('#msKpis .ms-kc')].filter(on).map(box);
     // the Today row by priority from the start side (right in Arabic): its figures' keys in the order the eye meets them
     const rtl = document.documentElement.dir === 'rtl';
@@ -134,10 +137,35 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     const more = document.getElementById('msMore');
     return { team, facts, details, tiles, tileOrder, overNow, overText: on(ov) ? ov.textContent.trim() : null, overColor: on(ov) ? getComputedStyle(ov).color : null, deltas: [...document.querySelectorAll('#msKpis .ms-kd, #msKpis .ms-spark, #msKpis .ms-chip')].filter(on).length,
       head: box(document.querySelector('header.top')), sales: box(document.querySelector(team ? '#msSales' : '#targetCard .ms-hero')), people: team ? box(document.querySelector('#targetCard .ms-people')) : null,
-      next: box(document.getElementById('msNext')), chip: box(document.querySelector('#msFcChip .ms-fc')), more: box(more), expanded: more && more.getAttribute('aria-expanded'),
+      next: box(document.getElementById('msNext')), chart: box(document.getElementById('msChart')), chip: box(document.querySelector('#msFcChip .ms-fc')), more: box(more), expanded: more && more.getAttribute('aria-expanded'),
       lbRows: lb.length, lbParts: lb.slice(0, 1).map(r => ['.rk', '.av', '.n', '.bar', '.p', '.a', '.v'].filter(s => on(r.querySelector(s))).join(' ')).join(''),
       nextRows: [...document.querySelectorAll('#msNext .ms-ac')].filter(on).length, recs: on(document.querySelector('#msNext .ms-nrec')), viewAll: on(document.querySelector('#msNext .ms-nva')),
       doc: document.documentElement.scrollHeight, vh: innerHeight, page: getComputedStyle(document.body).backgroundColor };
+  }, !!laptop);
+  const phoneView = () => homeView(false);
+  // the glass: the target card one step more opaque, the other cards and the tiles white at 9 %, a backdrop blur, no gradient image
+  const glass = () => ev(() => { const g = sel => { const e = document.querySelector(sel); if(!e) return null; const c = getComputedStyle(e); return { bg: c.backgroundColor, img: c.backgroundImage, blur: c.backdropFilter || c.webkitBackdropFilter || '' }; };
+    return { hero: g(document.getElementById('msGrid').classList.contains('ms-vteam') ? '#msSales' : '#targetCard .ms-hero'), tile: g('#msKpis .ms-kc'), next: g('#msNext'), page: getComputedStyle(document.body).backgroundColor }; });
+  const isGlass = x => !!x && /^rgba\(255, 255, 255, 0\.\d+\)$/.test(x.bg) && /blur\(/.test(x.blur) && x.img === 'none';
+  // AA contrast of every word on the home (glass over the matte page and its lightest glow): what falls short
+  const contrast = () => ev(() => {
+    const parse = c => { const m = String(c).match(/rgba?\(([^)]+)\)/); if(!m) return null; const p = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const over = (t, b) => ({ r: t.r * t.a + b.r * (1 - t.a), g: t.g * t.a + b.g * (1 - t.a), b: t.b * t.a + b.b * (1 - t.a), a: 1 });
+    const lum = c => { const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+    const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const pages = [parse(getComputedStyle(document.body).backgroundColor), { r: 17, g: 70, b: 57, a: 1 }];   // the page, and the lightest of its glows
+    const out = [], walk = document.createTreeWalker(document.getElementById('view-today'), NodeFilter.SHOW_TEXT);
+    for(let n = walk.nextNode(); n; n = walk.nextNode()){
+      const t = n.nodeValue.trim(), el = n.parentElement; if(!t || !/[\p{L}\p{N}]/u.test(t) || !el || el.closest('svg') || !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+      const rg = document.createRange(); rg.selectNodeContents(n); if(![...rg.getClientRects()].some(x => x.width > 2 && x.height > 2)) continue;
+      let hidden = false, alpha = 1; for(let a = el; a && a !== document.body; a = a.parentElement){ const c = getComputedStyle(a); if(/inset\(50%/.test(c.clipPath) || a.getBoundingClientRect().width < 3){ hidden = true; break; } alpha *= parseFloat(c.opacity); }
+      if(hidden) continue;
+      const cs = getComputedStyle(el), fg = parse(cs.color), layers = []; for(let a = el; a; a = a.parentElement){ const bg = parse(getComputedStyle(a).backgroundColor); if(bg && bg.a > 0) layers.push(bg); if(a === document.body) break; }
+      const size = parseFloat(cs.fontSize), need = size >= 24 || (parseInt(cs.fontWeight, 10) >= 700 && size >= 18.66) ? 3 : 4.5;
+      const min = Math.min.apply(null, pages.map(pg => { let bg = pg; for(let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg); return ratio(over({ r: fg.r, g: fg.g, b: fg.b, a: fg.a * alpha }, bg), bg); }));
+      if(min < need) out.push(t.slice(0, 30) + ' ' + Math.round(min * 100) / 100);
+    }
+    return [...new Set(out)];
   });
   const r2 = n => Math.round(n * 100) / 100;
   const whole = n => Math.round(n).toLocaleString('en-US');   // the picture's amounts: whole KWD with thousands separators (data-value keeps the fils)
@@ -195,8 +223,13 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     { shown: [s.visits, s.conversion, s.orders, s.ordersValue, s.newcustomers], dashboard: [truth.D.visits, truth.D.conversion, truth.D.orders, truth.D.ordersValue, truth.D.newc], joint: truth.D.joint });
   check('Orders are labelled as logged in the app, never as sales — with the note that they are not invoiced sales', /Orders logged in the app 15 orders|Orders logged in the app \d+ orders?/.test(s.work) && /not invoiced sales: sales come from the ERP files only/.test(s.work) && !/Orders? (?:sales|invoiced)/i.test(s.work), s.work.slice(0, 300));
   const due = await ev(() => visibleDueClinics().length);
-  check('Team: "Needs you today" counts the follow-ups due (visibleDueClinics) and names a customer to act on (execDashboard.act)', new RegExp(due + ' follow-ups due').test(s.next) && (truth.D.under ? s.next.includes(truth.D.firstUnder) : true) && new RegExp(truth.D.under + ' under-performing').test(s.next),
-    { due, under: truth.D.under, first: truth.D.firstUnder, next: s.next.slice(0, 300) });
+  // the owner's review of v125: the count of follow-ups due is the Today row's (once); the next actions name the first customer to
+  // act on; the counts of both lists are in the advisor's sheet ("Recommendations", under the next actions)
+  const dueShown = await ev(() => Number(document.querySelector('#msKpis [data-ms="due"]').dataset.value));
+  const recs = (await act(() => { document.querySelector('#msNext .ms-nrec').click(); const t = document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); closeModal(); return t; })) || '';
+  check('Team: the follow-ups due are counted once, in the Today row (visibleDueClinics); the next actions name a customer to act on and "Recommendations" counts both lists (execDashboard.act)', dueShown === due && (truth.D.under ? s.next.includes(truth.D.firstUnder) : true)
+      && recs.includes(`Follow-ups due (${due})`) && recs.includes(`Customers to act on (${truth.D.under + truth.D.potential})`) && (truth.D.under ? recs.includes(truth.D.firstUnder) : true),
+    { due, shown: dueShown, under: truth.D.under, potential: truth.D.potential, first: truth.D.firstUnder, next: s.next.slice(0, 200), recs: recs.slice(0, 300) });
   check('Team: the leaderboard lists every person, himself included — a row opens that person\'s screen (the picture: it replaces the person switch)', s.people.slice().sort().join() === truth.reps.slice().sort().join() && s.switch === '', { people: s.people, switch: s.switch });
   check('Team: each person\'s ▲/▼ against the same days last month = the growth her own screen gives (execDashboard for her) = the team\'s byPerson',
     truth.reps.every(r => truth.growth[r] != null && s.growth[r] === truth.growth[r] && truth.growth[r] === truth.ownGrowth[r]) && truth.reps.every(r => new RegExp(r.replace(/[.]/g, '\\.') + ' \\d+% [^]*?[▲▼] ' + Math.abs(truth.growth[r]) + '% vs the same days last month').test(s.target)),
@@ -223,27 +256,31 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     const q = sel => { const e = document.querySelector(sel); const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
     const nav = document.getElementById('bottomNav').getBoundingClientRect();
     const kpis = [...document.querySelectorAll('#msKpis .ms-kc')].map(e => { const b = e.getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; });
-    return { sales: q('#msSales'), people: q('#targetCard .ms-people'), chart: q('#msChart'), adv: q('#msAdvisor'), recent: q('#msRecentCard'), photo: q('#msPhoto'), status: q('#msStatus'), next: q('#msNext'), kpis,
+    return { sales: q('#msSales'), people: q('#targetCard .ms-people'), chart: q('#msChart'), adv: q('#msAdvisor'), recent: q('#msRecentCard'), photo: q('#msPhoto'), status: q('#msStatus'), next: q('#msNext'), chip: q('#msFcChip .ms-fc'), more: q('#msMore'), kpis,
       nav: { x: nav.left, y: nav.top, w: nav.width, h: nav.height }, vw: innerWidth, vh: innerHeight,
       sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, dir: document.documentElement.dir };
   });
-  check('Laptop 1440×900: the target card spans the content at the top, the four figure cards in one row under it, Sales Performance beside the leaderboard, then the advisor, the recent activity and the photo side by side; the needs and the pace card below them',
-    lay.sales.w >= 1000 && lay.kpis.length === 4 && lay.kpis.every((k, i) => k.y === lay.kpis[0].y && (!i || k.x > lay.kpis[i - 1].x)) && lay.kpis[0].y >= lay.sales.y + lay.sales.h
-    && lay.chart.y === lay.people.y && lay.chart.x < lay.people.x && lay.chart.w > lay.people.w && lay.chart.y > lay.kpis[0].y
-    && lay.adv.y === lay.recent.y && lay.recent.y === lay.photo.y && lay.adv.x < lay.recent.x && lay.recent.x < lay.photo.x && lay.adv.y > lay.chart.y
-    && lay.next.y > lay.adv.y && lay.status.y > lay.adv.y, lay);
+  // the owner's review of v125 (16 Nov): the target card across the top, the Today row (three tiles) under it, the team ranking at
+  // the start beside the next actions, Sales Performance across the row under them, the forecast line, More details, then (open)
+  // the pace card and the rest down to the recent activity; no advisor card, no clinic photo
+  check('Laptop 1440×900, by priority: the target card across the top, the Today row under it (three tiles), the ranking beside the next actions, Sales Performance across the row under them, the forecast line, More details, then the pace card and the rest; no advisor card, no photo',
+    lay.sales.w >= 1000 && lay.kpis.filter(k => k.w > 0).length === 3 && lay.kpis.filter(k => k.w > 0).every(k => k.y === lay.kpis.find(x => x.w > 0).y) && lay.kpis.find(x => x.w > 0).y >= lay.sales.y + lay.sales.h
+    && lay.people.y === lay.next.y && lay.people.x < lay.next.x && lay.chart.y >= lay.people.y + lay.people.h && lay.chart.w >= lay.sales.w - 2
+    && lay.chip.y >= lay.chart.y + lay.chart.h && lay.more.y >= lay.chip.y + lay.chip.h && lay.status.y >= lay.more.y + lay.more.h && lay.recent.y > lay.status.y && lay.adv.w === 0 && lay.photo.w === 0, lay);
   // redesign: the laptop's navigation is a labelled sidebar (every destination by name) instead of the 96 px icon rail
   check('Laptop: the navigation is a sidebar (full height, at the start edge, wide enough for its labels: 200–280 px), not a bottom bar', lay.nav.h >= lay.vh - 1 && lay.nav.w >= 200 && lay.nav.w <= 280 && lay.nav.x === 0, lay.nav);
-  const lap = await ev(() => ({ info: ['msSales', 'msWork', 'msAdvisor', 'targetCard', 'msChart', 'msDaily', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
+  const lap = await ev(() => ({ info: ['msSales', 'msWork', 'targetCard', 'msChart', 'msDaily', 'msBrands', 'msCust'].filter(id => !document.querySelector('#' + id + ' .ms-i')),
     open: ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].every(id => getComputedStyle(document.querySelector('#' + id + ' .ms-body')).display !== 'none'),
     rows: getComputedStyle(document.getElementById('msRows')).display }));
   // each ⓘ is wired: a tap opens "How it is calculated"
-  const infoTap = (await act(() => ['msSales', 'msWork', 'msAdvisor', 'targetCard', 'msChart', 'msDaily', 'msBrands', 'msCust'].map(id => {
+  const infoTap = (await act(() => ['msSales', 'msWork', 'targetCard', 'msChart', 'msDaily', 'msBrands', 'msCust'].map(id => {
     const b = document.querySelector('#' + id + ' .ms-i'); if(!b) return id + ': no ⓘ';
     b.click(); const open = document.getElementById('modalBack').classList.contains('show'), t = document.getElementById('modalInner').innerText; closeModal();
     return open && /How it is calculated/.test(t) ? '' : id + ': ' + (open ? t.slice(0, 40) : 'nothing opened');
   }).filter(Boolean))) || ['the page threw'];
-  check('Laptop: every card with figures has its ⓘ and each opens "How it is calculated"; the plan, follow-ups, tasks and visits are open; no phone rows', lap.info.length === 0 && infoTap.length === 0 && lap.open && lap.rows === 'none', Object.assign({ infoTap }, lap));
+  check('Laptop: every card with figures has its ⓘ and each opens "How it is calculated"; behind More details the plan, follow-ups, tasks and visits are open; no phone rows', lap.info.length === 0 && infoTap.length === 0 && lap.open && lap.rows === 'none', Object.assign({ infoTap }, lap));
+  const lapAA = await contrast();
+  check('Laptop (supervisor, More details open): every word on the glass meets AA contrast', lapAA.length === 0, lapAA.slice(0, 12));
 
   // ---------- ⓘ: how it is calculated, with this view's numbers ----------
   const how = (await act(() => { msHow('sales'); const t = document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); closeModal(); return t; })) || '';
@@ -352,20 +389,40 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     if(m.sw > m.cw) over.push({ w, m });
     const sp = await ev(spilled); if(sp.length) spill.push({ w, sp });
     if(w >= 390){ const sw = await ev(statsWrap); if(sw.length) wrap.push({ w, sw }); }
-    if(w >= 1024) rowsAt[w] = await ev(() => { const r = sel => { const b = document.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width) }; };
-      return { sales: r('#msSales'), adv: r('#msAdvisor'), people: r('#targetCard .ms-people'), chart: r('#msChart'), recent: r('#msRecentCard'), photo: r('#msPhoto'),
-        kpis: [...document.querySelectorAll('#msKpis .ms-kc')].map(e => Math.round(e.getBoundingClientRect().top)) }; });
+    if(w >= 1024) rowsAt[w] = await ev(() => { const r = sel => { const b = document.querySelector(sel).getBoundingClientRect(); return { x: Math.round(b.left), y: Math.round(b.top), w: Math.round(b.width), h: Math.round(b.height) }; };
+      return { sales: r('#msSales'), adv: r('#msAdvisor'), people: r('#targetCard .ms-people'), next: r('#msNext'), chart: r('#msChart'), chip: r('#msFcChip .ms-fc'), more: r('#msMore'), photo: r('#msPhoto'),
+        kpis: [...document.querySelectorAll('#msKpis .ms-kc')].filter(e => e.getClientRects().length).map(e => Math.round(e.getBoundingClientRect().top)) }; });
   }
-  // the owner's picture: the target card across the content and the four figures in one row at every laptop width; Sales
-  // Performance beside the leaderboard from 1280 px (above it at 1024); the advisor and the recent activity side by side, each
-  // wide enough for its words (≥ 360 px); the clinic photo beside them from 1366 px (a decoration: left out below)
-  const okAt = (x, w) => !!x && x.kpis.length === 4 && x.kpis.every(t => t === x.kpis[0]) && x.sales.w >= 1.9 * x.adv.w
-    && (w >= 1280 ? x.chart.y === x.people.y && x.chart.x !== x.people.x : x.people.y > x.chart.y)
-    && x.adv.y === x.recent.y && x.adv.w >= 360 && x.recent.w >= 360 && (w >= 1366 ? x.photo.y === x.adv.y && x.photo.w > 0 : x.photo.w === 0);
-  check('Laptop from 1024 to 1440 px: the target card across the content and the four figures in one row; Sales Performance beside the leaderboard from 1280 px (above it at 1024); the advisor and the recent activity side by side (≥ 360 px each), the photo beside them from 1366 px', [1024, 1280, 1366, 1440].every(w => okAt(rowsAt[w], w)), rowsAt);
+  // the owner's review of v125 (16 Nov), by priority: the target card across the content, the Today row (three tiles in one row),
+  // the team ranking beside the next actions from 1280 px (one above the other at 1024), the team's Sales Performance across the
+  // row under them, the forecast line, then More details; no advisor card, no clinic photo
+  const below = (a, b) => !!a && !!b && a.y + a.h <= b.y;
+  const okAt = (x, w) => !!x && x.kpis.length === 3 && x.kpis.every(t => t === x.kpis[0]) && x.sales.y < x.kpis[0]
+    && (w >= 1280 ? x.people.y === x.next.y && x.people.x !== x.next.x : below(x.people, x.next))
+    && below(x.people, x.chart) && below(x.next, x.chart) && x.chart.w >= x.sales.w - 2 && below(x.chart, x.chip) && below(x.chip, x.more) && x.adv.w === 0 && x.photo.w === 0;
+  check('Laptop from 1024 to 1440 px, by priority: the target card across the content, the Today row (three tiles in one row), the team ranking beside the next actions from 1280 px (one above the other at 1024), Sales Performance across the row under them, the forecast line, More details; no advisor card, no clinic photo', [1024, 1280, 1366, 1440].every(w => okAt(rowsAt[w], w)), rowsAt);
   check('Supervisor (team, English): the three figures under the sales card — label, amount, sub-line — each on one line from 390 px up (360 may wrap, never spill)', wrap.length === 0, wrap.slice(0, 3));
   check('Supervisor: no horizontal page scroll at 360, 390, 768, 1024, 1280 and 1440 px', over.length === 0, over);
   check('Supervisor: no figure spills out of its box (cards, stats columns, rows) at any of those widths', spill.length === 0, spill.slice(0, 3));
+
+  // ======================= the laptop's home as it opens: one look, then More details (the owner's review of v125, 16 Nov) =======================
+  for(const [who, role, lang] of [[G, 'supervisor', 'en'], [M, 'rep', 'ar']]){
+    await boot(who, role, 1440, 900, { lang, closed: true });
+    const v = await homeView(true), gl = await glass(), aa = await contrast(), team = who === G, tag = `${team ? 'supervisor' : 'rep'}, ${lang}`;
+    check(`Laptop (${tag}): the home opens with More details closed — none of what it holds shows`, v.details.length === 0 && v.expanded === 'false', v.details);
+    check(`Laptop (${tag}), by priority: the target card, the Today row from the start side (field visits, follow-ups due with the overdue in red, the KPI score), ${team ? 'the ranking beside the next actions, the team\'s Sales Performance under them' : 'her next actions beside her Sales Performance'}, the forecast line, More details`,
+      below(v.sales, v.tiles[0]) && v.tiles.length === 3 && v.tiles.every(t => t.y === v.tiles[0].y) && v.tileOrder.join() === 'today-visits,due,kpi' && v.overNow > 0 && v.overText === (lang === 'ar' ? `${v.overNow} متأخرة` : `${v.overNow} overdue`)
+        && (team ? v.people.y === v.next.y && below(v.next, v.chart) && below(v.people, v.chart) : v.next.y === v.chart.y && v.next.x !== v.chart.x) && below(team ? v.chart : v.next, v.chip) && below(v.chip, v.more), v);
+    check(`Laptop (${tag}): each fact once — follow-ups due, today's plan, field visits, the amount a day, the KPI score, the forecast; no ▲/▼ or sparkline in the Today row; no advisor card (its sheet: Recommendations, under three next actions at most)`,
+      Object.values(v.facts).every(x => x.length === 1) && v.deltas === 0 && v.recs && v.viewAll && v.nextRows >= 1 && v.nextRows <= 3, { facts: v.facts, deltas: v.deltas, rows: v.nextRows });
+    check(`Laptop (${tag}): the matte page, the cards as glass (the target card the most opaque), every word AA`, /^rgb\(12, 44, 35\)$/.test(gl.page) && isGlass(gl.hero) && isGlass(gl.tile) && isGlass(gl.next) && aa.length === 0, { gl, aa: aa.slice(0, 10) });
+  }
+  // the viewer asks for less transparency (or the browser has no backdrop blur): an opaque matte card of the same tone
+  { const cdp0 = await ctx.newCDPSession(page);
+    await cdp0.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] });
+    const solid = await glass(), aa = await contrast();
+    await cdp0.send('Emulation.setEmulatedMedia', { features: [] });
+    check('Less transparency asked for: the cards are an opaque matte of the same tone (no blur), every word still AA', !!solid.hero && /^rgb\(/.test(solid.hero.bg) && !/blur\(/.test(solid.hero.blur) && /^rgb\(/.test(solid.tile.bg) && !/blur\(/.test(solid.tile.blur) && aa.length === 0, { solid, aa: aa.slice(0, 6) }); }
 
   // ======================= a rep, phone =======================
   await boot(M, 'rep', 390, 844);
@@ -389,7 +446,6 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   const nav = await ev(() => { const n = document.getElementById('bottomNav').getBoundingClientRect(), l = document.querySelector('#bottomNav button[data-view="log"]').getBoundingClientRect();
     return { nav: { top: Math.round(n.top), bottom: Math.round(n.bottom), w: Math.round(n.width), h: Math.round(n.height) }, log: { top: Math.round(l.top), w: Math.round(l.width), h: Math.round(l.height) }, vh: innerHeight, vw: innerWidth }; });
   const pv = await phoneView();
-  const below = (a, b) => !!a && !!b && a.y + a.h <= b.y;
   // the owner's review of v125: one column, in this order — the head, her target card, the Today row (three figures side by side),
   // her next actions, the forecast line, then "More details"; nothing of what it holds shows, and the page ends with it
   check('Phone 390×844 (her phone): one column in the owner\'s order — the head, her target card, the Today row (three figures side by side), her next actions, the forecast line, then "More details", each the width of the screen',
@@ -398,7 +454,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   check('Phone: each fact shows once on her main view — follow-ups due, today\'s plan, field visits, the amount a day, the KPI score and the forecast each in one place; no ▲/▼ or sparkline in the Today row; the advisor not on the page (its sheet: "Recommendations" under her next actions, three rows at most, then View All)',
     Object.values(pv.facts).every(x => x.length === 1) && pv.facts['the forecast'][0] === '#msFcChip .ms-fc' && pv.deltas === 0 && pv.recs && pv.viewAll && pv.nextRows >= 1 && pv.nextRows <= 3, { facts: pv.facts, deltas: pv.deltas, recs: pv.recs, viewAll: pv.viewAll, rows: pv.nextRows });
   check('Phone: the Today row by priority from the start side — today\'s field visits, the follow-ups due, the KPI score; under the follow-ups the overdue ones in red ("2 overdue")',
-    pv.tileOrder.join() === 'today-visits,due,kpi' && pv.overNow > 0 && pv.overText === `${pv.overNow} overdue` && pv.overColor === 'rgb(196, 50, 10)', { order: pv.tileOrder, overdue: pv.overNow, said: pv.overText, colour: pv.overColor });
+    pv.tileOrder.join() === 'today-visits,due,kpi' && pv.overNow > 0 && pv.overText === `${pv.overNow} overdue` && pv.overColor === 'rgb(255, 154, 140)', { order: pv.tileOrder, overdue: pv.overNow, said: pv.overText, colour: pv.overColor });
   const noOver = await act(async () => {
     const keep = clinics.map(c => [c, c.nextFollowUp]), t = todayStr();
     clinics.forEach(c => { if(c.nextFollowUp && c.nextFollowUp < t) c.nextFollowUp = t; });   // in memory only: nothing is saved by looking
@@ -408,9 +464,11 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
     return r;
   });
   check('Phone: with no follow-up overdue, the follow-ups card says nothing more (no red line)', !!noOver && noOver.due > 0 && noOver.shown === false, noOver);
-  check('Phone: "More details" closed — nothing it holds shows (rows, visits card, plan, follow-ups, tasks, recent activity, the cross-invoice notice) and the page ends with it: her main view ≤ 1.3 screens (390×844)',
+  check('Phone: "More details" closed — nothing it holds shows (rows, visits card, plan, follow-ups, tasks, recent activity) and the page ends with it: her main view ≤ 1.3 screens (390×844)',
     !!pv.more && pv.details.length === 0 && pv.expanded === 'false' && pv.doc <= Math.round(1.3 * pv.vh) && pv.doc - (pv.more.y + pv.more.h) < 160, { details: pv.details, doc: pv.doc, moreBottom: pv.more ? pv.more.y + pv.more.h : null, screens: Math.round(pv.doc / pv.vh * 100) / 100 });
-  check('Phone: the main screen\'s page is a flat dark green (no gradient on the page or the target card)', /^rgb\(12, 44, 35\)$/.test(pv.page) && await ev(() => !/gradient/.test(getComputedStyle(document.body).backgroundImage.replace(/url\([^)]*\)/g, '')) && getComputedStyle(document.querySelector('#targetCard .ms-hero')).backgroundImage === 'none'), pv.page);
+  const pg = await glass(), phAA = await contrast();
+  check('Phone: the main screen\'s page is the matte dark green; the target card, the tiles and the next actions are glass (translucent white, a backdrop blur, no gradient), the target card the most opaque', /^rgb\(12, 44, 35\)$/.test(pg.page) && isGlass(pg.hero) && isGlass(pg.tile) && isGlass(pg.next) && parseFloat(pg.hero.bg.split(',')[3]) > parseFloat(pg.tile.bg.split(',')[3]), pg);
+  check('Phone: every word on her main view meets AA contrast (glass over the page and its lightest glow)', phAA.length === 0, phAA.slice(0, 12));
   check('Phone: the fixed bottom navigation, with "Log visit" in it (a thumb target ≥ 44 px) on the first screen', nav.nav.bottom === nav.vh && nav.nav.w === nav.vw && nav.nav.h < 120 && nav.log.top >= nav.vh - 120 && nav.log.h >= 44 && nav.log.w >= 44, nav);
   const fold = (await act(() => {
     const on = el => !!el && el.getClientRects().length > 0 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
@@ -424,6 +482,8 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   })) || { rows: [], opened: [] };
   check('Phone: "More details" opens the rest in place — the rows (day by day, brands, customers, orders), the visits card, the plan, follow-ups, tasks and recent activity; the follow-ups open in place',
     fold.opened.length === 6 && fold.expanded === 'true' && fold.before === 'none' && fold.after === 'block' && fold.due > 0 && fold.rows.length === 4, fold);
+  const phAA2 = await contrast();
+  check('Phone: More details open — every word meets AA contrast', phAA2.length === 0, phAA2.slice(0, 12));
   await page.click('#bottomNav button[data-view="log"]', { timeout: 3000 }).catch(e => errors.push('the Log visit button could not be tapped: ' + e.message.split('\n')[0]));
   await sleep(150);
   check('Phone: logging a visit is one tap from her main screen', await ev(() => activeView === 'log' && document.getElementById('view-log').classList.contains('active')));

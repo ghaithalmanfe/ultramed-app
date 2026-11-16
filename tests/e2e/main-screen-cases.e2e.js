@@ -68,6 +68,8 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].r
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(250);
     await page.evaluate(async ({ who, role }) => { await selectUser(who, role); }, { who, role });
     await sleep(300); await page.evaluate(() => msWhenReady()); await sleep(150);
+    // a laptop's home keeps the rest behind "More details" (closed at first, main-screen.e2e.js); the cases read those cards with it open
+    if(w >= 1024 && !opts.closed) await page.evaluate(() => { if(typeof msMoreToggle === 'function') msMoreToggle(true); });
   };
   const ev = (fn, arg) => page.evaluate(fn, arg);
   const act = (fn, arg) => page.evaluate(fn, arg).catch(e => { errors.push('a tap or sheet threw: ' + String(e && e.message || e).split('\n')[0]); return null; });
@@ -142,7 +144,7 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].r
   await boot(G, 'supervisor', 1440, 900);
   const nt = await dash({ rep: 'all', reps: await ev(() => REPS.slice()) });
   const ntS = { sales: await val('sales', '#msSales'), of: await val('of-target', '#msSales'), ach: await val('achievement', '#msSales'), rem: await val('remaining', '#msSales'), fc: await val('forecast', '#msKpis'), txt: await txt('#msSales') };
-  const ntPct = num(await txt('#msKpis'), /Sales Forecast (\d+)%/), gAmt = await ev(() => bestMonthRevenue('Dr. Ghaith').amount);
+  const ntPct = num(await txt('#msFcChip'), /≈ [\d,]+ KWD · (\d+)%/), gAmt = await ev(() => bestMonthRevenue('Dr. Ghaith').amount);
   check('No target for Dr. Ghaith: the sales card adds up on its own — its amount ÷ the target it shows = its %, the target − the amount = remaining, the forecast ÷ the target = the forecast\'s %',
     ntS.of === 17000 && Math.round(ntS.sales / ntS.of * 100) === ntS.ach && Math.abs(r2(ntS.of - ntS.sales) - ntS.rem) < 0.011 && Math.round(ntS.fc / ntS.of * 100) === ntPct,
     { shown: ntS, forecastPct: ntPct, dashboard: { achieved: nt.achievement.achieved, target: nt.achievement.target, pct: nt.achievement.pct, forTarget: nt.forecast.forTarget, all: nt.forecast.amount } });
@@ -254,12 +256,12 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].r
     { id: 'call1', clinicId: 'm1', rep: M, withRep: null, date: '2026-10-08', ts: Date.parse('2026-10-08T09:40:00'), callOnly: true, channel: 'phone', products: [], orderTaken: false, orderTotal: 0, doctorIds: [] },
     { id: 'joint1', clinicId: 'r1', rep: M, withRep: R, date: '2026-10-08', ts: Date.parse('2026-10-08T09:50:00'), products: ['p1'], orderTaken: false, orderTotal: 0, doctorIds: ['r1d1'], noOrderReason: 'Stock still available' }] });
   await boot(M, 'rep', 1440, 900);
-  const n13 = await txt('#msNext'), sum13 = await txt('#msPlanSum'), list13 = await ev(() => [...document.querySelectorAll('#planList .card')].map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+  const n13 = await txt('#msNext'), plan13 = await txt('#msKpis .ms-kplan'), sum13 = await txt('#msPlanSum'), list13 = await ev(() => [...document.querySelectorAll('#planList .card')].map(e => e.textContent.replace(/\s+/g, ' ').trim()));
   check('Mariam only phoned Harbor (planned): her plan says 1 of 2 done and Harbor is next — the next step, the plan row and the list agree',
-    /Today's plan: 1 of 2 done/.test(n13) && /Visit: Harbor Sample Dental Clinic Today · in today's plan/.test(n13) && /^1 of 2 done$/.test(sum13) && list13.some(t => /Harbor/.test(t) && !/Visited today/.test(t)), { next: n13.slice(0, 140), sum: sum13, list: list13 });
+    /^Plan 1 of 2$/.test(plan13) && /Visit: Harbor Sample Dental Clinic Today · in today's plan/.test(n13) && /^1 of 2 done$/.test(sum13) && list13.some(t => /Harbor/.test(t) && !/Visited today/.test(t)), { next: n13.slice(0, 140), plan: plan13, sum: sum13, list: list13 });
   await boot(R, 'rep', 1440, 900);
-  const r13 = await txt('#msNext'), rsum13 = await txt('#msPlanSum'), rlist13 = await txt('#planList');
-  check('Renova was on a joint field visit at Mira (planned): her plan counts it as visited — everywhere', /Today's plan: 1 of 1 done/.test(r13) && !/Visit: Mira Sample Dental Clinic/.test(r13) && /^1 of 1 done$/.test(rsum13) && /Visited today/.test(rlist13), { next: r13.slice(0, 140), sum: rsum13, list: rlist13.slice(0, 120) });
+  const r13 = await txt('#msNext'), rplan13 = await txt('#msKpis .ms-kplan'), rsum13 = await txt('#msPlanSum'), rlist13 = await txt('#planList');
+  check('Renova was on a joint field visit at Mira (planned): her plan counts it as visited — everywhere', /^Plan 1 of 1$/.test(rplan13) && !/Visit: Mira Sample Dental Clinic/.test(r13) && /^1 of 1 done$/.test(rsum13) && /Visited today/.test(rlist13), { next: r13.slice(0, 140), plan: rplan13, sum: rsum13, list: rlist13.slice(0, 120) });
 
   // ======================= planning today from the main screen =======================
   seed(cloud); { const p = JSON.parse(cloud.dayPlans); delete p['2026-10-08'][M]; cloud.dayPlans = JSON.stringify(p); }

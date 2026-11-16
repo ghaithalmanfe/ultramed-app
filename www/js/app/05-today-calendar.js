@@ -1461,16 +1461,20 @@ function msChartHTML(v, m){
   if(!Dy || !Dy.measured || !Array.isArray(Dy.days) || !Dy.days.length)
     return html + `<div class="ms-note">${msT(Dy ? 'No sales figure for this month yet, so no weekly bars.' : 'The weekly figures are not available on this device yet.')}</div>`;
   const W = UMCore.homeWeeks(msMonth(), withT ? Pr.days : Dy.days, withT ? A.target : null);
-  return html + `<div class="ms-wk">${msWeeksSVG(W)}</div>` + (withT && ((A.noTarget || []).length || (A.notMeasured || []).length) ? `<div class="ms-fine">${msT('Drawn for the people with a target and a sales figure:')} ${msNames(A.people || [])}.</div>` : '');
+  // the team's chart runs across its row on a laptop: drawn with more room between the weeks, at the words' own size (never stretched)
+  const host = v.kind === 'team' && window.matchMedia && window.matchMedia('(min-width: 1024px)').matches ? document.getElementById('msChart') : null;
+  const hw = host ? host.clientWidth : 0, VW = hw > 760 ? Math.round(552 * hw / 640) : 552;
+  return html + `<div class="ms-wk">${msWeeksSVG(W, VW)}</div>` + (withT && ((A.noTarget || []).length || (A.notMeasured || []).length) ? `<div class="ms-fine">${msT('Drawn for the people with a target and a sales figure:')} ${msNames(A.people || [])}.</div>` : '');
 }
-function msWeeksSVG(W){
-  const rtl = uiLang === 'ar', VW = 552, top = 18, base = 197;
+function msWeeksSVG(W, vw){
+  const rtl = uiLang === 'ar', VW = vw || 552, top = 18, base = 197;
   const vals = []; W.forEach(w => { if(w.achieved != null) vals.push(w.achieved); if(w.pace != null) vals.push(w.pace); });
   const step = msNiceStep(Math.max(1, Math.max.apply(null, vals.concat([1]))) / 4), maxY = step * 4;
   const y = val => base - Math.max(0, Math.min(1, val / maxY)) * (base - top), f1 = n => Math.round(n * 10) / 10;
   // the amounts' gutter: 50 px in English ("24K"), wider in Arabic (the whole number) — the labels never reach the plot
   const g = rtl ? 66 : 50;
-  const cx = i => rtl ? VW - (g + [29, 162, 300, 436][i]) : [79, 215, 360, 500][i];
+  const at = [0.0578, 0.3287, 0.6175, 0.896], atR = [0.0597, 0.3333, 0.6173, 0.8971];   // the same places on a wider drawing
+  const cx = i => VW === 552 ? (rtl ? VW - (g + [29, 162, 300, 436][i]) : [79, 215, 360, 500][i]) : rtl ? VW - (g + atR[i] * (VW - g)) : g + at[i] * (VW - g);
   const axX = rtl ? VW - g : g, labX = rtl ? VW - g + 8 : g - 24;
   let svg = `<svg viewBox="0 0 ${VW} 230" role="img" aria-label="${esc(trOf('Invoiced sales at the end of each week against the target pace') || 'Invoiced sales at the end of each week against the target pace')}"><defs>`
     + `<linearGradient id="msBarG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2B7F68"/><stop offset="1" stop-color="#1E7360"/></linearGradient>`
@@ -1719,24 +1723,26 @@ function msFold(id){
   _msOpen[id] = !el.classList.contains('open');
   el.classList.toggle('open', _msOpen[id]);
 }
-// ---- the phone (≤ 600 px): the main view ends with "More details"; everything else waits behind it until tapped ----
+// ---- a phone (≤ 600 px) and a laptop (≥ 1024 px): the main view ends with "More details"; everything else waits behind it
+// until tapped (tablets keep every card on the page) ----
 let _msMoreOpen = false;
 function msPhone(){ return !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches); }
+function msFolded(){ return !!(window.matchMedia && window.matchMedia('(max-width: 600px), (min-width: 1024px)').matches); }
 function msMoreToggle(open){
   _msMoreOpen = open == null ? !_msMoreOpen : !!open;
   const g = document.getElementById('msGrid'), b = document.getElementById('msMore');
   if(g) g.classList.toggle('ms-open', _msMoreOpen);
   if(b){ b.setAttribute('aria-expanded', _msMoreOpen ? 'true' : 'false'); const t = b.querySelector('.mt'); if(t){ t.textContent = _msMoreOpen ? 'Fewer details' : 'More details'; translateTree(t); } }
 }
-// the phone's status bar follows the main screen's dark page (the browser's own colour everywhere else)
+// the status bar (an installed app's title bar on a laptop) follows the main screen's dark page (the browser's own colour everywhere else)
 function msTheme(){
   const meta = document.querySelector('meta[name="theme-color"]'); if(!meta) return;
   if(!meta.dataset.light) meta.dataset.light = meta.getAttribute('content') || '';
-  meta.setAttribute('content', document.body.classList.contains('on-today') && msPhone() ? '#0C2C23' : meta.dataset.light);
+  meta.setAttribute('content', document.body.classList.contains('on-today') && msFolded() ? '#0C2C23' : meta.dataset.light);
 }
 function msGo(id){
   const el = document.getElementById(id); if(!el) return;
-  if(msPhone() && !_msMoreOpen && el.closest('#msGrid')) msMoreToggle(true);   // a card behind "More details": open it first
+  if(msFolded() && !_msMoreOpen && el.closest('#msGrid')) msMoreToggle(true);   // a card behind "More details": open it first
   if(!el.classList.contains('open') && !(window.matchMedia && window.matchMedia('(min-width: 1024px)').matches)){ _msOpen[id] = true; el.classList.add('open'); }
   try{ el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }catch(e){ el.scrollIntoView(); }
 }
