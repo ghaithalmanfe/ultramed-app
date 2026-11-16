@@ -2060,7 +2060,9 @@ function erpHealthCard(){
     <div class="chip-row" style="margin-top:8px;"><div class="chip small on" onclick="retryErpRows()">🔄 إعادة التحميل</div><div class="chip small" onclick="openErpImport()">📥 أعد رفع الملف</div></div>
   </div>`;
   }
-  if(_mirrorUsed.erpSales) return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
+  // (while the early open's line is up it says so for the whole screen — and a read that changes nothing draws nothing again:
+  // this card would stay up after the read is in, v126 speed part 3)
+  if(_mirrorUsed.erpSales && !(typeof _copyLine !== 'undefined' && _copyLine)) return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
     <div style="font-weight:700; font-size:13.5px;">📴 أرقام المبيعات من نسخة هذا الجهاز</div>
     <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">السحابة لم تُقرأ عند الفتح — الأرقام آخر ما شاهده هذا الجهاز وقد تكون أقدم من المحفوظ. أي رفع جديد يُدمج مع السحابة عند الحفظ.</div>
   </div>`;

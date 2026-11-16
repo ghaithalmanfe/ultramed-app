@@ -82,6 +82,7 @@ async function bgRefresh(){
   // must keep moving meanwhile (v121: the flag froze them until reload).
   if(typeof _erpImporting !== 'undefined' && (_erpImporting || _erpSaving)) return;
   if(refreshRunning() || _roundBusy) return;
+  if(earlyUnconfirmed()) return; // the early open: no cloud read before the sign-in is confirmed (v126 speed, part 3; 04-sync.js)
   if(currentUser && document.visibilityState==='visible'){
     _roundBusy = true;
     try{

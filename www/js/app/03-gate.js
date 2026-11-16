@@ -3,6 +3,10 @@
 // ---- GATE / USER ----
 async function selectUser(name, role){
   if(typeof dropFullBackup === 'function') dropFullBackup(); // a full backup held for the last sign-in is never handed to the next (13-exports.js)
+  // a screen drawn for someone else (another person's session, or the early open of the person this phone last signed
+  // in) is never shown to this one: covered until this person's own screen is drawn (v126 speed, part 3; 04-sync.js)
+  if(typeof earlyDrop === 'function') earlyDrop();
+  if(typeof screenCoverFor === 'function') screenCoverFor(name, role);
   currentUser = {name, role};
   if(!FIREBASE_ENABLED){
     try{ await window.storage.set('currentUser', JSON.stringify(currentUser), false); }catch(e){}
@@ -21,10 +25,16 @@ function switchUser(){
   // (flushOutbox), and what it had not sent stays on this phone, queued — it
   // uploads after the next sign-in (v123 review: refused for want of a
   // sign-in, it was taken off the queue).
+  const was = currentUser && USERS[currentUser.name] ? String(USERS[currentUser.name].email || '').toLowerCase() : '';
   currentUser = null;
-  if(FIREBASE_ENABLED && window.firebase){ firebase.auth().signOut().catch(()=>{}); }
+  forgetUser(); // the next start shows the sign-in screen, never this person's copy (v126 speed, part 3)
+  if(typeof earlyDrop === 'function') earlyDrop();
+  if(FIREBASE_ENABLED && window.firebase){ _signedOutOf = was || null; firebase.auth().signOut().catch(()=>{}); }
   showGateScreen();
 }
+// Signed out on this phone before the SDK had told who its saved session was (the early open's window, v126 speed part
+// 3): the SDK finishes its start first and tells that session, then the sign-out — that late word is not a sign-in.
+let _signedOutOf = null;
 function showGateScreen(){
   document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
   renderGate();
@@ -40,6 +50,8 @@ function showGateScreen(){
 function signInEnded(){
   if(typeof dropFullBackup === 'function') dropFullBackup();
   currentUser = null;
+  forgetUser(); // the next start shows the sign-in screen, never this person's copy (v126 speed, part 3)
+  if(typeof earlyDrop === 'function') earlyDrop();
   showGateScreen();
   const waiting = typeof outboxList === 'function' ? outboxList().length : 0;
   showToast(waiting ? '🔒 Signed out — sign in again. Changes wait on this phone and upload after you sign in' : '🔒 Signed out — sign in again', 8000);
@@ -152,6 +164,7 @@ async function submitEmailLogin(){
   const pwd = document.getElementById('elPwd').value;
   if(!email || !pwd){ showToast('Enter email and password'); return; }
   try{
+    _signedOutOf = null; // a sign-in asked for here: whoever the SDK tells next is signing in
     await firebase.auth().signInWithEmailAndPassword(email, pwd);
     closeModal();
   }catch(e){
@@ -163,12 +176,48 @@ async function submitGateLogin(name){
   const pwd = document.getElementById('gatePassword').value;
   if(!pwd){ showToast('Enter your password'); return; }
   try{
+    _signedOutOf = null; // a sign-in asked for here: whoever the SDK tells next is signing in
     await firebase.auth().signInWithEmailAndPassword(USERS[name].email, pwd);
     closeModal();
   }catch(e){
     showToast(navigator.onLine ? 'Wrong password, try again'
       : '📴 No connection — sign in once online, then the app works offline');
   }
+}
+// ---- The person this phone last signed in (the early open, v126 speed part 3) ----
+// Written when the cloud's sign-in confirms a person on the team list, removed at Sign out, when the sign-in ends (a
+// password changed on another device, a login disabled) and when the login is not on the team list: a start draws
+// from this phone's copy only for this person, and only while Firebase's own saved session on the phone is theirs.
+const LAST_USER = 'um_lastUser';
+function rememberUser(name, role, email){ try{ localStorage.setItem(LAST_USER, JSON.stringify({ name, role, email: String(email || '').toLowerCase() })); }catch(e){} }
+function forgetUser(){ try{ localStorage.removeItem(LAST_USER); }catch(e){} }
+function rememberedUser(){
+  try{ const o = JSON.parse(localStorage.getItem(LAST_USER) || 'null'); return o && typeof o.name === 'string' && o.name && typeof o.role === 'string' && typeof o.email === 'string' && o.email ? o : null; }catch(e){ return null; }
+}
+// Whose session Firebase keeps on this phone — read as the SDK keeps it (its IndexedDB "firebaseLocalStorageDb", else
+// web storage), without the SDK and without the network; null when there is none or it cannot be read (no early
+// open then). A database the SDK has not made yet is never made here (its creation is aborted).
+function firebaseSavedEmail(){
+  const key = 'firebase:authUser:' + FIREBASE_CONFIG.apiKey + ':[DEFAULT]';
+  const emailOf = v => { const o = typeof v === 'string' ? UMCore.safeParse(v, null) : v; return o && typeof o === 'object' && typeof o.email === 'string' && o.email ? o.email.toLowerCase() : null; };
+  try{ const ls = localStorage.getItem(key); if(ls) return Promise.resolve(emailOf(ls)); }catch(e){}
+  return new Promise(res => {
+    let done = false; const end = v => { if(!done){ done = true; res(v); } };
+    setTimeout(() => end(null), 1500);
+    let rq;
+    try{ if(typeof indexedDB === 'undefined' || !indexedDB) return end(null); rq = indexedDB.open('firebaseLocalStorageDb'); }catch(e){ return end(null); }
+    rq.onupgradeneeded = () => { try{ rq.transaction.abort(); }catch(e){} };
+    rq.onerror = rq.onblocked = () => end(null);
+    rq.onsuccess = () => {
+      const db = rq.result;
+      try{
+        if(!db.objectStoreNames.contains('firebaseLocalStorage')){ db.close(); return end(null); }
+        const g = db.transaction('firebaseLocalStorage', 'readonly').objectStore('firebaseLocalStorage').get(key);
+        g.onsuccess = () => { try{ db.close(); }catch(e){} end(g.result ? emailOf(g.result.value) : null); };
+        g.onerror = () => { try{ db.close(); }catch(e){} end(null); };
+      }catch(e){ try{ db.close(); }catch(e2){} end(null); }
+    };
+  });
 }
 async function tryAutoLogin(){
   if(FIREBASE_ENABLED && !window.firebase){
@@ -178,9 +227,16 @@ async function tryAutoLogin(){
     return;
   }
   if(FIREBASE_ENABLED){
+    // the screen of the person this phone last signed in, drawn from this phone's copy before the sign-in is confirmed
+    // and before any cloud read (v126 speed, part 3: earlyOpen, 04-sync.js) — nothing is read from the cloud or written
+    if(typeof earlyOpen === 'function') earlyOpen();
     firebase.auth().onAuthStateChanged(async (user)=>{
+      // signed out here before the SDK's start told this session (switchUser in the early open's window): not a sign-in
+      if(user && _signedOutOf && String(user.email || '').toLowerCase() === _signedOutOf) return;
+      if(!user) _signedOutOf = null; // (the sign-out has landed: that person told again later is a new sign-in)
       if(!user && currentUser){ signInEnded(); return; } // the sign-in ended under the app (v123 review)
-      if(!user || !user.email) return;
+      if(!user){ if(typeof earlyDrop === 'function' && earlyDrop()) forgetUser(); return; } // ended before the early open drew anything
+      if(!user.email) return;
       const email = user.email.toLowerCase();
       let found = Object.entries(USERS).find(([n,u])=>(u.email||'').toLowerCase()===email);
       if(!found){
@@ -202,9 +258,14 @@ async function tryAutoLogin(){
           return;
         }
         showToast('This login is not on the team list');
+        forgetUser();
+        if(typeof earlyDrop === 'function' && earlyDrop() && currentUser){ currentUser = null; showGateScreen(); }
         await firebase.auth().signOut().catch(()=>{});
         return;
       }
+      rememberUser(found[0], found[1].role, email);
+      // the screen drawn from this phone's copy is this person's: the start's cloud read now (earlyConfirmed)
+      if(typeof earlyFor === 'function' && earlyFor(found[0], found[1].role)){ if(!_early.confirmed) await earlyConfirmed(found[0], found[1].role); return; } // (once: the same person told again changes nothing, as before)
       if(!currentUser || currentUser.name!==found[0]) await selectUser(found[0], found[1].role);
     });
     return;

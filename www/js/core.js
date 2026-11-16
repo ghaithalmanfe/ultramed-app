@@ -1701,6 +1701,52 @@
     });
     return out;
   }
+  // A whole document (the catalog, the targets, the team list, the KPI settings, the selling guides) saved while the
+  // screen still shows this phone's copy at a start, before the cloud's read is in (the early open, v126 speed part
+  // 3): what this phone changed since that copy (base → mine) is put on the cloud's document as it is now (theirs) —
+  // key by key in an object, record by record (by id) in a list of records — wherever the cloud did not change the
+  // same thing. A part changed on both sides to different values (or changed on one and removed on the other) is a
+  // conflict: { ok: false, at: where }, nothing merged — the save is refused and said, as a compare-and-set refuses
+  // it. → { ok: true, value }. A list's order: this phone's, then what only the cloud has, in the cloud's order.
+  // Never mutates its inputs; keys are data (own properties only, never through the prototype).
+  function merge3Doc(base, mine, theirs){
+    var conflict = null;
+    var isObj = function(x){ return x != null && typeof x === 'object' && !Array.isArray(x); };
+    var own = function(o, k){ return Object.prototype.hasOwnProperty.call(o, k); };
+    var idOf = function(x){ return typeof x.id + ':' + String(x.id); };
+    var idList = function(a){
+      if(!Array.isArray(a)) return false;
+      var seen = Object.create(null);
+      for(var i = 0; i < a.length; i++){ var x = a[i]; if(!isObj(x) || x.id == null || seen[idOf(x)]) return false; seen[idOf(x)] = 1; }
+      return true;
+    };
+    var copy = function(x){ return x === undefined ? undefined : JSON.parse(JSON.stringify(x)); };
+    function m3(b, m, t, at){
+      if(conflict) return undefined;
+      if(sameValue(m, b)) return copy(t);                        // not changed here: the cloud's
+      if(sameValue(t, b) || sameValue(m, t)) return copy(m);     // not changed there, or the same change on both: this phone's
+      if(isObj(m) && isObj(t) && (b === undefined || b === null || isObj(b))){
+        var B = isObj(b) ? b : {}, out = {}, keys = [], seen = Object.create(null);
+        [m, t, B].forEach(function(o){ Object.keys(o).forEach(function(k){ if(!seen[k]){ seen[k] = 1; keys.push(k); } }); });
+        keys.forEach(function(k){
+          var v = m3(own(B, k) ? B[k] : undefined, own(m, k) ? m[k] : undefined, own(t, k) ? t[k] : undefined, at + '.' + k);
+          if(v !== undefined) Object.defineProperty(out, k, { value: v, enumerable: true, writable: true, configurable: true });
+        });
+        return out;
+      }
+      if(idList(m) && idList(t) && (b === undefined || b === null || idList(b))){
+        var Bm = Object.create(null), Mm = Object.create(null), Tm = Object.create(null), list = [];
+        (b || []).forEach(function(x){ Bm[idOf(x)] = x; }); m.forEach(function(x){ Mm[idOf(x)] = x; }); t.forEach(function(x){ Tm[idOf(x)] = x; });
+        m.forEach(function(x){ var v = m3(Bm[idOf(x)], x, Tm[idOf(x)], at + '[' + String(x.id) + ']'); if(v !== undefined) list.push(v); });
+        t.forEach(function(x){ if(Mm[idOf(x)]) return; var v = m3(Bm[idOf(x)], undefined, x, at + '[' + String(x.id) + ']'); if(v !== undefined) list.push(v); });
+        return list;
+      }
+      conflict = at || '(the whole document)';
+      return undefined;
+    }
+    var value = m3(base, mine, theirs, '');
+    return conflict ? { ok: false, at: conflict } : { ok: true, value: value };
+  }
   // A short, stable fingerprint of a record's stored form (53-bit cyrb53, as
   // text). While visits wait in the queue a phone keeps only id → fingerprint
   // of what the cloud last confirmed (a full copy would double what the visits
@@ -7540,7 +7586,7 @@
     parseErpFile, levenshtein, guessRepMap, normClinicName, isErpChannel,
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
-    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
+    normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, merge3Doc, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
     unionDoctorsById, possibleDuplicateDoctors, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,

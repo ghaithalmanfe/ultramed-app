@@ -80,7 +80,7 @@ const PRODUCT_IMG_SEED = {"Shenzhen|Aligner & Retainer Case": "https://cdn.shopi
 // The Intensiv catalog entries carry the manufacturer's photos (bundled in img/deck/p).
 INTENSIV_PRODUCTS.forEach(p => { if(p.img) PRODUCT_IMG_SEED['Intensiv|' + p.name] = p.img; });
 async function applyProductImgSeed(){
-  if(currentUser.role !== 'supervisor') return;
+  if(!currentUser || currentUser.role !== 'supervisor') return; // (nobody signed in: signed out while the read ran)
   if(_loadFailed.products || _mirrorUsed.products) return;
   let changed = 0;
   products.forEach(pr => {
@@ -202,7 +202,20 @@ function erpFillFromMirror(sales, prevMirror){
 // The mirror must never silently vanish when the phone's storage is full:
 // keep everything if it fits, else only the last four months' rows, else the
 // bare index (the app then shows the "rows not loaded" warning offline).
-function erpMirrorSave(sales){
+// `idx` (v126 speed, part 3): the cloud's index text this copy is of — kept beside it (um_copyIdx:erpSales), so an
+// early open's files can be found the same by the start's read; undefined keeps the one kept, anything else drops it.
+const COPY_IDX_ERP = 'um_copyIdx:erpSales';
+function erpMirrorIdx(idx){
+  if(idx === undefined) return;
+  try{ if(typeof idx === 'string') localStorage.setItem(COPY_IDX_ERP, idx); else localStorage.removeItem(COPY_IDX_ERP); }catch(e){ try{ localStorage.removeItem(COPY_IDX_ERP); }catch(e2){} }
+}
+function erpMirrorSave(sales, idx){
+  erpMirrorIdx(idx === undefined ? undefined : null); // (written again below once the copy has landed)
+  const ok = erpMirrorSaveNow(sales);
+  if(ok) erpMirrorIdx(idx);
+  return ok;
+}
+function erpMirrorSaveNow(sales){
   if(mirrorSave('erpSales', JSON.stringify(sales))){ mirrorNoteWrite('erpSales', true); return true; }
   mirrorNoteWrite('erpSales', false);
   const cutoff = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
@@ -395,8 +408,10 @@ let _visitsBroken = [];      // months whose archive could not be read (never wr
 let _visitsSaving = false;   // a save in flight: the refresh keeps its hands off the list
 let _visitsListed = false;   // the one-time archive listing for accounts without an index
 let _visitsSaveChain = Promise.resolve();
-function visitsMirrorSave(all){
-  if(mirrorSave('visits', JSON.stringify(all))){ mirrorNoteWrite('visits', true); return true; }
+function visitsMirrorSave(all, text, had){
+  const str = typeof text === 'string' ? text : JSON.stringify(all);
+  if(typeof had === 'string' && had === str && !_deviceStale.visits){ mirrorNoteWrite('visits', true); return true; } // the phone holds this very text (v126 speed, part 3)
+  if(mirrorSave('visits', str)){ mirrorNoteWrite('visits', true); return true; }
   mirrorNoteWrite('visits', false);
   // device storage full: keep this quarter so the offline screen still has it
   const cutoff = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
@@ -408,7 +423,7 @@ function visitsArchivesObj(){ const o = {}; Object.keys(_visitsArch).forEach(m =
 async function loadVisits(run){
   if(_visitsSaving) return visits; // never swap the list underneath a save
   const F = readFlags(run);
-  const gen0 = _localGen; // a save that runs while this reads makes what it read older than memory (v121)
+  const gen0 = run && run.pf ? run.pf.gen : _localGen; // a save that runs while this reads makes what it read older than memory (v121; reads asked for earlier: since then)
   const today = todayStr();
   if(outboxHas('visits')){
     if(_deviceStale.visits){ F.mirror.visits = true; return visits; } // its device copy is older than memory (a full phone)
@@ -418,11 +433,12 @@ async function loadVisits(run){
   let liveRes, idxRes;
   // the past months this phone keeps in its store (v126), read beside the index — at the start of a session only (a
   // month read this session is in memory)
-  const keptP = (run && run.noKept) || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
+  const keptP = (run && (run.noKept || run.local || run.readFirst)) || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
   try{
+    if(run && run.local) throw new Error('the early open reads no cloud'); // this phone's copy, as an offline start has it (v126 speed, part 3)
     [liveRes, idxRes] = await Promise.all([
-      withTimeout(window.storage.get('visits', true), 8000),
-      withTimeout(window.storage.get('visitsIndex', true), 8000).catch(() => null),
+      withTimeout(pfTake(run, 'visits') || window.storage.get('visits', true), 8000),
+      withTimeout(pfTake(run, 'visitsIndex') || window.storage.get('visitsIndex', true), 8000).catch(() => null),
     ]);
   }catch(e){
     noteNoAccess('visits', e); // the rules refused this read: said, never taken for "no connection" (v123)
@@ -430,6 +446,7 @@ async function loadVisits(run){
     const raw = mirrorGet('visits'), m = UMCore.safeParse(raw, null);
     if(Array.isArray(m)){
       F.mirror.visits = true;
+      if(run && run.local) run.visitsPhoneText = raw; // what the early open drew: the start's read compares what it puts together with it
       // nothing queued: what the phone kept beside a save that was on its way, else that
       // copy — what this phone last saw the cloud hold — is the base of the next save
       // where no read of this session gave one (v123, as for clinics; kept as text,
@@ -499,7 +516,11 @@ async function loadVisits(run){
       if(r && typeof r.value === 'string' && rev) fresh[m] = { rev, text: r.value, canon: r.value === got[m].json };
     }catch(e){ complete = false; if(!have) broken.push(m); } // an earlier copy is kept; a month never read is flagged
   };
-  const standIn = months.filter(m => keptFor(m));
+  // After an early open (v126 speed, part 3: run.readFirst) the screen already shows every month from this phone's copy:
+  // each past month is read from the cloud at once, and only a month whose read fails takes the store's copy as its
+  // stand-in (for the screen only, under the same rules: read again by the next refresh) — the store is not read first.
+  const readFirst = !!(run && run.readFirst);
+  const standIn = readFirst ? [] : months.filter(m => keptFor(m));
   const reads = months.filter(m => !standIn.includes(m)).map(readMonth);
   if(standIn.length){
     if(run && run.tombsP){ try{ await run.tombsP; }catch(e){} }
@@ -511,6 +532,19 @@ async function loadVisits(run){
     });
   }
   await Promise.all(reads);
+  if(readFirst && broken.length && idxRead && !readAll){
+    const k2 = (await keptGet(broken.map(m => UMCore.visitsArchKey(m)))) || {};
+    if(run.tombsP){ try{ await run.tombsP; }catch(e){} }
+    const quiet = visitsTombsQuiet();
+    broken.slice().forEach(m => {
+      const e = k2[UMCore.visitsArchKey(m)];
+      if(!(quiet && e && revOf(m) && e.rev === revOf(m) && Math.abs(now0 - (Number(e.at) || 0)) <= KEEP_RECHECK_MS)) return;
+      const arr = UMCore.safeParse(e.text, null);
+      if(!Array.isArray(arr)) return;
+      got[m] = { rev: e.rev, arr, json: e.canon ? e.text : JSON.stringify(arr), kept: Number(e.at) || 0 };
+      broken.splice(broken.indexOf(m), 1);
+    });
+  }
   return finish(liveArr, got, broken, fresh, kept);
   // what was read, put together: the visits on screen once loadAllNow takes them (run.visitsCommit)
   function finish(liveArr, got, broken, fresh, kept){
@@ -524,6 +558,10 @@ async function loadVisits(run){
   const archNext = Object.assign({}, _visitsArch, got), archObj = {};
   Object.keys(archNext).forEach(m => { archObj[m] = archNext[m].arr; });
   const all = UMCore.visitsAssemble(liveArr, archObj, today).sort((a, b) => order(a) - order(b)); // the same chronological order the single document had
+  // after an early open (v126 speed, part 3): the text the visits put together now make, compared with the copy it drew
+  // (loadAllNow) and written as the phone's copy only if it differs — one stringify for both
+  const allText = run && _onScreen.visitsPhone ? JSON.stringify(all) : null;
+  if(run) run.visitsAllText = allText;
   // the visits that only a month from the store holds: never evidence that the cloud holds them (the held deletes in
   // loadAllNow, v126 review)
   const keptMs = Object.keys(archNext).filter(m => archNext[m].kept != null);
@@ -548,6 +586,7 @@ async function loadVisits(run){
     const now = Date.now(), idxMonths = Object.keys(index.months || {});
     keepPut(Object.keys(fresh).map(m => ({ k: UMCore.visitsArchKey(m), rev: fresh[m].rev, text: fresh[m].text, canon: fresh[m].canon, at: now })),
       idxRead ? Object.keys(kept).filter(k => !idxMonths.includes(k.slice(UMCore.VISITS_ARCH_PREFIX.length))) : []);
+    if(readFirst && idxRead) keptKeys(UMCore.VISITS_ARCH_PREFIX).then(ks => { if(ks) keepPut(null, ks.filter(k => !idxMonths.includes(k.slice(UMCore.VISITS_ARCH_PREFIX.length)))); }); // (the store was not read: its months the index no longer lists, by key)
     _visitsLive = liveArr;
     _visitsLoaded = JSON.stringify(liveArr);
     if(!outboxHas('visits')){ _visitsBaseHash = null; _visitsBaseRecs = null; _visitsBaseText = null; _visitsBaseParsed = null; dropMergeBaseOnPhone('visits'); } // the documents just read are the base now
@@ -555,7 +594,7 @@ async function loadVisits(run){
     // time, keep the old copy aside — it may be the only surviving one.
     const prevRaw = mirrorGet('visits'), prev = UMCore.safeParse(prevRaw, null);
     if(Array.isArray(prev) && prev.length >= 10 && all.length < prev.length / 3){ try{ localStorage.setItem('um_mirror_prev:visits', prevRaw); }catch(e){} }
-    visitsMirrorSave(all);
+    visitsMirrorSave(all, allText, prevRaw);
     renderVisitsNudge();
   };
   if(run) run.visitsCommit = commit; else commit();
@@ -982,7 +1021,9 @@ async function loadErpSales(run){
   // hand, nothing saved here since, no copy of them on the phone to write whole again (mirrorRetryDue): the files on screen ARE that index's (a file's rows never change under their key,
   // v119) — nothing is parsed, put together or written to the phone's copy again (loadAllNow keeps them: run.erpSame)
   const esText = es && typeof es.value === 'string' ? es.value : null;
-  if(run) run.erpText = esText;
+  const fromPhone = !!(run && run.local); // the early open (v126 speed, part 3)
+  // the index text the copy was put together from (kept beside it at its last read or save): the start's read compares with it
+  if(run) run.erpText = fromPhone ? (() => { try{ return localStorage.getItem(COPY_IDX_ERP); }catch(e){ return null; } })() : esText;
   if(run && _onScreen.erpSales && !mirrorRetryDue('erpSales') && !F.mirror.erpSales && !F.failed.erpSales && esText === _onScreen.erpSales.text && erpSales === _onScreen.refs.erpSales
      && _localGen === _onScreen.gen && !_erpDirty && !_erpSaving && !_erpBroken.length && !_erpPutBack && erpPeriods().every(p => p && !p.rowsMissing)){
     run.erpSame = true;
@@ -1008,8 +1049,9 @@ async function loadErpSales(run){
   const shownExact = ref => !!shown[ref.key] && (ref.count == null || shown[ref.key].length === ref.count);
   const have = ref => heldExact(ref) || shownExact(ref);
   const reading = !F.mirror.erpSales && !F.failed.erpSales;
-  const needKeys = reading ? UMCore.erpChunkKeys({ periods: index.periods.filter(h => h && h.rowsRef && !have(h.rowsRef)) }) : [];
-  const kept = needKeys.length ? await keptBy(keptGet(needKeys)) : {}, fromStore = erpKeptDocs(index, kept, have), storeFiles = new Set(fromStore.files);
+  // the early open: the files of the copy that lack their rows (a full phone keeps a slimmer copy) come from the store — exact under their key
+  const needKeys = reading || fromPhone ? UMCore.erpChunkKeys({ periods: index.periods.filter(h => h && h.rowsRef && !have(h.rowsRef) && !(fromPhone && Array.isArray(h.rows) && !h.rowsMissing)) }) : [];
+  const kept = needKeys.length ? (fromPhone ? ((await keptGet(needKeys)) || {}) : await keptBy(keptGet(needKeys))) : {}, fromStore = erpKeptDocs(index, kept, have), storeFiles = new Set(fromStore.files);
   const fetchKeys = UMCore.erpChunkKeys({ periods: index.periods.filter(h => !(h && h.rowsRef && (have(h.rowsRef) || storeFiles.has(h.rowsRef.key)))) });
   let docs = Object.assign({}, fromStore.docs);
   const texts = {};
@@ -1026,7 +1068,7 @@ async function loadErpSales(run){
     out.sales.periods.forEach(p => { if(p && p.rowsMissing && p.rowsRef && shownExact(p.rowsRef)){ p.rows = shown[p.rowsRef.key]; delete p.rowsMissing; } });
     out.missing = out.sales.periods.filter(p => p && p.rowsMissing).map(p => p.id);
   }
-  if(out.missing.length) out.missing = erpFillFromMirror(out.sales, prevMirror);
+  if(out.missing.length && !fromPhone) out.missing = erpFillFromMirror(out.sales, prevMirror);
   const assembled = out.sales; // what the cloud holds (plus anything put back above)
   // What is on screen never double-counts a day, whatever the cloud holds
   // (a stale-device write, an old-version import): the invariant runs in
@@ -1038,6 +1080,7 @@ async function loadErpSales(run){
   // next refresh downloads nothing it already holds.
   const inv = UMCore.erpEnforceNoOverlap(out.sales, Date.now(), erpOverlapKeys());
   if(inv.changed){ out.sales = inv.sales; console.warn(`erpSales: ${inv.changed} overlapping period(s) trimmed in memory — the next sales save writes them back`); }
+  if(fromPhone){ if(out.missing.length) run.erpIncomplete = out.missing.slice(); return out.sales; } // the early open: a file without its rows here → no early open (loadAllNow); nothing written, nothing retried
   if(out.missing.length){
     // Rows the cloud would not hand over right now: the period stays listed
     // with rowsMissing (its stored chunks are left untouched by any save), the
@@ -1045,10 +1088,10 @@ async function loadErpSales(run){
     // and a quieter second attempt with a long budget runs by itself.
     _erpBroken = out.missing.slice();
     console.error('erpSales: rows unreadable for periods', out.missing);
-    if(prevMirror){ mirrorNoteWrite('erpSales', false); mirrorSave('erpSales', JSON.stringify(prevMirror)); } // keep the last good assembled copy
+    if(prevMirror){ mirrorNoteWrite('erpSales', false); erpMirrorIdx(null); mirrorSave('erpSales', JSON.stringify(prevMirror)); } // keep the last good assembled copy (not the index read now's)
     setTimeout(() => { retryErpRows({ quiet: true, timeoutMs: 60000 }).catch(() => {}); }, 1500);
   } else if(!F.mirror.erpSales && !F.failed.erpSales){
-    erpMirrorSave(assembled); // cloudGet mirrored the bare index — replace it with the assembled copy
+    erpMirrorSave(assembled, esText); // cloudGet mirrored the bare index — replace it with the assembled copy
   }
   return out.sales;
 }
@@ -1145,10 +1188,11 @@ function persistErpSales(){
   _erpSaveChain = run.catch(() => {});
   return run;
 }
+let _erpSaveGen = 0; // moves with every sales save: a read asked for before it is older than memory (prefetchStart)
 async function persistErpSalesNow(){
-  _erpSaving = true;
+  _erpSaving = true; _erpSaveGen++;
   try{ return await persistErpSalesInner(); }
-  finally{ _erpSaving = false; }
+  finally{ _erpSaving = false; _erpSaveGen++; }
 }
 // What the last sales save that did not land was (persistNow's outcome): the
 // rules refused it, its answer did not come back in time, or a guard stopped it.
@@ -1225,7 +1269,7 @@ async function persistErpSalesInner(){
     entries.forEach(([k]) => { if(k !== 'erpSales') _erpStored.add(k); });
     const refs = {}; index.periods.forEach(p => { refs[p.id] = p.rowsRef; });
     erpSales.periods.forEach(p => { if(p && refs[p.id]) p.rowsRef = refs[p.id]; });
-    erpMirrorSave(erpSales);
+    erpMirrorSave(erpSales, entries[entries.length - 1][1]); // the index text the cloud now holds: kept beside the copy (v126 speed, part 3)
     if(outboxHas('erpSales')) outboxRemove('erpSales');
     delete _mirrorUsed.erpSales;
     _erpDirty = false; renderErpDirtyPill();
@@ -1308,11 +1352,22 @@ async function cloudGet(key, src, run){
       return { value: mm };
     }
   }
+  // The early open (v126 speed, part 3): this phone's copy only — nothing is asked of the cloud, as an offline start
+  // that did not try. A document the copy's last read found missing in the cloud is that again (run.none); one the copy
+  // does not know is a read that failed.
+  if(run && run.local){
+    if(src) src.cloud = false;
+    const m = mirrorGet(key);
+    if(m != null){ F.mirror[key] = true; return { value: m }; }
+    if(run.none && run.none.has(key)){ F.mirror[key] = true; return null; }
+    F.failed[key] = true;
+    return null;
+  }
   try{
     // The sales index is tiny after the split but a legacy (un-split) account
     // still carries ~250 KB inline — give that one read more room, so the
     // migration can happen from a slow phone too.
-    const r = await withTimeout(window.storage.get(key, true), key === 'erpSales' ? 20000 : 8000);
+    const r = await withTimeout(pfTake(run, key) || window.storage.get(key, true), key === 'erpSales' ? 20000 : 8000);
     if(src) src.cloud = true;
     if(r && r.value != null && key === 'erpSales') return r; // loadErpSales mirrors the ASSEMBLED copy, never the bare index
     // the phone's copy already holds this very text (v126 speed: most reads of a round): nothing to compare or write
@@ -1345,10 +1400,180 @@ async function cloudGet(key, src, run){
 // at once used to overlap: each reset the read flags the other relied on, so a
 // read that had failed looked like an empty account (the factory catalog was
 // written over the live one) — and an older read could finish last.
+// ---- The early open (v126 speed, part 3) ----
+// A phone that has its copy draws the screen of the person it last signed in from that copy right after the app
+// boots — before the sign-in is confirmed (the SDK's own network round trips) and before any cloud read; the start's
+// cloud read then replaces it: nothing changed → nothing is drawn again, something changed → the whole frame is
+// swapped once (part 2's rules: _onScreen, the home frame). The window between that drawing and the cloud read is
+// an offline start in every respect: every list drawn counts as served from the phone's copy (_mirrorUsed) until a
+// read from the cloud replaces it — so the daily backup, the whole-day Restore, the held deletes, salesCheckComplete
+// and visitsComplete, the nameless-clinic and lost-doctor flows, the recovery sheets and the factory defaults never
+// take it for a cloud read; a save made in it merges three ways against that copy (a whole document too: merge3Doc
+// in persistNow); nothing of it is read from the cloud or written, and nothing reaches the cloud before the sign-in is
+// confirmed (the 20-second round, the queue's upload and the 'online' upload wait for it). A small line (#copyLine)
+// says the screen is this phone's copy, when it was saved and that it is updating — or that the read failed — until
+// a read from the cloud is in. Only for the person this phone last signed in (um_lastUser, 03-gate.js) while
+// Firebase's own saved session on the phone is theirs, and only from a whole copy (um_copyAt: written after a
+// refresh that read every list from the cloud and holds every copy on the phone; it lists the documents the cloud
+// did not have). A phone with no copy (the first open) starts as before.
+const COPY_AT = 'um_copyAt';
+let _early = null;      // { name, role, email, at, none: Set, state: 'loading' | 'drawn' | 'gone', confirmed, done }
+let _earlyRun = null;   // the early open on its way (loadAll waits for it)
+let _cloudRead = false; // this session's first refresh from the cloud has ended (the team lists' start rule)
+let _copyLine = null;   // the line: null | 'updating' | 'failed'
+function copyInfo(){
+  try{ const o = JSON.parse(localStorage.getItem(COPY_AT) || 'null'); return o && typeof o.at === 'number' && Array.isArray(o.none) ? o : null; }catch(e){ return null; }
+}
+function copyStale(){ try{ localStorage.removeItem(COPY_AT); }catch(e){} } // a copy could not be written: no early open until a whole one is
+// The deletes the screen was filtered with at the copy's read (the team's delete log as absorbed then, and this phone's
+// own): kept beside the copy (um_copyTombs) so an early open filters its lists exactly as that screen was. For the
+// screen only — never this phone's delete, never written to the log, never held or settled (every save reads the log
+// first, as always); let go by the start's read.
+const COPY_TOMBS = 'um_copyTombs', COPY_TOMB_KEYS = ['clinics', 'visits', 'tasks', 'events', 'dayPlans', 'doctors'];
+let _copyTombs = null;
+function copyTombsSave(){
+  const o = {}; COPY_TOMB_KEYS.forEach(k => { const t = _tombstones[k]; if(t && t.size) o[k] = [...t].map(String).sort(); });
+  const str = JSON.stringify(o);
+  try{ if(localStorage.getItem(COPY_TOMBS) !== str) localStorage.setItem(COPY_TOMBS, str); return true; }catch(e){ return false; }
+}
+function copyTombsLoad(){
+  let o = null; try{ o = JSON.parse(localStorage.getItem(COPY_TOMBS) || 'null'); }catch(e){}
+  if(!o || typeof o !== 'object') return null;
+  const m = {}; COPY_TOMB_KEYS.forEach(k => { if(Array.isArray(o[k])) m[k] = new Set(o[k].map(String)); });
+  return m;
+}
+// the deletes a list on screen is filtered with: this phone's known deletes, and while the early open's copy is on screen
+// the ones that copy was filtered with too
+function tombsView(k){ const t = _tombstones[k] || new Set(), c = _copyTombs && _copyTombs[k]; if(!c || !c.size) return t; const u = new Set(t); c.forEach(id => u.add(id)); return u; }
+// The documents a start reads one by one (cloudGet); the visits and the sales files have their own copies.
+const COPY_KEYS = ['clinics', 'products', 'tasks', 'dayPlans', 'staff', 'recycleBin', 'benchmarks', 'events', 'targets', 'categoryGuides', 'erpMap', 'erpNotes', 'rxTypes'];
+// A refresh that read every list from the cloud, with every copy on the phone whole: the copy is the cloud's as of now
+function copyMark(run, docs){
+  if(run.local || Object.keys(run.failed).length || Object.keys(run.mirror).some(k => !outboxHas(k))) return;
+  if(Object.keys(_deviceStale).length || _visitsBroken.length || _erpBroken.length || _erpPutBack || keptMonthsOnScreen() || _seedClinics || _bootCrashed) return;
+  const none = docs.filter(([k, r]) => !outboxHas(k) && !(r && r.value != null)).map(([k]) => k).sort();
+  if(!copyTombsSave()){ copyStale(); return; }
+  const prev = copyInfo();
+  if(prev && Math.abs(Date.now() - prev.at) < 60000 && prev.none.join('|') === none.join('|')) return; // (once a minute is enough for the line's time)
+  try{ localStorage.setItem(COPY_AT, JSON.stringify({ at: Date.now(), none })); }catch(e){}
+}
+function earlyFor(name, role){ return !!_early && _early.state !== 'gone' && _early.name === name && _early.role === role; }
+// the window: the screen is this phone's copy and this session's first read from the cloud is not in yet
+function earlyWindow(){ return !!_early && _early.state === 'drawn' && !_early.done; }
+// nothing reaches the cloud from the early open until the sign-in is confirmed (the round, the queue's upload)
+function earlyUnconfirmed(){ return !!_early && _early.state !== 'gone' && !_early.confirmed; }
+function earlyOpen(){
+  try{
+    if(_early || currentUser || !FIREBASE_ENABLED || !window.firebase) return;
+    const R = typeof rememberedUser === 'function' ? rememberedUser() : null, info = R ? copyInfo() : null;
+    if(!R || !info) return;
+    const u = USERS[R.name];
+    if(!u || u.role !== R.role || String(u.email || '').toLowerCase() !== R.email) return; // the team list on the phone no longer says so
+    const none = new Set(info.none.filter(k => typeof k === 'string'));
+    if(mirrorGet('clinics') == null || mirrorGet('visits') == null || mirrorGet('erpSales') == null) return;
+    if(COPY_KEYS.some(k => mirrorGet(k) == null && !none.has(k))) return; // a list the copy does not hold
+    const tombsOfCopy = copyTombsLoad();
+    if(!tombsOfCopy) return; // (written with every copy mark: without it the copy is not whole)
+    const e = _early = { name: R.name, role: R.role, email: R.email, at: info.at, none, state: 'loading', confirmed: false, done: false };
+    _copyTombs = tombsOfCopy;
+    _earlyRun = (async () => {
+      // every app script has run first (the files after this one: the KPI settings the figures read, 16-kpi.js) — the
+      // built site is one script, so this is the moment it ends; a sign-in confirmed meanwhile waits for the drawing
+      if(document.readyState === 'loading') await new Promise(r => document.addEventListener('DOMContentLoaded', r, { once: true }));
+      const fb = await firebaseSavedEmail(); // Firebase's own saved session on the phone: never another person's copy
+      if(_early !== e || e.state === 'gone') return;
+      if(fb !== R.email){ earlyDrop(); return; }
+      const r = await loadAllNow({ local: e });
+      if(r !== 'drawn' && _early === e) earlyDrop();
+    })().catch(err => { console.error('early open', err); if(_early === e) earlyDrop(); });
+  }catch(err){ console.error('early open', err); _early = null; }
+}
+// The early open is let go (another person signs in, the sign-in ended, the copy was not whole): true when there was one
+function earlyDrop(){
+  if(!_early || _early.state === 'gone') return false;
+  _prefetch = null; // (asked for this person's start: never handed to another's)
+  _copyTombs = null;
+  const drew = _early.state === 'drawn';
+  _early.state = 'gone';
+  copyLineSet(null);
+  if(!drew && currentUser && currentUser === _early.user) currentUser = null; // set for its data only: the start goes on as before
+  return true;
+}
+// The start's reads, asked for the moment the sign-in is confirmed while the early open may still be drawing: the
+// cloud's answers wait here for the start's read (loadAllNow takes each once, cloudGet / loadVisits / refreshTombs) —
+// nothing is parsed or put on screen before that read runs, after the drawing. The counters of what this phone saved
+// are taken when they are asked for: a save made after that is newer than what they bring back (the read "raced").
+let _prefetch = null;
+const PREFETCH_KEYS = ['tombs', 'clinics', 'products', 'visits', 'visitsIndex', 'tasks', 'dayPlans', 'staff', 'recycleBin', 'benchmarks', 'events', 'targets', 'categoryGuides', 'erpSales', 'erpMap', 'erpNotes', 'rxTypes'];
+function prefetchStart(){
+  if(_prefetch || _cloudRead) return;
+  const reads = Object.create(null);
+  PREFETCH_KEYS.forEach(k => {
+    if(outboxHas(k) || (k === 'visitsIndex' && outboxHas('visits'))) return; // served from the phone's copy (cloudGet, loadVisits)
+    const p = Promise.resolve().then(() => window.storage.get(k, true));
+    p.catch(() => {});
+    reads[k] = p;
+  });
+  _prefetch = { gen: _localGen, mapGen: _erpMapGen, rxGen: _rxTypesGen, erpGen: _erpSaveGen, take(k){ const p = reads[k]; delete reads[k]; return p || null; } };
+}
+const pfTake = (run, k) => (run && run.pf && run.pf.take(k)) || null;
+// The early open's figures worked out and painted (two frames), or 1.5 s at most (a hidden page paints no frame)
+function earlyPainted(){
+  const frames = () => new Promise(r => { if(typeof requestAnimationFrame !== 'function' || document.visibilityState !== 'visible') return r(); requestAnimationFrame(() => requestAnimationFrame(r)); });
+  return Promise.race([Promise.resolve(typeof msWhenReady === 'function' ? msWhenReady() : null).then(frames, frames), new Promise(r => setTimeout(r, 1500))]);
+}
+// The sign-in of the person the early open drew for is confirmed: the start's cloud read now (it waits for the drawing)
+async function earlyConfirmed(name, role){
+  const e = _early;
+  if(e) e.confirmed = true;
+  if(e && e.state !== 'gone') prefetchStart();
+  if(_earlyRun){ try{ await _earlyRun; }catch(err){} }
+  if(!earlyFor(name, role) || _early.state !== 'drawn'){ // the early open did not draw (its copy was not whole): the start as before
+    if(_early === e) earlyDrop();
+    if(!currentUser || currentUser.name !== name) await selectUser(name, role);
+    return;
+  }
+  if(typeof unparkSaves === 'function') unparkSaves(); // a sign-in (selectUser does it): what waited on the phone for access goes again
+  await loadAll();
+}
+// ---- The line: this phone's copy, when it was saved, updating / not updated (v126 speed, part 3) ----
+function copyTimeText(at){
+  const d = new Date(at), today = new Date().toDateString() === d.toDateString();
+  try{
+    const t = d.toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit', hour12: false });
+    return today ? t : d.toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short' }) + ' ' + t;
+  }catch(e){ return d.toISOString().slice(0, 16).replace('T', ' '); }
+}
+function copyLineSet(state){ if(_copyLine === state) return; _copyLine = state; renderCopyLine(); }
+function renderCopyLine(){
+  let el = document.getElementById('copyLine');
+  if(!_copyLine || !currentUser || !_early){ if(el) el.remove(); document.body.classList.remove('um-copyline'); return; }
+  if(!el){ el = document.createElement('div'); el.id = 'copyLine'; el.className = 'sbar sbar-pill sbar-copy'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.classList.toggle('failed', _copyLine === 'failed');
+  el.innerHTML = `<span>This phone's copy, saved</span> <span data-notr dir="auto">${esc(copyTimeText(_early.at))}</span> <span>${_copyLine === 'failed' ? '— could not update from the cloud; it is tried again' : '— updating from the cloud…'}</span>`;
+  document.body.classList.add('um-copyline');
+}
+// ---- Whose screen is drawn (v126 speed, part 3) ----
+// A screen drawn for one person is never shown to the next: a sign-in of someone else (after a sign-out, or after the
+// early open of the person this phone last signed in, whose sign-in had ended) covers it until their own is drawn.
+let _screenFor = null; // 'name|role' the screen was last drawn for (renderAll)
+function screenCoverFor(name, role){
+  if(!_screenFor || _screenFor === name + '|' + role) return;
+  document.body.classList.add('um-cover');
+  try{ closeModal(); }catch(e){}
+  if(!document.getElementById('coverNote')){ const n = document.createElement('div'); n.id = 'coverNote'; n.className = 'sbar sbar-pill sbar-copy'; n.setAttribute('role', 'status'); n.innerHTML = '<span>Loading...</span>'; document.body.appendChild(n); }
+}
+function screenDrawn(){
+  if(!currentUser) return;
+  _screenFor = currentUser.name + '|' + currentUser.role;
+  if(document.body.classList.contains('um-cover')){ document.body.classList.remove('um-cover'); const n = document.getElementById('coverNote'); if(n) n.remove(); }
+}
 let _loadAllRun = null;
 function loadAll(){
   if(_loadAllRun) return _loadAllRun;
-  const p = loadAllNow();
+  // the early open first: the start's cloud read waits for its drawing (one at a time — the two never overlap)
+  const early = _earlyRun;
+  const p = early ? early.then(() => loadAllNow(), () => loadAllNow()) : loadAllNow();
   _loadAllRun = p;
   const done = () => { if(_loadAllRun === p) _loadAllRun = null; };
   p.then(done, done);
@@ -1381,34 +1606,51 @@ const _docLoaded = {};
 //   visits    { live, idx, ids, complete, remap }: the live month and the index the visits on screen were
 //             put together from (every month at the revision on screen, none from the phone's store)
 //   erpSales  { text }: the sales index the files on screen were put together from (every file's rows in hand)
-const _onScreen = { gen: null, who: null, drawn: null, texts: Object.create(null), ids: Object.create(null), refs: Object.create(null), tfp: Object.create(null), visits: null, erpSales: null };
+const _onScreen = { gen: null, who: null, drawn: null, texts: Object.create(null), ids: Object.create(null), refs: Object.create(null), tfp: Object.create(null), visits: null, erpSales: null,
+  phone: Object.create(null), visitsPhone: null }; // (v126 speed, part 3: phone[k] — the text came from this phone's copy at the early open; visitsPhone — the copy of the visits it drew)
 const ON_SCREEN = { clinics: () => clinics, products: () => products, tasks: () => tasks, dayPlans: () => dayPlans, staff: () => staff, recycleBin: () => recycleBin,
   benchmarks: () => BENCHMARKS, events: () => events, targets: () => targets, categoryGuides: () => categoryGuides, erpMap: () => erpMap, erpNotes: () => erpNotes,
   rxTypes: () => rxTypesDoc, visits: () => visits, erpSales: () => erpSales };
 // The deletes known for a list, as one short string: what its copy on screen was filtered with (the clinics: the
 // doctors' too). Order-free; a delete added, let go or held changes it.
 function tombsFp(key){
-  const one = k => { const s = _tombstones[k]; if(!s || !s.size) return '0'; let h = 0; s.forEach(id => { const t = String(id); let x = 7; for(let i = 0; i < t.length; i++) x = (Math.imul(x, 31) + t.charCodeAt(i)) | 0; h = (h + x) | 0; }); return s.size + ':' + h; };
+  const one = k => { const s = tombsView(k); if(!s || !s.size) return '0'; let h = 0; s.forEach(id => { const t = String(id); let x = 7; for(let i = 0; i < t.length; i++) x = (Math.imul(x, 31) + t.charCodeAt(i)) | 0; h = (h + x) | 0; }); return s.size + ':' + h; };
   return key === 'clinics' ? one('clinics') + '/' + one('doctors') : one(key);
 }
 function onScreenWho(){ return currentUser ? currentUser.name + '|' + currentUser.role : ''; }
 // The copy on screen is no longer what a read gave (a sign-out, a start that went wrong): the next refresh takes every list again.
-function onScreenForget(){ _onScreen.gen = null; _onScreen.drawn = null; _onScreen.visits = null; _onScreen.erpSales = null; ['texts', 'ids', 'refs', 'tfp'].forEach(f => { _onScreen[f] = Object.create(null); }); }
-async function loadAllNow(){
-  const run = { failed: {}, mirror: {} }; // this refresh's own read flags (v123)
+function onScreenForget(){ _onScreen.gen = null; _onScreen.drawn = null; _onScreen.visits = null; _onScreen.erpSales = null; _onScreen.visitsPhone = null; ['texts', 'ids', 'refs', 'tfp', 'phone'].forEach(f => { _onScreen[f] = Object.create(null); }); }
+async function loadAllNow(opts){
+  // opts.local: the early open (v126 speed, part 3) — this phone's copy only, as an offline start that did not try: no
+  // cloud read, nothing written, and nothing put on screen unless the copy is whole (→ 'drawn', else 'nocopy' / 'gone')
+  const local = opts && opts.local ? opts.local : null;
+  const run = { failed: {}, mirror: {}, local: !!local, none: local ? local.none : null }; // this refresh's own read flags (v123)
+  // the start's reads asked for at the sign-in's confirmation (prefetchStart): taken here, with the counters of their time
+  const pf = !local && _prefetch ? _prefetch : null;
+  if(pf){ _prefetch = null; run.pf = pf; }
+  if(!local) _copyTombs = null; // a read from the cloud: the deletes are the log's from now on (what the early open drew was filtered with the copy's)
   const lf = run.failed, mu = run.mirror;
   let crashed = false;
+  if(local){ if(_early !== local || local.state === 'gone') return 'gone'; currentUser = local.user = { name: local.name, role: local.role }; }
   // what this refresh took anew (v126 speed): nothing → the screen is not drawn again; the copies it kept as they were
-  let took = new Set(), raced = false, clinicsKept = false, visitsKept = false, erpKept = false, teamP = null, teamBefore = null, gen0 = _localGen;
+  let took = new Set(), raced = false, clinicsKept = false, visitsKept = false, phoneVisits = false, erpKept = false, teamP = null, teamBefore = null, gen0 = _localGen;
+  let c0, p0, t0, dp0, st0, rb0, bm0, ev0, tg0, cg0, em0, en0, rt0; // what each read gave (the copy's mark: the documents the cloud did not have)
   const who = onScreenWho();
   try{
-    const mapGen0 = _erpMapGen; // a link saved while this read runs is newer than what it brings back
-    const rxGen0 = _rxTypesGen; // likewise a prescription-types save
-    gen0 = _localGen; // likewise any list saved here (v121)
+    const mapGen0 = pf ? pf.mapGen : _erpMapGen; // a link saved while this read runs is newer than what it brings back
+    const rxGen0 = pf ? pf.rxGen : _rxTypesGen; // likewise a prescription-types save
+    gen0 = pf ? pf.gen : _localGen; // likewise any list saved here (v121) — since the reads were asked for (prefetchStart)
+    const erpGen0 = pf ? pf.erpGen : _erpSaveGen; // likewise a sales save
     const heldSettled = heldSettledNow(); // the deletes held long enough as these reads begin: a read of the list may confirm them (round 3)
-    dropQueuedErpMap();        // before cloudGet: a queued key would make it serve this device's stale copy
+    if(!local) dropQueuedErpMap();        // before cloudGet: a queued key would make it serve this device's stale copy
     const g = k => cloudGet(k, null, run);
-    const tombsP = run.tombsP = refreshTombs(); // the team's delete log, read alongside the lists so a deleted record never reaches the screen (loadVisits waits on it before a kept month stands in for a read, v126)
+    const tombsP = run.tombsP = local ? Promise.resolve('local') : refreshTombs(run); // the team's delete log (the early open: this phone's), read alongside the lists so a deleted record never reaches the screen (loadVisits waits on it before a kept month stands in for a read, v126)
+    if(!local && _onScreen.visitsPhone){
+      run.readFirst = true; // the first read after an early open: every past month from the cloud at once (loadVisits)
+      // its reads are on their way (prefetchStart): what they bring is looked at once the early open's figures are painted
+      // — the screen first, then the comparison (on a phone the reads take longer than both)
+      await earlyPainted();
+    }
     const listsP = Promise.all([
       g('clinics'),
       g('products'),
@@ -1432,16 +1674,27 @@ async function loadAllNow(){
     // the first paint of every start). Nothing below reads them, and loadTeam keeps its own guards (_teamGen /
     // _teamSaving per list); the refresh ends once it is in.
     teamFromPhone(); // the lists the screen shows until a read: this phone's copy of the last one
-    const teamKeys = teamDue(!_bootLoaded);
+    const teamKeys = local ? [] : teamDue(!_cloudRead); // (the first read from the cloud is the start's, after an early open too)
     teamBefore = { chat: chatMsgs, memories }; // what memory held as the read began: drawn again only if it changed (teamRead)
     teamP = teamKeys.length ? loadTeam(teamKeys) : null;
     if(teamP) teamP.catch(() => {});
     const [c,p,v,t,dp,st,rb,bm,ev,tg,cg,es,em,en,rt] = await listsP;
+    [c0, p0, t0, dp0, st0, rb0, bm0, ev0, tg0, cg0, em0, en0, rt0] = [c, p, t, dp, st, rb, bm, ev, tg, cg, em, en, rt];
+    if(local){
+      // the early open puts nothing on screen unless the copy is whole — every list in it (or known not to exist), the
+      // visits a whole list, every sales file with its rows — and it is still wanted (no one else signed in meanwhile)
+      if(_early !== local || local.state === 'gone') return 'gone';
+      if(Object.keys(lf).length || !Array.isArray(UMCore.safeParse(c && c.value, null)) || !Array.isArray(v) || run.erpIncomplete){
+        console.warn('early open: this phone\'s copy is not whole — the start reads the cloud first', Object.keys(lf), run.erpIncomplete || '');
+        if(currentUser === local.user) currentUser = null;
+        return 'nocopy';
+      }
+    }
     // The flags of a list this refresh puts on screen become the screen's.
     const adopt = k => { if(lf[k]) _loadFailed[k] = true; else delete _loadFailed[k]; if(mu[k]) _mirrorUsed[k] = true; else delete _mirrorUsed[k]; };
     // Each key parses independently: one corrupt entry falls back alone instead
     // of throwing and resetting every collection to seed data.
-    const notDeleted = key => { const ts = tombSet(key); return x => !(x && ts.has(x.id)); };
+    const notDeleted = key => { const ts = local ? tombsView(key) : tombSet(key); return x => !(x && ts.has(x.id)); }; // (the early open: as the screen was filtered at the copy's read)
     // What a list read FROM THE CLOUD now (a document that exists; never the
     // phone's copy, never a read that failed) says about the deletes this phone
     // holds although the log no longer has them (reconcileTombs): the list holds
@@ -1479,7 +1732,7 @@ async function loadAllNow(){
     // below as every list's; the held deletes it answers for are settled from the ids that text holds)
     const sameBase = !raced && _bootLoaded && !_bootCrashed && !_seedClinics && _onScreen.gen === gen0 && _onScreen.who === who;
     const textOf = r => r && typeof r.value === 'string' ? r.value : null;
-    const sameText = (k, r) => sameBase && fromCloud(k) && !outboxHas(k) && (k in _onScreen.texts) && _onScreen.texts[k] === textOf(r) && _onScreen.refs[k] === ON_SCREEN[k]()
+    const sameText = (k, r) => sameBase && !local && fromCloud(k) && !outboxHas(k) && (k in _onScreen.texts) && _onScreen.texts[k] === textOf(r) && _onScreen.refs[k] === ON_SCREEN[k]()
       && (k !== 'erpMap' || _onScreen.mapGen === _erpMapGen) && (k !== 'rxTypes' || _onScreen.rxGen === _rxTypesGen);
     const parsed = Object.create(null); // each document parsed at most once by this refresh
     const docOf = (k, r, dflt) => (k in parsed) ? parsed[k] : (parsed[k] = UMCore.safeParse(r && r.value, dflt));
@@ -1496,7 +1749,7 @@ async function loadAllNow(){
     clinicsKept = clinicsSame && keptAs('clinics');
     if(!clinicsKept){
       const clinicsDoc = docOf('clinics', c, null);
-      clinics = normalizeClinics((clinicsDoc || []).filter(notDeleted('clinics')).map(dropTombedDoctors));
+      clinics = normalizeClinics((clinicsDoc || []).filter(notDeleted('clinics')).map(x => dropTombedDoctors(x, local ? tombsView('doctors') : undefined)));
       // nothing read (the read failed with no copy here, or the document is not a list):
       // never allowed to overwrite live data; a real read of no document is a new account
       _seedClinics = !clinicsDoc && !(!c && !lf.clinics && !mu.clinics);
@@ -1516,9 +1769,14 @@ async function loadAllNow(){
       // (a visit only a month from the phone's store holds says nothing of the cloud: left out, v126 review)
       const vc = Array.isArray(vv) && run.visitsKeptOnly && run.visitsKeptOnly.size ? vv.filter(x => !(x && run.visitsKeptOnly.has(x.id))) : vv;
       if(fromCloud('visits') && Array.isArray(vc)){ if(_visitsBroken.length || !run.visitsComplete){ const ids = idsOfList(vc); releaseHeldTombs('visits', heldIdsIn('visits', vc)); tombsToWrite += reviveAgainTombs('visits', id => ids.has(id)); } else settleHeld('visits', idsOfList(vc)); }
-      visits = (Array.isArray(vv) ? vv : []).filter(notDeleted('visits'));
+      // after the early open (v126 speed, part 3): what was put together now is exactly the copy it drew — the same
+      // text, the same deletes known, the same doctor merges, nothing saved here since — so the visits on screen stay
+      const ph = _onScreen.visitsPhone;
+      phoneVisits = !local && !!ph && sameBase && fromCloud('visits') && !outboxHas('visits') && !_visitsBroken.length && typeof run.visitsAllText === 'string'
+        && run.visitsAllText === ph.text && ph.ref === visits && ph.tfp === tombsFp('visits') && ph.remap === JSON.stringify(doctorMergesRemap());
+      if(phoneVisits) visitsKept = true;
+      else { visits = (Array.isArray(vv) ? vv : []).filter(notDeleted('visits')); took.add('visits'); }
       run.visitsIdsRead = Array.isArray(vc) ? idsOfList(vc) : null;
-      took.add('visits');
       }
     } // the base moves with the visits on screen (v123 review)
     const tasksSame = sameText('tasks', t), eventsSame = sameText('events', ev), plansSame = sameText('dayPlans', dp);
@@ -1532,7 +1790,7 @@ async function loadAllNow(){
     // screen now shows; a key waiting in the queue keeps what the cloud last
     // confirmed (kept on the phone when it was queued — a reopened phone).
     [['clinics', c], ['tasks', t], ['events', ev], ['dayPlans', dp]].forEach(([k, r]) => {
-      if(!took.has(k)) return; // kept (read from the cloud, nothing queued): its base is that very text already
+      if(!took.has(k) && !_onScreen.phone[k]) return; // kept (read from the cloud, nothing queued): its base is that very text already (the early open's copy: the read's text now)
       const fromRead = k === 'dayPlans' ? JSON.stringify(dayPlans) : (r && r.value != null ? r.value : null);
       if(!lf[k] && !mu[k]){ if(k === 'dayPlans') _dpBase = fromRead; else setMergeBase(k, fromRead); if(!outboxHas(k)) dropMergeBaseOnPhone(k); }
       else if(outboxHas(k)) mergeBaseFromPhone(k);
@@ -1566,7 +1824,7 @@ async function loadAllNow(){
     // the held deletes this read confirmed go back to the log now — not at this
     // phone's next delete (round 3): a phone with an old copy uploading later is held back by it
     if(tombsToWrite) await publishConfirmedTombs();
-    if(_erpSaving || _erpDirty) console.warn('erpSales: refresh skipped — a save is in flight or unsaved edits exist');
+    if(_erpSaving || _erpDirty || erpGen0 !== _erpSaveGen) console.warn('erpSales: refresh skipped — a save is in flight or unsaved edits exist');
     else { erpKept = es === erpSales && !!run.erpSame; if(!erpKept){ erpAdoptLoaded(es); took.add('erpSales'); } adopt('erpSales'); } // already assembled: periods carry their rows (the same files as on screen: kept)
     // An account link confirmed by the cloud while this read was on its way
     // (or a link save still in flight) is newer than the copy read here: keep
@@ -1610,9 +1868,12 @@ async function loadAllNow(){
     // What is on screen now, and the cloud's text it came from (_onScreen): only for a refresh that took its lists
     // (never one that kept them because a save ran while it read), only for what it read from the cloud
     if(!raced){
+      // the early open records the phone's texts (v126 speed, part 3): the start's read finds a list the same when the cloud
+      // holds that very text (_onScreen.phone: the base then still moves to the read's text)
       const rec = (k, r, ids) => {
-        if(!fromCloud(k) || outboxHas(k)){ delete _onScreen.texts[k]; return; }
+        if(!(fromCloud(k) || (local && mu[k])) || outboxHas(k)){ delete _onScreen.texts[k]; delete _onScreen.phone[k]; return; }
         _onScreen.texts[k] = textOf(r); _onScreen.refs[k] = ON_SCREEN[k](); _onScreen.tfp[k] = tombsFp(k);
+        if(local) _onScreen.phone[k] = true; else delete _onScreen.phone[k];
         if(ids !== undefined) _onScreen.ids[k] = ids;
       };
       const idsIf = (k, r, f) => k in parsed ? (r && r.value != null && Array.isArray(parsed[k]) ? f(parsed[k]) : null) : _onScreen.ids[k];
@@ -1626,10 +1887,11 @@ async function loadAllNow(){
       // the visits: the live month and the index they were put together from (every month at the revision on screen,
       // read from the cloud: none from the phone's store, none unreadable); recorded once the doctor merges are applied
       if(_visitsSaving || !fromCloud('visits') || outboxHas('visits')) _onScreen.visits = null;
-      else if(!visitsKept) _onScreen.visits = run.visitsTexts && run.visitsComplete && !_visitsBroken.length && !(run.visitsKeptOnly && run.visitsKeptOnly.size) && !keptMonthsOnScreen()
+      else if(!visitsKept || phoneVisits) _onScreen.visits = run.visitsTexts && run.visitsComplete && !_visitsBroken.length && !(run.visitsKeptOnly && run.visitsKeptOnly.size) && !keptMonthsOnScreen()
         ? { live: run.visitsTexts.live, idx: run.visitsTexts.idx, ids: run.visitsIdsRead, complete: true, remap: null } : null;
-      // the sales files: the index they were put together from, every file's rows in hand
-      if(_erpSaving || _erpDirty || !fromCloud('erpSales')) _onScreen.erpSales = null;
+      // the sales files: the index they were put together from, every file's rows in hand (the early open: the index text
+      // kept beside the phone's copy)
+      if(_erpSaving || _erpDirty || !(fromCloud('erpSales') || (local && mu.erpSales))) _onScreen.erpSales = null;
       else if(!erpKept) _onScreen.erpSales = run.erpText != null && !_erpBroken.length && !_erpPutBack ? { text: run.erpText } : null;
       _onScreen.refs.erpSales = erpSales;
       _onScreen.gen = gen0; _onScreen.who = who;
@@ -1641,22 +1903,25 @@ async function loadAllNow(){
     // (v123; until v122 the supervisor's phone collapsed same-name doctors and
     // wrote the clinic list back at every refresh).
     if(!visitsKept) applyDoctorRemap(); // (kept visits had it applied when they were taken: applying it twice could follow a chain of merges)
-    if(_onScreen.visits && !visitsKept){ _onScreen.visits.remap = JSON.stringify(_docRemap); _onScreen.refs.visits = visits; _onScreen.tfp.visits = tombsFp('visits'); }
-    archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
+    if(_onScreen.visits && (!visitsKept || phoneVisits)){ _onScreen.visits.remap = JSON.stringify(_docRemap); _onScreen.refs.visits = visits; _onScreen.tfp.visits = tombsFp('visits'); }
+    // what the early open drew of the visits: the phone's copy as text, beside the deletes and doctor merges it was drawn with
+    if(!raced) _onScreen.visitsPhone = local && mu.visits && !outboxHas('visits') && typeof run.visitsPhoneText === 'string'
+      ? { text: run.visitsPhoneText, ref: visits, tfp: tombsFp('visits'), remap: JSON.stringify(_docRemap) } : null;
+    if(!local) archiveTargetsMonth(); // a finished month's target/achieved figures are kept, not lost to rollover
     // A missing settings document gets its factory default only from the
     // supervisor's phone, only when this refresh itself read the cloud and found
     // no document, and only as a compare-and-set that the document still does
     // not exist (persistNow, a transaction on the server) — never from a rep's
     // phone, nor from one whose read failed or was served from its own copy
     // (v123: a rep's phone whose read had timed out wrote the factory catalog).
-    const seedOk = k => !raced && currentUser && currentUser.role === 'supervisor' && !lf[k] && !mu[k] && !_loadFailed[k] && !_mirrorUsed[k];
+    const seedOk = k => !local && !raced && currentUser && currentUser.role === 'supervisor' && !lf[k] && !mu[k] && !_loadFailed[k] && !_mirrorUsed[k];
     const quiet = { quietConflict: true }; // another phone created it meanwhile: the next refresh shows it
     if(!p && seedOk('products')) await persist('products', quiet);
     if(!st && seedOk('staff')) await persist('staff', quiet);
     if(!bm && seedOk('benchmarks')) await persist('benchmarks', quiet);
     if(!cg && seedOk('categoryGuides')) await persist('categoryGuides', quiet);
-    if(currentUser && currentUser.role === 'supervisor' && !_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpKept) await purgeIgnoredSalesmen(); // (kept files: as last time)
-    if(took.has('products')) await applyProductImgSeed();
+    if(!local && currentUser && currentUser.role === 'supervisor' && !_loadFailed.erpSales && !_mirrorUsed.erpSales && !erpKept) await purgeIgnoredSalesmen(); // (kept files: as last time)
+    if(!local && took.has('products')) await applyProductImgSeed();
   }catch(e){
     // A late failure (team load, a seed) must NOT throw away collections that
     // already parsed fine — only fill in whatever is still missing.
@@ -1669,6 +1934,14 @@ async function loadAllNow(){
     if(!dayPlans || typeof dayPlans !== 'object') dayPlans = {};
     if(!categoryGuides) categoryGuides = JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED));
   }
+  if(local && (crashed || _early !== local || local.state === 'gone')){ // the early open draws nothing: the start goes on as before
+    if(crashed) onScreenForget();
+    if(currentUser === local.user) currentUser = null;
+    return crashed ? 'nocopy' : 'gone';
+  }
+  // signed out while this read was on its way (the sign-in screen is up — the copy's screen can be signed out of before
+  // the start's read is in, v126 speed part 3): nothing is drawn for it; the next sign-in reads again
+  if(!currentUser) return;
   _bootCrashed = crashed;
   if(crashed) onScreenForget();
   if(!clinicsKept || crashed) hidePlaceholderClinics();
@@ -1684,6 +1957,19 @@ async function loadAllNow(){
   // Nothing new (v126 speed): the screen stays exactly as it is — not drawn again; only the words that follow the
   // clock move (msClock: the hour's greeting and figures, "5 min ago"). A new day draws everything.
   const drawnFor = who + '|' + todayStr();
+  if(local){
+    // the early open draws now, as a sign-in shows the app (selectUser) — with the line that says what the screen is
+    _bootLoaded = true; // real, loaded state (an offline start's): a save from here on is told apart from what a refresh reads
+    local.state = 'drawn';
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('bottomNav').style.display = 'flex';
+    welcomeDismissed = false;
+    renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours();
+    copyLineSet('updating');
+    updateSyncBadge();
+    return 'drawn';
+  }
   if(crashed || raced || took.size || _onScreen.drawn !== drawnFor){ renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours(); }
   else if(typeof msClock === 'function') msClock();
   _bootLoaded = true;
@@ -1700,6 +1986,17 @@ async function loadAllNow(){
     catch(e){ console.warn('visits: the past months kept on this phone could not be read from the cloud yet', e); }
   }
   if(_keptForSnap && !keptOnScreen()){ _keptForSnap = false; maybeSnapshot(); } // the daily backup waited for those months (v126)
+  // v126 speed, part 3: the phone's copy is the cloud's as of now when every list came from the cloud (what a start may draw
+  // from); the early open's window ends with this session's first read, and its line goes once every list on screen came
+  // from the cloud — a read that failed is said so until a later one is in
+  if(!raced) copyMark(run, [['clinics', c0], ['products', p0], ['tasks', t0], ['dayPlans', dp0], ['staff', st0], ['recycleBin', rb0], ['benchmarks', bm0], ['events', ev0], ['targets', tg0], ['categoryGuides', cg0], ['erpMap', em0], ['erpNotes', en0], ['rxTypes', rt0]]);
+  _cloudRead = true;
+  if(_early && _early.state === 'drawn' && !_early.lineDone){
+    if(!raced) _early.done = true;
+    const phone = Object.keys(_mirrorUsed).some(k => !outboxHas(k)) || Object.keys(_loadFailed).length > 0 || keptMonthsOnScreen();
+    if(!phone){ _early.lineDone = true; copyLineSet(null); } // (once a read is in, the line never comes back: it is about the start)
+    else copyLineSet(raced ? 'updating' : 'failed');
+  }
   if(teamP){ try{ await teamP; }catch(e){} teamRead(teamBefore); } // chat and memories: drawn where they show, once in (12-reports.js)
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for
@@ -1784,6 +2081,7 @@ function freeDeviceRoom(){
 function mirrorSave(key, str){
   if(deviceSet('um_mirror:' + key, str, key !== 'erpSales')){ delete _deviceStale[key]; return true; }
   _deviceStale[key] = true;
+  copyStale(); // the phone's copy is not the one a start may draw from any more (v126 speed, part 3)
   return false;
 }
 function mirrorGet(key){ try{ return localStorage.getItem('um_mirror:'+key); }catch(e){ return null; } }
@@ -2349,9 +2647,9 @@ function keepWhatCloudHolds(key, cloud){
 // offline edits, or another device's delete could be resurrected by our flush.
 // → 'ok' (the cloud answered), 'refused' (this login has no access: said once,
 // noteNoAccess) or 'failed' (no connection) — the queue's flush reads it (v123 review).
-async function refreshTombs(){
+async function refreshTombs(run){
   try{
-    const cur = await withTimeout(window.storage.get('tombs', true), 5000);
+    const cur = await withTimeout(pfTake(run, 'tombs') || window.storage.get('tombs', true), 5000);
     const doc = cur ? (UMCore.safeParse(cur.value, null) || {}) : {};
     absorbTombs(doc);
     reconcileTombs(doc);
@@ -2361,8 +2659,8 @@ async function refreshTombs(){
 }
 // A doctor removed from a clinic (tombstone 'clinicId|doctorId') must not
 // come back from a stale copy of the clinic — at load or in a merge.
-function dropTombedDoctors(c){
-  const dt = _tombstones.doctors;
+function dropTombedDoctors(c, view){
+  const dt = view instanceof Set ? view : _tombstones.doctors; // (view: the early open's — never a .map index)
   if(!c || !dt || !dt.size || !Array.isArray(c.doctors)) return c;
   c.doctors = c.doctors.filter(d => !(d && dt.has(c.id + '|' + d.id)));
   return c;
@@ -2378,6 +2676,7 @@ function offlineToast(msg){
   showToast(msg);
 }
 async function flushOutbox(){
+  if(earlyUnconfirmed()) return; // the early open: nothing goes to the cloud before the sign-in is confirmed (v126 speed, part 3)
   if(_bootLoaded && currentUser && typeof photoReadKeptQuiet === 'function') photoReadKeptQuiet(); // the phone's own photo stores need no signal (12-reports.js)
   if(_flushing || !navigator.onLine || !_bootLoaded || !currentUser) return;
   if(typeof retryPhotos === 'function') retryPhotos(); // photos kept on this phone until the cloud holds them (12-reports.js) — in the background, even with nothing queued
@@ -2425,7 +2724,9 @@ async function flushOutbox(){
 function updateSyncBadge(){
   let el = document.getElementById('syncPill');
   const n = outboxList().filter(k => !_saveBlocked.has(k) && !_saveParked.has(k)).length; // a list too large for the cloud, or one the cloud refused, is not uploading: the red bar says so (v123)
-  const show = (!navigator.onLine || n > 0) && !_memOnly.size; // the red bar (renderMemOnlyBar) says it all on a full phone
+  // nothing uploads before the early open's sign-in is confirmed: its line says what the screen is (v126 speed, part 3)
+  const show = (!navigator.onLine || (n > 0 && !earlyUnconfirmed())) && !_memOnly.size; // the red bar (renderMemOnlyBar) says it all on a full phone
+  document.body.classList.toggle('um-syncpill', !!show);
   if(!show){ if(el) el.style.display='none'; return; }
   if(!el){
     el = document.createElement('div');
@@ -2820,9 +3121,15 @@ async function persistNow(key, opts){
     const merged3 = key === 'recycleBin' || key === 'erpNotes';
     const str = merged3 ? null : JSON.stringify(value);
     if(!merged3 && !UMCore.fitsBytes(str, DOC_MAX_BYTES)) throw tooLargeError(key, null, UMCore.utf8Len(str));
-    let conflict = false, big = 0;
+    // A save made while the screen still shows this phone's copy at a start (the early open's window, v126 speed part
+    // 3: the copy is the base, the start's read not in yet): when another phone changed the document since that copy,
+    // this phone's change is put on the cloud's document as it is now — wherever the other did not change the same
+    // part (UMCore.merge3Doc); the same part changed on both is refused and said, as the compare-and-set refuses it.
+    const rebase = !merged3 && typeof loaded === 'string' && !!_mirrorUsed[key] && earlyWindow() && typeof UMCore.merge3Doc === 'function';
+    const baseDoc = rebase ? UMCore.safeParse(loaded, undefined) : undefined;
+    let conflict = false, big = 0, rebased = null;
     const fn = cur => {
-      conflict = false; big = 0; // a transaction may run more than once: each run starts clean
+      conflict = false; big = 0; rebased = null; // a transaction may run more than once: each run starts clean
       if(merged3){
         const c = cur != null ? UMCore.safeParse(cur, null) : null;
         const s = JSON.stringify(c && typeof c === 'object' ? mergeWholeDoc(key, key === 'recycleBin' ? recycleBin : erpNotes, c, loaded) : (key === 'recycleBin' ? recycleBin : erpNotes));
@@ -2830,7 +3137,17 @@ async function persistNow(key, opts){
         return s;
       }
       if(cur === str) return str; // already there (a run of the transaction whose answer was lost)
-      if(cur !== (loaded === undefined ? null : loaded)){ conflict = true; return null; }
+      if(cur !== (loaded === undefined ? null : loaded)){
+        const theirs = rebase && typeof cur === 'string' ? UMCore.safeParse(cur, undefined) : undefined;
+        const m = baseDoc !== undefined && theirs !== undefined ? UMCore.merge3Doc(baseDoc, JSON.parse(str), theirs) : null;
+        if(m && m.ok){
+          const s = JSON.stringify(m.value);
+          if(!UMCore.fitsBytes(s, DOC_MAX_BYTES)){ big = UMCore.utf8Len(s); return null; }
+          rebased = m.value;
+          return s;
+        }
+        conflict = true; return null;
+      }
       return str;
     };
     const op = typeof window.storage.update === 'function' ? window.storage.update(key, fn) : storageUpdate(key, fn, 12000);
@@ -2854,9 +3171,11 @@ async function persistNow(key, opts){
     if(big) throw tooLargeError(key, null, big);
     if(written == null) throw new Error('update failed');
     wholeDocLanded(key, written, loaded);
+    if(rebased && written === JSON.stringify(rebased)){ wholeDocTake(key, rebased, str); console.log('saved over another phone\'s change of ' + key + ' (both kept)'); }
     if(outboxHas(key)) outboxRemove(key);
     saveUnblocked(key);
     tell({ ok: true });
+    if(rebased) setTimeout(() => { if(currentUser) renderAll(); }, 0); // the other phone's change shows too
     return true;
   }catch(e){
     // Refused by the security rules, or larger than the cloud can store: it
@@ -2922,6 +3241,23 @@ function mergeWholeDoc(key, mine, cloud, loaded){
     return m;
   }
   return typeof UMCore.mergeKeyed3 === 'function' ? UMCore.mergeKeyed3(mine, cloud, base) : Object.assign({}, cloud, mine);
+}
+// A whole document that landed merged over another phone's change (the early open's window, v126 speed part 3): the
+// screen takes the merged document — the one the cloud now holds. Changed here again while that save was on its way
+// (`saved`: what it wrote from memory): the later change stays, on top of the merged document; the same part changed
+// again here → memory as it is (its own save meets the cloud's and is told).
+function wholeDocTake(key, v, saved){
+  const mem = { products, targets, staff, benchmarks: BENCHMARKS, categoryGuides }[key];
+  if(typeof saved === 'string' && JSON.stringify(mem) !== saved){
+    const m = UMCore.merge3Doc(JSON.parse(saved), mem, v);
+    if(!m.ok) return;
+    v = m.value;
+  }
+  if(key === 'products'){ products = v; if(typeof assignProductKeys === 'function') assignProductKeys(); }
+  else if(key === 'targets') targets = v;
+  else if(key === 'staff'){ staff = v; refreshStaff(); }
+  else if(key === 'benchmarks') BENCHMARKS = Object.assign({}, BENCHMARKS, v);
+  else if(key === 'categoryGuides') categoryGuides = Object.assign({}, JSON.parse(JSON.stringify(CATEGORY_GUIDES_SEED)), v || {});
 }
 // The cloud now holds `str` for a whole document: it is the base of the next
 // compare-and-set and the phone's copy; a merged document's screen copy takes

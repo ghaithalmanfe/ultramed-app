@@ -1441,6 +1441,10 @@
     'Browse full clinic list': 'تصفح قائمة العيادات الكاملة',
     'Import all contacts at once': 'استيراد كل جهات الاتصال مرة واحدة',
     'Start the conversation': 'ابدأ المحادثة',
+    // v126 speed, part 3: the early open — the screen drawn from this phone's copy until the start's cloud read is in
+    "This phone's copy, saved": 'نسخة هذا الهاتف، محفوظة',
+    '— updating from the cloud…': '— جارٍ التحديث من السحابة…',
+    '— could not update from the cloud; it is tried again': '— تعذّر التحديث من السحابة، وستُعاد المحاولة',
     'Loading messages…': 'جارٍ تحميل الرسائل…',   // a list this phone never read yet (v126 speed: chat and memories are read when their screen opens)
     'Loading memories…': 'جارٍ تحميل الذكريات…',
     'Date range for exports': 'نطاق التاريخ للتصدير',

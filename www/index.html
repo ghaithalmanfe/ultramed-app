@@ -527,6 +527,13 @@
   #memOnlyBar{top:calc(env(safe-area-inset-top, 0px) + 10px); text-align:center; pointer-events:none; white-space:pre-line;}
   #tooLargeBar{bottom:calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + 20px); text-align:start;}
   #wipeBanner{top:0; inset-inline:0; padding:calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; font-size:13px; font-weight:500; text-align:center; background:#8B1A0E;}
+  /* the early open (v126 speed, part 3; 04-sync.js): what the screen is until the start's cloud read is in, and the
+     cover over another person's screen until this person's own is drawn */
+  .sbar-copy{background:#173A2A; pointer-events:none;}
+  #copyLine.failed{background:var(--status-warning);}
+  body.um-syncpill #copyLine{top:calc(env(safe-area-inset-top, 0px) + 46px);}
+  body.um-cover #app, body.um-cover #bottomNav{visibility:hidden !important;}
+  #coverNote{top:calc(env(safe-area-inset-top, 0px) + 40vh);}
   /* the bars in the home screen's language (look only: their words, order and rules are 04-sync.js's / 13-exports.js's) */
   .sbar{font-size:13px; letter-spacing:-.005em; border:1px solid rgba(255,255,255,.18); box-shadow:0 10px 28px rgba(16,24,40,.2), 0 2px 6px rgba(16,24,40,.12);}
   .sbar-pill{padding:7px 16px; border-radius:999px;}

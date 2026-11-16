@@ -165,7 +165,10 @@ const FAKE_FIREBASE = `;(function(){
   var U = function(){ return window.__um; };
   var t = function(){ return performance.now(); };
   function log(op, key, t0, n){ var u = U(); if(u) u.cloud.push([op, key, Math.round(t0), Math.round(t()), n]); }
-  var LS = '__fakefb_user', listeners = [], user = null, known = false;
+  var LS = '__fakefb_user', listeners = [], user = null, known = false, apiKey = null;
+  // the real SDK keeps its signed-in session on the phone (IndexedDB, else web storage) under this key: kept here the
+  // web-storage way, so the app can see whose session it is before the sign-in is confirmed (v126 speed, part 3)
+  function saved(email){ try{ if(!apiKey) return; var k = 'firebase:authUser:' + apiKey + ':[DEFAULT]'; if(email) localStorage.setItem(k, JSON.stringify({ uid: 'u-' + email, email: email })); else localStorage.removeItem(k); }catch(err){} }
   try{ var e = localStorage.getItem(LS); if(e) user = { email: e, uid: 'u-' + e }; }catch(err){}
   function tell(){ if(window.__umWrap) window.__umWrap(); listeners.slice().forEach(function(cb){ try{ cb(user); }catch(err){ setTimeout(function(){ throw err; }); } }); }
   // the real SDK reads its saved session asynchronously, then tells every listener
@@ -175,9 +178,9 @@ const FAKE_FIREBASE = `;(function(){
     onAuthStateChanged: function(cb){ listeners.push(cb); if(known) setTimeout(function(){ if(window.__umWrap) window.__umWrap(); cb(user); }, 0); return function(){ listeners = listeners.filter(function(x){ return x !== cb; }); }; },
     signInWithEmailAndPassword: function(email, pwd){ return window.__fbSignIn(email, pwd).then(function(ok){
       if(!ok){ var er = new Error('wrong password'); er.code = 'auth/wrong-password'; throw er; }
-      user = { email: email, uid: 'u-' + email }; try{ localStorage.setItem(LS, email); }catch(err){}
+      user = { email: email, uid: 'u-' + email }; try{ localStorage.setItem(LS, email); }catch(err){} saved(email);
       setTimeout(tell, 0); return { user: user }; }); },
-    signOut: function(){ user = null; try{ localStorage.removeItem(LS); }catch(err){} setTimeout(tell, 0); return Promise.resolve(); },
+    signOut: function(){ user = null; try{ localStorage.removeItem(LS); }catch(err){} saved(null); setTimeout(tell, 0); return Promise.resolve(); },
   };
   function snap(id, d){ return { id: id, exists: !!(d && d.exists !== false && d.value != null), data: function(){ return d && d.value != null ? { value: d.value, updated: d.updated } : undefined; } }; }
   function docRef(id){ return {
@@ -210,7 +213,7 @@ const FAKE_FIREBASE = `;(function(){
   };
   var firestore = function(){ return db; };
   firestore.FieldPath = { documentId: function(){ return '__name__'; } };
-  var fb = { __fake: true, apps: [], initializeApp: function(c){ fb.apps.push(c); return {}; }, firestore: firestore, auth: function(){ return auth; } };
+  var fb = { __fake: true, apps: [], initializeApp: function(c){ fb.apps.push(c); apiKey = c && c.apiKey; return {}; }, firestore: firestore, auth: function(){ return auth; } };
   fb.auth.EmailAuthProvider = { credential: function(){ return {}; } };
   window.firebase = fb;
 })();`;
@@ -436,7 +439,8 @@ async function openOnce(ctx, prof, who, kind, opts){
       shown: { greeting: g ? g.textContent : '', who: typeof currentUser !== 'undefined' && currentUser ? currentUser.name : null, amountOnCard: tc ? window.__um.amountShown(tc) : false,
         dueCards: due ? due.querySelectorAll('.card').length : 0, marker: dueMarker ? dueText.indexOf(dueMarker) >= 0 : true, notMine: (notMine || []).filter(n => dueText.indexOf(n) >= 0),
         appAmount: typeof bestMonthRevenue === 'function' ? UMCore.money(bestMonthRevenue(who).amount) : null, mirrorUsed: typeof _mirrorUsed !== 'undefined' ? Object.keys(_mirrorUsed) : null,
-        loadFailed: typeof _loadFailed !== 'undefined' ? Object.keys(_loadFailed) : null, booted: typeof _bootLoaded !== 'undefined' ? _bootLoaded : null, outbox: typeof outboxList === 'function' ? outboxList() : null },
+        loadFailed: typeof _loadFailed !== 'undefined' ? Object.keys(_loadFailed) : null, booted: typeof _bootLoaded !== 'undefined' ? _bootLoaded : null, outbox: typeof outboxList === 'function' ? outboxList() : null,
+        early: typeof _early !== 'undefined' && _early ? _early.state : null, copyLine: !!document.getElementById('copyLine') },
     };
   }, opts.expect);
   let refresh = null;
@@ -626,9 +630,11 @@ async function storeRules(){
     page.on('pageerror', e => errors.push('pageerror: ' + e.message));
     const dump = () => page.evaluate(storeDumpInPage);
     const ix = () => JSON.parse(cloud.get('visitsIndex').value).months;
-    const reopen = label => openOnce(ctx, prof, sup, 'daily', { expect: exp, label });
+    // (the store's own path: each start here reads the cloud first — the phone forgets whom it last signed in, so no early
+    // open draws from its copy before; the early open's window has its own harness, speed-open.e2e.js)
+    const reopen = async label => { await page.evaluate(() => { try{ localStorage.removeItem('um_lastUser'); }catch(e){} }).catch(() => {}); return openOnce(ctx, prof, sup, 'daily', { expect: exp, label }); };
     // the past months a start read during its own read (loadVisits), before anything was drawn — the others stood in from the store
-    const startReads = r => { const lv = (r.page.timeline || []).find(x => x[0] === 'loadVisits'); return (r.page.cloudLog || []).filter(c => c[0] === 'get' && /^visitsArch:/.test(c[1]) && (!lv || c[2] < lv[2])).length; };
+    const startReads = r => { const lv = cloudLoadVisits(r.page); return (r.page.cloudLog || []).filter(c => c[0] === 'get' && /^visitsArch:/.test(c[1]) && (!lv || c[2] < lv[2])).length; };
     const lsState = () => page.evaluate(() => { const o = {}; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); o[k] = (localStorage.getItem(k) || '').length; } return o; });
     const lsFirst = await lsState();
     // K1 — only what the cloud returned: its exact text, at the key (and for a month the index revision) it was read at
@@ -770,6 +776,9 @@ async function storeRules(){
     check(`store: no page errors`, !errors.length && !first.errors.length, errors.slice(0, 5));
   } finally { await ctx.close().catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); cloudDown = false; failGet = null; }
 }
+// the boot's loadVisits that read the cloud: the first that began with the boot's loadAll (an early open draws from the
+// phone's copy with a loadVisits of its own before it, v126 speed part 3)
+function cloudLoadVisits(pg){ const a = pg.marks && pg.marks.loadAllStart; return (pg.timeline || []).find(x => x[0] === 'loadVisits' && (a == null || x[1] >= a - 1)); }
 function ownPainted(pg){
   const m = pg.marks; if(m.ownDom == null) return null;
   const next = (pg.msRuns || []).find(x => x[0] >= m.ownDom);
@@ -840,9 +849,15 @@ function rowOf(r){
     if(r.kind === 'daily'){
       check(`${tag}: the daily open downloads no sales file it keeps (erpRows:* read ${n('erpRows:*')} times, v125: 26)`, n('erpRows:*') === 0, rk['erpRows:*']);
       // v126 review: a kept month stands in for the first paint only — the start reads it from the cloud before it ends
-      const lv = (r.page.timeline || []).find(x => x[0] === 'loadVisits'), arch = (r.page.cloudLog || []).filter(c => c[0] === 'get' && /^visitsArch:/.test(c[1]));
-      check(`${tag}: the daily open draws the past months it keeps from the store and reads each from the cloud once, after the start's read (visitsArch:* read ${n('visitsArch:*')} times, none during it)`,
-        !!lv && n('visitsArch:*') === ARCH_MONTHS && arch.length === n('visitsArch:*') && arch.every(c => c[2] >= lv[2]), { reads: rk['visitsArch:*'], loadVisits: lv, firstAsked: arch.length ? Math.min(...arch.map(c => c[2])) : null });
+      const lv = cloudLoadVisits(r.page), arch = (r.page.cloudLog || []).filter(c => c[0] === 'get' && /^visitsArch:/.test(c[1]));
+      // v126 speed, part 3: a daily open draws from the phone's copy first (the early open) — every past month is on screen
+      // before any is read, and the start's read then reads each from the cloud once (the store stands in only for a month
+      // whose read fails); without the early open, a kept month stands in from the store and is read after the start's read
+      const fd0 = r.page.marks.firstDraw, firstAsk = arch.length ? Math.min(...arch.map(c => c[2])) : null;
+      if(r.page.shown.early) check(`${tag}: the daily open draws the past months from the phone's copy before any is read (the early open), and reads each from the cloud once (visitsArch:* read ${n('visitsArch:*')} times)`,
+        !!lv && n('visitsArch:*') === ARCH_MONTHS && arch.length === n('visitsArch:*') && fd0 != null && firstAsk != null && fd0 < firstAsk, { reads: rk['visitsArch:*'], firstDraw: fd0, firstAsked: firstAsk, early: r.page.shown.early });
+      else check(`${tag}: the daily open draws the past months it keeps from the store and reads each from the cloud once, after the start's read (visitsArch:* read ${n('visitsArch:*')} times, none during it)`,
+        !!lv && n('visitsArch:*') === ARCH_MONTHS && arch.length === n('visitsArch:*') && arch.every(c => c[2] >= lv[2]), { reads: rk['visitsArch:*'], loadVisits: lv, firstAsked: firstAsk });
     }
     const tl = r.page.timeline, first = name => tl.find(x => x[0] === name);
     const team = first('loadTeam'), lists = [first('loadVisits'), first('loadErpSales')].filter(Boolean);

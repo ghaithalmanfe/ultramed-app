@@ -527,6 +527,10 @@ function msClock(){
   if(activeView === 'today' && !_msHeld){ const v = msView(); if(v) renderRecentVisits(v, true); } // (a frame kept whole while new figures are worked out: the swap draws it)
 }
 function renderAll(){
+  try{ renderAllNow(); }
+  finally{ screenDrawn(); } // this person's own screen is drawn: a screen covered for them shows (v126 speed, part 3; 04-sync.js)
+}
+function renderAllNow(){
   renderGreeting();
   const stamp = document.getElementById('headerStamp');
   stamp.childNodes[0].textContent = msInitials(msName(currentUser.name));
