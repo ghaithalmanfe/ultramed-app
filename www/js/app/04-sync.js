@@ -214,33 +214,49 @@ function erpMirrorSave(sales){
 // alone fills most of it: the sales rows (3 MB) no longer fitted beside it, so
 // every start AND every 20-second round downloaded every sales file again
 // (v119's rule — a file's rows never change under their key — lost on such a
-// phone), and every start downloaded every past month's visits again (the
-// revision check in loadVisits kept them for the session only). Both are kept
-// in IndexedDB (a database of its own, apart from the photos'): each document
-// exactly as the cloud returned it — its text, the key it was read at, and for
-// a month the revision the visits index gave it in the same read. Never this
-// phone's merged or edited copy, never a revision this phone wrote: the store
-// is written only where a cloud read lands (loadVisits' commit, loadErpSales).
+// phone), and every start downloaded every past month's visits before it drew
+// anything. Both are kept in IndexedDB (a database of its own, apart from the
+// photos'): each document exactly as the cloud returned it — its text, the key
+// it was read at, and for a month the revision the visits index gave it in the
+// same read. Never this phone's merged or edited copy, never a revision this
+// phone wrote: the store is written only where a cloud read lands (loadVisits'
+// commit, visitsConfirmKeptNow, loadErpSales).
 //   erpRows:<file>:<rev>:<n>  a chunk of a sales file: stands in for its read
 //                             while the index names that key and the file's
-//                             chunks add up to its line count (erpAssemble);
-//   visitsArch:<month>        a past month: stands in for its read while the
-//                             index read now gives it the same revision, and
-//                             while no delete of a visit is held (loadVisits).
-// A store that does not open, does not answer within KEEP_DB_MS, was emptied
-// by the browser or holds something unreadable is a miss: the cloud is read,
-// as before — never "nothing there", never "unchanged". What came from the
-// store counts as the cloud's for the screen only: it is not a cloud read for
-// the held deletes ("every month read"), the daily backup (snapshotReadOk) or
-// the whole-day Restore until the cloud has been read again this session
-// (keptOnScreen / keptConfirmSoon); the full backup reads the cloud itself.
-// Like the phone's other copies (um_mirror:*) it stays at a sign-out.
-const KEEP_DB_MS = 5000;              // no answer by then: a miss
-const KEEP_LATE_MS = 1000;            // the cloud's answer is in: the store gets this much longer, then it is a miss
-const KEEP_RECHECK_MS = 20 * 3600000; // a kept month is read from the cloud again once it is this old (one a round)
-let _keepDbP = null;
+//                             chunks add up to its line count (erpAssemble).
+//                             Exact: nothing writes other rows under a key
+//                             (v119), so a file from the store IS the cloud's.
+//   visitsArch:<month>        a past month: for the SCREEN only, at the start
+//                             of a session, while the index read now gives it
+//                             the same revision, the copy is under
+//                             KEEP_RECHECK_MS old and no delete of a visit is
+//                             held (loadVisits). Never evidence of what the
+//                             cloud holds (v126 review): the refresh that put it
+//                             on screen reads it from the cloud before it ends,
+//                             and nothing writes a visits document or decides
+//                             from "every month read" before that
+//                             (visitsConfirmKept, keptMonthsOnScreen).
+// A store that does not open, does not answer in time, was emptied by the
+// browser or holds something unreadable is a miss: the cloud is read, as
+// before — never "nothing there", never "unchanged". A store that does not
+// answer within KEEP_DB_MS is not asked again this session; at a start it is
+// waited for only while it is open, or opened on this phone before (um_keepOk,
+// as the photos' um_idbOk). Like the phone's other copies (um_mirror:*) it
+// stays at a sign-out.
+const KEEP_DB_MS = 5000;              // no answer by then: a miss, and the store is not asked again this session
+const KEEP_LATE_MS = 1000;            // the cloud's answer is in: an open store (or one that opened here before) gets this much longer
+const KEEP_RECHECK_MS = 20 * 3600000; // a kept month older than this (or dated this much ahead of the clock) never stands in: read from the cloud
+const KEEP_SEEN = 'um_keepOk';        // the store opened on this phone before
+let _keepDbP = null, _keepState = 'idle'; // 'idle' | 'opening' | 'open' | 'dead' (did not answer in time)
+function keepSeen(){ try{ return localStorage.getItem(KEEP_SEEN) === '1'; }catch(e){ return false; } }
+function keepDead(){ // not asked again this session, and not waited for at the next start
+  _keepState = 'dead'; _keepDbP = Promise.resolve(null);
+  try{ localStorage.removeItem(KEEP_SEEN); }catch(e){}
+}
 function keepDb(){
+  if(_keepState === 'dead') return Promise.resolve(null);
   if(!_keepDbP){
+    _keepState = 'opening';
     let done = false;
     const open = new Promise(res => {
       let rq;
@@ -253,53 +269,68 @@ function keepDb(){
         const db = rq.result;
         if(done){ try{ db.close(); }catch(e){} return res(null); }
         if(!db.objectStoreNames.contains('docs')){ try{ db.close(); indexedDB.deleteDatabase('um_keep'); }catch(e){} return res(null); } // made without its store: started again next time
-        db.onversionchange = () => { try{ db.close(); }catch(e){} _keepDbP = null; };
+        db.onversionchange = () => { try{ db.close(); }catch(e){} if(_keepDbP === p){ _keepDbP = null; _keepState = 'idle'; } };
         res(db);
       };
       rq.onerror = rq.onblocked = () => res(null);
     });
-    const p = _keepDbP = withTimeout(open, KEEP_DB_MS).catch(() => null).then(db => { done = true; if(!db && _keepDbP === p) _keepDbP = null; return db; });
+    const p = _keepDbP = withTimeout(open, KEEP_DB_MS).then(db => {
+      done = true;
+      if(_keepDbP !== p) return db;
+      if(db){ _keepState = 'open'; try{ localStorage.setItem(KEEP_SEEN, '1'); }catch(e){} }
+      else { _keepDbP = null; _keepState = 'idle'; } // it said no at once (no IndexedDB, an error): cheap to ask again
+      return db;
+    }, () => { done = true; if(_keepDbP === p) keepDead(); return null; });
   }
   return _keepDbP;
 }
+// One transaction; fn(store) gives a request (its result is the answer) or a function that gives the answer
 function keepDo(mode, fn){
-  return withTimeout(keepDb().then(db => new Promise((res, rej) => {
-    if(!db) return rej(new Error('no store'));
-    let tx, rq;
-    try{ tx = db.transaction('docs', mode); rq = fn(tx.objectStore('docs')); }catch(e){ _keepDbP = null; return rej(e); }
-    tx.oncomplete = () => res(rq ? rq.result : null);
-    tx.onerror = tx.onabort = () => rej(tx.error || new Error('IndexedDB'));
-  })), KEEP_DB_MS);
+  return keepDb().then(db => {
+    if(!db) throw new Error('no store');
+    return withTimeout(new Promise((res, rej) => {
+      let tx, rq;
+      try{ tx = db.transaction('docs', mode); rq = fn(tx.objectStore('docs')); }
+      catch(e){ if(_keepState === 'open'){ _keepDbP = null; _keepState = 'idle'; } return rej(e); } // closed under it: opened again next time
+      tx.oncomplete = () => res(typeof rq === 'function' ? rq() : rq ? rq.result : null);
+      tx.onerror = tx.onabort = () => rej(tx.error || new Error('IndexedDB'));
+    }), KEEP_DB_MS).catch(e => { if(e && e.message === 'timeout') keepDead(); throw e; });
+  });
 }
+function keptMap(list){ const o = {}; (list || []).forEach(e => { if(e && typeof e.k === 'string' && typeof e.text === 'string') o[e.k] = e; }); return o; }
 // Every entry kept under a prefix → { key: entry }; null when the store cannot be read (a miss: the cloud is read)
 async function keptAll(prefix){
+  try{ return keptMap(await keepDo('readonly', st => st.getAll(IDBKeyRange.bound(prefix, prefix + '￿')))); }catch(e){ return null; }
+}
+// The entries of these keys only → { key: entry }; null when the store cannot be read
+async function keptGet(keys){
+  if(!keys.length) return {};
   try{
-    const list = await keepDo('readonly', st => st.getAll(IDBKeyRange.bound(prefix, prefix + '\uffff')));
-    const o = {}; (list || []).forEach(e => { if(e && typeof e.k === 'string' && typeof e.text === 'string') o[e.k] = e; });
-    return o;
+    return keptMap(await keepDo('readonly', st => { const out = []; keys.forEach(k => { const r = st.get(k); r.onsuccess = () => { if(r.result) out.push(r.result); }; }); return () => out; }));
   }catch(e){ return null; }
 }
-// What the store gave by the time the cloud answered (KEEP_LATE_MS more at most); a miss → {}
-function keptBy(p){ return Promise.race([p, new Promise(r => setTimeout(() => r(null), KEEP_LATE_MS))]).then(o => o || {}); }
+// The keys kept under a prefix, without their texts; null when the store cannot be read
+async function keptKeys(prefix){
+  try{ return (await keepDo('readonly', st => st.getAllKeys(IDBKeyRange.bound(prefix, prefix + '￿')))) || []; }catch(e){ return null; }
+}
+// What the store gave by the time the cloud answered (a miss → {}): a moment more only while the store is open, or
+// opened on this phone before and is opening now — a store that is not open is not waited for (v126 review)
+function keptBy(p){
+  const wait = _keepState === 'open' || (_keepState === 'opening' && keepSeen()) ? KEEP_LATE_MS : 0;
+  return Promise.race([p, new Promise(r => setTimeout(() => r(null), wait))]).then(o => o || {});
+}
 function keepPut(put, drop){
   if(!(put && put.length) && !(drop && drop.length)) return;
   keepDo('readwrite', st => { (put || []).forEach(e => st.put(e)); (drop || []).forEach(k => st.delete(k)); return null; }).catch(() => {});
 }
-// Read from the cloud again, at the next refresh, everything on screen that came from the store (the daily backup
-// waits for it; a whole-day Restore asks for it): then it counts as a cloud read. Not needed for the daily backup once
-// this phone knows today has one.
-let _keptConfirmVisits = false, _keptConfirmErp = false, _keptForSnap = false;
-function keptConfirmSoon(force){
-  if(!force){ try{ if(localStorage.getItem(SNAP_DAY) === todayStr()) return; }catch(e){} }
-  if(keptMonthsOnScreen()) _keptConfirmVisits = true;
-  if(keptFilesOnScreen()) _keptConfirmErp = true;
-  if(!force && (_keptConfirmVisits || _keptConfirmErp)) _keptForSnap = true; // the daily backup is tried again once they are read (loadAllNow)
-}
-const _erpStoreOf = new WeakMap();  // a sales copy as loaded → the files whose rows came from the store (not read from the cloud this session)
-const _erpConfirmed = new Set();     // the files read from the cloud this session
+// The store is only a copy of what the cloud holds: when the phone has no room left for a photo that exists only here
+// (photoKeep, 12-reports.js), the store gives way — emptied, the next start reads the cloud (v126 review)
+function keepClear(){ return keepDo('readwrite', st => st.clear()).then(() => true, () => false); }
+// A past month on screen that came from the store and was not read from the cloud this session (v126 review). Sales
+// files from the store are the cloud's own rows (exact under their key): they hold nothing back.
 function keptMonthsOnScreen(){ return Object.keys(_visitsArch).some(m => _visitsArch[m] && _visitsArch[m].kept != null); }
-function keptFilesOnScreen(){ const s = erpSales && _erpStoreOf.get(erpSales); return !!(s && [...s].some(k => !_erpConfirmed.has(k))); }
-function keptOnScreen(){ return keptMonthsOnScreen() || keptFilesOnScreen(); }
+function keptOnScreen(){ return keptMonthsOnScreen(); }
+let _keptForSnap = false; // the daily backup was held back by a kept month: tried again once the months are read (loadAllNow)
 // The files of the index this phone keeps whole — every chunk, adding up to the file's line count → { chunk key: rows }
 function erpKeptDocs(index, kept, skip){
   const out = {}, files = [];
@@ -383,10 +414,9 @@ async function loadVisits(run){
     if(Array.isArray(mm)){ F.mirror.visits = true; mergeBaseFromPhone('visits'); return mm; } // queued offline edits win until flushed (merged against what the phone kept, v123)
   }
   let liveRes, idxRes;
-  // the past months this phone keeps in its store (v126), read beside the index — at the start of a session (a month
-  // read this session is in memory) and never while they are to be read from the cloud again (keptConfirmSoon)
-  const confirm = _keptConfirmVisits;
-  const keptP = Object.keys(_visitsArch).length || confirm ? Promise.resolve({}) : keptAll(UMCore.VISITS_ARCH_PREFIX);
+  // the past months this phone keeps in its store (v126), read beside the index — at the start of a session only (a
+  // month read this session is in memory)
+  const keptP = (run && run.noKept) || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
   try{
     [liveRes, idxRes] = await Promise.all([
       withTimeout(window.storage.get('visits', true), 8000),
@@ -425,34 +455,45 @@ async function loadVisits(run){
   // "the cloud no longer holds that visit" must come from a read made now, never from the copy an
   // earlier read left
   const readAll = !!heldSettledNow().visits;
-  // A month the store keeps (v126) stands in for its read only while the index read now gives it the same revision,
-  // and only while no delete of a visit is held, on its way to the log or marked as published again — as the delete
-  // log read in this same refresh says (run.tombsP): a held delete lets go, settles or is written down as brought back
-  // on what the cloud's lists hold, so then every month comes from the cloud, as before. Nor does a read with a kept
-  // month in it count as "every month read" (visitsComplete). A kept month is read from the cloud again once it is a
-  // day old (one month a round, after the start), and whenever the daily backup or a Restore asks (keptConfirmSoon).
-  const kept = await keptBy(keptP);
-  if(run && run.tombsP){ try{ await run.tombsP; }catch(e){} }
-  const quiet = visitsTombsQuiet(), idxRead = !!(idxRes && idxRes.value != null);
-  const useKept = idxRead && !readAll && quiet && !confirm;
-  const recheck = useKept && _bootLoaded ? Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null && Date.now() - _visitsArch[m].kept > KEEP_RECHECK_MS).sort()[0] : null;
+  // A month the store keeps (v126) may stand in for its read — for the SCREEN only, at the start of a session — while
+  // the index read now gives it the same revision, the kept copy is under KEEP_RECHECK_MS old, and no delete of a visit
+  // is held, on its way to the log or marked as published again (the delete log read in this same refresh, run.tombsP:
+  // a held delete lets go, settles or is written down as brought back on what the cloud's lists hold, so then every
+  // month comes from the cloud). The refresh that puts it on screen reads it from the cloud before it ends
+  // (visitsConfirmKept), and nothing writes a visits document before that; nor does a read with a kept month in it
+  // count as "every month read" (visitsComplete). Every other month is read at once, beside the delete log — only the
+  // months that may stand in wait for it (v126 review).
+  const idxRead = !!(idxRes && idxRes.value != null);
+  const kept = keptP && idxRead && !readAll ? await keptBy(keptP) : {};
   const fresh = {}; // month → the text the cloud returned now (kept on the phone at the commit)
-  await Promise.all(months.map(async m => {
-    const rev = (index.months && index.months[m] && index.months[m].rev) || 0;
-    const have = _visitsArch[m];
-    if(have && have.rev === rev && !readAll && !(have.kept != null && (!quiet || confirm || m === recheck))) return; // unchanged since last read / written by this device
-    const e = useKept && !have && rev ? kept[UMCore.visitsArchKey(m)] : null;
-    if(e && e.rev === rev){
-      const arr = UMCore.safeParse(e.text, null);
-      if(Array.isArray(arr)){ got[m] = { rev, arr, json: e.canon ? e.text : JSON.stringify(arr), kept: e.at || 0 }; return; }
-    }
+  const revOf = m => (index.months && index.months[m] && index.months[m].rev) || 0;
+  const now0 = Date.now();
+  const keptFor = m => {
+    const e = !_visitsArch[m] && revOf(m) ? kept[UMCore.visitsArchKey(m)] : null;
+    return e && e.rev === revOf(m) && Math.abs(now0 - (Number(e.at) || 0)) <= KEEP_RECHECK_MS ? e : null; // (a clock set back: as old as it is ahead)
+  };
+  const readMonth = async m => {
+    const rev = revOf(m), have = _visitsArch[m];
+    if(have && have.rev === rev && !readAll && have.kept == null) return; // unchanged since last read / written by this device
     try{
       const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000);
       const arr = r && r.value != null ? (UMCore.safeParse(r.value, null) || []) : [];
       got[m] = { rev, arr, json: JSON.stringify(arr) };
       if(r && typeof r.value === 'string' && rev) fresh[m] = { rev, text: r.value, canon: r.value === got[m].json };
     }catch(e){ complete = false; if(!have) broken.push(m); } // an earlier copy is kept; a month never read is flagged
-  }));
+  };
+  const standIn = months.filter(m => keptFor(m));
+  const reads = months.filter(m => !standIn.includes(m)).map(readMonth);
+  if(standIn.length){
+    if(run && run.tombsP){ try{ await run.tombsP; }catch(e){} }
+    const quiet = visitsTombsQuiet();
+    standIn.forEach(m => {
+      const e = keptFor(m), arr = quiet && e ? UMCore.safeParse(e.text, null) : null;
+      if(Array.isArray(arr)) got[m] = { rev: e.rev, arr, json: e.canon ? e.text : JSON.stringify(arr), kept: Number(e.at) || 0 };
+      else reads.push(readMonth(m));
+    });
+  }
+  await Promise.all(reads);
   const keptIn = months.some(m => got[m] ? got[m].kept != null : !!(_visitsArch[m] && _visitsArch[m].kept != null));
   if(run) run.visitsComplete = complete && !keptIn;
   // A visits save ran meanwhile: what this read brought back is older than
@@ -463,6 +504,15 @@ async function loadVisits(run){
   const archNext = Object.assign({}, _visitsArch, got), archObj = {};
   Object.keys(archNext).forEach(m => { archObj[m] = archNext[m].arr; });
   const all = UMCore.visitsAssemble(liveArr, archObj, today).sort((a, b) => order(a) - order(b)); // the same chronological order the single document had
+  // the visits that only a month from the store holds: never evidence that the cloud holds them (the held deletes in
+  // loadAllNow, v126 review)
+  const keptMs = Object.keys(archNext).filter(m => archNext[m].kept != null);
+  if(run && keptMs.length){
+    const other = new Set(liveArr.filter(x => x && x.id != null).map(x => x.id)), only = new Set();
+    Object.keys(archNext).forEach(m => { if(archNext[m].kept == null) archNext[m].arr.forEach(x => { if(x && x.id != null) other.add(x.id); }); });
+    keptMs.forEach(m => archNext[m].arr.forEach(x => { if(x && x.id != null && !other.has(x.id)) only.add(x.id); }));
+    run.visitsKeptOnly = only;
+  }
   // What was read becomes the base of the next save — the documents' texts,
   // the phone's copy — only together with the visits on screen (v123 review):
   // a refresh that keeps the lists on screen because a save ran while it read
@@ -478,7 +528,6 @@ async function loadVisits(run){
     const now = Date.now(), idxMonths = Object.keys(index.months || {});
     keepPut(Object.keys(fresh).map(m => ({ k: UMCore.visitsArchKey(m), rev: fresh[m].rev, text: fresh[m].text, canon: fresh[m].canon, at: now })),
       idxRead ? Object.keys(kept).filter(k => !idxMonths.includes(k.slice(UMCore.VISITS_ARCH_PREFIX.length))) : []);
-    if(confirm) _keptConfirmVisits = false;
     _visitsLive = liveArr;
     _visitsLoaded = JSON.stringify(liveArr);
     if(!outboxHas('visits')){ _visitsBaseHash = null; _visitsBaseRecs = null; _visitsBaseText = null; _visitsBaseParsed = null; dropMergeBaseOnPhone('visits'); } // the documents just read are the base now
@@ -492,6 +541,100 @@ async function loadVisits(run){
   if(run) run.visitsCommit = commit; else commit();
   return all;
 }
+// ---- The past months on screen that came from the phone's store (v126 review) ----
+// A kept month is for the screen only: it is never evidence of what the cloud
+// holds until this session has read it from the cloud. The review found why
+// it matters: a save of ANOTHER month took the kept copy for "the cloud holds
+// this visit there" (Pass B's `stored`) and removed from the cloud a visit
+// that another phone had moved between two past months; a save of the kept
+// month itself put the moved visit back at its old date (mergeById keeps what
+// the cloud lacks). So every kept month is read from the cloud — at the end of
+// the refresh that put it on screen, and in the visits save chain before
+// anything of this session writes a visits document (a save, its tidy, a
+// photo mark): after this, `_visitsArch` holds only months read from the cloud
+// this session or written by it, as v125 had after a start.
+// Where the cloud's text is the kept one (nearly always), nothing changes on
+// screen. Where it differs, the screen is put on the cloud's: a visit this
+// phone did not change takes the cloud's copy (wherever a document read now
+// holds it), or leaves the screen when none holds it; a visit this phone
+// changed keeps the change, merged field by field over the cloud's copy (the
+// kept text is the base — the screen took its visits from there); a visit of
+// those months that the screen does not show joins it (unless deleted).
+// A month whose read fails stays kept (the next refresh reads it again): a
+// save never writes it nor takes it for what the cloud holds, and a save that
+// changes it does not land — it stays on this phone, queued (persistVisitsInner).
+// → { changed: whether the screen changed, unread: the months still kept }
+function visitsConfirmKept(){
+  if(!keptMonthsOnScreen()) return Promise.resolve({ changed: false, unread: [] });
+  const run = async () => { _visitsSaving = true; try{ return await visitsConfirmKeptNow(); } finally { _visitsSaving = false; } };
+  _localGen++; _localSaving++; // a refresh on its way keeps the lists (see persist)
+  const p = _visitsSaveChain.then(run, run);
+  _visitsSaveChain = p.catch(() => {});
+  return p.finally(() => { _localSaving--; _localGen++; });
+}
+// In the visits save chain (the caller holds _visitsSaving).
+async function visitsConfirmKeptNow(){
+  const ms = Object.keys(_visitsArch).filter(m => _visitsArch[m] && _visitsArch[m].kept != null);
+  if(!ms.length) return { changed: false, unread: [] };
+  let index;
+  try{ const idxRes = await withTimeout(window.storage.get('visitsIndex', true), 8000); index = (idxRes && idxRes.value != null ? UMCore.safeParse(idxRes.value, null) : null) || {}; }
+  catch(e){ return { changed: false, unread: ms }; } // the revisions are not known: nothing is taken
+  const texts = {}, ok = [];
+  await Promise.all(ms.map(async m => {
+    try{ const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000); texts[m] = r && typeof r.value === 'string' ? r.value : null; ok.push(m); }
+    catch(e){} // stays kept: read again by the next refresh
+  }));
+  const unread = ms.filter(m => !ok.includes(m));
+  const revOf = m => (index.months && index.months[m] && index.months[m].rev) || 0;
+  const now = Date.now(), today = todayStr(), read = {}, stale = [];
+  ok.forEach(m => {
+    const arr = texts[m] != null ? UMCore.safeParse(texts[m], null) : null, a = Array.isArray(arr) ? arr : []; // as loadVisits reads it
+    read[m] = { arr: a, json: JSON.stringify(a) };
+    if(read[m].json !== _visitsArch[m].json) stale.push(m);
+  });
+  let changed = 0;
+  if(stale.length){
+    const base = new Map(); // id → the visit as the kept copy holds it: what the screen took
+    stale.forEach(m => (UMCore.safeParse(_visitsArch[m].json, null) || []).forEach(v => { if(v && v.id != null && !base.has(v.id)) base.set(v.id, v); }));
+    // the cloud's copy of each visit as this session knows it — the months just read and the documents read or written
+    // this session (their texts: an object on screen may carry an edit not saved yet); never a month still kept — one
+    // copy per visit, where its date says it belongs (visitsAssemble)
+    const archNow = {};
+    Object.keys(_visitsArch).forEach(m => { if(read[m]) archNow[m] = read[m].arr; else if(_visitsArch[m].kept == null) archNow[m] = UMCore.safeParse(_visitsArch[m].json, null) || []; });
+    const cloudOf = new Map(UMCore.visitsAssemble(UMCore.safeParse(_visitsLoaded, null) || [], archNow, today).filter(v => v && v.id != null).map(v => [v.id, v]));
+    const fm = typeof UMCore.mergePhotos3 === 'function' ? { photos: (L, C, B) => UMCore.mergePhotos3(L, C, B) } : null;
+    const copy = o => JSON.parse(JSON.stringify(o));
+    const setTo = (s, rec) => { Object.keys(s).forEach(k => { if(!(k in rec)) delete s[k]; }); Object.assign(s, copy(rec)); }; // in place: a sheet holding the visit keeps it
+    const ts = tombSet('visits'), seen = new Set(), drop = new Set();
+    (visits || []).forEach(s => {
+      if(!s || s.id == null) return;
+      seen.add(s.id);
+      const b = base.get(s.id);
+      if(!b) return; // not from a month that changed
+      const c = cloudOf.get(s.id), sj = JSON.stringify(s);
+      if(sj === JSON.stringify(b)){ // not changed here: the cloud's copy, or none
+        if(!c){ drop.add(s.id); changed++; }
+        else if(JSON.stringify(c) !== sj){ setTo(s, c); changed++; }
+        return;
+      }
+      if(!c || typeof UMCore.merge3Record !== 'function') return; // changed here and no document read now holds it: this phone's change stays (never lost)
+      const r = UMCore.merge3Record(s, c, b, fm);
+      if(r && r.value && JSON.stringify(r.value) !== sj){ setTo(s, r.value); changed++; }
+    });
+    const add = [];
+    stale.forEach(m => read[m].arr.forEach(v => {
+      if(!v || v.id == null || seen.has(v.id) || ts.has(v.id)) return;
+      const c = cloudOf.get(v.id) || v; seen.add(v.id); add.push(copy(c)); changed++;
+    }));
+    if(drop.size) visits = (visits || []).filter(v => !(v && drop.has(v.id)));
+    if(add.length) visits = (visits || []).concat(add);
+  }
+  // every month read is now a month read from the cloud this session, at the revision the index gave in this read
+  ok.forEach(m => { const st = stale.includes(m); _visitsArch[m] = { rev: revOf(m), arr: st ? read[m].arr : _visitsArch[m].arr, json: st ? read[m].json : _visitsArch[m].json }; });
+  keepPut(ok.filter(m => texts[m] != null && revOf(m)).map(m => ({ k: UMCore.visitsArchKey(m), rev: revOf(m), text: texts[m], canon: texts[m] === read[m].json, at: now })));
+  if(changed){ applyDoctorRemap(); visitsMirrorSave(visits); }
+  return { changed: changed > 0, unread };
+}
 function renderVisitsNudge(){
   const el = document.getElementById('visitsNudge');
   if(!el) return;
@@ -504,7 +647,7 @@ function renderVisitsNudge(){
   </div>`;
 }
 async function retryVisitsArchives(){
-  const run = { failed: {}, mirror: {} }, gen0 = _localGen;
+  const run = { failed: {}, mirror: {}, noKept: true }, gen0 = _localGen; // (a retry reads the cloud: nothing stands in from the store)
   const all = await loadVisits(run);
   // what was read goes on screen (and becomes the base) only when no save ran meanwhile (v123 review)
   if(!_visitsSaving && !savedSince(gen0)){
@@ -526,17 +669,25 @@ function persistVisits(opts){
 async function persistVisitsInner(opts){
   _visitsSaving = true;
   try{
+    // a past month on screen that came from the phone's store is read from the cloud first: nothing below may take it
+    // for what the cloud holds (v126 review). One whose read fails stays kept: never written nor trusted here (below)
+    if(keptMonthsOnScreen()) await visitsConfirmKeptNow();
     const today = todayStr();
     if(!opts.authoritative) await refreshTombs();
     const ts = tombSet('visits');
     const local = (visits || []).filter(v => v && !ts.has(v.id));
     const part = UMCore.visitsPartition(local, today);
+    // a month still kept (its read failed just now): when this phone's list differs from it there — an edit, a visit
+    // moved in or out —, the save does not land and nothing is written; it stays on this phone, queued (v126 review)
+    const unreadKept = m => !!(_visitsArch[m] && _visitsArch[m].kept != null);
+    const touched = Object.keys(_visitsArch).filter(m => unreadKept(m) && JSON.stringify(part.months[m] || []) !== _visitsArch[m].json);
+    if(touched.length) throw new Error('visits: ' + touched.join(', ') + ' not read from the cloud yet — kept on this phone');
     const homeById = {};
     part.live.forEach(v => { if(v.id != null) homeById[v.id] = 'live'; });
     Object.keys(part.months).forEach(m => part.months[m].forEach(v => { if(v.id != null) homeById[v.id] = m; }));
     const stored = new Set(); // "doc|id" pairs the cloud is known to hold
     const note = (doc, arr) => (arr || []).forEach(v => { if(v && v.id != null) stored.add(doc + '|' + v.id); });
-    note('live', _visitsLive); Object.keys(_visitsArch).forEach(m => note(m, _visitsArch[m].arr));
+    note('live', _visitsLive); Object.keys(_visitsArch).forEach(m => { if(!unreadKept(m)) note(m, _visitsArch[m].arr); }); // (a kept month is no evidence)
     const keyOf = doc => doc === 'live' ? 'visits' : UMCore.visitsArchKey(doc);
     const written = {};
     // The cloud refuses a document above 1 MB. A month can only get there
@@ -595,7 +746,7 @@ async function persistVisitsInner(opts){
     const dirty = [];
     if(opts.authoritative || JSON.stringify(part.live) !== _visitsLoaded) dirty.push(['live', part.live]);
     Object.keys(part.months).forEach(m => {
-      if(_visitsBroken.includes(m)) return; // a month we could not read is never written
+      if(_visitsBroken.includes(m) || unreadKept(m)) return; // a month we could not read is never written
       const have = _visitsArch[m];
       if(!have || JSON.stringify(part.months[m]) !== have.json) dirty.push([m, part.months[m]]);
     });
@@ -607,7 +758,7 @@ async function persistVisitsInner(opts){
     }
     // Pass A2 — re-home what another (older) device left in the wrong document.
     for(const h of Object.keys(overflow)){
-      if(h !== 'live' && _visitsBroken.includes(h)) continue;
+      if(h !== 'live' && (_visitsBroken.includes(h) || unreadKept(h))) continue;
       const base = written[h] || (h === 'live' ? part.live : (part.months[h] || []));
       const ids = new Set(base.map(v => v && v.id));
       await writeUnion(h, base.concat(overflow[h].filter(v => !ids.has(v.id))));
@@ -615,7 +766,7 @@ async function persistVisitsInner(opts){
     // Pass B — tidy: shed a visit from a document once its home provably holds it.
     const docs = new Set(['live', ...Object.keys(_visitsArch), ...Object.keys(written)]);
     for(const doc of docs){
-      if(doc !== 'live' && _visitsBroken.includes(doc)) continue;
+      if(doc !== 'live' && (_visitsBroken.includes(doc) || unreadKept(doc))) continue;
       const arr = written[doc] || (doc === 'live' ? _visitsLive : _visitsArch[doc].arr);
       const stray = UMCore.visitsStrayIds(doc, arr, homeById, (h, id) => stored.has(h + '|' + id));
       if(!stray.length) continue;
@@ -640,7 +791,7 @@ async function persistVisitsInner(opts){
         idx.months = Object.assign({}, idx.months || {});
         writtenMonths.forEach(m => { idx.months[m] = { n: written[m].length, rev: now }; });
         owed.forEach(m => { idx.months[m] = Object.assign({ n: _visitsIdxOwed[m] }, idx.months[m] || {}, { rev: now }); });
-        Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
+        Object.keys(_visitsArch).forEach(m => { if(!idx.months[m] && !unreadKept(m)) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
         idx.v = 1; idx.updated = now;
         return JSON.stringify(idx);
       }, 12000);
@@ -691,7 +842,8 @@ async function persistVisitsInner(opts){
 // The document the cloud last showed holding a visit, else where it belongs now.
 function visitDocOf(id){
   if((_visitsLive || []).some(v => v && v.id === id)) return 'live';
-  const m = Object.keys(_visitsArch).find(k => (_visitsArch[k].arr || []).some(v => v && v.id === id));
+  const ks = Object.keys(_visitsArch), has = k => (_visitsArch[k].arr || []).some(v => v && v.id === id);
+  const m = ks.find(k => _visitsArch[k].kept == null && has(k)) || ks.find(has); // a month read from the cloud first (v126 review)
   if(m) return m;
   const v = (visits || []).find(x => x && x.id === id);
   return v ? UMCore.visitHome(v, todayStr()) : 'live';
@@ -711,7 +863,7 @@ async function bumpVisitsIndex(){
       const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
       idx.months = Object.assign({}, idx.months || {});
       months.forEach(m => { idx.months[m] = Object.assign({ n: _visitsIdxOwed[m] }, idx.months[m] || {}, { rev: now }); });
-      Object.keys(_visitsArch).forEach(m => { if(!idx.months[m]) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; });
+      Object.keys(_visitsArch).forEach(m => { if(!idx.months[m] && _visitsArch[m].kept == null) idx.months[m] = { n: _visitsArch[m].arr.length, rev: _visitsArch[m].rev || now }; }); // (a month from the store says nothing of the cloud, v126 review)
       idx.v = 1; idx.updated = now;
       return JSON.stringify(idx);
     }, 12000);
@@ -743,8 +895,11 @@ async function patchVisitPhotosNow(changes){
   if(!changes.length) return out;
   _visitsSaving = true;
   try{
+    // the document holding a visit is known only from documents read from the cloud (v126 review): a kept month is read
+    // first; a visit that only a month still kept places is asked again next round
+    if(keptMonthsOnScreen()) await visitsConfirmKeptNow();
     const byDoc = {};
-    changes.forEach(c => { const d = visitDocOf(c.visitId); (byDoc[d] = byDoc[d] || []).push(c); });
+    changes.forEach(c => { const d = visitDocOf(c.visitId); if(_visitsArch[d] && _visitsArch[d].kept != null) out[c.photoId] = 'failed'; else (byDoc[d] = byDoc[d] || []).push(c); });
     const settleIn = (arr, list, res) => { // → whether anything changed; res[photoId] = 'done' | 'missing'
       let changed = false;
       list.forEach(c => {
@@ -798,11 +953,10 @@ async function patchVisitPhotosNow(changes){
   }finally{ _visitsSaving = false; }
   return out;
 }
+let _erpKeptSwept = false; // the store's sales chunks the index no longer names are let go once a session
 async function loadErpSales(run){
   const F = readFlags(run);
   const prevMirror = UMCore.safeParse(mirrorGet('erpSales'), null); // assembled copy from last time
-  const confirm = _keptConfirmErp; // read again from the cloud what came from the store (keptConfirmSoon)
-  const keptP = confirm ? Promise.resolve({}) : keptAll('erpRows:'); // the store, read beside the index (v126)
   const es = await cloudGet('erpSales', null, run);
   const index = Object.assign({periods: []}, UMCore.safeParse(es && es.value, null) || {});
   if(!Array.isArray(index.periods)) index.periods = [];
@@ -811,25 +965,36 @@ async function loadErpSales(run){
   _erpBroken = [];
   // A file's rows never change under their key (a new upload is a new key):
   // the files this phone already holds exactly are not downloaded again —
-  // erpFillFromMirror below puts them in from the phone's copy (v119).
+  // erpFillFromMirror below puts them in from the phone's copy (v119); nor are
+  // the files on screen under the same key and line count (v126 review: a
+  // 20-second round reads nothing for them, not even the store), nor the
+  // files the store keeps whole (v126) — the store is read for the others only.
   const held = {};
   ((prevMirror && prevMirror.periods) || []).forEach(p => { if(p && Array.isArray(p.rows) && p.rows.length) held[UMCore.erpRowsKey(p)] = p.rows.length; });
   const heldExact = ref => held[ref.key] != null && (ref.count == null || held[ref.key] === ref.count);
-  // nor the files the store keeps whole under the same key (v126)
-  const kept = await keptBy(keptP), fromStore = erpKeptDocs(index, kept, heldExact), storeFiles = new Set(fromStore.files);
-  const fetchKeys = UMCore.erpChunkKeys({ periods: index.periods.filter(h => !(h && h.rowsRef && (heldExact(h.rowsRef) || storeFiles.has(h.rowsRef.key)))) });
+  const shown = {};
+  ((erpSales && erpSales.periods) || []).forEach(p => { if(p && !p.rowsMissing && Array.isArray(p.rows) && p.rows.length) shown[UMCore.erpRowsKey(p)] = p.rows; });
+  const shownExact = ref => !!shown[ref.key] && (ref.count == null || shown[ref.key].length === ref.count);
+  const have = ref => heldExact(ref) || shownExact(ref);
+  const reading = !F.mirror.erpSales && !F.failed.erpSales;
+  const needKeys = reading ? UMCore.erpChunkKeys({ periods: index.periods.filter(h => h && h.rowsRef && !have(h.rowsRef)) }) : [];
+  const kept = needKeys.length ? await keptBy(keptGet(needKeys)) : {}, fromStore = erpKeptDocs(index, kept, have), storeFiles = new Set(fromStore.files);
+  const fetchKeys = UMCore.erpChunkKeys({ periods: index.periods.filter(h => !(h && h.rowsRef && (have(h.rowsRef) || storeFiles.has(h.rowsRef.key)))) });
   let docs = Object.assign({}, fromStore.docs);
   const texts = {};
-  if(fetchKeys.length && !F.mirror.erpSales && !F.failed.erpSales) Object.assign(docs, await erpFetchChunks(fetchKeys, null, texts));
-  if(!F.mirror.erpSales && !F.failed.erpSales){
-    // each chunk the cloud returned is kept as it came; a key the index no longer names is let go
-    const now = Date.now(), names = new Set(keys);
-    keepPut(Object.keys(texts).map(k => ({ k, text: texts[k], at: now })), Object.keys(kept).filter(k => !names.has(k)));
-    index.periods.forEach(h => { const ref = h && h.rowsRef; if(ref && ref.chunks > 0 && !storeFiles.has(ref.key) && Array.from({ length: ref.chunks }, (x, i) => ref.key + ':' + i).every(k => texts[k] != null)) _erpConfirmed.add(ref.key); });
-    if(confirm) _keptConfirmErp = false;
+  if(fetchKeys.length && reading) Object.assign(docs, await erpFetchChunks(fetchKeys, null, texts));
+  if(reading){
+    // each chunk the cloud returned is kept as it came; once a session, the keys the index no longer names are let go
+    const now = Date.now();
+    keepPut(Object.keys(texts).map(k => ({ k, text: texts[k], at: now })));
+    if(!_erpKeptSwept){ _erpKeptSwept = true; const names = new Set(keys); keptKeys('erpRows:').then(ks => { if(ks) keepPut(null, ks.filter(k => !names.has(k))); }); }
   }
   _erpPutBack = 0;
   const out = UMCore.erpAssemble(index, docs);
+  if(out.missing.length){ // the files on screen under the same key and line count: their rows as they are
+    out.sales.periods.forEach(p => { if(p && p.rowsMissing && p.rowsRef && shownExact(p.rowsRef)){ p.rows = shown[p.rowsRef.key]; delete p.rowsMissing; } });
+    out.missing = out.sales.periods.filter(p => p && p.rowsMissing).map(p => p.id);
+  }
   if(out.missing.length) out.missing = erpFillFromMirror(out.sales, prevMirror);
   const assembled = out.sales; // what the cloud holds (plus anything put back above)
   // What is on screen never double-counts a day, whatever the cloud holds
@@ -854,7 +1019,6 @@ async function loadErpSales(run){
   } else if(!F.mirror.erpSales && !F.failed.erpSales){
     erpMirrorSave(assembled); // cloudGet mirrored the bare index — replace it with the assembled copy
   }
-  if(storeFiles.size) _erpStoreOf.set(out.sales, new Set(storeFiles)); // what on screen came from the store (keptOnScreen)
   return out.sales;
 }
 // Take a freshly loaded copy as the one on screen. A file put back from this
@@ -1255,7 +1419,9 @@ async function loadAllNow(){
     if(!_visitsSaving){
       if(run.visitsCommit) run.visitsCommit();
       // a month that did not load confirms nothing: what was read still lets a hold go
-      if(fromCloud('visits') && Array.isArray(v)){ if(_visitsBroken.length || !run.visitsComplete){ const ids = idsOfList(v); releaseHeldTombs('visits', heldIdsIn('visits', v)); tombsToWrite += reviveAgainTombs('visits', id => ids.has(id)); } else settleHeld('visits', idsOfList(v)); }
+      // (a visit only a month from the phone's store holds says nothing of the cloud: left out, v126 review)
+      const vc = Array.isArray(v) && run.visitsKeptOnly && run.visitsKeptOnly.size ? v.filter(x => !(x && run.visitsKeptOnly.has(x.id))) : v;
+      if(fromCloud('visits') && Array.isArray(vc)){ if(_visitsBroken.length || !run.visitsComplete){ const ids = idsOfList(vc); releaseHeldTombs('visits', heldIdsIn('visits', vc)); tombsToWrite += reviveAgainTombs('visits', id => ids.has(id)); } else settleHeld('visits', idsOfList(vc)); }
       visits = (Array.isArray(v) ? v : []).filter(notDeleted('visits'));
     } // the base moves with the visits on screen (v123 review)
     const tasksRead = UMCore.safeParse(t && t.value, []), eventsRead = UMCore.safeParse(ev && ev.value, []);
@@ -1387,8 +1553,16 @@ async function loadAllNow(){
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: reads the daily backups at most once a day, only when the list looks wiped (13)
   if(typeof checkPendingRename === 'function') checkPendingRename(); // a rename this phone started and the app was closed on (08-team-orders.js, round 3)
+  // The past months this refresh put on screen from the phone's store are read from the cloud before it ends (v126
+  // review): they stood in for the first paint only. First in the visits save chain, so a save waiting behind it runs
+  // on what the cloud holds; a read that fails leaves them kept, and the next refresh reads them (loadVisits).
+  const confirmP = keptMonthsOnScreen() ? visitsConfirmKept() : null;
   _refreshFlush = flushOutbox(); // anything saved offline goes up now, merged with the cloud (the 20-second round waits for it: bgRefresh)
-  if(_keptForSnap && !keptOnScreen()){ _keptForSnap = false; maybeSnapshot(); } // the daily backup asked for what came from the store: read from the cloud now (v126)
+  if(confirmP){
+    try{ const r = await confirmP; if(r.changed) renderAll(); if(r.unread.length) console.warn('visits: ' + r.unread.join(', ') + ' (kept on this phone) not read from the cloud yet — the next refresh reads them'); }
+    catch(e){ console.warn('visits: the past months kept on this phone could not be read from the cloud yet', e); }
+  }
+  if(_keptForSnap && !keptOnScreen()){ _keptForSnap = false; maybeSnapshot(); } // the daily backup waited for those months (v126)
 }
 let _filtersFor = null; // whose sign-in the rep filters were last defaulted for
 // ---- SMART MERGE-ON-SAVE ----
@@ -2905,13 +3079,13 @@ function snapshotReadOk(){ return !snapshotBlockedWhy(); }
 // upload; null — nothing holds it back.
 function snapshotBlockedWhy(){
   if(!_bootLoaded || _bootCrashed || _seedClinics || Object.keys(_mirrorUsed).length) return 'copy';
-  if(keptOnScreen()) return 'copy'; // a past month or a sales file from the phone's store, not read from the cloud this session (v126)
+  if(keptOnScreen()) return 'copy'; // a past month from the phone's store, not read from the cloud this session yet (v126)
   if(['clinics', 'visits', 'tasks', 'products'].some(k => _loadFailed[k])) return 'copy';
   return ['clinics', 'visits', 'tasks'].some(k => outboxHas(k)) ? 'queued' : null;
 }
 async function maybeSnapshot(){
   if(_snapRunning) return;
-  if(!snapshotReadOk()){ keptConfirmSoon(); return; } // held back by what came from the phone's store only: the next refresh reads it from the cloud (v126)
+  if(!snapshotReadOk()){ if(keptMonthsOnScreen()) _keptForSnap = true; return; } // a past month from the phone's store: tried again once it is read from the cloud (loadAllNow, v126)
   const day = todayStr(), key = 'snap_' + day;
   try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
   const fail = snapFailInfo();

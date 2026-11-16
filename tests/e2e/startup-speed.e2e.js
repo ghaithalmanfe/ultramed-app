@@ -20,14 +20,17 @@
 // long tasks. Checks: the right person's own data is shown (her follow-ups,
 // her month figure as UMCore.monthAchievement gives it from the fixture),
 // nothing is written at start, no page errors — and the v126 start-up work
-// (each check fails on v125): a daily open downloads no sales chunk and no
-// past month the phone keeps, nor does the 20-second round (measured on the
-// laptop rep's daily open), chat and memories are read beside the other lists,
-// msBuild works out the month's lines once. Then the phone's store's rules
-// (storeRules, one laptop device, K1–K11: only what the cloud returned, never
-// a revision this phone wrote, a stale month loses nothing, the held deletes,
-// the daily backup, the Restore and the full backup take only cloud reads, a
-// store that fails is a miss, a sign-out keeps it, the queue keeps its room).
+// (each check fails on v125): a daily open downloads no sales chunk the phone
+// keeps, nor does the 20-second round (measured on the laptop rep's daily
+// open); it draws the past months it keeps from the store and reads each from
+// the cloud once, after its own read (the v126 review: a kept month is for the
+// first paint only — the start confirms it before it ends); chat and memories
+// are read beside the other lists, msBuild works out the month's lines once.
+// Then the phone's store's rules (storeRules, one laptop device, K1–K11: only
+// what the cloud returned, never a revision this phone wrote, a stale month is
+// put right before the start ends and loses nothing, the held deletes, the
+// daily backup, the Restore and the full backup take only cloud reads, a store
+// that fails is a miss, a sign-out keeps it, the queue keeps its room).
 //
 // Nothing here depends on the internet: the Firebase SDK is replaced by a
 // stand-in that keeps the app's own Firestore adapter (01-config.js) and its
@@ -101,6 +104,7 @@ let cloud = new Map();
 function resetCloud(){ cloud = new Map(Object.entries(FIX.docs).map(([k, v]) => [k, { value: v, updated: Date.parse(FIX.now) - 3600000 }])); }
 resetCloud();
 const STAFF = JSON.parse(FIX.docs.staff);
+const ARCH_MONTHS = Object.keys(JSON.parse(FIX.docs.visitsIndex).months).length;
 let acct = null; // the open being measured: what the cloud served and took
 function freshAcct(){ return { reads: 0, readBytes: 0, readKeys: {}, writes: 0, writeBytes: 0, writeKeys: {}, queries: 0, http: 0, httpBytes: 0, httpWire: 0, setupAt: null }; }
 let cloudSetup = null; // the cloud's first request of a page pays the set-up
@@ -120,9 +124,10 @@ async function lockKey(k){
 const held = {};
 let txSeq = 0;
 let cloudDown = false; // no signal: every request fails (the store-rules step K11)
+let failGet = null;     // a pattern: the reads of those keys fail (the store-rules steps K6, K7: the kept months cannot be read)
 const down = () => { if(cloudDown){ const e = new Error('unavailable: no signal'); e.code = 'unavailable'; throw e; } };
 const api = {
-  async get(k){ down(); await onCloud(); const d = cloud.get(k); const n = d ? d.value.length + 60 : 60; await netDown(n); countRead(k, d ? d.value.length : 0); return d ? { exists: true, value: d.value, updated: d.updated } : { exists: false }; },
+  async get(k){ down(); if(failGet && failGet.test(k)){ const e = new Error('unavailable: no signal for this read'); e.code = 'unavailable'; throw e; } await onCloud(); const d = cloud.get(k); const n = d ? d.value.length + 60 : 60; await netDown(n); countRead(k, d ? d.value.length : 0); return d ? { exists: true, value: d.value, updated: d.updated } : { exists: false }; },
   async set(k, v){ down(); await onCloud(); await netUp(v.length + 60); cloud.set(k, { value: v, updated: Date.now() }); countWrite(k, v.length); return true; },
   async del(k){ await onCloud(); await netUp(60); cloud.delete(k); countWrite(k, 0); return true; },
   async commit(entries){ down(); await onCloud(); await netUp(entries.reduce((s, [k, v]) => s + v.length + 60, 0)); entries.forEach(([k, v]) => { cloud.set(k, { value: v, updated: Date.now() }); countWrite(k, v.length); }); return true; },
@@ -602,6 +607,8 @@ async function storeRules(){
     const dump = () => page.evaluate(storeDumpInPage);
     const ix = () => JSON.parse(cloud.get('visitsIndex').value).months;
     const reopen = label => openOnce(ctx, prof, sup, 'daily', { expect: exp, label });
+    // the past months a start read during its own read (loadVisits), before anything was drawn — the others stood in from the store
+    const startReads = r => { const lv = (r.page.timeline || []).find(x => x[0] === 'loadVisits'); return (r.page.cloudLog || []).filter(c => c[0] === 'get' && /^visitsArch:/.test(c[1]) && (!lv || c[2] < lv[2])).length; };
     const lsState = () => page.evaluate(() => { const o = {}; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); o[k] = (localStorage.getItem(k) || '').length; } return o; });
     const lsFirst = await lsState();
     // K1 — only what the cloud returned: its exact text, at the key (and for a month the index revision) it was read at
@@ -625,8 +632,8 @@ async function storeRules(){
     const dbg2 = await page.evaluate(() => ({ kept: Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length, quiet: visitsTombsQuiet(), held: Object.keys(_tombsHeld).map(k => k + ':' + _tombsHeld[k].size), pend: Object.keys(_tombsPending).map(k => k + ':' + _tombsPending[k].size), again: Object.keys(_tombsAgain).map(k => k + ':' + _tombsAgain[k].size), outbox: outboxList() }));
     e1 = (await dump()).find(e => e.k === 'visitsArch:' + M1);
     const d2b = await dump(), notNew = moved.filter(m => { const e = d2b.find(x => x.k === 'visitsArch:' + m); return !e || e.rev !== ix()[m].rev || e.text !== cloud.get('visitsArch:' + m).value; });
-    check(`store K2: the next start reads from the cloud the months whose revision moved (${moved.length}), the others from the store, and keeps what the cloud returned at the new revisions`,
-      reads(r2, 'visitsArch:*') === moved.length && dbg2.kept === months.length - moved.length && !notNew.length, { read: reads(r2, 'visitsArch:*'), dbg2, notNew });
+    check(`store K2: the next start reads at once the months whose revision moved (${moved.length}), draws the others from the store and reads them from the cloud before it ends, and keeps what the cloud returned at the new revisions`,
+      startReads(r2) === moved.length && reads(r2, 'visitsArch:*') === months.length && dbg2.kept === 0 && !notNew.length, { atStart: startReads(r2), read: reads(r2, 'visitsArch:*'), dbg2, notNew });
     // K3 — a photo mark settled in a past month (patchVisitPhotos) is not taken into the store either
     // a waiting photo mark in a past month (the fixture's are in the running month): another phone's, put in the cloud's
     // archive with the index revision moved, as a save would, then read in by a refresh
@@ -654,33 +661,43 @@ async function storeRules(){
     X.notes = 'changed on another phone'; cloud.set('visitsArch:' + M3, { value: JSON.stringify(arch), updated: Date.now() });
     const r4 = await reopen('store-K4');
     const seen4 = await page.evaluate(id => (visits.find(x => x.id === id) || {}).notes, X.id);
-    check(`store K4: a past month changed in the cloud while its index revision was owed stands in from the store (stale on screen)`, reads(r4, 'visitsArch:*') === 0 && seen4 !== 'changed on another phone', { read: reads(r4, 'visitsArch:*'), seen4 });
+    check(`store K4: a past month changed in the cloud while its index revision was owed stands in from the store for the first paint only — the start reads it from the cloud before it ends, and the screen shows the other phone's change`,
+      startReads(r4) === 0 && reads(r4, 'visitsArch:*') === months.length && seen4 === 'changed on another phone', { atStart: startReads(r4), read: reads(r4, 'visitsArch:*'), seen4 });
     const fb = await page.evaluate(async k => { let v = null; await readCloudForBackup(async d => { if(d.key === k) v = d.value; }); return v; }, 'visitsArch:' + M3);
     check(`store K8: the full backup reads the cloud's documents — that month is in it as the cloud holds it, not as the store keeps it`, fb === cloud.get('visitsArch:' + M3).value && fb.indexOf('changed on another phone') >= 0);
     const s4 = await page.evaluate(async id => { const v = visits.find(x => x.id === id); v.notes = 'edited on this phone'; const r = await persistTold('visits'); return r.ok; }, Y.id);
     const after4 = JSON.parse(cloud.get('visitsArch:' + M3).value), seen4b = await page.evaluate(id => (visits.find(x => x.id === id) || {}).notes, X.id);
     check(`store K4: saving that month keeps the other phone's change and this phone's edit (three-way merge in the transaction), and the screen takes the other's`,
       s4 && (after4.find(x => x.id === X.id) || {}).notes === 'changed on another phone' && (after4.find(x => x.id === Y.id) || {}).notes === 'edited on this phone' && seen4b === 'changed on another phone', { s4, seen4b });
-    // K6 — the daily backup: not taken while a past month or a sales file on screen came from the store; it asks the
-    // next refresh to read them from the cloud, then it is taken
+    // K6 — the daily backup: never taken while a past month on screen came from the store and was not read from the
+    // cloud yet (here: their reads fail at the start); taken by itself once a refresh has read them. Sales files from the
+    // store are the cloud's own rows (exact under their key): they hold nothing back and are not downloaded again
     const snapKey = 'snap_' + FIX.today;
     cloud.delete(snapKey); await page.evaluate(() => { try{ localStorage.removeItem('um_snapDay'); localStorage.removeItem('um_snapFail'); }catch(e){} });
+    failGet = /^visitsArch:/;
     const r6 = await reopen('store-K6');
-    const s6 = await page.evaluate(async () => { await maybeSnapshot(); return { why: snapshotBlockedWhy(), kept: keptOnScreen(), cv: _keptConfirmVisits, ce: _keptConfirmErp }; });
+    const s6 = await page.evaluate(async () => { await maybeSnapshot(); return { why: snapshotBlockedWhy(), kept: keptOnScreen(), asked: _keptForSnap }; });
     const kept6 = await page.evaluate(() => Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length);
-    check(`store K6: today's backup is not taken from a start whose past months and sales files came from the store; it asks for them from the cloud`, kept6 > 0 && s6.why === 'copy' && s6.kept && s6.cv && s6.ce && !cloud.has(snapKey), Object.assign({ kept6, snap: cloud.has(snapKey) }, s6));
+    check(`store K6: today's backup is not taken while past months on screen came from the store and could not be read from the cloud yet`, kept6 > 0 && s6.why === 'copy' && s6.kept && s6.asked && !cloud.has(snapKey), Object.assign({ kept6, snap: cloud.has(snapKey) }, s6));
+    failGet = null;
     acct = freshAcct();
     const s6b = await page.evaluate(async () => { await loadAll(); if(_refreshFlush){ try{ await _refreshFlush; }catch(e){} } return { why: snapshotBlockedWhy(), kept: keptOnScreen() }; });
     for(let i = 0; i < 40 && !cloud.has(snapKey); i++) await sleep(250); // the backup is tried again by itself once they are read
-    check(`store K6: the next refresh reads them from the cloud (every kept month, every chunk), then today's backup is taken by itself`, reads(acct, 'visitsArch:*') === kept6 && reads(acct, 'erpRows:*') === 26 && !s6b.kept && s6b.why === null && cloud.has(snapKey), { s6b, v: reads(acct, 'visitsArch:*'), e: reads(acct, 'erpRows:*') });
-    // K7 — the whole-day Restore stops, nothing changed, while they came from the store, and asks for them
+    // (every month: the kept ones, and any the start could not read at all — its revision had moved)
+    check(`store K6: the next refresh reads them from the cloud (every past month, no sales chunk), then today's backup is taken by itself`, reads(acct, 'visitsArch:*') === months.length && reads(acct, 'erpRows:*') === 0 && !s6b.kept && s6b.why === null && cloud.has(snapKey), { s6b, kept6, v: reads(acct, 'visitsArch:*'), e: reads(acct, 'erpRows:*') });
+    // K7 — the whole-day Restore stops, nothing changed, while a past month on screen came from the store and was not
+    // read from the cloud yet, and asks for it; once read, nothing holds it back
+    failGet = /^visitsArch:/;
     const r7a = await reopen('store-K7');
     const day = (() => { const d = new Date(FIX.today + 'T00:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
     acct = freshAcct();
     const s7 = await page.evaluate(async d => { const said = [], orig = window.showToast; window.showToast = function(m){ said.push(String(m)); return orig.apply(this, arguments); };
-      try{ await restoreSnapshotNow(d); } finally { window.showToast = orig; } return { said, cv: _keptConfirmVisits, ce: _keptConfirmErp }; }, day);
-    check(`store K7: a whole-day Restore stops with nothing changed while past months or sales files on screen came from the store, and asks the next refresh for them`,
-      reads(r7a, 'visitsArch:*') === 0 && acct.writes === 0 && s7.said.some(t => /first reads the past months and the sales files again from the cloud/.test(t)) && s7.cv && s7.ce, { said: s7.said, writes: acct.writeKeys });
+      try{ await restoreSnapshotNow(d); } finally { window.showToast = orig; } return { said, kept: keptOnScreen() }; }, day);
+    const w7 = acct.writes;
+    failGet = null;
+    const s7b = await page.evaluate(async () => { try{ await visitsConfirmKept(); }catch(e){} return { kept: keptOnScreen() }; });
+    check(`store K7: a whole-day Restore stops with nothing changed while past months on screen came from the store and could not be read from the cloud yet, and asks for them; once read, nothing holds it back`,
+      startReads(r7a) === 0 && s7.kept && w7 === 0 && s7.said.some(t => /first reads the past months again from the cloud/.test(t)) && !s7b.kept, { said: s7.said, writes: w7, s7b });
     // K5 — while a delete of a visit is held, every past month comes from the cloud
     const victim = 'harness-deleted-visit'; // deleted on this phone 10 days ago; the log lost it (an older app's 7-day cut) and no list holds it
     await page.evaluate(id => { const raw = JSON.parse(localStorage.getItem('um_tombs') || '{}'); raw.visits = raw.visits || {}; raw.visits[id] = Date.now() - 10 * 86400000; localStorage.setItem('um_tombs', JSON.stringify(raw)); localStorage.setItem('um_tombsMig123', '1'); }, victim);
@@ -731,7 +748,7 @@ async function storeRules(){
     check(`store K11: no signal, a heavy year on the phone: a visit saved now is queued and kept in the phone's storage, not memory only`, q.queued && q.onPhone && !q.memOnly && !q.stale, q);
     check(`store K11: the store takes no room in the phone's web storage (no key beyond what the first open wrote)`, !grew.length, grew);
     check(`store: no page errors`, !errors.length && !first.errors.length, errors.slice(0, 5));
-  } finally { await ctx.close().catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); cloudDown = false; }
+  } finally { await ctx.close().catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); cloudDown = false; failGet = null; }
 }
 function ownPainted(pg){
   const m = pg.marks; if(m.ownDom == null) return null;
@@ -802,7 +819,10 @@ function rowOf(r){
     const rk = r.acct.readKeys, n = g => (rk[g] || [0])[0];
     if(r.kind === 'daily'){
       check(`${tag}: the daily open downloads no sales file it keeps (erpRows:* read ${n('erpRows:*')} times, v125: 26)`, n('erpRows:*') === 0, rk['erpRows:*']);
-      check(`${tag}: the daily open downloads no past month it keeps (visitsArch:* read ${n('visitsArch:*')} times, v125: 12)`, n('visitsArch:*') === 0, rk['visitsArch:*']);
+      // v126 review: a kept month stands in for the first paint only — the start reads it from the cloud before it ends
+      const lv = (r.page.timeline || []).find(x => x[0] === 'loadVisits'), arch = (r.page.cloudLog || []).filter(c => c[0] === 'get' && /^visitsArch:/.test(c[1]));
+      check(`${tag}: the daily open draws the past months it keeps from the store and reads each from the cloud once, after the start's read (visitsArch:* read ${n('visitsArch:*')} times, none during it)`,
+        !!lv && n('visitsArch:*') === ARCH_MONTHS && arch.length === n('visitsArch:*') && arch.every(c => c[2] >= lv[2]), { reads: rk['visitsArch:*'], loadVisits: lv, firstAsked: arch.length ? Math.min(...arch.map(c => c[2])) : null });
     }
     const tl = r.page.timeline, first = name => tl.find(x => x[0] === name);
     const team = first('loadTeam'), lists = [first('loadVisits'), first('loadErpSales')].filter(Boolean);

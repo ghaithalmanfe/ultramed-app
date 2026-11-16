@@ -31,12 +31,16 @@ function openStaffForm(idx){
 // the supervisor's tap on "Finish the rename" (round 3). → [[outcome, key]…]
 function renameRepInLists(prevName, name){
   return holdRefresh(async () => {
+    // every visit renamed must be the cloud's: a past month on screen from the phone's store is read first (v126
+    // review); not read, the visits are left as they are and "Finish the rename" offers them later (the note stays)
+    let visitsOk = true;
+    if(keptMonthsOnScreen()){ try{ await visitsConfirmKept(); }catch(e){} visitsOk = !keptMonthsOnScreen(); }
     // Keep existing records pointing at this person — the owner, and the owner
     // before a handover: the earlier months of a handed-over clinic count for
     // prevRep — left on the old name, they counted for nobody on the team and
     // closed months moved (v123)
     clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; if(c.prevRep===prevName) c.prevRep = name; });
-    visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
+    if(visitsOk) visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
     tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
     Object.keys(dayPlans).forEach(d=>{
       if(dayPlans[d] && dayPlans[d][prevName]){
@@ -47,7 +51,7 @@ function renameRepInLists(prevName, name){
         tomb('dayPlans', d+'|'+prevName);
       }
     });
-    visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
+    if(visitsOk) visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
     events.forEach(e=>{ if(e.rep===prevName) e.rep = name; });
     // the month target and its archived months
     if(targets[prevName] && !targets[name]){ targets[name] = targets[prevName]; delete targets[prevName]; }
@@ -60,7 +64,7 @@ function renameRepInLists(prevName, name){
     if(reportRepFilter===prevName) reportRepFilter = name;
     if(calRepFilter===prevName) calRepFilter = name;
     const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
-    const got = await Promise.all([persistTold('clinics'), persistTold('visits'), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
+    const got = await Promise.all([persistTold('clinics'), visitsOk ? persistTold('visits') : Promise.resolve({ ok: false }), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
     return got.map((r, i) => [r, keys[i]]);
   });
 }

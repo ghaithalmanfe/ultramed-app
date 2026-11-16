@@ -1968,11 +1968,11 @@ async function restoreSnapshotNow(dateStr){
   // empty — this month's visits were erased everywhere while the confirmation
   // promised a copy.
   const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k));
-  // the past months or sales files on screen that came from this phone's store (v126) are read from the cloud
-  // first: the copy the restore keeps (today's backup) counts the visits of every month
+  // a past month on screen that came from this phone's store (v126) is read from the cloud first: the copy the restore
+  // keeps (today's backup) counts the visits of every month — asked for now, so a tap a moment later goes ahead
   if(!notRead.length && !_seedClinics && !_bootCrashed && typeof keptOnScreen === 'function' && keptOnScreen()){
-    keptConfirmSoon(true);
-    showToast('Restore stopped — this phone first reads the past months and the sales files again from the cloud (it is showing its own copy of them). Nothing was changed. Try again in a minute.', 8000);
+    visitsConfirmKept().then(r => { if(r && r.changed) renderAll(); }).catch(() => {});
+    showToast('Restore stopped — this phone first reads the past months again from the cloud (it is showing its own copy of them). Nothing was changed. Try again in a minute.', 8000);
     return;
   }
   if(notRead.length || _seedClinics || _bootCrashed){

@@ -731,7 +731,7 @@ function restoredFromCopy(h, kept){
 // moves the visits this phone holds — with a file or a month missing, neither
 // can be complete, so nothing is done.
 function salesCheckComplete(){ return !_loadFailed.erpSales && !_mirrorUsed.erpSales && !_loadFailed.erpMap && !_mirrorUsed.erpMap && !erpPeriods().some(p => p && p.rowsMissing); }
-function visitsComplete(){ return !_loadFailed.visits && !_mirrorUsed.visits && !(_visitsBroken && _visitsBroken.length); }
+function visitsComplete(){ return !_loadFailed.visits && !_mirrorUsed.visits && !(_visitsBroken && _visitsBroken.length) && !keptMonthsOnScreen(); } // (a past month from the phone's store is not read yet, v126 review)
 const _namingBusy = new Set();   // one tap at a time per record: a double tap never runs twice
 function namelessNotice(id, text){
   askInCard(id, `<div style="font-size:13px; line-height:1.6;">⚠️ <span>${text}</span></div>

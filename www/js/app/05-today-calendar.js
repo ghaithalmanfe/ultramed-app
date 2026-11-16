@@ -839,17 +839,20 @@ function msTeamTotal(v, P, sig){
   return msMemo(sig, 'tt', () => v.kind === 'team' && v.reps.length === REPS.length && v.reps.every((r, i) => r === REPS[i])
     ? teamTargetTotal(P.map(p => p.goal ? { goal: p.goal, ach: p.bm.amount } : null)) : teamTargetNow());
 }
-// The model to draw now: the fresh one, else the last one of the same view
-// while its successor is computed (a moment), else none (the cards wait).
+// The model to draw now: the one of the data as it is now, else none — the
+// cards it fills say "Calculating the month…" while it is worked out (a
+// moment). The last model of the view is never drawn beside the figures each
+// person's rows show at once (v126 review: one painted frame showed the new
+// target and achieved beside the old target's ring and remaining).
 function msEnsure(v, sig){
   sig = sig || msSig(v);
   const key = msKey(v);
-  if(_msModel && _msModel.sig === sig) return _msModel;
+  if(_msModel && _msModel.sig === sig && _msModel.key === key) return _msModel;
   if(!_msJob || _msJob.sig !== sig){
     _msJob = { sig, key };
     msSchedule();
   }
-  return _msModel && _msModel.key === key ? _msModel : null;
+  return null;
 }
 // The figures are worked out just AFTER the screen is painted (v126): the lists, the plan and each person's month
 // figure that renderToday draws show at once, the figures a moment later (the cards say "Calculating the month…").
@@ -862,7 +865,7 @@ function msSchedule(){
   const go = () => { if(_msTimer === tok){ clearTimeout(tok); _msTimer = setTimeout(msRun, 0); } };
   requestAnimationFrame(go);
 }
-function msModelFor(v){ return _msModel && v && _msModel.key === msKey(v) ? _msModel : null; }
+function msModelFor(v, sig){ return _msModel && v && _msModel.key === msKey(v) && _msModel.sig === (sig || msSig(v)) ? _msModel : null; } // the data as it is now only (msEnsure)
 function msRun(){
   _msTimer = null;
   const job = _msJob; _msJob = null;
@@ -1090,8 +1093,8 @@ function renderTargetCard(v, m, P, sig){
   if(!v && activeView === 'today' && currentUser){ renderToday(); return; }
   v = v || msView();
   if(!v){ el.innerHTML = ''; return; }
-  m = m || msModelFor(v);
   sig = sig || msSig(v);                                   // called on its own (after a change): the data as it is now
+  m = m || msModelFor(v, sig);
   P = P || msPeople(v, sig);
   if(v.kind === 'person'){
     const p = P[0], t = p.t, vN = t.visits > 0 ? msFieldVisits(p.rep) : 0;
@@ -1711,7 +1714,7 @@ function msGoClinics(r){ if(r && currentUser.role === 'supervisor') clinicRepFil
 // ---- "How it is calculated": the source, the formula and this view's own numbers ----
 function msHow(id){
   const v = msView(); if(!v) return;
-  const m = msModelFor(v), D = m && msOf(m.D), sig = msSig(v);
+  const sig = msSig(v), m = msModelFor(v, sig), D = m && msOf(m.D);
   const kv = (a, b) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`;
   const sec = (t, src, formula, view) => `<h4>${msT(t)}</h4><div><b>${msT('Source')}:</b> ${msT(src)}</div>${formula ? `<div><b>${msT('Formula')}:</b> ${msT(formula)}</div>` : ''}${view ? `<div style="margin-top:4px;">${view}</div>` : ''}`;
   const f2 = n => UMCore.groupThousands((Number(n) || 0).toFixed(2));   // the sums are written as the amounts are shown

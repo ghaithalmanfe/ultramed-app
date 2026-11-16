@@ -449,7 +449,14 @@ function photoDbDo(mode, fn){
 async function photoKeep(rec){
   _photoKept.set(rec.id, rec);
   const row = { id: rec.id, data: rec.data, visitId: rec.visitId || null, ts: rec.ts || Date.now() };
-  try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }catch(e){}
+  try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }
+  catch(e){
+    // no room left: the phone's copy of documents the cloud holds (um_keep, 04-sync.js) gives way to a photo that
+    // exists only here — before it would take the offline queue's room in web storage (v126 review)
+    if(e && /quota/i.test(String(e.name || '') + ' ' + String(e.message || '')) && await keepClear()){
+      try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }catch(e2){}
+    }
+  }
   if(deviceSet(PHOTO_LS + rec.id, JSON.stringify(row), true)) return (rec.on = 'ls');
   return (rec.on = 'mem');
 }

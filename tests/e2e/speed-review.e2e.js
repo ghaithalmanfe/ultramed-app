@@ -1,8 +1,11 @@
 // Adversarial review of the start-up speed change (v126, branch speed-v1:
 // the phone keeps sales chunks and past months in IndexedDB "um_keep", the
-// home figures are worked out after the paint). Every check fails on f0e04e5;
-// all but S4 pass on the live v125 (e3ce672) — S4 fails there too (it is older
-// than the change). The scenarios that held are in the review's report.
+// home figures are worked out after the paint). Every check fails on f0e04e5
+// but S3c with the delete log (that one held); S1–S3b and S5–S7 pass on the
+// live v125 (e3ce672), S4 fails there too (it is older than the change); S3d,
+// S3e and S10 need the store (they measure what it does). The checks from
+// S3c on were added with the fixes (the review's "try to break it" and its
+// "Unproven" list). The scenarios that held are in the review's report.
 //  S1  another phone's save landed in a past month but not its index write (the
 //      app closed between the two): after a restart this phone still shows the
 //      month as its store kept it — a visit logged into that month is hidden
@@ -17,6 +20,28 @@
 //      date; S3b (months in the order the app writes them) — gone from every
 //      document: the store's older copy of the earlier month counts as "the
 //      cloud holds it there", so the tidy removes it from the later one
+//  S3c a visit deleted on another phone in a past month this phone keeps (the
+//      delete log has it / lost it; the index write lost): it stays deleted
+//      after this phone restarts and saves a visit of that month
+//  S3d the same move as S3, and this phone edits the moved visit and another
+//      of October right after its screen is drawn, while the kept months are
+//      still being read from the cloud: the save waits for that read, keeps
+//      both edits and the other phone's date (the moved visit in one document)
+//  S3e the kept months cannot be read from the cloud after the restart: a
+//      save of October does not land (kept on this phone, queued) and writes
+//      nothing; once they can be read, the queued save lands — the moved visit
+//      stays where the other phone put it
+//  S8  (review: "flows that rewrite every month") a rename on a phone whose
+//      kept October lacks a visit the cloud holds (its index write lost):
+//      when the rename says every list saved, no visit in the cloud keeps the
+//      old name — also while the kept months could not be read at the start
+//  S9  (review: "photo marks on a misplaced visit") a waiting photo mark on a
+//      visit another phone moved from September to October: settled in the
+//      document that holds the visit — also while the kept months could not
+//      be read at the start
+//  S10 (review: "quota") the phone has no room left for a photo waiting to
+//      upload while the store holds documents: the store gives way, the photo
+//      is kept in IndexedDB — not in web storage, the offline queue's room
 //  S4  the home screen's frames after a change (a refresh brings new targets):
 //      every painted frame shows the figures of ONE data state — the target
 //      card's ring and remaining agree with its target and achieved
@@ -44,13 +69,14 @@ const server = http.createServer((req, res) => { const u = req.url.split('?')[0]
 let cloud = new Map();
 const resetCloud = () => { cloud = new Map(Object.entries(FIX.docs)); };
 // slow[k] = ms: every read of k answers ms later (slow['visitsArch:*']: every past month); log: every read asked for / answered
-const mode = { slow: {}, log: [] };
+const mode = { slow: {}, log: [], fail: null }; // fail: a Set of keys / 'prefix:*' whose reads fail (no signal for them)
 let held = false; const waiters = [];
 const acquire = async () => { if(!held){ held = true; return true; } await new Promise(r => waiters.push(r)); return true; };
 const release = async () => { const next = waiters.shift(); if(next) next(); else held = false; return true; };
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const api = {
   get: async (who, k) => { mode.log.push({ who, k, ev: 'ask', t: Date.now() }); const ms = mode.slow[k] || mode.slow[k.split(':')[0] + ':*']; if(ms) await wait(ms);
+    if(mode.fail && (mode.fail.has(k) || mode.fail.has(k.split(':')[0] + ':*'))) throw new Error('unavailable: no signal (harness)');
     const v = cloud.has(k) ? cloud.get(k) : null; mode.log.push({ who, k, ev: 'answer', t: Date.now() }); return v; },
   set: async (who, k, v) => { cloud.set(k, v); return true; },
   setMany: async (who, e) => { e.forEach(([k, v]) => cloud.set(k, v)); return true; },
@@ -113,6 +139,14 @@ const CHUNKS = Object.keys(FIX.docs).filter(k => k.startsWith('erpRows:')).lengt
         return open0.apply(this, arguments);
       };
       window.__keepReads = 0;
+      // sessionStorage __quota = '1': the phone is full — a photo's put fails (QuotaExceededError) until the store "um_keep" is emptied
+      const put0 = IDBObjectStore.prototype.put, clear0 = IDBObjectStore.prototype.clear;
+      IDBObjectStore.prototype.clear = function(){ try{ if(this.transaction.db.name === 'um_keep') sessionStorage.setItem('__quotaFreed', '1'); }catch(e){} return clear0.apply(this, arguments); };
+      IDBObjectStore.prototype.put = function(){
+        let full = false; try{ full = this.transaction.db.name === 'um_photos' && sessionStorage.getItem('__quota') === '1' && sessionStorage.getItem('__quotaFreed') !== '1'; }catch(e){}
+        if(full) throw new DOMException('harness: the phone is full', 'QuotaExceededError');
+        return put0.apply(this, arguments);
+      };
       const ga = IDBObjectStore.prototype.getAll;
       IDBObjectStore.prototype.getAll = function(){ try{ if(this.transaction.db.name === 'um_keep') window.__keepReads++; }catch(e){} return ga.apply(this, arguments); };
     }, CLOCK);
@@ -188,6 +222,187 @@ const CHUNKS = Object.keys(FIX.docs).filter(k => k.startsWith('erpRows:')).lengt
     const wrote = Object.keys(parse(cloud.get('visitsIndex')).months).filter(m => parse(cloud.get('visitsIndex')).months[m].rev !== parse(FIX.docs.visitsIndex).months[m].rev);
     check(`S3${ordered ? 'b' : 'a'}: a visit another phone moved from September to 1 October stays in the cloud with its corrected date after this phone restarts and saves a visit of October${ordered ? ' (months in the app\'s own order)' : ''}`,
       saved && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-01', { saved, where, shownBeforeSave: before, yEdited: /checked by the supervisor/.test(yNotes), monthsWritten: wrote });
+    await A.ctx.close();
+  }
+
+  // =====================================================================
+  // S3c: a visit deleted on another phone in a past month this phone keeps —
+  // its save wrote the delete log (or lost it) and September without the
+  // visit, then stopped before the index. This phone restarts and saves an
+  // edit of another September visit: the deleted one never comes back.
+  // =====================================================================
+  for(const logged of [true, false]) if(want('S3c')){
+    resetCloud();
+    const A = await mkPhone('S3c-sup' + (logged ? '' : '-nolog'));
+    await A.boot(SUP, 'supervisor');
+    await A.waitStore();
+    const M = '2026-09', sep = parse(cloud.get('visitsArch:' + M));
+    const D = sep.find(v => v && !v.callOnly && v.rep === 'Mariam' && !(v.photos || []).length) || sep.find(v => v && !v.callOnly);
+    const Y = sep.find(v => v && !v.callOnly && v.id !== D.id);
+    if(logged){ const t = parse(cloud.get('tombs')); t.visits = t.visits || {}; t.visits[D.id] = CLOCK - 3600000; cloud.set('tombs', JSON.stringify(t)); }
+    cloud.set('visitsArch:' + M, JSON.stringify(sep.filter(v => v.id !== D.id)));
+    await A.boot(SUP, 'supervisor');
+    const shown = await A.ev(id => (visits || []).some(v => v && v.id === id), D.id);
+    const saved = await A.ev(async id => { const v = visits.find(x => x && x.id === id); v.notes = (v.notes || '') + ' [checked by the supervisor]'; const r = await persistTold('visits'); return r && r.ok; }, Y.id);
+    const where = findVisit(D.id), yNotes = ((parse(cloud.get('visitsArch:' + M)) || []).find(v => v.id === Y.id) || {}).notes || '';
+    const stillLogged = !logged || !!((parse(cloud.get('tombs')) || {}).visits || {})[D.id];
+    check(`S3c: a visit deleted on another phone in a past month this phone keeps (the delete log ${logged ? 'has it' : 'lost it'}, the index write lost) stays deleted after this phone restarts and saves another visit of that month`,
+      saved && !shown && where.length === 0 && /checked by the supervisor/.test(yNotes) && stillLogged, { saved, shown, where, yEdited: /checked by the supervisor/.test(yNotes), stillLogged });
+    await A.ctx.close();
+  }
+
+  // the move of S3, on the cloud as the app writes it (visits by time), the index write lost → { X, Y, X2 }
+  const s3setup = () => {
+    resetCloud();
+    const ord = v => (v && v.ts) || (v && v.date ? new Date(v.date + 'T00:00:00').getTime() : 0);
+    [...cloud.keys()].filter(k => k.startsWith('visitsArch:')).forEach(k => cloud.set(k, JSON.stringify(parse(cloud.get(k)).sort((a, b) => ord(a) - ord(b)))));
+    return () => {
+      const sep = parse(cloud.get('visitsArch:2026-09')), oct = parse(cloud.get('visitsArch:2026-10'));
+      const X = sep.find(v => v && !v.callOnly && v.rep === 'Mariam' && !(v.photos || []).length) || sep.find(v => v && !v.callOnly);
+      const Y = oct.find(v => v && !v.callOnly && v.id !== X.id);
+      const X2 = Object.assign({}, X, { date: '2026-10-01', editedBy: 'Mariam', editedAt: Date.parse('2026-11-24T08:00:00') });
+      cloud.set('visitsArch:2026-09', JSON.stringify(sep.filter(v => v.id !== X.id)));
+      cloud.set('visitsArch:2026-10', JSON.stringify([X2].concat(oct).sort((a, b) => ord(a) - ord(b))));
+      return { X, Y, X2 };
+    };
+  };
+  const notesIn = (k, id) => (((parse(cloud.get(k)) || []).find(v => v && v.id === id)) || {}).notes || '';
+
+  // =====================================================================
+  // S3d: the move of S3; this phone edits the moved visit (its kept copy, at
+  // the old date) and a visit of October right after its screen is drawn,
+  // while the kept months are still on their way from the cloud. The save
+  // waits for them: both edits land, the moved visit keeps the other phone's
+  // date and is in one document only.
+  // =====================================================================
+  if(want('S3d')){
+    const move = s3setup();
+    const A = await mkPhone('S3d-sup');
+    await A.boot(SUP, 'supervisor');
+    await A.waitStore();
+    const { X, Y } = move();
+    mode.slow = { 'visitsArch:*': 1500 };
+    await A.goto();
+    await A.ev(({ who, role }) => { window.__bootP = selectUser(who, role); }, { who: SUP, role: 'supervisor' });
+    await A.page.waitForFunction(() => typeof _bootLoaded !== 'undefined' && _bootLoaded, null, { timeout: 30000, polling: 20 });
+    const early = await A.ev(ids => ({ kept: Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length, xDate: (visits.find(v => v && v.id === ids.x) || {}).date }), { x: X.id });
+    const saved = await A.ev(async ids => {
+      const x = visits.find(v => v && v.id === ids.x), y = visits.find(v => v && v.id === ids.y);
+      x.notes = (x.notes || '') + ' [x edited here]'; y.notes = (y.notes || '') + ' [y edited here]';
+      const r = await persistTold('visits'); return r && r.ok;
+    }, { x: X.id, y: Y.id });
+    mode.slow = {};
+    await A.ev(() => window.__bootP);
+    const where = findVisit(X.id), screen = await A.ev(id => { const v = visits.find(x => x && x.id === id); return v ? { date: v.date, notes: v.notes } : null; }, X.id);
+    check(`S3d: edits made while the kept months are still being read from the cloud wait for that read: both land, the moved visit keeps the other phone's date, in one document`,
+      early.kept > 0 && saved && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-01' && /x edited here/.test(notesIn('visitsArch:2026-10', X.id)) && /y edited here/.test(notesIn('visitsArch:2026-10', Y.id))
+        && !!screen && screen.date === '2026-10-01' && /x edited here/.test(screen.notes), { early, saved, where, screen });
+    await A.ctx.close();
+  }
+
+  // =====================================================================
+  // S3e: the move of S3, and the kept months cannot be read from the cloud
+  // after the restart: a save of October does not land and writes nothing —
+  // kept on this phone, queued; once the months can be read, the queued save
+  // lands and the moved visit stays where the other phone put it.
+  // =====================================================================
+  if(want('S3e')){
+    const move = s3setup();
+    const A = await mkPhone('S3e-sup');
+    await A.boot(SUP, 'supervisor');
+    await A.waitStore();
+    const { X, Y } = move();
+    mode.fail = new Set(['visitsArch:*']);
+    await A.boot(SUP, 'supervisor');
+    const before = { sep: cloud.get('visitsArch:2026-09'), oct: cloud.get('visitsArch:2026-10'), idx: cloud.get('visitsIndex') };
+    const r1 = await A.ev(async id => { const v = visits.find(x => x && x.id === id);
+      if(!v) return { missing: true, broken: _visitsBroken };
+      v.notes = (v.notes || '') + ' [y edited here]'; const r = await persistTold('visits');
+      return { ok: !!(r && r.ok), queued: outboxList().includes('visits'), kept: Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length }; }, Y.id);
+    const untouched = cloud.get('visitsArch:2026-09') === before.sep && cloud.get('visitsArch:2026-10') === before.oct && cloud.get('visitsIndex') === before.idx;
+    mode.fail = null;
+    await A.tick();
+    const r2 = await A.ev(() => ({ queued: outboxList().includes('visits'), kept: Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length }));
+    const where = findVisit(X.id);
+    check(`S3e: while the kept months cannot be read from the cloud a save does not land and writes nothing (kept on this phone); once they can, it lands and the moved visit stays where the other phone put it`,
+      !r1.ok && r1.queued && r1.kept > 0 && untouched && !r2.queued && r2.kept === 0 && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-01' && /y edited here/.test(notesIn('visitsArch:2026-10', Y.id)),
+      { r1, untouched, r2, where });
+    await A.ctx.close();
+  }
+
+  // =====================================================================
+  // S8: a rename (the supervisor's "Finish the rename" runs the same
+  // renameRepInLists) on a phone whose kept October lacks a visit of Mariam's
+  // the cloud holds. Twice: the kept months read at the start, and the kept
+  // months unreadable at the start (read again when the rename runs).
+  // =====================================================================
+  for(const unread of [false, true]) if(want('S8')){
+    resetCloud();
+    const A = await mkPhone('S8-sup' + (unread ? '-unread' : ''));
+    await A.boot(SUP, 'supervisor');
+    await A.waitStore();
+    const N = '2026-10', oct = parse(cloud.get('visitsArch:' + N));
+    const tpl = oct.find(v => v && v.rep === 'Mariam' && !v.callOnly) || oct[0];
+    const Z = Object.assign({}, tpl, { id: 'rv-late-mariam', rep: 'Mariam', date: '2026-10-28', ts: Date.parse('2026-10-28T10:00:00'), notes: 'uploaded late', photos: [] });
+    cloud.set('visitsArch:' + N, JSON.stringify(oct.concat([Z])));
+    if(unread) mode.fail = new Set(['visitsArch:*']);
+    await A.boot(SUP, 'supervisor');
+    mode.fail = null;
+    const pairs = await A.ev(async () => (await renameRepInLists('Mariam', 'Mariam K')).map(([r, k]) => [k, !!(r && r.ok)]));
+    const allSaved = pairs.every(([, ok]) => ok);
+    const oldName = visitDocs().reduce((n, k) => n + (parse(cloud.get(k)) || []).filter(v => v && (v.rep === 'Mariam' || v.withRep === 'Mariam')).length, 0);
+    const z = ((parse(cloud.get('visitsArch:' + N)) || []).find(v => v.id === Z.id) || {}).rep;
+    check(`S8: a rename on a phone whose kept October lacks a visit the cloud holds renames it too: no visit in the cloud keeps the old name once every list says saved${unread ? ' (the kept months unreadable at the start)' : ''}`,
+      allSaved && oldName === 0 && z === 'Mariam K', { pairs, oldName, z });
+    await A.ctx.close();
+  }
+
+  // =====================================================================
+  // S9: a waiting photo mark (another phone's photo, now uploaded) on the
+  // visit another phone moved from September to 1 October, the index write
+  // lost; this phone restarts and settles the mark. Twice, as S8.
+  // =====================================================================
+  for(const unread of [false, true]) if(want('S9')){
+    const PH = 'rv-photo-1';
+    const ord = v => (v && v.ts) || (v && v.date ? new Date(v.date + 'T00:00:00').getTime() : 0);
+    resetCloud();
+    [...cloud.keys()].filter(k => k.startsWith('visitsArch:')).forEach(k => cloud.set(k, JSON.stringify(parse(cloud.get(k)).sort((a, b) => ord(a) - ord(b)))));
+    const sep0 = parse(cloud.get('visitsArch:2026-09')), X = sep0.find(v => v && !v.callOnly && !(v.photos || []).length) || sep0[0];
+    X.photos = [{ id: PH, thumb: 'data:image/jpeg;base64,AAAA', pending: true, dev: 'dev-sample-other-phone', at: CLOCK - 5 * 86400000 }];
+    cloud.set('visitsArch:2026-09', JSON.stringify(sep0));
+    const A = await mkPhone('S9-sup' + (unread ? '-unread' : ''));
+    await A.boot(SUP, 'supervisor');
+    await A.waitStore();
+    const sep = parse(cloud.get('visitsArch:2026-09')), oct = parse(cloud.get('visitsArch:2026-10'));
+    const X2 = Object.assign({}, sep.find(v => v.id === X.id), { date: '2026-10-01' });
+    cloud.set('visitsArch:2026-09', JSON.stringify(sep.filter(v => v.id !== X.id)));
+    cloud.set('visitsArch:2026-10', JSON.stringify([X2].concat(oct).sort((a, b) => ord(a) - ord(b))));
+    if(unread) mode.fail = new Set(['visitsArch:*']);
+    await A.boot(SUP, 'supervisor');
+    mode.fail = null;
+    const res = await A.ev(async a => (await patchVisitPhotos([{ visitId: a.v, photoId: a.p, lost: false }]))[a.p], { v: X.id, p: PH });
+    const inCloud = findVisit(X.id), mark = (((parse(cloud.get('visitsArch:2026-10')) || []).find(v => v.id === X.id) || {}).photos || []).find(p => p && p.id === PH);
+    check(`S9: a waiting photo mark on a visit another phone moved between two past months is settled in the document that holds it${unread ? ' (the kept months unreadable at the start)' : ''}`,
+      res === 'done' && inCloud.length === 1 && inCloud[0] === 'visitsArch:2026-10@2026-10-01' && !!mark && !mark.pending, { res, inCloud, mark });
+    await A.ctx.close();
+  }
+
+  // =====================================================================
+  // S10: the phone runs out of room for a photo waiting to upload while the
+  // store holds documents the cloud has: the store gives way.
+  // =====================================================================
+  if(want('S10')){
+    resetCloud();
+    const A = await mkPhone('S10-rep');
+    await A.boot('Mariam', 'rep');
+    const n0 = await A.waitStore();
+    await A.ev(() => { sessionStorage.setItem('__quota', '1'); sessionStorage.removeItem('__quotaFreed'); });
+    const on = await A.ev(async () => photoKeep({ id: 'rv-full-photo', data: 'data:image/jpeg;base64,' + 'A'.repeat(4000), visitId: 'rv-visit', ts: Date.now() }));
+    const ls = await A.ev(() => localStorage.getItem('um_photo:rv-full-photo') != null);
+    const left = ((await A.dump()) || []).length;
+    await A.ev(() => sessionStorage.removeItem('__quota'));
+    check(`S10: with no room left for a photo waiting to upload, the store of the cloud's documents gives way and the photo is kept in IndexedDB, not in web storage (the offline queue's room)`,
+      n0 > 0 && on === 'idb' && !ls && left === 0, { storeBefore: n0, on, inWebStorage: ls, storeAfter: left });
     await A.ctx.close();
   }
 
