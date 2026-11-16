@@ -132,7 +132,10 @@ function reseed(o = {}){
   const boot = async (who, role, local) => {
     actor = role;
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(120);
-    await page.evaluate(l => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){} }, local || null);
+    // nothing on the device: web storage and the phone's store of what the cloud returned (v126; reseed gives
+    // September other visits under the same index revision, which the app never does)
+    await page.evaluate(l => new Promise(res => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){}
+      try{ const d = indexedDB.deleteDatabase('um_keep'); d.onsuccess = d.onerror = () => res(); setTimeout(res, 3000); }catch(e){ res(); } }), local || null);
     await page.goto(`http://localhost:${PORT}/index.html`); await sleep(200);
     await page.evaluate(async ({ who, role }) => { await selectUser(who, role); window.__toasts = []; const real = showToast; window.showToast = m => { window.__toasts.push(String(m)); real(m); }; }, { who, role });
     await sleep(200);

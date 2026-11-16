@@ -170,7 +170,10 @@ reseed();
   // phase far inside the app's 20 s background refresh, which reloads erpMap and could hide a missing rollback.
   const boot = async (who=G, role='supervisor', local) => {
     await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(150);
-    await page.evaluate(l => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){} }, local || null);
+    // nothing on the device: web storage and the phone's store of what the cloud returned (v126; a phase reseeds the
+    // cloud with other rows under the same keys, which the app never does)
+    await page.evaluate(l => new Promise(res => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){}
+      try{ const d = indexedDB.deleteDatabase('um_keep'); d.onsuccess = d.onerror = () => res(); setTimeout(res, 3000); }catch(e){ res(); } }), local || null);
     await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
     await page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
     await page.waitForTimeout(250);

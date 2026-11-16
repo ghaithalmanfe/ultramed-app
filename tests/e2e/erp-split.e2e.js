@@ -132,9 +132,14 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   mode.failGet = /^erpRows:/;
   await boot(); s = await state();
   check('unreadable chunks at boot → rows recovered from the last good mirror', s.periods.every(p=>p.rows>0 && !p.missing) && !s.loadFailed, s.periods);
-  // …and with NO mirror either, the periods are listed as missing (warning on
-  // screen), the index itself is fine, and a save keeps their stored references
+  // …with no mirror but the phone's store (v126): the file this phone READ from the cloud is in the store, exactly as
+  // the cloud gave it, and fills the gap; the one it imported (wrote) is not — the store keeps only what the cloud returned
   await page.evaluate(() => localStorage.removeItem('um_mirror:erpSales'));
+  await boot(); s = await state();
+  check('no chunks + no mirror, the store: the file read from the cloud comes from the phone\'s store, the file this phone wrote is listed as missing', s.periods.length === 2 && !s.periods[0].missing && s.periods[0].rows > 0 && s.periods[1].missing && !s.loadFailed, s.periods);
+  // …and with NO copy on the phone at all (no mirror, no store), the periods are listed as missing (warning on
+  // screen), the index itself is fine, and a save keeps their stored references
+  await page.evaluate(() => { localStorage.removeItem('um_mirror:erpSales'); return new Promise(res => { try{ const d = indexedDB.deleteDatabase('um_keep'); d.onsuccess = d.onerror = () => res(); setTimeout(res, 3000); }catch(e){ res(); } }); });
   await boot(); s = await state();
   const refsBefore = JSON.parse(cloud.erpSales).periods.map(p => p.rowsRef && p.rowsRef.key);
   const savedOk = await page.evaluate(async () => persist('erpSales'));
