@@ -11,12 +11,23 @@
 // slower through CDP, the network like 4G: every request pays a round trip,
 // the bytes share one link, a new connection pays its set-up).
 // Times are from the navigation start: the shell painted (first contentful
-// paint), the person's own data on the Today screen, the cloud's data merged
-// and drawn (loadAll done); plus the cloud reads and bytes, the main thread's
-// long tasks. At this stage it REPORTS the numbers and checks only
-// correctness: the right person's own data is shown (her follow-ups, her
-// month figure as UMCore.monthAchievement gives it from the fixture), nothing
-// is written at start, no page errors. Budgets come with the fixes.
+// paint), the person's own data on the Today screen painted (her greeting,
+// follow-ups and month figure — the frame in which they first were in the
+// page; that frame is painted before the next task, so the figures' msRun
+// starting after it bounds it), the figures drawn (msBuild's model: ring,
+// remaining, KPI), up to date (the boot's cloud read merged, drawn, its
+// figures too); plus the cloud reads and bytes per key, the main thread's
+// long tasks. Checks: the right person's own data is shown (her follow-ups,
+// her month figure as UMCore.monthAchievement gives it from the fixture),
+// nothing is written at start, no page errors — and the v126 start-up work
+// (each check fails on v125): a daily open downloads no sales chunk and no
+// past month the phone keeps, nor does the 20-second round (measured on the
+// laptop rep's daily open), chat and memories are read beside the other lists,
+// msBuild works out the month's lines once. Then the phone's store's rules
+// (storeRules, one laptop device, K1–K11: only what the cloud returned, never
+// a revision this phone wrote, a stale month loses nothing, the held deletes,
+// the daily backup, the Restore and the full backup take only cloud reads, a
+// store that fails is a miss, a sign-out keeps it, the queue keeps its room).
 //
 // Nothing here depends on the internet: the Firebase SDK is replaced by a
 // stand-in that keeps the app's own Firestore adapter (01-config.js) and its
@@ -32,7 +43,8 @@
 //   FIREBASE_SDK_DIR   a folder with the real firebase-*-compat.js files: their bytes are served and evaluated
 //                      (parse and compile cost on the critical path), then the stand-in takes over
 //   HEAVY_SCALE=x      scale the data (fixtures/heavy-year.js; 1 = a heavy year)
-//   REFRESH=1          also wait for the first 20-second background refresh of each daily open and measure it
+//   REFRESH=1          also wait for the first 20-second background refresh of each daily open and measure it (the laptop rep's always)
+//   STORE_RULES=0      leave out the store's rules (on by default whenever the laptop profile runs)
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path'); const os = require('os');
 const zlib = require('zlib'); const crypto = require('crypto'); const { spawnSync } = require('child_process');
@@ -107,13 +119,15 @@ async function lockKey(k){
 }
 const held = {};
 let txSeq = 0;
+let cloudDown = false; // no signal: every request fails (the store-rules step K11)
+const down = () => { if(cloudDown){ const e = new Error('unavailable: no signal'); e.code = 'unavailable'; throw e; } };
 const api = {
-  async get(k){ await onCloud(); const d = cloud.get(k); const n = d ? d.value.length + 60 : 60; await netDown(n); countRead(k, d ? d.value.length : 0); return d ? { exists: true, value: d.value, updated: d.updated } : { exists: false }; },
-  async set(k, v){ await onCloud(); await netUp(v.length + 60); cloud.set(k, { value: v, updated: Date.now() }); countWrite(k, v.length); return true; },
+  async get(k){ down(); await onCloud(); const d = cloud.get(k); const n = d ? d.value.length + 60 : 60; await netDown(n); countRead(k, d ? d.value.length : 0); return d ? { exists: true, value: d.value, updated: d.updated } : { exists: false }; },
+  async set(k, v){ down(); await onCloud(); await netUp(v.length + 60); cloud.set(k, { value: v, updated: Date.now() }); countWrite(k, v.length); return true; },
   async del(k){ await onCloud(); await netUp(60); cloud.delete(k); countWrite(k, 0); return true; },
-  async commit(entries){ await onCloud(); await netUp(entries.reduce((s, [k, v]) => s + v.length + 60, 0)); entries.forEach(([k, v]) => { cloud.set(k, { value: v, updated: Date.now() }); countWrite(k, v.length); }); return true; },
+  async commit(entries){ down(); await onCloud(); await netUp(entries.reduce((s, [k, v]) => s + v.length + 60, 0)); entries.forEach(([k, v]) => { cloud.set(k, { value: v, updated: Date.now() }); countWrite(k, v.length); }); return true; },
   async query(q){
-    await onCloud(); if(acct) acct.queries++;
+    down(); await onCloud(); if(acct) acct.queries++;
     let keys = [...cloud.keys()].sort();
     if(q.from != null) keys = keys.filter(k => k >= q.from);
     if(q.to != null) keys = keys.filter(k => k < q.to);
@@ -124,7 +138,7 @@ const api = {
     await netDown(n); docs.forEach(d => countRead(d.id, d.value.length));
     return docs;
   },
-  async txGet(k){ const release = await lockKey(k); const id = ++txSeq; held[id] = release; const d = await api.get(k); return { id, doc: d }; },
+  async txGet(k){ down(); const release = await lockKey(k); const id = ++txSeq; held[id] = release; const d = await api.get(k); return { id, doc: d }; },
   async txEnd(id, k, v){ try{ if(v != null) await api.set(k, v); } finally { if(held[id]){ held[id](); delete held[id]; } } return true; },
   async signIn(email, pwd){ if(NET){ await netDown(2000, NET.newConnRtts); await netDown(1500); } return !!pwd && STAFF.some(s => (s.email || '').toLowerCase() === String(email || '').toLowerCase()); },
 };
@@ -235,7 +249,16 @@ function initScript(arg){
   const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
   if(arg.lang){ try{ localStorage.setItem('ultramed_lang', arg.lang); }catch(e){} }
   if(window.top !== window) return;
-  const U = window.__um = { marks: {}, longtasks: [], cloud: [], timeline: [], fns: {}, loadAlls: 0, renders: 0 };
+  try{
+    const how = localStorage.getItem('__keepFail');
+    if(how && window.indexedDB){
+      const open = indexedDB.open.bind(indexedDB);
+      indexedDB.open = function(name){ if(name !== 'um_keep') return open.apply(null, arguments);
+        if(how === 'throw') throw new DOMException('the store cannot be opened', 'UnknownError');
+        return { set onsuccess(f){}, set onerror(f){}, set onupgradeneeded(f){}, set onblocked(f){}, result: null }; }; // never answers
+    }
+  }catch(e){}
+  const U = window.__um = { marks: {}, longtasks: [], cloud: [], timeline: [], fns: {}, loadAlls: 0, renders: 0, msRuns: [], unshared: 0, inBuild: 0 };
   const now = () => performance.now();
   const mark = (n, t) => { if(U.marks[n] == null) U.marks[n] = Math.round(t == null ? now() : t); };
   U.mark = mark;
@@ -251,7 +274,10 @@ function initScript(arg){
     ASYNC.forEach(n => { const f = window[n]; if(typeof f !== 'function') return; window[n] = function(){ const t0 = now(); if(n === 'loadAll'){ U.loadAlls++; if(U.loadAlls === 1) mark('loadAllStart', t0); else mark('refreshStart', t0); }
       const p = f.apply(this, arguments); const end = () => { const t1 = now(); U.timeline.push([n, Math.round(t0), Math.round(t1)]); if(n === 'loadAll'){ if(U.loadAlls === 1 || U.marks.loadAllEnd == null){ mark('loadAllEnd', t1); try{ msWhenReady().then(() => requestAnimationFrame(() => requestAnimationFrame(() => mark('upToDate')))); }catch(err){} } else mark('refreshEnd', t1); } };
       if(p && typeof p.then === 'function') p.then(end, end); else end(); return p; }; });
-    if(typeof window.msRun === 'function'){ const f = window.msRun; window.msRun = function(){ const t0 = now(); try{ return f.apply(this, arguments); } finally { const d = now() - t0; const e = U.fns.msRun = U.fns.msRun || [0, 0, 0]; e[0]++; e[1] += d; if(d > e[2]) e[2] = d;
+    // the figures: msBuild's month figures worked out without the month's lines it already has (bestMonthRevenue called bare)
+    if(typeof window.msBuild === 'function'){ const f = window.msBuild; window.msBuild = function(){ U.inBuild++; try{ return f.apply(this, arguments); } finally { U.inBuild--; } }; }
+    if(window.UMCore && typeof UMCore.monthAchievement === 'function'){ const f = UMCore.monthAchievement; UMCore.monthAchievement = function(rep, data, mtd){ if(U.inBuild && mtd === undefined) U.unshared++; return f.apply(this, arguments); }; }
+    if(typeof window.msRun === 'function'){ const f = window.msRun; window.msRun = function(){ const t0 = now(); try{ return f.apply(this, arguments); } finally { const d = now() - t0; U.msRuns.push([Math.round(t0), Math.round(now())]); const e = U.fns.msRun = U.fns.msRun || [0, 0, 0]; e[0]++; e[1] += d; if(d > e[2]) e[2] = d;
       try{ if(typeof _msModel !== 'undefined' && _msModel && _msModel.D && _msModel.key === msKey(msView()) && U.marks.figures == null){ mark('figures'); requestAnimationFrame(() => requestAnimationFrame(() => mark('figuresVisible'))); } }catch(err){} } }; }
     SYNC.forEach(n => { const f = window[n]; if(typeof f !== 'function') return; window[n] = function(){ const t0 = now(); try{ return f.apply(this, arguments); } finally { const d = now() - t0; const e = U.fns[n] = U.fns[n] || [0, 0, 0]; e[0]++; e[1] += d; if(d > e[2]) e[2] = d; } }; });
   };
@@ -379,7 +405,7 @@ async function openOnce(ctx, prof, who, kind, opts){
     const due = document.getElementById('dueList'), tc = document.getElementById('targetCard'), g = document.getElementById('greeting');
     const dueText = due ? due.textContent : '';
     return {
-      marks: U.marks, paint, longtasks: U.longtasks, timeline: U.timeline, fns: U.fns, cloudOps: U.cloud.length, cloudLog: U.cloud.slice(0, 400),
+      marks: U.marks, paint, longtasks: U.longtasks, timeline: U.timeline, fns: U.fns, cloudOps: U.cloud.length, cloudLog: U.cloud.slice(0, 400), msRuns: U.msRuns, unshared: U.unshared,
       nav: { workerStart: Math.round(nav.workerStart || 0), responseStart: Math.round(nav.responseStart || 0), responseEnd: Math.round(nav.responseEnd || 0), domInteractive: Math.round(nav.domInteractive || 0), dcl: Math.round(nav.domContentLoadedEventEnd || 0), load: Math.round(nav.loadEventEnd || 0), transfer: nav.transferSize, sw: !!navigator.serviceWorker.controller },
       res, ls, lsKB: Math.round(lsTotal / 1024),
       shown: { greeting: g ? g.textContent : '', who: typeof currentUser !== 'undefined' && currentUser ? currentUser.name : null, amountOnCard: tc ? window.__um.amountShown(tc) : false,
@@ -393,7 +419,7 @@ async function openOnce(ctx, prof, who, kind, opts){
     acct = freshAcct();
     await page.waitForFunction(() => window.__um && window.__um.marks.refreshEnd != null, null, { timeout: 60000, polling: 500 }).catch(() => {});
     refresh = await page.evaluate(() => { const U = window.__um, a = U.marks.refreshStart, b = U.marks.refreshEnd; const lt = U.longtasks.filter(l => l[0] >= a - 5); const ra = U.fns.renderAll ? U.fns.renderAll[1] : 0; return { ms: b != null ? b - a : null, renderAllTotal: Math.round(ra), longTasks: lt.length, longMs: lt.reduce((s, l) => s + l[1], 0), maxLong: lt.reduce((m, l) => Math.max(m, l[1]), 0) }; }).catch(() => null);
-    if(refresh) Object.assign(refresh, { reads: acct.reads, readKB: Math.round(acct.readBytes / 1024), writes: acct.writes });
+    if(refresh) Object.assign(refresh, { reads: acct.reads, readKB: Math.round(acct.readBytes / 1024), writes: acct.writes, erpRows: (acct.readKeys['erpRows:*'] || [0])[0], visitsArch: (acct.readKeys['visitsArch:*'] || [0])[0] });
   }
   let profileSummary = null;
   if(opts.profile){
@@ -541,7 +567,7 @@ async function deviceOnce(profName, who, n, opts){
     resetCloud();
     ctx = await launch(dir, prof, { cached: true });
     await ctx.addInitScript(initScript, { off: OFFSET_SRC, expect: exp, lang: opts.lang || null });
-    const dOpts = { expect: exp, profile: opts.profile, label: label + '-daily', refresh: REFRESH && !opts.profile };
+    const dOpts = { expect: exp, profile: opts.profile, label: label + '-daily', refresh: (REFRESH || (profName === 'laptop' && who === 'Mariam')) && !opts.profile };
     const daily = await openOnce(ctx, prof, who, 'daily', dOpts);
     await ctx.close();
     if(dOpts.lost) return null;
@@ -551,12 +577,173 @@ async function deviceOnce(profName, who, n, opts){
   return out;
 }
 
+// ---------- the phone's store (v126): its rules, each shown on one laptop device (the supervisor's) ----------
+function storeDumpInPage(){
+  return new Promise(res => {
+    let rq; try{ rq = indexedDB.open('um_keep'); }catch(e){ return res(null); }
+    rq.onupgradeneeded = () => { try{ rq.transaction.abort(); }catch(e){} }; // never create it from here
+    rq.onerror = () => res(null);
+    rq.onsuccess = () => { const db = rq.result; if(!db.objectStoreNames.contains('docs')){ db.close(); return res([]); }
+      const g = db.transaction('docs').objectStore('docs').getAll(); g.onsuccess = () => { db.close(); res(g.result.map(e => ({ k: e.k, rev: e.rev, text: e.text, at: e.at, canon: e.canon }))); }; g.onerror = () => { db.close(); res(null); }; };
+  });
+}
+async function storeRules(){
+  const prof = PROFILES.laptop; NET = NETS.laptop; resetCloud();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'um-startup-store-'));
+  const sup = 'Dr. Ghaith', exp = expectFor(sup);
+  const reads = (r, g) => ((r.acct || r).readKeys[g] || [0])[0];
+  const ctx = await launch(dir, prof, { cached: false });
+  await ctx.addInitScript(initScript, { off: OFFSET_SRC, expect: exp, lang: null });
+  const errors = [];
+  try{
+    const first = await openOnce(ctx, prof, sup, 'first', { expect: exp, label: 'store-first' });
+    const page = ctx.pages()[0];
+    page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+    const dump = () => page.evaluate(storeDumpInPage);
+    const ix = () => JSON.parse(cloud.get('visitsIndex').value).months;
+    const reopen = label => openOnce(ctx, prof, sup, 'daily', { expect: exp, label });
+    const lsState = () => page.evaluate(() => { const o = {}; for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); o[k] = (localStorage.getItem(k) || '').length; } return o; });
+    const lsFirst = await lsState();
+    // K1 — only what the cloud returned: its exact text, at the key (and for a month the index revision) it was read at
+    let ents = await dump();
+    const months = Object.keys(ix()).sort();
+    const bad = (ents || []).filter(e => !cloud.has(e.k) || e.text !== cloud.get(e.k).value || (/^visitsArch:/.test(e.k) && e.rev !== ix()[e.k.slice(11)].rev)).map(e => e.k);
+    check(`store K1: the store holds each sales chunk and past month exactly as the cloud returned it (text, key, index revision)`,
+      !!ents && ents.filter(e => /^erpRows:/.test(e.k)).length === 26 && ents.filter(e => /^visitsArch:/.test(e.k)).length === months.length && !bad.length, { n: ents && ents.length, bad: bad.slice(0, 5) });
+    // K2 — a month this phone saves is never kept at the revision it wrote, nor as its own copy; the next start reads it
+    const M1 = months[0], before1 = cloud.get('visitsArch:' + M1).value, rev1 = ix()[M1].rev;
+    const revsBefore = ix(), textsBefore = Object.fromEntries(months.map(m => [m, cloud.get('visitsArch:' + m).value]));
+    const s1 = await page.evaluate(async M => { const v = visits.find(x => x && x.date && x.date.slice(0, 7) === M && !x.callOnly); v.notes = (v.notes || '') + ' [edited on this phone]'; const r = await persistTold('visits'); return { id: v.id, ok: r.ok }; }, M1);
+    await sleep(500);
+    let e1 = (await dump()).find(e => e.k === 'visitsArch:' + M1);
+    // the months that save wrote (their index revision moved): none of them is in the store as written
+    const moved = months.filter(m => ix()[m].rev !== revsBefore[m].rev), d2 = await dump();
+    const asWritten = moved.filter(m => { const e = d2.find(x => x.k === 'visitsArch:' + m); return !e || e.rev !== revsBefore[m].rev || e.text !== textsBefore[m]; });
+    check(`store K2: the past months this phone saved stay in the store as the cloud returned them before — never this phone's copy, never the revision it wrote`,
+      s1.ok && moved.includes(M1) && cloud.get('visitsArch:' + M1).value.indexOf('[edited on this phone]') >= 0 && !!e1 && e1.rev === rev1 && e1.text === before1 && !asWritten.length, { s1, moved: moved.length, asWritten });
+    const r2 = await reopen('store-K2');
+    const dbg2 = await page.evaluate(() => ({ kept: Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length, quiet: visitsTombsQuiet(), held: Object.keys(_tombsHeld).map(k => k + ':' + _tombsHeld[k].size), pend: Object.keys(_tombsPending).map(k => k + ':' + _tombsPending[k].size), again: Object.keys(_tombsAgain).map(k => k + ':' + _tombsAgain[k].size), outbox: outboxList() }));
+    e1 = (await dump()).find(e => e.k === 'visitsArch:' + M1);
+    const d2b = await dump(), notNew = moved.filter(m => { const e = d2b.find(x => x.k === 'visitsArch:' + m); return !e || e.rev !== ix()[m].rev || e.text !== cloud.get('visitsArch:' + m).value; });
+    check(`store K2: the next start reads from the cloud the months whose revision moved (${moved.length}), the others from the store, and keeps what the cloud returned at the new revisions`,
+      reads(r2, 'visitsArch:*') === moved.length && dbg2.kept === months.length - moved.length && !notNew.length, { read: reads(r2, 'visitsArch:*'), dbg2, notNew });
+    // K3 — a photo mark settled in a past month (patchVisitPhotos) is not taken into the store either
+    // a waiting photo mark in a past month (the fixture's are in the running month): another phone's, put in the cloud's
+    // archive with the index revision moved, as a save would, then read in by a refresh
+    const M2 = months[1], a2 = JSON.parse(cloud.get('visitsArch:' + M2).value), v2 = a2.find(x => x && !x.callOnly) || a2[0];
+    v2.photos = (v2.photos || []).concat([{ id: 'harness-photo-1', thumb: 'data:image/jpeg;base64,AAAA', pending: true, dev: 'dev-sample-other-phone', at: Date.parse(FIX.now) - 86400000 }]);
+    cloud.set('visitsArch:' + M2, { value: JSON.stringify(a2), updated: Date.now() });
+    { const idx = JSON.parse(cloud.get('visitsIndex').value); idx.months[M2].rev = Date.now(); cloud.set('visitsIndex', { value: JSON.stringify(idx), updated: Date.now() }); }
+    await page.evaluate(() => loadAll());
+    const pv = { M: M2, visitId: v2.id, photoId: 'harness-photo-1' };
+    if(pv){
+      const before3 = cloud.get('visitsArch:' + pv.M).value, rev3 = ix()[pv.M].rev;
+      await page.evaluate(c => patchVisitPhotos([{ visitId: c.visitId, photoId: c.photoId, lost: false }]), pv);
+      await sleep(500);
+      const e3 = (await dump()).find(e => e.k === 'visitsArch:' + pv.M);
+      check(`store K3: a photo mark settled in a past month (patchVisitPhotos) leaves the store as it was; the index revision moves`,
+        cloud.get('visitsArch:' + pv.M).value !== before3 && ix()[pv.M].rev !== rev3 && !!e3 && e3.rev === rev3 && e3.text === before3, { M: pv.M });
+      acct = freshAcct();
+      await page.evaluate(() => loadAll());
+      const e3b = (await dump()).find(e => e.k === 'visitsArch:' + pv.M);
+      check(`store K3: the next refresh reads that month from the cloud and keeps it at the new revision`, reads(acct, 'visitsArch:*') === 1 && !!e3b && e3b.rev === ix()[pv.M].rev && e3b.text === cloud.get('visitsArch:' + pv.M).value, acct.readKeys['visitsArch:*']);
+    } else check('store K3: the fixture has a waiting photo mark in a past month', false);
+    // K4 + K8 — a month changed in the cloud with its revision still owed: the stale kept copy stands in on screen;
+    // the full backup reads the cloud's; a save of that month merges three ways against the cloud and loses nothing
+    const M3 = months[months.length - 1], arch = JSON.parse(cloud.get('visitsArch:' + M3).value), X = arch[0], Y = arch[1];
+    X.notes = 'changed on another phone'; cloud.set('visitsArch:' + M3, { value: JSON.stringify(arch), updated: Date.now() });
+    const r4 = await reopen('store-K4');
+    const seen4 = await page.evaluate(id => (visits.find(x => x.id === id) || {}).notes, X.id);
+    check(`store K4: a past month changed in the cloud while its index revision was owed stands in from the store (stale on screen)`, reads(r4, 'visitsArch:*') === 0 && seen4 !== 'changed on another phone', { read: reads(r4, 'visitsArch:*'), seen4 });
+    const fb = await page.evaluate(async k => { let v = null; await readCloudForBackup(async d => { if(d.key === k) v = d.value; }); return v; }, 'visitsArch:' + M3);
+    check(`store K8: the full backup reads the cloud's documents — that month is in it as the cloud holds it, not as the store keeps it`, fb === cloud.get('visitsArch:' + M3).value && fb.indexOf('changed on another phone') >= 0);
+    const s4 = await page.evaluate(async id => { const v = visits.find(x => x.id === id); v.notes = 'edited on this phone'; const r = await persistTold('visits'); return r.ok; }, Y.id);
+    const after4 = JSON.parse(cloud.get('visitsArch:' + M3).value), seen4b = await page.evaluate(id => (visits.find(x => x.id === id) || {}).notes, X.id);
+    check(`store K4: saving that month keeps the other phone's change and this phone's edit (three-way merge in the transaction), and the screen takes the other's`,
+      s4 && (after4.find(x => x.id === X.id) || {}).notes === 'changed on another phone' && (after4.find(x => x.id === Y.id) || {}).notes === 'edited on this phone' && seen4b === 'changed on another phone', { s4, seen4b });
+    // K6 — the daily backup: not taken while a past month or a sales file on screen came from the store; it asks the
+    // next refresh to read them from the cloud, then it is taken
+    const snapKey = 'snap_' + FIX.today;
+    cloud.delete(snapKey); await page.evaluate(() => { try{ localStorage.removeItem('um_snapDay'); localStorage.removeItem('um_snapFail'); }catch(e){} });
+    const r6 = await reopen('store-K6');
+    const s6 = await page.evaluate(async () => { await maybeSnapshot(); return { why: snapshotBlockedWhy(), kept: keptOnScreen(), cv: _keptConfirmVisits, ce: _keptConfirmErp }; });
+    const kept6 = await page.evaluate(() => Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length);
+    check(`store K6: today's backup is not taken from a start whose past months and sales files came from the store; it asks for them from the cloud`, kept6 > 0 && s6.why === 'copy' && s6.kept && s6.cv && s6.ce && !cloud.has(snapKey), Object.assign({ kept6, snap: cloud.has(snapKey) }, s6));
+    acct = freshAcct();
+    const s6b = await page.evaluate(async () => { await loadAll(); if(_refreshFlush){ try{ await _refreshFlush; }catch(e){} } return { why: snapshotBlockedWhy(), kept: keptOnScreen() }; });
+    for(let i = 0; i < 40 && !cloud.has(snapKey); i++) await sleep(250); // the backup is tried again by itself once they are read
+    check(`store K6: the next refresh reads them from the cloud (every kept month, every chunk), then today's backup is taken by itself`, reads(acct, 'visitsArch:*') === kept6 && reads(acct, 'erpRows:*') === 26 && !s6b.kept && s6b.why === null && cloud.has(snapKey), { s6b, v: reads(acct, 'visitsArch:*'), e: reads(acct, 'erpRows:*') });
+    // K7 — the whole-day Restore stops, nothing changed, while they came from the store, and asks for them
+    const r7a = await reopen('store-K7');
+    const day = (() => { const d = new Date(FIX.today + 'T00:00:00'); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+    acct = freshAcct();
+    const s7 = await page.evaluate(async d => { const said = [], orig = window.showToast; window.showToast = function(m){ said.push(String(m)); return orig.apply(this, arguments); };
+      try{ await restoreSnapshotNow(d); } finally { window.showToast = orig; } return { said, cv: _keptConfirmVisits, ce: _keptConfirmErp }; }, day);
+    check(`store K7: a whole-day Restore stops with nothing changed while past months or sales files on screen came from the store, and asks the next refresh for them`,
+      reads(r7a, 'visitsArch:*') === 0 && acct.writes === 0 && s7.said.some(t => /first reads the past months and the sales files again from the cloud/.test(t)) && s7.cv && s7.ce, { said: s7.said, writes: acct.writeKeys });
+    // K5 — while a delete of a visit is held, every past month comes from the cloud
+    const victim = 'harness-deleted-visit'; // deleted on this phone 10 days ago; the log lost it (an older app's 7-day cut) and no list holds it
+    await page.evaluate(id => { const raw = JSON.parse(localStorage.getItem('um_tombs') || '{}'); raw.visits = raw.visits || {}; raw.visits[id] = Date.now() - 10 * 86400000; localStorage.setItem('um_tombs', JSON.stringify(raw)); localStorage.setItem('um_tombsMig123', '1'); }, victim);
+    const r5 = await reopen('store-K5');
+    const held5 = await page.evaluate(id => !!(_tombsHeld.visits && _tombsHeld.visits.has(id)), victim);
+    const dbg5 = await page.evaluate(id => ({ ts: _tombstones.visits.has(id), at: (_tombsLocalAt.visits || {})[id], doc: (tombsDoc.visits || {})[id], unpub: !!(_tombsUnpublished.visits && _tombsUnpublished.visits.has(id)), now: Date.now(), raw: localStorage.getItem('um_tombs').slice(0, 200) }), victim);
+    const v5 = await page.evaluate(() => Object.keys(_visitsArch).filter(m => _visitsArch[m].kept != null).length);
+    check(`store K5: while a delete of a visit is held on this phone, every past month is read from the cloud (none from the store)`, held5 && reads(r5, 'visitsArch:*') === months.length && v5 === 0, { held5, read: reads(r5, 'visitsArch:*'), v5, dbg5 });
+    await page.evaluate(id => { const raw = JSON.parse(localStorage.getItem('um_tombs') || '{}'); if(raw.visits) delete raw.visits[id]; localStorage.setItem('um_tombs', JSON.stringify(raw)); localStorage.removeItem('um_tombsHeldAt'); }, victim);
+    // K9 — the store does not open, does not answer, or was emptied: a miss — the cloud is read, the screen is right
+    for(const how of ['throw', 'hang', 'evicted']){
+      await page.evaluate(h => { if(h === 'evicted') return new Promise(r => { const d = indexedDB.deleteDatabase('um_keep'); d.onsuccess = d.onerror = d.onblocked = () => r(); }); localStorage.setItem('__keepFail', h); }, how);
+      const r9 = await reopen('store-K9-' + how);
+      await page.evaluate(() => localStorage.removeItem('__keepFail'));
+      const m9 = r9.page.marks;
+      check(`store K9: the store ${how === 'throw' ? 'does not open' : how === 'hang' ? 'does not answer' : 'was emptied by the browser'} — a miss: every past month and chunk is read from the cloud, her figure is right`,
+        reads(r9, 'visitsArch:*') === months.length && reads(r9, 'erpRows:*') === 26 && r9.page.shown.amountOnCard && m9.loadAllEnd - m9.loadAllStart < 9000 && !r9.errors.length, { v: reads(r9, 'visitsArch:*'), e: reads(r9, 'erpRows:*'), ms: m9.loadAllEnd - m9.loadAllStart, errors: r9.errors.slice(0, 3) });
+    }
+    ents = await dump();
+    check(`store K9: once it answers again, the store is filled from the cloud's reads`, !!ents && ents.length === 26 + months.length, { n: ents && ents.length });
+    // K10 — a sign-out and another person: the store and the phone's copies stay exactly as they are; her start uses them
+    const mirrors = async () => Object.keys(await lsState()).filter(k => /^um_mirror:/.test(k)).sort().join(',');
+    const m10 = await mirrors(), n10 = ents.length;
+    await page.evaluate(() => switchUser());
+    const e10 = await dump(), mm10 = await mirrors();
+    acct = freshAcct();
+    await page.waitForSelector('#gateGrid .gate-tile', { timeout: 30000 });
+    await page.click(`#gateGrid .gate-tile:has-text("Mariam")`);
+    await page.waitForSelector('#gatePassword', { timeout: 30000 }); // the phone knows the team's addresses now: the password only
+    await page.fill('#gatePassword', 'invented-password');
+    await page.click('#modalInner button.btn');
+    await page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && currentUser.name === 'Mariam' && _bootLoaded && !refreshRunning(), null, { timeout: 60000, polling: 250 });
+    const own10 = await page.evaluate(() => UMCore.money(bestMonthRevenue('Mariam').amount));
+    check(`store K10: a sign-out leaves the store and the phone's copies as they are; the next person's start uses them (no past month, no chunk downloaded)`,
+      !!e10 && e10.length === n10 && mm10 === m10 && reads(acct, 'visitsArch:*') === 0 && reads(acct, 'erpRows:*') === 0 && own10 === expectFor('Mariam').amount, { n: e10 && e10.length, n10, v: reads(acct, 'visitsArch:*'), e: reads(acct, 'erpRows:*'), own10 });
+    // K11 — no signal on a phone holding a heavy year: a visit saved now is queued and lands in the phone's own storage
+    // (not memory only); the store takes no room in web storage (the same keys and sizes as before it existed)
+    const lsNow = await lsState();
+    const grew = Object.keys(lsNow).filter(k => !(k in lsFirst) && !/^(um_snapDay|um_snapFail|__keepFail|um_base:|um_tombs|um_tombsHeldAt|um_tombsUnpub|um_renamePending)/.test(k));
+    cloudDown = true;
+    const q = await page.evaluate(async () => {
+      const id = 'harness-queued-visit'; const c = clinics.find(x => x && x.rep === currentUser.name) || clinics[0];
+      visits.push({ id, date: todayStr(), ts: Date.now(), rep: currentUser.name, clinicId: c.id, clinicName: c.name, doctorIds: [], notes: 'saved with no signal' });
+      const r = await persistTold('visits');
+      return { ok: r.ok, queued: outboxList().includes('visits'), onPhone: (localStorage.getItem('um_mirror:visits') || '').indexOf(id) >= 0, memOnly: _memOnly.has('visits'), stale: !!_deviceStale.visits };
+    });
+    cloudDown = false;
+    check(`store K11: no signal, a heavy year on the phone: a visit saved now is queued and kept in the phone's storage, not memory only`, q.queued && q.onPhone && !q.memOnly && !q.stale, q);
+    check(`store K11: the store takes no room in the phone's web storage (no key beyond what the first open wrote)`, !grew.length, grew);
+    check(`store: no page errors`, !errors.length && !first.errors.length, errors.slice(0, 5));
+  } finally { await ctx.close().catch(() => {}); fs.rmSync(dir, { recursive: true, force: true }); cloudDown = false; }
+}
+function ownPainted(pg){
+  const m = pg.marks; if(m.ownDom == null) return null;
+  const next = (pg.msRuns || []).find(x => x[0] >= m.ownDom);
+  return next && m.ownVisible != null && next[0] < m.ownVisible ? next[0] : m.ownVisible;
+}
 function rowOf(r){
   const m = r.page.marks, lt = r.page.longtasks.filter(l => l[0] <= (r.settledAt || Infinity));
   return {
     shell: r.page.paint['first-contentful-paint'] != null ? r.page.paint['first-contentful-paint'] : null,
-    gate: m.gateShown, appShown: m.appShown, signIn: m.signInTap, loadAllStart: m.loadAllStart, data: m.ownVisible, figures: m.figuresVisible, upToDate: m.upToDate, cloud: m.loadAllEnd, settled: r.settledAt,
-    afterTap: m.signInTap != null && m.ownVisible != null ? m.ownVisible - m.signInTap : null,
+    gate: m.gateShown, appShown: m.appShown, signIn: m.signInTap, loadAllStart: m.loadAllStart, data: ownPainted(r.page), figures: m.figuresVisible, upToDate: m.upToDate, cloud: m.loadAllEnd, settled: r.settledAt,
+    afterTap: m.signInTap != null && ownPainted(r.page) != null ? ownPainted(r.page) - m.signInTap : null,
     render: r.page.fns.renderAll ? Math.round(r.page.fns.renderAll[1]) : null, targetCard: r.page.fns.renderTargetCard ? Math.round(r.page.fns.renderTargetCard[1]) : null,
     netDone: (() => { const t = r.page.timeline.filter(x => /^(loadVisits|loadErpSales|refreshTombs|loadTeam)$/.test(x[0]) && x[1] <= (m.loadAllEnd || Infinity)); return t.length ? Math.max(...t.map(x => x[2])) : null; })(),
     refreshMs: r.refresh ? r.refresh.ms : null, refreshRender: r.refresh && r.refresh.renderAllTotal != null ? Math.round(r.refresh.renderAllTotal - (r.page.fns.renderAll ? r.page.fns.renderAll[1] : 0)) : null, refreshReads: r.refresh ? r.refresh.reads : null, refreshKB: r.refresh ? r.refresh.readKB : null, refreshLongMs: r.refresh ? r.refresh.longMs : null, refreshMaxLong: r.refresh ? r.refresh.maxLong : null,
@@ -600,6 +787,7 @@ function rowOf(r){
     for(let n = 1; n <= RUNS; n++){ const rs = await device('phone', 'Mariam', n, { lang: 'ar' }); rs.forEach(r => runs.push(r)); console.log(`  phone Mariam (Arabic) #${n}: daily ${rowOf(rs[1]).data} ms`); }
   }
 
+  if(process.env.STORE_RULES !== '0' && profs.includes('laptop')){ const t = Date.now(); await storeRules(); console.log(`  the store's rules: ${Math.round((Date.now() - t) / 1000)} s`); }
   // ---------- correctness: the right person's own data, nothing written, no errors ----------
   runs.forEach(r => {
     const s = r.page.shown, e = r.expect, tag = `${r.label} (${r.who})`;
@@ -610,6 +798,17 @@ function rowOf(r){
     check(`${tag}: opening writes nothing to the cloud`, r.acct.writes === 0, r.acct.writeKeys);
     check(`${tag}: no page errors`, r.errors.length === 0, r.errors.slice(0, 5));
     if(r.kind === 'daily') check(`${tag}: the daily open is served by the service worker`, r.page.nav.sw === true, r.page.nav);
+    // v126: what did not change is not downloaded again; the team lists beside the others; the figures share the month's lines
+    const rk = r.acct.readKeys, n = g => (rk[g] || [0])[0];
+    if(r.kind === 'daily'){
+      check(`${tag}: the daily open downloads no sales file it keeps (erpRows:* read ${n('erpRows:*')} times, v125: 26)`, n('erpRows:*') === 0, rk['erpRows:*']);
+      check(`${tag}: the daily open downloads no past month it keeps (visitsArch:* read ${n('visitsArch:*')} times, v125: 12)`, n('visitsArch:*') === 0, rk['visitsArch:*']);
+    }
+    const tl = r.page.timeline, first = name => tl.find(x => x[0] === name);
+    const team = first('loadTeam'), lists = [first('loadVisits'), first('loadErpSales')].filter(Boolean);
+    check(`${tag}: chat and memories are read beside the other lists, not after them`, !!team && lists.length === 2 && team[1] < Math.min(...lists.map(x => x[2])), { team, lists });
+    check(`${tag}: the figures (msBuild) work out the month's lines once — no month figure worked out again without them`, r.page.unshared === 0, { unshared: r.page.unshared });
+    if(r.refresh) check(`${tag}: the 20-second refresh downloads no sales file it keeps`, r.refresh.erpRows === 0, r.refresh);
   });
 
   // ---------- the report ----------

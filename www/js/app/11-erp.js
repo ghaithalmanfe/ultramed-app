@@ -139,7 +139,7 @@ function erpBrandMtd(rep){ const today = todayStr(); return erpBrandRange(rep, t
 // authoritative, even over more recent raw sales-detail invoices (which may
 // include rows the DSR excludes). Sales files only fill in when no
 // current-month DSR exists; app-logged orders are the last resort.
-function bestMonthRevenue(rep){ return UMCore.monthAchievement(rep, digestData()); }
+function bestMonthRevenue(rep, mtd){ return UMCore.monthAchievement(rep, digestData(), mtd); } // mtd: the month's lines of everyone, worked out once by the caller from the same data (UMCore.erpMtd)
 // ---- Team total against target ----
 // The SAME official figure as the per-rep lines (bestMonthRevenue), summed:
 // achieved ÷ target across every rep with a monthly sales target. Shown
@@ -232,11 +232,11 @@ function officialRevenue(rep){
   return { amount: bm.amount, src: bm.src, asOf: bm.asOf, has: true, basis: bm.basis };
 }
 // targets as the coach/insights see them: DSR targets, achieved from ERP only.
-function blendedTargets(){
+function blendedTargets(mtd){
   const out = {};
   Object.keys(targets).filter(k => !k.startsWith('_')).forEach(rep => {
     const t = Object.assign({}, targets[rep]);
-    const bm = bestMonthRevenue(rep);
+    const bm = bestMonthRevenue(rep, mtd);
     delete t.achievedBrands;
     if(bm.basis === 'erp'){ t.achieved = bm.amount; t.achievedAsOf = bm.asOf; }
     else { delete t.achieved; delete t.achievedAsOf; }

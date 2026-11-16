@@ -762,9 +762,11 @@ function msKpiPastKey(v, S){
 }
 // The view's figures. Sales lines are attributed once and shared by both calls
 // (the same lines More → KPI scorecard and the management sheet read).
-function msBuild(v){
-  const data = digestData();
-  try{ data.erpShare = UMCore.erpShare(data); }catch(e){}
+function msBuild(v, sig){
+  // the data of this state with its one shared pass of the lines — the very object the parts drawn at once used
+  // (msDigest: each customer matched once for both, v126)
+  const data = sig ? msDigest(sig) : digestData();
+  if(!sig){ try{ data.erpShare = UMCore.erpShare(data); }catch(e){} }
   let rows;
   try{ rows = UMCore.erpAttributedRows(data); }catch(e){ console.error('main screen: sales lines', e); rows = undefined; }
   const m = { key: msKey(v), view: v, D: null, K: null, W: null, S: null, brands: msBrandNames() };
@@ -774,8 +776,10 @@ function msBuild(v){
   // point to act on or watch that is not the target (the target card says it) nor the follow-ups (the advisor lists
   // them), and only one whose words the Arabic screen has too
   try{
-    const ins = UMCore.coachInsights({ erpMtd: UMCore.erpMtd(data), from: msMonth() + '-01', to: todayStr(), today: todayStr(),
-      repFilter: v.kind === 'person' ? v.rep : 'all', visits, clinics, targets: blendedTargets(), dayPlans });
+    // one pass of the month's lines for both: blendedTargets worked each person's out again (bestMonthRevenue), v126
+    const mtd = (sig && msMtd(sig)) || UMCore.erpMtd(data);
+    const ins = UMCore.coachInsights({ erpMtd: mtd, from: msMonth() + '-01', to: todayStr(), today: todayStr(),
+      repFilter: v.kind === 'person' ? v.rep : 'all', visits, clinics, targets: blendedTargets(mtd), dayPlans });
     const hasAr = t => !window.UMI18N || !!UMI18N.tr(t);
     m.coach = (ins || []).filter(i => i && (i.level === 'act' || i.level === 'watch') && !/^target-/.test(i.key || '') && i.key !== 'followups' && i.title && hasAr(i.title))[0] || null;
   }catch(e){ console.error('main screen: coach', e); m.coach = null; }
@@ -843,10 +847,20 @@ function msEnsure(v, sig){
   if(_msModel && _msModel.sig === sig) return _msModel;
   if(!_msJob || _msJob.sig !== sig){
     _msJob = { sig, key };
-    clearTimeout(_msTimer);
-    _msTimer = setTimeout(msRun, 0);
+    msSchedule();
   }
   return _msModel && _msModel.key === key ? _msModel : null;
+}
+// The figures are worked out just AFTER the screen is painted (v126): the lists, the plan and each person's month
+// figure that renderToday draws show at once, the figures a moment later (the cards say "Calculating the month…").
+// Worked out in the next task, they held back the paint of the whole screen for as long as they took (about 2 s on
+// a slower phone with a heavy year). A page that paints no frame (hidden) works them out at once.
+function msSchedule(){
+  clearTimeout(_msTimer);
+  if(document.visibilityState !== 'visible' || typeof requestAnimationFrame !== 'function'){ _msTimer = setTimeout(msRun, 0); return; }
+  const tok = _msTimer = setTimeout(() => go(), 250);   // no frame within this: worked out all the same
+  const go = () => { if(_msTimer === tok){ clearTimeout(tok); _msTimer = setTimeout(msRun, 0); } };
+  requestAnimationFrame(go);
 }
 function msModelFor(v){ return _msModel && v && _msModel.key === msKey(v) ? _msModel : null; }
 function msRun(){
@@ -857,7 +871,7 @@ function msRun(){
     if(!job || !v || !currentUser) return;
     if(msKey(v) !== job.key){ if(activeView === 'today') renderToday(); return; }   // the view changed meanwhile: its own run follows (if any is needed)
     const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
-    const sig = msSig(v), m = msBuild(v);
+    const sig = msSig(v), m = msBuild(v, sig);
     m.sig = sig; m.ms = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - t0);
     _msModel = m;
     if(activeView === 'today') msPaint(v, m, sig);

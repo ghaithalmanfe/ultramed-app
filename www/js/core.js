@@ -2094,18 +2094,41 @@
   // Advertisement"): stock moved for marketing, never a customer win.
   var INTERNAL_ACCT_RE = /^\s*marketing\b|advertis/i;
   function isInternalAccount(name){ return INTERNAL_ACCT_RE.test(String(name || '')); }
+  // The part of erpWinsInRange no range changes — each account's first paid line, each account × product's first
+  // line, the dates of each account's paid lines — worked out once per list of lines (v126: the home's KPI months
+  // ask for the wins of 7 periods per person on the same list, and each call went over every line of the year
+  // again). Kept with the list (a WeakMap: it goes with the list) and its length; nothing in it is handed out.
+  var _winsIdx = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function winsCustKey(x){ return x.clinicId ? 'c:' + x.clinicId : 'n:' + (x.r.customer || '').trim().toLowerCase(); }
+  function erpWinsIndex(rows){
+    var hit = _winsIdx && _winsIdx.get(rows);
+    if(hit && hit.n === rows.length) return hit;
+    var firstSeen = {}, prodSeen = {}, dates = {};
+    rows.forEach(function(x){
+      if(x.channel || !(x.r.net > 0) || x.r.type === 'return' || (!x.clinicId && isInternalAccount(x.r.customer))) return;
+      var k = winsCustKey(x), pk = k + '|' + String(x.r.product || '').toLowerCase();
+      if(!firstSeen[k] || x.r.date < firstSeen[k]) firstSeen[k] = x.r.date;
+      if(!prodSeen[pk] || x.r.date < prodSeen[pk]) prodSeen[pk] = x.r.date;
+      if(typeof x.r.date === 'string') (dates[k] || (dates[k] = [])).push(x.r.date);
+    });
+    Object.keys(dates).forEach(function(k){ dates[k].sort(); });
+    var idx = { n: rows.length, firstSeen: firstSeen, prodSeen: prodSeen, dates: dates };
+    if(_winsIdx) _winsIdx.set(rows, idx);
+    return idx;
+  }
+  // an account's last paid line before `from` (its dates sorted) — what the pass over every line kept, the latest date < from
+  function winsLastBefore(sorted, from){
+    if(!sorted) return undefined;
+    var lo = 0, hi = sorted.length; // the first index whose date is not before `from`
+    while(lo < hi){ var mid = (lo + hi) >> 1; if(sorted[mid] < from) lo = mid + 1; else hi = mid; }
+    return lo > 0 ? sorted[lo - 1] : undefined;
+  }
   function erpWinsInRange(rows, from, to, clinics){
     var byId = {}; (clinics || []).forEach(function(c){ byId[c.id] = c; });
     var custName = function(x){ return x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : (x.r.customer || '').trim(); };
-    var custKey = function(x){ return x.clinicId ? 'c:' + x.clinicId : 'n:' + (x.r.customer || '').trim().toLowerCase(); };
-    var firstSeen = {}, lastBefore = {}, prodSeen = {};
-    rows.forEach(function(x){
-      if(x.channel || !(x.r.net > 0) || x.r.type === 'return' || (!x.clinicId && isInternalAccount(x.r.customer))) return;
-      var k = custKey(x), pk = k + '|' + String(x.r.product || '').toLowerCase();
-      if(!firstSeen[k] || x.r.date < firstSeen[k]) firstSeen[k] = x.r.date;
-      if(!prodSeen[pk] || x.r.date < prodSeen[pk]) prodSeen[pk] = x.r.date;
-      if(x.r.date < from && (!lastBefore[k] || x.r.date > lastBefore[k])) lastBefore[k] = x.r.date;
-    });
+    var custKey = winsCustKey;
+    var W = erpWinsIndex(rows), firstSeen = W.firstSeen, prodSeen = W.prodSeen, lastBefore = {};
+    Object.keys(W.dates).forEach(function(k){ var d = winsLastBefore(W.dates[k], from); if(d !== undefined) lastBefore[k] = d; });
     var wins = { newAccounts: {}, reactivated: {}, placements: {}, invoices: {} };
     // free lines, by document: a free line on a document that also carries a
     // paid line is part of that deal (it is in the discount); a document with
@@ -4007,7 +4030,7 @@
   //     invoices}] } } — null where a figure is not measured, never 0.
   function execDashboard(data, opts){
     data = Object.assign({}, data || {}); opts = opts || {};
-    data.erpShare = erpShare(data);
+    data.erpShare = erpShareOf(data) || erpShare(data); // the caller's pass of these very lists when it has one (v126: the home's figures matched every customer again here)
     var V = xdView(data, opts), month = V.month, current = V.current, from = V.from, mEnd = V.mEnd, to = V.to, today = V.today, dim = V.days;
     var team = V.team, one = V.one, people = V.people, brand = V.brand;
     var clinics = data.clinics || [], byId = Object.create(null);

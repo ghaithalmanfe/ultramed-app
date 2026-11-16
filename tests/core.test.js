@@ -5406,3 +5406,28 @@ describe('management dashboard (v123)', () => {
     assert.equal(Math.round(D.achievement.pct1), D.achievement.pct);
   });
 });
+
+describe('start-up speed (v126): the wins are worked out once per list of lines', () => {
+  // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
+  const row = (d, doc, cust, prod, net) => [d, doc, 0, prod, 1, net, net, 0, 'Mariam Sample', 'Intensiv', cust, 'Clinics', 0, ''];
+  const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];
+  const data = { today: '2026-10-20', clinics, erpMap: {}, targets: {}, visits: [], dayPlans: {}, events: [],
+    erpSales: { periods: [{ id: 'p', from: '2026-05-01', to: '2026-10-20', repMap: { 'Mariam Sample': 'Mariam' }, rows: [
+      row('2026-05-04', 'S1', 'Alpha Dental', 'Strip', 50), row('2026-10-02', 'S2', 'Alpha Dental', 'Brush', 70),           // back after 60+ days, a product new to her
+      row('2026-09-03', 'S3', 'Beta Clinic', 'Strip', 65), row('2026-10-05', 'S4', 'Beta Clinic', 'Strip', 40),               // a regular
+      row('2026-10-06', 'S5', 'Gamma Smile Clinic', 'Strip', 30), row('2026-10-07', 'S6', 'Marketing Sample', 'Strip', 10)] }] } };
+  const periods = [['2026-10-01', '2026-10-20'], ['2026-09-01', '2026-09-30'], ['2026-10-01', '2026-10-07'], ['2026-05-01', '2026-05-31']];
+  const score = (rows, f, t) => core.kpiScorecard(data, { rep: 'Mariam', from: f, to: t, rows });
+  test('every period on one list scores as on a fresh copy of it (nothing of one range leaks into another)', () => {
+    const rows = core.erpAttributedRows(data);
+    periods.concat(periods.slice().reverse()).forEach(([f, t]) => assert.deepEqual(score(rows, f, t), score(rows.slice(), f, t), f + '…' + t));
+  });
+  test('a list that grew is worked out again', () => {
+    const rows = core.erpAttributedRows(data);
+    const before = score(rows, '2026-10-01', '2026-10-20');
+    rows.push(...core.erpAttributedRows(Object.assign({}, data, { erpSales: { periods: [{ id: 'q', from: '2026-10-08', to: '2026-10-08', repMap: { 'Mariam Sample': 'Mariam' }, rows: [row('2026-10-08', 'S7', 'Delta Dental Care', 'Strip', 20)] }] } })));
+    const after = score(rows, '2026-10-01', '2026-10-20');
+    assert.deepEqual(after, score(rows.slice(), '2026-10-01', '2026-10-20'));
+    assert.notDeepEqual(after, before);
+  });
+});
