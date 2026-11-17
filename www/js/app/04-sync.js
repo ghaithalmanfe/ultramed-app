@@ -646,7 +646,7 @@ async function visitsConfirmKeptNow(){
   const texts = {}, ok = [];
   await Promise.all(ms.map(async m => {
     try{ const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000); texts[m] = r && typeof r.value === 'string' ? r.value : null; ok.push(m); }
-    catch(e){} // stays kept: read again by the next refresh
+    catch(e){ if(_visitsArch[m]) _visitsArch[m].why = /timeout/.test(String(e && e.message)) ? 'timeout' : 'read'; } // stays kept: read again by the next refresh
   }));
   const unread = ms.filter(m => !ok.includes(m));
   const revOf = m => (index.months && index.months[m] && index.months[m].rev) || 0;
@@ -729,23 +729,30 @@ function visitsReadFirst(){
 async function visitsReadFirstNow(){
   if(!visitsUnread()) return true;
   const today = todayStr();
+  const whyOf = e => /timeout/.test(String(e && e.message)) ? 'timeout' : 'read'; // no answer in time ≠ no connection (rerev W3)
   let liveRes, idxRes;
   try{ [liveRes, idxRes] = await Promise.all([withTimeout(window.storage.get('visits', true), 8000), withTimeout(window.storage.get('visitsIndex', true), 8000)]); }
-  catch(e){ noteNoAccess('visits', e); return false; }
+  catch(e){ noteNoAccess('visits', e); return { why: whyOf(e) }; }
   const index = idxRes && idxRes.value != null ? (UMCore.safeParse(idxRes.value, null) || {}) : null;
   let months = index ? Object.keys(index.months || {}) : null;
   if(!months){ // no index (a legacy account, or its write failed): the archives as listed
     try{ const l = await withTimeout(window.storage.list(UMCore.VISITS_ARCH_PREFIX, true), 8000); months = ((l && l.keys) || []).map(k => k.slice(UMCore.VISITS_ARCH_PREFIX.length)); }
-    catch(e){ return false; }
+    catch(e){ return { why: whyOf(e) }; }
   }
   // and every month the screen holds (its document may be there with its index entry owed)
   Object.keys(UMCore.visitsPartition((visits || []).filter(v => v), today).months).forEach(m => { if(!months.includes(m)) months.push(m); });
-  const texts = {}; let failed = false;
+  const texts = {}, failed = {};
   await Promise.all(months.map(async m => {
     try{ const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000); texts[m] = r && typeof r.value === 'string' ? r.value : null; }
-    catch(e){ failed = true; }
+    catch(e){ failed[m] = whyOf(e); }
   }));
-  if(failed) return false; // one document not read: the screen is not put on a part of the cloud
+  // A past month whose read failed (no answer in time over a weak link, rerev W1) does not hold back the rest: the live
+  // month and every month read are this session's reads, and that month stays on screen as the phone's copy has it —
+  // for the screen only, exactly like a month from the store (review 1): never written, never evidence of what the cloud
+  // holds, read again before the next visits save (visitsConfirmKeptNow) and by every refresh; a save that changes it
+  // does not land (persistVisitsInner: kept on this phone, queued). Until review 2's round 2 the whole read gave up, the
+  // save stayed queued for the session and every round read every month again.
+  const unread = Object.keys(failed);
   const liveArr = liveRes && liveRes.value != null ? (UMCore.safeParse(liveRes.value, null) || []) : [];
   const read = {}; // month → its visits as the cloud holds them now (months the cloud has a document of)
   months.forEach(m => { if(texts[m] == null) return; const a = UMCore.safeParse(texts[m], null); read[m] = Array.isArray(a) ? a : []; });
@@ -756,8 +763,9 @@ async function visitsReadFirstNow(){
   const copy = o => JSON.parse(JSON.stringify(o));
   const setTo = (s, rec) => { Object.keys(s).forEach(k => { if(!(k in rec)) delete s[k]; }); Object.assign(s, copy(rec)); }; // in place: a sheet holding the visit keeps it
   const fm = typeof UMCore.mergePhotos3 === 'function' ? { photos: (L, C, B) => UMCore.mergePhotos3(L, C, B) } : null;
-  const seen = new Set(), drop = new Set();
-  let changed = 0;
+  // worked out first, applied only once it is known that every month not read can be kept for the screen
+  const seen = new Set(), drop = new Set(), sets = [], mine = new Map(); // mine: id → the base record of a visit changed here
+  let unknownBase = false;
   (visits || []).forEach(s => {
     if(!s || s.id == null) return;
     seen.add(s.id);
@@ -765,20 +773,38 @@ async function visitsReadFirstNow(){
     if(b === undefined) return; // not in what the screen took: added here — this phone's
     const same = typeof b === 'string' ? (typeof UMCore.recordHash === 'function' && UMCore.recordHash(s) === b) : JSON.stringify(s) === JSON.stringify(b);
     if(same){ // not changed here: the cloud's copy, or none (deleted, or moved into a document read now)
-      if(!c){ drop.add(s.id); changed++; }
-      else if(JSON.stringify(c) !== JSON.stringify(s)){ setTo(s, c); changed++; }
+      if(!c){ if(!unread.includes(UMCore.visitHome(s, today))) drop.add(s.id); } // (in a month not read: as the screen has it)
+      else if(JSON.stringify(c) !== JSON.stringify(s)) sets.push([s, c]);
       return;
     }
+    if(b && typeof b === 'object') mine.set(s.id, b); else unknownBase = true;
     if(!c || !b || typeof b !== 'object' || typeof UMCore.merge3Record !== 'function') return; // changed here: this phone's change stays (never lost)
     const r = UMCore.merge3Record(s, c, b, fm);
-    if(r && r.value && JSON.stringify(r.value) !== JSON.stringify(s)){ setTo(s, r.value); changed++; }
+    if(r && r.value && JSON.stringify(r.value) !== JSON.stringify(s)) sets.push([s, r.value]);
   });
+  // a month not read is kept as the screen took it: its visits not changed here as they are, those changed here as their
+  // base record has them — without the base record of a visit changed here, what the screen took is not known: nothing
+  // is changed and the save stays on this phone (with every base record kept, rerev B1–B3, this does not happen)
+  if(unread.length && unknownBase) return { why: Object.values(failed).includes('timeout') ? 'timeout' : 'read' };
+  let changed = 0;
+  sets.forEach(([s, rec]) => { setTo(s, rec); changed++; });
   const add = cloudAll.filter(v => v && v.id != null && !seen.has(v.id) && !ts.has(v.id)).map(copy);
-  if(drop.size) visits = (visits || []).filter(v => !(v && drop.has(v.id)));
+  if(drop.size){ visits = (visits || []).filter(v => !(v && drop.has(v.id))); changed += drop.size; }
   if(add.length){ visits = (visits || []).concat(add); changed += add.length; }
   // the documents read now are this session's reads, at the revision the index gave in this read
   const revOf = m => (index && index.months && index.months[m] && index.months[m].rev) || 0, now = Date.now();
   Object.keys(read).forEach(m => { _visitsArch[m] = { rev: revOf(m), arr: read[m], json: JSON.stringify(read[m]) }; });
+  unread.forEach(m => {
+    const arr = [];
+    (visits || []).forEach(v => {
+      if(!v || v.id == null || ts.has(v.id)) return;
+      const b = mine.get(v.id);
+      if(b){ if(UMCore.visitHome(b, today) === m) arr.push(copy(b)); return; }
+      if(base && base.get(v.id) !== undefined && UMCore.visitHome(v, today) === m) arr.push(copy(v)); // (a visit added here is not what the screen took)
+    });
+    mine.forEach((b, id) => { if(UMCore.visitHome(b, today) === m && !arr.some(x => x.id === id) && !ts.has(id)) arr.push(copy(b)); }); // (one changed here and gone from the screen)
+    _visitsArch[m] = { rev: revOf(m), arr, json: JSON.stringify(arr), kept: now, why: failed[m] };
+  });
   _visitsBroken = [];
   _visitsLive = liveArr;
   _visitsLoaded = JSON.stringify(liveArr);
@@ -793,6 +819,9 @@ async function visitsReadFirstNow(){
   }
   return true;
 }
+// A visits save that did not land because the cloud's visits could not be read first: the reason goes with it (said by
+// persistNow: "no answer yet" when a read timed out with the phone online, never "when back online", rerev W3)
+function visitsWaitError(msg, why){ const e = new Error(msg + (why === 'timeout' ? ' (timeout)' : '')); e.visitsWait = why || 'read'; return e; }
 function renderVisitsNudge(){
   const el = document.getElementById('visitsNudge');
   if(!el) return;
@@ -830,14 +859,18 @@ async function persistVisitsInner(opts){
     // the visits on screen not read from the cloud this session (an early open, a start without a connection, a start's
     // read raced by a save): every document is read first and the screen put on it (v126 review 2); a read that fails
     // writes nothing — the save does not land, it stays on this phone, queued (persistNow says so)
-    let tombsRead = false;
+    _visitsDirtyDocs = null; // (set by Pass A below: a save that stops before it never leaves an earlier save's set)
+    let tombsRead = false, readNow = false;
     if(!opts.authoritative && visitsUnread()){
       await refreshTombs(); tombsRead = true; // (another device's deletes known before the screen is put on the cloud's documents)
-      if(!await visitsReadFirstNow()) throw new Error('visits: not read from the cloud yet — kept on this phone');
+      const rf = await visitsReadFirstNow();
+      if(rf !== true) throw visitsWaitError('visits: not read from the cloud yet — kept on this phone', rf && rf.why);
+      readNow = true;
     }
     // a past month on screen that came from the phone's store is read from the cloud first: nothing below may take it
-    // for what the cloud holds (v126 review). One whose read fails stays kept: never written nor trusted here (below)
-    if(keptMonthsOnScreen()) await visitsConfirmKeptNow();
+    // for what the cloud holds (v126 review). One whose read fails stays kept: never written nor trusted here (below).
+    // (a month the read-first just tried and could not read waits for the next round: tried once per save, rerev W2)
+    if(keptMonthsOnScreen() && !readNow) await visitsConfirmKeptNow();
     const today = todayStr();
     if(!opts.authoritative && !tombsRead) await refreshTombs();
     const ts = tombSet('visits');
@@ -847,7 +880,7 @@ async function persistVisitsInner(opts){
     // moved in or out —, the save does not land and nothing is written; it stays on this phone, queued (v126 review)
     const unreadKept = m => !!(_visitsArch[m] && _visitsArch[m].kept != null);
     const touched = Object.keys(_visitsArch).filter(m => unreadKept(m) && JSON.stringify(part.months[m] || []) !== _visitsArch[m].json);
-    if(touched.length) throw new Error('visits: ' + touched.join(', ') + ' not read from the cloud yet — kept on this phone');
+    if(touched.length) throw visitsWaitError('visits: ' + touched.join(', ') + ' not read from the cloud yet — kept on this phone', touched.some(m => _visitsArch[m].why === 'timeout') ? 'timeout' : 'read');
     const homeById = {};
     part.live.forEach(v => { if(v.id != null) homeById[v.id] = 'live'; });
     Object.keys(part.months).forEach(m => part.months[m].forEach(v => { if(v.id != null) homeById[v.id] = m; }));
@@ -1064,7 +1097,7 @@ async function patchVisitPhotosNow(changes){
     // the document holding a visit is known only from documents read from the cloud (v126 review): a kept month is read
     // first; a visit that only a month still kept places is asked again next round. The visits on screen not read from
     // the cloud this session (v126 review 2): every document is read first; not read → every mark asked again next round
-    if(visitsUnread() && !await visitsReadFirstNow()){ changes.forEach(c => { out[c.photoId] = 'failed'; }); return out; }
+    if(visitsUnread() && (await visitsReadFirstNow()) !== true){ changes.forEach(c => { out[c.photoId] = 'failed'; }); return out; }
     if(keptMonthsOnScreen()) await visitsConfirmKeptNow();
     const byDoc = {};
     changes.forEach(c => { const d = visitDocOf(c.visitId); if(_visitsArch[d] && _visitsArch[d].kept != null) out[c.photoId] = 'failed'; else (byDoc[d] = byDoc[d] || []).push(c); });
@@ -1827,14 +1860,15 @@ async function loadAllNow(opts){
     if(raced){
       console.warn('refresh: a save ran while it read — the lists on screen are kept; the next refresh reads again');
       const onPhone = (k, val) => { if(_loadFailed[k]) return; const str = JSON.stringify(val); mirrorSave(k, str); if(WHOLE_DOCS.includes(k)) keepDocBaseOnPhone(k, str); }; // never defaults over a real copy
+      // that copy may hold an edit whose save is still on its way: keep beside it the base the
+      // cloud last confirmed, so a reopen without a connection still counts the edit as this phone's —
+      // kept BEFORE the copy is written: the visits' base records are found in the copy it replaces (rerev B2)
+      ['clinics', 'tasks', 'events', 'dayPlans', 'visits'].forEach(k => { if(!_loadFailed[k] && !(k === 'clinics' && _seedClinics)) keepMergeBaseOnPhone(k); });
       if(!_seedClinics) onPhone('clinics', storedClinics());
       if(!_loadFailed.visits) visitsMirrorSave(visits);
       onPhone('products', products); onPhone('tasks', tasks); onPhone('dayPlans', dayPlans); onPhone('events', events);
       onPhone('targets', targets); onPhone('staff', staff); onPhone('recycleBin', recycleBin); onPhone('benchmarks', BENCHMARKS);
       onPhone('categoryGuides', categoryGuides); onPhone('erpNotes', erpNotes);
-      // that copy may hold an edit whose save is still on its way: keep beside it the base the
-      // cloud last confirmed, so a reopen without a connection still counts the edit as this phone's
-      ['clinics', 'tasks', 'events', 'dayPlans', 'visits'].forEach(k => { if(!_loadFailed[k] && !(k === 'clinics' && _seedClinics)) keepMergeBaseOnPhone(k); });
     }
     // v126 speed: a document read exactly as the copy on screen was taken from it (_onScreen) is kept as it is — not
     // parsed, filtered or merged again; it still counts as this refresh's read from the cloud (its flags are adopted
@@ -3011,28 +3045,43 @@ function keepMergeBaseOnPhone(key){
   if(str != null){ try{ localStorage.setItem('um_base:' + key, str); }catch(e){} }
 }
 // id → the base record (as the cloud last confirmed it) of every visit on
-// screen whose fingerprint differs from it: kept from earlier, else from the
-// documents this session read, else from the phone's copy (before this save
-// replaces it: a visit it had not changed then is still its base).
+// screen whose fingerprint differs from it: a record kept earlier (in memory,
+// or on the phone: um_base:visitsRec), else the whole record the base in
+// memory holds (the phone's copy as a start without a read took it), else the
+// documents this session read, else the phone's copy (before this save
+// replaces it: a visit it had not changed then is still its base). A record
+// kept earlier is carried over while it is still that fingerprint's visit —
+// never dropped by a later save (rerev B1–B3: the first save that did not land
+// had replaced the copy, a second one — the next in the round, the round's
+// retry of the queue, a refresh raced by the save — found no base for the
+// visit and rewrote um_base:visitsRec without it, and once the signal was back
+// this phone's whole visit was written over another device's correction).
 function visitsChangedBases(fps){
   const out = {}, today = todayStr();
   const dirty = _visitsDirtyDocs; _visitsDirtyDocs = null; // (unknown → every document: a few ms more, never a visit missed)
-  let docs = null, copy = null;
+  let docs = null, copy = null, onPhone;
   const index = (map, str) => { const a = typeof str === 'string' ? UMCore.safeParse(str, null) : null; if(Array.isArray(a)) a.forEach(v => { if(v && v.id != null && !map.has(v.id)) map.set(v.id, v); }); };
+  const fromKept = id => _visitsBaseRecs ? _visitsBaseRecs.get(id) : undefined;
+  const fromPhone = id => {
+    if(onPhone === undefined){ onPhone = null; try{ const o = UMCore.safeParse(localStorage.getItem('um_base:visitsRec'), null); if(o && typeof o === 'object' && !Array.isArray(o)) onPhone = o; }catch(e){} }
+    return onPhone ? onPhone[id] : undefined;
+  };
+  const fb = visitsFallbackBase();
+  const fromBase = id => { const b = fb ? fb.get(id) : undefined; return b && typeof b === 'object' ? b : undefined; };
+  // (a month kept for the screen too: its text names the base record of a visit changed here — the very record its
+  // fingerprint was taken from, never evidence of the cloud; rerev W7: left out, the record of an edit to a month the
+  // read-first could not reach was lost when the save did not land, and after a reopen the correction was undone)
   const fromDocs = id => { if(!docs){ docs = new Map(); index(docs, _visitsLoaded); Object.keys(_visitsArch).forEach(mo => index(docs, _visitsArch[mo].json)); } return docs.get(id); };
   const fromCopy = id => { if(!copy){ copy = new Map(); index(copy, mirrorGet('visits')); } return copy.get(id); };
+  const is = (b, fp) => !!b && typeof b === 'object' && !Array.isArray(b) && UMCore.recordHash(b) === fp;
   (visits || []).forEach(v => {
     if(!v || v.id == null) return;
     const fp = fps.get(v.id);
     if(typeof fp !== 'string') return; // new here: no base
-    const kept = _visitsBaseRecs && _visitsBaseRecs.get(v.id);
-    if(kept && UMCore.recordHash(kept) === fp){ out[v.id] = kept; return; } // changed before: its base is kept already
+    for(const get of [fromKept, fromPhone]){ const b = get(v.id); if(is(b, fp)){ out[v.id] = b; return; } } // changed before: its base is kept already
     if(dirty && !dirty.has(UMCore.visitHome(v, today))) return; // its document is as the cloud last confirmed it
     if(UMCore.recordHash(v) === fp) return; // unchanged: the fingerprint says it all
-    for(const get of [fromDocs, fromCopy]){
-      const b = get(v.id);
-      if(b && typeof b === 'object' && UMCore.recordHash(b) === fp){ out[v.id] = b; return; }
-    }
+    for(const get of [fromBase, fromDocs, fromCopy]){ const b = get(v.id); if(is(b, fp)){ out[v.id] = b; return; } }
   });
   return out;
 }
@@ -3370,6 +3419,9 @@ async function persistNowInner(key, opts){
     // save with no connection, and sent once access is back (v123 review).
     const kind = saveErrKind(e);
     const awaitingSignIn = typeof earlyUnconfirmed === 'function' && earlyUnconfirmed(); // (the early open's window: nothing is sent before the sign-in is confirmed)
+    // the cloud's visits not read first because a read had no answer in time, the phone online (a weak link): said so —
+    // never "when back online" (rerev W3)
+    const noAnswer = !!(e && e.visitsWait === 'timeout') && !(typeof navigator !== 'undefined' && navigator.onLine === false);
     const acc = kind === 'refused' ? await accessCheck() : null;
     const lost = acc === 'lost', unsure = acc === 'unknown'; // unsure (round 3): kept and queued like an offline save, tried again by the round
     if(kind && !lost && !unsure){
@@ -3400,7 +3452,7 @@ async function persistNowInner(key, opts){
       if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); } // the truth stays on screen until it uploads
       updateSyncBadge();
       if(lost || unsure) noAccessToast(onPhone ? (lost ? NO_ACCESS_KEPT : ACCESS_UNKNOWN_KEPT) : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
-      else offlineToast(onPhone ? (awaitingSignIn ? SIGNIN_WAIT_KEPT : '📴 Saved on this device — uploads automatically when back online')
+      else offlineToast(onPhone ? (awaitingSignIn ? SIGNIN_WAIT_KEPT : noAnswer ? VISITS_WAIT_KEPT : '📴 Saved on this device — uploads automatically when back online')
                                 : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     } else {
       if(WHOLE_DOCS.includes(key)) keepDocBaseOnPhone(key, JSON.stringify(toSave)); // the phone's copy now holds an edit the cloud has not: keep what the cloud held beside it
@@ -3409,7 +3461,7 @@ async function persistNowInner(key, opts){
                             : '⚠️ Device storage full — retry this save when back online');
     }
     // a whole document whose answer did not come in time may still land (followed above): said as "no answer yet", never as "not saved"
-    tell({ ok: false, queued: !!queueable, mirrored: onPhone, noAccess: lost || undefined, accessUnknown: unsure || undefined, awaitingSignIn: (awaitingSignIn && !lost && !unsure) || undefined, timeout: !queueable && /timeout/.test(String(e && e.message)) });
+    tell({ ok: false, queued: !!queueable, mirrored: onPhone, noAccess: lost || undefined, accessUnknown: unsure || undefined, awaitingSignIn: (awaitingSignIn && !lost && !unsure) || undefined, noAnswer: (noAnswer && !awaitingSignIn && !lost && !unsure) || undefined, timeout: !queueable && /timeout/.test(String(e && e.message)) });
     return false;
   }
 }
@@ -3483,6 +3535,7 @@ const NO_ACCESS_KEPT = "🔒 Kept on this phone — no access to the team's data
 // A save made while the screen is this phone's copy and the sign-in is not confirmed yet (the early open's window): the
 // cloud is not asked before it is — what waits says so, never "no connection" (v126 review 2, U5)
 const SIGNIN_WAIT_KEPT = '🔒 Kept on this phone — your sign-in is not confirmed yet. It uploads by itself once it is';
+const VISITS_WAIT_KEPT = '⏳ Kept on this phone — the cloud has not answered in time. It uploads by itself once it does'; // (rerev W3)
 const SIGNIN_WAIT_NOT_SAVED = '⏳ Not saved yet — your sign-in is not confirmed yet. The screen says so if it is saved';
 const NO_ACCESS_NOT_SAVED = "🔒 Not saved — no access to the team's data right now (signed out?). Sign in again, then save again";
 // The cloud refused a save and did not answer whether this login may save at all (round 3): kept, tried again
@@ -3695,6 +3748,7 @@ function saveFailText(r, key){
   if(o.noAccess) return [!o.queued ? NO_ACCESS_NOT_SAVED : o.mirrored ? NO_ACCESS_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000];
   if(o.accessUnknown) return [!o.queued ? ACCESS_UNKNOWN_NOT_SAVED : o.mirrored ? ACCESS_UNKNOWN_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000]; // (round 3)
   if(o.awaitingSignIn) return [!o.queued ? SIGNIN_WAIT_NOT_SAVED : o.mirrored ? SIGNIN_WAIT_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000]; // (v126 review 2: the early open's window)
+  if(o.noAnswer && o.queued) return [o.mirrored ? VISITS_WAIT_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 6000]; // (rerev W3: online, no answer in time)
   if(o.queued && o.mirrored) return ['📴 Saved on this device — uploads automatically when back online', 4000]; // the same words as persist's own offline notice
   if(o.queued) return ['⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000];
   if(o.refused) return ['⚠️ Not saved — reopen the app, then try again', 5000];      // a guard refused it before any write

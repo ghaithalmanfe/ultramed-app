@@ -56,7 +56,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
     await page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
     await page.waitForTimeout(250);
   };
-  const state = () => page.evaluate(() => ({
+  const state = () => page.evaluate(() => msWhenReady()).then(() => page.evaluate(() => ({ // (the home's figures, and its frame, are those of the data as it is now — a later frame is held until they are: v126 speed part 2)
     periods: erpPeriods().map(p => ({ id: p.id, from: p.from, to: p.to, rows: (p.rows||[]).length, missing: !!p.rowsMissing })),
     broken: _erpBroken.slice(), dirty: _erpDirty, loadFailed: !!_loadFailed.erpSales,
     nudge: (document.getElementById('erpNudge')||{}).innerText || '',
@@ -65,7 +65,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
     modal: (document.getElementById('modalInner')||{}).innerText || '',
     target: (document.getElementById('targetCard')||{}).innerText || '',
     mirrorBytes: (localStorage.getItem('um_mirror:erpSales')||'').length,
-  }));
+  })));
   const importFile = () => page.evaluate(async (b64) => {
     const buf = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)).buffer;
     openErpImport();
@@ -108,6 +108,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   // ---------- 1b) team total % everywhere target figures appear ----------
   const expTeamPct = Math.round((pctAfter.Mariam.amount + pctAfter.Renova.amount) / 22000 * 100);
   check('upload note carries the team total', /الفريق/.test(s.modal) && new RegExp('الفريق: \\d+% → ' + expTeamPct + '%').test(s.modal), s.modal.split('\n').filter(l=>/الفريق/.test(l)));
+  await page.evaluate(() => msWhenReady()); // (the home's figures, and its frame, are those of the data as it is now — a later frame is held until they are: v126 speed part 2)
   const team = await page.evaluate(() => {
     const grab = () => (document.getElementById('modalInner')||{}).innerText || '';
     const out = { tt: teamTargetNow(), today: (document.getElementById('targetCard')||{}).innerText || '' };
@@ -305,7 +306,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   check('clinic merge unions doctors from both devices (by id) — nobody lost, nobody twice', merged.includes('Dr. Zain') && merged.includes('Dr. Noor') && merged.filter(n=>/ahmed/i.test(n)).length===1, merged);
 
   // ---------- 13) month rollover: targets are stamped with their month and flagged when stale ----------
-  const stale2 = await page.evaluate(() => { targets.Mariam.month = '2026-08'; renderToday(); return { note: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '' }; });
+  const stale2 = await page.evaluate(async () => { targets.Mariam.month = '2026-08'; renderToday(); await msWhenReady(); return { note: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '' }; });
   check('a target from an earlier month is flagged on the Today card and a month-inputs card asks for this month\'s DSR', /Target is from August 2026/.test(stale2.note) && /المدخلات الشهرية مطلوبة/.test(stale2.nudge), { note: stale2.note.split('\n').filter(l=>/Target is/.test(l)), nudge: stale2.nudge.slice(0,60) });
 
   check('no page errors', errors.length===0, errors.slice(0,5));
