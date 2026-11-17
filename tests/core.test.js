@@ -5431,3 +5431,331 @@ describe('start-up speed (v126): the wins are worked out once per list of lines'
     assert.notDeepEqual(after, before);
   });
 });
+
+describe('alerts center (v121)', () => {
+  // The bell's rules: each alert says why it shows, shows when it should and
+  // not when it should not, a rep never gets a supervisor-only type, the same
+  // thing is never listed twice, and every line has its Arabic.
+  const i18n = require('../www/js/i18n.js');
+  const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith', MS = 'Mariam Sample', RS = 'Ranova Sample Person';
+  const TODAY = '2026-11-11';                                   // a Wednesday
+  const at = (h, mi) => new Date(2026, 10, 11, h, mi || 0).getTime();
+  const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Waterpik Cordless Plus', 1, net, net, 0, sm, 'Waterpik', cust, 'Clinics', 0, ''];
+  const repMap = { [MS]: M, [RS]: R };
+  const C = (id, name, rep, x) => Object.assign({ id, name, rep, cls: 'B', doctors: [] }, x || {});
+  const CLINICS = [C('m1', 'Amberline Clinic', M, { cls: 'A' }), C('m2', 'Birchwood Center', M, { nextFollowUp: '2026-11-05' }),
+    C('m3', 'Cobaltia Clinic', M), C('m4', 'Dunevale Dental', M, { nextFollowUp: TODAY }),
+    C('m5', 'Old Closed Clinic', M, { cls: 'Closed', nextFollowUp: '2026-10-01' }), C('m6', 'Emberly Clinic', M),
+    C('r1', 'Fernhill Center', R, { nextFollowUp: '2026-11-01' }), C('r2', 'Garnetta Center', R), C('r3', 'Harborview Clinic', R)];
+  const OCT = [row('2026-10-03', 'SINV1', 'Amberline Clinic', 800, MS), row('2026-10-04', 'SINV2', 'Birchwood Center', 500, MS),
+    row('2026-10-05', 'SINV3', 'Emberly Clinic', 60, MS), row('2026-10-06', 'SINV4', 'Fernhill Center', 600, RS),
+    row('2026-10-20', 'SINV5', 'Fernhill Center', 300, RS), row('2026-10-02', 'SINV6', 'My Fatoorah', 400, MS),
+    row('2026-10-03', 'SINV7', 'Marketing Philips', 200, MS)];
+  const NOV = [row('2026-11-02', 'SINV11', 'Amberline Clinic', 100, MS), row('2026-11-03', 'SINV12', 'Birchwood Center', 480, MS),
+    row('2026-11-04', 'SINV13', 'Garnetta Center', 900, RS), row('2026-11-02', 'SINV14', 'My Fatoorah', 420, MS)];
+  const PERIODS = () => [{ id: 'oct', from: '2026-10-01', to: '2026-10-31', repMap, rows: OCT }, { id: 'nov', from: '2026-11-01', to: '2026-11-09', repMap, rows: NOV }];
+  const DATA = () => ({
+    clinics: CLINICS.map(c => Object.assign({}, c)),
+    visits: [{ id: 'v1', clinicId: 'm1', rep: M, date: '2026-11-09' }, { id: 'v2', clinicId: 'm6', rep: M, date: TODAY },
+      { id: 'v3', clinicId: 'r2', rep: R, date: TODAY, callOnly: true }],
+    dayPlans: { '2026-11-05': { [M]: [{ id: 'm2', note: '📅 Follow-up due' }] }, '2026-11-09': { [M]: [{ id: 'm3', note: '' }, 'm1'] },
+      '2026-11-08': { [R]: ['r3', 'r1'] }, '2026-11-10': { [M]: ['m6'] }, [TODAY]: { [R]: ['r2', 'r3'] }, '2026-10-20': { [M]: ['m3'] } },
+    events: [{ id: 'e1', date: TODAY, rep: 'all', title: 'Team meeting', type: 'Meeting' }, { id: 'e2', kind: 'issue', at: TODAY + 'T09:00:00', rep: R }],
+    targets: { [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-11' } },
+    erpSales: { returnPolicy: 'origin', periods: PERIODS() }, erpMap: { 'Marketing Philips': '@ignore' } });
+  const run = (who, o) => {
+    o = o || {};
+    const role = who === G ? 'supervisor' : 'rep';
+    const data = o.data || DATA();
+    return core.alertsFor({ today: o.today || TODAY, now: o.now || at(13, 30), hour: o.hour != null ? o.hour : 13, user: { name: who, role },
+      reps: o.reps || [M, R], team: o.team || [M, R, G], data, settings: o.settings || null, device: o.device || {}, cache: o.cache, fmtDate: o.fmtDate, monthLabel: o.monthLabel });
+  };
+  const ids = list => list.map(a => a.id);
+  const one = (list, id) => list.find(a => a.id === id);
+  const lines = a => [a.title].concat(a.why || [], (a.items || []).map(i => i.text), (a.items || []).map(i => i.note).filter(Boolean));
+
+  test('a rep sees her own: the target at risk first, then overdue follow-ups, missed plans, customers buying less', () => {
+    const m = run(M);
+    assert.deepEqual(ids(m), ['target:Mariam:2026-11', 'overdue:Mariam', 'missed:Mariam', 'drop:Mariam:2026-11']);
+    assert.deepEqual(ids(run(R)), ['overdue:Renova', 'missed:Renova', 'drop:Renova:2026-11']);
+    m.concat(run(R)).forEach(a => assert.ok(!core.ALERT_SUP_ONLY[a.type], a.id + ' is supervisor-only'));
+  });
+  test('the supervisor sees everyone\'s, one alert per person, and his own types', () => {
+    const g = run(G);
+    assert.deepEqual(ids(g), ['target:Mariam:2026-11', 'overdue:Mariam', 'overdue:Renova', 'missed:Mariam', 'missed:Renova',
+      'noActivity:Renova:2026-11-11', 'drop:Mariam:2026-11', 'drop:Renova:2026-11']);
+    assert.equal(one(g, 'overdue:Mariam').title, 'Mariam: 1 follow-up overdue');
+    assert.equal(one(g, 'target:Mariam:2026-11').title, 'Mariam: month target at risk');
+    assert.equal(new Set(ids(g)).size, g.length, 'every id once');
+  });
+  test('overdue follow-ups: only dates that passed, closed clinics out, each item opens its clinic', () => {
+    const a = one(run(M), 'overdue:Mariam');
+    assert.deepEqual(a.items, [{ clinicId: 'm2', text: 'Birchwood Center — was due Nov 5 (6 days ago)' }]);   // m4 is due today, m5 is closed
+    assert.equal(a.open.screen, 'followups');
+    assert.equal(one(run(R), 'overdue:Renova').items[0].text, 'Fernhill Center — was due Nov 1 (10 days ago)');
+  });
+  test('missed plans: the last 14 days, not visited on the day nor since; an overdue follow-up is never listed twice', () => {
+    const a = one(run(M), 'missed:Mariam');
+    // m2's plan is its overdue follow-up (folded), m1 was visited that day, m6 was visited since, Oct 20 is past the window
+    assert.deepEqual(a.items, [{ clinicId: 'm3', date: '2026-11-09', text: 'Cobaltia Clinic — planned Nov 9' }]);
+    assert.equal(a.title, '1 planned visit missed');
+    const r = one(run(R), 'missed:Renova');
+    assert.deepEqual(r.items.map(i => i.clinicId), ['r3']);                 // r1 is under overdue follow-ups
+    const g = run(G), seen = {};
+    g.filter(x => x.type === 'overdue' || x.type === 'missed').forEach(x => x.items.forEach(i => { const k = x.rep + '|' + i.clinicId; assert.ok(!seen[k], 'twice: ' + k); seen[k] = 1; }));
+    // two dates for the same clinic: one line, both dates
+    const d = DATA(); d.dayPlans['2026-11-04'] = { [M]: ['m3'] };
+    const two = one(run(M, { data: d }), 'missed:Mariam');
+    assert.equal(two.title, '2 planned visits missed');
+    assert.deepEqual(two.items.map(i => i.text), ['Cobaltia Clinic — planned Nov 4, Nov 9']);
+  });
+  test('no field visit by the hour: supervisor only, working days, after the hour; calls named but not counted', () => {
+    const a = one(run(G), 'noActivity:Renova:2026-11-11');
+    assert.equal(a.title, 'Renova: no field visit logged today by 12:00');
+    assert.deepEqual(a.why, ['Checked after 12:00 on a working day (the hour is set in alert settings). Only field visits count — calls and phone orders do not.',
+      'Logged today: 1 call, 0 phone orders.', "Today's plan: 2 clinics.", 'In the calendar today: Team meeting (Meeting).']);
+    assert.deepEqual(a.open, { screen: 'calendar', rep: R });
+    assert.ok(!run(G).some(x => x.id === 'noActivity:Mariam:2026-11-11'), 'Mariam logged a field visit today');
+    assert.ok(!run(G, { hour: 11 }).some(x => x.type === 'noActivity'), 'before the hour');
+    assert.ok(!run(G, { settings: { noActivityHour: 14 } }).some(x => x.type === 'noActivity'), 'the supervisor\'s hour');
+    assert.ok(!run(G, { today: '2026-11-13', now: new Date(2026, 10, 13, 13).getTime() }).some(x => x.type === 'noActivity'), 'Friday is the weekend');
+    // a supervisor who sells is in REPS — never an alert about his own day
+    assert.ok(!run(G, { reps: [M, R, G] }).some(x => x.id === 'noActivity:Dr. Ghaith:2026-11-11'));
+    assert.ok(!run(M).some(x => x.type === 'noActivity') && !run(R).some(x => x.type === 'noActivity'));
+  });
+  test('target at risk: the month figure against an even pace in working days to the ERP cut-off, said in full', () => {
+    const a = one(run(M), 'target:Mariam:2026-11');
+    assert.equal(core.monthAchievement(M, Object.assign({ today: TODAY }, DATA())).amount, 1000);   // the Today card's figure
+    assert.deepEqual(a.why, [
+      'Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to Nov 9.',
+      'Working days (Sun–Thu) to the ERP cut-off: 7 of 22. An even pace would be 3,181.82 KD (32%) by then.',
+      'Pace: 31% of an even pace — below 90%, the sales coach\'s rule (Reports). At this pace the month ends near 3,142.86 KD (31%).',
+      'To reach the target: 600.00 KD a working day over the 15 working days left.']);
+    assert.equal(a.title, 'Month target at risk');
+    assert.deepEqual(a.open, { screen: 'coach', rep: M });           // the coach on Reports says the same, by the same rule
+    assert.ok(!run(R).some(x => x.type === 'target'), 'Renova is at 141% of an even pace');
+    const nofile = DATA(); nofile.erpSales.periods = nofile.erpSales.periods.filter(p => p.id === 'oct');
+    assert.ok(!run(M, { data: nofile }).some(x => x.type === 'target'), 'no sales file this month: nothing measured');
+    const early = DATA(); early.erpSales.periods[1] = Object.assign({}, early.erpSales.periods[1], { to: '2026-11-02', rows: NOV.filter(r => r[0] <= '2026-11-02') });
+    assert.ok(!run(M, { data: early, today: '2026-11-03', now: new Date(2026, 10, 3, 13).getTime() }).some(x => x.type === 'target'), '2 working days: too early to call');
+    const hit = DATA(); hit.targets[M].revenue = 900;
+    assert.ok(!run(M, { data: hit }).some(x => x.type === 'target'), 'achieved already');
+    assert.equal(core.alertSettings({ targetPacePct: 30 }).targetPacePct, undefined, 'no second pace limit beside the coach\'s');
+  });
+  test('target at risk: the sales coach\'s verdict, by the one rule both use (v122)', () => {
+    // 1000 KD to Nov 9 (7 of 22 working days): a 3500 KD target expects 1113.64 KD by then — 89.8% of
+    // an even pace. The coach says "behind" (below 90%); a rounded 90% must not hide the alert.
+    const coachSays = d => { const ins = core.coachInsights({ erpMtd: core.erpMtd(Object.assign({ today: TODAY }, d)), today: TODAY, repFilter: M,
+      visits: [], clinics: d.clinics, targets: d.targets, dayPlans: {} }).find(i => i.key === 'target-' + M); return ins ? ins.data.state : null; };
+    [3000, 3500, 3509, 3600, 10000, 900].forEach(goal => {
+      const d = DATA(); d.targets[M].revenue = goal;
+      const alert = run(M, { data: d }).find(x => x.type === 'target' && x.id === 'target:Mariam:2026-11');
+      assert.equal(!!alert, coachSays(d) === 'behind', goal + ' KD: the alert follows the coach (' + coachSays(d) + ')');
+    });
+    const d = DATA(); d.targets[M].revenue = 3500;
+    const a = one(run(M, { data: d }), 'target:Mariam:2026-11');
+    assert.equal(a.why[2], 'Pace: 89% of an even pace — below 90%, the sales coach\'s rule (Reports). At this pace the month ends near 3,142.86 KD (90%).');
+    assert.equal(a.why[3], 'To reach the target: 167.00 KD a working day over the 15 working days left.');   // the coach's own figure (KD/day, rounded up)
+    const tp = core.targetPace(3500, 1000, TODAY, '2026-11-09');
+    assert.deepEqual([tp.state, tp.workedSoFar, tp.totalWork, tp.daysLeft, tp.perDay], ['behind', 7, 22, 15, 167]);
+    // a file that carries her covers the month, and no invoice of hers yet: the Today card and the alert count 0 KD
+    // (monthAchievement); the coach has no line of hers to judge (erpMtd lists sellers only) — said, never a made-up figure
+    const none = DATA(); none.erpSales.periods[1] = Object.assign({}, none.erpSales.periods[1], { rows: NOV.filter(r => r[8] !== RS) });
+    const zero = one(run(R, { data: none }), 'target:Renova:2026-11');
+    assert.equal(zero.why[0], 'Achieved 0.00 KD of the 2,000.00 KD target (0%) — ERP sales files to Nov 9.');
+    assert.equal(core.coachInsights({ erpMtd: core.erpMtd(Object.assign({ today: TODAY }, none)), today: TODAY, repFilter: R, visits: [], clinics: none.clinics, targets: none.targets, dayPlans: {} })
+      .some(i => i.key === 'target-' + R), false);
+  });
+  test('a target from an earlier month: never judged, never silent — named as the Today card names it (v122)', () => {
+    const stale = DATA(); stale.targets[M].month = '2026-10';
+    const mine = run(M, { data: stale });
+    assert.ok(!mine.some(x => x.id === 'target:Mariam:2026-11'), 'no pace against last month\'s target');
+    const st = one(mine, 'target-stale:Mariam:2026-11');
+    assert.equal(st.title, 'Target is from October 2026');
+    assert.deepEqual(st.why, ["Upload this month's DSR: until then the Today card shows this target with the same note, and the month's pace is not judged against it."]);
+    assert.deepEqual(st.open, { screen: 'targetCard' });
+    assert.equal(st.sev, 'low');
+    const g = one(run(G, { data: stale }), 'target-stale:Mariam:2026-11');
+    assert.equal(g.title, 'Mariam: target is from October 2026');
+    assert.deepEqual(g.open, { screen: 'erpImport' });                  // the supervisor uploads the DSR
+    assert.ok(!run(R, { data: stale }).some(x => x.type === 'target'), 'never another person\'s target');
+    const byAsOf = DATA(); delete byAsOf.targets[M].month; byAsOf.targets[M].achievedAsOf = '2026-10-31';   // the Today card's own test of a target's month
+    assert.ok(one(run(M, { data: byAsOf }), 'target-stale:Mariam:2026-11'));
+    const later = DATA(); later.targets[M].month = '2026-12';            // next month's DSR uploaded early: not this month's, not stale
+    assert.ok(!run(M, { data: later }).some(x => x.type === 'target'));
+  });
+  test('sync (v122): the red bar of a full phone is said at once in its own words, the queue as the pill counts it', () => {
+    const now = at(13, 30);
+    const bar = ["This phone's storage is full — this visit is only in the app's memory: keep the app open and connected until it says Saved", "A photo is only in the app's memory too"];
+    const memPhoto = { visitId: 'v2', clinicId: 'm6', label: 'Emberly Clinic', date: TODAY, rep: M, withRep: null, wait: "⚠️ Photo waiting to upload · only in the app's memory — keep the app open", lost: null, mem: 1, here: 0, own: [now - 60000], old: 0, lostAt: [] };
+    const dev = { outbox: [{ key: 'visits', since: now - 60000 }, { key: 'tasks', since: now - 45 * 60000 }], memOnly: ['visits'], memBar: bar, photos: [memPhoto], online: false };
+    const list = run(M, { device: dev });
+    const mem = one(list, 'sync-mem');
+    assert.equal(mem.title, "Only in the app's memory — keep the app open");
+    assert.deepEqual(mem.why, bar);                                      // the bar's own lines
+    assert.equal(mem.sev, 'high');
+    assert.equal(mem.action, 'flush');
+    assert.deepEqual(mem.items.map(i => [i.text, i.note || null]), [["Visits — only in the app's memory", null],
+      ['Emberly Clinic · Nov 11', "⚠️ Photo waiting to upload · only in the app's memory — keep the app open"]]);
+    const w = one(list, 'sync-wait');
+    assert.deepEqual(w.items.map(i => i.text), ['Tasks — waiting since 12:45'], 'a key on the red bar is not listed twice');
+    assert.deepEqual(w.why, ['Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.',
+      'Shown when a change has waited longer than 30 minutes (alert settings).', 'This phone is offline right now.']);
+    assert.ok(!list.some(x => /^photos-/.test(x.id)), 'the photo only in memory is on the red bar\'s card only');
+    // the red bar comes down: its card goes, the queue stays
+    const after = run(M, { device: { outbox: [{ key: 'visits', since: now - 60000 }, { key: 'tasks', since: now - 45 * 60000 }] } });
+    assert.ok(!one(after, 'sync-mem'));
+    assert.deepEqual(one(after, 'sync-wait').items.map(i => i.text), ['Tasks — waiting since 12:45', 'Visits — waiting since 13:29']);
+    assert.ok(!one(run(M, { device: { outbox: [{ key: 'tasks', since: now - 10 * 60000 }] } }), 'sync-wait'), 'waiting 10 minutes is not long');
+    assert.ok(one(run(M, { device: { outbox: [{ key: 'tasks', since: now - 10 * 60000 }] }, settings: { outboxMinutes: 5 } }), 'sync-wait'), 'the supervisor\'s minutes');
+    // the branch's "saves that did not reach the cloud" was a second record beside the queue: gone
+    assert.ok(!run(G, { device: { failed: [{ key: 'targets', at: now - 60000 }] } }).some(x => x.type === 'sync'));
+    assert.ok(!run(M).some(x => x.type === 'sync'), 'nothing queued, nothing only in memory');
+  });
+  test('sync (v122): visit photos as their notes say them — this phone\'s waiting ones, another phone\'s after 3 days, the lost ones', () => {
+    const now = at(13, 30), day = 86400000;
+    const P = o => Object.assign({ visitId: 'v1', clinicId: 'm1', label: 'Amberline Clinic', date: '2026-11-09', rep: M, withRep: null, wait: null, lost: null, mem: 0, here: 0, own: [], old: 0, lostAt: [] }, o);
+    const kept = P({ wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 45 * 60000] });
+    const fresh = P({ visitId: 'v2', clinicId: 'm6', label: 'Emberly Clinic', date: TODAY, wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 5 * 60000] });
+    const stale = P({ visitId: 'v3', clinicId: 'm3', label: 'Cobaltia Clinic', date: '2026-11-06', wait: '⏳ Photo waiting to upload · 5 days now — it can only come from the phone that took it, if that phone still has it', old: 5 });
+    const lost = P({ visitId: 'v4', clinicId: 'm2', label: 'Birchwood Center', date: '2026-11-08', lost: '⚠️ Photo lost before it uploaded — only this small preview is kept', lostAt: [now - 3 * day] });
+    const oldLost = P({ visitId: 'v5', clinicId: 'm3', label: 'Cobaltia Clinic', date: '2026-10-20', lost: '⚠️ Photo lost before it uploaded — only this small preview is kept', lostAt: [now - 22 * day] });
+    const oldStale = P({ visitId: 'v7', clinicId: 'm1', date: '2026-10-21', wait: '⏳ Photo waiting to upload · 21 days now — it can only come from the phone that took it, if that phone still has it', old: 21 });
+    const hers = P({ visitId: 'v6', clinicId: 'r1', label: 'Fernhill Center', rep: R, date: '2026-11-07', wait: '⏳ Photo waiting to upload · 4 days now — it can only come from the phone that took it, if that phone still has it', old: 4 });
+    const list = run(M, { device: { photos: [kept, fresh, stale, lost, oldLost, oldStale, hers] } });
+    const w = one(list, 'photos-wait');
+    assert.equal(w.title, '1 visit photo waiting to upload from this phone');
+    assert.deepEqual(w.items.map(i => [i.text, i.note, i.clinicId]), [['Amberline Clinic · Nov 9', '⏳ Photo waiting to upload · kept on this phone', 'm1']]);   // 5 minutes is not long
+    assert.equal(w.action, 'flush');
+    const s = one(list, 'photos-stale');
+    assert.equal(s.title, '1 visit photo not arrived from another phone');
+    assert.deepEqual(s.items.map(i => [i.text, i.note]), [['Cobaltia Clinic · Nov 6', stale.wait]]);   // Renova's is hers; 21 days is past the window
+    assert.deepEqual(s.why, ['Taken on another phone and still waiting to upload after 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last 14 days.']);
+    const l = one(list, 'photos-lost');
+    assert.equal(l.title, '1 visit photo lost before it uploaded');
+    assert.deepEqual(l.items.map(i => [i.text, i.note]), [['Birchwood Center · Nov 8', lost.lost]]);   // the one of 22 days ago is past the window
+    assert.ok(!list.some(x => x.items && x.items.some(i => i.clinicId === 'r1')), 'a rep never sees another person\'s visit');
+    const g = run(G, { device: { photos: [stale, hers] } });
+    assert.deepEqual(one(g, 'photos-stale').items.map(i => i.text), ['Cobaltia Clinic · Nov 6 · Mariam', 'Fernhill Center · Nov 7 · Renova']);   // the supervisor: everyone's, named
+    assert.ok(!run(M, { device: { photos: [fresh] } }).some(x => /^photos-/.test(x.id)), 'a photo taken 5 minutes ago is not an alert');
+  });
+  test('sync (v122): sales file changes behind the red retry bar — the supervisor\'s', () => {
+    const e = one(run(G, { device: { erpDirty: true } }), 'sync-erp');
+    assert.equal(e.title, 'Sales file changes not saved');
+    assert.equal(e.action, 'retryErp'); assert.equal(e.sev, 'high');
+    assert.ok(!run(M, { device: { erpDirty: true } }).some(x => x.type === 'sync'), 'the sales files are the supervisor\'s');
+  });
+  test('a failed import and today\'s backup: the supervisor\'s only, as this phone found them', () => {
+    const now = at(13, 30), fail = { at: at(10, 42), ok: false, msg: '❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry', who: G };
+    const e = one(run(G, { device: { erpImport: fail } }), 'erpImport:' + fail.at);
+    assert.deepEqual(e.why, ['Tried on Nov 11 at 10:42 — the message is below.', 'The figures still come from the files saved before — the newest reaches Nov 9.']);
+    assert.equal(e.msg, fail.msg);
+    assert.ok(!run(G, { device: { erpImport: Object.assign({}, fail, { ok: true }) } }).some(x => x.type === 'erpImport'), 'an import that worked since');
+    assert.ok(!run(G, { device: { erpImport: Object.assign({}, fail, { at: now - 8 * 86400000 }) } }).some(x => x.type === 'erpImport'), 'older than a week');
+    assert.ok(!run(G, { device: { erpImport: Object.assign({}, fail, { who: 'Someone Else' }) } }).some(x => x.type === 'erpImport'), 'someone else\'s import');
+    assert.ok(!run(G, { hour: 13 }).some(x => x.type === 'backup'), 'before the hour, nothing failed');
+    assert.equal(one(run(G, { hour: 16 }), 'backup-unchecked:2026-11-11').sev, 'low');
+    assert.ok(!run(G, { hour: 17, device: { snapDay: TODAY } }).some(x => x.type === 'backup'), 'found or written today');
+    // v123's own record of the daily backup (um_snapFail, maybeSnapshot): its words, as Export → Automatic backups says them
+    const bf = one(run(G, { hour: 9, device: { snapFail: { day: TODAY, at: at(9, 5), why: 'failed', bytes: null } } }), 'backup-failed:2026-11-11');
+    assert.equal(bf.title, "Today's backup was not saved from this phone"); assert.equal(bf.action, 'checkBackup');
+    assert.deepEqual(bf.why, ["The app keeps one backup a day of the clinics, products, tasks and this month's visits. This phone tried at 09:05.", 'It tries again within the hour.']);
+    const big = one(run(G, { hour: 9, device: { snapFail: { day: TODAY, at: at(9, 5), why: 'tooLarge', bytes: 1200000 } } }), 'backup-failed:2026-11-11');
+    assert.equal(big.why[1], 'It is too large for the cloud (1172 KB, even without the photo previews): take a Full backup (Export & backups).'); assert.equal(big.action, null);
+    assert.ok(!run(G, { hour: 17, device: { snapFail: { day: '2026-11-10', at: at(9, 5) - 86400000, why: 'failed' } } }).some(x => x.id === 'backup-failed:2026-11-11'), 'yesterday\'s failure is not today\'s');
+    // a rep never: the same facts on her phone say nothing
+    const dev = { erpImport: Object.assign({}, fail, { who: M }), snapFail: { day: TODAY, at: at(9, 5), why: 'failed', bytes: null } };
+    assert.deepEqual(run(M, { hour: 17, device: dev }).filter(x => core.ALERT_SUP_ONLY[x.type]), []);
+  });
+  test('the supervisor\'s switches: a type turned off shows to no one; numbers stay within their limits', () => {
+    const off = { types: { drop: false, missed: false } };
+    assert.ok(!run(M, { settings: off }).some(x => x.type === 'drop' || x.type === 'missed'));
+    assert.ok(!run(G, { settings: off }).some(x => x.type === 'drop' || x.type === 'missed'));
+    const s = core.alertSettings({ noActivityHour: '15', dropPct: 500, targetMinDays: 'x', types: { sync: false } });
+    assert.equal(s.noActivityHour, 15); assert.equal(s.dropPct, 30); assert.equal(s.targetMinDays, 3);
+    assert.equal(s.types.sync, false); assert.equal(s.types.overdue, true);
+    assert.equal(core.alertSettings({ dropPct: 500 }, { dropPct: 45 }).dropPct, 45, 'a number out of its limits keeps the one in force');
+    assert.deepEqual(core.alertSettings(null), core.alertSettings({}));
+  });
+  test('owners: no owner, and someone off the team list, are named as such for the supervisor', () => {
+    const d = DATA(); d.clinics.push(C('x1', 'Lonely Clinic', '', { nextFollowUp: '2026-11-02' }), C('x2', 'Former Clinic', 'Sara', { nextFollowUp: '2026-11-03' }));
+    const g = run(G, { data: d });
+    assert.equal(one(g, 'overdue:').title, 'No owner: 1 follow-up overdue');
+    assert.equal(one(g, 'overdue:Sara').title, 'Sara (not on the team list): 1 follow-up overdue');
+    assert.ok(!run(M, { data: d }).some(x => x.id === 'overdue:' || x.id === 'overdue:Sara'));
+  });
+  test('dismiss hides for the rest of the day, snooze until the start of the day three days on, restore brings it back', () => {
+    const list = run(M), now = at(13, 30);
+    let st = core.alertStateNext({}, 'dismiss', 'missed:Mariam', TODAY, now);
+    let v = core.alertsVisible(list, st, TODAY, now);
+    assert.equal(v.shown.length, 3); assert.deepEqual(v.hidden.map(a => [a.id, a.hidden]), [['missed:Mariam', 'dismissed']]);
+    const tomorrow = new Date(2026, 10, 12, 8).getTime();
+    assert.equal(core.alertsVisible(list, st, '2026-11-12', tomorrow).shown.length, 4, 'back the next day');
+    st = core.alertStateNext(st, 'snooze', 'drop:Mariam:2026-11', TODAY, now);
+    assert.equal(st.snoozed['drop:Mariam:2026-11'], new Date(2026, 10, 14).getTime());
+    assert.equal(core.alertsVisible(list, st, '2026-11-13', new Date(2026, 10, 13, 23).getTime()).shown.length, 3, 'still snoozed on the 13th');
+    assert.equal(core.alertsVisible(list, st, '2026-11-14', new Date(2026, 10, 14, 0, 1).getTime()).shown.length, 4, 'back on the 14th');
+    st = core.alertStateNext(st, 'restore', 'missed:Mariam', TODAY, now);
+    assert.equal(core.alertsVisible(list, st, TODAY, now).shown.length, 3, 'only the snoozed one hidden');
+    // what has run out is dropped from the stored state
+    const later = core.alertStateNext(st, null, null, '2026-11-20', new Date(2026, 10, 20).getTime());
+    assert.deepEqual([Object.keys(later.dismissed), Object.keys(later.snoozed)], [[], []]);
+  });
+  test('the sales rules run again only when what they read changed (input.cache) — and say the same as without it', () => {
+    const cache = {}, d = DATA();
+    const a1 = run(M, { data: d, cache }), a2 = run(M, { data: d, cache });
+    assert.equal(one(a2, 'drop:Mariam:2026-11'), one(a1, 'drop:Mariam:2026-11'), 'the same object: not computed again');
+    assert.deepEqual(a1, run(M, { data: DATA() }));
+    // a new revision of the November file: Amberline bought 700 more — no longer down
+    d.erpSales.periods[1] = Object.assign({}, d.erpSales.periods[1], { rev: 2, rows: NOV.concat([row('2026-11-05', 'SINV15', 'Amberline Clinic', 700, MS)]) });
+    const a3 = run(M, { data: d, cache });
+    assert.ok(!a3.some(x => x.type === 'drop'));
+    assert.deepEqual(a3, run(M, { data: d }));
+    // a clinic handed over: the other person's view changes at once
+    d.clinics.find(x => x.id === 'r1').rep = M;
+    assert.ok(run(M, { data: d, cache }).some(x => x.id === 'drop:Mariam:2026-11' && x.items.some(i => i.clinicId === 'r1')));
+    // a target changed: the target card follows
+    d.targets[M].revenue = 1500;
+    assert.ok(!run(M, { data: d, cache }).some(x => x.type === 'target'));
+  });
+  test('erpSpanCovered: the files carrying the person cover every day, a weekend gap allowed', () => {
+    const d = { erpSales: { periods: PERIODS() } };
+    assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-10-09', M), true);
+    assert.equal(core.erpSpanCovered(d, '2026-09-01', '2026-09-09', M), false);
+    assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-11-08', R), true, 'two files chained');
+    assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-10-09', 'Nobody'), false, 'no file carries that person');
+    const gap = { erpSales: { periods: [{ id: 'a', from: '2026-10-01', to: '2026-10-05', repMap }, { id: 'b', from: '2026-10-15', to: '2026-10-31', repMap }] } };
+    assert.equal(core.erpSpanCovered(gap, '2026-10-01', '2026-10-20', M), false, 'a ten-day hole');
+  });
+  test('every line of every alert has its Arabic (the names and figures stay)', () => {
+    const now = at(13, 30), d = DATA();
+    d.clinics.push(C('x1', 'Lonely Clinic', '', { nextFollowUp: '2026-11-02' }));
+    const day = 86400000, P = o => Object.assign({ visitId: 'v1', clinicId: 'm1', label: 'Amberline Clinic', date: '2026-11-09', rep: M, withRep: null, wait: null, lost: null, mem: 0, here: 0, own: [], old: 0, lostAt: [] }, o);
+    const photos = [P({ wait: '⏳ 2 photos waiting to upload · 1 kept on this phone · 1 only in the app\'s memory — keep the app open', here: 1, mem: 1, own: [now - 60000, now - 60000] }),
+      P({ visitId: 'v2', wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 45 * 60000] }),
+      P({ visitId: 'v3', wait: '⏳ Photo waiting to upload · 4 days now — it can only come from the phone that took it, if that phone still has it', old: 4 }),
+      P({ visitId: 'v4', lost: '⚠️ 2 photos lost before they uploaded — only their small previews are kept', lostAt: [now - day, now - day] })];
+    const dev = { outbox: [{ key: 'tasks', since: now - 45 * 60000 }, { key: 'visits', since: now - 60000 }], memOnly: ['visits', 'memories'], erpDirty: true, online: false, photos,
+      memBar: ["This phone's storage is full — these changes are only in the app's memory: keep the app open and connected until it says Saved", "2 photos are only in the app's memory too"],
+      erpImport: { at: now - 3600000, ok: false, msg: 'x', who: G }, snapFail: { day: TODAY, at: now - 60000, why: 'tooLarge', bytes: 1200000 } };
+    const stale = DATA(); stale.targets[R].month = '2026-10';
+    // the dates and month names as the screen writes them in Arabic (fmtDate / monthLabel of 02 and 11)
+    const ar = { fmtDate: x => new Date(x + 'T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', { month: 'short', day: 'numeric' }),
+      monthLabel: x => new Date(x + '-01T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', { month: 'long', year: 'numeric' }) };
+    const all = [run(G, { data: d, device: dev, hour: 17 }), run(M, { device: dev }), run(G, { hour: 17, device: {} }), run(G, { data: stale }), run(R, { data: stale }),
+      run(G, Object.assign({ data: stale, device: dev, hour: 17 }, ar)), run(M, Object.assign({ device: dev }, ar))].reduce((a, b) => a.concat(b), []);
+    ['sync-mem', 'sync-wait', 'sync-erp', 'photos-wait', 'photos-stale', 'photos-lost', 'target-stale:Renova:2026-11'].forEach(id => assert.ok(all.some(a => a.id === id), 'covered: ' + id));
+    const types = new Set(all.map(a => a.type));
+    core.ALERT_TYPES.forEach(t => assert.ok(types.has(t), 'covered: ' + t));
+    const enLabel = l => /^[^·]+ · [A-Z][a-z]{2} \d{1,2}( · [^·]+)?$/.test(l);   // "Amberline Clinic · Nov 9": a name and an English date — its Arabic run has the Arabic date
+    const arLabel = l => /^[^·]+ · \d{1,2} [؀-ۿ]+( · [^·]+)?$/.test(l);           // the same line on an Arabic screen: nothing in it to translate
+    all.forEach(a => lines(a).forEach(l => { if(enLabel(l)) return; const t = i18n.tr(l) || (arLabel(l) ? l : null); assert.ok(t && /[؀-ۿ]/.test(t), 'no Arabic for: ' + l); }));
+    assert.ok(all.some(a => (a.items || []).some(i => /^Amberline Clinic · \d+ نوفمبر$/.test(i.text))), 'a photo line in Arabic: the name stays, the date in Arabic');
+    ['Alerts', 'Nothing needs attention right now.', 'Dismiss for today', 'Snooze 3 days', 'Alert settings', 'Upload now', 'Check now', 'Retry the save', 'Open']
+      .forEach(s => assert.ok(/[؀-ۿ]/.test(i18n.tr(s) || ''), s));
+    assert.equal(i18n.tr('Mariam: 2 follow-ups overdue'), 'Mariam: 2 متابعة متأخرة');
+    // an amount as the Arabic UI writes it: the same grouping, د.ك after the figure (kdAr, v125)
+    assert.equal(i18n.tr('Amberline Clinic — 100.00 KD vs 800.00 KD (−88%)'), 'Amberline Clinic — 100.00 د.ك مقابل 800.00 د.ك (−88%)');
+    assert.equal(i18n.tr('Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to 9 نوفمبر.'), 'المحقق 1,000.00 د.ك من تارغت 10,000.00 د.ك (10%) — من ملفات مبيعات ERP حتى 9 نوفمبر.');
+  });
+});

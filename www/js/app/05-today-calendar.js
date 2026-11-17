@@ -339,12 +339,8 @@ function openSalesHub(){
       moreTile(I('activity'), 'Product movement', 'Every brand → its products ranked by real sales: fast, mid, slow', 'closeModal(); openProductMovement()'),
       moreTile(I('pill'), 'Prescriptions growth', 'Prescription pads given, by doctor and by center', "closeModal(); ddTab='rx'; switchView('doctors')")].join('')}</div>`);
 }
-// The bell: the follow-ups due of whoever is signed in (a rep: hers), the same count as the Today screen's.
-function msBell(){
-  const n = currentUser ? visibleDueClinics().length : 0, b = document.getElementById('bellCount');
-  if(b){ b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n); }
-}
-function bellOpen(){ if(activeView !== 'today') switchView('today'); msGo('msDueCard'); }
+// The bell (the top bar's one bell) is the alerts center's (19-alerts.js): it follows every change drawn here.
+function msBell(){ if(typeof renderAlertsBell === 'function') renderAlertsBell(); }
 // Help & Support (the sidebar's last entry): the app's version, what this phone still has to send, and who to ask.
 function openHelp(){
   let queued = [];

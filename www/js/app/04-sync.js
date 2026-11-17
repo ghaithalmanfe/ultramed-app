@@ -1291,6 +1291,7 @@ async function persistErpSalesInner(){
 // erpSaveFailed — the pill is for the small edits: who-is-who, return policy,
 // the boot-time purge of ignored salesmen).
 function renderErpDirtyPill(){
+  if(typeof alertsSoon === 'function') alertsSoon(); // the header bell says what the bars say (19-alerts.js)
   let el = document.getElementById('erpDirtyPill');
   if(!_erpDirty){ if(el) el.remove(); return; }
   if(!el){
@@ -2092,6 +2093,32 @@ function outboxList(){
   _outboxMem.forEach(k => { if(!out.includes(k)) out.push(k); });
   return out;
 }
+// When each queued key was first queued (the alerts center, 19-alerts.js, says
+// how long a change has waited): kept like the queue itself — in memory always,
+// on the phone when it fits. A key keeps its time until it leaves the queue.
+const OUTBOX_SINCE = 'um_outboxSince';
+const _outboxSince = {};
+function outboxSinceDevice(){ try{ const m = JSON.parse(localStorage.getItem(OUTBOX_SINCE)||'{}'); return m && typeof m === 'object' && !Array.isArray(m) ? m : {}; }catch(e){ return {}; } }
+function outboxStamp(list){
+  const dev = outboxSinceDevice(), now = Date.now(), next = {};
+  list.forEach(k => { next[k] = _outboxSince[k] > 0 ? _outboxSince[k] : dev[k] > 0 ? dev[k] : now; });
+  Object.keys(_outboxSince).forEach(k => { delete _outboxSince[k]; });
+  Object.assign(_outboxSince, next);
+  try{ localStorage.setItem(OUTBOX_SINCE, JSON.stringify(next)); }catch(e){}
+}
+// The queue as outboxList() has it (memory included), each key with the time it
+// was first queued: [{key, since}]. A key queued before this release has no time
+// yet — it is stamped the first time it is read here ("waiting since at least then").
+function outboxWaiting(){
+  const list = outboxList(), dev = outboxSinceDevice(), now = Date.now();
+  let stamped = false;
+  const out = list.filter(k => typeof k === 'string' && k).map(k => {
+    if(!(_outboxSince[k] > 0)){ _outboxSince[k] = dev[k] > 0 ? dev[k] : now; stamped = true; }
+    return { key: k, since: _outboxSince[k] };
+  });
+  if(stamped){ try{ localStorage.setItem(OUTBOX_SINCE, JSON.stringify(_outboxSince)); }catch(e){} }
+  return out;
+}
 // The queue is now exactly `list` — in memory always; on the phone if it fits.
 function outboxWrite(list){
   _outboxMem.clear(); list.forEach(k => _outboxMem.add(k));
@@ -2104,6 +2131,7 @@ function outboxWrite(list){
     if(!(Array.isArray(dev) && dev.every(k => list.includes(k)))){ try{ localStorage.removeItem('um_outbox'); if(list.length) localStorage.setItem('um_outbox', str); ok = true; }catch(e){} }
   }
   _outboxDeviceBad = !ok; // an older device queue must not bring back what was sent
+  outboxStamp(list);
   updateSyncBadge();
   return ok;
 }
@@ -2123,6 +2151,15 @@ const MEMONLY_OTHER = "This phone's storage is full — these changes are only i
 const MEMONLY_PHOTO = "This phone's storage is full — a photo is only in the app's memory: keep the app open and connected until it says Saved";
 let _memBarTimer = 0; // while such a photo is on the bar: looked at again every second (it lands in the background)
 function memOnlyPhotos(){ return typeof photosToUpload === 'function' ? photosToUpload(true) : 0; }
+// The red bar's lines (English; [] while it is down) — the bar shows them,
+// and the alerts center says them as they are (19-alerts.js).
+function memOnlyLines(){
+  const nPh = memOnlyPhotos();
+  if(!_memOnly.size && !nPh) return [];
+  return _memOnly.size
+    ? [_memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER].concat(nPh ? [nPh === 1 ? "A photo is only in the app's memory too" : nPh + " photos are only in the app's memory too"] : [])
+    : [nPh === 1 ? MEMONLY_PHOTO : "This phone's storage is full — " + nPh + " photos are only in the app's memory: keep the app open and connected until it says Saved"];
+}
 function renderMemOnlyBar(){
   let el = document.getElementById('memOnlyBar');
   const nPh = memOnlyPhotos();
@@ -2134,9 +2171,7 @@ function renderMemOnlyBar(){
     el.className = 'sbar sbar-wide sbar-danger';
     document.body.appendChild(el);
   }
-  const lines = _memOnly.size
-    ? [_memOnly.has('visits') ? MEMONLY_VISIT : MEMONLY_OTHER].concat(nPh ? [nPh === 1 ? "A photo is only in the app's memory too" : nPh + " photos are only in the app's memory too"] : [])
-    : [nPh === 1 ? MEMONLY_PHOTO : "This phone's storage is full — " + nPh + " photos are only in the app's memory: keep the app open and connected until it says Saved"];
+  const lines = memOnlyLines();
   const txt = lines.map(t => trOf(t) || t).join('\n');
   if(el.textContent !== txt) el.textContent = txt; // an alert: said again only when it changes
   if(nPh) _memBarTimer = setTimeout(memOnlyRecheck, 1000);
@@ -2723,6 +2758,7 @@ async function flushOutbox(){
   }
 }
 function updateSyncBadge(){
+  if(typeof alertsSoon === 'function') alertsSoon(); // the header bell says what the bars say (19-alerts.js)
   let el = document.getElementById('syncPill');
   const n = outboxList().filter(k => !_saveBlocked.has(k) && !_saveParked.has(k)).length; // a list too large for the cloud, or one the cloud refused, is not uploading: the red bar says so (v123)
   // nothing uploads before the early open's sign-in is confirmed: its line says what the screen is (v126 speed, part 3)
