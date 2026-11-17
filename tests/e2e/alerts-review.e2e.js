@@ -25,6 +25,12 @@
 //   R11 a failed sales import on this phone, then the file imported on the supervisor's other device: the card still says
 //       "The last sales file import failed" and "The figures still come from the files saved before" for seven days
 //   R12 the alert settings: a number out of its limits is dropped without a word, and the toast says "saved for the whole team"
+//   R1c the printed management report by the same rule; R7c the KPI settings told "not saved" never in force, the
+//       document taken whole from the cloud (defaults for what it lacks); and the unproven items settled:
+//   R13 (U1) an alert-settings save with no answer in time that never lands is never in force; R14 (U2) a dismissal
+//       covers only what the card listed; R15 (U3) Upload now's words with one list only in memory; R16 (U4) targets
+//       saved in Admin over another screen — the bell follows; R17 (U6) Check now while the day's check is on its way;
+//       R18 (U9) the DSR is the supervisor's to upload, and the supervisor is never told to ask the supervisor
 // The clock is fixed (Wed 11 Nov 2026, 13:30) and can be moved forward without a reload (window.__shiftMs: a phone that
 // slept — its timers held back). Port 8294. Env: ONLY=R1,R2,…  WWW=<dir>
 const http = require('http'); const fs = require('fs'); const path = require('path');
@@ -36,10 +42,13 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 const want = id => !ONLY || ONLY.has(id);
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const cloud = {};
-const mode = { failSet: null, failGet: null, snapReads: [] };
+const mode = { failSet: null, failGet: null, snapReads: [], hangSet: null, slowSnap: 0, denySnap: false };
 const api = {
-  get: async k => { if(/^snap_/.test(k)) mode.snapReads.push(k); if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get ' + k); return k in cloud ? cloud[k] : null; },
-  set: async (k, v) => { if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set ' + k); cloud[k] = v; return true; },
+  get: async k => { if(/^snap_/.test(k)){ mode.snapReads.push(k); if(mode.slowSnap) await new Promise(r => setTimeout(r, mode.slowSnap)); } if(mode.failGet && mode.failGet.test(k)) throw new Error('boom-get ' + k); return k in cloud ? cloud[k] : null; },
+  set: async (k, v) => {
+    if(mode.hangSet && mode.hangSet.test(k)){ await new Promise(r => setTimeout(r, 9000)); throw new Error('boom-late ' + k); }   // no answer in time, then a failure: it never lands
+    if(mode.denySnap && /^snap_/.test(k)){ const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; throw e; }   // the security rules refuse it
+    if(mode.failSet && mode.failSet.test(k)) throw new Error('boom-set ' + k); cloud[k] = v; return true; },
   del: async k => { delete cloud[k]; return true; },
   list: async p => Object.keys(cloud).filter(k => k.startsWith(p)),
   setMany: async entries => { if(mode.failSet && entries.some(([k]) => mode.failSet.test(k))) throw new Error('boom-set'); entries.forEach(([k, v]) => { cloud[k] = v; }); return true; },
@@ -162,6 +171,12 @@ function seed(opts){
     const t2 = byId(c2, 'target:Mariam:2026-11');
     check('R1b: the supervisor — Mariam\'s leaderboard row and the alerts center say the same: never "On pace" beside "Mariam: month target at risk"',
       !!rowM && (/Behind pace/.test(rowM)) === !!t2, { row: rowM, alert: t2 && t2.title });
+    // the printed management report's targets table (Pace, Status) — the same rule, its percentage on its word's side
+    const rep1 = await page.evaluate(() => { const box = document.createElement('div'); box.innerHTML = buildMasterReportBody('en');
+      const tr = [...box.querySelectorAll('tr')].find(x => /^Mariam$/.test(((x.querySelector('td b') || {}).textContent || '').trim()));
+      const td = tr ? [...tr.querySelectorAll('td')].map(x => x.textContent.replace(/\s+/g, ' ').trim()) : null; return td ? { pace: td[3], status: td[5] } : null; });
+    check('R1c: the printed management report says the same by the same rule — Pace 89% and Behind for 89.7 % of an even pace (never 90% and On pace beside the alert\'s "Pace: 89%")',
+      !!rep1 && rep1.pace === '89%' && rep1.status === 'Behind' && !!t2, { report: rep1, alert: t2 && t2.why[2] });
   }
 
   // ---- R2: a target from an earlier month ----
@@ -261,6 +276,26 @@ function seed(opts){
       /KPI settings saved/.test(kpi) && !(bm.alerts && bm.alerts.types && bm.alerts.types.drop === false),
       { kpiToast: kpi, cloudAlerts: bm.alerts || null, cardsAfterConnectionBack: drops(c2) });
   }
+  // ---- R7c: the KPI settings and the rest of the same document: never an unsaved edit, the defaults where the cloud has none ----
+  if(want('R7')){
+    seed({ benchmarks: { coverage: 70, priority: 90, conversion: 25, tasks: 85 } });   // the team's settings document: no KPI settings saved yet
+    await boot(G, 'supervisor');
+    const D24 = await page.evaluate(() => UMCore.KPI_DEFAULTS.responseHours);
+    mode.failSet = /^benchmarks$/;   // no connection for the save
+    const k1 = await page.evaluate(async () => { openKpiSettings(); await new Promise(r => setTimeout(r, 60)); document.getElementById('kpi_responseHours').value = '6';
+      await saveKpiSettings(); await new Promise(r => setTimeout(r, 200)); closeModal();
+      const copy = UMCore.safeParse(localStorage.getItem('um_mirror:benchmarks'), null);
+      return { hours: kpiSettings().responseHours, toast: document.getElementById('toast').textContent, copyHours: copy && copy.kpi ? copy.kpi.responseHours : null }; });
+    mode.failSet = null;
+    await round();   // the connection back: the cloud's document — no KPI settings in it
+    const k2 = await page.evaluate(() => ({ hours: kpiSettings().responseHours, coverage: BENCHMARKS.coverage, visitsPerDay: kpiSettings().visitsPerDay, alertsOn: UMCore.alertSettings(BENCHMARKS.alerts).types.drop }));
+    // a later save of the same document that lands (the alert settings) carries nothing that was told "not saved"
+    const k3 = await page.evaluate(async () => { openAlertSettings(); await new Promise(r => setTimeout(r, 80)); await saveAlertSettings(); await new Promise(r => setTimeout(r, 200)); closeModal(); return document.getElementById('toast').textContent; });
+    const bm = JSON.parse(cloud.benchmarks || '{}');
+    check('R7c: KPI settings told "not saved" never take effect either — the KPI hours stay the ones in force (' + D24 + ' h) on this phone and in its copy, the cloud\'s document is taken whole (its 70 % coverage, the defaults for what it lacks), and a later save of it carries none of the unsaved hours',
+      /Not saved/.test(k1.toast) && k1.hours === D24 && k1.copyHours !== 6 && k2.hours === D24 && k2.coverage === 70 && k2.visitsPerDay === 5 && k2.alertsOn === true && /saved for the whole team/.test(k3) && !(bm.kpi && bm.kpi.responseHours === 6),
+      { k1, k2, k3, cloudKpi: bm.kpi || null });
+  }
 
   // ---- R8: what the visit photo cards rest on ----
   if(want('R8')){
@@ -336,6 +371,111 @@ function seed(opts){
     });
     check('R12: an hour typed out of its limits (25) is not kept — said so (or refused before saving), never "✅ Alert settings saved for the whole team" while the hour in force stays 12',
       r.inForce === 12 && !/saved for the whole team/.test(r.toast), r);
+  }
+
+  // ---- R13 (U1): an alert-settings save with no answer in time, that never lands ----
+  if(want('R13')){
+    seed();
+    await boot(G, 'supervisor');
+    const c0 = await center();
+    mode.hangSet = /^benchmarks$/;   // the write gets no answer within the app's time, then fails: it never lands
+    const r = await page.evaluate(async () => { openAlertSettings(); await new Promise(r => setTimeout(r, 80)); document.getElementById('alT_drop').checked = false;
+      const ok = await saveAlertSettings(); await new Promise(r => setTimeout(r, 150));
+      return { ok, toast: document.getElementById('toast').textContent, inForce: UMCore.alertSettings(BENCHMARKS.alerts).types.drop,
+        copy: (UMCore.safeParse(localStorage.getItem('um_mirror:benchmarks'), null) || {}).alerts || null }; });
+    const c1 = await center();
+    await page.waitForTimeout(2500); mode.hangSet = null;   // (the write has failed by now)
+    await round();
+    const c2 = await center();
+    const drops = c => c.cards.filter(x => x.type === 'drop').length;
+    check('R13 (U1): an alert-settings save with no answer in time that never lands — not in force meanwhile (the customers cards stay, memory and the phone\'s copy keep the settings in force) nor after',
+      r.ok === false && /No answer from the cloud yet/.test(r.toast) && r.inForce === true && !(r.copy && r.copy.types && r.copy.types.drop === false) && drops(c0) > 0 && drops(c1) === drops(c0) && drops(c2) === drops(c0),
+      { r, cards: [drops(c0), drops(c1), drops(c2)] });
+  }
+
+  // ---- R14 (U2): a dismissal covers only what the card listed ----
+  if(want('R14')){
+    seed();
+    await boot(M, 'rep');
+    let c = await center();
+    const before = (byId(c, 'overdue:Mariam') || {}).items;
+    await page.evaluate(async () => { openAlerts(); await new Promise(r => setTimeout(r, 80)); const card = [...document.querySelectorAll('#alertsCenter .al-card')].find(x => x.dataset.alId === 'overdue:Mariam');
+      card.querySelector('[data-act="dismiss"]').click(); await new Promise(r => setTimeout(r, 150)); closeModal(); });
+    c = await center();
+    const gone = !byId(c, 'overdue:Mariam');
+    // another phone: Cobaltia's follow-up date was set for Nov 6 — a new overdue follow-up of hers, the same day
+    { const cl = JSON.parse(cloud.clinics); cl.find(x => x.id === 'm3').nextFollowUp = '2026-11-06'; cloud.clinics = JSON.stringify(cl); }
+    await round();
+    c = await center();
+    const back = byId(c, 'overdue:Mariam');
+    check('R14 (U2): a dismissed card comes back the same day when something new of the same kind appears (a second overdue follow-up), with everything it lists; the bell counts it',
+      gone && JSON.stringify(before) === JSON.stringify(['Birchwood Center — was due Nov 5 (6 days ago)']) && !!back && back.items.length === 2 && back.items.some(t => /^Cobaltia Clinic/.test(t)) && c.badge === c.cards.length,
+      { before, gone, back: back && back.items, badge: c.badge, cards: c.cards.length });
+  }
+
+  // ---- R15 (U3): Upload now — a change only in the app's memory beside one kept on the phone ----
+  if(want('R15')){
+    seed();
+    await boot(M, 'rep');
+    mode.failSet = /^(tasks|events)$/;   // the cloud does not answer these saves
+    await page.evaluate(async () => { closeModal(); document.getElementById('newTaskInput').value = 'Call Amberline about the samples'; await addTask(); });   // kept on the phone, queued
+    await page.evaluate(async () => {
+      window.__lsSet = Storage.prototype.setItem;   // the phone's storage full for this one list's copy: only in the app's memory
+      Storage.prototype.setItem = function(k, v){ if(k === 'um_mirror:events') throw new DOMException('full', 'QuotaExceededError'); return window.__lsSet.call(this, k, v); };
+      closeModal(); switchView('more'); openClientLog(); openClientLogForm('request'); await new Promise(r => setTimeout(r, 60));
+      document.getElementById('clForm_clinic').value = 'Cobaltia Clinic'; document.getElementById('clForm_text').value = 'Asked for samples';
+      await saveClientLog('request'); closeModal(); });
+    const st = await page.evaluate(() => ({ queue: outboxList(), mem: [..._memOnly] }));
+    const toast = await page.evaluate(async () => { await alertsUploadNow(null); return document.getElementById('toast').textContent; });
+    await page.evaluate(() => { Storage.prototype.setItem = window.__lsSet; });
+    mode.failSet = null;
+    check('R15 (U3): Upload now with one list only in the app\'s memory and another kept on this phone — the words say both as they are, never that every change is only in the app\'s memory',
+      st.queue.includes('tasks') && st.queue.includes('events') && st.mem.includes('events') && !st.mem.includes('tasks') && /only in the app's memory/.test(toast) && /stay on this phone/.test(toast),
+      { st, toast });
+  }
+
+  // ---- R16 (U4): targets saved in Admin over another screen ----
+  if(want('R16')){
+    seed();
+    await boot(G, 'supervisor');
+    const before = await page.evaluate(() => _alerts.shown.map(a => a.id));
+    // the supervisor on the Clinics screen opens Admin and raises Renova's target: 900 KD to Nov 9 is now far behind
+    await page.evaluate(async () => { closeModal(); switchView('clinics'); openAdminPanel(); await new Promise(r => setTimeout(r, 120));
+      const i = REPS.indexOf('Renova'); document.getElementById('tgRev' + i).value = '20000'; await saveTargets(); await new Promise(r => setTimeout(r, 100)); closeModal(); });
+    await page.waitForTimeout(1500);
+    const after = await page.evaluate(() => ({ ids: _alerts.shown.map(a => a.id), bell: document.getElementById('alertsBellN').hidden ? 0 : +document.getElementById('alertsBellN').textContent, saved: JSON.parse(localStorage.getItem('um_mirror:targets') || '{}') }));
+    const c = await center();
+    check('R16 (U4): targets saved in Admin over the Clinics screen — the bell follows by itself, with no round: "Renova: month target at risk" and the bell = the cards',
+      !before.includes('target:Renova:2026-11') && after.ids.includes('target:Renova:2026-11') && after.bell === c.cards.length && /20000/.test(cloud.targets || ''),
+      { before, after: { ids: after.ids, bell: after.bell }, sheet: c.cards.length });
+  }
+
+  // ---- R17 (U6): Check now while the day's backup check is on its way ----
+  if(want('R17')){
+    seed();
+    await boot(G, 'supervisor', null, new Date(2026, 10, 11, 16, 30).getTime());
+    mode.slowSnap = 1500;   // the read of today's backup takes a moment
+    const r = await page.evaluate(async () => { maybeSnapshot(); await new Promise(r => setTimeout(r, 100)); await alertsCheckBackup(null); return document.getElementById('toast').textContent; });   // a save started the day's check; then the tap
+    mode.slowSnap = 0;
+    check('R17 (U6): "Check now" while the day\'s backup check is on its way — it waits for it and says what it found ("in the cloud"), never "could not be saved" meanwhile',
+      /backup is in the cloud/.test(r) && !!cloud['snap_2026-11-11'], { toast: r, written: !!cloud['snap_2026-11-11'] });
+  }
+
+  // ---- R18 (U9): the DSR is the supervisor's to upload; the supervisor is never told to ask the supervisor ----
+  if(want('R18')){
+    seed({ targets: { [M]: { revenue: 10000, month: '2026-10' }, [R]: { revenue: 2000, month: '2026-11' } } });
+    await boot(M, 'rep');
+    const c = await center(), ts = byId(c, 'target-stale:Mariam:2026-11');
+    seed();
+    await boot(G, 'supervisor', null, new Date(2026, 10, 11, 16, 30).getTime());
+    mode.denySnap = true;   // the cloud's security rules refuse this login's backup
+    const toast = await page.evaluate(async () => { await alertsCheckBackup(null); return document.getElementById('toast').textContent; });
+    mode.denySnap = false;
+    const c2 = await center(), bf = byId(c2, 'backup-failed:2026-11-11');
+    const sup = [toast].concat(bf ? bf.why : []);
+    check('R18 (U9): a rep is told to ask the supervisor for this month\'s DSR (never to upload it), and the supervisor\'s backup card and toast never tell him to ask the supervisor',
+      !!ts && /^Ask the supervisor to upload this month's DSR/.test(ts.why[0]) && !!bf && !sup.some(t => /ask the supervisor/i.test(t)) && sup.some(t => /security rules/.test(t)),
+      { rep: ts && ts.why, sup });
   }
 
   // ---- R9 / R10: Arabic ----

@@ -819,7 +819,7 @@ const LINE_RE = /This phone's copy, saved\s+(\S.*?)\s+— updating from the clou
     const win = await readSheet();
     const DATA_TYPES = /^(overdue|missed|request|noActivity|target|drop)$/, CLAIM = /up to date|synced|\buploaded\b|(?:is|are) in the cloud|reached the cloud|Nothing needs attention right now/i;
     const basisLine = "From this phone's copy, saved " + lineTime + ' — updating from the cloud.';
-    const dataCards = win.cards.filter(c => DATA_TYPES.test(c.type));
+    const dataCards = win.cards.filter(c => DATA_TYPES.test(c.type) || /^photos-/.test(c.id));   // (the visit photo cards are made from the visits list too: alerts review F8)
     releaseAuth(D.label, 'ok');
     await D.settled(); await D.ev(() => msWhenReady()); await D.ev(() => typeof alertsWhenReady === 'function' ? alertsWhenReady().then(() => 1) : 1); await sleep(600);
     const u = await D.um(), badge2 = await bell();

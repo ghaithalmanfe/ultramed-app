@@ -930,14 +930,17 @@ function msSettle(){ if(_msJob || _msTimer) return; const w = _msWaiters; _msWai
 // Settles once the figures on screen are those of the data as it is now (the harness waits on it).
 function msWhenReady(){ return (_msJob || _msTimer) ? new Promise(res => _msWaiters.push(res)) : Promise.resolve(_msModel); }
 
-// ---- pace: the management report's rule (13-exports.js) ----
-// Expected by now = working days (Sun–Thu) from day 1 to the day the figure
-// runs to ÷ the working days of the month. On pace from 90 % of that.
+// ---- pace: the one pace rule (UMCore.paceOf — the coach's, the alerts center's and the printed report's too) ----
+// Expected by now = working days (Sun–Thu) from day 1 to the day the figure runs to ÷ the working days of the month.
+// On pace from 90 % of that, judged on the exact value (89.7 % is behind: until the alerts review this card rounded
+// first and said "On pace" beside the alerts' "Month target at risk").
 function msPace(ach, goal, done, total){
-  if(!(goal > 0) || ach == null || !(total > 0)) return null;
+  if(ach == null) return null;
+  if(typeof UMCore.paceOf === 'function'){ const P = UMCore.paceOf(ach, goal, done, total); return !P ? null : P.state === 'hit' ? 'reached' : P.state; }
+  if(!(goal > 0) || !(total > 0)) return null;   // (an older cached core.js: the same comparison, exact)
   if(ach >= goal) return 'reached';
-  const pace = Math.round(ach / (goal * Math.max(1, done) / total) * 100);
-  return pace >= 100 ? 'ahead' : pace >= 90 ? 'on' : 'behind';
+  const r = ach / (goal * Math.max(1, done) / total);
+  return r >= 1 ? 'ahead' : r >= 0.9 ? 'on' : 'behind';
 }
 const MS_PILL = { reached: ['good', 'Target reached'], ahead: ['good', 'Ahead of pace'], on: ['good', 'On pace'], behind: ['warn', 'Behind pace'] };
 const MS_STATE = { reached: 'Target reached', ahead: 'Ahead of pace', on: 'On pace', behind: 'Behind pace' };   // the target card's rows: the pill's words, one word per state on the screen

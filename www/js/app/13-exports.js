@@ -1,7 +1,10 @@
 // professional report, master report, PDF and XLSX export
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- PROFESSIONAL REPORT ----
-let BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
+// The settings document's defaults (the evaluation targets; the KPI and alert settings fill their own): what a key the
+// cloud's document lacks reads as — never an earlier edit in memory that did not land (alerts review F7, loadAllNow)
+const BENCHMARKS_DEFAULTS = {coverage:75, priority:90, conversion:25, tasks:85};
+let BENCHMARKS = Object.assign({}, BENCHMARKS_DEFAULTS);
 function periodLabel(){
   if(reportCustom) return `${fmtDate(reportCustom.from)} – ${fmtDate(reportCustom.to)}`;
   return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time';
@@ -517,8 +520,11 @@ function buildMasterReportBody(lang, format){
     const totalWork = UMCore.workingDaysBetween(mStart, monthEnd);
     const worked = Math.max(1, UMCore.workingDaysBetween(mStart, bm.asOf || today));
     const fc = Math.round(bm.amount / worked * totalWork * 100) / 100;
-    const pace = Math.round(bm.amount / (t.revenue * worked / totalWork) * 100);
-    const state = bm.amount >= t.revenue ? 'hit' : pace >= 90 ? 'on' : 'behind';
+    // the one pace rule (UMCore.paceOf): judged on the exact value, its percentage cut to a whole one on its word's side
+    // (89.7 % prints 89 % and Behind — until the alerts review this table rounded first: 90 % and On pace)
+    const P = typeof UMCore.paceOf === 'function' ? UMCore.paceOf(bm.amount, t.revenue, worked, totalWork) : null;
+    const pace = P ? P.pct : Math.floor(bm.amount / (t.revenue * worked / totalWork) * 100);
+    const state = bm.amount >= t.revenue ? 'hit' : P ? (P.state === 'behind' ? 'behind' : 'on') : pace >= 90 ? 'on' : 'behind';
     return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, fc, pace, state };
   }).filter(Boolean);
 

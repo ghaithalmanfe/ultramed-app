@@ -12,9 +12,10 @@
 // backup (um_snapDay / um_snapFail, maybeSnapshot) — keeps each
 // person's dismiss / snooze on this device, and draws the bell and the sheet.
 // The supervisor's on/off per type and the hours / limits live in
-// BENCHMARKS.alerts, saved through persist('benchmarks') like the KPI
-// settings; a rep can neither open nor save them. Nothing here reads the
-// cloud: the bell costs no download.
+// BENCHMARKS.alerts, saved through the settings document's own save
+// (persistSettings, 04-sync.js — like the KPI settings: one that did not land
+// never takes effect); a rep can neither open nor save them. Nothing here
+// reads the cloud: the bell costs no download.
 const ALERT_STATE = 'um_alerts:';   // + the person's name → { dismissed: {id: day}, snoozed: {id: ms} }
 const ALERT_SHOW_MAX = 8;           // list lines shown per card; "+N more" after them
 const ALERT_ICON = { overdue: 'calendar', missed: 'clipboard', request: 'chat', noActivity: 'users', target: 'target', drop: 'chart', sync: 'refresh', erpImport: 'download', backup: 'shield' };
@@ -23,7 +24,7 @@ const ALERT_TYPE_INFO = {
   missed: ['Missed planned visits', 'Planned in the last 14 days, not visited on the day nor since.'],
   request: ['Client requests not answered in time', "Open client requests (More → Requests, escalations & stands) not marked answered within the hours of the KPI settings — the KPI scorecard's rule."],
   noActivity: ['No field visit by a set hour', 'Supervisor only: a person with no field visit logged today by the hour below, on working days.'],
-  target: ['Month target at risk', "The month figure (ERP files) below 90% of an even pace in working days to the ERP cut-off — the sales coach's rule; a target from an earlier month is named."],
+  target: ['Month target at risk', "The month figure (ERP files) below 90% of an even pace in working days to the ERP cut-off — the pace rule of the Today card, the sales coach and the reports; a target from an earlier month is named."],
   drop: ['Customers buying less than last month', 'Invoiced sales in the ERP files from day 1 to the cut-off, against the same days of last month.'],
   sync: ['Sync problems', "What the sync bars and the visit photo notes say: changes waiting to upload, changes kept on this phone and not sent, a change the cloud refused, anything only in the app's memory, visit photos waiting or lost, sales file changes not saved."],
   erpImport: ['Failed sales file import', 'Supervisor only: the last import on this phone failed.'],
@@ -43,6 +44,7 @@ const _alertsCache = {};                   // UMCore.alertsFor's: the sales rule
 let _alertsShowHidden = false;
 
 function alertsStateKey(){ return ALERT_STATE + (currentUser ? currentUser.name : ''); }
+function alertsName(n){ return typeof msName === 'function' ? msName(n) : String(n == null ? '' : n); }
 function alertsJSON(key){ try{ const v = JSON.parse(localStorage.getItem(key) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }catch(e){ return null; } }
 function alertsState(){ return alertsJSON(alertsStateKey()) || {}; }
 function alertsStateSave(st){ try{ localStorage.setItem(alertsStateKey(), JSON.stringify(st)); return true; }catch(e){ return false; } }
@@ -112,7 +114,10 @@ function alertsInput(){
     // the sales lines through the pass the screens use, kept per data state (erpShareNow, 11-erp.js; v126 speed part 4)
     data: { clinics, visits, dayPlans, events, targets, erpSales, erpMap, erpShare: erpShareNow() },
     responseHours: typeof kpiSettings === 'function' ? kpiSettings().responseHours : undefined,   // the KPI scorecard's hours (16-kpi.js)
-    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, monthLabel, cache: _alertsCache, state: alertsState() };
+    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, monthLabel, cache: _alertsCache, state: alertsState(),
+    // a person's name as the home and the deck write it (msName: the team's Arabic names in the Arabic screen — alerts
+    // review F9), several joined as the screen joins them
+    nameOf: alertsName, namesOf: list => list.map(alertsName).join(uiLang === 'ar' ? ' و' : ' & ') };
 }
 function alertsCompute(){
   // an older cached core.js (a release race) has no rules: no bell rather than a broken screen
@@ -307,7 +312,9 @@ function alertsToggleHidden(){ _alertsShowHidden = !_alertsShowHidden; renderAle
 function alertsSetState(btn, op){
   const card = btn && btn.closest ? btn.closest('[data-al-id]') : null;
   if(!card || !currentUser) return;
-  const st = UMCore.alertStateNext(alertsState(), op, card.dataset.alId, todayStr(), Date.now());
+  // what the card lists now (alerts review U2): something new of the same kind shows the card again
+  const a = alertOf(btn), refs = op !== 'restore' && a && typeof UMCore.alertRefs === 'function' ? UMCore.alertRefs(a) : null;
+  const st = UMCore.alertStateNext(alertsState(), op, card.dataset.alId, todayStr(), Date.now(), refs);
   if(!alertsStateSave(st)){ showToast('⚠️ This phone could not keep the choice — its storage is full'); return; }
   refreshAlerts(true);
 }
@@ -385,8 +392,11 @@ async function alertsUploadNow(btn){
   // large for the cloud or refused is not "waiting for an answer" — the red bar at the bottom says why (v123)
   const left = outboxList().filter(k => !_saveBlocked.has(k) && !_saveParked.has(k));
   const ph = left.length ? 0 : photosToUpload(false), bar = tooLargeLines();
-  if(left.length) showToast(_memOnly.size ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
-    : '⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.');
+  // (alerts review U3: one list only in memory made every list left "only in the app's memory")
+  const memLeft = left.filter(k => _memOnly.has(k));
+  if(left.length) showToast(memLeft.length === left.length ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
+    : !memLeft.length ? '⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.'
+    : "⚠️ Not uploaded yet — the cloud did not answer. Some are only in the app's memory: keep the app open and connected until it says Saved. The others stay on this phone and upload by themselves.");
   else if(ph) showToast('⏳ ' + photosLeftText(ph));
   else if(bar.length) showToast(bar[0], 5000); // only held lists are left: the red bar's own words
   refreshAlerts(true);
@@ -418,13 +428,17 @@ async function alertsCheckBackup(btn){
     return;
   }
   if(btn) btn.disabled = true;
-  await maybeSnapshot();
-  const t = todayStr(), F = snapFailInfo();
-  let day = null; try{ day = localStorage.getItem(SNAP_DAY); }catch(e){}
-  showToast(day === t ? '✅ Today\'s backup is in the cloud'
-    : F && F.day === t && F.why === 'tooLarge' ? '❌ Today\'s backup is too large for the cloud — take a Full backup (Export & backups)'
-    : F && F.day === t && F.why === 'refused' ? '🔒 Today\'s backup was not saved: not allowed (ask the supervisor)'
-    : '❌ Today\'s backup could not be saved — try again later');
+  // a tap checks now — one read of today's backup, written when missing; the hour's wait after a failure is for the
+  // automatic tries, and a check already on its way is waited for — and the words are what this call did (alerts
+  // review F6, U6); the supervisor is never told to ask the supervisor (U9)
+  const r = await maybeSnapshot({ now: true });
+  const held2 = r === 'held' ? snapshotBlockedWhy() : null;
+  showToast(r === 'done' ? '✅ Today\'s backup is in the cloud'
+    : r === 'tooLarge' ? '❌ Today\'s backup is too large for the cloud — take a Full backup (Export & backups)'
+    : r === 'refused' ? "🔒 Today's backup was not saved: the cloud's security rules refused this login"
+    : held2 === 'queued' ? '⏳ This phone does not take today\'s backup now: changes on this phone are still waiting to upload'
+    : held2 ? '⚠️ This phone does not take today\'s backup now: not every list on it came from the cloud yet'
+    : '❌ Today\'s backup could not be saved — try again later', 6000);
   refreshAlerts(true);
 }
 
@@ -449,16 +463,18 @@ async function saveAlertSettings(){
   const cur = UMCore.alertSettings(BENCHMARKS && BENCHMARKS.alerts), raw = { types: {} };
   UMCore.ALERT_TYPES.forEach(t => { const el = document.getElementById('alT_' + t); raw.types[t] = el ? !!el.checked : cur.types[t]; });
   Object.keys(UMCore.ALERT_DEFAULTS).forEach(k => { const el = document.getElementById('alS_' + k); raw[k] = el ? el.value : cur[k]; });
-  const next = UMCore.alertSettings(raw, cur);   // a number out of its limits keeps the one in force
-  const was = BENCHMARKS && BENCHMARKS.alerts;
-  BENCHMARKS = Object.assign({}, BENCHMARKS, { alerts: next }); // the KPI settings and the evaluation targets stay as they are
-  // one compare-and-set of the whole document (v123): what this save did is said, never "saved" for one that did not
-  // land — refused, changed on another device (its bar), no answer in time (it may land late) — as the KPI settings do
-  const r = await persistTold('benchmarks');
+  // a number out of its limits is refused and its field named with them — never dropped without a word under "saved"
+  // (alerts review F12); nothing is saved, the sheet stays with what was typed
+  const L = UMCore.ALERT_LIMITS;
+  const bad = ALERT_NUMBERS.filter(([k]) => { const v = String(raw[k] == null ? '' : raw[k]).trim(), n = Number(v); return !(v !== '' && isFinite(n) && n >= L[k][0] && n <= L[k][1]); });
+  ALERT_NUMBERS.forEach(([k]) => { const el = document.getElementById('alS_' + k); if(el){ if(bad.some(b => b[0] === k)) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); } });
+  if(bad.length){ const [k, label] = bad[0]; showToast(`⚠️ Not saved — ${label}: from ${L[k][0]} to ${L[k][1]}`, 7000); return false; }
+  const next = UMCore.alertSettings(raw, cur);
+  // one compare-and-set of the whole document (v123), through the settings document's own save: one that did not land
+  // never takes effect — memory and this phone's copy stay with the settings in force (persistSettings, 04-sync.js;
+  // alerts review F7); what it did is said, never "saved" for one that did not land
+  const r = await persistSettings({ alerts: next }); // the KPI settings and the evaluation targets stay as they are
   if(!r.ok){
-    // not saved: this phone's alerts follow the settings in force again — unless the save may still land (no answer
-    // in time: followed, and the next refresh brings whatever the cloud holds)
-    if(!(r.outcome && r.outcome.timeout) && BENCHMARKS && BENCHMARKS.alerts === next) BENCHMARKS = Object.assign({}, BENCHMARKS, { alerts: was });
     saveToast(r, 'benchmarks', '');
     refreshAlerts(true);
     return false;

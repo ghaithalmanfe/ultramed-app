@@ -1979,8 +1979,15 @@ async function loadAllNow(opts){
     if(stVal){ staff = stVal; refreshStaff(); took.add('staff'); }
     const rbVal = raced || sameText('recycleBin', rb) ? null : docOf('recycleBin', rb, null);
     if(rbVal){ recycleBin = Object.assign({clinics:[],products:[],visits:[]}, rbVal); took.add('recycleBin'); }
-    const bmVal = raced || sameText('benchmarks', bm) ? null : docOf('benchmarks', bm, null);
-    if(bmVal){ BENCHMARKS = Object.assign({}, BENCHMARKS, bmVal); took.add('benchmarks'); }
+    // the settings document, taken as the cloud holds it — or, after a read that failed, as this phone's copy holds it:
+    // the code's defaults fill only the keys it lacks, never an edit in memory that did not land (alerts review F7: merged
+    // over memory, a key the cloud's document lacks — an unsaved alert setting — stayed in force). A read that failed
+    // with no copy on the phone keeps memory as it is.
+    if(!raced && !sameText('benchmarks', bm) && !(lf.benchmarks && !(bm && bm.value != null))){
+      const bmVal = docOf('benchmarks', bm, null);
+      const bmNext = Object.assign({}, BENCHMARKS_DEFAULTS, bmVal && typeof bmVal === 'object' && !Array.isArray(bmVal) ? bmVal : {});
+      if(JSON.stringify(bmNext) !== JSON.stringify(BENCHMARKS)){ BENCHMARKS = bmNext; took.add('benchmarks'); }
+    }
     // What is on screen now, and the cloud's text it came from (_onScreen): only for a refresh that took its lists
     // (never one that kept them because a save ran while it read), only for what it read from the cloud
     if(!raced){
@@ -3141,11 +3148,18 @@ function savedSince(gen0){ return _localGen !== gen0 || _localSaving > 0; }
 // before or between its writes (a restore: the delete log first, then
 // several documents): the refresh is held off for its whole length.
 async function holdRefresh(fn){ _localGen++; _localSaving++; try{ return await fn(); } finally{ _localSaving--; _localGen++; } }
+// The lists and documents the alerts read (19-alerts.js): a save of one asks the top bar's bell — worked out after it,
+// never inside it (alertsAsk only asks). Until the alerts review (F5, U4) only the home's drawings asked: a request
+// answered in its own sheet, targets saved in Admin over another screen, left the bell counting what was gone until
+// the next round happened to draw the home again.
+const ALERT_READS = { clinics: 1, visits: 1, dayPlans: 1, events: 1, targets: 1, erpSales: 1, benchmarks: 1 };
 async function persist(key, opts){
-  if(!LOCAL_KEYS[key]) return persistNow(key, opts);
-  _localGen++; _localSaving++;
-  try{ const ok = await persistNow(key, opts); if(ok === true) memOnlyLanded(key); return ok; }
-  finally{ _localSaving--; _localGen++; }
+  try{
+    if(!LOCAL_KEYS[key]) return await persistNow(key, opts);
+    _localGen++; _localSaving++;
+    try{ const ok = await persistNow(key, opts); if(ok === true) memOnlyLanded(key); return ok; }
+    finally{ _localSaving--; _localGen++; }
+  }finally{ if(ALERT_READS[key] && typeof alertsAsk === 'function') alertsAsk(); }
 }
 // A whole document saved by compare-and-set (the catalog, the targets, the team list, the KPI settings, the selling
 // guides): one save of it at a time, each against what the one before it landed (v126 speed, part 4) — two saves of
@@ -3647,6 +3661,25 @@ function persistTold(key, opts){
   return persist(key, Object.assign({}, opts || {}, { told: x => { info = x; } }))
     .then(ok => told(ok, true), e => { console.warn('save of ' + key + ' failed', e); return told(false, false); });
 }
+// A save of the settings document (BENCHMARKS — the evaluation targets, the KPI settings and the alert settings in one
+// whole document): `change` is put on a copy and that copy saved. A save that did not land never takes effect — not in
+// memory, not in this phone's copy (persist's own catch had written it there) — so neither a later round served from
+// the phone's copy nor a later save of the same document carries it (alerts review F7: alert settings told "not saved"
+// came into force at the next round and the KPI settings' next save sent them to the whole team). One with no answer in
+// time, or waiting for the sign-in, may still land: persist says so when it does, and the next refresh takes the
+// cloud's document whole (loadAllNow).
+async function persistSettings(change){
+  const before = BENCHMARKS, next = Object.assign({}, BENCHMARKS, change);
+  BENCHMARKS = next;
+  const r = await persistTold('benchmarks');
+  if(!r.ok && BENCHMARKS === next){
+    BENCHMARKS = before;
+    const str = JSON.stringify(before);
+    mirrorSave('benchmarks', str);              // the phone's copy is what is in force again
+    keepDocBaseOnPhone('benchmarks', str);      // … and beside it what the cloud last held, when that differs
+  }
+  return r;
+}
 // The words for a save that did not land, from what it did (persistTold /
 // persistFor): refused by the rules, too large for the cloud, kept on this
 // phone (it uploads by itself), or not saved. null: it landed, or persist's
@@ -3750,28 +3783,39 @@ function snapshotBlockedWhy(){
   if(['clinics', 'visits', 'tasks'].some(k => outboxHas(k))) return 'queued';
   return visitsUnread() ? 'copy' : null; // the visits on screen not read from the cloud this session (v126 review 2)
 }
-async function maybeSnapshot(){
-  if(_snapRunning) return;
-  if(!snapshotReadOk()){ if(keptMonthsOnScreen()) _keptForSnap = true; return; } // a past month from the phone's store: tried again once it is read from the cloud (loadAllNow, v126)
+// One check of today's backup at a time; → what it did: 'done' (today's backup is in the cloud: found, or written now),
+// 'held' (not from this phone now: snapshotBlockedWhy), 'wait' (it failed within the hour: the automatic tries wait),
+// 'tooLarge' | 'refused' | 'failed' (snapFailed). opts.now: a tap ("Check now") — it checks now, the hour's wait is for
+// the automatic tries, and a check already on its way is waited for first (alerts review F6, U6: the tap returned at
+// once, nothing read, and said "could not be saved").
+let _snapP = null;
+function maybeSnapshot(opts){
+  const tap = !!(opts && opts.now);
+  if(_snapP) return tap ? _snapP.then(() => maybeSnapshot(opts), () => maybeSnapshot(opts)) : _snapP;
+  const p = _snapP = maybeSnapshotNow(tap).finally(() => { if(_snapP === p) _snapP = null; });
+  return p;
+}
+async function maybeSnapshotNow(tap){
+  if(!snapshotReadOk()){ if(keptMonthsOnScreen()) _keptForSnap = true; return 'held'; } // a past month from the phone's store: tried again once it is read from the cloud (loadAllNow, v126)
   const day = todayStr(), key = 'snap_' + day;
-  try{ if(localStorage.getItem(SNAP_DAY) === day) return; }catch(e){}
+  try{ if(localStorage.getItem(SNAP_DAY) === day) return 'done'; }catch(e){}
   const fail = snapFailInfo();
-  if(fail && fail.day === day && Date.now() - (fail.at || 0) < SNAP_RETRY_MS) return; // tried within the hour: not again yet
+  if(!tap && fail && fail.day === day && Date.now() - (fail.at || 0) < SNAP_RETRY_MS) return 'wait'; // tried within the hour: not again yet
   _snapRunning = true;
   try{
     const existing = await window.storage.get(key, true).catch(()=>null);
-    if(existing){ snapDone(day); return; } // already snapshotted today
+    if(existing){ snapDone(day); return 'done'; } // already snapshotted today
     const out = UMCore.snapshotPayload(snapshotDoc(), { slimAt: SNAP_SLIM_BYTES, max: DOC_MAX_BYTES });
-    if(out.tooLarge){ snapFailed(day, 'tooLarge', out.bytes); return; }
+    if(out.tooLarge){ snapFailed(day, 'tooLarge', out.bytes); return 'tooLarge'; }
     if(out.slimmed) console.warn(`daily backup: ${out.slimmed} photo previews left out to stay under the size limit (${out.bytes} bytes)`);
     try{ await window.storage.set(key, out.str, true); }
     catch(e){
       // another phone may have written today's backup meanwhile (the team only creates one; the supervisor may replace it)
       const now = await window.storage.get(key, true).catch(()=>null);
-      if(now){ snapDone(day); return; }
-      const kind = saveErrKind(e);
-      snapFailed(day, kind === 'tooLarge' ? 'tooLarge' : kind === 'refused' ? 'refused' : 'failed', kind === 'tooLarge' ? out.bytes : null);
-      return;
+      if(now){ snapDone(day); return 'done'; }
+      const kind = saveErrKind(e), why = kind === 'tooLarge' ? 'tooLarge' : kind === 'refused' ? 'refused' : 'failed';
+      snapFailed(day, why, kind === 'tooLarge' ? out.bytes : null);
+      return why;
     }
     snapDone(day);
     // Keep 12 days: the backups that aged out are deleted by name — listing
@@ -3780,7 +3824,8 @@ async function maybeSnapshot(){
       const d = new Date(day + 'T00:00:00'); d.setDate(d.getDate() - i);
       await window.storage.delete('snap_' + UMCore.localDateStr(d), true).catch(()=>null);
     }
-  }catch(e){ console.error('snapshot error', e); snapFailed(day, 'failed', null); }
+    return 'done';
+  }catch(e){ console.error('snapshot error', e); snapFailed(day, 'failed', null); return 'failed'; }
   finally{ _snapRunning = false; }
 }
 

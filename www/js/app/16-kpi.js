@@ -88,8 +88,7 @@ async function saveKpiSettings(){
     if(k === 'openDays') out[k] = el.value.split(/[,\s]+/).map(x => x.trim()).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x));
     else { const v = parseFloat(el.value); out[k] = isFinite(v) && v >= 0 ? v : S[k]; }
   });
-  BENCHMARKS = Object.assign({}, BENCHMARKS, { kpi: out });
-  const r = await persistTold('benchmarks');
+  const r = await persistSettings({ kpi: out }); // a save that did not land never takes effect, here or in this phone's copy (04-sync.js)
   if(r.ok) { showToast('✅ KPI settings saved'); openKpiScorecard(); }
   else saveToast(r, 'benchmarks', ''); // what happened instead — never silence
 }

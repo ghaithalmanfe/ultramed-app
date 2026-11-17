@@ -199,7 +199,7 @@ function seed(){
   check('target: says how it is computed — the month figure of the Today card, working days to the ERP cut-off, the pace, what is needed',
     JSON.stringify(tgt.why) === JSON.stringify(['Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to Nov 9.',
       'Working days (Sun–Thu) to the ERP cut-off: 7 of 22. An even pace would be 3,181.82 KD (32%) by then.',
-      'Pace: 31% of an even pace — below 90%, the sales coach\'s rule (Reports). At this pace the month ends near 3,142.86 KD (31%).',
+      'Pace: 31% of an even pace — below 90%, the pace rule of the Today card, the sales coach and the reports. At this pace the month ends near 3,142.86 KD.',
       'To reach the target: 600.00 KD a working day over the 15 working days left.']) && todayFig.amount === 1000 && todayFig.sales === 1000 && todayFig.goal === 10000, { why: tgt.why, todayFig });
   check('customers: invoiced sales on the same days of last month (ERP only) — a channel, an internal account, a small buyer and a −4% are not listed',
     JSON.stringify(byId(c, 'drop:Mariam:2026-11').items) === JSON.stringify(['Amberline Clinic — 100.00 KD vs 800.00 KD (−88%)']) &&
@@ -299,12 +299,21 @@ function seed(){
     const box = document.getElementById('alertSettings');
     if(!box) return { err: 'no settings sheet' };
     document.getElementById('alT_drop').checked = false;
-    document.getElementById('alS_noActivityHour').value = '99';   // out of its limits: the hour in force stays
+    // out of its limits: refused before anything is saved, the field named with its limits, the sheet kept as typed
+    // (alerts review F12: it was dropped without a word, under "saved for the whole team")
+    document.getElementById('alS_noActivityHour').value = '99';
+    const cloudBefore = await window.__cGet('benchmarks');
     document.getElementById('alertSettingsSave').click(); await new Promise(r => setTimeout(r, 300));
-    return { toast: document.getElementById('toast').textContent, back: !!document.getElementById('alertsCenter') };
+    const refused = { toast: document.getElementById('toast').textContent, kept: !!document.getElementById('alertSettings') && document.getElementById('alS_noActivityHour').value === '99',
+      invalid: document.getElementById('alS_noActivityHour').getAttribute('aria-invalid') === 'true', cloudSame: (await window.__cGet('benchmarks')) === cloudBefore };
+    document.getElementById('alS_noActivityHour').value = '12';
+    document.getElementById('alertSettingsSave').click(); await new Promise(r => setTimeout(r, 300));
+    return { refused, toast: document.getElementById('toast').textContent, back: !!document.getElementById('alertsCenter') };
   });
   const bm = JSON.parse(cloud.benchmarks || '{}');
-  check('settings: turning a type off is saved where the supervisor\'s settings live (benchmarks), the rest kept, a bad number ignored',
+  check('settings: a number out of its limits is refused and named with them, nothing saved, the sheet kept as typed',
+    !!saved.refused && /^⚠️ Not saved — No field visit by \(hour, 0–23\): from 0 to 23$/.test(saved.refused.toast) && saved.refused.kept && saved.refused.invalid && saved.refused.cloudSame, saved.refused);
+  check('settings: turning a type off is saved where the supervisor\'s settings live (benchmarks), the rest kept',
     bm.alerts && bm.alerts.types.drop === false && bm.alerts.types.overdue === true && bm.alerts.noActivityHour === 12 && bm.coverage === 75 && /saved for the whole team/.test(saved.toast) && saved.back, { saved, alerts: bm.alerts, coverage: bm.coverage });
   c = await center();
   check('settings: the supervisor\'s customers cards are gone (6)', c.count === 6 && counts(c) && !c.cards.some(x => x.type === 'drop'), ids(c));
@@ -542,7 +551,7 @@ function seed(){
   await boot(G, 'supervisor', { ultramed_lang: 'ar' });
   c = await center();
   const noAr2 = c.cards.flatMap(lines).filter(l => !/[؀-ۿ]/.test(l));
-  check('Arabic (the supervisor): every card, his own types included', c.count === 8 && !noAr2.length && byId(c, 'noActivity:Renova:2026-11-11').title === 'Renova: لا زيارة ميدانية مسجلة اليوم حتى الساعة 12:00', { noAr2, t: byId(c, 'noActivity:Renova:2026-11-11').title });
+  check('Arabic (the supervisor): every card, his own types included', c.count === 8 && !noAr2.length && byId(c, 'noActivity:Renova:2026-11-11').title === 'رانوفا: لا زيارة ميدانية مسجلة اليوم حتى الساعة 12:00', { noAr2, t: byId(c, 'noActivity:Renova:2026-11-11').title });
   f = await fits();
   check('390 px, Arabic, the supervisor\'s 8 cards with a very long clinic name: no sideways scroll', f.page && f.sheet && f.bell && f.header, f);
   const st = await page.evaluate(async () => { openAlertSettings(); await new Promise(r => setTimeout(r, 100)); const txt = el => el.innerText.replace(/\s+/g, ' ').trim();

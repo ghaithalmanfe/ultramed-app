@@ -5490,14 +5490,14 @@ describe('alerts center (v121)', () => {
   });
   test('overdue follow-ups: only dates that passed, closed clinics out, each item opens its clinic', () => {
     const a = one(run(M), 'overdue:Mariam');
-    assert.deepEqual(a.items, [{ clinicId: 'm2', text: 'Birchwood Center — was due Nov 5 (6 days ago)' }]);   // m4 is due today, m5 is closed
+    assert.deepEqual(a.items, [{ clinicId: 'm2', ref: 'c:m2', text: 'Birchwood Center — was due Nov 5 (6 days ago)' }]);   // m4 is due today, m5 is closed (ref: what a dismissal covers, alerts review U2)
     assert.equal(a.open.screen, 'followups');
     assert.equal(one(run(R), 'overdue:Renova').items[0].text, 'Fernhill Center — was due Nov 1 (10 days ago)');
   });
   test('missed plans: the last 14 days, not visited on the day nor since; an overdue follow-up is never listed twice', () => {
     const a = one(run(M), 'missed:Mariam');
     // m2's plan is its overdue follow-up (folded), m1 was visited that day, m6 was visited since, Oct 20 is past the window
-    assert.deepEqual(a.items, [{ clinicId: 'm3', date: '2026-11-09', text: 'Cobaltia Clinic — planned Nov 9' }]);
+    assert.deepEqual(a.items, [{ clinicId: 'm3', ref: 'c:m3@2026-11-09', date: '2026-11-09', text: 'Cobaltia Clinic — planned Nov 9' }]);
     assert.equal(a.title, '1 planned visit missed');
     const r = one(run(R), 'missed:Renova');
     assert.deepEqual(r.items.map(i => i.clinicId), ['r3']);                 // r1 is under overdue follow-ups
@@ -5529,7 +5529,7 @@ describe('alerts center (v121)', () => {
     assert.deepEqual(a.why, [
       'Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to Nov 9.',
       'Working days (Sun–Thu) to the ERP cut-off: 7 of 22. An even pace would be 3,181.82 KD (32%) by then.',
-      'Pace: 31% of an even pace — below 90%, the sales coach\'s rule (Reports). At this pace the month ends near 3,142.86 KD (31%).',
+      'Pace: 31% of an even pace — below 90%, the pace rule of the Today card, the sales coach and the reports. At this pace the month ends near 3,142.86 KD.',   // (alerts review F1: one rule, no second percentage of the same ratio)
       'To reach the target: 600.00 KD a working day over the 15 working days left.']);
     assert.equal(a.title, 'Month target at risk');
     assert.deepEqual(a.open, { screen: 'coach', rep: M });           // the coach on Reports says the same, by the same rule
@@ -5554,7 +5554,14 @@ describe('alerts center (v121)', () => {
     });
     const d = DATA(); d.targets[M].revenue = 3500;
     const a = one(run(M, { data: d }), 'target:Mariam:2026-11');
-    assert.equal(a.why[2], 'Pace: 89% of an even pace — below 90%, the sales coach\'s rule (Reports). At this pace the month ends near 3,142.86 KD (90%).');
+    // the one pace rule's percentage, cut on its word's side (89.8 % → 89); the month-end figure with no second percentage
+    // of the same ratio (it read "(90%)" beside "Pace: 89%" — alerts review F1)
+    assert.equal(a.why[2], 'Pace: 89% of an even pace — below 90%, the pace rule of the Today card, the sales coach and the reports. At this pace the month ends near 3,142.86 KD.');
+    const pc = core.paceOf(1000, 3500, 7, 22);
+    assert.deepEqual([pc.state, pc.pct], ['behind', 89]);
+    assert.deepEqual([core.paceOf(2854, 10000, 7, 22).state, core.paceOf(2854, 10000, 7, 22).pct], ['behind', 89]);   // 89.70 %: behind, never 90
+    assert.deepEqual([core.paceOf(2864, 10000, 7, 22).state, core.paceOf(2864, 10000, 7, 22).pct], ['on', 90]);       // 90.01 %
+    assert.deepEqual([core.paceOf(3182, 10000, 7, 22).state, core.paceOf(10000, 10000, 7, 22).state], ['ahead', 'hit']);
     assert.equal(a.why[3], 'To reach the target: 167.00 KD a working day over the 15 working days left.');   // the coach's own figure (KD/day, rounded up)
     const tp = core.targetPace(3500, 1000, TODAY, '2026-11-09');
     assert.deepEqual([tp.state, tp.workedSoFar, tp.totalWork, tp.daysLeft, tp.perDay], ['behind', 7, 22, 15, 167]);
@@ -5566,17 +5573,38 @@ describe('alerts center (v121)', () => {
     assert.equal(core.coachInsights({ erpMtd: core.erpMtd(Object.assign({ today: TODAY }, none)), today: TODAY, repFilter: R, visits: [], clinics: none.clinics, targets: none.targets, dayPlans: {} })
       .some(i => i.key === 'target-' + R), false);
   });
+  test('dismiss / snooze cover only what the card listed then (alerts review U2): something new shows the card again', () => {
+    const T0 = '2026-11-11', now = new Date(2026, 10, 11, 13, 30).getTime();
+    const card = refs => ({ id: 'overdue:Mariam', type: 'overdue', items: refs.map(r => ({ ref: r, text: r })) });
+    const one = card(['c:m2']);
+    let st = core.alertStateNext({}, 'dismiss', one.id, T0, now, core.alertRefs(one));
+    assert.deepEqual(st.dismissed[one.id], { day: T0, refs: ['c:m2'] });
+    assert.equal(core.alertsVisible([one], st, T0, now).hidden.length, 1, 'what it listed: hidden for the day');
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m3'])], st, T0, now).shown.length, 1, 'a new overdue follow-up: the card shows again');
+    assert.equal(core.alertsVisible([card([])], st, T0, now).hidden.length, 1, 'fewer than it listed: still covered');
+    assert.equal(core.alertsVisible([one], st, '2026-11-12', now + 86400000).shown.length, 1, 'the next day: back');
+    st = core.alertStateNext(st, 'snooze', one.id, T0, now, core.alertRefs(one));
+    assert.equal(core.alertsVisible([one], st, T0, now).hidden[0].hidden, 'snoozed');
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m4'])], st, T0, now).shown.length, 1, 'snoozed: something new shows it too');
+    assert.equal(core.alertsNextAt({ today: T0, now, state: st }) <= new Date(2026, 10, 12).getTime(), true);
+    // an earlier app's entries (a day, a time) cover the card whole, as they did
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m3'])], { dismissed: { 'overdue:Mariam': T0 } }, T0, now).hidden.length, 1);
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m3'])], { snoozed: { 'overdue:Mariam': now + 3600000 } }, T0, now).hidden.length, 1);
+  });
   test('a target from an earlier month: never judged, never silent — named as the Today card names it (v122)', () => {
     const stale = DATA(); stale.targets[M].month = '2026-10';
     const mine = run(M, { data: stale });
     assert.ok(!mine.some(x => x.id === 'target:Mariam:2026-11'), 'no pace against last month\'s target');
     const st = one(mine, 'target-stale:Mariam:2026-11');
     assert.equal(st.title, 'Target is from October 2026');
-    assert.deepEqual(st.why, ["Upload this month's DSR: until then the Today card shows this target with the same note, and the month's pace is not judged against it."]);
+    // what is true of the other screens (alerts review F2): the Today card and the coach judge the pace against it, this
+    // card does not; a rep is told to ask the supervisor for the DSR (U9)
+    assert.deepEqual(st.why, ["Ask the supervisor to upload this month's DSR. Until then the Today card shows this target with the same note, and the Today card and the sales coach judge the month's pace against it; this card does not."]);
     assert.deepEqual(st.open, { screen: 'targetCard' });
     assert.equal(st.sev, 'low');
     const g = one(run(G, { data: stale }), 'target-stale:Mariam:2026-11');
     assert.equal(g.title, 'Mariam: target is from October 2026');
+    assert.deepEqual(g.why, ["Upload this month's DSR. Until then the Today card shows this target with the same note, and the Today card and the sales coach judge the month's pace against it; this card does not."]);
     assert.deepEqual(g.open, { screen: 'erpImport' });                  // the supervisor uploads the DSR
     assert.ok(!run(R, { data: stale }).some(x => x.type === 'target'), 'never another person\'s target');
     const byAsOf = DATA(); delete byAsOf.targets[M].month; byAsOf.targets[M].achievedAsOf = '2026-10-31';   // the Today card's own test of a target's month
@@ -5869,7 +5897,10 @@ describe('alerts center (v121)', () => {
     assert.ok(all.some(a => (a.items || []).some(i => /^Amberline Clinic · \d+ نوفمبر$/.test(i.text))), 'a photo line in Arabic: the name stays, the date in Arabic');
     ['Alerts', 'Nothing needs attention right now.', 'Dismiss for today', 'Snooze 3 days', 'Alert settings', 'Upload now', 'Check now', 'Retry the save', 'Open']
       .forEach(s => assert.ok(/[؀-ۿ]/.test(i18n.tr(s) || ''), s));
-    assert.equal(i18n.tr('Mariam: 2 follow-ups overdue'), 'Mariam: 2 متابعة متأخرة');
+    // counted as the app counts everywhere else (countAr — alerts review F10); in the app the name itself comes in Arabic
+    // (alertsFor's nameOf: msName — F9), here in Node there is no wdArNames
+    assert.equal(i18n.tr('Mariam: 2 follow-ups overdue'), 'Mariam: متابعتان متأخرتان');
+    assert.equal(i18n.tr('Birchwood Center — was due 5 نوفمبر (6 days ago)'), 'Birchwood Center — كانت مستحقة 5 نوفمبر (قبل 6 أيام)');
     // an amount as the Arabic UI writes it: the same grouping, د.ك after the figure (kdAr, v125)
     assert.equal(i18n.tr('Amberline Clinic — 100.00 KD vs 800.00 KD (−88%)'), 'Amberline Clinic — 100.00 د.ك مقابل 800.00 د.ك (−88%)');
     assert.equal(i18n.tr('Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to 9 نوفمبر.'), 'المحقق 1,000.00 د.ك من تارغت 10,000.00 د.ك (10%) — من ملفات مبيعات ERP حتى 9 نوفمبر.');

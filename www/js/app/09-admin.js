@@ -133,13 +133,12 @@ async function saveTargets(){
 }
 async function saveBenchmarks(){
   const clamp = v => Math.max(0, Math.min(100, parseInt(v)||0));
-  BENCHMARKS = Object.assign({}, BENCHMARKS, { // keep the KPI settings saved in the same document
+  const r = await persistSettings({ // the KPI and alert settings saved in the same document stay; not landed → not in force (04-sync.js)
     coverage: clamp(document.getElementById('bmCoverage').value),
     priority: clamp(document.getElementById('bmPriority').value),
     conversion: clamp(document.getElementById('bmConversion').value),
     tasks: clamp(document.getElementById('bmTasks').value),
   });
-  const r = await persistTold('benchmarks');
   saveToast(r, 'benchmarks', '✅ Evaluation targets updated');
   if(document.getElementById('scorecards')) renderScorecards();
 }

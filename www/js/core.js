@@ -362,20 +362,38 @@
   // and what is working and should be repeated ('good').
   // opts: {from, to, today, repFilter, visits, clinics, targets, dayPlans}
   // Returns [{level, icon, key, title, detail}], 'act' first.
-  // A month target's pace — the sales coach's rule (coachInsights), and the
-  // one the alerts center judges by: the working days (Sun–Thu) from the 1st to
-  // the ERP cut-off (at least one) against those of the whole month; "behind"
-  // below 90% of that even share, "hit" at the target. perDay: what is left,
-  // spread over the working days left, rounded up (all of it when none is left).
+  // ---- The one pace rule (alerts review F1) ----
+  // A month target's pace: the month figure against an even share of the target over the working days (Sun–Thu) from
+  // the 1st to the day the figure runs to (at least one), of the whole month's working days — 'hit' at the target,
+  // 'ahead' from the full even share, 'on' from 90 % of it, 'behind' below. Judged on the exact value, never a rounded
+  // one (89.7 % is behind); `pct` is that share cut to a whole percent and kept on its word's side (89.7 % → 89, never
+  // 90), so no screen prints a percentage its word contradicts. The home's target card and pace card, the team's
+  // leaderboard, the printed management report, the sales coach and the alerts center all judge by it (until v126
+  // the home and the report rounded first: at 89.5–90 % they said "On pace" while the coach said "behind").
   var TARGET_BEHIND = 0.9;
+  function paceOf(ach, goal, done, total){
+    ach = Number(ach); goal = Number(goal); total = Number(total);
+    if(!(goal > 0) || !isFinite(ach) || !(total > 0)) return null;
+    var expected = goal * Math.max(1, Number(done) || 0) / total, ratio = ach / expected, eps = 1e-9, on = Math.round(TARGET_BEHIND * 100);
+    var state = ach >= goal ? 'hit' : ratio >= 1 - eps ? 'ahead' : ratio >= TARGET_BEHIND - eps ? 'on' : 'behind';
+    var pct = Math.floor(ratio * 100 + eps);
+    if(state === 'behind') pct = Math.min(pct, on - 1);
+    else if(state === 'on') pct = Math.min(Math.max(pct, on), 99);
+    else if(state === 'ahead') pct = Math.max(pct, 100);
+    return { state: state, expected: expected, ratio: ratio, pct: pct, behindBelow: TARGET_BEHIND };
+  }
+  // The same rule for a person's month by dates (the coach and the alerts): the working days from the 1st to the ERP
+  // cut-off against those of the whole month. state keeps the coach's words ('hit' | 'pace' | 'behind'; pace: the four
+  // states); perDay: what is left, spread over the working days left, rounded up (all of it when none is left).
   function targetPace(goal, mtd, today, asOf){
     var mStart = today.slice(0, 7) + '-01';
     var daysInMonth = new Date(+today.slice(0, 4), +today.slice(5, 7), 0).getDate();
     var monthEnd = today.slice(0, 7) + '-' + ('0' + daysInMonth).slice(-2);
     var totalWork = workingDaysBetween(mStart, monthEnd);
     var workedSoFar = Math.max(1, workingDaysBetween(mStart, asOf || today));
-    var expected = goal * workedSoFar / totalWork, daysLeft = totalWork - workedSoFar;
-    return { state: mtd >= goal ? 'hit' : mtd < expected * TARGET_BEHIND ? 'behind' : 'pace', expected: expected, behindBelow: TARGET_BEHIND,
+    var P = paceOf(mtd, goal, workedSoFar, totalWork) || { state: 'behind', expected: 0, ratio: 0, pct: 0 };
+    var daysLeft = totalWork - workedSoFar;
+    return { state: P.state === 'hit' ? 'hit' : P.state === 'behind' ? 'behind' : 'pace', pace: P.state, pct: P.pct, ratio: P.ratio, expected: P.expected, behindBelow: TARGET_BEHIND,
       totalWork: totalWork, workedSoFar: workedSoFar, daysLeft: daysLeft, perDay: daysLeft > 0 ? Math.ceil((goal - mtd) / daysLeft) : Math.ceil(goal - mtd) };
   }
   function coachInsights(opts){
@@ -7721,7 +7739,7 @@
   function alertWho(c, who){
     if(!c.sup) return '';
     if(!who) return 'No owner: ';
-    return who + (c.team && c.team.indexOf(who) < 0 ? ' (not on the team list)' : '') + ': ';
+    return c.nm(who) + (c.team && c.team.indexOf(who) < 0 ? ' (not on the team list)' : '') + ': ';
   }
   function alertMonth(c, m){ try{ return c.ml ? c.ml(m) : new Date(m + '-01T00:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }catch(e){ return m; } }
   function alertKeyLabel(k){ return erpOwn(ALERT_KEY_LABEL, k) ? ALERT_KEY_LABEL[k] : String(k); }
@@ -7755,7 +7773,7 @@
         title: alertWho(c, who) + alertN(list.length, 'follow-up', 'follow-ups') + ' overdue',
         why: ['Each clinic below has a follow-up date that has passed. Closed clinics are not counted.'],
         items: list.map(function(x){ var d = daysBetween(x.nextFollowUp, c.today);
-          return { clinicId: x.id, text: (x.name || '—') + ' — was due ' + c.fd(x.nextFollowUp) + ' (' + alertN(d, 'day', 'days') + ' ago)' }; }),
+          return { clinicId: x.id, ref: 'c:' + x.id, text: (x.name || '—') + ' — was due ' + c.fd(x.nextFollowUp) + ' (' + alertN(d, 'day', 'days') + ' ago)' }; }),
         open: { screen: 'followups' } };
     });
   }
@@ -7785,7 +7803,7 @@
         title: alertWho(c, rep) + alertN(n, 'planned visit', 'planned visits') + ' missed',
         why: ['Planned in the last ' + ALERT_PLAN_DAYS + ' days and not visited on the planned day, nor since. A clinic with an overdue follow-up is under overdue follow-ups instead.'],
         items: g.ids.map(function(id){ var it = g.by[id]; it.dates.sort(alertByDate);
-          return { clinicId: id, date: it.dates[0], text: (it.clinic.name || '—') + ' — planned ' + it.dates.map(function(d){ return c.fd(d); }).join(', ') }; }),
+          return { clinicId: id, ref: 'c:' + id + '@' + it.dates.join(','), date: it.dates[0], text: (it.clinic.name || '—') + ' — planned ' + it.dates.map(function(d){ return c.fd(d); }).join(', ') }; }),
         open: { screen: 'missed' } };
     });
   }
@@ -7807,7 +7825,7 @@
       return { id: 'request:' + who, type: 'request', sev: 'medium', rep: who || null,
         title: alertWho(c, who) + alertN(list.length, 'client request', 'client requests') + ' not answered in time',
         why: ['Logged in Requests, escalations & stands and not marked answered within ' + alertN(c.responseHours, 'hour', 'hours') + " — the KPI scorecard's rule (KPI settings)."],
-        items: list.map(function(e){ var cl = c.byId[e.clinicId]; return { clinicId: cl ? cl.id : null, text: ((cl && cl.name) || '—') + ' — logged ' + alertWhen(c, Date.parse(e.at)) }; }),
+        items: list.map(function(e){ var cl = c.byId[e.clinicId]; return { clinicId: cl ? cl.id : null, ref: 'e:' + (e.id != null ? e.id : e.at), text: ((cl && cl.name) || '—') + ' — logged ' + alertWhen(c, Date.parse(e.at)) }; }),
         open: { screen: 'requests' } };
     });
   }
@@ -7832,7 +7850,7 @@
         why.push('In the calendar today: ' + (e.title || '—') + (e.type ? ' (' + e.type + ')' : '') + '.');
       });
       out.push({ id: 'noActivity:' + rep + ':' + c.today, type: 'noActivity', sev: 'medium', rep: rep,
-        title: rep + ': no field visit logged today by ' + hh, why: why, items: [], open: { screen: 'calendar', rep: rep } });
+        title: c.nm(rep) + ': no field visit logged today by ' + hh, why: why, items: [], open: { screen: 'calendar', rep: rep } });
     });
     return out;
   }
@@ -7853,9 +7871,13 @@
       var tm = t.month || (t.achievedAsOf ? String(t.achievedAsOf).slice(0, 7) : null);
       if(tm && tm < m){
         var ml = alertMonth(c, tm);
+        // what is true of the other screens (alerts review F2): the Today card shows this target with the note and judges
+        // the month's pace against it, and so does the sales coach — this card does not; the DSR is the supervisor's to
+        // upload (U9: a rep is told to ask for it, never to upload it)
         out.push({ id: 'target-stale:' + rep + ':' + m, type: 'target', sev: 'low', rep: rep,
-          title: c.sup ? rep + ': target is from ' + ml : 'Target is from ' + ml,
-          why: ["Upload this month's DSR: until then the Today card shows this target with the same note, and the month's pace is not judged against it."],
+          title: c.sup ? c.nm(rep) + ': target is from ' + ml : 'Target is from ' + ml,
+          why: [(c.sup ? "Upload this month's DSR." : "Ask the supervisor to upload this month's DSR.")
+            + " Until then the Today card shows this target with the same note, and the Today card and the sales coach judge the month's pace against it; this card does not."],
           items: [], open: c.sup ? { screen: 'erpImport' } : { screen: 'targetCard' } });
         return;
       }
@@ -7866,16 +7888,18 @@
       var goal = t.revenue, amt = a.amount, P = targetPace(goal, amt, c.today, a.asOf);
       if(P.workedSoFar < c.S.targetMinDays || P.state !== 'behind') return;
       var E = P.workedSoFar, W = P.totalWork, proj = Math.round(amt / E * W * 100) / 100;
-      // "below 90%": the share is cut, never rounded up to the limit it is below
-      var pace = Math.floor(amt / P.expected * 100), limit = Math.round(P.behindBelow * 100);
+      // the one pace rule's own percentage (paceOf: cut to a whole percent on its word's side — "below 90%" never reads
+      // 90); the month-end figure is said without a second percentage of the same ratio (it read 90% beside "Pace: 89%")
+      var pace = P.pct, limit = Math.round(P.behindBelow * 100);
       var why = [
-        'Achieved ' + money(amt) + ' of the ' + money(goal) + ' target (' + Math.round(amt / goal * 100) + '%) — ERP sales files to ' + c.fd(a.asOf) + '.',
+        // a month the files hold only in part is said so, as the Today card's source line says it (alerts review F4)
+        'Achieved ' + money(amt) + ' of the ' + money(goal) + ' target (' + Math.round(amt / goal * 100) + '%) — ERP sales files to ' + c.fd(a.asOf) + (a.complete === false ? ' (partial month)' : '') + '.',
         'Working days (Sun–Thu) to the ERP cut-off: ' + E + ' of ' + W + '. An even pace would be ' + money(P.expected) + ' (' + Math.round(E / W * 100) + '%) by then.',
-        'Pace: ' + pace + '% of an even pace — below ' + limit + "%, the sales coach's rule (Reports). At this pace the month ends near " + money(proj) + ' (' + Math.round(proj / goal * 100) + '%).'];
+        'Pace: ' + pace + '% of an even pace — below ' + limit + '%, the pace rule of the Today card, the sales coach and the reports. At this pace the month ends near ' + money(proj) + '.'];
       why.push(P.daysLeft > 0 ? 'To reach the target: ' + money(P.perDay) + ' a working day over the ' + alertN(P.daysLeft, 'working day', 'working days') + ' left.'
         : 'No working day is left after the ERP cut-off.');
       out.push({ id: 'target:' + rep + ':' + m, type: 'target', sev: 'high', rep: rep,
-        title: c.sup ? rep + ': month target at risk' : 'Month target at risk', why: why, items: [], open: { screen: 'coach', rep: rep } });
+        title: c.sup ? c.nm(rep) + ': month target at risk' : 'Month target at risk', why: why, items: [], open: { screen: 'coach', rep: rep } });
     });
     return out;
   }
@@ -7893,7 +7917,9 @@
     var spans = Object.create(null);
     var span = function(rep){
       if(!spans[rep]){ var cut = erpMonthCovered(c.data, rep || null), pTo = cut ? addMonthsStr(cut, -1) : null;
-        spans[rep] = { cut: cut, pTo: pTo, ok: !!cut && erpSpanCovered(c.data, pStart, pTo, rep || null) }; }
+        // both windows held by the files: last month's to its same-days end and this month's from day 1 to the cut-off
+        // (alerts review F3: a month whose files start on the 5th called a customer whose purchase fell on the 3rd "−100%")
+        spans[rep] = { cut: cut, pTo: pTo, ok: !!cut && erpSpanCovered(c.data, pStart, pTo, rep || null) && erpSpanCovered(c.data, mStart, cut, rep || null) }; }
       return spans[rep];
     };
     // one pass over both months (the month figure's own lines): last month's
@@ -7924,7 +7950,7 @@
         title: alertWho(c, rep) + alertN(list.length, 'customer', 'customers') + ' buying less than last month',
         why: ['Invoiced sales in the ERP files, net of returns: ' + c.fd(mStart) + ' – ' + c.fd(P.cut) + ', against the same days last month (' + c.fd(pStart) + ' – ' + c.fd(P.pTo) + ').',
           'Shown when a customer that bought at least ' + money(c.S.dropMinKD) + ' in those days last month is down ' + c.S.dropPct + '% or more (alert settings).'],
-        items: list.map(function(x){ return { clinicId: x.clinicId, text: x.name + ' — ' + money(x.now) + ' vs ' + money(x.was) + ' (−' + x.pct + '%)' }; }),
+        items: list.map(function(x){ return { clinicId: x.clinicId, ref: 'c:' + x.clinicId, text: x.name + ' — ' + money(x.now) + ' vs ' + money(x.was) + ' (−' + x.pct + '%)' }; }),
         open: { screen: 'clinics' } };
     });
   }
@@ -7945,8 +7971,8 @@
   // listed again under waiting.
   var ALERT_PHOTO_DAYS = 14;
   function alertPhotoLine(c, p){
-    return { visitId: p.visitId, clinicId: p.clinicId != null ? p.clinicId : null,
-      text: (p.label || '—') + ' · ' + c.fd(p.date) + (c.sup && p.rep ? ' · ' + p.rep + (p.withRep ? ' & ' + p.withRep : '') : '') };
+    return { visitId: p.visitId, ref: 'v:' + p.visitId, clinicId: p.clinicId != null ? p.clinicId : null,
+      text: (p.label || '—') + ' · ' + c.fd(p.date) + (c.sup && p.rep ? ' · ' + c.nms([p.rep].concat(p.withRep ? [p.withRep] : [])) : '') };
   }
   function alertSync(c){
     var d = c.device, out = [], mins = c.S.outboxMinutes * 60000, horizon = c.now - ALERT_PHOTO_DAYS * 86400000;
@@ -7957,7 +7983,7 @@
     var listed = Object.create(null);
     var sorted = function(list){ return list.slice().sort(function(a, b){ return alertByDate(a.date, b.date) || erpCmp(a.label, b.label) || alertByDate(String(a.visitId), String(b.visitId)); }); };
     if(bar.length){
-      var mItems = memKeys.map(function(k){ return { key: k, text: alertKeyLabel(k) + " — only in the app's memory" }; });
+      var mItems = memKeys.map(function(k){ return { key: k, ref: 'k:' + k, text: alertKeyLabel(k) + " — only in the app's memory" }; });
       sorted(photos.filter(function(p){ return p.mem > 0 && p.wait; })).forEach(function(p){ listed[p.visitId] = 1; mItems.push(Object.assign(alertPhotoLine(c, p), { note: p.wait })); });
       out.push({ id: 'sync-mem', type: 'sync', sev: 'high', rep: null, title: "Only in the app's memory — keep the app open", why: bar, items: mItems, open: { screen: 'sync' }, action: 'flush' });
     }
@@ -7969,7 +7995,7 @@
     var heldKeys = held.map(function(x){ return x.key; });
     if(heldBar.length){
       out.push({ id: 'sync-held', type: 'sync', sev: 'high', rep: null, title: held.length && held.every(function(x){ return x.kept; }) ? 'Kept on this phone, not sent' : 'Not saved: the red bar says why',
-        why: heldBar, items: held.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + (x.kept ? ' — kept on this phone, not sent' : ' — not saved') }; }),
+        why: heldBar, items: held.map(function(x){ return { key: x.key, ref: 'k:' + x.key, text: alertKeyLabel(x.key) + (x.kept ? ' — kept on this phone, not sent' : ' — not saved') }; }),
         open: { screen: 'sync' }, action: d.heldRetry ? 'retryHeld' : null });
     }
     // v123: a whole document this phone saved and the cloud refused (changed on another device, or it did not load from
@@ -7978,7 +8004,7 @@
     if(refused.length){
       var rWhy = []; refused.forEach(function(x){ if(rWhy.indexOf(x.msg) < 0) rWhy.push(x.msg); });
       out.push({ id: 'sync-refused', type: 'sync', sev: 'high', rep: null, title: refused.length === 1 ? alertKeyLabel(refused[0].key) + ': not saved' : alertN(refused.length, 'change', 'changes') + ' not saved',
-        why: rWhy, items: refused.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — not saved' }; }), open: { screen: 'sync' } });
+        why: rWhy, items: refused.map(function(x){ return { key: x.key, ref: 'k:' + x.key, text: alertKeyLabel(x.key) + ' — not saved' }; }), open: { screen: 'sync' } });
     }
     var waiting = (d.outbox || []).filter(function(x){ return x && x.key && x.since > 0 && (!bar.length || memKeys.indexOf(x.key) < 0) && heldKeys.indexOf(x.key) < 0; }).sort(function(a, b){ return a.since - b.since; });
     if(waiting.length && c.now - waiting[0].since >= mins){
@@ -7988,7 +8014,7 @@
       // the early open's window (v126 speed, part 3): nothing reaches the cloud before the sign-in is confirmed
       if(d.basis && d.basis.unconfirmed) why.push('Nothing is sent before the sign-in is confirmed: then they upload by themselves.');
       out.push({ id: 'sync-wait', type: 'sync', sev: 'medium', rep: null, title: 'Changes on this phone waiting to upload', why: why,
-        items: waiting.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — waiting since ' + alertWhen(c, x.since) }; }),
+        items: waiting.map(function(x){ return { key: x.key, ref: 'k:' + x.key, text: alertKeyLabel(x.key) + ' — waiting since ' + alertWhen(c, x.since) }; }),
         open: { screen: 'sync' }, action: 'flush' });
     }
     // this phone's photos waiting to upload: the ones it holds (kept here; those only in memory are on the red bar's card)
@@ -8035,9 +8061,12 @@
   function alertErpImport(c){
     var e = c.device.erpImport;
     if(!e || e.ok || !(e.at > 0) || (e.who && e.who !== c.user.name) || c.now - e.at > 7 * 86400000) return [];
+    // a file imported after this failure — on this phone or another device — is in the files: the import is no longer
+    // the last one, nor do the figures still come from the files saved before it (alerts review F11)
+    if(((c.data.erpSales && c.data.erpSales.periods) || []).some(function(p){ var t = p && Date.parse(p.importedAt); return t > e.at; })) return [];
     var latest = null;
     ((c.data.erpSales && c.data.erpSales.periods) || []).forEach(function(p){ if(p && p.to && (!latest || p.to > latest)) latest = p.to; });
-    return [{ id: 'erpImport:' + e.at, type: 'erpImport', sev: 'high', rep: null, title: 'The last sales file import failed',
+    return [{ id: 'erpImport:' + e.at, type: 'erpImport', sev: 'high', rep: null, title: 'The last sales file import on this phone failed',
       why: ['Tried on ' + c.fd(localDateStr(new Date(e.at))) + ' at ' + alertHHMM(e.at) + ' — the message is below.',
         latest ? 'The figures still come from the files saved before — the newest reaches ' + c.fd(latest) + '.' : 'No sales file is saved yet.'],
       msg: String(e.msg || ''), items: [], open: { screen: 'erpImport' } }];
@@ -8051,7 +8080,7 @@
     if(F && F.day === c.today && F.at > 0){
       var why = ["The app keeps one backup a day of the clinics, products, tasks and this month's visits. This phone tried at " + alertHHMM(F.at) + '.'];
       why.push(F.why === 'tooLarge' ? 'It is too large for the cloud (' + Math.round((Number(F.bytes) || 0) / 1024) + ' KB, even without the photo previews): take a Full backup (Export & backups).'
-        : F.why === 'refused' ? 'Not allowed (ask the supervisor).' : 'It tries again within the hour.');
+        : F.why === 'refused' ? "Not allowed: the cloud's security rules refused this login (they are set in the Firebase console)." : 'It tries again within the hour.');
       return [{ id: 'backup-failed:' + c.today, type: 'backup', sev: 'high', rep: null, title: "Today's backup was not saved from this phone",
         why: why, items: [], open: { screen: 'backup' }, action: F.why === 'failed' ? 'checkBackup' : null }];
     }
@@ -8094,6 +8123,10 @@
       data: { today: today, clinics: clinics, visits: visits, targets: data.targets || {}, erpSales: data.erpSales || { periods: [] }, erpMap: data.erpMap || {} },
       responseHours: Number(input.responseHours) > 0 ? Number(input.responseHours) : KPI_DEFAULTS.responseHours,
       S: S, device: input.device || {}, fd: typeof input.fmtDate === 'function' ? input.fmtDate : fmtDate,
+      // a person's name as the screen writes it (the app: msName — the team's Arabic names in the Arabic screen, as the
+      // home and the deck write them; alerts review F9), and several of them (a joint visit)
+      nm: typeof input.nameOf === 'function' ? function(n){ return String(input.nameOf(n)); } : function(n){ return String(n); },
+      nms: typeof input.namesOf === 'function' ? function(l){ return String(input.namesOf(l)); } : function(l){ return l.join(' & '); },
       ml: typeof input.monthLabel === 'function' ? input.monthLabel : null };
     // the pass of the sales lines the screens use (the app's erpShareNow: UMCore.erpShareKept, v126 speed part 4) —
     // taken only for the very lists it was made from (erpShareOf), so the month figure and the customers' lines are
@@ -8107,11 +8140,18 @@
   var ALERT_LISTS = { overdue: ['clinics'], missed: ['dayPlans', 'visits', 'clinics'], request: ['events', 'clinics'], noActivity: ['visits', 'dayPlans', 'events'],
     target: ['erpSales', 'targets', 'clinics', 'erpMap'], drop: ['erpSales', 'clinics', 'erpMap'] };
   var ALERT_LIST_LABEL = { clinics: 'clinics', visits: 'visits', dayPlans: 'day plans', events: 'calendar', targets: 'targets', erpSales: 'sales files', erpMap: 'account links' };
-  function alertBasis(c, t){
-    var b = c.device.basis;
-    if(!b || !ALERT_LISTS[t]) return null;
+  // the cards made from the visits list though their type is 'sync' (alerts review F8): the visit photo cards, and the
+  // red bar's card when it lists visits (its visit lines are the visits' marks)
+  function alertListsOf(a, t){
+    if(ALERT_LISTS[t]) return ALERT_LISTS[t];
+    if(t === 'sync' && a && (/^photos-/.test(a.id) || (a.items || []).some(function(i){ return i && i.visitId != null; }))) return ['visits'];
+    return null;
+  }
+  function alertBasis(c, t, a){
+    var b = c.device.basis, L = alertListsOf(a, t);
+    if(!b || !L) return null;
     if(b.copy) return "From this phone's copy, saved " + (b.at || '—') + (b.copy === 'failed' ? ' — it could not update from the cloud; it is tried again.' : ' — updating from the cloud.');
-    var phone = Array.isArray(b.phone) ? b.phone : [], lists = ALERT_LISTS[t].filter(function(k){ return phone.indexOf(k) >= 0; });
+    var phone = Array.isArray(b.phone) ? b.phone : [], lists = L.filter(function(k){ return phone.indexOf(k) >= 0; });
     return lists.length ? "From this phone's copy of the " + lists.map(function(k){ return ALERT_LIST_LABEL[k]; }).join(', ') + ' — not read from the cloud this time.' : null;
   }
   function alertsFor(input){
@@ -8131,8 +8171,7 @@
         else { list = ALERT_RULES[t](c); if(erpKey) cache[t] = { key: erpKey, list: list }; else delete cache[t]; }
       } else list = ALERT_RULES[t](c);
       // what the card's figures come from, when they are not the cloud's (a copy: what is kept stays as it was)
-      var basis = alertBasis(c, t);
-      list.forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; out.push(basis ? Object.assign({}, a, { why: (a.why || []).concat([basis]) }) : a); } });
+      list.forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; var basis = alertBasis(c, t, a); out.push(basis ? Object.assign({}, a, { why: (a.why || []).concat([basis]) }) : a); } });
     });
     return out.sort(function(a, b){ return ALERT_SEV[a.sev] - ALERT_SEV[b.sev] || ALERT_TYPES.indexOf(a.type) - ALERT_TYPES.indexOf(b.type) || erpCmp(a.rep, b.rep); });
   }
@@ -8160,7 +8199,7 @@
     });
     if(dv.erpImport && dv.erpImport.at > 0) at(dv.erpImport.at + 7 * DAY + 1);
     var st = input && input.state && typeof input.state === 'object' ? input.state : {};
-    Object.keys(st.snoozed || {}).forEach(function(k){ at(st.snoozed[k]); });
+    Object.keys(st.snoozed || {}).forEach(function(k){ at(alertUntil(st.snoozed[k])); });
     return best;
   }
   var ALERT_ERP_RULES = { target: true, drop: true };
@@ -8173,30 +8212,43 @@
     var sk = erpStateKey(c.data);
     if(sk == null) return null;
     var es = c.data.erpSales || {};
-    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), alertMonth(c, '2026-01'), c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD,
+    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), alertMonth(c, '2026-01'), c.reps.map(c.nm), c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD,
       es.returnPolicy == null ? null : String(es.returnPolicy), c.targets, sk]);
   }
-  // Each user's dismiss (for the rest of the day) and snooze (until a time),
-  // kept on the device: { dismissed: { id: 'YYYY-MM-DD' }, snoozed: { id: ms } }.
+  // Each user's dismiss (for the rest of the day) and snooze (until a time), kept on the device: { dismissed: { id: day
+  // | { day, refs } }, snoozed: { id: ms | { until, refs } } }. A dismissal or a snooze covers only what the card listed
+  // when it was given (refs: each listed clinic, visit, request or list — alerts review U2): something new of the same
+  // kind shows the card again, with everything it lists; a card that lists nothing is covered whole (an earlier app's
+  // entries, a day or a time alone, cover the card whole too).
+  function alertRefs(a){ return ((a && a.items) || []).map(function(i){ return i && i.ref != null ? String(i.ref) : null; }).filter(function(r){ return r != null; }); }
+  function alertCovers(v, a){
+    if(!v || typeof v !== 'object' || !Array.isArray(v.refs)) return true;
+    var had = v.refs.map(String);
+    return alertRefs(a).every(function(r){ return had.indexOf(r) >= 0; });
+  }
+  function alertDay(v){ return v && typeof v === 'object' ? v.day : v; }
+  function alertUntil(v){ return Number(v && typeof v === 'object' ? v.until : v); }
   function alertsVisible(list, state, today, now){
     var st = state && typeof state === 'object' ? state : {}, dis = st.dismissed || {}, sn = st.snoozed || {}, shown = [], hidden = [];
     (list || []).forEach(function(a){
-      var d = erpOwn(dis, a.id) && dis[a.id] === today, s = erpOwn(sn, a.id) && Number(sn[a.id]) > now;
-      if(d || s) hidden.push(Object.assign({}, a, { hidden: d ? 'dismissed' : 'snoozed', until: s ? Number(sn[a.id]) : null }));
+      var dv = erpOwn(dis, a.id) ? dis[a.id] : null, sv = erpOwn(sn, a.id) ? sn[a.id] : null;
+      var d = alertDay(dv) === today && alertCovers(dv, a), u = alertUntil(sv), s = u > now && alertCovers(sv, a);
+      if(d || s) hidden.push(Object.assign({}, a, { hidden: d ? 'dismissed' : 'snoozed', until: s ? u : null }));
       else shown.push(a);
     });
     return { shown: shown, hidden: hidden };
   }
-  // op: 'dismiss' (the rest of today) | 'snooze' (until the start of the day
-  // three days on) | 'restore'. Returns the new state; what has run out is dropped.
-  function alertStateNext(state, op, id, today, now){
+  // op: 'dismiss' (the rest of today) | 'snooze' (until the start of the day three days on) | 'restore'; refs: what the
+  // card lists now (alertRefs). Returns the new state; what has run out is dropped.
+  function alertStateNext(state, op, id, today, now, refs){
     var st = state && typeof state === 'object' ? state : {}, dis = Object.create(null), sn = Object.create(null);
-    Object.keys(st.dismissed || {}).forEach(function(k){ if(st.dismissed[k] === today) dis[k] = today; });
-    Object.keys(st.snoozed || {}).forEach(function(k){ var u = Number(st.snoozed[k]); if(u > now) sn[k] = u; });
+    Object.keys(st.dismissed || {}).forEach(function(k){ var v = st.dismissed[k]; if(alertDay(v) === today) dis[k] = v; });
+    Object.keys(st.snoozed || {}).forEach(function(k){ var v = st.snoozed[k]; if(alertUntil(v) > now) sn[k] = v; });
     if(id != null){
       id = String(id);
-      if(op === 'dismiss') dis[id] = today;
-      else if(op === 'snooze'){ sn[id] = new Date(addDaysStr(today, ALERT_SNOOZE_DAYS) + 'T00:00:00').getTime(); delete dis[id]; }
+      var R = Array.isArray(refs) ? refs.map(String) : null;
+      if(op === 'dismiss') dis[id] = R ? { day: today, refs: R } : today;
+      else if(op === 'snooze'){ var u = new Date(addDaysStr(today, ALERT_SNOOZE_DAYS) + 'T00:00:00').getTime(); sn[id] = R ? { until: u, refs: R } : u; delete dis[id]; }
       else if(op === 'restore'){ delete dis[id]; delete sn[id]; }
     }
     return { dismissed: dis, snoozed: sn };
@@ -8227,6 +8279,6 @@
     productMovement, pmNormName,
     cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
     backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder,
-    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, alertSettings, alertsFor, alertsNextAt, alertsVisible, alertStateNext, erpSpanCovered, targetPace, requestOpenLate
+    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, alertSettings, alertsFor, alertsNextAt, alertsVisible, alertStateNext, alertRefs, erpSpanCovered, targetPace, paceOf, requestOpenLate
   };
 });
