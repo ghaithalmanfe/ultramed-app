@@ -3326,13 +3326,14 @@ const REFUSED_NOT_READ = '⚠️ Not saved — this did not load from the cloud.
 const _refused = new Map(); // key → what to say
 function refusedSave(key, msg){
   if(msg) _refused.set(key, msg); else if(!_refused.delete(key)) return;
+  if(typeof alertsSoon === 'function') alertsSoon(); // the top bar's bell says what the bars say (19-alerts.js)
   let el = document.getElementById('refusedPill');
   if(!_refused.size){ if(el) el.remove(); return; }
   if(!el){
     el = document.createElement('div');
     el.id = 'refusedPill'; el.setAttribute('role', 'alert');
     el.className = 'sbar sbar-pill sbar-danger sbar-tap';
-    el.onclick = () => { _refused.clear(); el.remove(); };
+    el.onclick = () => { _refused.clear(); el.remove(); if(typeof alertsSoon === 'function') alertsSoon(); };
     document.body.appendChild(el);
   }
   const last = [..._refused.values()].pop();
@@ -3428,19 +3429,26 @@ function tooLargeText(t){
   if(t.key === 'visits') return `🛑 Not saved: the visits of ${tooLargeMonthLabel(t.month)} are too large for the cloud (too many photos). Remove some photos from that month's visits (Edit visit → ×), then save again.` + (t.kept ? ' What this phone holds for them stays on this phone.' : '');
   return `🛑 Not saved: ${TOO_LARGE_LIST[t.key] || t.key} is too large for the cloud. Ask the supervisor — nothing else was changed.` + (t.kept ? ' What this phone holds stays on this phone.' : '');
 }
-function renderTooLargeBar(){
-  let el = document.getElementById('tooLargeBar');
+// The bar's lines (English; [] while it is down) and whether it offers "Try again" — the bar shows them, and the
+// alerts center says them as they are (19-alerts.js).
+function tooLargeLines(){
   const items = Object.keys(_tooLarge).map(k => _tooLarge[k]);
   const parked = [..._saveParked.values()]; // queued lists the cloud refused (v123 review): on this bar too
-  if(!items.length && !parked.length){ if(el) el.remove(); return; }
+  return items.map(tooLargeText).concat(parked.length ? [parked.includes('noAccess') ? PARKED_NO_ACCESS : PARKED_REFUSED] : []);
+}
+function tooLargeRetry(){ return Object.keys(_tooLarge).some(k => _tooLarge[k] && _tooLarge[k].kept) || _saveParked.size > 0; }
+function renderTooLargeBar(){
+  if(typeof alertsSoon === 'function') alertsSoon(); // the top bar's bell says what the bars say (19-alerts.js)
+  let el = document.getElementById('tooLargeBar');
+  const lines = tooLargeLines();
+  if(!lines.length){ if(el) el.remove(); return; }
   if(!el){
     el = document.createElement('div');
     el.id = 'tooLargeBar'; el.setAttribute('role', 'alert'); el.setAttribute('data-notr', '');
     el.className = 'sbar sbar-wide sbar-danger';
     document.body.appendChild(el);
   }
-  const retry = (items.some(t => t.kept) || parked.length) ? `<button class="chip small" style="margin-top:6px; background:#fff; color:var(--status-danger); border-color:#fff;" onclick="retryBlockedSaves()">${esc(trOf('Try again') || 'Try again')}</button>` : '';
-  const lines = items.map(tooLargeText).concat(parked.length ? [parked.includes('noAccess') ? PARKED_NO_ACCESS : PARKED_REFUSED] : []);
+  const retry = tooLargeRetry() ? `<button class="chip small" style="margin-top:6px; background:#fff; color:var(--status-danger); border-color:#fff;" onclick="retryBlockedSaves()">${esc(trOf('Try again') || 'Try again')}</button>` : '';
   const html = lines.map(t => `<div>${esc(trOf(t) || t)}</div>`).join('') + retry;
   if(el.innerHTML !== html) el.innerHTML = html; // an alert: said again only when it changes
 }

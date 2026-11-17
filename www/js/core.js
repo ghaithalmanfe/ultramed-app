@@ -7936,7 +7936,26 @@
       sorted(photos.filter(function(p){ return p.mem > 0 && p.wait; })).forEach(function(p){ listed[p.visitId] = 1; mItems.push(Object.assign(alertPhotoLine(c, p), { note: p.wait })); });
       out.push({ id: 'sync-mem', type: 'sync', sev: 'high', rep: null, title: "Only in the app's memory — keep the app open", why: bar, items: mItems, open: { screen: 'sync' }, action: 'flush' });
     }
-    var waiting = (d.outbox || []).filter(function(x){ return x && x.key && x.since > 0 && (!bar.length || memKeys.indexOf(x.key) < 0); }).sort(function(a, b){ return a.since - b.since; });
+    // v123: the red bar at the bottom — what the cloud cannot take as it is (too large) and what it refused (the rules,
+    // or no access: kept on this phone, not sent) — said at once in that bar's own lines (device.heldBar), its keys
+    // named; a key on it is never listed under waiting (the pill does not count it either)
+    var heldBar = (Array.isArray(d.heldBar) ? d.heldBar : []).filter(function(l){ return typeof l === 'string' && l; });
+    var held = (Array.isArray(d.held) ? d.held : []).filter(function(x){ return x && typeof x.key === 'string' && x.key; });
+    var heldKeys = held.map(function(x){ return x.key; });
+    if(heldBar.length){
+      out.push({ id: 'sync-held', type: 'sync', sev: 'high', rep: null, title: held.length && held.every(function(x){ return x.kept; }) ? 'Kept on this phone, not sent' : 'Not saved: the red bar says why',
+        why: heldBar, items: held.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + (x.kept ? ' — kept on this phone, not sent' : ' — not saved') }; }),
+        open: { screen: 'sync' }, action: d.heldRetry ? 'retryHeld' : null });
+    }
+    // v123: a whole document this phone saved and the cloud refused (changed on another device, or it did not load from
+    // the cloud) — said at once in the words of its bar (#refusedPill), until a save of it lands or the bar is tapped away
+    var refused = (Array.isArray(d.refused) ? d.refused : []).filter(function(x){ return x && typeof x.key === 'string' && x.key && typeof x.msg === 'string' && x.msg; });
+    if(refused.length){
+      var rWhy = []; refused.forEach(function(x){ if(rWhy.indexOf(x.msg) < 0) rWhy.push(x.msg); });
+      out.push({ id: 'sync-refused', type: 'sync', sev: 'high', rep: null, title: refused.length === 1 ? alertKeyLabel(refused[0].key) + ': not saved' : alertN(refused.length, 'change', 'changes') + ' not saved',
+        why: rWhy, items: refused.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — not saved' }; }), open: { screen: 'sync' } });
+    }
+    var waiting = (d.outbox || []).filter(function(x){ return x && x.key && x.since > 0 && (!bar.length || memKeys.indexOf(x.key) < 0) && heldKeys.indexOf(x.key) < 0; }).sort(function(a, b){ return a.since - b.since; });
     if(waiting.length && c.now - waiting[0].since >= mins){
       var why = ['Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.',
         'Shown when a change has waited longer than ' + alertN(c.S.outboxMinutes, 'minute', 'minutes') + ' (alert settings).'];
@@ -8010,10 +8029,13 @@
         why: why, items: [], open: { screen: 'backup' }, action: F.why === 'failed' ? 'checkBackup' : null }];
     }
     if(c.hour < c.S.backupHour) return [];
+    var why = ["This phone has not checked today's backup yet: it checks the first time a clinic, visit or task is saved here each day."];
+    // why this phone does not take it right now (snapshotBlockedWhy, as Export → Automatic backups says it)
+    if(d.snapHeld === 'copy') why.push('This phone does not take it now: not every list on it came from the cloud (a read failed, or a list is shown from this phone\'s copy). It is taken once everything has loaded from the cloud — or by another phone of the team.');
+    else if(d.snapHeld === 'queued') why.push('This phone does not take it now: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team.');
+    else why.push("Check now reads today's backup once and writes it if it is missing.");
     return [{ id: 'backup-unchecked:' + c.today, type: 'backup', sev: 'low', rep: null, title: "Today's backup is not confirmed yet",
-      why: ["This phone has not checked today's backup yet: it checks the first time a clinic, visit or task is saved here each day.",
-        "Check now reads today's backup once and writes it if it is missing."],
-      items: [], open: { screen: 'backup' }, action: 'checkBackup' }];
+      why: why, items: [], open: { screen: 'backup' }, action: d.snapHeld ? null : 'checkBackup' }];
   }
   var ALERT_RULES = { overdue: alertOverdue, missed: alertMissed, noActivity: alertNoActivity, target: alertTarget, drop: alertDrops, sync: alertSync, erpImport: alertErpImport, backup: alertBackup };
   // input = { today, now (ms), hour (local; default from now), user: { name, role },
@@ -8021,8 +8043,9 @@
   //   dayPlans, events, targets, erpSales, erpMap }, settings (BENCHMARKS.alerts),
   //   device: { online, outbox: [{ key, since }], memOnly: [key], memBar: [line],
   //   photos: [{ visitId, clinicId, label, date, rep, withRep, wait, lost, mem, here,
-  //   own: [ms], old: days, lostAt: [ms] }], erpDirty, erpImport: { at, ok, msg, who },
-  //   snapDay, snapFail: { day, at, why, bytes } } (alertSync says what each is),
+  //   own: [ms], old: days, lostAt: [ms] }], held: [{ key, kept }], heldBar: [line], heldRetry, refused: [{ key, msg }],
+  //   erpDirty, erpImport: { at, ok, msg, who },
+  //   snapDay, snapFail: { day, at, why, bytes }, snapHeld: null | 'copy' | 'queued' } (alertSync says what each is),
   //   fmtDate (the screen's date format), monthLabel (its month names) }.
   // Returns the alerts, most urgent first, each id once: [{ id, type, sev, rep,
   //   title, why: [...], msg?, items: [{ text, note?, clinicId?, visitId?, date?, key? }],
@@ -8041,6 +8064,10 @@
       data: { today: today, clinics: clinics, visits: visits, targets: data.targets || {}, erpSales: data.erpSales || { periods: [] }, erpMap: data.erpMap || {} },
       S: S, device: input.device || {}, fd: typeof input.fmtDate === 'function' ? input.fmtDate : fmtDate,
       ml: typeof input.monthLabel === 'function' ? input.monthLabel : null };
+    // the pass of the sales lines the screens use (the app's erpShareNow: UMCore.erpShareKept, v126 speed part 4) —
+    // taken only for the very lists it was made from (erpShareOf), so the month figure and the customers' lines are
+    // the screens' own; without it the rules make their own pass, with the same answers
+    if(data.erpShare) c.data.erpShare = data.erpShare;
     // input.cache (an object the caller keeps): the two rules that read the
     // sales lines run again only when what they read changed
     var cache = input.cache && typeof input.cache === 'object' ? input.cache : null, erpKey = null;
@@ -8049,26 +8076,27 @@
       if(!S.types[t] || (ALERT_SUP_ONLY[t] && !c.sup)) return;
       var list;
       if(cache && ALERT_ERP_RULES[t]){
-        erpKey = erpKey || alertErpKey(c);
+        if(erpKey === null) erpKey = alertErpKey(c) || '';
         var slot = cache[t];
-        if(slot && slot.key === erpKey) list = slot.list;
-        else { list = ALERT_RULES[t](c); cache[t] = { key: erpKey, list: list }; }
+        if(erpKey && slot && slot.key === erpKey) list = slot.list;
+        else { list = ALERT_RULES[t](c); if(erpKey) cache[t] = { key: erpKey, list: list }; else delete cache[t]; }
       } else list = ALERT_RULES[t](c);
       list.forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; out.push(a); } });
     });
     return out.sort(function(a, b){ return ALERT_SEV[a.sev] - ALERT_SEV[b.sev] || ALERT_TYPES.indexOf(a.type) - ALERT_TYPES.indexOf(b.type) || erpCmp(a.rep, b.rep); });
   }
   var ALERT_ERP_RULES = { target: true, drop: true };
-  // Everything the target and customer rules read: the day, whose view, the
-  // limits, the sales files (a file's rows never change under the same id and
-  // revision), the account links, the clinics' names / owners / handovers /
-  // shared flags / class, the targets, the team and the screen's date format.
+  // Everything the target and customer rules read — the key of what input.cache keeps for them: the day (their only
+  // clock), whose view (the person, the role, REPS, the team list), the screen's date and month format, their limits,
+  // the targets, and the state of the sales lines exactly as the kept pass keys it (erpStateKey: each file's id, dates,
+  // rows-loaded flag, salesman map and its rows — the array itself and its length —, the returns policy, each clinic's
+  // id, name, owner, handover, sharing and class, the account links). null: nothing can be kept (no WeakMap).
   function alertErpKey(c){
-    var es = c.data.erpSales || {}, ps = Array.isArray(es.periods) ? es.periods : [];
-    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), alertMonth(c, '2026-01'), c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD, es.returnPolicy || '',
-      ps.map(function(p){ return p ? [p.id, p.rev || 0, p.from, p.to, p.rowsMissing ? 1 : 0, Array.isArray(p.rows) ? p.rows.length : -1, p.repMap || null] : null; }),
-      c.data.erpMap, c.targets,
-      c.clinics.map(function(x){ return x ? [x.id, x.name, x.rep || '', x.cls || '', x.prevRep || '', x.repSince || '', x.shared ? 1 : 0, x.sharedSince || ''] : null; })]);
+    var sk = erpStateKey(c.data);
+    if(sk == null) return null;
+    var es = c.data.erpSales || {};
+    return JSON.stringify([c.today, c.user.name, c.sup, c.reps, c.team, c.fd('2026-01-02'), alertMonth(c, '2026-01'), c.S.targetMinDays, c.S.dropPct, c.S.dropMinKD,
+      es.returnPolicy == null ? null : String(es.returnPolicy), c.targets, sk]);
   }
   // Each user's dismiss (for the rest of the day) and snooze (until a time),
   // kept on the device: { dismissed: { id: 'YYYY-MM-DD' }, snoozed: { id: ms } }.

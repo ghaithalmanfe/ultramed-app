@@ -5718,6 +5718,57 @@ describe('alerts center (v121)', () => {
     d.targets[M].revenue = 1500;
     assert.ok(!run(M, { data: d, cache }).some(x => x.type === 'target'));
   });
+  test('the sales rules on the pass the screens keep (v126 speed part 4: UMCore.erpShareKept) — the same answers, and kept only for exactly what they read', () => {
+    const d = DATA(), sh = core.erpShareKept(d), withPass = Object.assign({}, d, { erpShare: sh });
+    let asked = 0; const m0 = sh.match; sh.match = function(n){ asked++; return m0(n); };
+    const a0 = run(M, { data: d }), a1 = run(M, { data: withPass });
+    sh.match = m0;
+    assert.deepEqual(a1, a0, 'the kept pass gives the very figures');
+    assert.ok(asked > 0, 'the rules took the pass they were given (made from these very lists)');
+    let other = 0; const sh2 = core.erpShareKept(DATA()), m2 = sh2.match; sh2.match = function(n){ other++; return m2(n); };
+    run(M, { data: Object.assign({}, d, { erpShare: sh2 }) }); sh2.match = m2;
+    assert.equal(other, 0, 'a pass made from other lists is never taken for these');
+    // the month figure is the Today card's (monthAchievement) with the same pass
+    assert.equal(core.monthAchievement(M, Object.assign({ today: TODAY }, withPass)).amount, 1000);
+    // a file's rows replaced by other rows of the same length under the same id (its rows array is another one):
+    // the customer rule follows — the kept results are keyed on the rows themselves, not on their count
+    const cache = {}, e = DATA();
+    assert.ok(run(M, { data: e, cache }).some(x => x.id === 'drop:Mariam:2026-11'));
+    const nov2 = NOV.map(r => r[10] === 'Amberline Clinic' ? row(r[0], r[1], 'Amberline Clinic', 900, MS) : r.slice());
+    e.erpSales.periods[1] = Object.assign({}, e.erpSales.periods[1], { rows: nov2 });   // same id, no new rev, same length
+    const after = run(M, { data: e, cache });
+    assert.ok(!after.some(x => x.id === 'drop:Mariam:2026-11'), 'Amberline bought 900 now: no longer down');
+    assert.deepEqual(after, run(M, { data: e }), 'as worked out with nothing kept');
+    // the day is in the key: the next day's figures are worked out for that day
+    const next = run(M, { data: e, cache, today: '2026-11-12', now: new Date(2026, 10, 12, 13).getTime() });
+    assert.deepEqual(next, run(M, { data: e, today: '2026-11-12', now: new Date(2026, 10, 12, 13).getTime() }));
+  });
+  test('sync (v123): the red bar at the bottom and a refused whole document are said at once in their own words; a key on that bar is not "waiting"', () => {
+    const now = at(13, 30);
+    const bar = ["🔒 Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone."];
+    const dev = { heldBar: bar, held: [{ key: 'tasks', kept: true }], heldRetry: true, outbox: [{ key: 'tasks', since: now - 90 * 60000 }, { key: 'visits', since: now - 45 * 60000 }],
+      refused: [{ key: 'targets', msg: '⚠️ Not saved — changed on another device. Reopen the app, then save again' }] };
+    const list = run(M, { device: dev });
+    const h = one(list, 'sync-held');
+    assert.deepEqual(h.why, bar); assert.equal(h.title, 'Kept on this phone, not sent'); assert.equal(h.sev, 'high'); assert.equal(h.action, 'retryHeld');
+    assert.deepEqual(h.items.map(i => i.text), ['Tasks — kept on this phone, not sent']);
+    const w = one(list, 'sync-wait');
+    assert.deepEqual(w.items.map(i => i.key), ['visits'], 'a key the bar at the bottom holds is never "waiting to upload"');
+    const r = one(list, 'sync-refused');
+    assert.equal(r.title, 'Monthly targets: not saved'); assert.deepEqual(r.why, ['⚠️ Not saved — changed on another device. Reopen the app, then save again']);
+    // too large and not kept: "not saved", and no "Try again"
+    const big = one(run(M, { device: { heldBar: ['🛑 Not saved: the clinic list is too large for the cloud. Ask the supervisor — nothing else was changed.'], held: [{ key: 'clinics', kept: false }], heldRetry: false } }), 'sync-held');
+    assert.equal(big.title, 'Not saved: the red bar says why'); assert.equal(big.action, null); assert.deepEqual(big.items.map(i => i.text), ['Clinics — not saved']);
+    assert.ok(!run(M, { device: { heldBar: [], held: [] } }).some(x => x.id === 'sync-held'), 'the bar down: no card');
+  });
+  test("today's backup: why this phone does not take it now (snapshotBlockedWhy), as Export → Automatic backups says it", () => {
+    const q = one(run(G, { hour: 17, device: { snapHeld: 'queued' } }), 'backup-unchecked:2026-11-11');
+    assert.equal(q.why[1], 'This phone does not take it now: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team.');
+    assert.equal(q.action, null, 'Check now would not take it either');
+    const cp = one(run(G, { hour: 17, device: { snapHeld: 'copy' } }), 'backup-unchecked:2026-11-11');
+    assert.ok(/^This phone does not take it now: not every list on it came from the cloud/.test(cp.why[1]));
+    assert.equal(one(run(G, { hour: 17 }), 'backup-unchecked:2026-11-11').action, 'checkBackup');
+  });
   test('erpSpanCovered: the files carrying the person cover every day, a weekend gap allowed', () => {
     const d = { erpSales: { periods: PERIODS() } };
     assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-10-09', M), true);

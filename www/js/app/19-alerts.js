@@ -61,19 +61,35 @@ function alertsPhotoFacts(){
   });
   return out;
 }
+// The lists on the red bar at the bottom (v123): too large for the cloud, or refused (the rules / no access) — each
+// key once, and whether this phone keeps its changes (queued) or they were not saved at all.
+function alertsHeld(){
+  const out = [], seen = new Set();
+  Object.keys(_tooLarge).forEach(id => { const t = _tooLarge[id]; if(!t || !t.key || seen.has(t.key)) return; seen.add(t.key); out.push({ key: t.key, kept: !!t.kept }); });
+  _saveBlocked.forEach(k => { if(!seen.has(k)){ seen.add(k); out.push({ key: k, kept: outboxHas(k) }); } });
+  _saveParked.forEach((why, k) => { if(!seen.has(k)){ seen.add(k); out.push({ key: k, kept: true }); } });
+  return out;
+}
 // What this phone knows — read from the device only, never from the cloud.
 function alertsDevice(){
   let snapDay = null; try{ snapDay = localStorage.getItem(SNAP_DAY); }catch(e){}
   return {
     online: navigator.onLine !== false,
-    outbox: outboxWaiting(),            // the queue the pill counts (memory included)
+    // the queue as the pill counts it (memory included): a list too large for the cloud or refused is not uploading —
+    // the red bar at the bottom says so (updateSyncBadge, v123)
+    outbox: outboxWaiting().filter(x => !_saveBlocked.has(x.key) && !_saveParked.has(x.key)),
     memOnly: [..._memOnly],             // queued keys the phone could not keep
     memBar: memOnlyLines(),             // the red bar's lines, as it shows them
+    held: alertsHeld(),                 // the red bar at the bottom (tooLargeLines): its lists …
+    heldBar: tooLargeLines(),           // … its lines, as it shows them
+    heldRetry: tooLargeRetry(),         // … and its "Try again"
+    refused: [..._refused.entries()].map(([key, msg]) => ({ key, msg })),   // a whole document the cloud refused (#refusedPill)
     photos: alertsPhotoFacts(),
     erpDirty: !!_erpDirty,
     erpImport: lastErpImport(),
     snapDay,
     snapFail: snapFailInfo(),           // the daily backup's own record of its last failure (04, maybeSnapshot)
+    snapHeld: snapshotBlockedWhy(),     // why this phone does not take it now ('copy' | 'queued' | null)
   };
 }
 function alertsCompute(){
@@ -81,7 +97,9 @@ function alertsCompute(){
   if(!currentUser || typeof UMCore.alertsFor !== 'function') return { shown: [], hidden: [] };
   const now = Date.now(), today = todayStr();
   const list = UMCore.alertsFor({ today, now, user: { name: currentUser.name, role: currentUser.role }, reps: REPS.slice(),
-    team: staff.map(s => s && s.name).filter(Boolean), data: { clinics, visits, dayPlans, events, targets, erpSales, erpMap },
+    team: staff.map(s => s && s.name).filter(Boolean),
+    // the sales lines through the pass the screens use, kept per data state (erpShareNow, 11-erp.js; v126 speed part 4)
+    data: { clinics, visits, dayPlans, events, targets, erpSales, erpMap, erpShare: erpShareNow() },
     settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, monthLabel, cache: _alertsCache });
   return UMCore.alertsVisible(list, alertsState(), today, now);
 }
@@ -155,6 +173,7 @@ function alertCardHTML(a, hidden){
   if(a.open && ALERT_OPEN[a.open.screen]) acts.push(`<button class="chip small on" data-act="open" onclick="alertsOpen(this)">Open</button>`);
   if(a.action === 'flush') acts.push(`<button class="chip small" data-act="flush" onclick="alertsUploadNow(this)">Upload now</button>`);
   if(a.action === 'retryErp') acts.push(`<button class="chip small" data-act="retryErp" onclick="alertsRetryErp(this)">Retry the save</button>`);
+  if(a.action === 'retryHeld') acts.push(`<button class="chip small" data-act="retryHeld" onclick="alertsRetryHeld(this)">Try again</button>`);
   if(a.action === 'checkBackup') acts.push(`<button class="chip small" data-act="checkBackup" onclick="alertsCheckBackup(this)">Check now</button>`);
   if(hidden) acts.push(`<button class="chip small" data-act="restore" onclick="alertsSetState(this, 'restore')">Show again</button>`);
   else {
@@ -258,8 +277,14 @@ async function alertsUploadNow(btn){
 async function alertsRetryErp(btn){
   if(!requireAdmin()) return;
   if(btn) btn.disabled = true;
-  const ok = await persist('erpSales');
-  showToast(ok ? '✅ Sales file changes saved' : '❌ Not saved — check the connection and try again');
+  const r = await persistTold('erpSales');
+  saveToast(r, 'erpSales', '✅ Sales file changes saved'); // what the save did, never "saved" for one that did not land (v123)
+  refreshAlerts(true);
+}
+// The red bar's "Try again" (retryBlockedSaves): each list on it is sent once more, and says what it did.
+async function alertsRetryHeld(btn){
+  if(btn) btn.disabled = true;
+  await retryBlockedSaves();
   refreshAlerts(true);
 }
 // The same one check the app makes on the first save of the day (maybeSnapshot):
@@ -267,8 +292,12 @@ async function alertsRetryErp(btn){
 // did not load from the cloud.
 async function alertsCheckBackup(btn){
   if(!requireAdmin()) return;
-  if(Object.keys(_mirrorUsed).length || Object.keys(_loadFailed).length || _bootCrashed || _seedClinics){
-    showToast('⚠️ This phone\'s data did not fully load from the cloud — reopen the app on a good connection, then check again');
+  // the very rule maybeSnapshot keeps (snapshotBlockedWhy): only from a copy that is the cloud's, with nothing of this phone's waiting
+  const held = snapshotBlockedWhy();
+  if(held){
+    showToast(held === 'queued' ? '⏳ This phone does not take today\'s backup now: changes on this phone are still waiting to upload'
+      : '⚠️ This phone does not take today\'s backup now: not every list on it came from the cloud yet', 6000);
+    refreshAlerts(true);
     return;
   }
   if(btn) btn.disabled = true;
@@ -306,12 +335,16 @@ async function saveAlertSettings(){
   UMCore.ALERT_TYPES.forEach(t => { const el = document.getElementById('alT_' + t); raw.types[t] = el ? !!el.checked : cur.types[t]; });
   Object.keys(UMCore.ALERT_DEFAULTS).forEach(k => { const el = document.getElementById('alS_' + k); raw[k] = el ? el.value : cur[k]; });
   const next = UMCore.alertSettings(raw, cur);   // a number out of its limits keeps the one in force
-  const before = BENCHMARKS;
+  const was = BENCHMARKS && BENCHMARKS.alerts;
   BENCHMARKS = Object.assign({}, BENCHMARKS, { alerts: next }); // the KPI settings and the evaluation targets stay as they are
-  const ok = await persist('benchmarks');
-  if(!ok){
-    BENCHMARKS = before;
-    showToast('❌ Alert settings not saved — check the connection and try again');
+  // one compare-and-set of the whole document (v123): what this save did is said, never "saved" for one that did not
+  // land — refused, changed on another device (its bar), no answer in time (it may land late) — as the KPI settings do
+  const r = await persistTold('benchmarks');
+  if(!r.ok){
+    // not saved: this phone's alerts follow the settings in force again — unless the save may still land (no answer
+    // in time: followed, and the next refresh brings whatever the cloud holds)
+    if(!(r.outcome && r.outcome.timeout) && BENCHMARKS && BENCHMARKS.alerts === next) BENCHMARKS = Object.assign({}, BENCHMARKS, { alerts: was });
+    saveToast(r, 'benchmarks', '');
     refreshAlerts(true);
     return false;
   }

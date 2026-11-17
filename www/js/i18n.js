@@ -2504,6 +2504,15 @@
     'It tries again within the hour.': 'يحاول مرة أخرى خلال ساعة.',
     "Today's backup is too large for the cloud — take a Full backup (Export & backups)": 'نسخة اليوم الاحتياطية أكبر من أن تحفظها السحابة — خذ نسخة كاملة (التصدير والنسخ الاحتياطية)',
     "Today's backup was not saved: not allowed (ask the supervisor)": 'لم تُحفظ نسخة اليوم الاحتياطية: غير مسموح (اسأل المشرف)',
+    // the alerts center on v123's bars: the red bar at the bottom (too large / refused, kept on this phone) and a whole
+    // document the cloud refused (#refusedPill)
+    'Kept on this phone, not sent': 'محفوظة على هذا الهاتف، ولم تُرسل',
+    'Not saved: the red bar says why': 'لم تُحفظ: الشريط الأحمر يذكر السبب',
+    // why this phone does not take today's backup now (snapshotBlockedWhy)
+    "This phone does not take it now: not every list on it came from the cloud (a read failed, or a list is shown from this phone's copy). It is taken once everything has loaded from the cloud — or by another phone of the team.": 'هذا الهاتف لا يحفظها الآن: ليست كل القوائم عليه من السحابة (تعذّرت قراءة، أو قائمة معروضة من نسخة هذا الهاتف). تُحفظ بعد أن يُحمَّل كل شيء من السحابة — أو من هاتف آخر في الفريق.',
+    'This phone does not take it now: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team.': 'هذا الهاتف لا يحفظها الآن: تغييرات على هذا الهاتف ما زالت تنتظر الرفع. تُحفظ بعد رفعها — أو من هاتف آخر في الفريق.',
+    "This phone does not take today's backup now: changes on this phone are still waiting to upload": 'هذا الهاتف لا يحفظ نسخة اليوم الاحتياطية الآن: تغييرات على هذا الهاتف ما زالت تنتظر الرفع',
+    "This phone does not take today's backup now: not every list on it came from the cloud yet": 'هذا الهاتف لا يحفظ نسخة اليوم الاحتياطية الآن: ليست كل القوائم عليه من السحابة بعد',
     // === END ALERTS ===
 
     // === SCREENS A ===
@@ -2954,6 +2963,10 @@
     [/^(?:(.+): )?[Tt]arget is from (.+)$/, function (m) { return (m[1] ? alertWhoAr(m[1]) : '') + 'التارغت من ' + m[2]; }],
     [/^The app keeps one backup a day of the clinics, products, tasks and this month's visits\. This phone tried at (\d{1,2}:\d{2})\.$/, function (m) { return 'يحفظ التطبيق نسخة احتياطية واحدة كل يوم للعيادات والمنتجات والمهام وزيارات هذا الشهر. حاول هذا الهاتف الساعة ' + m[1] + '.'; }],
     [/^It is too large for the cloud \((\d+) KB, even without the photo previews\): take a Full backup \(Export & backups\)\.$/, function (m) { return 'إنها أكبر من أن تحفظها السحابة (' + m[1] + ' كيلوبايت، حتى دون معاينات الصور): خذ نسخة كاملة (التصدير والنسخ الاحتياطية).'; }],
+    [/^(.+) — kept on this phone, not sent$/, function (m) { return alertKeyAr(m[1]) + ' — محفوظة على هذا الهاتف، ولم تُرسل'; }],
+    [/^(.+) — not saved$/, function (m) { return alertKeyAr(m[1]) + ' — لم تُحفظ'; }],
+    [/^(.+): not saved$/, function (m) { return alertKeyAr(m[1]) + ': لم تُحفظ'; }],
+    [/^(\d+) changes? not saved$/, function (m) { return m[1] + ' تغيير لم يُحفظ'; }],
     // === END ALERTS ===
   ];
 
