@@ -29,13 +29,20 @@ function switchUser(){
   currentUser = null;
   forgetUser(); // the next start shows the sign-in screen, never this person's copy (v126 speed, part 3)
   if(typeof earlyDrop === 'function') earlyDrop();
-  if(FIREBASE_ENABLED && window.firebase){ _signedOutOf = was || null; firebase.auth().signOut().catch(()=>{}); }
+  if(FIREBASE_ENABLED && window.firebase){ _signedOutOf = was || null; signedOutKeep(was); firebase.auth().signOut().catch(()=>{}); }
   showGateScreen();
 }
 // Signed out on this phone before the SDK had told who its saved session was (the early open's window, v126 speed part
 // 3): the SDK finishes its start first and tells that session, then the sign-out — that late word is not a sign-in.
 // Kept until the SDK says "nobody" (the sign-out has landed): a sign-in asked for meanwhile is told after it.
 let _signedOutOf = null;
+// …and kept on the phone too (rerev S1): Firebase's sign-out waits behind its start, so an app closed in the early open's
+// window kept Firebase's saved session, and the next start signed that person in again by itself — whoever picked up the
+// phone acted as her. Until the SDK says "nobody" (or holds another person's session), a start told of that very session
+// signs it out instead; that person signing in again on the sign-in screen clears it (she is signing in on purpose).
+const SIGNED_OUT = 'um_signedOut';
+function signedOutKeep(email){ try{ if(email) localStorage.setItem(SIGNED_OUT, String(email).toLowerCase()); else localStorage.removeItem(SIGNED_OUT); }catch(e){} }
+function signedOutOnPhone(){ try{ return localStorage.getItem(SIGNED_OUT) || null; }catch(e){ return null; } }
 function showGateScreen(){
   document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
   renderGate();
@@ -168,6 +175,7 @@ async function submitEmailLogin(){
     // (_signedOutOf stays until the SDK says "nobody": Firebase queues this sign-in behind a sign-out asked before its
     // start had told the saved session — it tells that session first, then the sign-out, then this one; cleared here,
     // the earlier person was signed in again for a moment and the new one was told "Signed out", v126 review 2, U1)
+    if(signedOutOnPhone() === email) signedOutKeep(null); // (she signs in again on purpose: her session is not the one signed out of, rerev S1)
     await firebase.auth().signInWithEmailAndPassword(email, pwd);
     closeModal();
   }catch(e){
@@ -180,6 +188,7 @@ async function submitGateLogin(name){
   if(!pwd){ showToast('Enter your password'); return; }
   try{
     // (_signedOutOf stays until the SDK says "nobody" — see submitEmailLogin: v126 review 2, U1)
+    if(signedOutOnPhone() === String(USERS[name].email || '').toLowerCase()) signedOutKeep(null); // (rerev S1, as above)
     await firebase.auth().signInWithEmailAndPassword(USERS[name].email, pwd);
     closeModal();
   }catch(e){
@@ -236,7 +245,15 @@ async function tryAutoLogin(){
     firebase.auth().onAuthStateChanged(async (user)=>{
       // signed out here before the SDK's start told this session (switchUser in the early open's window): not a sign-in
       if(user && _signedOutOf && String(user.email || '').toLowerCase() === _signedOutOf) return;
-      if(!user) _signedOutOf = null; // (the sign-out has landed: that person told again later is a new sign-in)
+      // …or before the app was last closed, its sign-out never reached the SDK (rerev S1): signed out now, the sign-in screen stays
+      if(user && !_signedOutOf && signedOutOnPhone() && String(user.email || '').toLowerCase() === signedOutOnPhone()){
+        _signedOutOf = signedOutOnPhone(); forgetUser(); if(typeof earlyDrop === 'function') earlyDrop();
+        if(!currentUser) showGateScreen();
+        firebase.auth().signOut().catch(()=>{});
+        return;
+      }
+      if(!user){ _signedOutOf = null; signedOutKeep(null); } // (the sign-out has landed: that person told again later is a new sign-in)
+      else if(signedOutOnPhone() && String(user.email || '').toLowerCase() !== signedOutOnPhone()) signedOutKeep(null); // (the SDK holds another person's session now)
       if(!user && currentUser){ signInEnded(); return; } // the sign-in ended under the app (v123 review)
       if(!user){ if(typeof earlyDrop === 'function' && earlyDrop()) forgetUser(); return; } // ended before the early open drew anything
       if(!user.email) return;

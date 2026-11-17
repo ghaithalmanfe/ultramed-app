@@ -20,6 +20,14 @@
 //       drew the screen first — on v125 nothing could be edited before that read was in)
 //   B3  the same with ONE save made once the start's read has ended, and one round while the requests still fail (the phone
 //       says it is online — a weak signal): that round's retry of the queue is the second save of B1
+// Added with the fix (speed-review-2, round 2 of review 2):
+//   W5  the edit is of a visit IN that slow month: the save does not land while the month cannot be read (it is not
+//       written), and says why — the cloud has not answered in time, never "when back online"; once the month answers,
+//       the next rounds land it
+//   W6  with that month still slow, another device moved one visit out of it (to October) and another into it (from
+//       October) before this phone's daily open: the October edit saved in the window lands, neither move is undone in
+//       the cloud, and once the month answers the phone shows both where the other device put them
+//   S2  …after S1, Mariam signs in again on the sign-in screen: she is signed in (the kept sign-out never locks her out)
 // The sign-in is the app's own (03-gate.js) over a stand-in for the Firebase SDK that keeps its session on the phone and
 // confirms it only when the harness says (as in speed-review-2.e2e.js, whose helpers this harness reuses); the cloud is a
 // fake in Node; the clock is fixed; the 20-second round is driven by hand. Invented data (fixtures/heavy-year.js, scale
@@ -265,10 +273,68 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
   }
 
   // =====================================================================================================
+  // W5 / W6 (added with the fix): the slow month itself, and visits another device moved out of it and into it
+  // =====================================================================================================
+  const mar0 = parse(SMALL.docs['visitsArch:2026-03']);
+  if(want('W5')){
+    seed(SMALL);
+    const P = await mkDevice('W5-phone');
+    await P.firstOpen(M);
+    const SLOW = 'visitsArch:2026-03', X = pick(mar0);
+    await P.restart({ hold: true });
+    const drew = await waitEarly(P);
+    ctl.slow.set(P.label, { test: (k, kind) => kind === 'get' && k === SLOW, ms: 9000 });
+    const t0 = Date.now();
+    await P.ev(a => { window.__um.toasts.length = 0; const v = visits.find(x => x.id === a); v.notes = (v.notes || '') + ' [March edit on the phone]'; window.__save = persistTold('visits'); }, X.id);
+    releaseAuth(P.label, 'ok');
+    const out = await P.ev(async () => { const r = await window.__save; return { ok: r.ok, queued: !!(r.outcome && r.outcome.queued), words: !r.ok && typeof saveFailText === 'function' ? (saveFailText(r, 'visits') || [''])[0] : '' }; });
+    await round(P);
+    const marchWritten = writesBy(P.label, t0).some(w => w.k.split(',').includes(SLOW));
+    const inMarch = () => /March edit on the phone/.test((((doc(SLOW) || []).find(v => v && v.id === X.id)) || {}).notes || '');
+    const whileSlow = { queued: await P.ev(() => outboxList()), inCloud: inMarch(), toasts: await P.ev(() => window.__um.toasts.slice()) };
+    ctl.slow.delete(P.label); // the month answers again
+    await round(P); await round(P);
+    const after = { queued: await P.ev(() => outboxList()), inCloud: inMarch() };
+    const said = [out.words].concat(whileSlow.toasts).filter(Boolean);
+    check('W5: the edit is of a visit IN the slow month: the save does not land while that month cannot be read — nothing written to it, said as "the cloud has not answered in time" (never "when back online") — and lands once the month answers',
+      drew && !out.ok && out.queued && /not answered in time/.test(out.words) && !said.some(t => /back online|No connection/i.test(t)) && !marchWritten && !whileSlow.inCloud && whileSlow.queued.includes('visits')
+        && after.inCloud && !after.queued.includes('visits'), { drew, out, marchWrittenWhileSlow: marchWritten, whileSlow, after });
+    await done(P);
+  }
+  if(want('W6')){
+    seed(SMALL);
+    const P = await mkDevice('W6-phone'), L = await mkDevice('W6-laptop');
+    await P.firstOpen(M); await L.firstOpen(M);
+    const SLOW = 'visitsArch:2026-03', OUT = pick(mar0), IN = pick(oct0), Y = pick(oct0, [IN.id]);
+    // the laptop moves one visit out of March (to 15 October) and one into March (from October, to 20 March): its saves land whole
+    const moved = await L.ev(async a => { const o = visits.find(x => x.id === a.out), i = visits.find(x => x.id === a.in);
+      o.date = '2026-10-15'; i.date = '2026-03-20'; [o, i].forEach(v => { v.editedBy = 'Mariam'; v.editedAt = Date.now(); }); return (await persistTold('visits')).ok; }, { out: OUT.id, in: IN.id });
+    const before = { out: findVisit(OUT.id), in: findVisit(IN.id) };
+    await done(L);
+    await P.restart({ hold: true });
+    const drew = await waitEarly(P);
+    ctl.slow.set(P.label, { test: (k, kind) => kind === 'get' && k === SLOW, ms: 9000 });
+    await P.ev(a => { const v = visits.find(x => x.id === a); v.notes = (v.notes || '') + ' [edited on the phone]'; window.__save = persistTold('visits'); }, Y.id);
+    releaseAuth(P.label, 'ok');
+    const out = await P.ev(async () => { const r = await window.__save; return { ok: r.ok }; });
+    await round(P);
+    const whileSlow = { out: findVisit(OUT.id), in: findVisit(IN.id), y: /edited on the phone/.test((((doc('visitsArch:2026-10') || []).find(v => v && v.id === Y.id)) || {}).notes || '') };
+    ctl.slow.delete(P.label);
+    await round(P); await round(P);
+    const shown = await P.ev(a => { const d = id => { const v = (visits || []).filter(x => x && x.id === id); return v.map(x => x.date).join(); }; return { out: d(a.out), in: d(a.in) }; }, { out: OUT.id, in: IN.id });
+    const after = { out: findVisit(OUT.id), in: findVisit(IN.id) };
+    check('W6: March still slow, another device had moved one visit out of it (to 15 October) and one into it (from October, to 20 March): the October edit saved in the window lands, neither move is undone in the cloud, and once March answers the phone shows both where that device put them',
+      moved && drew && out.ok && whileSlow.y && whileSlow.out.join() === 'visitsArch:2026-10@2026-10-15' && whileSlow.in.join() === 'visitsArch:2026-03@2026-03-20'
+        && after.out.join() === 'visitsArch:2026-10@2026-10-15' && after.in.join() === 'visitsArch:2026-03@2026-03-20' && shown.out === '2026-10-15' && shown.in === '2026-03-20',
+      { moved, before, drew, saved: out.ok, whileSlow, after, shownOnPhone: shown });
+    await done(P);
+  }
+
+  // =====================================================================================================
   // S1: Mariam signs out in the early open's window and the app is closed before Firebase's start has ended (its
   // sign-out waits behind that start): opened again, Mariam is not signed in again by itself
   // =====================================================================================================
-  if(want('S1')){
+  if(want('S1') || want('S2')){
     seed(SMALL);
     const D = await mkDevice('S1');
     await D.firstOpen(M);
@@ -286,6 +352,12 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
       greet: (document.getElementById('greeting') || {}).textContent || '' }));
     check('S1: Mariam signs out in the early open\'s window and the app is closed before Firebase\'s start ends: opened again it shows the sign-in screen — Mariam is not signed in again by herself (whoever picks up the phone next would act as her)',
       drew && gate1 && !s.who && s.gate && !s.app && !s.selects.includes(M), Object.assign({ drew, signInScreenAfterSignOut: gate1 }, s));
+    if(want('S2')){
+      let again = null;
+      try{ await D.signInOnGate(M); again = await D.ev(() => ({ who: typeof currentUser !== 'undefined' && currentUser ? currentUser.name : null, app: getComputedStyle(document.getElementById('app')).display !== 'none', kept: localStorage.getItem('um_signedOut') })); }
+      catch(e){ again = { error: String(e && e.message || e).slice(0, 120) }; }
+      check('S2: …then Mariam signs in again on that sign-in screen: she is signed in (the sign-out kept on the phone never locks her out)', !!again && again.who === M && again.app && !again.kept, again);
+    }
     await done(D);
   }
 

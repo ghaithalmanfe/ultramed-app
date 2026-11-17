@@ -33,6 +33,8 @@
     // v126 review 2: a save made while the screen is this phone's copy and the sign-in is not confirmed yet
     'Kept on this phone — your sign-in is not confirmed yet. It uploads by itself once it is': 'محفوظ على هذا الهاتف — لم يتأكد تسجيل دخولك بعد. يُرفع تلقائيًا بعد أن يتأكد',
     'Not saved yet — your sign-in is not confirmed yet. The screen says so if it is saved': 'لم يُحفظ بعد — لم يتأكد تسجيل دخولك بعد. تظهر رسالة إذا تم الحفظ',
+    // rerev: a visits save held back because the cloud's visits did not answer in time (the phone online, a weak link)
+    'Kept on this phone — the cloud has not answered in time. It uploads by itself once it does': 'محفوظ على هذا الهاتف — لم تردّ السحابة في الوقت المحدد. يُرفع تلقائيًا عندما تردّ',
     "Not saved — no access to the team's data right now (signed out?). Sign in again, then save again": 'لم يُحفظ — لا صلاحية على بيانات الفريق الآن (هل خرجت من الحساب؟). سجّل الدخول مرة أخرى ثم احفظ من جديد',
     "Changes wait on this phone, not sent: no access to the team's data right now (signed out, or the password was changed on another device). Sign in again — they upload by themselves.": 'تغييرات محفوظة على هذا الهاتف ولم تُرسل: لا صلاحية على بيانات الفريق الآن (خرجت من الحساب، أو غُيّرت كلمة المرور من جهاز آخر). سجّل الدخول مرة أخرى — وتُرفع تلقائيًا.',
     'Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone.': 'تغييرات محفوظة على هذا الهاتف ولم تُرسل: السحابة لا تسمح لهذا الحساب بحفظها. اسأل المشرف — تبقى على هذا الهاتف.',
