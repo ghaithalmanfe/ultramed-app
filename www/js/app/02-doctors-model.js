@@ -18,6 +18,7 @@ let noOrderReason = null;
 let selectedClinicId = null;
 let selectedDoctorIds = []; // contacts met during the visit (multi-select)
 let newClinicMode = false;
+let _lvNewSaved = null; // the new customer the visit form saved ("Save customer", 06): { gen (the form's generation), id, contact (as typed), r (its save's outcome) }
 let welcomeDismissed = false;
 const ACCOUNT_TYPES = ['Credit account','Cash based'];
 

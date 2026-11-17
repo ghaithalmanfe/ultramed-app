@@ -935,17 +935,24 @@ function newClinicSalesCheck(nc, confirmed, retry, cancel){
 // as it is — the visit, order or call was saved all the same and pointed at a clinic nobody had.
 // Now it comes off the list, nothing else is saved, the form keeps what was typed and its box
 // says why. → the save's outcome when the form may go on (saved, or kept and queued), else null.
+// ("Kept and queued" only: a save a guard refused before any write — the clinics did not load right, a save that would
+// have removed most of the list — is neither saved nor queued, so nothing may point at the clinic either; until 17 Nov,
+// when the visit form's "Save customer" came to use it as well, the visit, order or call was saved all the same.)
 async function saveNewClinicFirst(nc, askId){
   const r = await persistTold('clinics');
   const o = (r && r.outcome) || {};
-  if(r && (r.ok || !(o.denied || o.tooLarge))) return r;
+  if(saveGoesOn(r)) return r;
   clinics = clinics.filter(c => c !== nc);
-  const t = saveFailText(r, 'clinics'), msg = t ? t[0] : NOT_ALLOWED_MSG;
+  const t = saveFailText(r, 'clinics'), msg = t ? t[0] : (o.denied || o.tooLarge) ? NOT_ALLOWED_MSG : '⚠️ Not saved — reopen the app, then try again';
   const box = document.getElementById(askId);
   if(box) box.innerHTML = newClinicAskCard(`<span>${esc(msg)}</span> <span>What you typed is still here.</span>`); // (the save's own notice says it too)
   return null;
 }
 function newClinicAskCard(html){ return `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; }
+// A save of a merge-safe list a form may go on from: it landed, or it is kept on this phone and queued (it uploads by
+// itself). Refused by the rules or too large for the cloud (never sent as it is), or refused by a guard before any
+// write (neither saved nor queued): it does not.
+function saveGoesOn(r){ const o = (r && r.outcome) || {}; return !!r && (r.ok === true || (!o.denied && !o.tooLarge && !!o.queued)); }
 // The same check for clinics made in bulk (round 3): Admin → Manage clinics →
 // Import and the contact import made clinics with no check at all, and every
 // invoice of an ERP account their names start matching then counted for the

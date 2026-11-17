@@ -3014,6 +3014,7 @@ async function flushOutbox(){
 }
 function updateSyncBadge(){
   if(typeof alertsSoon === 'function') alertsSoon(); // the header bell says what the bars say (19-alerts.js)
+  if(typeof lvSavedNoteRefresh === 'function') lvSavedNoteRefresh(); // …and the visit form's new customer whether its save has reached the cloud (06)
   let el = document.getElementById('syncPill');
   const n = outboxList().filter(k => !_saveBlocked.has(k) && !_saveParked.has(k)).length; // a list too large for the cloud, or one the cloud refused, is not uploading: the red bar says so (v123)
   // nothing uploads before the early open's sign-in is confirmed: its line says what the screen is (v126 speed, part 3)
