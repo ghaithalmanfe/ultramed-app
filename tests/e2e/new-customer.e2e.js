@@ -7,19 +7,20 @@
 //      contact person typed offered as a person met (it is the clinic's contact: never made a doctor by itself)
 //  N2  …the people met added there (the contact offered, one more by "+ Add doctor"), then Save visit: one clinic, the
 //      visit on it with both, everything in the cloud
-//  N3  …someone met is then required, as for any clinic on the list; "Cancel" leaves the customer (it is real), clears
-//      the visit form and says so
+//  N3  …someone met is then required, as for any clinic on the list; nothing typed or attached in the other steps is
+//      lost — no Cancel clears the form after the save (the form is simply in the picked-clinic state), and "Change"
+//      works as for any clinic: the products, notes, follow-up and photo stay, and the visit carries them
 //  N4  refused by the rules: off the list, nothing queued, the form keeps everything typed, the words say not allowed;
 //      too large for the cloud: the same with its words; a doctor added there that the rules refuse: off the clinic, the
 //      sheet keeps the name, nobody picked as met
 //  N5  offline: kept on this phone and queued, said so (never "saved"); people added offline; once back it all lands
-//      and the note says saved — refused by the rules at upload instead, the note and "Cancel" say it is not sent
+//      and the note says saved — refused by the rules at upload instead, the note says it is not sent
 //  N6  a double tap — two calls, a real second tap while a slow cloud saves, "Save visit" meanwhile: one clinic
 //  N7  "Save visit" without "Save customer": as before (the clinic first, then the visit); the sales question asked in
 //      the card first (a rep is stopped; the supervisor's "Count from this month"); the supervisor's new customer is
 //      the "Logging as" person's; the new customer's save refused by a guard before any write (neither saved nor
 //      queued) stops the visit too (it was saved pointing at that clinic)
-//  N8  Arabic: «حفظ الزبون», the hint, the note, the toasts, the chips — no English left
+//  N8  Arabic: «حفظ العميل» (the app's word, عميل), the hint, the note, the toasts, the chips — no English left
 //  N9  the phone (390 px): no sideways pan, every target at least 44 px, nothing lying over one, before and after
 // Invented data only (clinic and people names marked "Sample"); a fake cloud; the clock pinned to Fri 13 Nov 2026, 10:00.
 const { chromium } = require('playwright');
@@ -185,7 +186,7 @@ function formState(x){
     check('N1. (the report) a new customer typed in step 1 — name, contact person, phone, class, account type — has a "Save customer" button; tapped, the customer is saved (hers, everything typed, in the cloud) and the form shows it as picked: step 2 offers its people to tap — "+ Add doctor", and the contact typed ("+ Add ' + CONTACT + '") — never "Pick the clinic in step 1 first"',
       hadButton && !!btnBox && btnBox.height >= 44 && before.step2 !== PICK_FIRST && /Save customer/.test(before.step2)
         && s1.inMem.length === 1 && c1.length === 1 && c1[0].rep === 'Mariam' && c1[0].contact === CONTACT && c1[0].phone === '12345' && c1[0].cls === 'B' && c1[0].account === 'Credit account' && c1[0].isNew === true && c1[0].addedOn === TODAY
-        && !s1.newMode && s1.sel === c1[0].id && !s1.fields && s1.card.includes(NAME) && /New customer saved/.test(s1.note) && s1.noteState === 'saved' && s1.cancel
+        && !s1.newMode && s1.sel === c1[0].id && !s1.fields && s1.card.includes(NAME) && /New customer saved/.test(s1.note) && s1.noteState === 'saved' && !s1.cancel
         && s1.step2 !== PICK_FIRST && !/Pick the clinic in step 1 first/.test(s1.step2) && s1.addDoctor && s1.sug === '+ Add ' + CONTACT
         && s1.toasts.includes('🌟 New customer saved — now tap who you met in step 2') && s1.tag2 === 'Required' && s1.prog === '1 of 2' && !s1.queued,
       { hadButton, btnH: btnBox && Math.round(btnBox.height), step2Before: before.step2, s1: Object.assign({}, s1, { inMem: s1.inMem }), cloud: c1 });
@@ -227,13 +228,22 @@ function formState(x){
     await P.ctx.close();
   }
 
-  // ===================== N3 — someone met required then; Cancel keeps the customer =====================
+  // ===================== N3 — someone met required then; nothing of the visit lost =====================
   seedCloud();
   {
     const P = await mkPhone('N3'); await P.boot('Mariam', 'rep');
     await P.typeCustomer(NAME, CONTACT);
-    const ok = await P.saveCustomer();
+    // the rest of the visit typed and attached BEFORE the customer is saved: a product, notes, a follow-up date, a photo
+    await P.tap('#productChips .chip');
     await P.page.fill('#visitNotes', 'N3 notes typed');
+    await P.tap('#quickDates button[data-days="7"]');
+    await P.ev(() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); g.fillStyle = '#2F8F6F'; g.fillRect(0, 0, 64, 64);
+      const u = cv.toDataURL('image/jpeg', .7); visitPhotos.push({ id: 'n3shot', thumb: u, full: u }); renderVisitPhotos(); lvPaint(); });
+    const form0 = await P.ev(() => ({ prods: selectedProducts.slice(), notes: document.getElementById('visitNotes').value, follow: document.getElementById('followUpDate').value, photos: visitPhotos.map(p => p.id) }));
+    const ok = await P.saveCustomer();
+    const s0 = await P.state(NAME);
+    const form1 = await P.ev(() => ({ prods: selectedProducts.slice(), notes: document.getElementById('visitNotes').value, follow: document.getElementById('followUpDate').value, photos: visitPhotos.map(p => p.id),
+      cancels: [...document.querySelectorAll('#lvStep1 button')].filter(b => b.offsetParent !== null && /Cancel/.test(b.innerText)).length }));
     await P.ev(() => { window.__toasts = []; });
     await P.tap('button.lv-save'); await P.settle();
     const s1 = await P.state(NAME);
@@ -241,14 +251,23 @@ function formState(x){
     check('N3. once the customer is saved it is a clinic on the list: "Save visit" with nobody tapped in step 2 stops with "Add the doctor you met first (+ Add doctor)" — nothing saved, the form kept',
       ok && s1.toasts.includes('👨‍⚕️ Add the doctor you met first (+ Add doctor)') && /Add the doctor you met first/.test(err2) && !cloudVisits().length && s1.view === 'log' && s1.notes === 'N3 notes typed' && s1.sel === (named(NAME)[0] || {}).id,
       { ok, toasts: s1.toasts, err2, visits: cloudVisits().length, view: s1.view });
-    await P.ev(() => { window.__toasts = []; });
-    const cancelled = await P.tap('#lvSavedCancel');
-    await P.page.waitForTimeout(120);
-    const s2 = await P.state(NAME);
-    check('N3b. "Cancel" after a saved customer leaves the customer (on the phone and in the cloud — it is real), clears the visit form (no clinic, no fields, no notes; step 2 back to "Pick the clinic in step 1 first") and says so; no visit',
-      cancelled && s2.inMem.length === 1 && named(NAME).length === 1 && !s2.sel && !s2.newMode && !s2.fields && s2.notes === '' && s2.step2 === PICK_FIRST && !s2.note
-        && s2.toasts.includes('The new customer stays on the clinic list — the visit form was cleared, no visit was logged') && !cloudVisits().length && s2.view === 'log',
-      { cancelled, s2: { inMem: s2.inMem.length, sel: s2.sel, newMode: s2.newMode, fields: s2.fields, notes: s2.notes, step2: s2.step2, note: s2.note, view: s2.view, toasts: s2.toasts }, cloud: named(NAME).length, visits: cloudVisits().length });
+    // "Change", as for any clinic on the list: only the clinic pick goes — the product, notes, follow-up and photo stay
+    await P.tap('#selectedClinicCard button.chip[onclick^="clearClinicPick"]');
+    const form2 = await P.ev(() => ({ sel: selectedClinicId, prods: selectedProducts.slice(), notes: document.getElementById('visitNotes').value, follow: document.getElementById('followUpDate').value, photos: visitPhotos.map(p => p.id) }));
+    const row = await P.ev(n => { const c = clinics.find(x => x.name === n); return c ? c.id : null; }, NAME);
+    await P.page.fill('#clinicSearchLog', 'Cedar');
+    await P.tap(`#clinicPickList .lrow[onclick="pickClinic('${row}')"]`);
+    await P.tap('#doctorPickChips .chip[onclick^="openQuickAddDoctor"]:not(#lvContactSug)');
+    if(await P.has('#newDocName')) await P.page.fill('#newDocName', SECOND);
+    await saveDoctorSheet(P);
+    await P.tap('button.lv-save'); await P.settle();
+    const v = cloudVisits().find(x => x && x.notes === 'N3 notes typed');
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    check('N3b. nothing of the visit is lost after "Save customer": no Cancel there clears the form (it is in the picked-clinic state), the product, notes, follow-up and photo typed before the save stay; "Change" works as for any clinic (they stay too), the customer is on the list to pick again, and the visit saved then carries all of it',
+      ok && !s0.cancel && form1.cancels === 0 && form0.prods.length === 1 && !!form0.follow && same(form0, { prods: form1.prods, notes: form1.notes, follow: form1.follow, photos: form1.photos })
+        && !form2.sel && same(form0, { prods: form2.prods, notes: form2.notes, follow: form2.follow, photos: form2.photos }) && !!row && named(NAME).length === 1
+        && !!v && v.clinicId === row && (v.doctorIds || []).length === 1 && same(v.products, form0.prods) && v.nextFollowUp === form0.follow && (v.photos || []).map(p => p.id).join() === 'n3shot',
+      { form0, form1, form2, cancelShown: s0.cancel, visit: v && { clinicId: v.clinicId, doctorIds: v.doctorIds, products: v.products, next: v.nextFollowUp, photos: (v.photos || []).map(p => p.id) } });
     await P.ctx.close();
   }
 
@@ -352,14 +371,10 @@ function formState(x){
     mode.offline.delete('N5d'); mode.deny = { re: /^clinics$/, ops: 'w' };
     await P.tick();
     const s2 = await P.state(NAME);
-    await P.ev(() => { window.__toasts = []; });
-    const cancelled = await P.tap('#lvSavedCancel'); await P.page.waitForTimeout(120);
-    const s3 = await P.state(NAME);
     mode.deny = null;
-    check('N5d. kept offline, then refused by the rules at upload: the note now says it waits on this phone, not sent (never "uploads automatically"); "Cancel" says the same of the customer — kept on this phone, not in the cloud',
-      ok && s1.noteState === 'kept' && s2.noteState === 'parked-refused' && /not sent/.test(s2.note) && !/uploads automatically/.test(s2.note) && s2.queued && !named(NAME).length
-        && cancelled && s3.toasts.includes('The new customer stays on this phone, not sent (the red bar says why) — the visit form was cleared, no visit was logged') && s3.inMem.length === 1 && !s3.sel,
-      { ok, s1: s1.noteState, s2: { state: s2.noteState, note: s2.note, queued: s2.queued }, cancelled, s3: { toasts: s3.toasts, inMem: s3.inMem.length } });
+    check('N5d. kept offline, then refused by the rules at upload: the note now says it waits on this phone, not sent (never "uploads automatically"); the customer stays on this phone and in the queue, not in the cloud',
+      ok && s1.noteState === 'kept' && s2.noteState === 'parked-refused' && /not sent/.test(s2.note) && !/uploads automatically/.test(s2.note) && s2.queued && !named(NAME).length && s2.inMem.length === 1 && s2.sel === s2.inMem[0].id,
+      { ok, s1: s1.noteState, s2: { state: s2.noteState, note: s2.note, queued: s2.queued, inMem: s2.inMem.length } });
     await P.ctx.close();
   }
 
@@ -480,15 +495,15 @@ function formState(x){
     const ar = await P.ev(({ data }) => {
       const pick = sel => [...document.querySelectorAll(sel)];
       const clean = el => { const k = el.cloneNode(true); k.querySelectorAll('[dir="auto"], .cls').forEach(x => x.remove()); let t = k.innerText || k.textContent || ''; data.forEach(d => { t = t.split(d).join(''); }); return t.replace(/\s+/g, ' ').trim(); };
-      const parts = { note: pick('#lvSavedNote'), cancel: pick('#lvSavedCancel'), chips: pick('#doctorPickChips'), heads: pick('#lvStep1 .step-h, #doctorPickWrap .step-h') }, out = {};
+      const parts = { note: pick('#lvSavedNote'), chips: pick('#doctorPickChips'), heads: pick('#lvStep1 .step-h, #doctorPickWrap .step-h') }, out = {};
       Object.keys(parts).forEach(k => { out[k] = parts[k].map(clean).join(' | '); });
       out.left = Object.values(out).filter(t => /[A-Za-z]{2,}/.test(t));
       return out;
     }, { data: [NAME, CONTACT, 'Mariam'] });
-    check('N8. Arabic: the button reads «حفظ الزبون», step 2 says to save the customer first; saved, the toast, the note, «إلغاء» and the chips are Arabic («+ إضافة» + the contact, «+ إضافة طبيب») — no English left',
-      ok && before.btn.trim() === 'حفظ الزبون' && before.hint === 'اضغط «حفظ الزبون» في الخطوة 1 أولاً — ثم أضف هنا من قابلتهم.'
-        && s.shownToasts.includes('🌟 حُفظ الزبون الجديد — اضغط الآن على من قابلته في الخطوة 2') && /حُفظ الزبون الجديد/.test(ar.note) && /اضغط الآن على من قابلته في الخطوة 2/.test(ar.note)
-        && ar.cancel === 'إلغاء' && /\+ إضافة طبيب/.test(ar.chips) && s.sug === '+ إضافة ' + CONTACT && !ar.left.length,
+    check('N8. Arabic, in the app\'s own word (عميل): the button reads «حفظ العميل», step 2 says to save the customer first; saved, the toast, the note and the chips are Arabic («+ إضافة» + the contact, «+ إضافة طبيب») — no English left, no «زبون»',
+      ok && before.btn.trim() === 'حفظ العميل' && before.hint === 'اضغط «حفظ العميل» في الخطوة 1 أولاً — ثم أضف هنا من قابلتهم.'
+        && s.shownToasts.includes('🌟 حُفظ العميل الجديد — اضغط الآن على من قابلته في الخطوة 2') && /حُفظ العميل الجديد/.test(ar.note) && /اضغط الآن على من قابلته في الخطوة 2/.test(ar.note)
+        && /\+ إضافة طبيب/.test(ar.chips) && s.sug === '+ إضافة ' + CONTACT && !ar.left.length && !/زبون/.test(before.btn + before.hint + s.shownToasts.join() + ar.note),
       { ok, before, toasts: s.shownToasts, ar, sug: s.sug });
     await P.ctx.close();
   }

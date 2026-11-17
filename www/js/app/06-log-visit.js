@@ -753,8 +753,9 @@ function visitSaveMsg(vs, kept, added){
 // (saveNewClinicFirst, round 4: refused or too large, it comes off the list and the form keeps everything typed).
 // Saved, or kept on this phone and queued (no connection: said so), the form shows it as if it had been picked from
 // the list: step 2 lists its people and "+ Add doctor" — and, as for any clinic on the list, someone met is required
-// then. "Save visit" without "Save customer" is as before. The contact person typed is the clinic's contact: it is
-// offered in step 2 as a person met (the "Add doctor" sheet with the name filled in), never made a doctor by itself.
+// then; nothing typed or attached in the other steps is cleared by the save. "Save visit" without "Save customer" is
+// as before. The contact person typed is the clinic's contact: it is offered in step 2 as a person met (the "Add
+// doctor" sheet with the name filled in), never made a doctor by itself.
 // (_lvNewSaved, 02: the customer this form saved — declared with the form's other state)
 // The clinic step 1 holds, as it is saved: the one shape for both ways. rep: whose it is — a rep's own, the
 // supervisor's "Logging as". → the clinic, or null (no name, or the name taken: said in step 1 and the toast)
@@ -836,14 +837,14 @@ function lvSavedState(s){
   return p ? 'parked-' + p : 'kept';
 }
 function lvSavedFor(c){ const s = _lvNewSaved; return s && c && s.gen === _logFormGen && s.id === c.id ? s : null; }
-// Under the customer this form saved: what its save did, in that save's own words — and "Cancel": the customer is
-// real and stays on the list (nothing takes it back), the visit form is cleared.
+// Under the customer this form saved: what its save did, in that save's own words. Nothing else: once saved, the
+// form is simply in the picked-clinic state ("Change" as for any clinic) — nothing of the visit typed or attached so
+// far (products, the order, notes, photos) is cleared by anything here.
 function lvSavedCustomerHTML(c){
   const s = lvSavedFor(c);
   if(!s) return '';
   const st = lvSavedState(s);
-  return `<div class="lv-saved" id="lvSavedNote" role="status" data-state="${st}">${lvSavedNoteInner(s, st)}</div>
-    <button class="btn ghost" id="lvSavedCancel" onclick="cancelSavedCustomer()">Cancel</button>`;
+  return `<div class="lv-saved" id="lvSavedNote" role="status" data-state="${st}">${lvSavedNoteInner(s, st)}</div>`;
 }
 function lvSavedNoteInner(s, st){
   const words = st === 'saved' ? '✅ New customer saved.' : st === 'blocked' ? tooLargeText({ key: 'clinics', kept: true })
@@ -857,13 +858,6 @@ function lvSavedNoteRefresh(){
   if(!el || !s) return;
   const st = lvSavedState(s);
   if(el.dataset.state !== st){ el.dataset.state = st; el.innerHTML = lvSavedNoteInner(s, st); }
-}
-function cancelSavedCustomer(){
-  const st = _lvNewSaved ? lvSavedState(_lvNewSaved) : 'saved';
-  prepLogView(); // a new form: nothing of this visit is kept
-  showToast(st === 'saved' ? 'The new customer stays on the clinic list — the visit form was cleared, no visit was logged'
-    : st === 'kept' ? 'The new customer stays on this phone and uploads by itself — the visit form was cleared, no visit was logged'
-    : 'The new customer stays on this phone, not sent (the red bar says why) — the visit form was cleared, no visit was logged', 6000);
 }
 // The contact person typed with the customer this form saved, while someone of that name is not on its list yet.
 function lvContactSuggestion(c){
