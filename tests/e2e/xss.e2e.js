@@ -126,6 +126,27 @@ const NESTED = '"><img src=y onerror="window.' + MARK + '=(window.' + MARK + '||
   });
   check('Weekly deck: a visit photo kept as its inline preview (data:) still loads under the page\'s security policy', deckImg.ok, deckImg);
 
+  // 6) The sign-in system (security review, item 1): with Firebase's e-mail enumeration protection on (the default
+  //    for projects made since September 2023, and the review's advice), a wrong password comes back as
+  //    auth/invalid-credential, not auth/wrong-password. Change password must still say the current one is wrong.
+  const cp = await page.evaluate(async () => {
+    const shown = []; const _t = window.showToast; window.showToast = m => { shown.push(m); };
+    const _fb = window.firebase;
+    window.firebase = { auth: Object.assign(() => ({ currentUser: {
+      reauthenticateWithCredential: async () => { const e = new Error('invalid'); e.code = 'auth/invalid-credential'; throw e; },
+      updatePassword: async () => {} } }), { EmailAuthProvider: { credential: () => ({}) } }) };
+    try{
+      openChangePassword();
+      document.getElementById('cpCurrent').value = 'not-the-password';
+      document.getElementById('cpNew').value = 'another-password-1';
+      document.getElementById('cpConfirm').value = 'another-password-1';
+      await submitChangePassword();
+    }catch(e){ shown.push('threw: ' + e.message); }
+    finally{ window.firebase = _fb; window.showToast = _t; try{ closeModal(); }catch(e){} }
+    return shown;
+  });
+  check('Change password: a wrong current password is said as such, also under e-mail enumeration protection', cp.includes('Current password is incorrect'), cp);
+
   const csp = await page.evaluate(() => window.__cspV || []);
   check('nothing the app itself asked for was blocked by its own security policy', csp.length === 0, csp.slice(0, 6));
 
