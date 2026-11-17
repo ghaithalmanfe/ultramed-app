@@ -432,8 +432,9 @@ async function loadVisits(run){
   }
   let liveRes, idxRes;
   // the past months this phone keeps in its store (v126), read beside the index — at the start of a session only (a
-  // month read this session is in memory)
-  const keptP = (run && (run.noKept || run.local || run.readFirst)) || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
+  // month read this session is in memory): while the visits are not read from the cloud this session (review 2: an
+  // account with no archived month has no month in memory, and read its store and put its visits together at every round)
+  const keptP = (run && (run.noKept || run.local || run.readFirst)) || !visitsUnread() || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
   try{
     if(run && run.local) throw new Error('the early open reads no cloud'); // this phone's copy, as an offline start has it (v126 speed, part 3)
     [liveRes, idxRes] = await Promise.all([
@@ -489,11 +490,14 @@ async function loadVisits(run){
   // on the phone to write whole again (mirrorRetryDue: then they are put together and the copy written): nothing is
   // parsed or put together again. loadAllNow keeps the visits on screen — or puts them together now (run.visitsLater)
   // when the deletes known or the doctor merges changed. Still a read from the cloud of every month (run.visitsComplete).
+  // An account with no index (a new team in its first month: the index comes with the first archived month) takes this
+  // path too while it has none, as recorded (review 2: it put its visits together and drew every screen at every round) —
+  // its read counts for what it counted when recorded (rec.complete: without an index, never "every month read").
   const rec = _onScreen.visits;
   const revOf0 = m => (index.months && index.months[m] && index.months[m].rev) || 0;
-  if(run && rec && !mirrorRetryDue('visits') && idxRead && !readAll && !keptP && liveText === rec.live && idxText === rec.idx && _localGen === _onScreen.gen && visits === _onScreen.refs.visits
+  if(run && rec && !mirrorRetryDue('visits') && (idxRead || (idxText === null && rec.idx === null)) && !readAll && !keptP && liveText === rec.live && idxText === rec.idx && _localGen === _onScreen.gen && visits === _onScreen.refs.visits
      && !_visitsBroken.length && !keptMonthsOnScreen() && months.every(m => _visitsArch[m] && _visitsArch[m].rev === revOf0(m) && _visitsArch[m].kept == null)){
-    run.visitsSame = true; run.visitsComplete = true;
+    run.visitsSame = true; run.visitsComplete = !!rec.complete;
     run.visitsLater = () => finish(UMCore.safeParse(liveText, null) || [], {}, [], {}, {});
     return visits;
   }
@@ -695,6 +699,100 @@ async function visitsConfirmKeptNow(){
   if(changed){ applyDoctorRemap(); visitsMirrorSave(visits); }
   return { changed: changed > 0, unread };
 }
+// ---- The visits on screen not read from the cloud this session (v126 review 2) ----
+// An early open draws the phone's copy, a start without a connection serves it, a start's read raced by a save
+// commits nothing: until a read of this session has committed the visits (every commit and every write of the live
+// document sets _visitsLoaded), none of their documents — the live month or a past one — is evidence of what the
+// cloud holds, exactly like a month from the store (review 1). Review 2 found a save in that state writing every
+// month the phone held, each merged against the copy: a visit another device had moved between two documents since
+// the copy went back to its old date (the union keeps the copy's visit where the cloud's document lacks it, and the
+// tidy then took it out of the document the other device had put it in), and every month's revision moved (every
+// other phone read every month again). So before anything of this session writes a visits document (a save, its
+// tidy, a photo mark, a rename) every document the cloud's index lists — and every month the screen holds — is read
+// now and the screen is put on them: a visit this phone did not change since what the screen took (the copy, or the
+// base kept beside a queued save) takes the cloud's copy wherever a document read now holds it, or leaves the screen
+// when none does (deleted, or moved and already placed); a visit this phone changed keeps its change, merged field by
+// field over the cloud's copy where the base is a whole record; a visit the screen lacks joins it (unless deleted).
+// Those documents are then this session's reads (_visitsArch, _visitsLive, _visitsLoaded): the save goes on as after
+// a start's read and writes only the documents that differ. A read that fails changes nothing (→ false): the save
+// does not land and stays on this phone, queued, said as such.
+function visitsUnread(){ return _visitsLoaded == null; }
+function visitsReadFirst(){
+  if(!visitsUnread()) return Promise.resolve(true);
+  const run = async () => { _visitsSaving = true; try{ return await visitsReadFirstNow(); } finally { _visitsSaving = false; } };
+  _localGen++; _localSaving++; // a refresh on its way keeps the lists (see persist)
+  const p = _visitsSaveChain.then(run, run);
+  _visitsSaveChain = p.catch(() => {});
+  return p.finally(() => { _localSaving--; _localGen++; });
+}
+// In the visits save chain (the caller holds _visitsSaving). → true: the visits are this session's reads now
+async function visitsReadFirstNow(){
+  if(!visitsUnread()) return true;
+  const today = todayStr();
+  let liveRes, idxRes;
+  try{ [liveRes, idxRes] = await Promise.all([withTimeout(window.storage.get('visits', true), 8000), withTimeout(window.storage.get('visitsIndex', true), 8000)]); }
+  catch(e){ noteNoAccess('visits', e); return false; }
+  const index = idxRes && idxRes.value != null ? (UMCore.safeParse(idxRes.value, null) || {}) : null;
+  let months = index ? Object.keys(index.months || {}) : null;
+  if(!months){ // no index (a legacy account, or its write failed): the archives as listed
+    try{ const l = await withTimeout(window.storage.list(UMCore.VISITS_ARCH_PREFIX, true), 8000); months = ((l && l.keys) || []).map(k => k.slice(UMCore.VISITS_ARCH_PREFIX.length)); }
+    catch(e){ return false; }
+  }
+  // and every month the screen holds (its document may be there with its index entry owed)
+  Object.keys(UMCore.visitsPartition((visits || []).filter(v => v), today).months).forEach(m => { if(!months.includes(m)) months.push(m); });
+  const texts = {}; let failed = false;
+  await Promise.all(months.map(async m => {
+    try{ const r = await withTimeout(window.storage.get(UMCore.visitsArchKey(m), true), 8000); texts[m] = r && typeof r.value === 'string' ? r.value : null; }
+    catch(e){ failed = true; }
+  }));
+  if(failed) return false; // one document not read: the screen is not put on a part of the cloud
+  const liveArr = liveRes && liveRes.value != null ? (UMCore.safeParse(liveRes.value, null) || []) : [];
+  const read = {}; // month → its visits as the cloud holds them now (months the cloud has a document of)
+  months.forEach(m => { if(texts[m] == null) return; const a = UMCore.safeParse(texts[m], null); read[m] = Array.isArray(a) ? a : []; });
+  const cloudAll = UMCore.visitsAssemble(liveArr, read, today); // one copy per visit, where its date says it belongs
+  const cloudOf = new Map(cloudAll.filter(v => v && v.id != null).map(v => [v.id, v]));
+  const base = visitsFallbackBase(); // what the screen took (the copy by id), or the base kept beside a queued save: a record or a fingerprint
+  const ts = tombSet('visits');
+  const copy = o => JSON.parse(JSON.stringify(o));
+  const setTo = (s, rec) => { Object.keys(s).forEach(k => { if(!(k in rec)) delete s[k]; }); Object.assign(s, copy(rec)); }; // in place: a sheet holding the visit keeps it
+  const fm = typeof UMCore.mergePhotos3 === 'function' ? { photos: (L, C, B) => UMCore.mergePhotos3(L, C, B) } : null;
+  const seen = new Set(), drop = new Set();
+  let changed = 0;
+  (visits || []).forEach(s => {
+    if(!s || s.id == null) return;
+    seen.add(s.id);
+    const b = base ? base.get(s.id) : undefined, c = cloudOf.get(s.id);
+    if(b === undefined) return; // not in what the screen took: added here — this phone's
+    const same = typeof b === 'string' ? (typeof UMCore.recordHash === 'function' && UMCore.recordHash(s) === b) : JSON.stringify(s) === JSON.stringify(b);
+    if(same){ // not changed here: the cloud's copy, or none (deleted, or moved into a document read now)
+      if(!c){ drop.add(s.id); changed++; }
+      else if(JSON.stringify(c) !== JSON.stringify(s)){ setTo(s, c); changed++; }
+      return;
+    }
+    if(!c || !b || typeof b !== 'object' || typeof UMCore.merge3Record !== 'function') return; // changed here: this phone's change stays (never lost)
+    const r = UMCore.merge3Record(s, c, b, fm);
+    if(r && r.value && JSON.stringify(r.value) !== JSON.stringify(s)){ setTo(s, r.value); changed++; }
+  });
+  const add = cloudAll.filter(v => v && v.id != null && !seen.has(v.id) && !ts.has(v.id)).map(copy);
+  if(drop.size) visits = (visits || []).filter(v => !(v && drop.has(v.id)));
+  if(add.length){ visits = (visits || []).concat(add); changed += add.length; }
+  // the documents read now are this session's reads, at the revision the index gave in this read
+  const revOf = m => (index && index.months && index.months[m] && index.months[m].rev) || 0, now = Date.now();
+  Object.keys(read).forEach(m => { _visitsArch[m] = { rev: revOf(m), arr: read[m], json: JSON.stringify(read[m]) }; });
+  _visitsBroken = [];
+  _visitsLive = liveArr;
+  _visitsLoaded = JSON.stringify(liveArr);
+  if(!outboxHas('visits')){ _visitsBaseHash = null; _visitsBaseRecs = null; _visitsBaseText = null; _visitsBaseParsed = null; dropMergeBaseOnPhone('visits'); } // (as a start's read: these documents are the base now)
+  keepPut(Object.keys(read).filter(m => revOf(m)).map(m => ({ k: UMCore.visitsArchKey(m), rev: revOf(m), text: texts[m], canon: texts[m] === _visitsArch[m].json, at: now })));
+  if(changed){
+    // the cloud's visits FAR fewer than this phone's copy: the old copy is kept aside first (as a start's read does) —
+    // it may be the only surviving one of a wiped list
+    const prevRaw = mirrorGet('visits'), prev = UMCore.safeParse(prevRaw, null);
+    if(Array.isArray(prev) && prev.length >= 10 && (visits || []).length < prev.length / 3){ try{ localStorage.setItem('um_mirror_prev:visits', prevRaw); }catch(e){} }
+    applyDoctorRemap(); visitsMirrorSave(visits);
+  }
+  return true;
+}
 function renderVisitsNudge(){
   const el = document.getElementById('visitsNudge');
   if(!el) return;
@@ -729,11 +827,19 @@ function persistVisits(opts){
 async function persistVisitsInner(opts){
   _visitsSaving = true;
   try{
+    // the visits on screen not read from the cloud this session (an early open, a start without a connection, a start's
+    // read raced by a save): every document is read first and the screen put on it (v126 review 2); a read that fails
+    // writes nothing — the save does not land, it stays on this phone, queued (persistNow says so)
+    let tombsRead = false;
+    if(!opts.authoritative && visitsUnread()){
+      await refreshTombs(); tombsRead = true; // (another device's deletes known before the screen is put on the cloud's documents)
+      if(!await visitsReadFirstNow()) throw new Error('visits: not read from the cloud yet — kept on this phone');
+    }
     // a past month on screen that came from the phone's store is read from the cloud first: nothing below may take it
     // for what the cloud holds (v126 review). One whose read fails stays kept: never written nor trusted here (below)
     if(keptMonthsOnScreen()) await visitsConfirmKeptNow();
     const today = todayStr();
-    if(!opts.authoritative) await refreshTombs();
+    if(!opts.authoritative && !tombsRead) await refreshTombs();
     const ts = tombSet('visits');
     const local = (visits || []).filter(v => v && !ts.has(v.id));
     const part = UMCore.visitsPartition(local, today);
@@ -956,7 +1062,9 @@ async function patchVisitPhotosNow(changes){
   _visitsSaving = true;
   try{
     // the document holding a visit is known only from documents read from the cloud (v126 review): a kept month is read
-    // first; a visit that only a month still kept places is asked again next round
+    // first; a visit that only a month still kept places is asked again next round. The visits on screen not read from
+    // the cloud this session (v126 review 2): every document is read first; not read → every mark asked again next round
+    if(visitsUnread() && !await visitsReadFirstNow()){ changes.forEach(c => { out[c.photoId] = 'failed'; }); return out; }
     if(keptMonthsOnScreen()) await visitsConfirmKeptNow();
     const byDoc = {};
     changes.forEach(c => { const d = visitDocOf(c.visitId); if(_visitsArch[d] && _visitsArch[d].kept != null) out[c.photoId] = 'failed'; else (byDoc[d] = byDoc[d] || []).push(c); });
@@ -1762,7 +1870,13 @@ async function loadAllNow(opts){
       // them or the doctor merges changed since (a merge is applied once, to the visits as read: applyDoctorRemap)
       visitsKept = !!run.visitsSame && !!_onScreen.visits && keptAs('visits') && _onScreen.visits.remap === JSON.stringify(doctorMergesRemap());
       const vv = run.visitsSame && !visitsKept ? run.visitsLater() : v;
-      if(visitsKept){ if(fromCloud('visits')) settleHeld('visits', _onScreen.visits.ids); } // every month read from the cloud: a hold is answered
+      if(visitsKept){ // every month read from the cloud: a hold is answered — else (no index: never "every month") a hold only lets go
+        const ids = _onScreen.visits.ids;
+        if(fromCloud('visits') && ids){
+          if(run.visitsComplete) settleHeld('visits', ids);
+          else { releaseHeldTombs('visits', _tombsHeld.visits && _tombsHeld.visits.size ? [..._tombsHeld.visits.keys()].filter(id => ids.has(id)) : null); tombsToWrite += reviveAgainTombs('visits', id => ids.has(id)); }
+        }
+      }
       else {
       if(run.visitsCommit) run.visitsCommit();
       // a month that did not load confirms nothing: what was read still lets a hold go
@@ -1888,8 +2002,8 @@ async function loadAllNow(opts){
       // the visits: the live month and the index they were put together from (every month at the revision on screen,
       // read from the cloud: none from the phone's store, none unreadable); recorded once the doctor merges are applied
       if(_visitsSaving || !fromCloud('visits') || outboxHas('visits')) _onScreen.visits = null;
-      else if(!visitsKept || phoneVisits) _onScreen.visits = run.visitsTexts && run.visitsComplete && !_visitsBroken.length && !(run.visitsKeptOnly && run.visitsKeptOnly.size) && !keptMonthsOnScreen()
-        ? { live: run.visitsTexts.live, idx: run.visitsTexts.idx, ids: run.visitsIdsRead, complete: true, remap: null } : null;
+      else if(!visitsKept || phoneVisits) _onScreen.visits = run.visitsTexts && (run.visitsComplete || run.visitsTexts.idx === null) && !_visitsBroken.length && !(run.visitsKeptOnly && run.visitsKeptOnly.size) && !keptMonthsOnScreen()
+        ? { live: run.visitsTexts.live, idx: run.visitsTexts.idx, ids: run.visitsIdsRead, complete: !!run.visitsComplete, remap: null } : null; // (no index: recorded as not "every month read")
       // the sales files: the index they were put together from, every file's rows in hand (the early open: the index text
       // kept beside the phone's copy)
       if(_erpSaving || _erpDirty || !(fromCloud('erpSales') || (local && mu.erpSales))) _onScreen.erpSales = null;
@@ -1956,8 +2070,10 @@ async function loadAllNow(opts){
     _filtersFor = currentUser.name;
   }
   // Nothing new (v126 speed): the screen stays exactly as it is — not drawn again; only the words that follow the
-  // clock move (msClock: the hour's greeting and figures, "5 min ago"). A new day draws everything.
-  const drawnFor = who + '|' + todayStr();
+  // clock move (msClock: the hour's greeting and figures, "5 min ago"). A new day draws everything. The screen is
+  // drawn for whoever is signed in NOW: a sign-in made while this read was on its way (the person it was started for
+  // signed out meanwhile) is handed this very read (loadAll) and its screen is drawn — never left covered (v126 review 2)
+  const drawnFor = onScreenWho() + '|' + todayStr();
   if(local){
     // the early open draws now, as a sign-in shows the app (selectUser) — with the line that says what the screen is
     _bootLoaded = true; // real, loaded state (an offline start's): a save from here on is told apart from what a refresh reads
@@ -3203,6 +3319,7 @@ async function persistNowInner(key, opts){
     // sign-in that ended) is not the rules' "no": kept and queued below, like a
     // save with no connection, and sent once access is back (v123 review).
     const kind = saveErrKind(e);
+    const awaitingSignIn = typeof earlyUnconfirmed === 'function' && earlyUnconfirmed(); // (the early open's window: nothing is sent before the sign-in is confirmed)
     const acc = kind === 'refused' ? await accessCheck() : null;
     const lost = acc === 'lost', unsure = acc === 'unknown'; // unsure (round 3): kept and queued like an offline save, tried again by the round
     if(kind && !lost && !unsure){
@@ -3233,16 +3350,16 @@ async function persistNowInner(key, opts){
       if(!onPhone){ _memOnly.add(key); renderMemOnlyBar(); } // the truth stays on screen until it uploads
       updateSyncBadge();
       if(lost || unsure) noAccessToast(onPhone ? (lost ? NO_ACCESS_KEPT : ACCESS_UNKNOWN_KEPT) : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
-      else offlineToast(onPhone ? '📴 Saved on this device — uploads automatically when back online'
+      else offlineToast(onPhone ? (awaitingSignIn ? SIGNIN_WAIT_KEPT : '📴 Saved on this device — uploads automatically when back online')
                                 : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads');
     } else {
       if(WHOLE_DOCS.includes(key)) keepDocBaseOnPhone(key, JSON.stringify(toSave)); // the phone's copy now holds an edit the cloud has not: keep what the cloud held beside it
       if(lost || unsure) noAccessToast(lost ? NO_ACCESS_NOT_SAVED : ACCESS_UNKNOWN_NOT_SAVED);
-      else offlineToast(mOk ? '📴 No connection — retry this save when back online'
+      else offlineToast(awaitingSignIn ? SIGNIN_WAIT_NOT_SAVED : mOk ? '📴 No connection — retry this save when back online'
                             : '⚠️ Device storage full — retry this save when back online');
     }
     // a whole document whose answer did not come in time may still land (followed above): said as "no answer yet", never as "not saved"
-    tell({ ok: false, queued: !!queueable, mirrored: onPhone, noAccess: lost || undefined, accessUnknown: unsure || undefined, timeout: !queueable && /timeout/.test(String(e && e.message)) });
+    tell({ ok: false, queued: !!queueable, mirrored: onPhone, noAccess: lost || undefined, accessUnknown: unsure || undefined, awaitingSignIn: (awaitingSignIn && !lost && !unsure) || undefined, timeout: !queueable && /timeout/.test(String(e && e.message)) });
     return false;
   }
 }
@@ -3312,6 +3429,10 @@ const DOC_MAX_BYTES = 1000000; // the cloud refuses a document above 1 MiB (1,04
 const NOT_ALLOWED_MSG = '🔒 Not allowed, not saved (ask the supervisor)';
 // A phone with no access to the team's data (v123 review): what it saves stays on it
 const NO_ACCESS_KEPT = "🔒 Kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again";
+// A save made while the screen is this phone's copy and the sign-in is not confirmed yet (the early open's window): the
+// cloud is not asked before it is — what waits says so, never "no connection" (v126 review 2, U5)
+const SIGNIN_WAIT_KEPT = '🔒 Kept on this phone — your sign-in is not confirmed yet. It uploads by itself once it is';
+const SIGNIN_WAIT_NOT_SAVED = '⏳ Not saved yet — your sign-in is not confirmed yet. The screen says so if it is saved';
 const NO_ACCESS_NOT_SAVED = "🔒 Not saved — no access to the team's data right now (signed out?). Sign in again, then save again";
 // The cloud refused a save and did not answer whether this login may save at all (round 3): kept, tried again
 const ACCESS_UNKNOWN_KEPT = "🔒 Kept on this phone — the cloud did not answer whether this login may save it; it is tried again";
@@ -3496,6 +3617,7 @@ function saveFailText(r, key){
   // no access to the team's data (signed out): kept and queued, or not saved (a whole document) — v123 review
   if(o.noAccess) return [!o.queued ? NO_ACCESS_NOT_SAVED : o.mirrored ? NO_ACCESS_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000];
   if(o.accessUnknown) return [!o.queued ? ACCESS_UNKNOWN_NOT_SAVED : o.mirrored ? ACCESS_UNKNOWN_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000]; // (round 3)
+  if(o.awaitingSignIn) return [!o.queued ? SIGNIN_WAIT_NOT_SAVED : o.mirrored ? SIGNIN_WAIT_KEPT : '⚠️ Device storage full — kept in memory only: keep the app open until it uploads', 7000]; // (v126 review 2: the early open's window)
   if(o.queued && o.mirrored) return ['📴 Saved on this device — uploads automatically when back online', 4000]; // the same words as persist's own offline notice
   if(o.queued) return ['⚠️ Not saved on this device (storage full) — keep the app open until it uploads', 5000];
   if(o.refused) return ['⚠️ Not saved — reopen the app, then try again', 5000];      // a guard refused it before any write
@@ -3580,7 +3702,8 @@ function snapshotBlockedWhy(){
   if(!_bootLoaded || _bootCrashed || _seedClinics || Object.keys(_mirrorUsed).length) return 'copy';
   if(keptOnScreen()) return 'copy'; // a past month from the phone's store, not read from the cloud this session yet (v126)
   if(['clinics', 'visits', 'tasks', 'products'].some(k => _loadFailed[k])) return 'copy';
-  return ['clinics', 'visits', 'tasks'].some(k => outboxHas(k)) ? 'queued' : null;
+  if(['clinics', 'visits', 'tasks'].some(k => outboxHas(k))) return 'queued';
+  return visitsUnread() ? 'copy' : null; // the visits on screen not read from the cloud this session (v126 review 2)
 }
 async function maybeSnapshot(){
   if(_snapRunning) return;

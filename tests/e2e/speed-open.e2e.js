@@ -161,16 +161,22 @@ function initScript(arg){
   const now = () => performance.now();
   const mark = (n, t) => { if(U.marks[n] == null) U.marks[n] = Math.round(t == null ? now() : t); };
   U.mark = mark;
+  // each function wrapped once, as soon as it exists: the sign-in can be confirmed while the app's scripts still load
+  // (the source's files one by one) — loadAll there, renderAll and msRun not yet (review 2: wrapped all at once at that
+  // moment, the figures were never seen, P2 "figures undefined")
+  const WRAP = ['loadAll', 'loadErpSales', 'loadVisits', 'renderAll', 'msRun', 'showToast'];
+  U.done = {};
+  const once = (n, make) => { if(U.done[n] || typeof window[n] !== 'function') return; U.done[n] = true; window[n] = make(window[n]); };
   window.__umWrap = () => {
-    if(U.wrapped || typeof window.loadAll !== 'function') return;
-    U.wrapped = true;
-    ['loadAll', 'loadErpSales', 'loadVisits'].forEach(n => { const f = window[n]; if(typeof f !== 'function') return; window[n] = function(){ const t0 = now(); if(n === 'loadAll'){ U.loadAlls = (U.loadAlls || 0) + 1; if(U.loadAlls === 1) mark('loadAllStart', t0); }
+    if(U.wrapped) return;
+    ['loadAll', 'loadErpSales', 'loadVisits'].forEach(n => once(n, f => function(){ window.__umWrap(); const t0 = now(); if(n === 'loadAll'){ U.loadAlls = (U.loadAlls || 0) + 1; if(U.loadAlls === 1) mark('loadAllStart', t0); }
       const p = f.apply(this, arguments); const end = () => { const t1 = now(); U.timeline.push([n, Math.round(t0), Math.round(t1)]); if(n === 'loadAll' && U.marks.loadAllEnd == null){ mark('loadAllEnd', t1); try{ msWhenReady().then(() => requestAnimationFrame(() => requestAnimationFrame(() => mark('upToDate')))); }catch(err){} } };
-      if(p && typeof p.then === 'function') p.then(end, end); else end(); return p; }; });
-    const ra = window.renderAll; if(typeof ra === 'function') window.renderAll = function(){ U.renderAll++; if(U.marks.firstDraw == null) mark('firstDraw'); return ra.apply(this, arguments); };
-    const mr = window.msRun; if(typeof mr === 'function') window.msRun = function(){ const t0 = now(); try{ return mr.apply(this, arguments); } finally { U.msRuns.push([Math.round(t0), Math.round(now())]);
-      try{ if(_msModel && _msModel.D && _msModel.key === msKey(msView()) && U.marks.figures == null){ mark('figures'); requestAnimationFrame(() => requestAnimationFrame(() => mark('figuresVisible'))); } }catch(err){} } };
-    const st = window.showToast; if(typeof st === 'function') window.showToast = function(m, ms){ U.toasts.push(String(m)); return st.apply(this, arguments); };
+      if(p && typeof p.then === 'function') p.then(end, end); else end(); return p; }));
+    once('renderAll', ra => function(){ U.renderAll++; if(U.marks.firstDraw == null) mark('firstDraw'); return ra.apply(this, arguments); });
+    once('msRun', mr => function(){ const t0 = now(); try{ return mr.apply(this, arguments); } finally { U.msRuns.push([Math.round(t0), Math.round(now())]);
+      try{ if(_msModel && _msModel.D && _msModel.key === msKey(msView()) && U.marks.figures == null){ mark('figures'); requestAnimationFrame(() => requestAnimationFrame(() => mark('figuresVisible'))); } }catch(err){} } });
+    once('showToast', st => function(m, ms){ U.toasts.push(String(m)); return st.apply(this, arguments); });
+    U.wrapped = WRAP.every(n => U.done[n]);
   };
   // every painted frame: what the screen shows (whose greeting, the app visible, the line, the home's figures)
   const ex = arg.expect || null;

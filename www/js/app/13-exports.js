@@ -1969,7 +1969,7 @@ async function restoreSnapshotNow(dateStr){
   // waiting in the queue would make its counts wrong and the copy it keeps
   // empty — this month's visits were erased everywhere while the confirmation
   // promised a copy.
-  const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k));
+  const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k) || (k === 'visits' && typeof visitsUnread === 'function' && visitsUnread())); // (v126 review 2: the visits not read from the cloud this session)
   // a past month on screen that came from this phone's store (v126) is read from the cloud first: the copy the restore
   // keeps (today's backup) counts the visits of every month — asked for now, so a tap a moment later goes ahead
   if(!notRead.length && !_seedClinics && !_bootCrashed && typeof keptOnScreen === 'function' && keptOnScreen()){
