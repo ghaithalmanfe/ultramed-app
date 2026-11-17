@@ -2318,39 +2318,47 @@
   /* === END SIGN-IN, ADMIN, ERP IMPORT & BACKUPS === */
 
   /* === ALERTS ===
-     The alerts center (19-alerts.js): the sheet the top bar's bell opens, and the supervisor's alert settings. */
-  .al-sub{color:var(--muted); font-size:12.5px; margin:-6px 0 12px; line-height:1.45;}
-  .al-empty{display:flex; align-items:center; gap:8px; font-weight:700; font-size:13.5px;}
-  .al-card{border-inline-start:4px solid var(--amber); padding:13px 14px;}
-  .al-card.al-high{border-inline-start-color:var(--coral);}
-  .al-card.al-low{border-inline-start-color:var(--green-soft);}
-  .al-card.al-off{opacity:.72;}
-  .al-head{display:flex; gap:9px; align-items:flex-start;}
-  .al-ic{flex-shrink:0; width:26px; height:26px; border-radius:50%; background:var(--green-dim); color:var(--green-dark); display:flex; align-items:center; justify-content:center; font-size:14px;}
-  .al-title{font-weight:700; font-size:14px; line-height:1.35; min-width:0; overflow-wrap:anywhere; padding-top:3px;}
-  .al-state{font-size:11.5px; color:var(--muted); margin-top:4px; font-weight:600;}
-  .al-why{font-size:12px; color:var(--muted); line-height:1.5; margin-top:6px; overflow-wrap:anywhere;}
-  .al-why > div + div{margin-top:3px;}
-  .al-msg{font-size:12px; margin-top:6px; padding:7px 9px; border-radius:8px; background:var(--coral-dim); color:var(--coral-ink); overflow-wrap:anywhere; line-height:1.45;}
-  .al-items{margin-top:8px; border-top:1px solid var(--line);}
-  .al-item{font-size:12.5px; padding:7px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; line-height:1.4;}
-  .al-item.clickable{cursor:pointer; color:var(--green-dark); font-weight:600;}
-  .al-note{font-size:12px; font-weight:500; color:var(--muted); margin-top:2px;}
-  .al-item:last-child{border-bottom:none;}
-  .al-more{font-size:12px; color:var(--muted); padding-top:6px;}
-  .al-acts{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
-  .al-acts .chip{margin:0; font-family:inherit;}
-  .al-hidden{margin:14px 0 4px;}
-  .al-hidden > .chip{margin-bottom:8px; font-family:inherit;}
-  .al-foot{display:flex; gap:8px; flex-wrap:wrap;}
-  .al-foot .btn{flex:1 1 140px;}
-  .al-set{display:flex; gap:10px; align-items:flex-start; margin:0; padding:9px 0; border-bottom:1px solid var(--line); color:var(--ink); font-weight:500; font-size:13px; line-height:1.4;}
-  .al-set:last-child{border-bottom:none;}
-  .al-set input{width:20px; height:20px; flex-shrink:0; margin:1px 0 0; accent-color:var(--green);}
-  .al-set-d{display:block; font-size:11.5px; color:var(--muted); font-weight:400; margin-top:2px;}
-  .al-num{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0; padding:7px 0; color:var(--ink); font-size:12.5px; font-weight:500;}
-  .al-num:first-child{margin-top:0;}
-  .al-num input{width:96px; flex-shrink:0; padding:8px 10px;}
+     The alerts center (19-alerts.js): the sheet the top bar's bell opens and the supervisor's alert settings, on the
+     component layer (the sheet frame, .card, .lrows / .lrow, .chip, .empty) — only what is the alerts' own is here. */
+  .al-sub{margin:-4px 0 14px; font-size:13.5px; line-height:1.5; color:var(--p-muted);}
+  .al-sub .al-basis{display:block; margin-top:8px; padding:9px 12px; border-radius:12px; background:var(--p-mint-soft); color:var(--p-ink2); font-weight:500;}
+  .al-list{display:flex; flex-direction:column; gap:12px;}
+  .al-card{margin:0; padding:14px 16px; border-inline-start:4px solid #E9A23B;}
+  .al-card.al-high{border-inline-start-color:#E5484D;}
+  .al-card.al-low{border-inline-start-color:#57B795;}
+  .al-card.al-off{opacity:.75;}
+  .al-head{display:flex; gap:12px; align-items:flex-start;}
+  .al-ic{width:36px; height:36px; border-radius:50%; background:#FFF4E5; color:#B4541A; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .al-high .al-ic{background:#FDECEC; color:#C8372D;}
+  .al-low .al-ic{background:var(--p-mint-soft); color:var(--p-g6);}
+  .al-ic .svgi{width:18px; height:18px; stroke-width:2.2;}
+  .al-ht{flex:1; min-width:0; padding-top:2px;}
+  .al-title{font-weight:700; font-size:15px; line-height:1.35; color:var(--p-ink); overflow-wrap:anywhere;}
+  .al-state{margin-top:3px; font-size:12.5px; font-weight:600; color:var(--p-muted);}
+  .al-why{margin-top:8px; font-size:13px; line-height:1.5; color:var(--p-muted); overflow-wrap:anywhere;}
+  .al-why > div + div{margin-top:4px;}
+  .al-msg{margin-top:8px; padding:8px 12px; border-radius:12px; background:#FDECEC; color:#B4231A; font-size:13px; line-height:1.45; overflow-wrap:anywhere;}
+  .al-items{margin-top:10px;}
+  .lrow.al-item{min-height:48px; padding:8px 14px;}
+  div.lrow.al-item{cursor:default;}
+  .al-it{display:block; font-size:13.5px; line-height:1.4; color:var(--p-ink); overflow-wrap:anywhere;}
+  .al-item.clickable .al-it{font-weight:600;}
+  .al-note{display:block; margin-top:2px; font-size:12.5px; line-height:1.4; color:var(--p-muted); overflow-wrap:anywhere;}
+  .al-more{padding:6px 4px 0; font-size:12.5px; color:var(--p-muted);}
+  .al-acts{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .al-acts .chip{margin:0;}
+  .al-hidden{margin:16px 0 4px;}
+  .al-hidden > .chip{margin:0 0 10px;}
+  .al-empty{padding:24px 16px;}
+  .al-set-card{margin:0 0 12px; padding:4px 16px;}
+  .al-set{display:flex; gap:12px; align-items:flex-start; margin:0; padding:11px 0; border-top:1px solid var(--p-line); color:var(--p-ink); font-size:13.5px; font-weight:500; line-height:1.4; cursor:pointer;}
+  .al-set:first-child{border-top:none;}
+  .al-set input{width:20px; height:20px; flex-shrink:0; margin:1px 0 0; accent-color:#0B5A45;}
+  .al-set-t{min-width:0;}
+  .al-set-d{display:block; margin-top:2px; font-size:12.5px; font-weight:400; color:var(--p-muted);}
+  .al-num{display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0; padding:8px 0; border-top:1px solid var(--p-line); color:var(--p-ink); font-size:13.5px; font-weight:500;}
+  .al-num:first-child{border-top:none;}
+  .al-num input{width:104px; min-height:44px; flex-shrink:0; margin:0; padding:8px 12px;}
   /* === END ALERTS === */
 
   /* === SCREENS A === */

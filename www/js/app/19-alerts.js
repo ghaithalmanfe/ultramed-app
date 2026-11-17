@@ -24,7 +24,7 @@ const ALERT_TYPE_INFO = {
   noActivity: ['No field visit by a set hour', 'Supervisor only: a person with no field visit logged today by the hour below, on working days.'],
   target: ['Month target at risk', "The month figure (ERP files) below 90% of an even pace in working days to the ERP cut-off — the sales coach's rule; a target from an earlier month is named."],
   drop: ['Customers buying less than last month', 'Invoiced sales in the ERP files from day 1 to the cut-off, against the same days of last month.'],
-  sync: ['Sync problems', "What the sync bars and the visit photo notes say: changes waiting to upload, anything only in the app's memory, visit photos waiting or lost, sales file changes not saved."],
+  sync: ['Sync problems', "What the sync bars and the visit photo notes say: changes waiting to upload, changes kept on this phone and not sent, a change the cloud refused, anything only in the app's memory, visit photos waiting or lost, sales file changes not saved."],
   erpImport: ['Failed sales file import', 'Supervisor only: the last import on this phone failed.'],
   backup: ['Daily backup', 'Supervisor only: today\'s backup could not be saved, or is not confirmed after the hour below.'],
 };
@@ -133,41 +133,47 @@ function alertsSoon(){
   _alertsSoonT = setTimeout(() => { _alertsSoonT = 0; refreshAlerts(false); }, 60);
 }
 
-// ---- the sheet ----
+// ---- the sheet (v125's component layer: the sheet frame, cards, list rows, chips, the empty state) ----
+// The sheet opens with its <h3> (the frame's header tile, data-ic) and ends with its buttons (the frame's foot); only
+// #alertsCenter — the cards — and the line under the title are drawn again when what they say changes.
 function openAlerts(){
   if(!currentUser) return;
   refreshAlerts(false);
-  showModal(`<div id="alertsCenter">${alertsSheetHTML()}</div>`);
+  const sup = currentUser.role === 'supervisor';
+  showModal(`<h3 data-ic="bell">Alerts</h3>
+    <p class="al-sub" id="alertsSub">${alertsSubHTML()}</p>
+    <div id="alertsCenter">${alertsSheetHTML()}</div>
+    ${sup ? `<button class="btn secondary" id="alertsSettingsBtn" onclick="openAlertSettings()">${I('settings')} <span>Alert settings</span></button>` : ''}
+    <button class="btn secondary" onclick="closeModal()">Close</button>`);
 }
 function renderAlertsSheet(){
-  const box = document.getElementById('alertsCenter');
+  const box = document.getElementById('alertsCenter'), sub = document.getElementById('alertsSub');
   if(box) box.innerHTML = alertsSheetHTML();
+  if(sub) sub.innerHTML = alertsSubHTML();
 }
+function alertsSubHTML(){ return '<span>What needs attention now. Each card says why it shows.</span>'; }
 function alertsSheetHTML(){
-  const sup = currentUser.role === 'supervisor', r = _alerts;
-  const cards = r.shown.length ? r.shown.map(a => alertCardHTML(a, false)).join('')
-    : `<div class="card al-empty">${I('check')} <span>Nothing needs attention right now.</span></div>`;
+  const r = _alerts;
+  const cards = r.shown.length ? `<div class="al-list">${r.shown.map(a => alertCardHTML(a, false)).join('')}</div>`
+    : `<div class="empty al-empty"><div class="big">Nothing needs attention right now.</div></div>`;
   const hidden = r.hidden.length ? `<div class="al-hidden">
       <button class="chip small" id="alertsHiddenBtn" onclick="alertsToggleHidden()">${_alertsShowHidden ? 'Hide the dismissed and snoozed' : `Dismissed or snoozed (${r.hidden.length})`}</button>
-      ${_alertsShowHidden ? r.hidden.map(a => alertCardHTML(a, true)).join('') : ''}
+      ${_alertsShowHidden ? `<div class="al-list">${r.hidden.map(a => alertCardHTML(a, true)).join('')}</div>` : ''}
     </div>` : '';
-  return `<h3 style="margin-top:0;">${I('bell')} <span>Alerts</span></h3>
-    <p class="al-sub">What needs attention now. Each card says why it shows.</p>
-    ${cards}${hidden}
-    <div class="al-foot">
-      ${sup ? `<button class="btn secondary" id="alertsSettingsBtn" onclick="openAlertSettings()">${I('settings')} <span>Alert settings</span></button>` : ''}
-      <button class="btn secondary" onclick="closeModal()">Close</button>
-    </div>`;
+  return cards + hidden;
 }
 function alertCardHTML(a, hidden){
   const items = a.items || [], more = Math.max(0, items.length - ALERT_SHOW_MAX);
-  // ids and names reach the handlers only through data-* attributes
+  // ids and names reach the handlers only through data-* attributes; a line that opens something is a list row (.lrow)
   const item = it => {
     const cid = it.clinicId != null ? String(it.clinicId) : '';
     const go = cid || (it.key && alertKeyOpener(it.key));
     // a visit's photo line: its note's own words under it, as under the visit's thumbnails
-    const note = it.note ? `<div class="al-note">${esc(it.note)}</div>` : '';
-    return `<div class="al-item${go ? ' clickable' : ''}"${cid ? ` data-clinic="${esc(cid)}"` : ''}${it.key ? ` data-key="${esc(it.key)}"` : ''}${go ? ' onclick="alertsOpenItem(this)"' : ''}><div>${esc(it.text)}</div>${note}</div>`;
+    const note = it.note ? `<span class="al-note">${esc(it.note)}</span>` : '';
+    const attrs = `${cid ? ` data-clinic="${esc(cid)}"` : ''}${it.key ? ` data-key="${esc(it.key)}"` : ''}`;
+    const body = `<span class="lr-t"><span class="al-it">${esc(it.text)}</span>${note}</span>`;
+    return go ? `<button class="lrow al-item clickable"${attrs} onclick="alertsOpenItem(this)">${body}<svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg></button>`
+      : `<div class="lrow al-item"${attrs}>${body}</div>`;
   };
   const acts = [];
   if(a.open && ALERT_OPEN[a.open.screen]) acts.push(`<button class="chip small on" data-act="open" onclick="alertsOpen(this)">Open</button>`);
@@ -181,14 +187,13 @@ function alertCardHTML(a, hidden){
     acts.push(`<button class="chip small" data-act="snooze" onclick="alertsSetState(this, 'snooze')">Snooze 3 days</button>`);
   }
   const state = !hidden ? '' : a.hidden === 'dismissed' ? 'Dismissed for today' : `Snoozed until ${fmtDate(UMCore.localDateStr(new Date(a.until)))}`;
-  return `<div class="card al-card al-${esc(a.sev)}${hidden ? ' al-off' : ''}" data-al-id="${esc(a.id)}" data-al-type="${esc(a.type)}">
-    <div class="al-head"><span class="al-ic">${I(ALERT_ICON[a.type] || 'alert')}</span><div class="al-title">${esc(a.title)}</div></div>
-    ${state ? `<div class="al-state">${esc(state)}</div>` : ''}
+  return `<section class="card al-card al-${esc(a.sev)}${hidden ? ' al-off' : ''}" data-al-id="${esc(a.id)}" data-al-type="${esc(a.type)}">
+    <div class="al-head"><span class="al-ic" aria-hidden="true">${I(ALERT_ICON[a.type] || 'alert')}</span><div class="al-ht"><div class="al-title">${esc(a.title)}</div>${state ? `<div class="al-state">${esc(state)}</div>` : ''}</div></div>
     <div class="al-why">${(a.why || []).map(w => `<div>${esc(w)}</div>`).join('')}</div>
     ${a.msg ? `<div class="al-msg">${esc(a.msg)}</div>` : ''}
-    ${items.length ? `<div class="al-items">${items.slice(0, ALERT_SHOW_MAX).map(item).join('')}${more ? `<div class="al-more">+${more} more</div>` : ''}</div>` : ''}
+    ${items.length ? `<div class="lrows al-items">${items.slice(0, ALERT_SHOW_MAX).map(item).join('')}</div>${more ? `<div class="al-more">+${more} more</div>` : ''}` : ''}
     <div class="al-acts">${acts.join('')}</div>
-  </div>`;
+  </section>`;
 }
 function alertOf(el){
   const card = el && el.closest ? el.closest('[data-al-id]') : null, id = card ? card.dataset.alId : null;
@@ -316,18 +321,16 @@ function openAlertSettings(){
   if(!requireAdmin()) return;
   const S = UMCore.alertSettings(BENCHMARKS && BENCHMARKS.alerts), L = UMCore.ALERT_LIMITS;
   const row = t => `<label class="al-set"><input type="checkbox" id="alT_${t}" data-type="${t}"${S.types[t] ? ' checked' : ''}>
-      <span><b>${ALERT_TYPE_INFO[t][0]}</b><span class="al-set-d">${ALERT_TYPE_INFO[t][1]}</span></span></label>`;
+      <span class="al-set-t"><b>${ALERT_TYPE_INFO[t][0]}</b><span class="al-set-d">${ALERT_TYPE_INFO[t][1]}</span></span></label>`;
   const num = ([k, label, step]) => `<label class="al-num"><span>${label}</span><input type="number" inputmode="decimal" id="alS_${k}" value="${S[k]}" step="${step}" min="${L[k][0]}" max="${L[k][1]}"></label>`;
-  showModal(`<div id="alertSettings">
-    <h3 style="margin-top:0;">${I('settings')} <span>Alert settings</span></h3>
+  showModal(`<h3 data-ic="settings">Alert settings</h3>
     <p class="al-sub">For the whole team: a type switched off shows to no one. Dismiss and snooze stay each person's own.</p>
-    <div class="card">${UMCore.ALERT_TYPES.map(row).join('')}</div>
-    <div class="card">${ALERT_NUMBERS.map(num).join('')}</div>
-    <div class="al-foot">
-      <button class="btn" id="alertSettingsSave" onclick="saveAlertSettings()">Save</button>
-      <button class="btn secondary" onclick="openAlerts()">Back</button>
+    <div id="alertSettings">
+      <div class="card al-set-card">${UMCore.ALERT_TYPES.map(row).join('')}</div>
+      <div class="card al-set-card">${ALERT_NUMBERS.map(num).join('')}</div>
     </div>
-  </div>`);
+    <button class="btn" id="alertSettingsSave" onclick="saveAlertSettings()">Save</button>
+    <button class="btn secondary" onclick="openAlerts()">Back</button>`);
 }
 async function saveAlertSettings(){
   if(!requireAdmin()) return false;

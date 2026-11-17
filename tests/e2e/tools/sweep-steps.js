@@ -63,5 +63,9 @@ const STEPS = [
   {"name":"find-missing","js":"closeModal(); openClinicRecovery()","wait":1200,"sup":true},
   {"name":"weekly-deck","js":"closeModal(); openWeeklyDeck()","sup":true},
   {"name":"bars","js":"(()=>{ closeModal(); switchView('today'); _erpDirty = true; renderErpDirtyPill(); refusedSave('clinics', REFUSED_ELSEWHERE); })()","sup":true},
+  // the alerts center (19-alerts.js): the top bar's bell opens it; one card dismissed, the dismissed listed; the supervisor's settings
+  {"name":"alerts","js":"closeModal(); openAlerts()"},
+  {"name":"alerts-hidden","js":"(()=>{ closeModal(); openAlerts(); const b = document.querySelector('#alertsCenter .al-card [data-act=\"dismiss\"]'); if(b) b.click(); _alertsShowHidden = true; renderAlertsSheet(); })()"},
+  {"name":"alert-settings","js":"closeModal(); openAlertSettings()","sup":true},
 ];
 module.exports = { STEPS };

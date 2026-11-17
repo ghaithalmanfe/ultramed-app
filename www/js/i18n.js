@@ -2497,7 +2497,7 @@
     'Changes and photos waiting longer than (minutes)': 'تغييرات وصور تنتظر أكثر من (دقيقة)',
     "Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved": 'لم تُرفع بعد — السحابة لم تستجب. هي في ذاكرة التطبيق فقط: أبقِ التطبيق مفتوحًا ومتصلاً حتى يقول «تم الحفظ»',
     "The month figure (ERP files) below 90% of an even pace in working days to the ERP cut-off — the sales coach's rule; a target from an earlier month is named.": 'المحقق منذ بداية الشهر (ملفات ERP) تحت 90% من الإيقاع المتساوي بأيام العمل حتى آخر تاريخ في ملفات ERP — قاعدة مدرب المبيعات؛ والتارغت القادم من شهر سابق يُذكر باسمه.',
-    "What the sync bars and the visit photo notes say: changes waiting to upload, anything only in the app's memory, visit photos waiting or lost, sales file changes not saved.": 'ما تقوله أشرطة المزامنة وملاحظات صور الزيارات: تغييرات تنتظر الرفع، وما هو في ذاكرة التطبيق فقط، وصور زيارات تنتظر أو فُقدت، وتغييرات ملفات المبيعات غير المحفوظة.',
+    "What the sync bars and the visit photo notes say: changes waiting to upload, changes kept on this phone and not sent, a change the cloud refused, anything only in the app's memory, visit photos waiting or lost, sales file changes not saved.": 'ما تقوله أشرطة المزامنة وملاحظات صور الزيارات: تغييرات تنتظر الرفع، وتغييرات محفوظة على هذا الهاتف لم تُرسل، وتغيير رفضته السحابة، وما هو في ذاكرة التطبيق فقط، وصور زيارات تنتظر أو فُقدت، وتغييرات ملفات المبيعات غير المحفوظة.',
     // today's backup as v123's own record says it (um_snapFail, maybeSnapshot)
     "Today's backup was not saved from this phone": 'لم تُحفظ نسخة اليوم الاحتياطية من هذا الهاتف',
     'Not allowed (ask the supervisor).': 'غير مسموح (اسأل المشرف).',

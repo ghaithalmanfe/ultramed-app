@@ -123,9 +123,12 @@ function seed(){
     const bell = document.getElementById('alertsBell'), badge = document.getElementById('alertsBellN');
     return { cards: [...box.querySelectorAll('.al-card:not(.al-off)')].map(card), hiddenCards: [...box.querySelectorAll('.al-card.al-off')].map(card),
       badge: !badge.hidden ? badge.textContent : '', count: Number(bell.dataset.count), shown: _alerts.shown.length,
-      aria: bell.getAttribute('aria-label'), head: txt(box.querySelector('h3')), sub: txt(box.querySelector('.al-sub')), empty: !!box.querySelector('.al-empty'),
+      aria: bell.getAttribute('aria-label'), head: txt(document.querySelector('#modalInner h3')), sub: txt(document.querySelector('#modalInner .al-sub')), empty: !!box.querySelector('.al-empty'),
       hiddenBtn: txt(document.getElementById('alertsHiddenBtn')), settingsBtn: !!document.getElementById('alertsSettingsBtn'),
-      buttons: [...box.querySelectorAll('button')].map(txt), dir: document.getElementById('modalInner').getAttribute('dir') };
+      buttons: [...document.querySelectorAll('#modalInner button')].map(txt), dir: document.getElementById('modalInner').getAttribute('dir'),
+      // the sheet frame of the component layer (v125): the header tile, the buttons in the foot, the lines that open something as list rows
+      frame: { tile: !!document.querySelector('#modalInner h3.mh .mh-ic'), foot: [...document.querySelectorAll('#modalInner .modal-foot .btn')].map(txt),
+        rows: [...box.querySelectorAll('.al-item')].every(e => e.classList.contains('lrow') && !!e.closest('.lrows')), chips: [...box.querySelectorAll('.al-acts [data-act]')].every(e => e.classList.contains('chip')) } };
   });
   // a button of one card, found by the card's id (the ids carry names: never inside a selector)
   const act = (id, a) => page.evaluate(async ({ id, a }) => {
@@ -161,6 +164,9 @@ function seed(){
   check('Mariam: 4 alerts — the target at risk first, then overdue follow-ups, missed plans, customers buying less; the bell counts the cards',
     ids(c) === 'target:Mariam:2026-11,overdue:Mariam,missed:Mariam,drop:Mariam:2026-11' && counts(c), { ids: ids(c), count: c.count, badge: c.badge });
   check('Mariam: every card says why it shows', sayWhy(c), c.cards.map(x => x.why));
+  check('the v125 look: the sheet frame\'s header tile, Close in its foot, every line that opens something a list row, the actions chips',
+    c.frame.tile && JSON.stringify(c.frame.foot) === JSON.stringify(['Close']) && c.frame.rows && c.frame.chips && c.head === 'Alerts', c.frame);
+
   check('overdue: only follow-ups whose date has passed (due today and a closed clinic are not), oldest first',
     JSON.stringify(byId(c, 'overdue:Mariam').items) === JSON.stringify(['Birchwood Center — was due Nov 5 (6 days ago)', LONG + ' — was due Nov 7 (4 days ago)']), byId(c, 'overdue:Mariam').items);
   check('missed: the plan not visited on the day nor since; the overdue follow-up\'s own plan is not listed a second time',
@@ -518,9 +524,9 @@ function seed(){
   f = await fits();
   check('390 px, Arabic, the supervisor\'s 8 cards with a very long clinic name: no sideways scroll', f.page && f.sheet && f.bell && f.header, f);
   const st = await page.evaluate(async () => { openAlertSettings(); await new Promise(r => setTimeout(r, 100)); const txt = el => el.innerText.replace(/\s+/g, ' ').trim();
-    const box = document.getElementById('alertSettings'), s = document.getElementById('modalContent');
-    return { left: [...box.querySelectorAll('h3, .al-sub, .al-set b, .al-set-d, .al-num > span, button')].map(txt).filter(t => !/[؀-ۿ]/.test(t)), fit: document.documentElement.scrollWidth <= window.innerWidth && s.scrollWidth <= s.clientWidth + 1 }; });
-  check('Arabic: the settings sheet, no English left, no sideways scroll', !st.left.length && st.fit, st);
+    const box = document.getElementById('modalInner'), s = document.getElementById('modalContent');
+    return { boxed: !!document.getElementById('alertSettings'), left: [...box.querySelectorAll('h3, .al-sub, .al-set b, .al-set-d, .al-num > span, button')].map(txt).filter(t => !/[؀-ۿ]/.test(t)), fit: document.documentElement.scrollWidth <= window.innerWidth && s.scrollWidth <= s.clientWidth + 1 }; });
+  check('Arabic: the settings sheet, no English left, no sideways scroll', st.boxed && !st.left.length && st.fit, st);
   seed();
   await boot(G, 'supervisor');
   await center();
