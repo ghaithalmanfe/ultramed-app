@@ -14,7 +14,7 @@ function kpiRange(p){
   return { from: t.slice(0, 7) + '-01', to: t, label: 'This month' };
 }
 function kpiCards(reps, period){
-  const r = kpiRange(period), data = digestData(), rows = UMCore.erpAttributedRows(data), S = kpiSettings();
+  const r = kpiRange(period), data = digestDataKept(), rows = UMCore.erpAttributedRows(data), S = kpiSettings(); // (the lines kept for the data state)
   return reps.map(rep => UMCore.kpiScorecard(Object.assign({}, data, { today: todayStr() }), { rep, from: r.from, to: r.to, settings: S, rows }));
 }
 let _kpiRep = null, _kpiPeriod = 'month';
@@ -184,7 +184,7 @@ function openMonthByMonth(){
   const sup = currentUser.role === 'supervisor';
   if(!_mbmRep || (!sup && _mbmRep !== currentUser.name)) _mbmRep = sup ? 'all' : currentUser.name;
   const reps = sup ? REPS.slice() : [currentUser.name];
-  const T = UMCore.monthlyTrend(Object.assign(digestData(), { today: todayStr() }), { reps, months: _mbmN, settings: kpiSettings() });
+  const T = UMCore.monthlyTrend(Object.assign(digestDataKept(), { today: todayStr() }), { reps, months: _mbmN, settings: kpiSettings() }); // (the pass kept for the data state)
   const M = T.months, team = _mbmRep === 'all';
   const of = m => team ? m.team : m.byRep[_mbmRep];
   const name = m => { const n = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m.month.slice(5, 7), 10) - 1] + ' ' + m.month.slice(2, 4); return m.partial ? n + ' (to ' + parseInt(m.to.slice(8, 10), 10) + ')' : n; };

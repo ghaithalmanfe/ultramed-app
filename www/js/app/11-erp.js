@@ -110,10 +110,25 @@ function returnPolicyChips(reopenId){
 // reconciliation lists stay clinic-only.
 function erpRowCountsAsSales(r){ return true; }
 // One pass's customer matcher (v126 speed): each distinct ERP customer name matched once against the clinics and the
-// account links as they are now — matchCustomer's very answer (UMCore.erpMatcher; an older cached core.js matches each
-// line as before). Made at the start of a pass over many lines, never kept between passes: a rename or a new link
-// changes the answers. Matching every line again had made a clinic's card take 24 s on a slower phone with a heavy year.
-function erpMatchFn(){ return typeof UMCore.erpMatcher === 'function' ? UMCore.erpMatcher(clinics, erpMap) : name => UMCore.matchCustomer(name, clinics, erpMap); }
+// account links as they are now — matchCustomer's very answer (an older cached core.js matches each line as before).
+// Asked for at the start of a pass over many lines: the matcher of the pass kept for this data state (erpShareNow),
+// which a rename, a handover or a new link replaces — never one kept by time. Matching every line again had made a
+// clinic's card take 24 s on a slower phone with a heavy year.
+function erpMatchFn(){
+  const sh = erpShareNow(); if(sh) return sh.match;
+  return typeof UMCore.erpMatcher === 'function' ? UMCore.erpMatcher(clinics, erpMap) : name => UMCore.matchCustomer(name, clinics, erpMap);
+}
+// The pass of the sales lines kept per data state (UMCore.erpShareKept, v126 speed part 4): each customer matched once,
+// each file's lines with the returns policy applied, the clinics by id, every line and each clinic's lines, the lines
+// with whom they count for, and the ERP accounts of a day — worked out once while exactly what they read is the same
+// (the sales files, the returns policy, the clinics' names, owners, handovers, sharing and class, the account links),
+// then again: never by time. It serves these very lists (UMCore.erpShareOf). null with an older cached core.js.
+function erpShareNow(){
+  try{ return typeof UMCore.erpShareKept === 'function' ? UMCore.erpShareKept({ erpSales, clinics, erpMap }) : null; }
+  catch(e){ console.warn('the kept sales pass', e); return null; }
+}
+// digestData() with that pass, for a screen that goes over the lines (the passes in core.js take it: UMCore.erpShareOf)
+function digestDataKept(){ const d = digestData(), sh = erpShareNow(); if(sh) d.erpShare = sh; return d; }
 // Sums imported ERP net for a range/rep. Returns null when no imported
 // period overlaps the range, so callers can fall back to app-logged numbers.
 function erpRevenueForRange(from, to, repFilter){
@@ -1255,7 +1270,7 @@ function elSideHtml(x, extra){
 function erpLinkSideNow(name){
   name = String(name == null ? '' : name).trim();
   const v = Object.prototype.hasOwnProperty.call(erpMap, name) ? erpMap[name] : null;
-  try{ return UMCore.erpLinkPreview(digestData(), { name, to: v }).before; }catch(e){ console.warn('where an account counts', e); return null; }
+  try{ return UMCore.erpLinkPreview(digestDataKept(), { name, to: v }).before; }catch(e){ console.warn('where an account counts', e); return null; }
 }
 // "Where it counts" as a phrase: at a clinic (its name and how), or the badge
 // and what having no clinic means. mode 'now' (after a change), 'again' (the
@@ -1287,7 +1302,7 @@ function erpLinkPeople(people){
   const list = (people || []).filter(p => Math.abs(p.net) >= 0.0005);
   return list.length ? list.map(p => `${elWho(p.rep)} <span dir="ltr" style="color:var(--muted);">${money(p.net)}</span>`).join(' · ') : '—';
 }
-function erpAccountsNow(){ return UMCore.erpAccounts(digestData()); }
+function erpAccountsNow(){ return UMCore.erpAccounts(digestDataKept()); } // (kept for the data state and the day: UMCore.erpShareKept)
 const elNeedsLink = a => a.status === 'gone' || a.status === 'ambiguous' || a.status === 'none';
 const elRowsMissing = () => erpPeriods().some(p => p && p.rowsMissing);
 // Every editor sheet carries data-el-sheet="<n>" on its title. Work that ends
@@ -1433,7 +1448,7 @@ function renderErpLinks(){
 function elInit(name, back, keep){
   name = String(name == null ? '' : name).trim();
   if(!name || name === '(no name)') return false;   // a nameless line is never an account
-  const d = digestData();
+  const d = digestDataKept();
   const shownOld = Object.prototype.hasOwnProperty.call(erpMap, name) ? erpMap[name] : null;
   let acc = UMCore.erpAccounts(d).accounts.find(a => a.name === name);
   // Neither an account of the loaded files nor a stored link: not a name any
@@ -1452,8 +1467,8 @@ function elInit(name, back, keep){
   return true;
 }
 function erpAccountLines(name){ // one row per document: what "Show the invoices" lists
-  const docs = {};
-  erpPeriods().forEach(p => { if(p && !p.rowsMissing) erpViewRows(p).forEach(r => {
+  const docs = {}, sh = erpShareNow(); // (each file's lines from the pass kept for the data state: the same lines)
+  erpPeriods().forEach(p => { if(p && !p.rowsMissing) (sh ? sh.rows(p) : erpViewRows(p)).forEach(r => {
     if((r.customer || '').trim() !== name) return;
     const k = r.doc + '|' + r.type;
     const d = docs[k] || (docs[k] = { doc: r.doc, date: r.date, net: 0, salesman: r.salesman, type: r.type });
@@ -1502,7 +1517,7 @@ function openErpLinkEdit(name, back, keep){
     const m = UMCore.matchCustomer(_el.name, clinics, {}), c = erpLinkClinic(m.clinicId);
     let none = EL_TXT.noneNow;
     if(!m.channel && !c && !m.ambiguous){ // with no clinic: back to "Unrecognized customer names" only if a team member issued its invoices
-      try{ const ap = UMCore.erpLinkPreview(digestData(), { name: _el.name, to: null }); if(!ap.error) none = elNoneText(ap.people); }catch(e){ console.warn('automatic match', e); }
+      try{ const ap = UMCore.erpLinkPreview(digestDataKept(), { name: _el.name, to: null }); if(!ap.error) none = elNoneText(ap.people); }catch(e){ console.warn('automatic match', e); }
     }
     autoSub = m.channel ? `<span>Would count at:</span> ${erpLinkBadge({ status: 'channel' })}`
       : c ? `<span>Would count at:</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(c.name)}</b> ${erpLinkBadge({ status: m.method === 'family' ? 'family' : 'name', closed: c.cls === 'Closed' })}`
@@ -1715,7 +1730,7 @@ function elRenderMoves(){
     if(hint) hint.innerHTML = _el.fieldErr ? '' : elFamilyHint(nb);
   }
   let pv = null;
-  try{ pv = UMCore.erpLinkPreview(digestData(), { name: _el.name, to: _el.to, addClinic: nb || null }, { settings: typeof kpiSettings === 'function' ? kpiSettings() : {} }); }
+  try{ pv = UMCore.erpLinkPreview(digestDataKept(), { name: _el.name, to: _el.to, addClinic: nb || null }, { settings: typeof kpiSettings === 'function' ? kpiSettings() : {} }); }
   catch(e){ console.error('ERP link preview', e); }
   _elPv = pv;
   elHideErr();
@@ -2146,7 +2161,7 @@ function elBranchKeeps(c, name){
   const link = Object.keys(erpMap).find(k => k !== name && erpMap[k] === c.id);
   if(link != null) return { why: 'link', account: link };
   let acc = null;
-  try{ acc = UMCore.erpAccounts(digestData()).accounts.find(a => a.name !== name && a.clinicId === c.id) || null; }
+  try{ acc = UMCore.erpAccounts(digestDataKept()).accounts.find(a => a.name !== name && a.clinicId === c.id) || null; }
   catch(e){ console.warn('branch check', e); return { why: 'check' }; }
   return acc ? { why: 'account', account: acc.name } : null;
 }

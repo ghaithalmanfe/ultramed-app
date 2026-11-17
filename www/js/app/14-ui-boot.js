@@ -59,6 +59,33 @@ function modalFrame(inner){
   }catch(e){ console.error('sheet frame', e); }
 }
 function closeModal(){ document.getElementById('modalBack').classList.remove('show'); }
+// ---- Long lists in pages (v126 speed, part 4) ----
+// A long list — the Doctors list, the clinic analysis' clinics, the coverage review's clinics — draws its first rows,
+// then "Show N more"; its counts, search and filters are worked out over the whole list as before (the caller's), only
+// the drawing of the rest waits for the tap. A tap adds the next rows of the very list on screen (the one this draw was
+// of: a refresh that changes the data draws the list again). How many rows are shown is kept per list while what picks
+// them (its filters, search, person, window) is the same; another pick starts from the first page.
+const PAGE_ROWS = { dd: 60, ca: 20, covV: 30, covN: 30 };
+const _pages = Object.create(null); // list → { key, n, items, row }
+function pagedRows(list, key, items, row){
+  const p = _pages[list] && _pages[list].key === key ? _pages[list] : { key, n: PAGE_ROWS[list] };
+  p.items = items; p.row = row; _pages[list] = p;
+  const n = Math.min(p.n, items.length);
+  return items.slice(0, n).map(row).join('') + pageMoreHTML(list, n, items.length);
+}
+function pageMoreHTML(list, shown, total){
+  if(shown >= total) return '';
+  return `<div class="pg-more" data-list="${list}"><button type="button" class="btn secondary" onclick="pageMore('${list}', this)">Show ${Math.min(PAGE_ROWS[list], total - shown)} more (${total - shown} not shown yet)</button></div>`;
+}
+function pageMore(list, btn){
+  const p = _pages[list], wrap = btn && btn.closest('.pg-more');
+  if(!p || !p.items || !wrap) return;
+  const from = Math.min(p.n, p.items.length), to = Math.min(from + PAGE_ROWS[list], p.items.length);
+  p.n = to;
+  wrap.insertAdjacentHTML('beforebegin', p.items.slice(from, to).map(p.row).join(''));
+  const next = pageMoreHTML(list, to, p.items.length);
+  if(next) wrap.outerHTML = next; else wrap.remove();
+}
 function closeModalBg(e){ if(e.target.id==='modalBack') closeModal(); }
 
 if('serviceWorker' in navigator){

@@ -2717,6 +2717,8 @@
     [/^(\d+) of (\d+) cards complete$/, function (m) { return m[1] + ' من ' + m[2] + ' كارت مكتمل'; }],
     [/^(\d+)% complete$/, function (m) { return m[1] + '% مكتمل'; }],
     [/^Incomplete cards \((\d+)\)$/, function (m) { return 'كروت غير مكتملة (' + m[1] + ')'; }],
+    // a long list drawn in pages (pagedRows, v126 speed part 4)
+    [/^Show (\d+) more \((\d+) not shown yet\)$/, function (m) { return 'اعرض ' + m[1] + ' أخرى (' + m[2] + ' لم تُعرض بعد)'; }],
     [/^Saved · (\d+)% complete$/, function (m) { return 'تم الحفظ · ' + m[1] + '% مكتمل'; }],
     [/^(\d+) cards? to complete · (\d+) clinics? with no known decision maker\. Tap to fill them in\.$/, function (m) { return m[1] + ' كارت للإكمال · ' + m[2] + ' عيادة بلا صاحب قرار معروف. اضغطي لإكمالها.'; }],
     [/^(\d+) doctors? with unknown role or influence: (.+)$/, function (m) { return m[1] + ' طبيب بدور أو تأثير غير معروف: ' + m[2]; }],

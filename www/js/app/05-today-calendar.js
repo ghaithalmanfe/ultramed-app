@@ -789,7 +789,7 @@ function msBuild(v, sig){
   // the data of this state with its one shared pass of the lines — the very object the parts drawn at once used
   // (msDigest: each customer matched once for both, v126)
   const data = sig ? msDigest(sig) : digestData();
-  if(!sig){ try{ data.erpShare = UMCore.erpShare(data); }catch(e){} }
+  if(!sig){ try{ data.erpShare = msShareOf(data); }catch(e){} }
   let rows;
   try{ rows = UMCore.erpAttributedRows(data); }catch(e){ console.error('main screen: sales lines', e); rows = undefined; }
   const m = { key: msKey(v), view: v, D: null, K: null, W: null, S: null, brands: msBrandNames() };
@@ -850,7 +850,10 @@ function msMemo(sig, key, fn){
 }
 // The data of this state with one shared pass of the sales lines (UMCore.erpShare: each customer matched once, each
 // file's rows read once) for the parts drawn at once — each person's month, the invoices on another rep's clinic, the week.
-function msDigest(sig){ return msMemo(sig, 'dd', () => { const d = digestData(); try{ d.erpShare = UMCore.erpShare(d); }catch(e){} return d; }); }
+function msDigest(sig){ return msMemo(sig, 'dd', () => { const d = digestData(); try{ d.erpShare = msShareOf(d); }catch(e){} return d; }); }
+// (the pass kept per data state of the sales lines, UMCore.erpShareKept — v126 speed part 4: a change of the visits or
+// the plans keeps it, a change of what it reads gives another; an older cached core.js: one pass per state, as before)
+function msShareOf(d){ return typeof UMCore.erpShareKept === 'function' ? UMCore.erpShareKept(d) : UMCore.erpShare(d); }
 // The month's lines of everyone, once per data state: each person's month figure reads it (monthAchievement with
 // its map is bestMonthRevenue's very figure — one pass instead of one per person).
 function msMtd(sig){ return msMemo(sig, 'mtd', () => { try{ return UMCore.erpMtd(msDigest(sig)); }catch(e){ console.error('main screen: month lines', e); return null; } }); }

@@ -1,7 +1,8 @@
 // The integration sweep's steps (the redesign's integration pass): every view, then the sheets they open
 // ("sup": the supervisor's only; "gate": the sign-in screen, before signing in). Shared by phone-layout.e2e.js
 // (every page laid out right on a phone) and speed-taps.e2e.js (every page painted soon after its tap).
-// A step is { name, view } (switchView) or { name, js } (a snippet, awaited); "wait" = ms to let it settle.
+// A step is { name, view } (switchView) or { name, js } (a snippet, awaited); "wait" = ms to let it settle; "pre" = a
+// snippet run just before the step that is not the person's tap (the harness finding what to open), never timed.
 const STEPS = [
   { "name": "gate", "gate": true },
   {"name":"today","view":"today"},
@@ -23,10 +24,10 @@ const STEPS = [
   {"name":"visit-log","js":"closeModal(); openVisitLog()"},
   {"name":"photo-gallery","js":"(()=>{ const mk = c => { const cv = document.createElement('canvas'); cv.width = cv.height = 160; const g = cv.getContext('2d'); g.fillStyle = c; g.fillRect(0,0,160,160); g.fillStyle='rgba(255,255,255,.45)'; g.beginPath(); g.arc(80,80,42,0,7); g.fill(); return cv.toDataURL('image/jpeg', .7); }; const vs = visits.filter(v => !v.callOnly && !v.orderOnly).slice(-2); if(vs[0]) vs[0].photos = [{id:'shot-a', thumb: mk('#2F8F6F')}, {id:'shot-b', thumb: mk('#0B5A45'), pending: true, dev: 'other', at: Date.now()}]; if(vs[1]) vs[1].photos = [{id:'shot-c', thumb: mk('#57B795')}, {id:'shot-d', thumb: mk('#8FC9B2'), lost: true}]; closeModal(); openPhotoGallery(); })()"},
   {"name":"lightbox","js":"(()=>{ closeModal(); const cv = document.createElement('canvas'); cv.width = 320; cv.height = 240; const g = cv.getContext('2d'); g.fillStyle = '#2F8F6F'; g.fillRect(0,0,320,240); g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(160,120,60,0,7); g.fill(); const v = visits.filter(x => !x.callOnly && !x.orderOnly).slice(-1)[0]; v.photos = [{ id: 'lbshot', thumb: cv.toDataURL('image/jpeg', .8) }]; showLightbox('lbshot', 'Harbor Sample Dental Clinic · Oct 8'); })()"},
-  {"name":"clinic-card","js":"(()=>{ const c = clinics.find(x => (x.doctors||[]).length >= 2 && x.cls !== 'Closed' && visits.some(v => v.clinicId === x.id)) || clinics[0]; switchView('clinics'); openClinicDetail(c.id); })()"},
+  {"name":"clinic-card","pre":"(()=>{ const c = clinics.find(x => (x.doctors||[]).length >= 2 && x.cls !== 'Closed' && visits.some(v => v.clinicId === x.id)) || clinics[0]; window.__stepC = c.id; switchView('clinics'); })()","js":"openClinicDetail(window.__stepC)"},
   {"name":"add-clinic","js":"closeModal(); openAddClinic()"},
   {"name":"rx-growth","js":"closeModal(); ddTab='rx'; switchView('doctors'); renderDoctorsDb(); scrollTo(0,0)"},
-  {"name":"doctor-profile","js":"(()=>{ const c = clinics.find(x => (x.doctors||[]).length && visits.some(v => v.clinicId === x.id)); switchView('doctors'); openDoctorProfile(c.id, c.doctors[0].id); })()"},
+  {"name":"doctor-profile","pre":"(()=>{ const c = clinics.find(x => (x.doctors||[]).length && visits.some(v => v.clinicId === x.id)); window.__stepC = c.id; window.__stepD = c.doctors[0].id; switchView('doctors'); })()","js":"openDoctorProfile(window.__stepC, window.__stepD)"},
   {"name":"doctor-records","js":"closeModal(); openDoctorRecords()"},
   {"name":"rx-types","js":"closeModal(); openRxTypes()","sup":true},
   {"name":"data-entry","js":"closeModal(); openDataEntry()","sup":true},
@@ -40,8 +41,8 @@ const STEPS = [
   {"name":"month-by-month","js":"closeModal(); _mbmRep='all'; openMonthByMonth()"},
   {"name":"requests","js":"(()=>{ const t = new Date(Date.now() - 5*3600000).toISOString(); const c = clinics.filter(x => x.cls !== 'Closed'); events.push({id:'rq1', kind:'issue', type:'request', clinicId:c[0].id, rep:c[0].rep, text:'Needs the price list for loupes', at:t, createdBy:'Dr. Ghaith'}, {id:'rq2', kind:'issue', type:'escalation', clinicId:c[1].id, rep:c[1].rep, text:'Called the office about a late delivery', via:'the manager', at:t, createdBy:'Dr. Ghaith'}, {id:'st1', kind:'stand', clinicId:c[2].id, rep:c[2].rep, brand:'Philips Sonicare counter stand', at:t, checks:[], createdBy:'Dr. Ghaith'}); closeModal(); openClientLog(); })()"},
   {"name":"erp-links","js":"closeModal(); openErpLinks({})","sup":true},
-  {"name":"erp-editor","js":"(()=>{ closeModal(); const a = UMCore.erpAccounts(digestData()).accounts.filter(a => a.clinicId && a.invoices > 0)[0]; openErpLinkEdit(a.name); })()","sup":true},
-  {"name":"erp-preview","js":"(()=>{ closeModal(); const acc = UMCore.erpAccounts(digestData()).accounts.filter(a => a.clinicId && a.invoices > 0).sort((a,b) => b.invoices - a.invoices); const a = acc.find(x => { const c = clinics.find(y => y.id === x.clinicId); return c && clinics.some(o => o.rep && c.rep && o.rep !== c.rep && o.cls !== 'Closed'); }) || acc[0]; const c = clinics.find(y => y.id === a.clinicId); const o = clinics.find(x => x.rep && x.rep !== c.rep && x.cls !== 'Closed'); window.__pvA = a.name; openErpLinkPreviewFor(a.name, o.id); })()","sup":true},
+  {"name":"erp-editor","pre":"(()=>{ closeModal(); window.__stepA = UMCore.erpAccounts(digestData()).accounts.filter(a => a.clinicId && a.invoices > 0)[0].name; })()","js":"openErpLinkEdit(window.__stepA)","sup":true},
+  {"name":"erp-preview","pre":"(()=>{ closeModal(); const acc = UMCore.erpAccounts(digestData()).accounts.filter(a => a.clinicId && a.invoices > 0).sort((a,b) => b.invoices - a.invoices); const a = acc.find(x => { const c = clinics.find(y => y.id === x.clinicId); return c && clinics.some(o => o.rep && c.rep && o.rep !== c.rep && o.cls !== 'Closed'); }) || acc[0]; const c = clinics.find(y => y.id === a.clinicId); const o = clinics.find(x => x.rep && x.rep !== c.rep && x.cls !== 'Closed'); window.__pvA = a.name; window.__pvTo = o.id; })()","js":"openErpLinkPreviewFor(window.__pvA, window.__pvTo)","sup":true},
   {"name":"product-detail","js":"(()=>{ closeModal(); const p = products.find(x => x.price != null) || products[0]; openProductDetail(productKey(p)); })()"},
   {"name":"catalog-gaps","js":"closeModal(); openCatalogGaps()","sup":true},
   {"name":"duplicates","js":"closeModal(); openProductDups()","sup":true},
