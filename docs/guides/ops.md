@@ -13,7 +13,7 @@
 تعمل كل ليلة 02:15 والجمعة 02:45 وأول الشهر 03:15 بتوقيت الكويت، وتبقى 14 و60 و90 يومًا.
 
 ## ٢. الإيميل اليومي
-الأسرار في المكان نفسه: `REPORT_LOGIN_EMAIL` و`REPORT_LOGIN_PASSWORD` (حساب مخصص للمهمة على بريد الشركة)، و`RESEND_API_KEY`، و`MAIL_FROM` (نطاقه موثّق في Resend). واختياريًا في Variables: `MAIL_ALL_DAYS` = 1 للجمعة والسبت، و`MAIL_TO_OVERRIDE` للتجربة. جرّب: «لوحة الإدارة» ← «📧 Email reports» ← «▶️ أرسل الآن من GitHub». التفاصيل في [README](../../README.md#daily-e-mail-reports-v87).
+الأسرار في المكان نفسه: `REPORT_LOGIN_EMAIL` و`REPORT_LOGIN_PASSWORD` (حساب مخصص للمهمة على بريد الشركة)، و`RESEND_API_KEY`، و`MAIL_FROM` (نطاقه موثّق في Resend). واختياريًا في Variables: `MAIL_ALL_DAYS` = 1 للجمعة والسبت، و`MAIL_TO_OVERRIDE` للتجربة. جرّب: «لوحة الإدارة» ← «📧 تقارير الإيميل» ← «▶️ أرسل الآن من GitHub». التفاصيل في [README](../../README.md#daily-e-mail-reports-v87).
 
 ## ٣. قواعد الحماية
 لا تُنشر مع التطبيق: كلما تغيّر `firestore.rules` الصقه بيدك.
