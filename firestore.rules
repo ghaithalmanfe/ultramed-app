@@ -25,12 +25,29 @@ rules_version = '2';
 //     and write only mailLog. Left as it is, no login is a job login and
 //     nobody but the supervisor can write mailLog (the e-mail job then sends
 //     its e-mails but cannot log the run).
-//  3. Check that every login the team uses (Admin → Team, and the jobs'
+//  3. Replace TEAM_EMAIL@ultramed-kw.com below with the login e-mail of every
+//     person in Admin → Team (each rep and each supervisor), in lowercase
+//     (several: 'one', 'two'). Do it ONLY in the console, never in this file.
+//     Once it is filled in, only those logins, the supervisors' (step 1) and
+//     the jobs' (step 2) can read or write anything: a stranger who creates a
+//     password account with an unused @ultramed-kw.com address gets nothing
+//     (security review, 17 Nov). Left as it is — the placeholder alone — any
+//     password login on the company domain still counts as the team, as
+//     before this list existed, so pasting the file unchanged never locks the
+//     team out (and protects nothing new). A person missing from the list is
+//     refused: her phone keeps every change and sends it once she is added.
+//     When someone joins the team, add her login here in the same visit to
+//     the console as creating her account; when someone leaves, remove it
+//     (and disable her account in Authentication → Users).
+//  4. Check that every login the team uses (Admin → Team, and the jobs'
 //     logins) ends with @ultramed-kw.com — any other is refused.
-//  4. Authentication → Settings → User actions: untick "Enable create
+//  5. Authentication → Settings → User actions: untick "Enable create
 //     (sign-up)". Otherwise anyone can create a password account with an
-//     unused @ultramed-kw.com address and pass the domain check below.
-//  5. Authentication → Sign-in method: disable Anonymous (the app never
+//     unused @ultramed-kw.com address (the web API key in the app is public
+//     by design); until step 3 is done that account passes the domain check
+//     below and reads and writes everything. Then Authentication → Users:
+//     delete (or disable) every account that is not the team's or a job's.
+//  6. Authentication → Sign-in method: disable Anonymous (the app never
 //     uses it; these rules refuse it anyway).
 //
 // WHO WRITES WHAT (every key; file:line as of v120)
@@ -129,16 +146,42 @@ service cloud.firestore {
       return ['SUPERVISOR_EMAIL@ultramed-kw.com'];
     }
 
+    // Every person's login on the team (Admin → Team: each rep and each
+    // supervisor), lower case. Replace the placeholder in the Firebase console
+    // only (see the top of this file). The supervisors (SUPERVISOR_EMAILS) and
+    // the jobs (JOB_EMAILS) are team logins whether or not they are listed here.
+    function TEAM_EMAILS() {
+      return ['TEAM_EMAIL@ultramed-kw.com'];
+    }
+    // Filled in = anything but the placeholder alone (one entry in upper case:
+    // it can never match a login, Firebase e-mails are lower case). The check
+    // does not repeat the placeholder, so replacing it everywhere in the
+    // console cannot switch the list off; a list that keeps the placeholder
+    // beside the real logins is filled in too (the placeholder matches nobody).
+    function teamListFilledIn() {
+      return TEAM_EMAILS().size() != 1 || TEAM_EMAILS()[0] == TEAM_EMAILS()[0].lower();
+    }
+    function emailOf() {
+      return request.auth.token.email.lower();
+    }
+
     // A password account (signInWithEmailAndPassword, 03-gate.js) on the
-    // company domain. Anonymous, custom-token, Google and phone sign-ins are
-    // refused, and so is every other domain. email_verified is not required:
-    // accounts created in the console are unverified.
+    // company domain, listed in TEAM_EMAILS (or a supervisor's or a job's) once
+    // that list is filled in. Anonymous, custom-token, Google and phone
+    // sign-ins are refused, and so is every other domain. email_verified is
+    // not required: accounts created in the console are unverified (requiring
+    // it would lock the whole team out); the list is what keeps a self-created
+    // account on the company domain out.
     function isTeam() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == 'password'
         && ('email' in request.auth.token)
         && request.auth.token.email is string
-        && request.auth.token.email.lower().matches('[^@]+@ultramed-kw[.]com');
+        && emailOf().matches('[^@]+@ultramed-kw[.]com')
+        && (!teamListFilledIn()
+            || emailOf() in TEAM_EMAILS()
+            || emailOf() in SUPERVISOR_EMAILS()
+            || emailOf() in JOB_EMAILS());
     }
 
     // Supervisor rights come from this list ONLY — never from the `staff`

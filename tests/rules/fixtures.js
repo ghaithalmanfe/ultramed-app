@@ -16,10 +16,15 @@ const RULES_FILE = process.env.RULES_FILE ? path.resolve(process.env.RULES_FILE)
 const RAW_RULES = fs.readFileSync(RULES_FILE, 'utf8');
 const PLACEHOLDER = 'SUPERVISOR_EMAIL@ultramed-kw.com';
 const JOB_PLACEHOLDER = 'JOB_LOGIN_EMAIL@ultramed-kw.com'; // the e-mail and backup jobs' read-only logins (v123)
+const TEAM_PLACEHOLDER = 'TEAM_EMAIL@ultramed-kw.com';     // every person's login on the team (security review, 17 Nov)
 // The committed placeholders replaced by test logins — what the owner does
-// with the real addresses in the console: the supervisor(s), and the two jobs.
+// with the real addresses in the console: the supervisor(s), the two jobs and
+// the team (its reps: the supervisors and the jobs count as team by themselves).
 const list = emails => '[' + emails.map(e => `'${e}'`).join(', ') + ']';
-const rulesFor = (...emails) => RAW_RULES.replace(`['${PLACEHOLDER}']`, list(emails)).replace(`['${JOB_PLACEHOLDER}']`, list([REPORTS, BACKUPS]));
+const withTeam = (rules, team) => rules.replace(`['${TEAM_PLACEHOLDER}']`, list(team));
+const rulesFor = (...emails) => withTeam(RAW_RULES.replace(`['${PLACEHOLDER}']`, list(emails)).replace(`['${JOB_PLACEHOLDER}']`, list([REPORTS, BACKUPS])), [REP_A, REP_B]);
+// The same with the team list left as committed (the placeholder alone): the domain rule as before the list.
+const rulesNoTeamList = (...emails) => RAW_RULES.replace(`['${PLACEHOLDER}']`, list(emails)).replace(`['${JOB_PLACEHOLDER}']`, list([REPORTS, BACKUPS]));
 
 // Fictional logins only — never a real address (the repository is public).
 const SUP = 'test-supervisor@ultramed-kw.com';
@@ -81,7 +86,7 @@ const asValue = (v) => (typeof v === 'string' ? v : JSON.stringify(v));
 const stored = (v) => ({ value: asValue(v), updated: Date.now() }); // exactly what window.storage writes
 
 module.exports = {
-  ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, RULES_FILE, RAW_RULES, PLACEHOLDER, JOB_PLACEHOLDER, rulesFor,
+  ROOT, WWW, PROJECT, HOST, PORT, AUTH_HOST, RULES_FILE, RAW_RULES, PLACEHOLDER, JOB_PLACEHOLDER, TEAM_PLACEHOLDER, rulesFor, rulesNoTeamList, withTeam, list,
   SUP, SUP2, REP_A, REP_B, REPORTS, BACKUPS,
   utcDay, kuwaitDay, localDay, snap, lastMonth,
   PHOTO, CHUNK, ARCH, AUDIT, TEAM_KEYS, SUPERVISOR_KEYS, JOB_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS,
