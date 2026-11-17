@@ -87,10 +87,29 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   txt = await page.evaluate(() => { _kpiRep = 'Mariam'; _kpiPeriod = 'month'; openKpiScorecard(); return document.querySelector('#modalBack').innerText.replace(/\s+/g, ' '); });
   check('Mariam\'s scorecard: total out of 100, the escalation counted, the request answered on time, the stand tracked', /\d+\/100/.test(txt) && /1 escalation/.test(txt) && /1 of 1 answered within 24h/.test(txt) && /1 active · 1 checked/.test(txt), txt.slice(0, 900));
   check('government coverage: the Ministry (shared with her) counts, the private hospital does not', /0% of 1 government accounts visited per week/.test(txt) || /of 1 government accounts/.test(txt), (txt.match(/[^.]*government[^.]*/) || [''])[0]);
-  // settings: saved with the other evaluation targets kept
-  await page.evaluate(async () => { openKpiSettings(); document.getElementById('kpi_discountOther').value = '30'; document.getElementById('kpi_openDays').value = '2026-10-15, bad, 2026-10-22'; await saveKpiSettings(); });
+  // settings: a number out of its limits, or not a number, is refused — its field named with its limits, nothing saved,
+  // the sheet kept with what was typed — as the alert settings do (alerts review F12). Until v126 the old value was kept
+  // without a word and the toast said "✅ KPI settings saved"; a date that is not one was dropped the same way.
+  const bm0 = cloud.benchmarks;
+  const bad = await page.evaluate(async () => {
+    const out = [], at = id => document.getElementById(id);
+    for(const [id, v] of [['kpi_discountA', '-5'], ['kpi_visitsPerDay', ''], ['kpi_responseHours', '0'], ['kpi_discountOther', '150']]){
+      openKpiSettings(); if(id !== 'kpi_discountOther') at('kpi_discountOther').value = '30'; at(id).value = v;
+      await saveKpiSettings(); await new Promise(r => setTimeout(r, 60));
+      out.push({ id, v, toast: at('toast').textContent, open: !!at(id), typed: at(id) ? at(id).value : null, invalid: at(id) ? at(id).getAttribute('aria-invalid') : null, inForce: kpiSettings().discountOther });
+    }
+    openKpiSettings(); at('kpi_openDays').value = '2026-10-15, bad, 2026-10-22';
+    await saveKpiSettings(); await new Promise(r => setTimeout(r, 60));
+    out.push({ id: 'kpi_openDays', toast: at('toast').textContent, open: !!at('kpi_openDays'), invalid: at('kpi_openDays') ? at('kpi_openDays').getAttribute('aria-invalid') : null, inForce: kpiSettings().openDays });
+    return out;
+  });
+  check('KPI settings: a number out of its limits or not a number (−5 %, an empty field, 0 hours, 150 %) is refused — "⚠️ Not saved — <field>: from <min> to <max>", the field marked, what was typed kept, nothing saved (cloud and memory as before); never "✅ KPI settings saved"',
+    bad.slice(0, 4).every(b => !/KPI settings saved/.test(b.toast) && /^⚠️ Not saved — .+: from [\d.]+ to [\d.]+$/.test(b.toast) && b.open && b.typed === b.v && b.invalid === 'true' && b.inForce === 35) && cloud.benchmarks === bm0, bad);
+  check('KPI settings: an open day that is not a date is refused and named ("bad") — nothing saved', !/KPI settings saved/.test(bad[4].toast) && /Open days/.test(bad[4].toast) && /\bbad\b/.test(bad[4].toast) && bad[4].open && bad[4].invalid === 'true' && cloud.benchmarks === bm0, bad[4]);
+  // …and with every field right it saves, the other evaluation targets untouched
+  await page.evaluate(async () => { openKpiSettings(); document.getElementById('kpi_discountOther').value = '30'; document.getElementById('kpi_openDays').value = '2026-10-15, 2026-10-22'; await saveKpiSettings(); });
   const bm = JSON.parse(cloud.benchmarks);
-  check('KPI settings saved; evaluation targets untouched; bad dates dropped', bm.kpi.discountOther === 30 && JSON.stringify(bm.kpi.openDays) === '["2026-10-15","2026-10-22"]' && bm.coverage === 70, bm);
+  check('KPI settings saved; evaluation targets untouched', bm.kpi.discountOther === 30 && JSON.stringify(bm.kpi.openDays) === '["2026-10-15","2026-10-22"]' && bm.coverage === 70, bm);
   // government flag in Territory
   await page.evaluate(async () => { openAdminPanel(); setAdminTab('territory'); await toggleGovClinic('h'); });
   check('marking the private hospital as government is saved', JSON.parse(cloud.clinics).find(c => c.id === 'h').gov === true);

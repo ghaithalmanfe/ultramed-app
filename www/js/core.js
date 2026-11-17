@@ -2710,6 +2710,36 @@
   // over the others), the value shown, the target, and the detail behind it.
   var KPI_DEFAULTS = { visitsPerDay: 5, doctorsPerMonth: 60, discountA: 40, discountOther: 35, discountOpenDay: 40, openDays: [],
     rxGrowth: 0.15, newProducts: 5, newAccounts: 2, returnsMax: 0.02, responseHours: 24, workdaysPerMonth: 22 };
+  // The KPI settings sheet's limits (v126): a number out of them — or not a number — is refused and its field named, and
+  // nothing is saved (as the alert settings, alerts review F12). Until then such a number kept the old value without a
+  // word under "✅ KPI settings saved". The limits are what the scorecard can use: a discount limit is a percentage,
+  // returns are a share of sales, and a target of 0 visits, hours or growth would be divided by (a 0 placements or
+  // accounts target already counted as 1).
+  var KPI_LIMITS = { visitsPerDay: [1, 30], doctorsPerMonth: [1, 1000], discountA: [0, 100], discountOther: [0, 100], discountOpenDay: [0, 100],
+    rxGrowth: [0.01, 5], newProducts: [1, 100], newAccounts: [1, 100], returnsMax: [0, 1], responseHours: [1, 720] };
+  // What the sheet typed (raw: {key: text}, openDays: the text of the dates) → { ok, kpi (the settings to save, the
+  // keys not typed kept from `cur`), bad: [{key, min, max}] (a number out of its limits or not a number), badDays:
+  // [the parts of openDays that are not a date written 2026-10-15] }. Pure.
+  function kpiSettingsCheck(raw, cur){
+    raw = raw || {}; cur = cur || KPI_DEFAULTS;
+    var out = {}, bad = [], badDays = [];
+    Object.keys(KPI_DEFAULTS).forEach(function(k){
+      if(!Object.prototype.hasOwnProperty.call(raw, k)){ out[k] = cur[k] != null ? cur[k] : KPI_DEFAULTS[k]; return; }
+      if(k === 'openDays'){
+        var days = [];
+        String(raw[k] == null ? '' : raw[k]).split(/[,\s،]+/).map(function(x){ return x.trim(); }).filter(Boolean).forEach(function(x){
+          var ok = /^\d{4}-\d{2}-\d{2}$/.test(x) && localDateStr(new Date(x + 'T00:00:00')) === x;
+          if(ok){ if(days.indexOf(x) < 0) days.push(x); } else badDays.push(x);
+        });
+        out[k] = days;
+        return;
+      }
+      var L = KPI_LIMITS[k], t = String(raw[k] == null ? '' : raw[k]).trim(), v = Number(t);
+      if(L && !(t !== '' && isFinite(v) && v >= L[0] && v <= L[1])){ bad.push({ key: k, min: L[0], max: L[1] }); return; }
+      out[k] = L ? v : (t !== '' && isFinite(v) ? v : cur[k]);
+    });
+    return { ok: !bad.length && !badDays.length, kpi: out, bad: bad, badDays: badDays };
+  }
   var KPI_ITEMS = [
     ['sales', 'Sales achievement', 30], ['visits', 'Visits per day', 10], ['discipline', 'Daily plan & visit reports', 10],
     ['doctors', 'Doctors seen & decision makers', 10], ['discount', 'Discount within limits', 10], ['issues', 'Fewer problems (escalations, returns)', 10],
@@ -8279,6 +8309,7 @@
     productMovement, pmNormName,
     cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
     backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder,
-    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, alertSettings, alertsFor, alertsNextAt, alertsVisible, alertStateNext, alertRefs, erpSpanCovered, targetPace, paceOf, requestOpenLate
+    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, ALERT_KEY_LABEL, alertSettings, alertsFor, alertsNextAt, alertsVisible, alertStateNext, alertRefs, erpSpanCovered, targetPace, paceOf, requestOpenLate,
+    KPI_LIMITS, kpiSettingsCheck
   };
 });

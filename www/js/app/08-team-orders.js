@@ -228,7 +228,7 @@ function openStandaloneOrder(prefillClinicId){
   soNewClinicMode = false;
   showModal(`
     <h3 style="margin-top:0;">${I('cart')} Add order</h3>
-    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone or remote orders — recorded as revenue, not as a field visit.</p>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;"><span>For phone or remote orders — logged in the app as an order, not as a field visit.</span> <span>Orders logged in the app are not invoiced sales: sales come from the ERP files only.</span></p>
     <label>Clinic</label>
     <input type="text" id="soClinicSearch" placeholder="Search clinics..." oninput="renderSoClinics()" style="margin-bottom:8px;">
     <div id="soClinicPick"></div>

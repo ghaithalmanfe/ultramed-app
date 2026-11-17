@@ -562,15 +562,32 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
   openLostDoctors(scope);
 }
 // A doctor who left the clinic or was removed on purpose: kept in the delete log
-// for good, so the sheet stops offering them. Nothing else changes.
-async function markDoctorGone(clinicId, docId, scope){
+// for good, so the sheet stops offering them. Nothing else changes. Asked in the
+// card first, like every other tap of these sheets (askInCard): the second tap
+// applies it (v126 — until then the first tap did, for good).
+async function markDoctorGone(clinicId, docId, scope, confirmed){
   const c = clinics.find(x => x && x.id === clinicId);
   if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
-  tomb('doctors', clinicId + '|' + docId);
-  const ok = await persistTombs();
-  if(ok) showToast('✅ Taken off this list', 4000);
-  else if(_saveParked.get('tombs') === 'refused') showToast(REFUSED_KEPT, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
-  else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
+  const sel = clinicId + '|' + docId, asked = 'gone:' + sel;
+  if(confirmed !== asked){
+    const n = visitsNaming(clinicId, docId).length;
+    const html = `<div style="font-size:13px; line-height:1.6;">⚠️ <span>Take this doctor off the list for good?</span> <span>Their visits stay as they are.</span> (${n} <span>visits</span>)</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-c="${esc(clinicId)}" data-d="${esc(docId)}" data-scope="${esc(scope || '')}" data-ask="${esc(asked)}" onclick="markDoctorGone(this.dataset.c, this.dataset.d, this.dataset.scope, this.dataset.ask)">✅ <span>Yes, take them off</span></button>
+        <button class="chip small" data-scope="${esc(scope || '')}" onclick="openLostDoctors(this.dataset.scope)"><span>Cancel</span></button>
+      </div>`;
+    if(!askInCard(sel, html)){ openLostDoctors(scope); askInCard(sel, html); } // (the sheet was not on screen: the question is asked in it)
+    return;
+  }
+  if(_namingBusy.has(sel)) return; // a double tap applies it once
+  _namingBusy.add(sel);
+  try{
+    tomb('doctors', sel);
+    const ok = await persistTombs();
+    if(ok) showToast('✅ Taken off this list', 4000);
+    else if(_saveParked.get('tombs') === 'refused') showToast(REFUSED_KEPT, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
+    else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
+  } finally { _namingBusy.delete(sel); }
   renderAll();
   openLostDoctors(scope);
 }

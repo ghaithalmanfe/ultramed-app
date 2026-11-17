@@ -2276,6 +2276,32 @@ function outboxWaiting(){
   if(stamped){ try{ localStorage.setItem(OUTBOX_SINCE, JSON.stringify(_outboxSince)); }catch(e){} }
   return out;
 }
+// What this phone has not put in the cloud yet (Help & Support's "Waiting to be sent", 05; v126), read with the very
+// functions the pill, the red bars, the visit photo notes and the alerts center read — never a rule of its own:
+// - lists: the queue as outboxWaiting has it (memory included), each with the time it was queued and whether it is
+//   kept only in the app's memory (_memOnly) — without the lists on the red bar at the bottom, which the round does
+//   not send (the pill does not count them either);
+// - held: those lists (alertsHeld, 19): too large for the cloud or refused — kept on this phone and not sent, or not
+//   saved at all; refused: a whole document the cloud refused (#refusedPill); erp: the sales files' retry bar;
+// - photos / photosMem: the visit photos this phone still holds for the cloud (photosToUpload: the toasts' and the red
+//   bar's count), and of them those only in the app's memory;
+// - unheld / elsewhere: what the visits' photo notes still call waiting (photoWaitInfo, 12) that this phone does not
+//   hold — its own (not confirmed in the cloud yet) and another phone's.
+// Until v126 the Help line read the queue alone: "Nothing — everything has reached the cloud" while a photo waited.
+function waitingOnPhone(){
+  const held = typeof alertsHeld === 'function' ? alertsHeld() : [];
+  const heldKeys = new Set(held.map(x => x.key));
+  const lists = outboxWaiting().filter(x => !heldKeys.has(x.key) && !_saveBlocked.has(x.key) && !_saveParked.has(x.key)).map(x => ({ key: x.key, since: x.since, mem: _memOnly.has(x.key) }));
+  const photos = typeof photosToUpload === 'function' ? photosToUpload(false) : 0, photosMem = typeof photosToUpload === 'function' ? photosToUpload(true) : 0;
+  let unheld = 0, elsewhere = 0;
+  if(currentUser && typeof photoWaitInfo === 'function' && typeof visibleVisits === 'function') visibleVisits().forEach(v => {
+    if(!v || !Array.isArray(v.photos) || !v.photos.length) return;
+    const w = photoWaitInfo(v);
+    if(w){ unheld += w.unheld || 0; elsewhere += w.others || 0; }
+  });
+  return { lists, held, refused: [..._refused.keys()], erp: !!_erpDirty, photos, photosMem, unheld, elsewhere,
+    mine: lists.length + held.length + _refused.size + (_erpDirty ? 1 : 0) + photos + unheld };   // 0: nothing of this phone's
+}
 // The queue is now exactly `list` — in memory always; on the phone if it fits.
 function outboxWrite(list){
   _outboxMem.clear(); list.forEach(k => _outboxMem.add(k));

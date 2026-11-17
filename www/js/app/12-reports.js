@@ -657,7 +657,9 @@ function photoStaleText(days){ return days + ' days now — it can only come fro
 // phone's photo past PHOTO_STALE_DAYS; othersAt: when each of another phone's waiting photos was taken — its age
 // moves with the clock), own: [when each waiting photo this phone
 // holds was taken — kept here or only in memory; one with its mark that it no
-// longer holds is being settled, not kept], lostAt: [when each lost photo was taken] } or null.
+// longer holds is being settled, not kept], lostAt: [when each lost photo was taken],
+// unheld: this phone's own waiting photos it does not hold (being settled: not confirmed in the cloud yet),
+// others: another phone's waiting photos (Help & Support's "Waiting to be sent" counts both, v126) } or null.
 function photoWaitInfo(v){
   const ps = ((v && v.photos) || []).filter(p => p);
   // this phone knows before its mark's save lands: one it saw land is not
@@ -666,9 +668,9 @@ function photoWaitInfo(v){
   const lost = ps.filter(p => !_photoLanded.has(p.id) && ((p.lost && !p.pending) || (p.pending && _photoLost.has(p.id))));
   if(!waiting.length && !lost.length) return null;
   const me = photoDevice(), own = [], othersAt = [];
-  let here = 0, mem = 0, old = 0, wait = null;
+  let here = 0, mem = 0, old = 0, wait = null, unheld = 0, others = 0;
   if(waiting.length){
-    waiting.forEach(p => { const r = _photoKept.get(p.id); if(r) own.push(Number(p.at) || 0); if(!r){ if(p.dev !== me){ if(Number(p.at) > 0) othersAt.push(Number(p.at)); if(photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); } return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(r) own.push(Number(p.at) || 0); if(!r){ if(p.dev !== me){ others++; if(Number(p.at) > 0) othersAt.push(Number(p.at)); if(photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); } else unheld++; return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
     const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
     if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
     if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");
@@ -679,7 +681,7 @@ function photoWaitInfo(v){
     wait = parts.join(' · ');
   }
   const lostTxt = !lost.length ? null : lost.length === 1 ? PHOTO_LOST_1 : '⚠️ ' + lost.length + ' photos lost before they uploaded — only their small previews are kept';
-  return { wait, lostTxt, mem, here, old, own, othersAt, lostAt: lost.map(p => Number(p.at) || 0) };
+  return { wait, lostTxt, mem, here, old, own, othersAt, lostAt: lost.map(p => Number(p.at) || 0), unheld, others };
 }
 function photoWaitHTML(v){
   const w = photoWaitInfo(v);

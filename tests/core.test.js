@@ -877,6 +877,21 @@ describe('rep and customer matching', () => {
     assert.match(it.discipline.value, /^67%/);
     assert.equal(k.total, Math.round((0.85 * 30 + (4 / 6 / 5) * 10 + (2 / 3) * 10 + (0.6 * 4 / 16 + 0.4 * 0.5) * 10 + 0.75 * 10 + it.issues.score * 10 + 5 + 0.5 * 5 + 5 + 0.5 * 5)));
   });
+  test('kpiSettingsCheck (v126): a number out of its limits, or not a number, and an open day that is not a date are refused by name — never the old value kept without a word', () => {
+    // every number the sheet edits has limits, and the defaults are within them
+    Object.keys(core.KPI_LIMITS).forEach(k => { const [a, b] = core.KPI_LIMITS[k]; assert.ok(core.KPI_DEFAULTS[k] >= a && core.KPI_DEFAULTS[k] <= b, k); });
+    const r = core.kpiSettingsCheck({ discountA: '-5', visitsPerDay: '', responseHours: '0', discountOther: '150', rxGrowth: 'abc', openDays: '2026-10-15, bad, 2026-02-30, 2026-10-22' }, core.KPI_DEFAULTS);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.bad.map(b => b.key).sort(), ['discountA', 'discountOther', 'responseHours', 'rxGrowth', 'visitsPerDay']);
+    assert.deepEqual(r.bad.find(b => b.key === 'discountA'), { key: 'discountA', min: 0, max: 100 });
+    assert.deepEqual(r.badDays, ['bad', '2026-02-30']);
+    // all right: the numbers as typed, the dates once each (an Arabic comma too), what was not typed kept
+    const ok = core.kpiSettingsCheck({ discountA: '45', returnsMax: '0.03', openDays: '2026-10-15، 2026-10-22, 2026-10-15' }, Object.assign({}, core.KPI_DEFAULTS, { visitsPerDay: 6 }));
+    assert.equal(ok.ok, true);
+    assert.equal(ok.kpi.discountA, 45); assert.equal(ok.kpi.returnsMax, 0.03); assert.equal(ok.kpi.visitsPerDay, 6);
+    assert.deepEqual(ok.kpi.openDays, ['2026-10-15', '2026-10-22']);
+    assert.deepEqual(core.kpiSettingsCheck({ openDays: '' }).kpi.openDays, []);
+  });
   test('weeklyReport: the Thursday deck figures – sales, month to date, wins, field work, next week', () => {
     const row = (d, doc, sm, cust, net, product, brand, qty) => [d, doc, 0, product || 'P', qty == null ? 1 : qty, net, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
     const clinics = [

@@ -209,7 +209,7 @@ function adminTerritoryHTML(){
     <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Move a clinic to a different rep. Visit history stays with the clinic.</p>
     <div class="card" style="margin-bottom:10px; border-inline-start:4px solid var(--teal);">
       <div style="font-weight:700; font-size:13.5px;">${I('download')} Upload a clinic distribution</div>
-      <div style="color:var(--muted); font-size:12px; margin:2px 0 8px;">Excel or CSV with an <b>Account</b> column and a <b>Now with</b> (or New rep / Owner) column. "Mariam + Ghaith" = shared. You see every change before it is saved.</div>
+      <div style="color:var(--muted); font-size:12px; margin:2px 0 8px;">Excel or CSV with an <b data-notr>Account</b> column and a <b data-notr>Now with</b> (or New rep / Owner) column. "Mariam + Ghaith" = shared. You see every change before it is saved.</div>
       <input type="file" id="apDistFile" accept=".xlsx,.xls,.csv" onchange="distFilePicked(this)">
     </div>
     <input type="text" id="apTerrSearch" placeholder="Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
@@ -241,9 +241,13 @@ function renderAdminTerritory(){
   if(!list.length){ el.innerHTML = `<div class="empty">No clinics match.</div>`; return; }
   el.innerHTML = list.map(c=>{
     const vCount = visits.filter(v=>v.clinicId===c.id).length;
+    const parts = [`<span>${vCount} visit${vCount===1?'':'s'}</span>`,
+      c.rep&&REPS.includes(c.rep) ? `<span>currently ${esc(c.rep)}</span>` : '<span>currently</span> <span style="color:var(--coral-ink);">unassigned</span>',
+      c.repSince&&c.prevRep ? `<span>since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})</span>` : '',
+      c.shared ? `<span><b>shared</b> – each invoice counts for whoever issued it${c.sharedSince?' (from '+fmtDate(c.sharedSince)+')':''}</span>` : ''].filter(Boolean);
     return `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c.cls)};">
       <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}${c.repSince&&c.prevRep?` · since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})`:''}${c.shared?` · <b>shared</b> – each invoice counts for whoever issued it${c.sharedSince?' (from '+fmtDate(c.sharedSince)+')':''}`:''}</div>
+      <div class="clinic-sub" style="margin-bottom:8px;">${parts.join('<span data-notr> · </span>')}</div>
       <div class="chip-row">
         ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
         <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
@@ -285,14 +289,14 @@ function openDistributionPreview(sheets){
   const plan = UMCore.planDistribution(dist, clinics, erpMap, todayStr().slice(0, 7) + '-01');
   _distPlan = plan;
   const own = x => x.shared ? `${esc(x.to)} <span class="chip small on" style="padding:1px 6px;">shared</span>` : esc(x.to);
-  const line = x => `<div style="font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--line, #eee);"><b>${esc(x.clinic)}</b>${x.clinic!==x.account?` <span style="color:var(--muted);">(file: ${esc(x.account)})</span>`:''}<br>${esc(x.from || 'unassigned')}${x.wasShared?' (shared)':''} → ${own(x)}</div>`;
-  const miss = plan.missing.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);">→ ${esc(x.owners.join(' + '))}${x.shared ? ' · not in the app: its invoices already count for whoever issues them' : ' · not in the app — add the clinic or check the name'}</span></div>`).join('');
+  const line = x => `<div style="font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--line, #eee);"><b>${esc(x.clinic)}</b>${x.clinic!==x.account?` <span style="color:var(--muted);">(file: ${esc(x.account)})</span>`:''}<br><span dir="ltr">${x.from ? esc(x.from) : '<span>unassigned</span>'}${x.wasShared?' <span>(shared)</span>':''} → ${own(x)}</span></div>`;
+  const miss = plan.missing.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);"><span dir="ltr">→ ${esc(x.owners.join(' + '))}</span> · <span>${x.shared ? 'not in the app: its invoices already count for whoever issues them' : 'not in the app — add the clinic or check the name'}</span></span></div>`).join('');
   const amb = plan.ambiguous.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);">— several clinics look alike (${esc((x.candidates || []).join(', '))}); set it by hand below</span></div>`).join('');
   showModal(`
     <h3 style="margin-top:0;">${I('download')} Clinic distribution — check before saving</h3>
     <div style="color:var(--muted); font-size:12.5px; margin:-4px 0 10px;">Changes count from ${fmtDate(plan.since)}: this month's sales go to the new owner, earlier months stay with the previous one. Shared = each invoice counts for whoever issued it. Targets are not changed.</div>
     <div class="card"><b>${plan.changes.length} change${plan.changes.length===1?'':'s'}</b>${plan.changes.length ? plan.changes.map(line).join('') : '<div style="color:var(--muted); font-size:12.5px;">The app already matches this file.</div>'}</div>
-    <div style="color:var(--muted); font-size:12px; margin:6px 0;">${plan.same.length} clinic${plan.same.length===1?'':'s'} already as in the file.${dist.badOwners.length ? ` ${dist.badOwners.length} row(s) skipped — owner not on the team: ${dist.badOwners.map(b=>esc(b.account)+' ('+esc(b.owner)+')').join(', ')}.` : ''}</div>
+    <div style="color:var(--muted); font-size:12px; margin:6px 0;"><span>${plan.same.length} clinic${plan.same.length===1?'':'s'} already as in the file.</span>${dist.badOwners.length ? ` <span>${dist.badOwners.length} row(s) skipped — owner not on the team:</span> <span dir="auto">${dist.badOwners.map(b=>esc(b.account)+' ('+esc(b.owner)+')').join(', ')}</span>.` : ''}</div>
     ${amb ? `<div class="nudge" style="margin-top:6px;"><b>Not moved — check by hand</b>${amb}</div>` : ''}
     ${miss ? `<div class="card" style="margin-top:6px;"><b>Not in the app (${plan.missing.length})</b>${miss}</div>` : ''}
     <div style="display:flex; gap:8px; margin-top:12px;">

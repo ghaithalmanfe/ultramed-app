@@ -343,18 +343,45 @@ function openSalesHub(){
 // is worked out after the drawing — never inside it, never while a refresh is on its way (alertsSoon).
 function msBell(){ if(typeof alertsAsk === 'function') alertsAsk(); }
 // Help & Support (the sidebar's last entry): the app's version, what this phone still has to send, and who to ask.
+// "Waiting to be sent" counts everything this phone has not put in the cloud (waitingOnPhone, 04-sync.js): the queued
+// lists (memory included), the lists kept on this phone and not sent, a change the cloud refused, the sales files'
+// changes, the visit photos waiting or kept on this phone — in the words of the bars, the photo notes and the alerts
+// center (their dictionary entries), each on its own line; "Nothing — everything has reached the cloud" only when it
+// is true (until v126 it read the queue alone, and said it while a visit photo waited to upload).
+function helpWaitingLines(){
+  let W = null;
+  try{ W = waitingOnPhone(); }catch(e){ console.warn('help: waiting', e); }
+  if(!W) return [];
+  const label = k => (UMCore.ALERT_KEY_LABEL && Object.prototype.hasOwnProperty.call(UMCore.ALERT_KEY_LABEL, k)) ? UMCore.ALERT_KEY_LABEL[k] : String(k);
+  const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  const when = ms => { const d = localDateStr(new Date(ms)); return (d === todayStr() ? '' : fmtDate(d) + ', ') + hhmm(ms); };
+  const out = [];
+  W.lists.forEach(x => out.push(label(x.key) + (x.mem ? " — only in the app's memory" : ' — waiting since ' + when(x.since))));
+  W.held.forEach(x => out.push(label(x.key) + (x.kept ? ' — kept on this phone, not sent' : ' — not saved')));
+  W.refused.forEach(k => { if(!W.held.some(x => x.key === k)) out.push(label(k) + ' — not saved'); });
+  if(W.erp) out.push('Sales file changes not saved');
+  if(W.photos){
+    const n = W.photos, mem = W.photosMem, here = n - mem;
+    out.push([n + (n === 1 ? ' visit photo' : ' visit photos') + ' waiting to upload from this phone',
+      here ? (here === n ? 'kept on this phone' : here + ' kept on this phone') : '',
+      mem ? (mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open") : ''].filter(Boolean).join(' · '));
+  }
+  if(W.unheld) out.push(W.unheld + (W.unheld === 1 ? ' visit photo' : ' visit photos') + ' taken on this phone, not confirmed in the cloud yet');
+  if(W.elsewhere){
+    if(!W.mine) out.unshift('Nothing from this phone');
+    out.push(W.elsewhere + (W.elsewhere === 1 ? ' visit photo' : ' visit photos') + ' not arrived from another phone');
+  }
+  return out;
+}
 function openHelp(){
-  let queued = [];
-  try{ queued = outboxList(); }catch(e){}
   const online = navigator.onLine !== false;
   const sups = (staff || []).filter(s => s && s.role === 'supervisor' && s.active !== false).map(s => s.name);
-  const names = { clinics: 'Clinics', visits: 'Visits', tasks: 'Tasks', events: 'Events', dayPlans: "Day's plans", products: 'Products & prices', targets: 'Targets', chat: 'Team chat', memories: 'Memories' };
-  const list = queued.map(k => esc(trOf(names[k] || '') || names[k] || k)).join(uiLang === 'ar' ? '، ' : ', ');
+  const lines = helpWaitingLines();
   showModal(`<h3 style="margin-top:0;">${I('nhelp')} ${msT('Help & Support')}</h3>
     <div class="ms-how">
       <div class="kv"><span>${msT('App version')}</span><span data-notr>${esc(APP_REV)}</span></div>
       <div class="kv"><span>${msT('Connection')}</span><span>${msT(online ? 'Online' : 'Offline — changes are kept on this phone')}</span></div>
-      <div class="kv"><span>${msT('Waiting to be sent')}</span><span>${queued.length ? `${msN(queued.length)} · ${list}` : msT('Nothing — everything has reached the cloud')}</span></div>
+      <div class="kv"><span>${msT('Waiting to be sent')}</span><span id="helpWaiting">${lines.length ? lines.map(l => `<span style="display:block;">${esc(l)}</span>`).join('') : msT('Nothing — everything has reached the cloud')}</span></div>
       <h4>${msT('Who to ask')}</h4>
       <div>${sups.length ? `${msT('Your supervisor:')} <b>${msNames(sups)}</b> — ${msT('write in the team chat, or call.')}` : msT('Write in the team chat.')}</div>
       <div class="ms-note">${msT('A red bar at the bottom of the screen says when something could not be sent, and what to do.')}</div>

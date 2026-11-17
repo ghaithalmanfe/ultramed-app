@@ -428,9 +428,26 @@ function seed(){
     // doctor removals stay in the delete log for good; "left / removed on purpose" takes one off the list
     const lostR32 = await page.evaluate(() => (UMCore.lostDoctors(clinics.filter(c => c.id === 'r32'), visits, tombSet('doctors')).r32 || []).map(e => e.id));
     check('fix: a doctor removed on purpose a month ago is not offered as lost', !lostR32.includes('dold') && lostR32.includes('dlx'), lostR32);
-    await page.evaluate(async () => { closeModal(); await markDoctorGone('r32', 'dlx', 'r32'); }); await sleep(300);
+    // "Left the clinic or removed on purpose" is asked in the card first, like every other recovery tap (askInCard): the
+    // first tap changes nothing — until v126 it took the doctor off for good on the first tap
+    const goneInCloud = () => !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dlx'];
+    await page.evaluate(() => { closeModal(); openLostDoctors('r32'); }); await sleep(60);
+    const gone1 = await page.evaluate(async () => {
+      const card = document.querySelector('#modalInner [data-lostdoc="r32|dlx"]');
+      const b = card && [...card.querySelectorAll('button')].find(x => /markDoctorGone/.test(x.getAttribute('onclick') || ''));
+      if(!b) return { err: 'no button' };
+      b.click(); await new Promise(r => setTimeout(r, 350));
+      const c2 = document.querySelector('#modalInner [data-lostdoc="r32|dlx"]');
+      const ask = c2 && c2.querySelector('button[data-ask]');
+      return { card: c2 ? c2.innerText.replace(/\s+/g, ' ').trim() : null, ask: ask ? ask.innerText.trim() : null, tombed: tombSet('doctors').has('r32|dlx'),
+        ar: ['Take this doctor off the list for good?', 'Their visits stay as they are.', 'Yes, take them off'].map(t => UMI18N.tr(t)) };
+    });
+    check('fix: "Left the clinic or removed on purpose" — the first tap only asks in the card (what it does, "Yes, take them off" / Cancel, in Arabic too); nothing changes, here or in the cloud',
+      !gone1.err && !!gone1.ask && /off the list for good/.test(gone1.card || '') && /visits stay as they are/.test(gone1.card || '') && !gone1.tombed && !goneInCloud() && gone1.ar.every(t => t && /[؀-ۿ]/.test(t)), gone1);
+    // the second tap applies it — a double tap once
+    await page.evaluate(() => { const b = document.querySelector('#modalInner [data-lostdoc="r32|dlx"] button[data-ask]'); if(b){ b.click(); b.click(); } }); await sleep(400);
     const lostAfter = await page.evaluate(() => (UMCore.lostDoctors(clinics.filter(c => c.id === 'r32'), visits, tombSet('doctors')).r32 || []).map(e => e.id));
-    check('fix: "Left the clinic or removed on purpose" takes the doctor off the list and into the shared delete log', !lostAfter.includes('dlx') && !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dlx'], { lostAfter, tomb: !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dlx'] });
+    check('fix: …the second tap takes the doctor off the list and into the shared delete log', !lostAfter.includes('dlx') && goneInCloud(), { lostAfter, tomb: goneInCloud() });
     check('fix: the old doctor delete is still in the shared log after that save', !!(JSON.parse(cloud.tombs || '{}').doctors || {})['r32|dold']);
   }
   check('no page errors', errors.length === 0, errors);

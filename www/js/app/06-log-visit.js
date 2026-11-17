@@ -759,7 +759,7 @@ function confirmFollowUp(clinicId){
   if(!c) return;
   showModal(`
     <h3 style="margin-top:0;" data-ic="calendar">${esc(c.name)}</h3>
-    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${statusLabel(c.nextFollowUp)}. What's the next step?</p>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;"><span>${statusLabel(c.nextFollowUp)}</span>. <span>What's the next step?</span></p>
     <button class="btn" onclick="closeModal(); quickLogFrom('${c.id}')">${I('check')} Log the visit now</button>
     <button class="btn secondary" onclick="openRescheduleFollowUp('${c.id}')">${I('calendar')} Not yet — reschedule</button>
     <button class="btn ghost" onclick="clearFollowUp('${c.id}')">Clear — no longer needed</button>

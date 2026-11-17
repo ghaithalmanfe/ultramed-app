@@ -111,7 +111,7 @@
     'Update password': 'تحديث كلمة المرور',
     'No team members yet.': 'لا يوجد أعضاء في الفريق بعد.',
     '🦷 Sales Rep': '🦷 مندوبة مبيعات',
-    'Not selling — Edit → “Also sells” gives them clinics, a target and a scorecard.': 'لا يبيع حالياً. Edit ثم «يبيع أيضاً» يعطيه عيادات وتارغت وبطاقة أداء.',
+    'Not selling — Edit → “Also sells” gives them clinics, a target and a scorecard.': 'لا يبيع حالياً. «تعديل» ثم «يبيع أيضاً» يعطيه عيادات وتارغت وبطاقة أداء.',
     'Also sells (own clinics and target)': 'يبيع أيضاً (عيادات وتارغت خاصة)',
     '🎯 Yes — counts like a rep': '🎯 نعم، يُحسب كمندوب',
     'For a supervisor who carries accounts: appears in targets, scorecards and clinic assignment. Reps always count.': 'لمشرف يحمل حسابات: يظهر في التارغت وبطاقات الأداء وتوزيع العيادات. المندوبات يُحسبن دائماً.',
@@ -964,7 +964,6 @@
     'Add selected tasks': 'إضافة المهام المحددة',
 
     // ---- orders, calls, edits ----
-    'For phone or remote orders — recorded as revenue, not as a field visit.': 'للطلبيات الهاتفية أو عن بُعد — تُسجَّل كإيراد وليس كزيارة ميدانية.',
     'Save order': 'حفظ الطلبية',
     'Quantities': 'الكميات',
     'Order total': 'إجمالي الطلبية',
@@ -2537,6 +2536,77 @@
 
     // === SCREENS C ===
     // === END SCREENS C ===
+
+    // === POLISH (v126) === what the guides quote from the screens, checked in Arabic (tests/e2e/polish.e2e.js)
+    // Help & Support's "Waiting to be sent" (the lists' and photos' lines are the alerts center's own words)
+    'Nothing from this phone': 'لا شيء من هذا الهاتف',
+    // the offline pill
+    '📴 Offline — saving locally': '📴 غير متصل — الحفظ على هذا الهاتف',
+    // the follow-up sheet
+    "What's the next step?": 'ما الخطوة التالية؟',
+    'Log the visit now': 'سجّل الزيارة الآن',
+    'Not yet — reschedule': 'ليس بعد — أعد الجدولة',
+    // the sign-in errors
+    'Wrong email or password': 'البريد أو كلمة المرور غير صحيحة',
+    'Wrong password, try again': 'كلمة المرور غير صحيحة، حاول مرة أخرى',
+    '📴 No connection — sign in once online, then the app works offline': '📴 لا يوجد اتصال — سجّل الدخول مرة وأنت متصل، وبعدها يعمل التطبيق دون اتصال',
+    '📴 Offline — using this device’s saved data': '📴 غير متصل — يعرض البيانات المحفوظة على هذا الجهاز',
+    // the admin panel: the tab, the Email reports tab's headings (Arabic already beside the English), the Team tab
+    '📧 Email reports': '📧 تقارير الإيميل',
+    'Recipients · المستلمون': 'المستلمون',
+    'Preview · معاينة': 'معاينة',
+    'Send now · إرسال الآن': 'إرسال الآن',
+    // Territory: the chips, the distribution upload and its check sheet
+    'Shared': 'مشترك',
+    'Gov': 'حكومي',
+    'Hospitals, the ministry, universities: sales go to whoever issues the invoice': 'مستشفيات، الوزارة، الجامعات: المبيعات لمن يصدر الفاتورة',
+    'Government account: must be visited every week': 'حساب حكومي: يجب أن يُزار كل أسبوع',
+    'shared': 'مشترك',
+    '(shared)': '(مشترك)',
+    'currently': 'حاليًا',
+    'Upload a clinic distribution': 'رفع توزيع العيادات',
+    'Excel or CSV with an': 'ملف Excel أو CSV فيه عمود',
+    'column and a': 'وعمود',
+    '(or New rep / Owner) column. "Mariam + Ghaith" = shared. You see every change before it is saved.': '(أو New rep / Owner). «Mariam + Ghaith» = حساب مشترك. ترى كل تغيير قبل أن يُحفظ.',
+    'Clinic distribution — check before saving': 'توزيع العيادات — راجِع قبل الحفظ',
+    'The app already matches this file.': 'التطبيق مطابق لهذا الملف.',
+    'Not moved — check by hand': 'لم تُنقل — راجِعها يدويًا',
+    'not in the app — add the clinic or check the name': 'ليست في التطبيق — أضف العيادة أو تحقّق من الاسم',
+    'not in the app: its invoices already count for whoever issues them': 'ليست في التطبيق: فواتيرها تُحسب أصلًا لمن يصدرها',
+    'row(s) skipped — owner not on the team:': 'تخطّي صفوف — المالك ليس في الفريق:',
+    'Distribution saved': 'حُفظ التوزيع',
+    'Back to Territory': 'العودة إلى المناطق',
+    'Not saved': 'لم يُحفظ',
+    'The clinic list could not be saved to the cloud — nothing was changed. Check the connection and upload the file again.': 'تعذّر حفظ قائمة العيادات في السحابة — لم يتغير شيء. تحقّق من الاتصال ثم ارفع الملف مرة أخرى.',
+    '❌ Could not open this file — save it as Excel (.xlsx) or CSV and retry': '❌ تعذّر فتح هذا الملف — احفظه بصيغة Excel (.xlsx) أو CSV وأعد المحاولة',
+    '❌ No "Account" + "Now with" columns found in this file': '❌ لا يوجد في هذا الملف عمودا «Account» و«Now with»',
+    // the KPI settings: the fields and what a save says
+    'Max discount % – A clinics': 'أقصى خصم % – عيادات الفئة A',
+    'Max discount % – other clinics': 'أقصى خصم % – العيادات الأخرى',
+    'Max discount % – open days': 'أقصى خصم % – الأيام المفتوحة',
+    'Open days (dates, comma-separated, e.g. 2026-10-15, 2026-10-22)': 'الأيام المفتوحة (تواريخ تفصل بينها فاصلة، مثلًا 2026-10-15، 2026-10-22)',
+    'Field visits a day': 'الزيارات الميدانية في اليوم',
+    'Different doctors met a month': 'الأطباء المختلفون الذين تمت مقابلتهم في الشهر',
+    'New product placements a month': 'منتجات تدخل العيادات لأول مرة في الشهر',
+    'New accounts a month': 'حسابات جديدة في الشهر',
+    'Answer a client request within (hours)': 'الرد على طلب العميل خلال (ساعات)',
+    'Max returns (share of sales, e.g. 0.02 = 2%)': 'أقصى مرتجعات (نسبة من المبيعات، مثلًا 0.02 = 2%)',
+    'Prescription growth a month (e.g. 0.15 = 15%)': 'نمو الوصفات في الشهر (مثلًا 0.15 = 15%)',
+    '✅ KPI settings saved': '✅ حُفظت إعدادات المؤشرات',
+    // the admin panel's Data tab (health checks)
+    'Never visited': 'لم تُزر أبداً',
+    'No follow-up date set': 'لا يوجد موعد متابعة',
+    'No class assigned (A–F)': 'بلا فئة (A–F)',
+    'No contact or doctor on file': 'لا جهة اتصال ولا طبيب مسجّل',
+    'Possible duplicate clinics': 'عيادات قد تكون مكررة',
+    'Products sharing a product code': 'منتجات تشترك في كود منتج واحد',
+    // "Doctors without a name": "Left the clinic or removed on purpose", asked in the card first
+    'Take this doctor off the list for good?': 'إزالة هذا الطبيب من القائمة نهائيًا؟',
+    'Their visits stay as they are.': 'تبقى زياراته كما هي.',
+    'Yes, take them off': 'نعم، أزِله',
+    // "Order only": an order logged in the app is never sales or revenue (the owner's rule)
+    'For phone or remote orders — logged in the app as an order, not as a field visit.': 'للطلبيات الهاتفية أو عن بُعد — تُسجَّل في التطبيق طلبيةً، لا زيارة ميدانية.',
+    // === END POLISH ===
   };
 
   // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
@@ -2992,6 +3062,38 @@
     [/^From this phone's copy, saved (.+) — it could not update from the cloud; it is tried again\.$/, function (m) { return 'من نسخة هذا الهاتف، المحفوظة ' + m[1] + ' — تعذّر التحديث من السحابة، وستُعاد المحاولة.'; }],
     [/^From this phone's copy of the (.+) — not read from the cloud this time\.$/, function (m) { var L = { clinics: 'العيادات', visits: 'الزيارات', 'day plans': 'خطط الأيام', calendar: 'التقويم', targets: 'الأهداف', 'sales files': 'ملفات المبيعات', 'account links': 'ربط حسابات ERP' }; return 'من نسخة هذا الهاتف (' + m[1].split(', ').map(function (x) { return L[x] || x; }).join('، ') + ') — لم تُقرأ من السحابة هذه المرة.'; }],
     // === END ALERTS ===
+    // === POLISH (v126) === what the guides quote from the screens, checked in Arabic (tests/e2e/polish.e2e.js)
+    // Help & Support's "Waiting to be sent": this phone's own photo that it no longer holds, not confirmed in the cloud
+    [/^(\d+) visit photos? taken on this phone, not confirmed in the cloud yet$/, function (m) { return m[1] === '1' ? 'صورة زيارة واحدة التُقطت على هذا الجهاز ولم يتأكد وصولها إلى السحابة بعد' : 'صور زيارات التُقطت على هذا الجهاز ولم يتأكد وصولها إلى السحابة بعد: ' + m[1]; }],
+    // the offline pill ("⏳" is kept by the leading-symbol rule)
+    [/^Uploading offline changes \((\d+)\)…$/, function (m) { return 'جارٍ رفع التغييرات غير المتصلة (' + m[1] + ')…'; }],
+    // the admin panel's Team tab
+    [/^Last visit (.+)$/, function (m) { return 'آخر زيارة ' + m[1]; }],
+    // Territory: each clinic's line, one part at a time (the names stay; the dates are already Arabic)
+    [/^currently (.+)$/, function (m) { return 'حاليًا مع ' + m[1]; }],
+    [/^since (.+) \(before: (.+)\)$/, function (m) { return 'منذ ' + m[1] + ' (قبلها: ' + m[2] + ')'; }],
+    [/^– each invoice counts for whoever issued it(?: \(from (.+)\))?$/, function (m) { return '– تُحسب كل فاتورة لمن أصدرها' + (m[1] ? ' (من ' + m[1] + ')' : ''); }],
+    [/^Showing (\d+) of (\d+) — search to find others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — ابحث لإيجاد البقية'; }],
+    [/^Showing (\d+) of (\d+) — type a clinic name above to find the others$/, function (m) { return 'يظهر ' + m[1] + ' من ' + m[2] + ' — اكتب اسم عيادة في الأعلى لإيجاد البقية'; }],
+    // the distribution upload's check sheet and what it saved
+    [/^Changes count from (.+): this month's sales go to the new owner, earlier months stay with the previous one\. Shared = each invoice counts for whoever issued it\. Targets are not changed\.$/, function (m) { return 'تُحسب التغييرات من ' + m[1] + ': مبيعات هذا الشهر للمالك الجديد، والأشهر السابقة تبقى مع السابق. مشترك = كل فاتورة تُحسب لمن أصدرها. الأهداف لا تتغير.'; }],
+    [/^(\d+) changes?$/, function (m) { return countAr(m[1], ['تغيير واحد', 'تغييران', 'تغييرات', 'تغييرًا']); }],
+    [/^\(file: (.+)\)$/, function (m) { return '(في الملف: ' + m[1] + ')'; }],
+    [/^(\d+) clinics? already as in the file\.$/, function (m) { return countAr(m[1], ['عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة']) + ' كما في الملف أصلًا.'; }],
+    [/^(\d+) row\(s\) skipped — owner not on the team:$/, function (m) { return 'تخطّي ' + countAr(m[1], ['صف واحد', 'صفين', 'صفوف', 'صفًا']) + ' — المالك ليس في الفريق:'; }],
+    [/^— several clinics look alike \((.+)\); set it by hand below$/, function (m) { return '— عدة عيادات متشابهة (' + alertListAr(m[1]) + ')؛ اضبطها يدويًا أدناه'; }],
+    [/^Not in the app \((\d+)\)$/, function (m) { return 'ليست في التطبيق (' + m[1] + ')'; }],
+    [/^Save (\d+) changes?$/, function (m) { var n = parseInt(m[1], 10); return n === 1 ? 'حفظ تغيير واحد' : n === 2 ? 'حفظ التغييرين' : 'حفظ ' + countAr(m[1], ['', '', 'تغييرات', 'تغييرًا']); }],
+    [/^(\d+) clinics? updated from (.+)\. The Today card, reports and e-mails now count each clinic's sales for its new owner\.$/, function (m) { return 'حُدّثت ' + countAr(m[1], ['عيادة واحدة', 'عيادتان', 'عيادات', 'عيادة']) + ' من ' + m[2] + '. بطاقة اليوم والتقارير والإيميلات تحسب الآن مبيعات كل عيادة لمالكها الجديد.'; }],
+    // what a tap on Territory tells (the clinic and the people stay as they are)
+    [/^(.+): shared – sales by invoice issuer from (.+)$/, function (m) { return m[1] + ': حساب مشترك – المبيعات لمن يصدر الفاتورة من ' + m[2]; }],
+    [/^(.+): back to its owner$/, function (m) { return m[1] + ': عادت لمالكها'; }],
+    [/^(.+): government account – visited every week$/, function (m) { return m[1] + ': حساب حكومي – يُزار كل أسبوع'; }],
+    [/^(.+): not a government account$/, function (m) { return m[1] + ': ليس حسابًا حكوميًا'; }],
+    [/^(.+) → (.+) \(from (.+)\)$/, function (m) { return m[1] + ' → ' + m[2] + ' (من ' + m[3] + ')'; }],
+    // the KPI settings: an open day that is not a date (the field and its limits: "Not saved — <field>: from … to …" above)
+    [/^Not saved — Open days: write each date as 2026-10-15 \(not a date: (.+)\)$/, function (m) { return 'لم يُحفظ — الأيام المفتوحة: اكتب كل تاريخ هكذا 2026-10-15 (ليس تاريخًا: ' + alertListAr(m[1]) + ')'; }],
+    // === END POLISH ===
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
