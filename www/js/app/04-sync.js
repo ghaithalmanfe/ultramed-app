@@ -432,8 +432,9 @@ async function loadVisits(run){
   }
   let liveRes, idxRes;
   // the past months this phone keeps in its store (v126), read beside the index — at the start of a session only (a
-  // month read this session is in memory)
-  const keptP = (run && (run.noKept || run.local || run.readFirst)) || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
+  // month read this session is in memory): while the visits are not read from the cloud this session (review 2: an
+  // account with no archived month has no month in memory, and read its store and put its visits together at every round)
+  const keptP = (run && (run.noKept || run.local || run.readFirst)) || !visitsUnread() || Object.keys(_visitsArch).length ? null : keptAll(UMCore.VISITS_ARCH_PREFIX);
   try{
     if(run && run.local) throw new Error('the early open reads no cloud'); // this phone's copy, as an offline start has it (v126 speed, part 3)
     [liveRes, idxRes] = await Promise.all([
@@ -489,11 +490,14 @@ async function loadVisits(run){
   // on the phone to write whole again (mirrorRetryDue: then they are put together and the copy written): nothing is
   // parsed or put together again. loadAllNow keeps the visits on screen — or puts them together now (run.visitsLater)
   // when the deletes known or the doctor merges changed. Still a read from the cloud of every month (run.visitsComplete).
+  // An account with no index (a new team in its first month: the index comes with the first archived month) takes this
+  // path too while it has none, as recorded (review 2: it put its visits together and drew every screen at every round) —
+  // its read counts for what it counted when recorded (rec.complete: without an index, never "every month read").
   const rec = _onScreen.visits;
   const revOf0 = m => (index.months && index.months[m] && index.months[m].rev) || 0;
-  if(run && rec && !mirrorRetryDue('visits') && idxRead && !readAll && !keptP && liveText === rec.live && idxText === rec.idx && _localGen === _onScreen.gen && visits === _onScreen.refs.visits
+  if(run && rec && !mirrorRetryDue('visits') && (idxRead || (idxText === null && rec.idx === null)) && !readAll && !keptP && liveText === rec.live && idxText === rec.idx && _localGen === _onScreen.gen && visits === _onScreen.refs.visits
      && !_visitsBroken.length && !keptMonthsOnScreen() && months.every(m => _visitsArch[m] && _visitsArch[m].rev === revOf0(m) && _visitsArch[m].kept == null)){
-    run.visitsSame = true; run.visitsComplete = true;
+    run.visitsSame = true; run.visitsComplete = !!rec.complete;
     run.visitsLater = () => finish(UMCore.safeParse(liveText, null) || [], {}, [], {}, {});
     return visits;
   }
@@ -780,7 +784,13 @@ async function visitsReadFirstNow(){
   _visitsLoaded = JSON.stringify(liveArr);
   if(!outboxHas('visits')){ _visitsBaseHash = null; _visitsBaseRecs = null; _visitsBaseText = null; _visitsBaseParsed = null; dropMergeBaseOnPhone('visits'); } // (as a start's read: these documents are the base now)
   keepPut(Object.keys(read).filter(m => revOf(m)).map(m => ({ k: UMCore.visitsArchKey(m), rev: revOf(m), text: texts[m], canon: texts[m] === _visitsArch[m].json, at: now })));
-  if(changed){ applyDoctorRemap(); visitsMirrorSave(visits); }
+  if(changed){
+    // the cloud's visits FAR fewer than this phone's copy: the old copy is kept aside first (as a start's read does) —
+    // it may be the only surviving one of a wiped list
+    const prevRaw = mirrorGet('visits'), prev = UMCore.safeParse(prevRaw, null);
+    if(Array.isArray(prev) && prev.length >= 10 && (visits || []).length < prev.length / 3){ try{ localStorage.setItem('um_mirror_prev:visits', prevRaw); }catch(e){} }
+    applyDoctorRemap(); visitsMirrorSave(visits);
+  }
   return true;
 }
 function renderVisitsNudge(){
@@ -1860,7 +1870,13 @@ async function loadAllNow(opts){
       // them or the doctor merges changed since (a merge is applied once, to the visits as read: applyDoctorRemap)
       visitsKept = !!run.visitsSame && !!_onScreen.visits && keptAs('visits') && _onScreen.visits.remap === JSON.stringify(doctorMergesRemap());
       const vv = run.visitsSame && !visitsKept ? run.visitsLater() : v;
-      if(visitsKept){ if(fromCloud('visits')) settleHeld('visits', _onScreen.visits.ids); } // every month read from the cloud: a hold is answered
+      if(visitsKept){ // every month read from the cloud: a hold is answered — else (no index: never "every month") a hold only lets go
+        const ids = _onScreen.visits.ids;
+        if(fromCloud('visits') && ids){
+          if(run.visitsComplete) settleHeld('visits', ids);
+          else { releaseHeldTombs('visits', _tombsHeld.visits && _tombsHeld.visits.size ? [..._tombsHeld.visits.keys()].filter(id => ids.has(id)) : null); tombsToWrite += reviveAgainTombs('visits', id => ids.has(id)); }
+        }
+      }
       else {
       if(run.visitsCommit) run.visitsCommit();
       // a month that did not load confirms nothing: what was read still lets a hold go
@@ -1986,8 +2002,8 @@ async function loadAllNow(opts){
       // the visits: the live month and the index they were put together from (every month at the revision on screen,
       // read from the cloud: none from the phone's store, none unreadable); recorded once the doctor merges are applied
       if(_visitsSaving || !fromCloud('visits') || outboxHas('visits')) _onScreen.visits = null;
-      else if(!visitsKept || phoneVisits) _onScreen.visits = run.visitsTexts && run.visitsComplete && !_visitsBroken.length && !(run.visitsKeptOnly && run.visitsKeptOnly.size) && !keptMonthsOnScreen()
-        ? { live: run.visitsTexts.live, idx: run.visitsTexts.idx, ids: run.visitsIdsRead, complete: true, remap: null } : null;
+      else if(!visitsKept || phoneVisits) _onScreen.visits = run.visitsTexts && (run.visitsComplete || run.visitsTexts.idx === null) && !_visitsBroken.length && !(run.visitsKeptOnly && run.visitsKeptOnly.size) && !keptMonthsOnScreen()
+        ? { live: run.visitsTexts.live, idx: run.visitsTexts.idx, ids: run.visitsIdsRead, complete: !!run.visitsComplete, remap: null } : null; // (no index: recorded as not "every month read")
       // the sales files: the index they were put together from, every file's rows in hand (the early open: the index text
       // kept beside the phone's copy)
       if(_erpSaving || _erpDirty || !(fromCloud('erpSales') || (local && mu.erpSales))) _onScreen.erpSales = null;

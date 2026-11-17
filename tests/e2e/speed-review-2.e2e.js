@@ -14,6 +14,9 @@
 //       visits only once the start's read is in)
 //   V6  that window save while the cloud's visits cannot be read: it does not land, writes nothing, says it is kept on
 //       this phone; once they can be read it lands and the move stays
+//   V7  (part 1's "Risk 2", older than this change) a visits save queued with no signal, the app reopened, a visit moved
+//       on another device meanwhile: the queued save uploads and the moved visit stays where the other device put it
+//   V8  the cloud's visits emptied after the copy (a wipe): a window save keeps this phone's old copy aside first
 //   U1  (Firebase's own order of events) Mariam signs out before her sign-in is confirmed and Renova signs in on the
 //       sign-in screen: Mariam is never selected again, Renova is not told she was signed out
 //   U2  a rename made in the window: no visit in the cloud keeps the old name (one logged since the copy too)
@@ -24,6 +27,16 @@
 //       screen says "Viewing: … · Back to the team" or greets the supervisor
 //   H2  Mariam signs out while her start's read is on its way and Renova signs in on the sign-in screen before that read
 //       is in: when it comes in, Renova's own screen is drawn — not left covered until the next 20-second round
+//   N1  (from the alerts worker) an account with no archived visits month — a new team in its first month: the live
+//       document only, no index: a round where nothing changed reads nothing from the phone's store, parses and puts
+//       nothing together, writes no copy, draws nothing again, and leaves the scroll, an open sheet, the text typed in
+//       it and its focus alone (on 328e2bc every round put the visits together and drew every screen again)
+//   N2  …and a month that appears in the cloud later (another device logs a visit dated in October: the account's first
+//       archived month and its index) is read at the next round — never taken as read — and stays where that device put
+//       it when this phone saves an edit
+//   N3  …and on that account, the early open's window (finding 1 there): a visit another device moved from November back
+//       to October (the account's first archived month and its index) stays there when this phone, whose copy has no
+//       archived month, saves an edit of another visit in the window
 // The sign-in is the app's own (03-gate.js) over a stand-in for the Firebase SDK that keeps its session on the phone and
 // confirms it only when the harness says (as in speed-open.e2e.js); the cloud is a fake in Node; the clock is fixed; the
 // 20-second round is driven by hand. Invented data (fixtures/heavy-year.js, scale 0.1). Port 8293. ONLY=V1,V2,… runs a subset.
@@ -35,6 +48,8 @@ const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 const want = id => !ONLY || ONLY.has(id);
 const fixture = require('./fixtures/heavy-year.js');
 const SMALL = fixture.build({ scale: 0.1 });
+// a new team in its first month: the live document only — no archived month, no index (written with the first archived month)
+const FIRST = Object.assign({}, SMALL, { docs: Object.fromEntries(Object.entries(SMALL.docs).filter(([k]) => !/^visitsArch:/.test(k) && k !== 'visitsIndex')) });
 const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith';
 const EMAIL = { [M]: 'mariam@example.com', [R]: 'renova@example.com', [G]: 'ghaith@example.com' };
 const sleep = ms => new Promise(r => setTimeout(r, Math.max(0, ms)));
@@ -219,11 +234,11 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
   // another visit before the start's read of the visits is in (the early open's window, or the start's read itself)
   // =====================================================================================================
   const moveCase = async (id, o) => {
-    seed(SMALL);
+    seed(o.first ? FIRST : SMALL);
     const P = await mkDevice(id + '-phone'), L = await mkDevice(id + '-laptop');
     await P.firstOpen(M);
     await L.firstOpen(M);
-    const X = o.from === 'sep' ? pick(sep0) : pick(oct0), Y = pick(oct0, [X.id]);
+    const X = o.first ? pick(live0) : o.from === 'sep' ? pick(sep0) : pick(oct0), Y = o.first ? pick(live0, [X.id]) : pick(oct0, [X.id]);
     // the laptop corrects X's date (Edit visit) and its save lands whole — every document and the index
     const moved = await L.ev(async a => { const v = visits.find(x => x.id === a.x); v.date = a.to; v.editedBy = 'Mariam'; v.editedAt = Date.now(); const r = await persistTold('visits'); return r.ok; }, { x: X.id, to: o.to });
     const before = findVisit(X.id);
@@ -257,7 +272,7 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
     const out = started ? await P.ev(async () => { const r = await window.__save; return { ok: r.ok }; }) : { ok: false };
     releaseReads(P.label); ctl.slow.delete(P.label);
     await P.settled(); await P.tick(); await sleep(300);
-    const where = findVisit(X.id), yNotes = ((doc('visitsArch:2026-10') || []).find(v => v.id === Y.id) || {}).notes || '';
+    const where = findVisit(X.id), yNotes = ((doc(o.first ? 'visits' : 'visitsArch:2026-10') || []).find(v => v.id === Y.id) || {}).notes || '';
     const shown = await P.ev(a => { const v = (visits || []).find(x => x && x.id === a); return v ? v.date : null; }, X.id);
     const wrote = [...new Set(writesBy(P.label, t0).map(w => w.k).filter(k => /^visitsArch:/.test(k)))].sort();
     await done(P);
@@ -341,6 +356,62 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
       moved && drew && !out.ok && out.queued && out.mirrored && /Saved on this device|Kept on this phone/i.test(out.words) && !wroteWhileUnread.length && whereThen.length === 1 && whereThen[0] === 'visitsArch:2026-10@2026-10-01'
         && queuedThen.includes('visits') && /edited on the phone/.test(yNotes) && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-01' && !queuedAfter.includes('visits'),
       { moved, drew, out, wroteWhileUnread, whereThen, queuedThen, where, otherEditLanded: /edited on the phone/.test(yNotes), queuedAfter });
+    await done(P);
+  }
+
+  // =====================================================================================================
+  // V7: part 1's "Risk 2 (left open)", older than this change (v125 has it): a visits save made with no signal is
+  // queued, the app is closed and opened again still without signal, another device has moved a visit meanwhile —
+  // when the signal is back the queued save uploads and the moved visit stays where the other device put it
+  // =====================================================================================================
+  if(want('V7')){
+    seed(SMALL);
+    const P = await mkDevice('V7-phone'), L = await mkDevice('V7-laptop');
+    await P.firstOpen(M); await L.firstOpen(M);
+    const X = pick(sep0), Y = pick(oct0, [X.id]);
+    const off = (k, kind) => true; // no signal at all for this phone
+    ctl.fail.set(P.label, off);
+    await P.restart({ hold: false });
+    await P.page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && currentUser.name === 'Mariam' && _bootLoaded && !refreshRunning(), null, { timeout: 60000, polling: 100 });
+    const q = await P.ev(async a => { const v = visits.find(x => x.id === a.y); v.notes = (v.notes || '') + ' [edited with no signal]'; const r = await persistTold('visits'); return { ok: r.ok, queued: outboxList().includes('visits') }; }, { y: Y.id });
+    const moved = await L.ev(async a => { const v = visits.find(x => x.id === a.x); v.date = '2026-10-01'; v.editedBy = 'Mariam'; v.editedAt = Date.now(); return (await persistTold('visits')).ok; }, { x: X.id });
+    await done(L);
+    await P.restart({ hold: false }); // closed and opened again, still no signal
+    await P.page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && currentUser.name === 'Mariam' && _bootLoaded && !refreshRunning(), null, { timeout: 60000, polling: 100 });
+    const stillQueued = await P.ev(() => outboxList().includes('visits'));
+    ctl.fail.delete(P.label); // the signal is back
+    await P.tick(); await P.settled(); await P.tick(); await sleep(300);
+    const where = findVisit(X.id), yNotes = ((doc('visitsArch:2026-10') || []).find(v => v.id === Y.id) || {}).notes || '';
+    const queuedAfter = await P.ev(() => outboxList());
+    check('V7: (part 1\'s "Risk 2", older) a visits save queued with no signal, the app reopened still without, a visit moved on another device meanwhile: once the signal is back the queued save uploads and the moved visit stays at its corrected date (visitsArch:2026-10@2026-10-01)',
+      !q.ok && q.queued && moved && stillQueued && /edited with no signal/.test(yNotes) && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-01' && !queuedAfter.includes('visits'),
+      { queuedOffline: q, moved, stillQueued, otherEditLanded: /edited with no signal/.test(yNotes), where, queuedAfter });
+    await done(P);
+  }
+
+  // =====================================================================================================
+  // V8: the cloud's visits emptied by accident after this phone's copy (a wipe): a save in the window takes the cloud as
+  // it is (as a start's read does) — and this phone's old copy is kept aside first (um_mirror_prev:visits), the copy a
+  // wipe may leave as the only one
+  // =====================================================================================================
+  if(want('V8')){
+    seed(SMALL);
+    const P = await mkDevice('V8-phone');
+    await P.firstOpen(M);
+    const had = await P.ev(() => (JSON.parse(localStorage.getItem('um_mirror:visits') || '[]') || []).length);
+    visitDocs().forEach(k => cloud.set(k, { value: '[]', updated: Date.now() })); // every visits document emptied
+    await P.restart({ hold: true });
+    const drew = await waitEarly(P);
+    await P.ev(() => { const c = clinics.find(x => x.rep === 'Mariam' && x.cls !== 'Closed');
+      visits.push({ id: 'v8-new', date: todayStr(), ts: Date.now() - 60000, rep: 'Mariam', clinicId: c.id, clinicName: c.name, doctorIds: [], notes: 'logged in the first second', products: [] });
+      window.__save = persistTold('visits'); });
+    releaseAuth(P.label, 'ok');
+    const out = await P.ev(async () => { const r = await window.__save; return { ok: r.ok }; });
+    await P.settled(); await sleep(200);
+    const kept = await P.ev(() => (JSON.parse(localStorage.getItem('um_mirror_prev:visits') || '[]') || []).length);
+    const newIn = findVisit('v8-new').length === 1;
+    check(`V8: the cloud's visits emptied after this phone's copy (${had} visits): a save in the window lands its own new visit and keeps this phone's old copy aside (um_mirror_prev:visits) before taking the cloud as it is`,
+      drew && out.ok && newIn && kept >= had && had >= 10, { drew, saved: out.ok, newVisitInCloud: newIn, copyHad: had, keptAside: kept });
     await done(P);
   }
 
@@ -500,6 +571,86 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
     check('H2: Mariam signs out while her start\'s read is on its way and Renova signs in before that read is in: once it comes in, Renova\'s own screen is drawn — not left covered ("Loading...") until the next 20-second round',
       inRead && s.who === R && s.app && !s.covered && /Renova/.test(s.greet), Object.assign({ inRead }, s));
     await done(D);
+  }
+
+  // =====================================================================================================
+  // N1–N2 (from the alerts worker): an account with no archived visits month — a new team in its first month, the live
+  // document only and no index (the index is written with the first archived month)
+  // =====================================================================================================
+  if(want('N1') || want('N2')){
+    // what a round does (as speed-rounds.e2e.js measures it): documents parsed (JSON.parse of a text over 4 KB), the phone's
+    // copies written, the phone's store of past months read, the screen drawn, the figures worked out, changes on screen
+    const watch = D => D.ev(() => {
+      if(window.__n) return;
+      const w = window.__n = { parses: 0, mirror: 0, store: 0, renderAll: 0, msRun: 0, mut: 0 };
+      const jp = JSON.parse; JSON.parse = function(s){ if(typeof s === 'string' && s.length > 4096) w.parses++; return jp.apply(this, arguments); };
+      const si = Storage.prototype.setItem; Storage.prototype.setItem = function(k){ if(/^um_mirror:/.test(String(k))) w.mirror++; return si.apply(this, arguments); };
+      [['renderAll', 'renderAll'], ['msRun', 'msRun'], ['keptAll', 'store'], ['keptGet', 'store']].forEach(([n, c]) => { const f = window[n]; if(typeof f === 'function') window[n] = function(){ w[c]++; return f.apply(this, arguments); }; });
+      new MutationObserver(ms => { w.mut += ms.length; }).observe(document.getElementById('app'), { childList: true, subtree: true, characterData: true, attributes: true });
+    });
+    const round = async D => {
+      await D.page.waitForFunction(() => typeof _flushing === 'undefined' || !_flushing, null, { timeout: 60000 });
+      return D.ev(async () => { const w = window.__n; Object.keys(w).forEach(k => { w[k] = 0; }); await window.__bgTick(); await msWhenReady();
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return Object.assign({}, w); });
+    };
+    const quiet = x => x.parses === 0 && x.mirror === 0 && x.store === 0 && x.renderAll === 0 && x.msRun === 0 && x.mut === 0;
+    // (and an index that lists no month — written by a whole-day Restore, which writes the index whatever it holds)
+    for(const [who, role, idx] of [[M, 'rep', null], [G, 'supervisor', null], [M, 'rep', '{"months":{},"v":1}']]){
+      if(!want('N1') && (role !== 'rep' || idx)) continue;
+      seed(FIRST);
+      if(idx) cloud.set('visitsIndex', { value: idx, updated: Date.parse(FIRST.now) - 3600000 });
+      const D = await mkDevice('N1-' + role + (idx ? '-index' : ''));
+      await D.firstOpen(who);
+      await watch(D);
+      await D.tick(); await D.settled(); await sleep(200); // the first round after the start (whatever it has to do)
+      const r1 = await round(D), r2 = await round(D);
+      const docs = visitDocs();
+      if(want('N1')) check(idx ? `N1 ${role}: …the same on an account whose index lists no month (a whole-day Restore in its first month writes it)`
+        : `N1 ${role}: an account with no archived visits month (a new team in its first month — the live document only, no index): a round where nothing changed reads nothing from the phone's store, parses no document, puts nothing together, writes no copy, draws nothing again and works out no figure`,
+        docs.length === 1 && cloud.has('visitsIndex') === !!idx && quiet(r1) && quiet(r2), { visitDocs: docs, index: cloud.has('visitsIndex'), rounds: [r1, r2] });
+      if(want('N1') && role === 'supervisor'){
+        // the screen does not move: the clinics list scrolled, a sheet open with text typed in it, the focus in it
+        await D.ev(async () => { switchView('clinics'); await msWhenReady(); });
+        await D.ev(() => { window.scrollTo(0, 700); const c = clinics.find(x => (x.doctors || []).length) || clinics[0]; openClinicDetail(c.id);
+          const inp = [...document.querySelectorAll('#modalInner input[type="text"], #modalInner textarea')].find(e => e.offsetParent) || null;
+          const search = document.getElementById('clinicSearch');
+          if(inp){ inp.focus(); inp.value = 'typed, not saved'; } else { search.focus(); search.value = 'typed'; } });
+        for(let i = 0, last = -1, same = 0; i < 40 && same < 3; i++){ const n = await D.ev(() => document.getElementById('modalInner').innerHTML.length); same = n === last ? same + 1 : 0; last = n; await sleep(200); }
+        const snap = () => D.ev(() => ({ y: window.scrollY, sheet: document.getElementById('modalInner').innerHTML.length, open: document.getElementById('modalBack').classList.contains('show'),
+          focus: document.activeElement && (document.activeElement.id || document.activeElement.tagName), value: document.activeElement && document.activeElement.value }));
+        const before = await snap(); const rr = await round(D); const after = await snap();
+        check('N1: …and on that account the screen does not move on such a round — scroll, the open sheet, the text typed in it and the focus stay as they are',
+          before.open && after.open && after.y === before.y && after.sheet === before.sheet && after.focus === before.focus && after.value === before.value && rr.mut === 0 && rr.renderAll === 0,
+          { before, after, mutations: rr.mut, renderAll: rr.renderAll });
+        await D.ev(() => { closeModal(); switchView('today'); window.scrollTo(0, 0); });
+      }
+      if(want('N2') && role === 'rep' && !idx){
+        // another device of hers logs a visit dated in October: its save writes the account's first archived month and the index
+        const L = await mkDevice('N2-laptop');
+        await L.firstOpen(M);
+        const added = await L.ev(async () => { const c = clinics.find(x => x.rep === 'Mariam' && x.cls !== 'Closed');
+          visits.push({ id: 'n2-october', date: '2026-10-15', ts: Date.parse('2026-10-15T09:00:00'), rep: 'Mariam', clinicId: c.id, clinicName: c.name, doctorIds: [], notes: 'logged late, dated in October', products: [] });
+          return (await persistTold('visits')).ok; });
+        await done(L);
+        const docs2 = visitDocs(), idx2 = cloud.has('visitsIndex');
+        await D.tick(); await D.settled(); await sleep(200);
+        const seen = await D.ev(() => visits.some(v => v && v.id === 'n2-october'));
+        const y = (parse(FIRST.docs.visits) || []).find(v => v && v.rep === M && !v.callOnly && !(v.photos || []).length);
+        const saved = await D.ev(async a => { const v = visits.find(x => x.id === a); v.notes = (v.notes || '') + ' [edited on the phone]'; return (await persistTold('visits')).ok; }, y.id);
+        await D.settled(); await sleep(200);
+        const where = findVisit('n2-october'), yIn = /edited on the phone/.test((((doc('visits') || []).find(v => v && v.id === y.id)) || {}).notes || '');
+        check('N2: …and a month that appears in the cloud later (another device logs a visit dated in October: the account\'s first archived month and its index) is read at this phone\'s next round — never taken as read: the visit shows, and stays at visitsArch:2026-10 when this phone saves an edit',
+          added && docs2.includes('visitsArch:2026-10') && idx2 && seen && saved && yIn && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-15',
+          { added, visitDocs: docs2, index: idx2, seenOnPhone: seen, saved, editLanded: yIn, where });
+      }
+      await done(D);
+    }
+  }
+  if(want('N3')){
+    const r = await moveCase('N3', { first: true, to: '2026-10-20', when: 'window' });
+    check('N3: …and on that account in the early open\'s window: a visit another device moved from November back to October (the account\'s first archived month and its index) stays there when this phone, whose copy has no archived month, saves an edit of another visit — expected only visitsArch:2026-10@2026-10-20',
+      r.moved && r.drew && r.out.ok && r.yEdited && r.where.length === 1 && r.where[0] === 'visitsArch:2026-10@2026-10-20' && r.shown === '2026-10-20',
+      { movedOnLaptop: r.moved, cloudBefore: r.before, drewInWindow: r.drew, saved: r.out.ok, otherEditLanded: r.yEdited, where: r.where, shownOnPhone: r.shown, archiveDocsWritten: r.wrote });
   }
 
   console.log(results.join('\n'));
