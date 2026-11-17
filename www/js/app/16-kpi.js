@@ -14,7 +14,7 @@ function kpiRange(p){
   return { from: t.slice(0, 7) + '-01', to: t, label: 'This month' };
 }
 function kpiCards(reps, period){
-  const r = kpiRange(period), data = digestData(), rows = UMCore.erpAttributedRows(data), S = kpiSettings();
+  const r = kpiRange(period), data = digestDataKept(), rows = UMCore.erpAttributedRows(data), S = kpiSettings(); // (the lines kept for the data state)
   return reps.map(rep => UMCore.kpiScorecard(Object.assign({}, data, { today: todayStr() }), { rep, from: r.from, to: r.to, settings: S, rows }));
 }
 let _kpiRep = null, _kpiPeriod = 'month';
@@ -68,30 +68,44 @@ function openKpiScorecard(){
       <button class="btn secondary" onclick="closeModal()">Close</button>
     </div>`);
 }
+// The sheet's fields, in its order: [key, label, step] — a number out of UMCore.KPI_LIMITS is refused by name (v126)
+const KPI_FIELDS = [['discountA', 'Max discount % – A clinics'], ['discountOther', 'Max discount % – other clinics'], ['discountOpenDay', 'Max discount % – open days'],
+  ['openDays', 'Open days (dates, comma-separated, e.g. 2026-10-15, 2026-10-22)'],
+  ['visitsPerDay', 'Field visits a day'], ['doctorsPerMonth', 'Different doctors met a month'], ['newProducts', 'New product placements a month'], ['newAccounts', 'New accounts a month'],
+  ['responseHours', 'Answer a client request within (hours)'], ['returnsMax', 'Max returns (share of sales, e.g. 0.02 = 2%)', 0.005], ['rxGrowth', 'Prescription growth a month (e.g. 0.15 = 15%)', 0.01]];
 function openKpiSettings(){
   if(!requireAdmin()) return;
-  const S = kpiSettings();
-  const f = (k, label, step) => `<label style="display:block; font-size:12.5px; margin-top:8px;">${label}<input type="number" step="${step || 1}" id="kpi_${k}" value="${S[k]}" style="margin-top:3px;"></label>`;
+  const S = kpiSettings(), L = UMCore.KPI_LIMITS || {};
+  const f = ([k, label, step]) => k === 'openDays'
+    ? `<label style="display:block; font-size:12.5px; margin-top:8px;">${label}<input type="text" id="kpi_openDays" value="${esc((S.openDays || []).join(', '))}" style="margin-top:3px;"></label>`
+    : `<label style="display:block; font-size:12.5px; margin-top:8px;">${label}<input type="number" inputmode="decimal" step="${step || 1}"${L[k] ? ` min="${L[k][0]}" max="${L[k][1]}"` : ''} id="kpi_${k}" value="${S[k]}" style="margin-top:3px;"></label>`;
   showModal(`
     <h3 style="margin-top:0;">${I('settings')} KPI settings</h3>
-    ${f('discountA', 'Max discount % – A clinics')}${f('discountOther', 'Max discount % – other clinics')}${f('discountOpenDay', 'Max discount % – open days')}
-    <label style="display:block; font-size:12.5px; margin-top:8px;">Open days (dates, comma-separated, e.g. 2026-10-15, 2026-10-22)<input type="text" id="kpi_openDays" value="${esc((S.openDays || []).join(', '))}" style="margin-top:3px;"></label>
-    ${f('visitsPerDay', 'Field visits a day')}${f('doctorsPerMonth', 'Different doctors met a month')}${f('newProducts', 'New product placements a month')}${f('newAccounts', 'New accounts a month')}
-    ${f('responseHours', 'Answer a client request within (hours)')}${f('returnsMax', 'Max returns (share of sales, e.g. 0.02 = 2%)', 0.005)}${f('rxGrowth', 'Prescription growth a month (e.g. 0.15 = 15%)', 0.01)}
+    ${KPI_FIELDS.map(f).join('')}
     <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn" onclick="saveKpiSettings()">Save</button><button class="btn secondary" onclick="openKpiScorecard()">Back</button></div>`);
 }
 async function saveKpiSettings(){
-  if(!requireAdmin()) return;
-  const S = kpiSettings(), out = {};
-  Object.keys(UMCore.KPI_DEFAULTS).forEach(k => {
-    const el = document.getElementById('kpi_' + k); if(!el) { out[k] = S[k]; return; }
-    if(k === 'openDays') out[k] = el.value.split(/[,\s]+/).map(x => x.trim()).filter(x => /^\d{4}-\d{2}-\d{2}$/.test(x));
-    else { const v = parseFloat(el.value); out[k] = isFinite(v) && v >= 0 ? v : S[k]; }
-  });
-  BENCHMARKS = Object.assign({}, BENCHMARKS, { kpi: out });
-  const r = await persistTold('benchmarks');
-  if(r.ok) { showToast('✅ KPI settings saved'); openKpiScorecard(); }
-  else saveToast(r, 'benchmarks', ''); // what happened instead — never silence
+  if(!requireAdmin()) return false;
+  if(typeof UMCore.kpiSettingsCheck !== 'function'){ showToast('⚠️ Not saved — reopen the app, then try again', 6000); return false; } // an older cached core.js (a release race)
+  const raw = {};
+  KPI_FIELDS.forEach(([k]) => { const el = document.getElementById('kpi_' + k); if(el) raw[k] = el.value; });
+  // a number out of its limits (or not a number), or an open day that is not a date, is refused and its field named —
+  // never the old value kept without a word under "saved" (as the alert settings, alerts review F12); nothing is saved,
+  // the sheet stays with what was typed
+  const chk = UMCore.kpiSettingsCheck(raw, kpiSettings());
+  const badKeys = new Set(chk.bad.map(b => b.key).concat(chk.badDays.length ? ['openDays'] : []));
+  KPI_FIELDS.forEach(([k]) => { const el = document.getElementById('kpi_' + k); if(el){ if(badKeys.has(k)) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid'); } });
+  const first = KPI_FIELDS.find(([k]) => badKeys.has(k));
+  if(first){
+    if(first[0] === 'openDays'){ showToast(`⚠️ Not saved — Open days: write each date as 2026-10-15 (not a date: ${chk.badDays.join(', ')})`, 7000); return false; }
+    const b = chk.bad.find(x => x.key === first[0]);
+    showToast(`⚠️ Not saved — ${first[1]}: from ${b.min} to ${b.max}`, 7000);
+    return false;
+  }
+  const r = await persistSettings({ kpi: chk.kpi }); // a save that did not land never takes effect, here or in this phone's copy (04-sync.js)
+  if(r.ok){ showToast('✅ KPI settings saved'); openKpiScorecard(); return true; }
+  saveToast(r, 'benchmarks', ''); // what happened instead — never silence
+  return false;
 }
 
 // ---- client requests, escalations, stands ----
@@ -184,7 +198,7 @@ function openMonthByMonth(){
   const sup = currentUser.role === 'supervisor';
   if(!_mbmRep || (!sup && _mbmRep !== currentUser.name)) _mbmRep = sup ? 'all' : currentUser.name;
   const reps = sup ? REPS.slice() : [currentUser.name];
-  const T = UMCore.monthlyTrend(Object.assign(digestData(), { today: todayStr() }), { reps, months: _mbmN, settings: kpiSettings() });
+  const T = UMCore.monthlyTrend(Object.assign(digestDataKept(), { today: todayStr() }), { reps, months: _mbmN, settings: kpiSettings() }); // (the pass kept for the data state)
   const M = T.months, team = _mbmRep === 'all';
   const of = m => team ? m.team : m.byRep[_mbmRep];
   const name = m => { const n = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m.month.slice(5, 7), 10) - 1] + ' ' + m.month.slice(2, 4); return m.partial ? n + ' (to ' + parseInt(m.to.slice(8, 10), 10) + ')' : n; };

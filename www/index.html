@@ -13,6 +13,13 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="preload" href="fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+<!-- The hosts the first reads go to, connected while the page loads (v126 speed): the sign-in's token refresh and account
+     check (fetched without credentials: crossorigin), then the cloud's channel (both kinds of connection). No
+     Content-Security-Policy on this page limits them; nothing is sent until the app asks. -->
+<link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com">
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
@@ -520,6 +527,13 @@
   #memOnlyBar{top:calc(env(safe-area-inset-top, 0px) + 10px); text-align:center; pointer-events:none; white-space:pre-line;}
   #tooLargeBar{bottom:calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px) + 20px); text-align:start;}
   #wipeBanner{top:0; inset-inline:0; padding:calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px; font-size:13px; font-weight:500; text-align:center; background:#8B1A0E;}
+  /* the early open (v126 speed, part 3; 04-sync.js): what the screen is until the start's cloud read is in, and the
+     cover over another person's screen until this person's own is drawn */
+  .sbar-copy{background:#173A2A; pointer-events:none;}
+  #copyLine.failed{background:var(--status-warning);}
+  body.um-syncpill #copyLine{top:calc(env(safe-area-inset-top, 0px) + 46px);}
+  body.um-cover #app, body.um-cover #bottomNav{visibility:hidden !important;}
+  #coverNote{top:calc(env(safe-area-inset-top, 0px) + 40vh);}
   /* the bars in the home screen's language (look only: their words, order and rules are 04-sync.js's / 13-exports.js's) */
   .sbar{font-size:13px; letter-spacing:-.005em; border:1px solid rgba(255,255,255,.18); box-shadow:0 10px 28px rgba(16,24,40,.2), 0 2px 6px rgba(16,24,40,.12);}
   .sbar-pill{padding:7px 16px; border-radius:999px;}
@@ -1750,6 +1764,10 @@
     label:has(> input[type=checkbox]), label:has(> input[type=radio]){min-height:44px;}   /* the label is the tick's target */
     input[type=file]{min-height:44px;}
   }
+  /* a long list drawn in pages (pagedRows, 14-ui-boot.js): "Show N more" under the rows drawn so far */
+  .pg-more{padding:10px 0 4px;}
+  .lrows .pg-more{padding:10px 12px;}
+  .pg-more .btn{min-height:44px;}
   /* === END COMPONENTS === */
 
   /* === VISIT ===
@@ -1791,6 +1809,12 @@
   #newClinicAsk > .card{margin:10px 0 0; border:1px solid #F3D6B4 !important; border-inline-start:4px solid var(--p-warn) !important; background:#FFF6EC !important; border-radius:14px; box-shadow:none; color:var(--p-ink2);}
   #newClinicAsk .btn{width:auto; min-width:140px; margin:8px 8px 0 0;}
   [dir="rtl"] #newClinicAsk .btn{margin:8px 0 0 8px;}
+  /* "Save customer": the new customer saved before the visit; the form is locked while it saves, then shows it as picked */
+  #newClinicFields .btn.lv-ncsave{margin-top:16px;}
+  #view-log.nc-saving #newClinicFields > :not(.log-saving-note), #view-log.nc-saving #lvWho{pointer-events:none; opacity:.5;}
+  #newClinicFields .log-saving-note{margin-top:10px;}
+  .lv-saved{margin-top:10px; padding:10px 12px; border-radius:12px; background:var(--p-mint-soft); color:var(--p-g6); font-size:13.5px; font-weight:500; line-height:1.5; overflow-wrap:anywhere;}
+  .lv-saved:not([data-state="saved"]){background:var(--p-warn-soft); color:#8A3B0C;}   /* kept on this phone (or not sent): said in amber */
   .lv-step .toggle-row .chip{min-height:48px; display:flex; align-items:center; justify-content:center; font-weight:600;}
   #orderItemsWrap{margin-top:12px;}
   #noOrderWrap{margin-top:12px;}
@@ -2299,6 +2323,50 @@
   #apBody .card, #apDataBody .card{border-radius:14px;}
   /* === END SIGN-IN, ADMIN, ERP IMPORT & BACKUPS === */
 
+  /* === ALERTS ===
+     The alerts center (19-alerts.js): the sheet the top bar's bell opens and the supervisor's alert settings, on the
+     component layer (the sheet frame, .card, .lrows / .lrow, .chip, .empty) — only what is the alerts' own is here. */
+  .al-sub{margin:-4px 0 14px; font-size:13.5px; line-height:1.5; color:var(--p-muted);}
+  .al-sub .al-basis{display:block; margin-top:8px; padding:9px 12px; border-radius:12px; background:var(--p-mint-soft); color:var(--p-ink2); font-weight:500;}
+  .al-list{display:flex; flex-direction:column; gap:12px;}
+  .al-card{margin:0; padding:14px 16px; border-inline-start:4px solid #E9A23B;}
+  .al-card.al-high{border-inline-start-color:#E5484D;}
+  .al-card.al-low{border-inline-start-color:#57B795;}
+  .al-card.al-off{opacity:.75;}
+  .al-head{display:flex; gap:12px; align-items:flex-start;}
+  .al-ic{width:36px; height:36px; border-radius:50%; background:#FFF4E5; color:#B4541A; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .al-high .al-ic{background:#FDECEC; color:#C8372D;}
+  .al-low .al-ic{background:var(--p-mint-soft); color:var(--p-g6);}
+  .al-ic .svgi{width:18px; height:18px; stroke-width:2.2;}
+  .al-ht{flex:1; min-width:0; padding-top:2px;}
+  .al-title{font-weight:700; font-size:15px; line-height:1.35; color:var(--p-ink); overflow-wrap:anywhere;}
+  .al-state{margin-top:3px; font-size:12.5px; font-weight:600; color:var(--p-muted);}
+  .al-why{margin-top:8px; font-size:13px; line-height:1.5; color:var(--p-muted); overflow-wrap:anywhere;}
+  .al-why > div + div{margin-top:4px;}
+  .al-msg{margin-top:8px; padding:8px 12px; border-radius:12px; background:#FDECEC; color:#B4231A; font-size:13px; line-height:1.45; overflow-wrap:anywhere;}
+  .al-items{margin-top:10px;}
+  .lrow.al-item{min-height:48px; padding:8px 14px;}
+  div.lrow.al-item{cursor:default;}
+  .al-it{display:block; font-size:13.5px; line-height:1.4; color:var(--p-ink); overflow-wrap:anywhere;}
+  .al-item.clickable .al-it{font-weight:600;}
+  .al-note{display:block; margin-top:2px; font-size:12.5px; line-height:1.4; color:var(--p-muted); overflow-wrap:anywhere;}
+  .al-more{padding:6px 4px 0; font-size:12.5px; color:var(--p-muted);}
+  .al-acts{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+  .al-acts .chip{margin:0;}
+  .al-hidden{margin:16px 0 4px;}
+  .al-hidden > .chip{margin:0 0 10px;}
+  .al-empty{padding:24px 16px;}
+  .al-set-card{margin:0 0 12px; padding:4px 16px;}
+  .al-set{display:flex; gap:12px; align-items:flex-start; margin:0; padding:11px 0; border-top:1px solid var(--p-line); color:var(--p-ink); font-size:13.5px; font-weight:500; line-height:1.4; cursor:pointer;}
+  .al-set:first-child{border-top:none;}
+  .al-set input{width:20px; height:20px; flex-shrink:0; margin:1px 0 0; accent-color:#0B5A45;}
+  .al-set-t{min-width:0;}
+  .al-set-d{display:block; margin-top:2px; font-size:12.5px; font-weight:400; color:var(--p-muted);}
+  .al-num{display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0; padding:8px 0; border-top:1px solid var(--p-line); color:var(--p-ink); font-size:13.5px; font-weight:500;}
+  .al-num:first-child{border-top:none;}
+  .al-num input{width:104px; min-height:44px; flex-shrink:0; margin:0; padding:8px 12px;}
+  /* === END ALERTS === */
+
   /* === SCREENS A === */
   /* === END SCREENS A === */
 
@@ -2425,7 +2493,7 @@
 
 <div class="wrap" id="app" style="display:none;">
   <!-- The top bar. A view other than Today: its title. Today: on a phone the brand (wordmark and tagline), on a laptop
-       quick find (Ctrl/⌘+K). Then the bell (the follow-ups due) and the account: initials, name and role; its menu holds
+       quick find (Ctrl/⌘+K). Then the bell (the alerts center, 19-alerts.js) and the account: initials, name and role; its menu holds
        the language, Log a visit, the password and Sign out. Inside #app: the sign-in screen and the full report hide it. -->
   <header class="top">
     <div class="top-title">
@@ -2445,7 +2513,7 @@
       <div class="qf-list" id="quickFindList" role="listbox" hidden></div>
     </div>
     <div class="top-actions">
-      <button class="top-bell" onclick="bellOpen()" aria-label="Follow-ups due" title="Follow-ups due"><svg class="svgi" aria-hidden="true"><use href="#i-bell"/></svg><span class="bell-n" id="bellCount" data-notr hidden></span></button>
+      <button class="top-bell" id="alertsBell" onclick="openAlerts()" aria-label="Alerts" title="Alerts"><svg class="svgi" aria-hidden="true"><use href="#i-bell"/></svg><span class="bell-n" id="alertsBellN" data-notr hidden></span></button>
       <button class="userchip" onclick="openAccountMenu()" aria-label="Account menu" aria-haspopup="dialog">
         <span class="stamp" id="headerStamp">•••<span class="dot" id="headerDot"></span></span>
         <span class="top-user"><span class="top-name" id="topUserName" data-notr></span><span class="top-role" id="topUserRole"></span></span>
@@ -2566,6 +2634,8 @@
             <div class="chip-row" id="newClinicClsChips"></div>
             <label>Account type</label>
             <div class="chip-row" id="newClinicAcctChips"></div>
+            <!-- the new customer saved on its own, before the visit: then step 2 lists its people (saveNewCustomer) -->
+            <button class="btn lv-ncsave" id="newClinicSaveBtn" onclick="saveNewCustomer()">Save customer</button>
             <button class="btn ghost" onclick="cancelNewClinic()">Cancel</button>
           </div>
           <div class="lv-err" id="lvErr1" role="alert" hidden></div>
@@ -3050,5 +3120,6 @@
 <script src="js/app/14-ui-boot.js"></script>
 <script src="js/app/15-weekly-deck.js"></script>
 <script src="js/app/16-kpi.js"></script>
+<script src="js/app/19-alerts.js"></script>
 </body>
 </html>

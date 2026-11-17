@@ -86,6 +86,7 @@ function previewDigest(kind, rep){
 }
 // -- Team tab (performance + roster management in one place) --
 function adminTeamHTML(){
+  const mtd = erpMtdMap(); // every person's month figure and the team's: one pass of the month's lines (v126 speed)
   return `<div id="apStaffList"></div>
     <button class="btn secondary" onclick="openStaffForm()">+ Add team member</button>
     <div class="section-title">Evaluation targets</div>
@@ -106,14 +107,14 @@ function adminTeamHTML(){
     <div class="card">
       ${REPS.map((r,i)=>{
         const t = targets[r] || {};
-        const tp = targetPct(r);
+        const tp = targetPct(r, mtd);
         return `<div style="font-weight:700; font-size:13.5px; margin:${i?'14px':'0'} 0 4px;">${esc(r)}${tp?` <span style="font-weight:600; font-size:12px; color:var(--muted);">· ${tp.pct}% achieved this month (${money(tp.amount)})</span>`:''}</div>
         <div style="display:flex; gap:10px;">
           <div style="flex:1;"><label style="font-size:12px;">Sales (KD)</label><input type="number" min="0" id="tgRev${i}" value="${t.revenue||0}"></div>
           <div style="flex:1;"><label style="font-size:12px;">Visits</label><input type="number" min="0" id="tgVis${i}" value="${t.visits||0}"></div>
         </div>`;
       }).join('')}
-      ${(()=>{ const tt = teamTargetNow(); return tt.pct != null ? `<div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-weight:700; font-size:13.5px;">Team total <span style="font-weight:600; font-size:12px; color:var(--muted);">· ${tt.pct}% achieved this month (${money(tt.ach)} of ${money(tt.goal)})</span></div>` : ''; })()}
+      ${(()=>{ const tt = teamTargetNow(mtd); return tt.pct != null ? `<div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--line); font-weight:700; font-size:13.5px;">Team total <span style="font-weight:600; font-size:12px; color:var(--muted);">· ${tt.pct}% achieved this month (${money(tt.ach)} of ${money(tt.goal)})</span></div>` : ''; })()}
       <button class="btn secondary small" style="margin-top:12px;" onclick="saveTargets()">Save monthly targets</button>
     </div>`;
 }
@@ -132,13 +133,12 @@ async function saveTargets(){
 }
 async function saveBenchmarks(){
   const clamp = v => Math.max(0, Math.min(100, parseInt(v)||0));
-  BENCHMARKS = Object.assign({}, BENCHMARKS, { // keep the KPI settings saved in the same document
+  const r = await persistSettings({ // the KPI and alert settings saved in the same document stay; not landed → not in force (04-sync.js)
     coverage: clamp(document.getElementById('bmCoverage').value),
     priority: clamp(document.getElementById('bmPriority').value),
     conversion: clamp(document.getElementById('bmConversion').value),
     tasks: clamp(document.getElementById('bmTasks').value),
   });
-  const r = await persistTold('benchmarks');
   saveToast(r, 'benchmarks', '✅ Evaluation targets updated');
   if(document.getElementById('scorecards')) renderScorecards();
 }
@@ -209,7 +209,7 @@ function adminTerritoryHTML(){
     <p style="color:var(--muted); font-size:12.5px; margin-top:0;">Move a clinic to a different rep. Visit history stays with the clinic.</p>
     <div class="card" style="margin-bottom:10px; border-inline-start:4px solid var(--teal);">
       <div style="font-weight:700; font-size:13.5px;">${I('download')} Upload a clinic distribution</div>
-      <div style="color:var(--muted); font-size:12px; margin:2px 0 8px;">Excel or CSV with an <b>Account</b> column and a <b>Now with</b> (or New rep / Owner) column. "Mariam + Ghaith" = shared. You see every change before it is saved.</div>
+      <div style="color:var(--muted); font-size:12px; margin:2px 0 8px;">Excel or CSV with an <b data-notr>Account</b> column and a <b data-notr>Now with</b> (or New rep / Owner) column. "Mariam + Ghaith" = shared. You see every change before it is saved.</div>
       <input type="file" id="apDistFile" accept=".xlsx,.xls,.csv" onchange="distFilePicked(this)">
     </div>
     <input type="text" id="apTerrSearch" placeholder="Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
@@ -241,9 +241,13 @@ function renderAdminTerritory(){
   if(!list.length){ el.innerHTML = `<div class="empty">No clinics match.</div>`; return; }
   el.innerHTML = list.map(c=>{
     const vCount = visits.filter(v=>v.clinicId===c.id).length;
+    const parts = [`<span>${vCount} visit${vCount===1?'':'s'}</span>`,
+      c.rep&&REPS.includes(c.rep) ? `<span>currently ${esc(c.rep)}</span>` : '<span>currently</span> <span style="color:var(--coral-ink);">unassigned</span>',
+      c.repSince&&c.prevRep ? `<span>since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})</span>` : '',
+      c.shared ? `<span><b>shared</b> – each invoice counts for whoever issued it${c.sharedSince?' (from '+fmtDate(c.sharedSince)+')':''}</span>` : ''].filter(Boolean);
     return `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c.cls)};">
       <div class="clinic-name">${esc(c.name)}</div>
-      <div class="clinic-sub" style="margin-bottom:8px;">${vCount} visit${vCount===1?'':'s'} · currently ${c.rep&&REPS.includes(c.rep)?esc(c.rep):'<span style="color:var(--coral-ink);">unassigned</span>'}${c.repSince&&c.prevRep?` · since ${fmtDate(c.repSince)} (before: ${esc(c.prevRep)})`:''}${c.shared?` · <b>shared</b> – each invoice counts for whoever issued it${c.sharedSince?' (from '+fmtDate(c.sharedSince)+')':''}`:''}</div>
+      <div class="clinic-sub" style="margin-bottom:8px;">${parts.join('<span data-notr> · </span>')}</div>
       <div class="chip-row">
         ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
         <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
@@ -285,14 +289,14 @@ function openDistributionPreview(sheets){
   const plan = UMCore.planDistribution(dist, clinics, erpMap, todayStr().slice(0, 7) + '-01');
   _distPlan = plan;
   const own = x => x.shared ? `${esc(x.to)} <span class="chip small on" style="padding:1px 6px;">shared</span>` : esc(x.to);
-  const line = x => `<div style="font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--line, #eee);"><b>${esc(x.clinic)}</b>${x.clinic!==x.account?` <span style="color:var(--muted);">(file: ${esc(x.account)})</span>`:''}<br>${esc(x.from || 'unassigned')}${x.wasShared?' (shared)':''} → ${own(x)}</div>`;
-  const miss = plan.missing.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);">→ ${esc(x.owners.join(' + '))}${x.shared ? ' · not in the app: its invoices already count for whoever issues them' : ' · not in the app — add the clinic or check the name'}</span></div>`).join('');
+  const line = x => `<div style="font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--line, #eee);"><b>${esc(x.clinic)}</b>${x.clinic!==x.account?` <span style="color:var(--muted);">(file: ${esc(x.account)})</span>`:''}<br><span dir="ltr">${x.from ? esc(x.from) : '<span>unassigned</span>'}${x.wasShared?' <span>(shared)</span>':''} → ${own(x)}</span></div>`;
+  const miss = plan.missing.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);"><span dir="ltr">→ ${esc(x.owners.join(' + '))}</span> · <span>${x.shared ? 'not in the app: its invoices already count for whoever issues them' : 'not in the app — add the clinic or check the name'}</span></span></div>`).join('');
   const amb = plan.ambiguous.map(x => `<div style="font-size:12.5px; padding:2px 0;">${esc(x.account)} <span style="color:var(--muted);">— several clinics look alike (${esc((x.candidates || []).join(', '))}); set it by hand below</span></div>`).join('');
   showModal(`
     <h3 style="margin-top:0;">${I('download')} Clinic distribution — check before saving</h3>
     <div style="color:var(--muted); font-size:12.5px; margin:-4px 0 10px;">Changes count from ${fmtDate(plan.since)}: this month's sales go to the new owner, earlier months stay with the previous one. Shared = each invoice counts for whoever issued it. Targets are not changed.</div>
     <div class="card"><b>${plan.changes.length} change${plan.changes.length===1?'':'s'}</b>${plan.changes.length ? plan.changes.map(line).join('') : '<div style="color:var(--muted); font-size:12.5px;">The app already matches this file.</div>'}</div>
-    <div style="color:var(--muted); font-size:12px; margin:6px 0;">${plan.same.length} clinic${plan.same.length===1?'':'s'} already as in the file.${dist.badOwners.length ? ` ${dist.badOwners.length} row(s) skipped — owner not on the team: ${dist.badOwners.map(b=>esc(b.account)+' ('+esc(b.owner)+')').join(', ')}.` : ''}</div>
+    <div style="color:var(--muted); font-size:12px; margin:6px 0;"><span>${plan.same.length} clinic${plan.same.length===1?'':'s'} already as in the file.</span>${dist.badOwners.length ? ` <span>${dist.badOwners.length} row(s) skipped — owner not on the team:</span> <span dir="auto">${dist.badOwners.map(b=>esc(b.account)+' ('+esc(b.owner)+')').join(', ')}</span>.` : ''}</div>
     ${amb ? `<div class="nudge" style="margin-top:6px;"><b>Not moved — check by hand</b>${amb}</div>` : ''}
     ${miss ? `<div class="card" style="margin-top:6px;"><b>Not in the app (${plan.missing.length})</b>${miss}</div>` : ''}
     <div style="display:flex; gap:8px; margin-top:12px;">
@@ -615,9 +619,20 @@ async function addDoctor(clinicId){
   const title = tEl ? tEl.dataset.title : '';
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return null; }
+  const had = new Set((c.doctors || []).map(d => d && d.id));
   const r = addDoctorsToClinic(c, name, title);
   if(!r.ids.length){ showToast('Enter a doctor name'); return null; }
   const saved = r.added ? await persistTold('clinics') : null;
+  if(saved && !saveGoesOn(saved)){
+    // a doctor whose save can never land as it is (refused, too large — or refused before any write) is not left on
+    // the clinic as if added, nor picked as met: off it again (never saved: no delete log), the name typed stays in
+    // the box, the toast says why
+    const cc = clinics.find(x => x && x.id === clinicId) || c;
+    cc.doctors = (cc.doctors || []).filter(d => d && had.has(d.id));
+    const dl = document.getElementById('docListInModal'); if(dl) dl.innerHTML = renderDoctorRows(cc);
+    saveToast(saved, 'clinics');
+    return null;
+  }
   // The clinic-detail sheet has this list; the quick-add sheet from Log visit doesn't
   const dl = document.getElementById('docListInModal');
   if(dl) dl.innerHTML = renderDoctorRows(c);
@@ -751,12 +766,13 @@ function missingClinicCandidates(){
   });
   // 3. invoice customers that match no clinic (may include non-clinic accounts — unticked by default)
   const custs = {};
+  const match = erpMatchFn();
   erpPeriods().forEach(p=>erpViewRows(p).forEach(r=>{
     const cu = (r.customer||'').trim(); if(!cu) return;
     const key = _mcNorm(cu); if(!key || custs[key]) { if(custs[key]) custs[key].n++; return; }
-    const m = UMCore.matchCustomer(cu, clinics, erpMap);
+    const m = match(cu);
     if(m.clinicId || m.ignored || m.channel){ custs[key] = {skip:true, n:1}; return; }
-    custs[key] = {name:cu, n:1, rep: UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}) || ''};
+    custs[key] = {name:cu, n:1, rep: UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match) || ''};
   }));
   Object.values(custs).forEach(cu=>{ if(!cu.skip) take({src:'erp', label:`🧾 عميل بالفواتير (${cu.n} سطر)`, name:cu.name, rep:cu.rep, key:'erp:'+_mcNorm(cu.name)}); });
   return out;

@@ -31,12 +31,20 @@ function openStaffForm(idx){
 // the supervisor's tap on "Finish the rename" (round 3). → [[outcome, key]…]
 function renameRepInLists(prevName, name){
   return holdRefresh(async () => {
+    // every visit renamed must be the cloud's: a past month on screen from the phone's store is read first (v126
+    // review), and so are the visits of the phone's copy before a read of this session committed them (review 2: an
+    // early open's window, a start without a connection); not read, the visits are left as they are and "Finish the
+    // rename" offers them later (the note stays)
+    let visitsOk = true;
+    if(visitsUnread()){ try{ await refreshTombs(); await visitsReadFirst(); }catch(e){} }
+    if(keptMonthsOnScreen()){ try{ await visitsConfirmKept(); }catch(e){} }
+    visitsOk = !keptMonthsOnScreen() && !visitsUnread();
     // Keep existing records pointing at this person — the owner, and the owner
     // before a handover: the earlier months of a handed-over clinic count for
     // prevRep — left on the old name, they counted for nobody on the team and
     // closed months moved (v123)
     clinics.forEach(c=>{ if(c.rep===prevName) c.rep = name; if(c.prevRep===prevName) c.prevRep = name; });
-    visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
+    if(visitsOk) visits.forEach(v=>{ if(v.rep===prevName) v.rep = name; });
     tasks.forEach(t=>{ if(t.rep===prevName) t.rep = name; });
     Object.keys(dayPlans).forEach(d=>{
       if(dayPlans[d] && dayPlans[d][prevName]){
@@ -47,7 +55,7 @@ function renameRepInLists(prevName, name){
         tomb('dayPlans', d+'|'+prevName);
       }
     });
-    visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
+    if(visitsOk) visits.forEach(v=>{ if(v.withRep===prevName) v.withRep = name; });
     events.forEach(e=>{ if(e.rep===prevName) e.rep = name; });
     // the month target and its archived months
     if(targets[prevName] && !targets[name]){ targets[name] = targets[prevName]; delete targets[prevName]; }
@@ -60,7 +68,7 @@ function renameRepInLists(prevName, name){
     if(reportRepFilter===prevName) reportRepFilter = name;
     if(calRepFilter===prevName) calRepFilter = name;
     const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
-    const got = await Promise.all([persistTold('clinics'), persistTold('visits'), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
+    const got = await Promise.all([persistTold('clinics'), visitsOk ? persistTold('visits') : Promise.resolve({ ok: false }), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
     return got.map((r, i) => [r, keys[i]]);
   });
 }
@@ -220,7 +228,7 @@ function openStandaloneOrder(prefillClinicId){
   soNewClinicMode = false;
   showModal(`
     <h3 style="margin-top:0;">${I('cart')} Add order</h3>
-    <p style="color:var(--muted); font-size:13px; margin-top:-6px;">For phone or remote orders — recorded as revenue, not as a field visit.</p>
+    <p style="color:var(--muted); font-size:13px; margin-top:-6px;"><span>For phone or remote orders — logged in the app as an order, not as a field visit.</span> <span>Orders logged in the app are not invoiced sales: sales come from the ERP files only.</span></p>
     <label>Clinic</label>
     <input type="text" id="soClinicSearch" placeholder="Search clinics..." oninput="renderSoClinics()" style="margin-bottom:8px;">
     <div id="soClinicPick"></div>

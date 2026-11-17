@@ -75,7 +75,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   await page.evaluate(async (csv) => { window.confirm = () => true; openErpImport(); await erpAutoImport(csv); await new Promise(r => setTimeout(r, 300));
     const b = [...document.querySelectorAll('button')].find(b => /Save & analyze/.test(b.textContent)); if(b) b.click(); await new Promise(r => setTimeout(r, 800)); try{ closeModal(); }catch(e){} }, csv);
   const ach = () => page.evaluate(() => { const d = digestData(); return { g: UMCore.monthAchievement('Dr. Ghaith', d).amount, m: UMCore.monthAchievement('Mariam', d).amount }; });
-  const card = () => page.evaluate(() => { renderToday(); return document.getElementById('targetCard').innerText.replace(/\s+/g, ' '); });
+  const card = () => page.evaluate(async () => { renderToday(); await msWhenReady(); return document.getElementById('targetCard').innerText.replace(/\s+/g, ' '); }); // (the home's figures, and its frame, are those of the data as it is now — a later frame is held until they are: v126 speed part 2)
   const mapped = await page.evaluate(() => JSON.stringify(erpSales.repMapGlobal));
   check('both salesmen mapped (Ghaith Al Sample → Dr. Ghaith)', /Ghaith Al Sample":"Dr. Ghaith/.test(mapped) && /Mariam Sample":"Mariam/.test(mapped), mapped);
   let a = await ach();

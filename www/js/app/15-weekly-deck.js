@@ -100,7 +100,7 @@ function wdMonth(row, withYear){
   return row.partial ? n + ' (to ' + parseInt(row.to.slice(8, 10), 10) + ')' : n;
 }
 function wdTrend(end, months){
-  const d = Object.assign(digestData(), { today: todayStr() });
+  const d = Object.assign(digestDataKept(), { today: todayStr() }); // (the pass kept for the data state)
   return UMCore.monthlyTrend(d, { end, reps: REPS.slice(), months: months || 6, settings: (typeof kpiSettings === 'function') ? kpiSettings() : {} });
 }
 // ---- visuals, made in the browser at export time (no network needed) ----
@@ -257,7 +257,7 @@ function wdPickPhoto(pool, week, used){
   return null;
 }
 function weeklyDeckData(end){
-  return UMCore.weeklyReport(Object.assign(digestData(), { today: todayStr() }), { end, reps: REPS.slice(), settings: (typeof kpiSettings === 'function') ? kpiSettings() : {} });
+  return UMCore.weeklyReport(Object.assign(digestDataKept(), { today: todayStr() }), { end, reps: REPS.slice(), settings: (typeof kpiSettings === 'function') ? kpiSettings() : {} });
 }
 
 // ---- the deck ----
@@ -326,7 +326,7 @@ async function buildWeeklyDeck(end, opts){
   say('Reading the week…');
   const W = weeklyDeckData(end);
   const kS = (typeof kpiSettings === 'function') ? kpiSettings() : {};
-  const kd0 = Object.assign(digestData(), { today: todayStr() }), krows = UMCore.erpAttributedRows(kd0);
+  const kd0 = Object.assign(digestDataKept(), { today: todayStr() }), krows = UMCore.erpAttributedRows(kd0);
   const K = {}; W.reps.forEach(r => { K[r] = UMCore.kpiScorecard(kd0, { rep: r, from: W.monthStart, to: W.to, settings: kS, rows: krows }); });
   const TR = wdTrend(W.to), TM = TR.months;
   const S = UMCore.weeklyStory(W, { presenter: currentUser.name, brandName: wdBrand, trend: TR, kpi: K, familyOf: wdFamilyOf, ask: opts.ask || '' });
@@ -1071,7 +1071,7 @@ async function wdAppendix(pres, c){
 
   // A11 · discount per invoice, clients and the pipeline, samples ledger
   { const lim = W.margin.limits || {};
-    const rows11 = (UMCore.clinicInvoices ? UMCore.clinicInvoices(UMCore.erpAttributedRows(Object.assign(digestData(), { today: todayStr() })), R, W.from, W.to, Object.fromEntries((clinics || []).map(x => [x.id, x])), W.settings) : [])
+    const rows11 = (UMCore.clinicInvoices ? UMCore.clinicInvoices(UMCore.erpAttributedRows(Object.assign(digestDataKept(), { today: todayStr() })), R, W.from, W.to, Object.fromEntries((clinics || []).map(x => [x.id, x])), W.settings) : [])
       .map(i => [dmy(i.date), i.rep, i.doc, cut(i.account, 36), kd2(i.gross), kd2(i.net), { text: i.pct + '%', options: i.within ? {} : neg }, i.limit + '%', i.within ? t('within', 'ضمن الحد') : { text: t('above', 'فوق الحد'), options: neg }]);
     table('A11', t('Discount per clinic invoice against its limit', 'خصم كل فاتورة عيادة مقابل حدّها'), AR ? ['التاريخ', 'الفرد', 'الفاتورة', 'العيادة', 'سعر القائمة (د.ك)', 'بعد الخصم (د.ك)', 'الخصم', 'الحد', ''] : ['Date', 'Person', 'Invoice', 'Clinic', 'List KD', 'Paid KD', 'Discount', 'Limit', ''], rows11, [0.8, 1.2, 1.4, 3.43, 1.15, 1.15, 1.0, 0.8, 1.2], t('No clinic invoice this week.', 'لا فواتير عيادات هذا الأسبوع.'), 13,
       t('Limits (supervisor\'s KPI settings): A clinics ' + lim.A + '%, others ' + lim.other + '%, open days ' + lim.openDay + '% · this week ' + (W.margin.discount != null ? W.margin.discount + '%' : '—') + ' against ' + (W.margin.avgPrev != null ? W.margin.avgPrev + '%' : '—') + ' in the earlier weeks.',

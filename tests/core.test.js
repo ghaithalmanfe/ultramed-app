@@ -877,6 +877,21 @@ describe('rep and customer matching', () => {
     assert.match(it.discipline.value, /^67%/);
     assert.equal(k.total, Math.round((0.85 * 30 + (4 / 6 / 5) * 10 + (2 / 3) * 10 + (0.6 * 4 / 16 + 0.4 * 0.5) * 10 + 0.75 * 10 + it.issues.score * 10 + 5 + 0.5 * 5 + 5 + 0.5 * 5)));
   });
+  test('kpiSettingsCheck (v126): a number out of its limits, or not a number, and an open day that is not a date are refused by name — never the old value kept without a word', () => {
+    // every number the sheet edits has limits, and the defaults are within them
+    Object.keys(core.KPI_LIMITS).forEach(k => { const [a, b] = core.KPI_LIMITS[k]; assert.ok(core.KPI_DEFAULTS[k] >= a && core.KPI_DEFAULTS[k] <= b, k); });
+    const r = core.kpiSettingsCheck({ discountA: '-5', visitsPerDay: '', responseHours: '0', discountOther: '150', rxGrowth: 'abc', openDays: '2026-10-15, bad, 2026-02-30, 2026-10-22' }, core.KPI_DEFAULTS);
+    assert.equal(r.ok, false);
+    assert.deepEqual(r.bad.map(b => b.key).sort(), ['discountA', 'discountOther', 'responseHours', 'rxGrowth', 'visitsPerDay']);
+    assert.deepEqual(r.bad.find(b => b.key === 'discountA'), { key: 'discountA', min: 0, max: 100 });
+    assert.deepEqual(r.badDays, ['bad', '2026-02-30']);
+    // all right: the numbers as typed, the dates once each (an Arabic comma too), what was not typed kept
+    const ok = core.kpiSettingsCheck({ discountA: '45', returnsMax: '0.03', openDays: '2026-10-15، 2026-10-22, 2026-10-15' }, Object.assign({}, core.KPI_DEFAULTS, { visitsPerDay: 6 }));
+    assert.equal(ok.ok, true);
+    assert.equal(ok.kpi.discountA, 45); assert.equal(ok.kpi.returnsMax, 0.03); assert.equal(ok.kpi.visitsPerDay, 6);
+    assert.deepEqual(ok.kpi.openDays, ['2026-10-15', '2026-10-22']);
+    assert.deepEqual(core.kpiSettingsCheck({ openDays: '' }).kpi.openDays, []);
+  });
   test('weeklyReport: the Thursday deck figures – sales, month to date, wins, field work, next week', () => {
     const row = (d, doc, sm, cust, net, product, brand, qty) => [d, doc, 0, product || 'P', qty == null ? 1 : qty, net, net, 0, sm, brand || 'Intensiv', cust, 'Clinics', 0, ''];
     const clinics = [
@@ -5017,7 +5032,8 @@ describe('management dashboard (v123)', () => {
     const es = sales(), oct = es.periods.find(p => p.id === 'oct');
     oct.rows = oct.rows.filter(r => r[8] === MS); oct.repMap = { [MS]: M };
     const one = core.execDashboard(data({ erpSales: es }), { reps });
-    assert.deepEqual([one.forecast.people, one.forecast.amount, one.forecast.target, one.forecast.pct, one.byPerson[1].forecast], [[M], 808.5, 1000, 81, null]);
+    // 808.5 ÷ 1000 = 80.85 %: cut to 80 by the one pace rule (paceOf, 17 Nov) — it was rounded to 81 until then
+    assert.deepEqual([one.forecast.people, one.forecast.amount, one.forecast.target, one.forecast.pct, one.byPerson[1].forecast], [[M], 808.5, 1000, 80, null]);
   });
 
   test('the same month a year before: built as the same days of last month, only people measured in both', () => {
@@ -5404,5 +5420,573 @@ describe('management dashboard (v123)', () => {
     const D = core.execDashboard(data(), { reps });
     assert.equal(D.achievement.pct1, Math.round(D.achievement.achieved / D.achievement.target * 1000) / 10);
     assert.equal(Math.round(D.achievement.pct1), D.achievement.pct);
+  });
+});
+
+describe('start-up speed (v126): the wins are worked out once per list of lines', () => {
+  // packed ERP row: [date, doc, type(1=return), product, qty, gross, net, sret, salesman, brand, customer, cls, dsret, ref]
+  const row = (d, doc, cust, prod, net) => [d, doc, 0, prod, 1, net, net, 0, 'Mariam Sample', 'Intensiv', cust, 'Clinics', 0, ''];
+  const clinics = [{ id: 'a', name: 'Alpha Dental', rep: 'Mariam', cls: 'A', doctors: [] }, { id: 'b', name: 'Beta Clinic', rep: 'Mariam', cls: 'B', doctors: [] }];
+  const data = { today: '2026-10-20', clinics, erpMap: {}, targets: {}, visits: [], dayPlans: {}, events: [],
+    erpSales: { periods: [{ id: 'p', from: '2026-05-01', to: '2026-10-20', repMap: { 'Mariam Sample': 'Mariam' }, rows: [
+      row('2026-05-04', 'S1', 'Alpha Dental', 'Strip', 50), row('2026-10-02', 'S2', 'Alpha Dental', 'Brush', 70),           // back after 60+ days, a product new to her
+      row('2026-09-03', 'S3', 'Beta Clinic', 'Strip', 65), row('2026-10-05', 'S4', 'Beta Clinic', 'Strip', 40),               // a regular
+      row('2026-10-06', 'S5', 'Gamma Smile Clinic', 'Strip', 30), row('2026-10-07', 'S6', 'Marketing Sample', 'Strip', 10)] }] } };
+  const periods = [['2026-10-01', '2026-10-20'], ['2026-09-01', '2026-09-30'], ['2026-10-01', '2026-10-07'], ['2026-05-01', '2026-05-31']];
+  const score = (rows, f, t) => core.kpiScorecard(data, { rep: 'Mariam', from: f, to: t, rows });
+  test('every period on one list scores as on a fresh copy of it (nothing of one range leaks into another)', () => {
+    const rows = core.erpAttributedRows(data);
+    periods.concat(periods.slice().reverse()).forEach(([f, t]) => assert.deepEqual(score(rows, f, t), score(rows.slice(), f, t), f + '…' + t));
+  });
+  test('a list that grew is worked out again', () => {
+    const rows = core.erpAttributedRows(data);
+    const before = score(rows, '2026-10-01', '2026-10-20');
+    rows.push(...core.erpAttributedRows(Object.assign({}, data, { erpSales: { periods: [{ id: 'q', from: '2026-10-08', to: '2026-10-08', repMap: { 'Mariam Sample': 'Mariam' }, rows: [row('2026-10-08', 'S7', 'Delta Dental Care', 'Strip', 20)] }] } })));
+    const after = score(rows, '2026-10-01', '2026-10-20');
+    assert.deepEqual(after, score(rows.slice(), '2026-10-01', '2026-10-20'));
+    assert.notDeepEqual(after, before);
+  });
+});
+
+describe('alerts center (v121)', () => {
+  // The bell's rules: each alert says why it shows, shows when it should and
+  // not when it should not, a rep never gets a supervisor-only type, the same
+  // thing is never listed twice, and every line has its Arabic.
+  const i18n = require('../www/js/i18n.js');
+  const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith', MS = 'Mariam Sample', RS = 'Ranova Sample Person';
+  const TODAY = '2026-11-11';                                   // a Wednesday
+  const at = (h, mi) => new Date(2026, 10, 11, h, mi || 0).getTime();
+  const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Waterpik Cordless Plus', 1, net, net, 0, sm, 'Waterpik', cust, 'Clinics', 0, ''];
+  const repMap = { [MS]: M, [RS]: R };
+  const C = (id, name, rep, x) => Object.assign({ id, name, rep, cls: 'B', doctors: [] }, x || {});
+  const CLINICS = [C('m1', 'Amberline Clinic', M, { cls: 'A' }), C('m2', 'Birchwood Center', M, { nextFollowUp: '2026-11-05' }),
+    C('m3', 'Cobaltia Clinic', M), C('m4', 'Dunevale Dental', M, { nextFollowUp: TODAY }),
+    C('m5', 'Old Closed Clinic', M, { cls: 'Closed', nextFollowUp: '2026-10-01' }), C('m6', 'Emberly Clinic', M),
+    C('r1', 'Fernhill Center', R, { nextFollowUp: '2026-11-01' }), C('r2', 'Garnetta Center', R), C('r3', 'Harborview Clinic', R)];
+  const OCT = [row('2026-10-03', 'SINV1', 'Amberline Clinic', 800, MS), row('2026-10-04', 'SINV2', 'Birchwood Center', 500, MS),
+    row('2026-10-05', 'SINV3', 'Emberly Clinic', 60, MS), row('2026-10-06', 'SINV4', 'Fernhill Center', 600, RS),
+    row('2026-10-20', 'SINV5', 'Fernhill Center', 300, RS), row('2026-10-02', 'SINV6', 'My Fatoorah', 400, MS),
+    row('2026-10-03', 'SINV7', 'Marketing Philips', 200, MS)];
+  const NOV = [row('2026-11-02', 'SINV11', 'Amberline Clinic', 100, MS), row('2026-11-03', 'SINV12', 'Birchwood Center', 480, MS),
+    row('2026-11-04', 'SINV13', 'Garnetta Center', 900, RS), row('2026-11-02', 'SINV14', 'My Fatoorah', 420, MS)];
+  const PERIODS = () => [{ id: 'oct', from: '2026-10-01', to: '2026-10-31', repMap, rows: OCT }, { id: 'nov', from: '2026-11-01', to: '2026-11-09', repMap, rows: NOV }];
+  const DATA = () => ({
+    clinics: CLINICS.map(c => Object.assign({}, c)),
+    visits: [{ id: 'v1', clinicId: 'm1', rep: M, date: '2026-11-09' }, { id: 'v2', clinicId: 'm6', rep: M, date: TODAY },
+      { id: 'v3', clinicId: 'r2', rep: R, date: TODAY, callOnly: true }],
+    dayPlans: { '2026-11-05': { [M]: [{ id: 'm2', note: '📅 Follow-up due' }] }, '2026-11-09': { [M]: [{ id: 'm3', note: '' }, 'm1'] },
+      '2026-11-08': { [R]: ['r3', 'r1'] }, '2026-11-10': { [M]: ['m6'] }, [TODAY]: { [R]: ['r2', 'r3'] }, '2026-10-20': { [M]: ['m3'] } },
+    events: [{ id: 'e1', date: TODAY, rep: 'all', title: 'Team meeting', type: 'Meeting' }, { id: 'e2', kind: 'issue', at: TODAY + 'T09:00:00', rep: R }],
+    targets: { [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-11' } },
+    erpSales: { returnPolicy: 'origin', periods: PERIODS() }, erpMap: { 'Marketing Philips': '@ignore' } });
+  const run = (who, o) => {
+    o = o || {};
+    const role = who === G ? 'supervisor' : 'rep';
+    const data = o.data || DATA();
+    return core.alertsFor({ today: o.today || TODAY, now: o.now || at(13, 30), hour: o.hour != null ? o.hour : 13, user: { name: who, role },
+      reps: o.reps || [M, R], team: o.team || [M, R, G], data, settings: o.settings || null, device: o.device || {}, cache: o.cache, fmtDate: o.fmtDate, monthLabel: o.monthLabel, responseHours: o.responseHours });
+  };
+  const ids = list => list.map(a => a.id);
+  const one = (list, id) => list.find(a => a.id === id);
+  const lines = a => [a.title].concat(a.why || [], (a.items || []).map(i => i.text), (a.items || []).map(i => i.note).filter(Boolean));
+
+  test('a rep sees her own: the target at risk first, then overdue follow-ups, missed plans, customers buying less', () => {
+    const m = run(M);
+    assert.deepEqual(ids(m), ['target:Mariam:2026-11', 'overdue:Mariam', 'missed:Mariam', 'drop:Mariam:2026-11']);
+    assert.deepEqual(ids(run(R)), ['overdue:Renova', 'missed:Renova', 'drop:Renova:2026-11']);
+    m.concat(run(R)).forEach(a => assert.ok(!core.ALERT_SUP_ONLY[a.type], a.id + ' is supervisor-only'));
+  });
+  test('the supervisor sees everyone\'s, one alert per person, and his own types', () => {
+    const g = run(G);
+    assert.deepEqual(ids(g), ['target:Mariam:2026-11', 'overdue:Mariam', 'overdue:Renova', 'missed:Mariam', 'missed:Renova',
+      'noActivity:Renova:2026-11-11', 'drop:Mariam:2026-11', 'drop:Renova:2026-11']);
+    assert.equal(one(g, 'overdue:Mariam').title, 'Mariam: 1 follow-up overdue');
+    assert.equal(one(g, 'target:Mariam:2026-11').title, 'Mariam: month target at risk');
+    assert.equal(new Set(ids(g)).size, g.length, 'every id once');
+  });
+  test('overdue follow-ups: only dates that passed, closed clinics out, each item opens its clinic', () => {
+    const a = one(run(M), 'overdue:Mariam');
+    assert.deepEqual(a.items, [{ clinicId: 'm2', ref: 'c:m2', text: 'Birchwood Center — was due Nov 5 (6 days ago)' }]);   // m4 is due today, m5 is closed (ref: what a dismissal covers, alerts review U2)
+    assert.equal(a.open.screen, 'followups');
+    assert.equal(one(run(R), 'overdue:Renova').items[0].text, 'Fernhill Center — was due Nov 1 (10 days ago)');
+  });
+  test('missed plans: the last 14 days, not visited on the day nor since; an overdue follow-up is never listed twice', () => {
+    const a = one(run(M), 'missed:Mariam');
+    // m2's plan is its overdue follow-up (folded), m1 was visited that day, m6 was visited since, Oct 20 is past the window
+    assert.deepEqual(a.items, [{ clinicId: 'm3', ref: 'c:m3@2026-11-09', date: '2026-11-09', text: 'Cobaltia Clinic — planned Nov 9' }]);
+    assert.equal(a.title, '1 planned visit missed');
+    const r = one(run(R), 'missed:Renova');
+    assert.deepEqual(r.items.map(i => i.clinicId), ['r3']);                 // r1 is under overdue follow-ups
+    const g = run(G), seen = {};
+    g.filter(x => x.type === 'overdue' || x.type === 'missed').forEach(x => x.items.forEach(i => { const k = x.rep + '|' + i.clinicId; assert.ok(!seen[k], 'twice: ' + k); seen[k] = 1; }));
+    // two dates for the same clinic: one line, both dates
+    const d = DATA(); d.dayPlans['2026-11-04'] = { [M]: ['m3'] };
+    const two = one(run(M, { data: d }), 'missed:Mariam');
+    assert.equal(two.title, '2 planned visits missed');
+    assert.deepEqual(two.items.map(i => i.text), ['Cobaltia Clinic — planned Nov 4, Nov 9']);
+  });
+  test('no field visit by the hour: supervisor only, working days, after the hour; calls named but not counted', () => {
+    const a = one(run(G), 'noActivity:Renova:2026-11-11');
+    assert.equal(a.title, 'Renova: no field visit logged today by 12:00');
+    assert.deepEqual(a.why, ['Checked after 12:00 on a working day (the hour is set in alert settings). Only field visits count — calls and phone orders do not.',
+      'Logged today: 1 call, 0 phone orders.', "Today's plan: 2 clinics.", 'In the calendar today: Team meeting (Meeting).']);
+    assert.deepEqual(a.open, { screen: 'calendar', rep: R });
+    assert.ok(!run(G).some(x => x.id === 'noActivity:Mariam:2026-11-11'), 'Mariam logged a field visit today');
+    assert.ok(!run(G, { hour: 11 }).some(x => x.type === 'noActivity'), 'before the hour');
+    assert.ok(!run(G, { settings: { noActivityHour: 14 } }).some(x => x.type === 'noActivity'), 'the supervisor\'s hour');
+    assert.ok(!run(G, { today: '2026-11-13', now: new Date(2026, 10, 13, 13).getTime() }).some(x => x.type === 'noActivity'), 'Friday is the weekend');
+    // a supervisor who sells is in REPS — never an alert about his own day
+    assert.ok(!run(G, { reps: [M, R, G] }).some(x => x.id === 'noActivity:Dr. Ghaith:2026-11-11'));
+    assert.ok(!run(M).some(x => x.type === 'noActivity') && !run(R).some(x => x.type === 'noActivity'));
+  });
+  test('target at risk: the month figure against an even pace in working days to the ERP cut-off, said in full', () => {
+    const a = one(run(M), 'target:Mariam:2026-11');
+    assert.equal(core.monthAchievement(M, Object.assign({ today: TODAY }, DATA())).amount, 1000);   // the Today card's figure
+    assert.deepEqual(a.why, [
+      'Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to Nov 9.',
+      'Working days (Sun–Thu) to the ERP cut-off: 7 of 22. An even pace would be 3,181.82 KD (32%) by then.',
+      'Pace: 31% of an even pace — below 90%, the pace rule of the Today card, the sales coach and the reports. At this pace the month ends near 3,142.86 KD.',   // (alerts review F1: one rule, no second percentage of the same ratio)
+      'To reach the target: 600.00 KD a working day over the 15 working days left.']);
+    assert.equal(a.title, 'Month target at risk');
+    assert.deepEqual(a.open, { screen: 'coach', rep: M });           // the coach on Reports says the same, by the same rule
+    assert.ok(!run(R).some(x => x.type === 'target'), 'Renova is at 141% of an even pace');
+    const nofile = DATA(); nofile.erpSales.periods = nofile.erpSales.periods.filter(p => p.id === 'oct');
+    assert.ok(!run(M, { data: nofile }).some(x => x.type === 'target'), 'no sales file this month: nothing measured');
+    const early = DATA(); early.erpSales.periods[1] = Object.assign({}, early.erpSales.periods[1], { to: '2026-11-02', rows: NOV.filter(r => r[0] <= '2026-11-02') });
+    assert.ok(!run(M, { data: early, today: '2026-11-03', now: new Date(2026, 10, 3, 13).getTime() }).some(x => x.type === 'target'), '2 working days: too early to call');
+    const hit = DATA(); hit.targets[M].revenue = 900;
+    assert.ok(!run(M, { data: hit }).some(x => x.type === 'target'), 'achieved already');
+    assert.equal(core.alertSettings({ targetPacePct: 30 }).targetPacePct, undefined, 'no second pace limit beside the coach\'s');
+  });
+  test('target at risk: the sales coach\'s verdict, by the one rule both use (v122)', () => {
+    // 1000 KD to Nov 9 (7 of 22 working days): a 3500 KD target expects 1113.64 KD by then — 89.8% of
+    // an even pace. The coach says "behind" (below 90%); a rounded 90% must not hide the alert.
+    const coachSays = d => { const ins = core.coachInsights({ erpMtd: core.erpMtd(Object.assign({ today: TODAY }, d)), today: TODAY, repFilter: M,
+      visits: [], clinics: d.clinics, targets: d.targets, dayPlans: {} }).find(i => i.key === 'target-' + M); return ins ? ins.data.state : null; };
+    [3000, 3500, 3509, 3600, 10000, 900].forEach(goal => {
+      const d = DATA(); d.targets[M].revenue = goal;
+      const alert = run(M, { data: d }).find(x => x.type === 'target' && x.id === 'target:Mariam:2026-11');
+      assert.equal(!!alert, coachSays(d) === 'behind', goal + ' KD: the alert follows the coach (' + coachSays(d) + ')');
+    });
+    const d = DATA(); d.targets[M].revenue = 3500;
+    const a = one(run(M, { data: d }), 'target:Mariam:2026-11');
+    // the one pace rule's percentage, cut on its word's side (89.8 % → 89); the month-end figure with no second percentage
+    // of the same ratio (it read "(90%)" beside "Pace: 89%" — alerts review F1)
+    assert.equal(a.why[2], 'Pace: 89% of an even pace — below 90%, the pace rule of the Today card, the sales coach and the reports. At this pace the month ends near 3,142.86 KD.');
+    const pc = core.paceOf(1000, 3500, 7, 22);
+    assert.deepEqual([pc.state, pc.pct], ['behind', 89]);
+    assert.deepEqual([core.paceOf(2854, 10000, 7, 22).state, core.paceOf(2854, 10000, 7, 22).pct], ['behind', 89]);   // 89.70 %: behind, never 90
+    assert.deepEqual([core.paceOf(2864, 10000, 7, 22).state, core.paceOf(2864, 10000, 7, 22).pct], ['on', 90]);       // 90.01 %
+    assert.deepEqual([core.paceOf(3182, 10000, 7, 22).state, core.paceOf(10000, 10000, 7, 22).state], ['ahead', 'hit']);
+    assert.equal(a.why[3], 'To reach the target: 167.00 KD a working day over the 15 working days left.');   // the coach's own figure (KD/day, rounded up)
+    const tp = core.targetPace(3500, 1000, TODAY, '2026-11-09');
+    assert.deepEqual([tp.state, tp.workedSoFar, tp.totalWork, tp.daysLeft, tp.perDay], ['behind', 7, 22, 15, 167]);
+    // a file that carries her covers the month, and no invoice of hers yet: the Today card and the alert count 0 KD
+    // (monthAchievement); the coach has no line of hers to judge (erpMtd lists sellers only) — said, never a made-up figure
+    const none = DATA(); none.erpSales.periods[1] = Object.assign({}, none.erpSales.periods[1], { rows: NOV.filter(r => r[8] !== RS) });
+    const zero = one(run(R, { data: none }), 'target:Renova:2026-11');
+    assert.equal(zero.why[0], 'Achieved 0.00 KD of the 2,000.00 KD target (0%) — ERP sales files to Nov 9.');
+    assert.equal(core.coachInsights({ erpMtd: core.erpMtd(Object.assign({ today: TODAY }, none)), today: TODAY, repFilter: R, visits: [], clinics: none.clinics, targets: none.targets, dayPlans: {} })
+      .some(i => i.key === 'target-' + R), false);
+  });
+  test('dismiss / snooze cover only what the card listed then (alerts review U2): something new shows the card again', () => {
+    const T0 = '2026-11-11', now = new Date(2026, 10, 11, 13, 30).getTime();
+    const card = refs => ({ id: 'overdue:Mariam', type: 'overdue', items: refs.map(r => ({ ref: r, text: r })) });
+    const one = card(['c:m2']);
+    let st = core.alertStateNext({}, 'dismiss', one.id, T0, now, core.alertRefs(one));
+    assert.deepEqual(st.dismissed[one.id], { day: T0, refs: ['c:m2'] });
+    assert.equal(core.alertsVisible([one], st, T0, now).hidden.length, 1, 'what it listed: hidden for the day');
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m3'])], st, T0, now).shown.length, 1, 'a new overdue follow-up: the card shows again');
+    assert.equal(core.alertsVisible([card([])], st, T0, now).hidden.length, 1, 'fewer than it listed: still covered');
+    assert.equal(core.alertsVisible([one], st, '2026-11-12', now + 86400000).shown.length, 1, 'the next day: back');
+    st = core.alertStateNext(st, 'snooze', one.id, T0, now, core.alertRefs(one));
+    assert.equal(core.alertsVisible([one], st, T0, now).hidden[0].hidden, 'snoozed');
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m4'])], st, T0, now).shown.length, 1, 'snoozed: something new shows it too');
+    assert.equal(core.alertsNextAt({ today: T0, now, state: st }) <= new Date(2026, 10, 12).getTime(), true);
+    // an earlier app's entries (a day, a time) cover the card whole, as they did
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m3'])], { dismissed: { 'overdue:Mariam': T0 } }, T0, now).hidden.length, 1);
+    assert.equal(core.alertsVisible([card(['c:m2', 'c:m3'])], { snoozed: { 'overdue:Mariam': now + 3600000 } }, T0, now).hidden.length, 1);
+  });
+  test('a target from an earlier month: never judged, never silent — named as the Today card names it (v122)', () => {
+    const stale = DATA(); stale.targets[M].month = '2026-10';
+    const mine = run(M, { data: stale });
+    assert.ok(!mine.some(x => x.id === 'target:Mariam:2026-11'), 'no pace against last month\'s target');
+    const st = one(mine, 'target-stale:Mariam:2026-11');
+    assert.equal(st.title, 'Target is from October 2026');
+    // what is true of the other screens (alerts review F2): the Today card and the coach judge the pace against it, this
+    // card does not; a rep is told to ask the supervisor for the DSR (U9)
+    assert.deepEqual(st.why, ["Ask the supervisor to upload this month's DSR. Until then the Today card shows this target with the same note, and the Today card and the sales coach judge the month's pace against it; this card does not."]);
+    assert.deepEqual(st.open, { screen: 'targetCard' });
+    assert.equal(st.sev, 'low');
+    const g = one(run(G, { data: stale }), 'target-stale:Mariam:2026-11');
+    assert.equal(g.title, 'Mariam: target is from October 2026');
+    assert.deepEqual(g.why, ["Upload this month's DSR. Until then the Today card shows this target with the same note, and the Today card and the sales coach judge the month's pace against it; this card does not."]);
+    assert.deepEqual(g.open, { screen: 'erpImport' });                  // the supervisor uploads the DSR
+    assert.ok(!run(R, { data: stale }).some(x => x.type === 'target'), 'never another person\'s target');
+    const byAsOf = DATA(); delete byAsOf.targets[M].month; byAsOf.targets[M].achievedAsOf = '2026-10-31';   // the Today card's own test of a target's month
+    assert.ok(one(run(M, { data: byAsOf }), 'target-stale:Mariam:2026-11'));
+    const later = DATA(); later.targets[M].month = '2026-12';            // next month's DSR uploaded early: not this month's, not stale
+    assert.ok(!run(M, { data: later }).some(x => x.type === 'target'));
+  });
+  test('sync (v122): the red bar of a full phone is said at once in its own words, the queue as the pill counts it', () => {
+    const now = at(13, 30);
+    const bar = ["This phone's storage is full — this visit is only in the app's memory: keep the app open and connected until it says Saved", "A photo is only in the app's memory too"];
+    const memPhoto = { visitId: 'v2', clinicId: 'm6', label: 'Emberly Clinic', date: TODAY, rep: M, withRep: null, wait: "⚠️ Photo waiting to upload · only in the app's memory — keep the app open", lost: null, mem: 1, here: 0, own: [now - 60000], old: 0, lostAt: [] };
+    const dev = { outbox: [{ key: 'visits', since: now - 60000 }, { key: 'tasks', since: now - 45 * 60000 }], memOnly: ['visits'], memBar: bar, photos: [memPhoto], online: false };
+    const list = run(M, { device: dev });
+    const mem = one(list, 'sync-mem');
+    assert.equal(mem.title, "Only in the app's memory — keep the app open");
+    assert.deepEqual(mem.why, bar);                                      // the bar's own lines
+    assert.equal(mem.sev, 'high');
+    assert.equal(mem.action, 'flush');
+    assert.deepEqual(mem.items.map(i => [i.text, i.note || null]), [["Visits — only in the app's memory", null],
+      ['Emberly Clinic · Nov 11', "⚠️ Photo waiting to upload · only in the app's memory — keep the app open"]]);
+    const w = one(list, 'sync-wait');
+    assert.deepEqual(w.items.map(i => i.text), ['Tasks — waiting since 12:45'], 'a key on the red bar is not listed twice');
+    assert.deepEqual(w.why, ['Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.',
+      'Shown when a change has waited longer than 30 minutes (alert settings).', 'This phone is offline right now.']);
+    assert.ok(!list.some(x => /^photos-/.test(x.id)), 'the photo only in memory is on the red bar\'s card only');
+    // the red bar comes down: its card goes, the queue stays
+    const after = run(M, { device: { outbox: [{ key: 'visits', since: now - 60000 }, { key: 'tasks', since: now - 45 * 60000 }] } });
+    assert.ok(!one(after, 'sync-mem'));
+    assert.deepEqual(one(after, 'sync-wait').items.map(i => i.text), ['Tasks — waiting since 12:45', 'Visits — waiting since 13:29']);
+    assert.ok(!one(run(M, { device: { outbox: [{ key: 'tasks', since: now - 10 * 60000 }] } }), 'sync-wait'), 'waiting 10 minutes is not long');
+    assert.ok(one(run(M, { device: { outbox: [{ key: 'tasks', since: now - 10 * 60000 }] }, settings: { outboxMinutes: 5 } }), 'sync-wait'), 'the supervisor\'s minutes');
+    // the branch's "saves that did not reach the cloud" was a second record beside the queue: gone
+    assert.ok(!run(G, { device: { failed: [{ key: 'targets', at: now - 60000 }] } }).some(x => x.type === 'sync'));
+    assert.ok(!run(M).some(x => x.type === 'sync'), 'nothing queued, nothing only in memory');
+  });
+  test('sync (v122): visit photos as their notes say them — this phone\'s waiting ones, another phone\'s after 3 days, the lost ones', () => {
+    const now = at(13, 30), day = 86400000;
+    const P = o => Object.assign({ visitId: 'v1', clinicId: 'm1', label: 'Amberline Clinic', date: '2026-11-09', rep: M, withRep: null, wait: null, lost: null, mem: 0, here: 0, own: [], old: 0, lostAt: [] }, o);
+    const kept = P({ wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 45 * 60000] });
+    const fresh = P({ visitId: 'v2', clinicId: 'm6', label: 'Emberly Clinic', date: TODAY, wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 5 * 60000] });
+    const stale = P({ visitId: 'v3', clinicId: 'm3', label: 'Cobaltia Clinic', date: '2026-11-06', wait: '⏳ Photo waiting to upload · 5 days now — it can only come from the phone that took it, if that phone still has it', old: 5 });
+    const lost = P({ visitId: 'v4', clinicId: 'm2', label: 'Birchwood Center', date: '2026-11-08', lost: '⚠️ Photo lost before it uploaded — only this small preview is kept', lostAt: [now - 3 * day] });
+    const oldLost = P({ visitId: 'v5', clinicId: 'm3', label: 'Cobaltia Clinic', date: '2026-10-20', lost: '⚠️ Photo lost before it uploaded — only this small preview is kept', lostAt: [now - 22 * day] });
+    const oldStale = P({ visitId: 'v7', clinicId: 'm1', date: '2026-10-21', wait: '⏳ Photo waiting to upload · 21 days now — it can only come from the phone that took it, if that phone still has it', old: 21 });
+    const hers = P({ visitId: 'v6', clinicId: 'r1', label: 'Fernhill Center', rep: R, date: '2026-11-07', wait: '⏳ Photo waiting to upload · 4 days now — it can only come from the phone that took it, if that phone still has it', old: 4 });
+    const list = run(M, { device: { photos: [kept, fresh, stale, lost, oldLost, oldStale, hers] } });
+    const w = one(list, 'photos-wait');
+    assert.equal(w.title, '1 visit photo waiting to upload from this phone');
+    assert.deepEqual(w.items.map(i => [i.text, i.note, i.clinicId]), [['Amberline Clinic · Nov 9', '⏳ Photo waiting to upload · kept on this phone', 'm1']]);   // 5 minutes is not long
+    assert.equal(w.action, 'flush');
+    const s = one(list, 'photos-stale');
+    assert.equal(s.title, '1 visit photo not arrived from another phone');
+    assert.deepEqual(s.items.map(i => [i.text, i.note]), [['Cobaltia Clinic · Nov 6', stale.wait]]);   // Renova's is hers; 21 days is past the window
+    assert.deepEqual(s.why, ['Taken on another phone and still waiting to upload after 3 days or more: it can only come from the phone that took it, if that phone still has it. Photos taken in the last 14 days.']);
+    const l = one(list, 'photos-lost');
+    assert.equal(l.title, '1 visit photo lost before it uploaded');
+    assert.deepEqual(l.items.map(i => [i.text, i.note]), [['Birchwood Center · Nov 8', lost.lost]]);   // the one of 22 days ago is past the window
+    assert.ok(!list.some(x => x.items && x.items.some(i => i.clinicId === 'r1')), 'a rep never sees another person\'s visit');
+    const g = run(G, { device: { photos: [stale, hers] } });
+    assert.deepEqual(one(g, 'photos-stale').items.map(i => i.text), ['Cobaltia Clinic · Nov 6 · Mariam', 'Fernhill Center · Nov 7 · Renova']);   // the supervisor: everyone's, named
+    assert.ok(!run(M, { device: { photos: [fresh] } }).some(x => /^photos-/.test(x.id)), 'a photo taken 5 minutes ago is not an alert');
+  });
+  test('sync (v122): sales file changes behind the red retry bar — the supervisor\'s', () => {
+    const e = one(run(G, { device: { erpDirty: true } }), 'sync-erp');
+    assert.equal(e.title, 'Sales file changes not saved');
+    assert.equal(e.action, 'retryErp'); assert.equal(e.sev, 'high');
+    assert.ok(!run(M, { device: { erpDirty: true } }).some(x => x.type === 'sync'), 'the sales files are the supervisor\'s');
+  });
+  test('a failed import and today\'s backup: the supervisor\'s only, as this phone found them', () => {
+    const now = at(13, 30), fail = { at: at(10, 42), ok: false, msg: '❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry', who: G };
+    const e = one(run(G, { device: { erpImport: fail } }), 'erpImport:' + fail.at);
+    assert.deepEqual(e.why, ['Tried on Nov 11 at 10:42 — the message is below.', 'The figures still come from the files saved before — the newest reaches Nov 9.']);
+    assert.equal(e.msg, fail.msg);
+    assert.ok(!run(G, { device: { erpImport: Object.assign({}, fail, { ok: true }) } }).some(x => x.type === 'erpImport'), 'an import that worked since');
+    assert.ok(!run(G, { device: { erpImport: Object.assign({}, fail, { at: now - 8 * 86400000 }) } }).some(x => x.type === 'erpImport'), 'older than a week');
+    assert.ok(!run(G, { device: { erpImport: Object.assign({}, fail, { who: 'Someone Else' }) } }).some(x => x.type === 'erpImport'), 'someone else\'s import');
+    assert.ok(!run(G, { hour: 13 }).some(x => x.type === 'backup'), 'before the hour, nothing failed');
+    assert.equal(one(run(G, { hour: 16 }), 'backup-unchecked:2026-11-11').sev, 'low');
+    assert.ok(!run(G, { hour: 17, device: { snapDay: TODAY } }).some(x => x.type === 'backup'), 'found or written today');
+    // v123's own record of the daily backup (um_snapFail, maybeSnapshot): its words, as Export → Automatic backups says them
+    const bf = one(run(G, { hour: 9, device: { snapFail: { day: TODAY, at: at(9, 5), why: 'failed', bytes: null } } }), 'backup-failed:2026-11-11');
+    assert.equal(bf.title, "Today's backup was not saved from this phone"); assert.equal(bf.action, 'checkBackup');
+    assert.deepEqual(bf.why, ["The app keeps one backup a day of the clinics, products, tasks and this month's visits. This phone tried at 09:05.", 'It tries again within the hour.']);
+    const big = one(run(G, { hour: 9, device: { snapFail: { day: TODAY, at: at(9, 5), why: 'tooLarge', bytes: 1200000 } } }), 'backup-failed:2026-11-11');
+    assert.equal(big.why[1], 'It is too large for the cloud (1172 KB, even without the photo previews): take a Full backup (Export & backups).'); assert.equal(big.action, null);
+    assert.ok(!run(G, { hour: 17, device: { snapFail: { day: '2026-11-10', at: at(9, 5) - 86400000, why: 'failed' } } }).some(x => x.id === 'backup-failed:2026-11-11'), 'yesterday\'s failure is not today\'s');
+    // a rep never: the same facts on her phone say nothing
+    const dev = { erpImport: Object.assign({}, fail, { who: M }), snapFail: { day: TODAY, at: at(9, 5), why: 'failed', bytes: null } };
+    assert.deepEqual(run(M, { hour: 17, device: dev }).filter(x => core.ALERT_SUP_ONLY[x.type]), []);
+  });
+  test('the supervisor\'s switches: a type turned off shows to no one; numbers stay within their limits', () => {
+    const off = { types: { drop: false, missed: false } };
+    assert.ok(!run(M, { settings: off }).some(x => x.type === 'drop' || x.type === 'missed'));
+    assert.ok(!run(G, { settings: off }).some(x => x.type === 'drop' || x.type === 'missed'));
+    const s = core.alertSettings({ noActivityHour: '15', dropPct: 500, targetMinDays: 'x', types: { sync: false } });
+    assert.equal(s.noActivityHour, 15); assert.equal(s.dropPct, 30); assert.equal(s.targetMinDays, 3);
+    assert.equal(s.types.sync, false); assert.equal(s.types.overdue, true);
+    assert.equal(core.alertSettings({ dropPct: 500 }, { dropPct: 45 }).dropPct, 45, 'a number out of its limits keeps the one in force');
+    assert.deepEqual(core.alertSettings(null), core.alertSettings({}));
+  });
+  test('owners: no owner, and someone off the team list, are named as such for the supervisor', () => {
+    const d = DATA(); d.clinics.push(C('x1', 'Lonely Clinic', '', { nextFollowUp: '2026-11-02' }), C('x2', 'Former Clinic', 'Sara', { nextFollowUp: '2026-11-03' }));
+    const g = run(G, { data: d });
+    assert.equal(one(g, 'overdue:').title, 'No owner: 1 follow-up overdue');
+    assert.equal(one(g, 'overdue:Sara').title, 'Sara (not on the team list): 1 follow-up overdue');
+    assert.ok(!run(M, { data: d }).some(x => x.id === 'overdue:' || x.id === 'overdue:Sara'));
+  });
+  test('dismiss hides for the rest of the day, snooze until the start of the day three days on, restore brings it back', () => {
+    const list = run(M), now = at(13, 30);
+    let st = core.alertStateNext({}, 'dismiss', 'missed:Mariam', TODAY, now);
+    let v = core.alertsVisible(list, st, TODAY, now);
+    assert.equal(v.shown.length, 3); assert.deepEqual(v.hidden.map(a => [a.id, a.hidden]), [['missed:Mariam', 'dismissed']]);
+    const tomorrow = new Date(2026, 10, 12, 8).getTime();
+    assert.equal(core.alertsVisible(list, st, '2026-11-12', tomorrow).shown.length, 4, 'back the next day');
+    st = core.alertStateNext(st, 'snooze', 'drop:Mariam:2026-11', TODAY, now);
+    assert.equal(st.snoozed['drop:Mariam:2026-11'], new Date(2026, 10, 14).getTime());
+    assert.equal(core.alertsVisible(list, st, '2026-11-13', new Date(2026, 10, 13, 23).getTime()).shown.length, 3, 'still snoozed on the 13th');
+    assert.equal(core.alertsVisible(list, st, '2026-11-14', new Date(2026, 10, 14, 0, 1).getTime()).shown.length, 4, 'back on the 14th');
+    st = core.alertStateNext(st, 'restore', 'missed:Mariam', TODAY, now);
+    assert.equal(core.alertsVisible(list, st, TODAY, now).shown.length, 3, 'only the snoozed one hidden');
+    // what has run out is dropped from the stored state
+    const later = core.alertStateNext(st, null, null, '2026-11-20', new Date(2026, 10, 20).getTime());
+    assert.deepEqual([Object.keys(later.dismissed), Object.keys(later.snoozed)], [[], []]);
+  });
+  test('the sales rules run again only when what they read changed (input.cache) — and say the same as without it', () => {
+    const cache = {}, d = DATA();
+    const a1 = run(M, { data: d, cache }), a2 = run(M, { data: d, cache });
+    assert.equal(one(a2, 'drop:Mariam:2026-11'), one(a1, 'drop:Mariam:2026-11'), 'the same object: not computed again');
+    assert.deepEqual(a1, run(M, { data: DATA() }));
+    // a new revision of the November file: Amberline bought 700 more — no longer down
+    d.erpSales.periods[1] = Object.assign({}, d.erpSales.periods[1], { rev: 2, rows: NOV.concat([row('2026-11-05', 'SINV15', 'Amberline Clinic', 700, MS)]) });
+    const a3 = run(M, { data: d, cache });
+    assert.ok(!a3.some(x => x.type === 'drop'));
+    assert.deepEqual(a3, run(M, { data: d }));
+    // a clinic handed over: the other person's view changes at once
+    d.clinics.find(x => x.id === 'r1').rep = M;
+    assert.ok(run(M, { data: d, cache }).some(x => x.id === 'drop:Mariam:2026-11' && x.items.some(i => i.clinicId === 'r1')));
+    // a target changed: the target card follows
+    d.targets[M].revenue = 1500;
+    assert.ok(!run(M, { data: d, cache }).some(x => x.type === 'target'));
+  });
+  test('the sales rules on the pass the screens keep (v126 speed part 4: UMCore.erpShareKept) — the same answers, and kept only for exactly what they read', () => {
+    const d = DATA(), sh = core.erpShareKept(d), withPass = Object.assign({}, d, { erpShare: sh });
+    let asked = 0; const m0 = sh.match; sh.match = function(n){ asked++; return m0(n); };
+    const a0 = run(M, { data: d }), a1 = run(M, { data: withPass });
+    sh.match = m0;
+    assert.deepEqual(a1, a0, 'the kept pass gives the very figures');
+    assert.ok(asked > 0, 'the rules took the pass they were given (made from these very lists)');
+    let other = 0; const sh2 = core.erpShareKept(DATA()), m2 = sh2.match; sh2.match = function(n){ other++; return m2(n); };
+    run(M, { data: Object.assign({}, d, { erpShare: sh2 }) }); sh2.match = m2;
+    assert.equal(other, 0, 'a pass made from other lists is never taken for these');
+    // the month figure is the Today card's (monthAchievement) with the same pass
+    assert.equal(core.monthAchievement(M, Object.assign({ today: TODAY }, withPass)).amount, 1000);
+    // a file's rows replaced by other rows of the same length under the same id (its rows array is another one):
+    // the customer rule follows — the kept results are keyed on the rows themselves, not on their count
+    const cache = {}, e = DATA();
+    assert.ok(run(M, { data: e, cache }).some(x => x.id === 'drop:Mariam:2026-11'));
+    const nov2 = NOV.map(r => r[10] === 'Amberline Clinic' ? row(r[0], r[1], 'Amberline Clinic', 900, MS) : r.slice());
+    e.erpSales.periods[1] = Object.assign({}, e.erpSales.periods[1], { rows: nov2 });   // same id, no new rev, same length
+    const after = run(M, { data: e, cache });
+    assert.ok(!after.some(x => x.id === 'drop:Mariam:2026-11'), 'Amberline bought 900 now: no longer down');
+    assert.deepEqual(after, run(M, { data: e }), 'as worked out with nothing kept');
+    // the day is in the key: the next day's figures are worked out for that day
+    const next = run(M, { data: e, cache, today: '2026-11-12', now: new Date(2026, 10, 12, 13).getTime() });
+    assert.deepEqual(next, run(M, { data: e, today: '2026-11-12', now: new Date(2026, 10, 12, 13).getTime() }));
+  });
+  test('sync (v123): the red bar at the bottom and a refused whole document are said at once in their own words; a key on that bar is not "waiting"', () => {
+    const now = at(13, 30);
+    const bar = ["🔒 Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone."];
+    const dev = { heldBar: bar, held: [{ key: 'tasks', kept: true }], heldRetry: true, outbox: [{ key: 'tasks', since: now - 90 * 60000 }, { key: 'visits', since: now - 45 * 60000 }],
+      refused: [{ key: 'targets', msg: '⚠️ Not saved — changed on another device. Reopen the app, then save again' }] };
+    const list = run(M, { device: dev });
+    const h = one(list, 'sync-held');
+    assert.deepEqual(h.why, bar); assert.equal(h.title, 'Kept on this phone, not sent'); assert.equal(h.sev, 'high'); assert.equal(h.action, 'retryHeld');
+    assert.deepEqual(h.items.map(i => i.text), ['Tasks — kept on this phone, not sent']);
+    const w = one(list, 'sync-wait');
+    assert.deepEqual(w.items.map(i => i.key), ['visits'], 'a key the bar at the bottom holds is never "waiting to upload"');
+    const r = one(list, 'sync-refused');
+    assert.equal(r.title, 'Monthly targets: not saved'); assert.deepEqual(r.why, ['⚠️ Not saved — changed on another device. Reopen the app, then save again']);
+    // too large and not kept: "not saved", and no "Try again"
+    const big = one(run(M, { device: { heldBar: ['🛑 Not saved: the clinic list is too large for the cloud. Ask the supervisor — nothing else was changed.'], held: [{ key: 'clinics', kept: false }], heldRetry: false } }), 'sync-held');
+    assert.equal(big.title, 'Not saved: the red bar says why'); assert.equal(big.action, null); assert.deepEqual(big.items.map(i => i.text), ['Clinics — not saved']);
+    assert.ok(!run(M, { device: { heldBar: [], held: [] } }).some(x => x.id === 'sync-held'), 'the bar down: no card');
+  });
+  test("today's backup: why this phone does not take it now (snapshotBlockedWhy), as Export → Automatic backups says it", () => {
+    const q = one(run(G, { hour: 17, device: { snapHeld: 'queued' } }), 'backup-unchecked:2026-11-11');
+    assert.equal(q.why[1], 'This phone does not take it now: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team.');
+    assert.equal(q.action, null, 'Check now would not take it either');
+    const cp = one(run(G, { hour: 17, device: { snapHeld: 'copy' } }), 'backup-unchecked:2026-11-11');
+    assert.ok(/^This phone does not take it now: not every list on it came from the cloud/.test(cp.why[1]));
+    assert.equal(one(run(G, { hour: 17 }), 'backup-unchecked:2026-11-11').action, 'checkBackup');
+  });
+  test('a client request not answered in time (v126): late exactly when the KPI scorecard counts it late — the one rule', () => {
+    const d = DATA(), logged = '2026-11-10T13:59:56', lateAt = new Date(2026, 10, 11, 13, 59, 56).getTime();
+    d.events.push({ id: 'rq1', kind: 'issue', type: 'request', clinicId: 'm1', rep: M, text: 'Price list', at: logged, createdBy: M },
+      { id: 'rq2', kind: 'issue', type: 'request', clinicId: 'r1', rep: R, text: 'Samples', at: '2026-11-09T09:00:00', createdBy: R },
+      { id: 'rq3', kind: 'issue', type: 'request', clinicId: 'm3', rep: M, text: 'Answered', at: '2026-11-08T09:00:00', resolvedAt: '2026-11-08T10:00:00', createdBy: M });
+    const kpiLate = now => core.kpiScorecard(Object.assign({ today: TODAY }, d), { rep: M, from: '2026-11-01', to: TODAY, nowMs: now }).items.find(i => i.key === 'response').value;
+    const before = run(M, { data: d, now: lateAt - 1000 }), after = run(M, { data: d, now: lateAt + 1000 });
+    assert.ok(!before.some(x => x.type === 'request'), 'a second before the 24 hours: not late');
+    assert.equal(kpiLate(lateAt - 1000), '1 of 1 answered within 24h · 1 open', 'the KPI scorecard: still open');
+    const a = one(after, 'request:Mariam');
+    assert.equal(kpiLate(lateAt + 1000), '1 of 2 answered within 24h', 'the KPI scorecard counts it late at the same moment');
+    assert.equal(a.title, '1 client request not answered in time');
+    assert.deepEqual(a.why, ["Logged in Requests, escalations & stands and not marked answered within 24 hours — the KPI scorecard's rule (KPI settings)."]);
+    assert.deepEqual(a.items.map(i => [i.clinicId, i.text]), [['m1', 'Amberline Clinic — logged Nov 10, 13:59']]);
+    assert.deepEqual(a.open, { screen: 'requests' });
+    assert.ok(!after.some(x => x.id === 'request:Renova'), 'a rep: only her clinics\' requests');
+    const g = run(G, { data: d, now: lateAt + 1000 });
+    assert.equal(one(g, 'request:Renova').title, 'Renova: 1 client request not answered in time');
+    assert.equal(one(g, 'request:Mariam').title, 'Mariam: 1 client request not answered in time');
+    // the hours are the KPI settings'
+    assert.ok(!run(M, { data: d, now: lateAt + 1000, responseHours: 48 }).some(x => x.type === 'request'));
+    // it comes due with the clock alone: the next moment the alerts must be worked out again is that one
+    assert.equal(core.alertsNextAt({ today: TODAY, now: lateAt - 60000, user: { name: M, role: 'rep' }, data: d }), lateAt + 1);
+    assert.ok(core.ALERT_TYPES.indexOf('request') >= 0 && !core.ALERT_SUP_ONLY.request);
+  });
+  test('the next moment an alert comes due with no data change (alertsNextAt): midnight, the hours set, the minutes waited, a photo a day older, a snooze', () => {
+    const base = { today: TODAY, user: { name: G, role: 'supervisor' }, data: DATA() };
+    const N = (now, o) => core.alertsNextAt(Object.assign({}, base, { now }, o || {}));
+    assert.equal(N(at(23, 59)), new Date(2026, 10, 12).getTime(), 'midnight: a follow-up turns overdue, a plan missed, a dismissal ends');
+    assert.equal(N(at(11, 0)), at(12, 0), 'the hour set for a field visit (12:00)');
+    assert.equal(N(at(13, 30)), at(16, 0), "the hour set for today's backup (16:00)");
+    assert.equal(N(at(13, 30), { settings: { backupHour: 23, noActivityHour: 9 } }), at(23, 0), 'the hours as set');
+    // (the hours set already passed today: the earliest moment is the one each case adds)
+    const Q = (now, o) => N(now, Object.assign({ settings: { noActivityHour: 0, backupHour: 0 } }, o));
+    assert.equal(Q(at(13, 30)), new Date(2026, 10, 12).getTime());
+    assert.equal(Q(at(13, 30), { device: { outbox: [{ key: 'tasks', since: at(13, 10) }] } }), at(13, 40), 'a change waiting longer than 30 minutes');
+    assert.equal(Q(at(13, 30), { device: { photos: [{ visitId: 'v1', own: [at(13, 20)] }] } }), at(13, 50), 'this phone\'s photo waiting longer than 30 minutes');
+    const day = 86400000, taken = at(15, 0) - 3 * day;   // 2 days and 22½ hours old: 3 days at 15:00
+    assert.equal(Q(at(13, 30), { device: { photos: [{ visitId: 'v2', othersAt: [taken] }] } }), at(15, 0), "another phone's photo: its note gives its age from 3 days, a day at a time");
+    assert.equal(Q(at(16, 0), { device: { photos: [{ visitId: 'v2', othersAt: [taken] }] } }), new Date(2026, 10, 12).getTime(), '…the next day older after midnight here');
+    assert.equal(Q(at(13, 30), { device: { photos: [{ visitId: 'v3', lostAt: [at(15, 0) - 14 * day] }] } }), at(15, 0) + 1, 'a lost photo leaves after 14 days');
+    assert.equal(Q(at(13, 30), { state: { snoozed: { 'drop:Mariam:2026-11': at(14, 5) } } }), at(14, 5), 'a snooze ending');
+    assert.equal(Q(at(13, 30), { device: { erpImport: { at: at(14, 0) - 7 * day, ok: false } } }), at(14, 0) + 1, 'a failed import leaves after 7 days');
+  });
+  test('in the early open\'s window every card the lists make says it is this phone\'s copy, with the copy\'s time — never "synced"; what is kept stays as it was', () => {
+    const cache = {}, d = DATA(), now = at(13, 30);
+    const plain = run(M, { data: d, cache });
+    const dev = { basis: { copy: 'updating', at: '08:12', phone: [], unconfirmed: true }, outbox: [{ key: 'tasks', since: now - 45 * 60000 }] };
+    const win = run(M, { data: d, cache, device: dev });
+    const line = "From this phone's copy, saved 08:12 — updating from the cloud.";
+    ['target', 'overdue', 'missed', 'drop'].forEach(t => { const a = win.find(x => x.type === t); assert.ok(a, t); assert.equal(a.why[a.why.length - 1], line, t + ': says what it rests on'); });
+    const w = one(win, 'sync-wait');
+    assert.ok(!w.why.includes(line), 'this phone\'s own queue is not the copy');
+    assert.equal(w.why[w.why.length - 1], 'Nothing is sent before the sign-in is confirmed: then they upload by themselves.');
+    assert.ok(!win.some(a => [a.title].concat(a.why).some(l => /up to date|synced|\buploaded\b|(?:is|are) in the cloud|reached the cloud/i.test(l))), 'nothing claims the cloud');
+    // the cached cards are not changed by the line (the next computation outside the window says nothing of a copy)
+    assert.deepEqual(run(M, { data: d, cache }), plain);
+    const failed = run(M, { data: d, device: { basis: { copy: 'failed', at: 'Nov 10 18:40', phone: [] } } });
+    assert.equal(one(failed, 'overdue:Mariam').why.slice(-1)[0], "From this phone's copy, saved Nov 10 18:40 — it could not update from the cloud; it is tried again.");
+    // outside the window: only the cards whose own lists came from the phone's copy say so
+    const off = run(M, { data: d, device: { basis: { copy: null, phone: ['visits'] } } });
+    assert.equal(one(off, 'missed:Mariam').why.slice(-1)[0], "From this phone's copy of the visits — not read from the cloud this time.");
+    assert.equal(one(off, 'overdue:Mariam').why.slice(-1)[0], one(plain, 'overdue:Mariam').why.slice(-1)[0], 'the follow-ups read the clinics only');
+  });
+  test('erpSpanCovered: the files carrying the person cover every day, a weekend gap allowed', () => {
+    const d = { erpSales: { periods: PERIODS() } };
+    assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-10-09', M), true);
+    assert.equal(core.erpSpanCovered(d, '2026-09-01', '2026-09-09', M), false);
+    assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-11-08', R), true, 'two files chained');
+    assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-10-09', 'Nobody'), false, 'no file carries that person');
+    const gap = { erpSales: { periods: [{ id: 'a', from: '2026-10-01', to: '2026-10-05', repMap }, { id: 'b', from: '2026-10-15', to: '2026-10-31', repMap }] } };
+    assert.equal(core.erpSpanCovered(gap, '2026-10-01', '2026-10-20', M), false, 'a ten-day hole');
+  });
+  test('every line of every alert has its Arabic (the names and figures stay)', () => {
+    const now = at(13, 30), d = DATA();
+    d.clinics.push(C('x1', 'Lonely Clinic', '', { nextFollowUp: '2026-11-02' }));
+    d.events.push({ id: 'rqA', kind: 'issue', type: 'request', clinicId: 'm1', rep: M, text: 'x', at: '2026-11-09T09:00:00', createdBy: M });   // late: a client request card
+    const day = 86400000, P = o => Object.assign({ visitId: 'v1', clinicId: 'm1', label: 'Amberline Clinic', date: '2026-11-09', rep: M, withRep: null, wait: null, lost: null, mem: 0, here: 0, own: [], old: 0, lostAt: [] }, o);
+    const photos = [P({ wait: '⏳ 2 photos waiting to upload · 1 kept on this phone · 1 only in the app\'s memory — keep the app open', here: 1, mem: 1, own: [now - 60000, now - 60000] }),
+      P({ visitId: 'v2', wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 45 * 60000] }),
+      P({ visitId: 'v3', wait: '⏳ Photo waiting to upload · 4 days now — it can only come from the phone that took it, if that phone still has it', old: 4 }),
+      P({ visitId: 'v4', lost: '⚠️ 2 photos lost before they uploaded — only their small previews are kept', lostAt: [now - day, now - day] })];
+    const dev = { outbox: [{ key: 'tasks', since: now - 45 * 60000 }, { key: 'visits', since: now - 60000 }], memOnly: ['visits', 'memories'], erpDirty: true, online: false, photos,
+      memBar: ["This phone's storage is full — these changes are only in the app's memory: keep the app open and connected until it says Saved", "2 photos are only in the app's memory too"],
+      erpImport: { at: now - 3600000, ok: false, msg: 'x', who: G }, snapFail: { day: TODAY, at: now - 60000, why: 'tooLarge', bytes: 1200000 } };
+    const stale = DATA(); stale.targets[R].month = '2026-10';
+    // the dates and month names as the screen writes them in Arabic (fmtDate / monthLabel of 02 and 11)
+    const ar = { fmtDate: x => new Date(x + 'T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', { month: 'short', day: 'numeric' }),
+      monthLabel: x => new Date(x + '-01T00:00:00').toLocaleDateString('ar-KW-u-nu-latn', { month: 'long', year: 'numeric' }) };
+    const all = [run(G, { data: d, device: dev, hour: 17 }), run(M, { device: dev }), run(G, { hour: 17, device: {} }), run(G, { data: stale }), run(R, { data: stale }),
+      run(G, Object.assign({ data: stale, device: dev, hour: 17 }, ar)), run(M, Object.assign({ device: dev }, ar))].reduce((a, b) => a.concat(b), []);
+    ['sync-mem', 'sync-wait', 'sync-erp', 'photos-wait', 'photos-stale', 'photos-lost', 'target-stale:Renova:2026-11'].forEach(id => assert.ok(all.some(a => a.id === id), 'covered: ' + id));
+    const types = new Set(all.map(a => a.type));
+    core.ALERT_TYPES.forEach(t => assert.ok(types.has(t), 'covered: ' + t));
+    const enLabel = l => /^[^·]+ · [A-Z][a-z]{2} \d{1,2}( · [^·]+)?$/.test(l);   // "Amberline Clinic · Nov 9": a name and an English date — its Arabic run has the Arabic date
+    const arLabel = l => /^[^·]+ · \d{1,2} [؀-ۿ]+( · [^·]+)?$/.test(l);           // the same line on an Arabic screen: nothing in it to translate
+    all.forEach(a => lines(a).forEach(l => { if(enLabel(l)) return; const t = i18n.tr(l) || (arLabel(l) ? l : null); assert.ok(t && /[؀-ۿ]/.test(t), 'no Arabic for: ' + l); }));
+    assert.ok(all.some(a => (a.items || []).some(i => /^Amberline Clinic · \d+ نوفمبر$/.test(i.text))), 'a photo line in Arabic: the name stays, the date in Arabic');
+    ['Alerts', 'Nothing needs attention right now.', 'Dismiss for today', 'Snooze 3 days', 'Alert settings', 'Upload now', 'Check now', 'Retry the save', 'Open']
+      .forEach(s => assert.ok(/[؀-ۿ]/.test(i18n.tr(s) || ''), s));
+    // counted as the app counts everywhere else (countAr — alerts review F10); in the app the name itself comes in Arabic
+    // (alertsFor's nameOf: msName — F9), here in Node there is no wdArNames
+    assert.equal(i18n.tr('Mariam: 2 follow-ups overdue'), 'Mariam: متابعتان متأخرتان');
+    assert.equal(i18n.tr('Birchwood Center — was due 5 نوفمبر (6 days ago)'), 'Birchwood Center — كانت مستحقة 5 نوفمبر (قبل 6 أيام)');
+    // an amount as the Arabic UI writes it: the same grouping, د.ك after the figure (kdAr, v125)
+    assert.equal(i18n.tr('Amberline Clinic — 100.00 KD vs 800.00 KD (−88%)'), 'Amberline Clinic — 100.00 د.ك مقابل 800.00 د.ك (−88%)');
+    assert.equal(i18n.tr('Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to 9 نوفمبر.'), 'المحقق 1,000.00 د.ك من تارغت 10,000.00 د.ك (10%) — من ملفات مبيعات ERP حتى 9 نوفمبر.');
+  });
+});
+
+describe('one pace rule everywhere (the owner\'s decision of 17 Nov: on pace from 90 % — UMCore.paceOf)', () => {
+  // Mariam: a 10,000 KD target; the files to Nov 9 (7 of November's 22 working days: an even pace is 3,181.82 KD by
+  // then); she invoiced 2,854 KD = 89.70 % of that even pace — behind by the rule, "90%" once rounded.
+  const M = 'Mariam', R = 'Renova', MS = 'Mariam Sample', RS = 'Ranova Sample Person';
+  const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Waterpik Cordless Plus', 1, net, net, 0, sm, 'Waterpik', cust, 'Clinics', 0, ''];
+  const C = (id, name, rep) => ({ id, name, rep, cls: 'B', doctors: [] });
+  const data = (o) => { o = o || {};
+    const nov = o.nov || [row('2026-11-02', 'SINV11', 'Amberline Clinic', 1854, MS), row('2026-11-03', 'SINV12', 'Birchwood Center', 1000, MS), row('2026-11-04', 'SINV13', 'Garnetta Center', 900, RS)];
+    const periods = o.periods || [{ id: 'nov', from: '2026-11-01', to: '2026-11-09', repMap: { [MS]: M, [RS]: R }, rows: nov }];
+    return { today: o.today || '2026-11-11', clinics: [C('m1', 'Amberline Clinic', M), C('m2', 'Birchwood Center', M), C('r1', 'Garnetta Center', R)], visits: [], tasks: [], events: [], dayPlans: {}, erpMap: {},
+      targets: o.targets || { [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-11' } }, erpSales: { returnPolicy: 'origin', periods } }; };
+
+  test('the forecast\'s % of the target is the pace card\'s own percentage, cut on its word\'s side — 89.7 % reads 89, never 90 beside "Behind pace"', () => {
+    const D = core.execDashboard(data(), { rep: M, reps: [M, R] }), A = D.achievement, wd = D.perDay.workdays;
+    const word = core.paceOf(A.achieved, A.target, wd.done, wd.total);                       // the pace card's verdict (msPace)
+    assert.deepEqual([wd.done, wd.total, A.achieved, D.forecast.forTarget], [7, 22, 2854, 8969.71]);
+    assert.deepEqual([word.state, word.pct, D.forecast.pct], ['behind', 89, 89]);             // rounded, 8,969.71 ÷ 10,000 read 90%
+    // 2,864 KD = 90.01 %: on pace, 90
+    const on = core.execDashboard(data({ nov: [row('2026-11-02', 'SINV11', 'Amberline Clinic', 2864, MS)] }), { rep: M, reps: [M, R] });
+    assert.deepEqual([core.paceOf(on.achievement.achieved, on.achievement.target, 7, 22).state, on.forecast.pct], ['on', 90]);
+    // 99.8 % of an even pace: on pace, 99 — never 100 while the forecast stays under the target
+    const near = core.execDashboard(data({ nov: [row('2026-11-02', 'SINV11', 'Amberline Clinic', 3176, MS)] }), { rep: M, reps: [M, R] });
+    assert.deepEqual([near.forecast.forTarget < 10000, near.forecast.pct], [true, 99]);
+    // the team, every file to the same day: the team's pace card and its forecast, the same percentage
+    const T = core.execDashboard(data(), { rep: 'all', reps: [M, R] }), TA = T.achievement, tw = T.perDay.workdays;
+    assert.equal(T.forecast.pct, core.paceOf(TA.achieved, TA.target, tw.done, tw.total).pct);
+  });
+
+  test('files to different days: each person projected from her own day, the forecast\'s own ratio cut the same way', () => {
+    const periods = [{ id: 'novM', from: '2026-11-01', to: '2026-11-09', repMap: { [MS]: M }, rows: [row('2026-11-02', 'SINV11', 'Amberline Clinic', 2854, MS)] },
+      { id: 'novR', from: '2026-11-01', to: '2026-11-05', repMap: { [RS]: R }, rows: [row('2026-11-04', 'SINV13', 'Garnetta Center', 405, RS)] }];
+    const T = core.execDashboard(data({ periods }), { rep: 'all', reps: [M, R] }), F = T.forecast;
+    assert.deepEqual([F.byRep[M].done, F.byRep[R].done], [7, 5]);
+    // (8,969.71 + 405 ÷ 5 × 22 = 1,782) ÷ 12,000 = 89.6 %: 89 (it read 90%), on the side of the team's word ("behind")
+    assert.deepEqual([F.forTarget, F.target, F.pct], [10751.71, 12000, 89]);
+    assert.equal(F.pct, core.paceOf(F.forTarget, F.target, 1, 1).pct);
+    const TA = T.achievement, tw = T.perDay.workdays;
+    assert.equal(core.paceOf(TA.achieved, TA.target, tw.done, tw.total).state, 'behind');
+  });
+
+  test('the daily e-mail\'s "at this pace" is the same rule: working days to the day the files reach, cut — never the calendar to today, never "0%" without a file', () => {
+    const d = core.dailyDigest({ kind: 'morning', data: data(), reps: [M, R], rep: M });
+    // Nov 11, the files to Nov 9: 89.7 % of an even pace (by the calendar to today it read 78%: 2,854 ÷ 11 × 30)
+    assert.equal(d.blocks[0].target.pace, 89);
+    assert.match(d.text, /على هذا الإيقاع تصل إلى 89% بنهاية الشهر/);
+    const none = core.dailyDigest({ kind: 'morning', data: data({ periods: [] }), reps: [M, R], rep: M });
+    assert.equal(none.blocks[0].target.pace, null);
+    assert.doesNotMatch(none.text, /على هذا الإيقاع/);
+  });
+
+  test('the weekly deck says "on pace to pass the target" only when the rule says ahead of an even pace — never from the calendar straight line', () => {
+    // Nov 26: 20 of 22 working days (90.9 %), 26 of 30 calendar days (86.7 %). Mariam 8,818 of 10,000: 97.0 % of an even
+    // pace — "On pace" on the Today card, 101.7 % by the calendar straight line (the deck said "on pace to pass, 102%")
+    const file = net => [{ id: 'nov', from: '2026-11-01', to: '2026-11-26', repMap: { [MS]: M, [RS]: R }, rows: [row('2026-11-03', 'S1', 'Amberline Clinic', net, MS), row('2026-11-18', 'S2', 'Garnetta Center', 300, RS)] }];
+    const story = net => { const W = core.weeklyReport(data({ today: '2026-11-26', periods: file(net) }), { end: '2026-11-26', reps: [M, R] });
+      return { W, S: core.weeklyStory(W, { presenter: 'Dr. Ghaith' }), H: core.weeklyHighlights(W) }; };
+    const on = story(8818);
+    assert.deepEqual([on.W.perRep[M].paceRule.state, on.W.perRep[M].paceRule.pct], ['on', 96]);
+    assert.ok(on.W.perRep[M].pace > 1);                                                         // the straight line (A3 only)
+    assert.ok(!on.S.all.some(i => i.key === 'target-pace:' + M), 'no "on pace to pass" below an even pace');
+    assert.ok(!on.H.some(t => /on pace to exceed/.test(t)));
+    const ahead = story(9500);                                                                  // 104.5 % of an even pace
+    const it = ahead.S.all.find(i => i.key === 'target-pace:' + M);
+    assert.deepEqual([it.big, it.detail], ['104%', 'KD 9,500 of KD 10,000 by 26 Nov (working day 20 of 22)']);
+    assert.ok(ahead.H.includes('Mariam is on pace to exceed the month\'s target (104%).'));
   });
 });

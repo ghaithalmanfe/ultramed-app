@@ -234,12 +234,15 @@ function copyProductDupReport(){
 // Visual guidance: every product suggestion carries its PHOTO. ERP product
 // names differ slightly from catalog names, so match by token overlap; when
 // no photo exists (e.g. professional Univet gear) show a branded tile.
+// a product's name and brand as tokens, kept beside it and worked out again when either changes (v126 speed)
+const _findCatToks = new WeakMap();
 function findCatalogProduct(name){
   const nt = String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean);
   if(!nt.length) return null;
   let best = null, bestScore = 0;
   products.forEach(pr => {
-    const pt = (pr.name+' '+(pr.brand||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/);
+    const obj = pr && typeof pr === 'object', e = obj ? _findCatToks.get(pr) : null;
+    const pt = e && e.n === pr.name && e.b === pr.brand ? e.t : (() => { const t = (pr.name+' '+(pr.brand||'')).toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/); if(obj) _findCatToks.set(pr, { n: pr.name, b: pr.brand, t }); return t; })();
     const ov = nt.filter(t=>pt.includes(t)).length;
     const score = ov / Math.max(1, Math.max(nt.length, Math.min(pt.length, nt.length+2)));
     if(ov >= Math.min(2, nt.length) && score > bestScore){ best = pr; bestScore = score; }
@@ -272,7 +275,8 @@ function renderDoctorsDb(){
   if(ddTab === 'rx'){ filtersEl.innerHTML=''; renderRxStats(body, docs); return; }
   const dueN = docs.filter(d=>d.cadenceStatus==='due').length;
   const bdayN = docs.filter(d=>d.birthdayIn!=null && d.birthdayIn<=14).length;
-  const rawOf = d => ((clinics.find(c=>c.id===d.clinicId)||{}).doctors||[]).find(x=>x.id===d.id) || {};
+  const clinicOf = new Map(); clinics.forEach(c => { if(c && !clinicOf.has(c.id)) clinicOf.set(c.id, c); }); // (the first clinic with each id, as find() gives — once for the list)
+  const rawOf = d => ((clinicOf.get(d.clinicId)||{}).doctors||[]).find(x=>x.id===d.id) || {};
   const incN = docs.filter(d=>UMCore.doctorRecordCompleteness(rawOf(d)).pct<100).length;
   filtersEl.innerHTML = [
     ['all', `All (${docs.length})`], ['due', `${I('bell')} Follow-up due (${dueN})`],
@@ -290,9 +294,9 @@ function renderDoctorsDb(){
     (b.cadenceStatus==='due') - (a.cadenceStatus==='due') ||
     ((a.birthdayIn!=null&&a.birthdayIn<=14)?0:1) - ((b.birthdayIn!=null&&b.birthdayIn<=14)?0:1) ||
     String(b.lastVisit||'').localeCompare(String(a.lastVisit||'')));
-  const gaps = dataGaps().length;
+  const dg = dataGaps(), gaps = dg.length; // (once for both figures)
   const totalFields = docs.length*7 + ddPool().filter(c=>c.cls!=='Closed').length*3;
-  const pctDone = totalFields ? Math.max(0, Math.round((1 - dataGaps().reduce((s2,g)=>s2+g.miss.length,0)/totalFields)*100)) : 100;
+  const pctDone = totalFields ? Math.max(0, Math.round((1 - dg.reduce((s2,g)=>s2+g.miss.length,0)/totalFields)*100)) : 100;
   body.innerHTML = `
     <div class="dd-tools">
       ${currentUser.role==='supervisor'?`<button class="chip small" onclick="openContactImport()">${I('download')} Import contacts</button>`:''}
@@ -301,7 +305,7 @@ function renderDoctorsDb(){
       <button class="chip small" onclick="exportDoctorsDbXlsx()">${I('share')} Export (Excel)</button>
       <span class="chip small dd-pct" style="pointer-events:none;">Data completeness: ${pctDone}%</span>
     </div>
-    ` + (list.length ? `<div class="lrows dd-rows">` : '') + (list.map(d=>{
+    ` + (list.length ? `<div class="lrows dd-rows">` : '') + (pagedRows('dd', [ddFilter, q, currentUser.name, currentUser.role].join('\u0001'), list, d=>{ // (the first rows, then "Show more": v126 speed, part 4)
     const pb = SPECIALTY_PLAYBOOK[d.title];
     return `<div class="lrow dd-row clickable" role="button" tabindex="0" onclick="openDoctorProfile('${d.clinicId}','${d.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
       <span class="lr-ic" aria-hidden="true">${pb ? `<span class="dd-emo">${pb.icon}</span>` : I('stethoscope')}</span>
@@ -318,7 +322,7 @@ function renderDoctorsDb(){
         </div>
       </div>
     </div>`;
-  }).join('') + (list.length ? `</div>` : '') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
+  }) + (list.length ? `</div>` : '') || '<div class="empty">👨‍⚕️ No doctors match. Doctors are added from each clinic\'s file or while logging a visit.</div>');
 }
 // ---- PRESCRIPTIONS GIVEN: the Doctors page tab (v114) ----
 // Pads of printed prescription forms, counted from the one ledger
@@ -1322,9 +1326,12 @@ let caRep = null;
 // so unit-plan suggestions never re-match per card.
 // Every imported invoice line, flattened once and reused — the cross-sell
 // engine needs the whole market to know what comparable clinics buy.
+// (v126 speed, part 4: the lines of the pass kept per data state — erpShareNow — which also follows the returns policy;
+// this memo was keyed on the files' ids and line counts only)
 let _allRowsMemo = null;
 function erpAllRows(){
-  const sig = erpPeriods().map(p2=>p2.id+':'+(p2.rows?p2.rows.length:0)).join('|');
+  const sh = erpShareNow(); if(sh) return sh.lines();
+  const sig = erpReturnPolicy() + '|' + erpPeriods().map(p2=>p2.id+':'+(p2.rows?p2.rows.length:0)).join('|');
   if(!_allRowsMemo || _allRowsMemo.sig !== sig){
     let all = [];
     erpPeriods().forEach(p2=>{ all = all.concat(erpViewRows(p2)); });
@@ -1332,9 +1339,20 @@ function erpAllRows(){
   }
   return _allRowsMemo.all;
 }
+// The market's purchase lines from the ERP files (UMCore.crossSellErpLines), the same for every clinic's guide: kept
+// while the lines of the kept pass (one per data state) and what the catalog says of each product (name, brand,
+// category, price, in order) are the same (v126 speed, part 4).
+let _xsKept = { lines: null, prod: null, erp: null };
 function clinicSellGuide(clinicId){
+  const sh = erpShareNow(), rows = erpAllRows();
+  let erpLines;
+  if(sh && typeof UMCore.crossSellErpLines === 'function'){
+    const prod = JSON.stringify((products || []).map(p => p ? [p.id, p._key, p.name, p.brand, p.cat, p.price] : null));
+    if(_xsKept.lines !== rows || _xsKept.prod !== prod) _xsKept = { lines: rows, prod, erp: UMCore.crossSellErpLines(rows, sh.match, products) };
+    erpLines = _xsKept.erp;
+  }
   return UMCore.crossSellPlan({ clinicId, clinics, products, visits,
-    erpRows: erpAllRows(), erpMap, today: todayStr(), limit: 3 });
+    erpRows: rows, erpMap, today: todayStr(), limit: 3, share: sh, erpLines });
 }
 // "What do they buy, and what do I sell them next?" — every line carries the
 // evidence behind it, so the rep can say it out loud in the clinic.
@@ -1367,12 +1385,16 @@ function sellGuideBlock(c){
       ${(!g.lapsed.length && !g.upsell.length && !g.cross.length)?`<div style="color:var(--muted); font-size:12.5px; padding-top:8px;">No gap found against comparable clinics — this account already buys across the range.</div>`:''}
     </div>`;
 }
+// (every line and each clinic's lines: the pass kept per data state when there is one — the same lines, read only)
 function caAllRowsByClinic(){
+  const sh = erpShareNow();
+  if(sh) return { by: sh.byClinic(), all: sh.lines() };
   const by = {};
   let all = [];
   erpPeriods().forEach(p2=>{ all = all.concat(erpViewRows(p2)); });
+  const match = erpMatchFn();
   all.forEach(r=>{
-    const m = UMCore.matchCustomer((r.customer||'').trim(), clinics, erpMap);
+    const m = match((r.customer||'').trim());
     if(!m.clinicId) return;
     (by[m.clinicId] = by[m.clinicId] || []).push(r);
   });
@@ -1381,9 +1403,10 @@ function caAllRowsByClinic(){
 function caMonthClinicSales(){
   const today = todayStr(), mStart = today.slice(0,7)+'-01';
   const byClinic = {};
-  erpPeriods().filter(p2=>p2.to>=mStart && p2.from<=today).forEach(p2=>erpViewRows(p2).forEach(r=>{
+  const match = erpMatchFn(), sh = erpShareNow(), viewOf = p2 => sh ? sh.rows(p2) : erpViewRows(p2);
+  erpPeriods().filter(p2=>p2.to>=mStart && p2.from<=today).forEach(p2=>viewOf(p2).forEach(r=>{
     if(r.date < mStart || r.date > today) return;
-    const m = UMCore.matchCustomer((r.customer||'').trim(), clinics, erpMap);
+    const m = match((r.customer||'').trim());
     if(!m.clinicId) return;
     const a = byClinic[m.clinicId] || (byClinic[m.clinicId]={net:0, byBrand:{}, brandRaw:{}, docs:new Set()});
     a.net += r.net; if(r.doc) a.docs.add(r.doc);
@@ -1420,6 +1443,7 @@ function renderClinicAnalysis(){
 
   // Group the rep's clinics into family cards (or single-clinic cards).
   const seen = new Set(); const cards = [];
+  const vByC = visitsByClinic(); // (a clinic's visits in the list's order, found once — v126 speed, part 4)
   clinics.filter(c=>c.rep===rep && c.cls!=='Closed').forEach(c=>{
     if(seen.has(c.id)) return;
     const famKey = fams.byClinic[c.id];
@@ -1434,10 +1458,11 @@ function renderClinicAnalysis(){
     });
     // Visits + intel from the girls' reports (this month, family-wide).
     const ids = new Set(members.map(m2=>m2.id));
-    const vs = visits.filter(v=>ids.has(v.clinicId) && v.date>=mStart && v.date<=today);
+    const ofCard = members.length === 1 ? (vByC.get(members[0].id) || []) : visits.filter(v=>ids.has(v.clinicId)); // (a family's in the list's order, as before)
+    const vs = ofCard.filter(v=>v.date>=mStart && v.date<=today);
     const fieldN = vs.filter(v=>UMCore.isFieldVisit(v)).length;
     const callsN = vs.filter(v=>v.callOnly).length;
-    const lastAll = visits.filter(v=>ids.has(v.clinicId)).sort((a,b2)=>b2.date.localeCompare(a.date));
+    const lastAll = ofCard.slice().sort((a,b2)=>b2.date.localeCompare(a.date));
     const lastV = lastAll[0] || null;
     const notes = lastAll.filter(v=>v.notes || v.noOrderReason).slice(0,2)
       .map(v=>({date:v.date, txt:(v.notes||v.noOrderReason||'').slice(0,110)}));
@@ -1449,16 +1474,10 @@ function renderClinicAnalysis(){
       return { brand: b, tgt: tgtB[b], sold, gap: Math.max(0, tgtB[b]-sold) };
     }).filter(o=>o.gap>0.005).sort((a,b2)=>b2.gap-a.gap);
     const pct = tgt>0 ? Math.round(act/tgt*100) : 0;
-    // Concrete units for the #1 gap: "≈ 3× Cordless Plus" right on the card.
-    let topUnits = null, topPlan = null;
-    if(opps.length){
-      const clinicRows = []; members.forEach(m2=>{ (rowsIdx.by[m2.id]||[]).forEach(r=>clinicRows.push(r)); });
-      const up = UMCore.unitSellPlan({brand: opps[0].brand, gap: opps[0].gap, clinicRows, allRows, products});
-      if(up.length){ topUnits = up.map(x=>`${x.units}× ${x.product}`).join(' + '); topPlan = up; }
-    }
-    cards.push({ id:c.id, label, cls:c.cls, members, topUnits, tgt:Math.round(tgt*100)/100, act:Math.round(act*100)/100,
+    // Concrete units for the #1 gap: "≈ 3× Cordless Plus" right on the card — worked out for a card when it is drawn
+    // (the cards are drawn in pages, v126 speed part 4: the same plan from the same lines)
+    cards.push({ id:c.id, label, cls:c.cls, members, tgt:Math.round(tgt*100)/100, act:Math.round(act*100)/100,
       pct, gap: Math.round(Math.max(0,tgt-act)*100)/100, fieldN, callsN, lastV, notes, docs, contact, opps,
-      topPlan,
       nextFollowUp: members.map(m2=>m2.nextFollowUp).filter(Boolean).sort()[0] || null });
   });
 
@@ -1479,8 +1498,19 @@ function renderClinicAnalysis(){
         <div><div style="font-weight:800; font-size:14.5px;">${covered}/${cards.length}</div><div style="font-size:9.5px; color:var(--muted); letter-spacing:.06em;">CLINICS BOUGHT</div></div>
       </div>
     </div>
-    ${shown.map(cd=>{
+    ${pagedRows('ca', [rep, q, currentUser.name, currentUser.role].join('\u0001'), shown, cd=>{
+      if(cd.topPlan === undefined){
+        cd.topPlan = null;
+        if(cd.opps.length){
+          const clinicRows = []; cd.members.forEach(m2=>{ (rowsIdx.by[m2.id]||[]).forEach(r=>clinicRows.push(r)); });
+          const up = UMCore.unitSellPlan({brand: cd.opps[0].brand, gap: cd.opps[0].gap, clinicRows, allRows, products});
+          if(up.length) cd.topPlan = up;
+        }
+      }
       const barPct = Math.max(0, Math.min(100, cd.pct)); // returns can push actuals negative
+      // the clinic's share of the target judged by the one pace rule (paceFor, to the day her figure runs to; until 17 Nov:
+      // gold from 50 %, whatever the day of the month)
+      const cP = paceFor(cd.act, cd.tgt, bm.asOf);
       return `<div class="card ca-row" style="margin-bottom:10px;">
         <div class="row-between">
           <div style="display:flex; gap:8px; align-items:center;">
@@ -1492,10 +1522,10 @@ function renderClinicAnalysis(){
           </div>
           <div style="text-align:start; flex-shrink:0;">
             <div style="font-weight:800; font-size:14px;">${money(cd.act)} <span style="color:var(--muted); font-weight:500; font-size:11px;">/ ${money(cd.tgt)}</span></div>
-            <div style="font-size:10.5px; font-weight:700; color:${cd.pct>=100?'var(--sage-ink)':cd.pct>=50?'var(--gold-ink)':'var(--coral-ink)'};">${cd.pct}% of clinic target</div>
+            <div style="font-size:10.5px; font-weight:700; color:${paceInk(cP, 'var(--gold-ink)', 'var(--coral-ink)')};"${cP ? ` data-pace="${cP.state}"` : ''}>${cd.pct}% of clinic target</div>
           </div>
         </div>
-        <div style="height:6px; border-radius:3px; background:var(--paper); overflow:hidden; margin:8px 0;"><div style="width:${barPct}%; height:100%; background:${cd.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>
+        <div style="height:6px; border-radius:3px; background:var(--paper); overflow:hidden; margin:8px 0;"><div style="width:${barPct}%; height:100%; background:${cP && cP.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>
         ${cd.opps.length?`<div style="font-size:12.5px; margin-bottom:6px;"><b>🎯 Sell next:</b> ${cd.opps.slice(0,3).map(o=>`${esc(o.brand)} <span class="num" style="color:var(--coral-ink);">${money(o.gap)}</span>`).join(' · ')}</div>${cd.topPlan?`<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; overflow:hidden;">
           ${cd.topPlan.slice(0,3).map(x=>`<div style="position:relative;">${playbookThumb(x.product, 42)}<span style="position:absolute; top:-5px; inset-inline-end:-5px; background:var(--teal); color:#fff; font-size:9.5px; font-weight:800; border-radius:99px; padding:1px 5px;">×${x.units}</span></div>`).join('')}
           <div style="font-size:11px; color:var(--teal); font-weight:600; min-width:0;">${esc(cd.opps[0].brand)}</div>
@@ -1509,7 +1539,7 @@ function renderClinicAnalysis(){
           ${cd.nextFollowUp?`<span class="chip small" style="pointer-events:none;">⏰ ${fmtDate(cd.nextFollowUp)}</span>`:''}
         </div>
       </div>`;
-    }).join('') || '<div class="empty">No clinics match.</div>'}`;
+    }) || '<div class="empty">No clinics match.</div>'}`;
 }
 // Full per-brand breakdown for one clinic/family: its share of every brand
 // target vs what it actually bought — the concrete "what to sell here" plan.
@@ -1933,13 +1963,14 @@ function erpWindowStats(from, to, repFilter){
   if(!ps.length) return null;
   const byClinic = {}, docs = {};
   let net = 0;
-  ps.forEach(p => erpViewRows(p).forEach(r => {
+  const match = erpMatchFn(), sh = erpShareNow(); // (the pass kept for the data state: its lines and matches)
+  ps.forEach(p => (sh ? sh.rows(p) : erpViewRows(p)).forEach(r => {
     if(!UMCore.inRange(r.date, from, to)) return;
-    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{});
+    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match);
     if(!rep || (repFilter !== 'all' && rep !== repFilter)) return;
     net += r.net;
     if(r.type !== 'return') docs[r.doc] = 1;
-    const m = UMCore.matchCustomer(r.customer, clinics, erpMap);
+    const m = match(r.customer);
     if(m.clinicId) byClinic[m.clinicId] = (byClinic[m.clinicId]||0) + r.net;
   }));
   Object.keys(byClinic).forEach(k => byClinic[k] = Math.round(byClinic[k]*100)/100);
@@ -1950,14 +1981,17 @@ function renderCoverageBoard(){
   const from = UMCore.localDateStr(d), to = todayStr();
   const cov = UMCore.clinicCoverage({ from, to, today: to, repFilter: covRep, visits, clinics, dayPlans });
   const ew = erpWindowStats(from, to, covRep);
-  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(), from, to, today: to, repFilter: covRep, visits, clinics, targets: blendedTargets(), dayPlans })
+  const covMtd = erpMtdMap(); // one pass of the month's lines for the coach and the targets it reads (v126 speed)
+  const coach = UMCore.coachInsights({ erpMtd: covMtd, from, to, today: to, repFilter: covRep, visits, clinics, targets: blendedTargets(covMtd), dayPlans })
     .filter(i => i.level !== 'good').slice(0, 3);
   const repChips = currentUser.role === 'supervisor'
     ? `<div class="chip-row" style="margin-bottom:8px;">${['all', ...REPS].map(r =>
         `<div class="chip small ${covRep===r?'on':''}" onclick="setCovRep('${esc(r)}')">${r==='all'?'Whole team':esc(r)}</div>`).join('')}</div>` : '';
   const tile = (n, l) => `<div class="ins-tile"><div class="it-n">${n}</div><div class="it-l">${l}</div></div>`;
-  const clinicOf = id => clinics.find(c => c.id === id);
-  const visitedRows = cov.visited.map(c => {
+  const byId = new Map(); clinics.forEach(c => { if(c && !byId.has(c.id)) byId.set(c.id, c); }); // (the first clinic with each id, as find() gives)
+  const clinicOf = id => byId.get(id);
+  const pick = [covRep, covDays, currentUser.name, currentUser.role].join('\u0001'); // the lists are drawn in pages (v126 speed, part 4)
+  const visitedRows = pagedRows('covV', pick, cov.visited, c => {
     const cl = clinicOf(c.id);
     const detail = c.detail.map(v => {
       const names = cl ? contactNames(v, cl) : '';
@@ -1985,8 +2019,8 @@ function renderCoverageBoard(){
       ${c.nextFollowUp?`<div style="font-size:12px; color:var(--muted); margin-top:6px;">Next follow-up: ${fmtDate(c.nextFollowUp)}</div>`:''}
       <button class="chip small" style="margin-top:8px;" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">${I('file')} Open clinic</button>
     </details>`;
-  }).join('');
-  const needsRows = cov.needsVisit.map(c => `
+  });
+  const needsRows = pagedRows('covN', pick, cov.needsVisit, c => `
     <div class="card" style="padding:12px 14px; margin-bottom:8px; border-inline-start:4px solid ${c.weight<=1?'var(--coral)':c.weight<=4?'#FF9500':'var(--teal)'};">
       <div class="row-between">
         <div style="display:flex; align-items:center; gap:9px;">
@@ -2002,7 +2036,7 @@ function renderCoverageBoard(){
         <button class="chip small" onclick="closeModal(); quickLogFrom('${esc(c.id)}')">${I('plus')} Log a visit</button>
         <button class="chip small" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">${I('file')} Open clinic</button>
       </div>
-    </div>`).join('');
+    </div>`);
   showModal(`
     <h3 style="margin-top:0;" data-wide data-sections data-grid>${I('clipboard')} Coverage review</h3>
     <div style="color:var(--muted); font-size:12.5px; margin-bottom:10px;">Everything done and still needed — last ${covDays} days${covRep!=='all'?' · '+esc(covRep):''}</div>
@@ -2053,7 +2087,9 @@ function erpHealthCard(){
     <div class="chip-row" style="margin-top:8px;"><div class="chip small on" onclick="retryErpRows()">🔄 إعادة التحميل</div><div class="chip small" onclick="openErpImport()">📥 أعد رفع الملف</div></div>
   </div>`;
   }
-  if(_mirrorUsed.erpSales) return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
+  // (while the early open's line is up it says so for the whole screen — and a read that changes nothing draws nothing again:
+  // this card would stay up after the read is in, v126 speed part 3)
+  if(_mirrorUsed.erpSales && !(typeof _copyLine !== 'undefined' && _copyLine)) return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
     <div style="font-weight:700; font-size:13.5px;">📴 أرقام المبيعات من نسخة هذا الجهاز</div>
     <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">السحابة لم تُقرأ عند الفتح — الأرقام آخر ما شاهده هذا الجهاز وقد تكون أقدم من المحفوظ. أي رفع جديد يُدمج مع السحابة عند الحفظ.</div>
   </div>`;

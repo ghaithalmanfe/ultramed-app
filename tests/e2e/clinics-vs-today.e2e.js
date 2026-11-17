@@ -107,7 +107,7 @@ const kd = s => { const m = String(s || '').replace(/,/g, '').match(/(-?\d+(?:\.
     return { sub: card ? txt(card.querySelector('.csub')) : '', tiles, rec: txt(rec), parts: { clinics: part('clinics'), channels: part('channels'), ignored: part('ignored'), total: part('total') },
       people: rec ? [...rec.querySelectorAll('[data-person]')].map(e => ({ rep: e.dataset.person, t: txt(e) })) : [], team: part('team'), list, top, filter: clinicRepFilter };
   }, rep || null);
-  const today = () => page.evaluate(() => { renderToday(); return document.getElementById('targetCard').innerText.replace(/\s+/g, ' '); });
+  const today = () => page.evaluate(async () => { renderToday(); await msWhenReady(); return document.getElementById('targetCard').innerText.replace(/\s+/g, ' '); }); // (the home's figures, and its frame, are those of the data as it is now — a later frame is held until they are: v126 speed part 2)
   const ach = () => page.evaluate(() => { const d = digestData(); return { m: UMCore.monthAchievement('Mariam', d).amount, r: UMCore.monthAchievement('Renova', d).amount, g: UMCore.monthAchievement('Dr. Ghaith', d).amount }; });
   const tileKD = (c, re) => { const t = c.tiles.find(x => re.test(x.l)); return t ? (kd(t.l) != null ? kd(t.l) : kd(t.n)) : null; };
 

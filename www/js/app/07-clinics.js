@@ -12,8 +12,16 @@ function setClinicMode(m){
   document.getElementById('clinicListPane').style.display = m==='list'?'block':'none';
   if(m==='dash') renderClinicDash(); else renderClinics();
 }
-function clinicStats(c){
-  const vs = visits.filter(v=>v.clinicId===c.id);
+// The visits of each clinic, in the list's order (clinic id → visits), for a screen that reads every clinic's: found in
+// one pass over the visits instead of one per clinic (v126 speed, part 4). Made for one draw, never kept.
+function visitsByClinic(){
+  const by = new Map();
+  (visits || []).forEach(v => { if(!v) return; const a = by.get(v.clinicId); if(a) a.push(v); else by.set(v.clinicId, [v]); });
+  return by;
+}
+// vs (optional): this clinic's visits in the list's order, grouped once by the caller for every clinic (visitsByClinic)
+function clinicStats(c, vs){
+  vs = vs || visits.filter(v=>v.clinicId===c.id);
   const field = vs.filter(isFieldVisit);         // physical visits only
   const orders = vs.filter(v=>v.orderTaken);     // includes remote orders
   const rev = vs.reduce((a,v)=>a+(v.orderTotal||0),0);
@@ -35,7 +43,7 @@ function clinicStats(c){
 let erpDashTab = 'not';
 function erpDashData(repOverride){
   const effRep = repOverride || clinicRepFilter;
-  const ms = UMCore.monthCustomerSales(digestData(), { rep: effRep, fallback: true, isExchange: isExchangeLine });
+  const ms = UMCore.monthCustomerSales(digestDataKept(), { rep: effRep, fallback: true, isExchange: isExchangeLine }); // (the pass kept for the data state)
   const fams = UMCore.clinicFamilies(clinics);
   // a shared account invoiced by two people is one line naming both
   const buyers = ms.accounts.map(a => ({ name: a.name, rep: a.reps.join(' + '), clinicId: a.clinicId, channel: a.channel, family: a.family,
@@ -46,8 +54,9 @@ function erpDashData(repOverride){
   buyers.forEach(b=>{ if(b.family && fams.fams[b.family]) fams.fams[b.family].ids.forEach(id=>boughtIds.add(id)); });
   let pool = clinics.filter(c=>c.cls!=='Closed');
   if(effRep !== 'all') pool = pool.filter(c=>c.rep===effRep);
+  const vByC = visitsByClinic();
   const nonBuyers = pool.filter(c=>!boughtIds.has(c.id)).map(c=>{
-    const lastV = visits.filter(v=>v.clinicId===c.id).map(v=>v.date).sort().pop() || null;
+    const lastV = (vByC.get(c.id) || []).map(v=>v.date).sort().pop() || null;
     const days = lastV ? Math.round((new Date(todayStr())-new Date(lastV))/86400000) : null;
     return {c, lastV, days};
   }).sort((a,b)=>{
@@ -213,7 +222,8 @@ function renderClinicDash(){
   if(clinicRepFilter!=='all') pool = pool.filter(c=>c.rep===clinicRepFilter);
   const closed = clinics.filter(c=>c.cls==='Closed' && (clinicRepFilter==='all'||c.rep===clinicRepFilter)).length;
 
-  const stats = pool.map(c=>({c, s:clinicStats(c)}));
+  const vByC = visitsByClinic(); // (each clinic's visits found once, not every visit for every clinic: v126 speed, part 4)
+  const stats = pool.map(c=>({c, s:clinicStats(c, vByC.get(c.id) || [])}));
   const totRev = stats.reduce((a,x)=>a+x.s.rev,0);
   const totVisits = stats.reduce((a,x)=>a+x.s.visits,0);
   const totOrders = stats.reduce((a,x)=>a+x.s.orders,0);
@@ -552,15 +562,32 @@ async function nameLostDoctor(clinicId, docId, raw, scope, kind, confirmed){
   openLostDoctors(scope);
 }
 // A doctor who left the clinic or was removed on purpose: kept in the delete log
-// for good, so the sheet stops offering them. Nothing else changes.
-async function markDoctorGone(clinicId, docId, scope){
+// for good, so the sheet stops offering them. Nothing else changes. Asked in the
+// card first, like every other tap of these sheets (askInCard): the second tap
+// applies it (v126 — until then the first tap did, for good).
+async function markDoctorGone(clinicId, docId, scope, confirmed){
   const c = clinics.find(x => x && x.id === clinicId);
   if(!canNameForClinic(c) || !lostDoctorsOf(c).some(e => e.id === docId)){ openLostDoctors(scope); return; }
-  tomb('doctors', clinicId + '|' + docId);
-  const ok = await persistTombs();
-  if(ok) showToast('✅ Taken off this list', 4000);
-  else if(_saveParked.get('tombs') === 'refused') showToast(REFUSED_KEPT, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
-  else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
+  const sel = clinicId + '|' + docId, asked = 'gone:' + sel;
+  if(confirmed !== asked){
+    const n = visitsNaming(clinicId, docId).length;
+    const html = `<div style="font-size:13px; line-height:1.6;">⚠️ <span>Take this doctor off the list for good?</span> <span>Their visits stay as they are.</span> (${n} <span>visits</span>)</div>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;">
+        <button class="chip small" data-c="${esc(clinicId)}" data-d="${esc(docId)}" data-scope="${esc(scope || '')}" data-ask="${esc(asked)}" onclick="markDoctorGone(this.dataset.c, this.dataset.d, this.dataset.scope, this.dataset.ask)">✅ <span>Yes, take them off</span></button>
+        <button class="chip small" data-scope="${esc(scope || '')}" onclick="openLostDoctors(this.dataset.scope)"><span>Cancel</span></button>
+      </div>`;
+    if(!askInCard(sel, html)){ openLostDoctors(scope); askInCard(sel, html); } // (the sheet was not on screen: the question is asked in it)
+    return;
+  }
+  if(_namingBusy.has(sel)) return; // a double tap applies it once
+  _namingBusy.add(sel);
+  try{
+    tomb('doctors', sel);
+    const ok = await persistTombs();
+    if(ok) showToast('✅ Taken off this list', 4000);
+    else if(_saveParked.get('tombs') === 'refused') showToast(REFUSED_KEPT, 6000); // the rules refused it: kept on this phone, not sent (persistTombs)
+    else showToast('⚠️ Taken off this list on this device — not saved to the cloud yet', 4000); // queued: it uploads by itself
+  } finally { _namingBusy.delete(sel); }
   renderAll();
   openLostDoctors(scope);
 }
@@ -731,7 +758,7 @@ function restoredFromCopy(h, kept){
 // moves the visits this phone holds — with a file or a month missing, neither
 // can be complete, so nothing is done.
 function salesCheckComplete(){ return !_loadFailed.erpSales && !_mirrorUsed.erpSales && !_loadFailed.erpMap && !_mirrorUsed.erpMap && !erpPeriods().some(p => p && p.rowsMissing); }
-function visitsComplete(){ return !_loadFailed.visits && !_mirrorUsed.visits && !(_visitsBroken && _visitsBroken.length); }
+function visitsComplete(){ return !_loadFailed.visits && !_mirrorUsed.visits && !(_visitsBroken && _visitsBroken.length) && !keptMonthsOnScreen() && !visitsUnread(); } // (a past month from the phone's store is not read yet, v126 review; nor the visits of the phone's copy before a read of this session, review 2)
 const _namingBusy = new Set();   // one tap at a time per record: a double tap never runs twice
 function namelessNotice(id, text){
   askInCard(id, `<div style="font-size:13px; line-height:1.6;">⚠️ <span>${text}</span></div>
@@ -908,17 +935,24 @@ function newClinicSalesCheck(nc, confirmed, retry, cancel){
 // as it is — the visit, order or call was saved all the same and pointed at a clinic nobody had.
 // Now it comes off the list, nothing else is saved, the form keeps what was typed and its box
 // says why. → the save's outcome when the form may go on (saved, or kept and queued), else null.
+// ("Kept and queued" only: a save a guard refused before any write — the clinics did not load right, a save that would
+// have removed most of the list — is neither saved nor queued, so nothing may point at the clinic either; until 17 Nov,
+// when the visit form's "Save customer" came to use it as well, the visit, order or call was saved all the same.)
 async function saveNewClinicFirst(nc, askId){
   const r = await persistTold('clinics');
   const o = (r && r.outcome) || {};
-  if(r && (r.ok || !(o.denied || o.tooLarge))) return r;
+  if(saveGoesOn(r)) return r;
   clinics = clinics.filter(c => c !== nc);
-  const t = saveFailText(r, 'clinics'), msg = t ? t[0] : NOT_ALLOWED_MSG;
+  const t = saveFailText(r, 'clinics'), msg = t ? t[0] : (o.denied || o.tooLarge) ? NOT_ALLOWED_MSG : '⚠️ Not saved — reopen the app, then try again';
   const box = document.getElementById(askId);
   if(box) box.innerHTML = newClinicAskCard(`<span>${esc(msg)}</span> <span>What you typed is still here.</span>`); // (the save's own notice says it too)
   return null;
 }
 function newClinicAskCard(html){ return `<div class="card" style="margin-top:10px; border-inline-start:4px solid var(--amber); background:var(--amber-dim); font-size:13px; line-height:1.6;">${html}</div>`; }
+// A save of a merge-safe list a form may go on from: it landed, or it is kept on this phone and queued (it uploads by
+// itself). Refused by the rules or too large for the cloud (never sent as it is), or refused by a guard before any
+// write (neither saved nor queued): it does not.
+function saveGoesOn(r){ const o = (r && r.outcome) || {}; return !!r && (r.ok === true || (!o.denied && !o.tooLarge && !!o.queued)); }
 // The same check for clinics made in bulk (round 3): Admin → Manage clinics →
 // Import and the contact import made clinics with no check at all, and every
 // invoice of an ERP account their names start matching then counted for the
@@ -1154,7 +1188,7 @@ function clinicErpAccountsSection(c){
 }
 function clinicErpAccountsHTML(c){
   if(!c || !currentUser || currentUser.role !== 'supervisor') return '';
-  const res = UMCore.erpAccounts(digestData());
+  const res = UMCore.erpAccounts(digestDataKept()); // (kept for the data state and the day)
   const here = res.accounts.filter(a => a.clinicId === c.id);
   const staleHere = (res.stale || []).filter(s => s.link === c.id);
   const inv = here.reduce((s, a) => s + a.invoices, 0), net = here.reduce((s, a) => s + a.net, 0);
@@ -1198,22 +1232,33 @@ function clinicErpRetry(id){
   }).catch(e => console.warn('retry sales rows', e));
 }
 function clinicErpLedger(clinicId){
-  const ret = [], all = [];
-  erpPeriods().forEach(p => erpViewRows(p).forEach(r => all.push(r)));
-  const focAll = UMCore.focLinesAnnotated(all);
+  const ret = [];
+  // every line of the files and their free-goods lines, from the pass kept for this data state (v126 speed, part 4)
+  const sh = erpShareNow(), all = sh ? sh.lines() : [];
+  if(!sh) erpPeriods().forEach(p => erpViewRows(p).forEach(r => all.push(r)));
+  const focAll = sh ? erpFocKept(sh) : UMCore.focLinesAnnotated(all);
+  const match = erpMatchFn();
   all.forEach(r => {
-    const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
+    const m = match((r.customer||'').trim() || '(no name)');
     if(m.clinicId !== clinicId) return;
     const rv = UMCore.returnValue(r);
     if(rv > 0) ret.push(Object.assign({}, r, {retAmount: Math.round(rv*1000)/1000}));
   });
   const foc = focAll.filter(r => {
-    const m = UMCore.matchCustomer((r.customer||'').trim() || '(no name)', clinics, erpMap);
+    const m = match((r.customer||'').trim() || '(no name)');
     return m.clinicId === clinicId;
   });
   const byDate = (a,b)=>(b.date||'').localeCompare(a.date||'');
   ret.sort(byDate); foc.sort(byDate);
   return {ret, foc};
+}
+// The free-goods lines of every file, each with its default kind (UMCore.focLinesAnnotated over every line): one list per
+// data state of the kept pass — the same lines, in the same order. Read only (the ledger copies what it shows).
+let _focKept = { lines: null, foc: null };
+function erpFocKept(sh){
+  const all = sh.lines();
+  if(_focKept.lines !== all) _focKept = { lines: all, foc: UMCore.focLinesAnnotated(all) };
+  return _focKept.foc;
 }
 function erpNoteInput(key){
   return `<input type="text" data-key="${esc(key)}" value="${esc(erpNoteText(key))}"

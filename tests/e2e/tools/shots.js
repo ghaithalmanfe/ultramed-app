@@ -130,6 +130,7 @@ const { audit } = require('./audit.js');
           await sleep(opt.settle != null ? opt.settle : 2400); signedIn = true;
         }
         if(st.view) await page.evaluate(v => { closeModal(); switchView(v); scrollTo(0, 0); }, st.view).catch(e => errors.push('step ' + st.name + ': ' + e.message.split('\n')[0]));
+        if(st.pre) await page.evaluate(async js => { const r = (0, eval)(js); if(r && typeof r.then === 'function') await r; }, st.pre).catch(e => errors.push('step ' + st.name + ' (pre): ' + e.message.split('\n')[0]));
         if(st.js) await page.evaluate(async js => { const r = (0, eval)(js); if(r && typeof r.then === 'function') await r; }, st.js).catch(e => errors.push('step ' + st.name + ': ' + e.message.split('\n')[0]));
         await page.evaluate(() => typeof msWhenReady === 'function' ? msWhenReady() : null).catch(() => {});
         await page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});

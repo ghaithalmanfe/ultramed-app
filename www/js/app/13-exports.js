@@ -1,7 +1,10 @@
 // professional report, master report, PDF and XLSX export
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- PROFESSIONAL REPORT ----
-let BENCHMARKS = {coverage:75, priority:90, conversion:25, tasks:85};
+// The settings document's defaults (the evaluation targets; the KPI and alert settings fill their own): what a key the
+// cloud's document lacks reads as — never an earlier edit in memory that did not land (alerts review F7, loadAllNow)
+const BENCHMARKS_DEFAULTS = {coverage:75, priority:90, conversion:25, tasks:85};
+let BENCHMARKS = Object.assign({}, BENCHMARKS_DEFAULTS);
 function periodLabel(){
   if(reportCustom) return `${fmtDate(reportCustom.from)} – ${fmtDate(reportCustom.to)}`;
   return reportRange===7?'This Week':reportRange===30?'This Month':reportRange===90?'This Quarter':'All Time';
@@ -440,6 +443,7 @@ function mrChartSvg(trend, lang){
   return `<div class="mr-chart"><svg viewBox="0 0 ${W} ${H+6}" style="width:100%; height:auto;">${grid}${bars}${labels}${legend}</svg></div>`;
 }
 function buildMasterReportBody(lang, format){
+  const mtd = erpMtdMap(); // the month's lines of everyone, once for the whole report (each figure worked them out again, v126 speed)
   const L = REPORT_I18N[lang] || REPORT_I18N.en;
   const rtl = lang === 'ar';
   const b = reportRangeBounds();
@@ -466,11 +470,12 @@ function buildMasterReportBody(lang, format){
   //     customers excluded).
   // The old salesman-based sum over raw rows double-counted channel revenue and
   // mis-credited territory sales, so the big cover number came out too high.
+  const match = erpMatchFn();
   const rows = allRows.filter(r => {
     if(!UMCore.inRange(r.date, b.from, b.to)) return false;
-    const mc = UMCore.matchCustomer((r.customer||'').trim(), clinics, erpMap);
+    const mc = match((r.customer||'').trim());
     if(mc.ignored || mc.channel) return false;
-    const rrep = UMCore.erpRowRep(r, clinics, erpMap, repMapAll);
+    const rrep = UMCore.erpRowRep(r, clinics, erpMap, repMapAll, match);
     if(!rrep) return false;
     if(repFilter !== 'all' && rrep !== repFilter) return false;
     return true;
@@ -483,7 +488,7 @@ function buildMasterReportBody(lang, format){
   const recTo = b.to ? (psTo && psTo < b.to ? psTo : b.to) : psTo;
   const rec = ps.length ? UMCore.reconcileErp({rows: allRows, visits, clinics, erpMap, repMap: repMapAll, from: recFrom, to: recTo, isExchange: isExchangeLine}) : null;
   const trend = ps.length ? UMCore.erpWeeklyTrend(rows, repMapAll) : [];
-  const coach = UMCore.coachInsights({ erpMtd: erpMtdMap(),from: b.from, to: b.to, today, repFilter, visits, clinics, targets: blendedTargets(), dayPlans});
+  const coach = UMCore.coachInsights({ erpMtd: mtd,from: b.from, to: b.to, today, repFilter, visits, clinics, targets: blendedTargets(mtd), dayPlans});
   const cov = UMCore.clinicCoverage({from: b.from || m[0], to: b.to || today, today, repFilter, visits, clinics, dayPlans});
   const returns = UMCore.returnsAnalysis(rows, {clinics, erpMap, isExchange: isExchangeLine}); // branches unified; exchanges excluded
   const dateStr = new Date().toLocaleDateString(rtl ? 'ar' : 'en-US', {year:'numeric', month:'long', day:'numeric'});
@@ -506,7 +511,7 @@ function buildMasterReportBody(lang, format){
   const tstats = repsList.map(rep => {
     const t = targets[rep] || {};
     if(!(t.revenue > 0)) return null;
-    const bm = officialRevenue(rep);
+    const bm = officialRevenue(rep, mtd);
     if(!bm.has) return { rep, goal: t.revenue, ach: null, src: null, fc: null, pace: null, state: 'nodata' };
     // Pace/forecast run on WORKING days (Sun–Thu) at the winning source's
     // as-of day, so a mid-month upload isn't measured against the calendar.
@@ -515,15 +520,21 @@ function buildMasterReportBody(lang, format){
     const totalWork = UMCore.workingDaysBetween(mStart, monthEnd);
     const worked = Math.max(1, UMCore.workingDaysBetween(mStart, bm.asOf || today));
     const fc = Math.round(bm.amount / worked * totalWork * 100) / 100;
-    const pace = Math.round(bm.amount / (t.revenue * worked / totalWork) * 100);
-    const state = bm.amount >= t.revenue ? 'hit' : pace >= 90 ? 'on' : 'behind';
-    return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, fc, pace, state };
+    // the one pace rule (UMCore.paceOf): judged on the exact value, its percentage cut to a whole one on its word's side
+    // (89.7 % prints 89 % and Behind — until the alerts review this table rounded first: 90 % and On pace)
+    const P = typeof UMCore.paceOf === 'function' ? UMCore.paceOf(bm.amount, t.revenue, worked, totalWork) : null;
+    const pace = P ? P.pct : Math.floor(bm.amount / (t.revenue * worked / totalWork) * 100);
+    const state = bm.amount >= t.revenue ? 'hit' : P ? (P.state === 'behind' ? 'behind' : 'on') : pace >= 90 ? 'on' : 'behind';
+    return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, asOf: bm.asOf || null, fc, pace, state };
   }).filter(Boolean);
 
   // Team sums across every rep in scope — the report must always show the
   // COMBINED number for both reps, not just per-rep lines.
   const goalSum = tstats.reduce((s,x)=>s+x.goal,0), achSum = tstats.reduce((s,x)=>s+(x.ach||0),0), fcSum = tstats.reduce((s,x)=>s+(x.fc||0),0);
   const anyOfficial = tstats.some(x=>x.ach!=null);
+  // the team's pace by the same rule (paceFor — the Today card's Team line): the sums to the latest day the people's
+  // files reach. (Until 17 Nov the Total row's Pace column carried the % of the target instead.)
+  const teamP = anyOfficial ? paceFor(achSum, goalSum, tstats.reduce((m, x) => x.ach != null && x.asOf && (!m || x.asOf > m) ? x.asOf : m, null)) : null;
 
   // 1 — executive summary
   let exec = '';
@@ -543,7 +554,7 @@ function buildMasterReportBody(lang, format){
       ? `<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td colspan="3"><span class="mr-note">${L.awaitErp}</span></td><td><span class="mr-pill o">${L.st_await}</span></td></tr>`
       : `<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td>${mrMoney(x.ach,lang)} <span class="mr-note num">${esc(x.src||'')}</span></td><td><span class="num">${x.pace}%</span></td><td>${mrMoney(x.fc,lang)}</td>
       <td><span class="mr-pill ${x.state==='hit'?'g':x.state==='on'?'g':'r'}">${x.state==='hit'?L.st_hit:x.state==='on'?L.st_on:L.st_behind}</span></td></tr>`).join('')}
-    ${tstats.length>1&&anyOfficial?`<tr style="border-top:2px solid #022917;"><td><b>${L.total}</b></td><td><b>${mrMoney(goalSum,lang)}</b></td><td><b>${mrMoney(achSum,lang)}</b></td><td><span class="num"><b>${goalSum?Math.round(achSum/goalSum*100):0}%</b></span></td><td><b>${mrMoney(fcSum,lang)}</b></td><td></td></tr>`:''}
+    ${tstats.length>1&&anyOfficial?`<tr style="border-top:2px solid #022917;"><td><b>${L.total}</b></td><td><b>${mrMoney(goalSum,lang)}</b></td><td><b>${mrMoney(achSum,lang)}</b></td><td><span class="num"><b>${teamP && teamP.pct != null ? teamP.pct + '%' : '—'}</b></span></td><td><b>${mrMoney(fcSum,lang)}</b></td><td>${teamP ? `<span class="mr-pill ${teamP.state === 'behind' ? 'r' : 'g'}">${teamP.state === 'reached' ? L.st_hit : teamP.state === 'behind' ? L.st_behind : L.st_on}</span>` : ''}</td></tr>`:''}
     </tbody></table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   const brandParts = repsList.map(rep=>{
@@ -552,14 +563,14 @@ function buildMasterReportBody(lang, format){
     if(!items.length) return '';
     // Target per brand from the DSR, achieved per brand from the ERP sales files only.
     const eb = erpBrandMtd(rep);
-    const bm = bestMonthRevenue(rep);
+    const bm = bestMonthRevenue(rep, mtd), bCut = bm.basis === 'erp' ? bm.asOf : null;   // a brand is judged by the one pace rule to the day her figure runs to
     return `<h3 class="mr-rep">${esc(rep)}</h3><table class="mr-tbl">
       <thead><tr><th>${L.brandCol}</th><th>${L.target} (DSR)</th><th>${L.achieved} (${esc(bm.basis === 'erp' ? bm.src : 'ERP')})</th><th>${L.ach}</th></tr></thead><tbody>
       ${items.map(([br,tg])=>{
         const a = Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
-        const pct = Math.round(a/tg*100);
+        const pct = Math.round(a/tg*100), P = paceFor(a, tg, bCut);   // (until 17 Nov: green from 60 %, orange from 25 %, whatever the day)
         return `<tr><td>${esc(br)}</td><td><span class="num">${amt2(tg, 0)}</span></td><td><span class="num">${amt2(a)}</span></td>
-          <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
+          <td><span class="mr-pill ${!P ? 'o' : P.state === 'behind' ? 'r' : 'g'}"${P ? ` data-pace="${P.state}"` : ''}><span class="num">${pct}%</span></span></td></tr>`;
       }).join('')}</tbody></table>`;
   }).filter(Boolean);
 
@@ -721,7 +732,7 @@ function buildMasterReportBody(lang, format){
   // and it never uses the raw invoice sum, which ignored the DSR entirely and
   // showed "awaiting ERP" when only the DSR had been uploaded.
   let officialSum = 0, officialAny = false;
-  repsList.forEach(rep => { const o = officialRevenue(rep); if(o.has){ officialSum += o.amount; officialAny = true; } });
+  repsList.forEach(rep => { const o = officialRevenue(rep, mtd); if(o.has){ officialSum += o.amount; officialAny = true; } });
   const erpSalesVal = officialAny ? Math.round(officialSum*100)/100 : null;
   const callsN = periodVisits.filter(v=>v.callOnly).length;
   const loggedOrdersN = periodVisits.filter(v=>v.orderTaken).length;
@@ -1967,7 +1978,14 @@ async function restoreSnapshotNow(dateStr){
   // waiting in the queue would make its counts wrong and the copy it keeps
   // empty — this month's visits were erased everywhere while the confirmation
   // promised a copy.
-  const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k));
+  const notRead = ['clinics', 'tasks', 'visits'].filter(k => _loadFailed[k] || _mirrorUsed[k] || outboxHas(k) || (k === 'visits' && typeof visitsUnread === 'function' && visitsUnread())); // (v126 review 2: the visits not read from the cloud this session)
+  // a past month on screen that came from this phone's store (v126) is read from the cloud first: the copy the restore
+  // keeps (today's backup) counts the visits of every month — asked for now, so a tap a moment later goes ahead
+  if(!notRead.length && !_seedClinics && !_bootCrashed && typeof keptOnScreen === 'function' && keptOnScreen()){
+    visitsConfirmKept().then(r => { if(r && r.changed) renderAll(); }).catch(() => {});
+    showToast('Restore stopped — this phone first reads the past months again from the cloud (it is showing its own copy of them). Nothing was changed. Try again in a minute.', 8000);
+    return;
+  }
   if(notRead.length || _seedClinics || _bootCrashed){
     showToast('Restore stopped — the clinics, tasks or visits on this device did not all load from the cloud, or changes on this device have not reached it yet. Nothing was changed. Check the connection, then try again.', 8000);
     return;

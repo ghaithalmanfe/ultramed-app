@@ -65,6 +65,7 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
       await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
       await page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
       await page.waitForTimeout(300);
+      await page.evaluate(() => msWhenReady()); // the home's figures and its frame are those of the data as it is now (a later frame is held until they are)
     };
     return { page, boot, label };
   };
@@ -106,11 +107,29 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
   await A.boot('Dr. Ghaith', 'supervisor');
   card = await A.page.evaluate(() => document.getElementById('targetCard').innerText);
   check('TODAY-1c: supervisor still sees the Team row', /Team/.test(card) && /2 reps/.test(card), card.split('\n').slice(-2));
-  // TODAY-6 visits-only target renders a row
-  await A.page.evaluate((r) => { targets[r] = { visits: 15, revenue: 0, month: todayStr().slice(0,7) }; renderTargetCard(); }, reps[1]);
+  // TODAY-6 visits-only target renders a row. The screen's whole frame of the earlier targets stays until the new
+  // figures are worked out (v126 speed, part 2: never a frame of two states), so the card is read once they are
+  // (msWhenReady). CI, 82ae888: read at once, it was the earlier targets' frame whenever the figures came later.
+  await A.page.evaluate(async (r) => { targets[r] = { visits: 15, revenue: 0, month: todayStr().slice(0,7) }; renderTargetCard(); await msWhenReady(); }, reps[1]);
   card = await A.page.evaluate(() => document.getElementById('targetCard').innerText);
   check('TODAY-6: a visits-only target renders its own row', new RegExp(reps[1] + '[\\s\\S]*Visits 2 of 15').test(card), card.split('\n').filter(l=>/Visits/.test(l)));
-  await A.page.evaluate((r) => { targets[r] = { revenue: 12000, visits: 0, achieved: 4000, achievedAsOf: '2026-09-14', month: todayStr().slice(0,7) }; renderTargetCard(); }, reps[1]);
+  await A.page.evaluate(async (r) => { targets[r] = { revenue: 12000, visits: 0, achieved: 4000, achievedAsOf: '2026-09-14', month: todayStr().slice(0,7) }; renderTargetCard(); await msWhenReady(); }, reps[1]);
+  // TODAY-6b: the same with the figures slow to work out (600 ms, CI's flake made certain): the earlier frame is held
+  // meanwhile, and msWhenReady() resolves only once the new rows are on screen — never on the held frame
+  const slow6 = await A.page.evaluate(async (r) => {
+    const mr = window.msRun; window.msRun = function(){ const self = this, a = arguments; _msTimer = setTimeout(() => mr.apply(self, a), 600); }; // (the app's pending timer kept)
+    try{
+      targets[r] = { visits: 15, revenue: 0, month: todayStr().slice(0,7) }; renderTargetCard();
+      const held = document.getElementById('targetCard').innerText;
+      await msWhenReady();
+      return { heldShowedNew: /Visits 2 of 15/.test(held), ready: document.getElementById('targetCard').innerText };
+    } finally {
+      window.msRun = mr;
+      targets[r] = { revenue: 12000, visits: 0, achieved: 4000, achievedAsOf: '2026-09-14', month: todayStr().slice(0,7) }; renderTargetCard(); await msWhenReady();
+    }
+  }, reps[1]);
+  check('TODAY-6b: the figures 600 ms slow — msWhenReady() resolves only once the visits-only row is on screen (never on the frame of the earlier targets held meanwhile)',
+    new RegExp(reps[1] + '[\\s\\S]*Visits 2 of 15').test(slow6.ready), { heldFrameShowedTheNewRow: slow6.heldShowedNew, ready: slow6.ready.split('\n').filter(l => /Visits/.test(l)) });
   // TODAY-4 / TODAY-5: joint visit satisfies the partner's plan; missed section exists on Today
   const missed = await A.page.evaluate(() => { renderMissedPlans(); return { title: document.getElementById('missedTitle').style.display, list: document.getElementById('missedList').innerText, coach: UMCore.coachInsights({ erpMtd: {}, from: null, to: null, today: todayStr(), repFilter: 'all', visits, clinics, targets, dayPlans }).filter(i=>i.key==='missed').map(i=>i.detail).join(' ') }; });
   check('TODAY-4: the joint visit satisfied the partner\'s planned visit (only the unvisited plan is missed)', missed.list.split('Reschedule').length-1 === 1 && !missed.list.includes(m0[1].name), missed.list.split('\n').slice(0,3));

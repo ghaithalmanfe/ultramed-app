@@ -109,15 +109,36 @@ function returnPolicyChips(reopenId){
 // / target figure below therefore counts every line; only the buyers and
 // reconciliation lists stay clinic-only.
 function erpRowCountsAsSales(r){ return true; }
+// One pass's customer matcher (v126 speed): each distinct ERP customer name matched once against the clinics and the
+// account links as they are now — matchCustomer's very answer (an older cached core.js matches each line as before).
+// Asked for at the start of a pass over many lines: the matcher of the pass kept for this data state (erpShareNow),
+// which a rename, a handover or a new link replaces — never one kept by time. Matching every line again had made a
+// clinic's card take 24 s on a slower phone with a heavy year.
+function erpMatchFn(){
+  const sh = erpShareNow(); if(sh) return sh.match;
+  return typeof UMCore.erpMatcher === 'function' ? UMCore.erpMatcher(clinics, erpMap) : name => UMCore.matchCustomer(name, clinics, erpMap);
+}
+// The pass of the sales lines kept per data state (UMCore.erpShareKept, v126 speed part 4): each customer matched once,
+// each file's lines with the returns policy applied, the clinics by id, every line and each clinic's lines, the lines
+// with whom they count for, and the ERP accounts of a day — worked out once while exactly what they read is the same
+// (the sales files, the returns policy, the clinics' names, owners, handovers, sharing and class, the account links),
+// then again: never by time. It serves these very lists (UMCore.erpShareOf). null with an older cached core.js.
+function erpShareNow(){
+  try{ return typeof UMCore.erpShareKept === 'function' ? UMCore.erpShareKept({ erpSales, clinics, erpMap }) : null; }
+  catch(e){ console.warn('the kept sales pass', e); return null; }
+}
+// digestData() with that pass, for a screen that goes over the lines (the passes in core.js take it: UMCore.erpShareOf)
+function digestDataKept(){ const d = digestData(), sh = erpShareNow(); if(sh) d.erpShare = sh; return d; }
 // Sums imported ERP net for a range/rep. Returns null when no imported
 // period overlaps the range, so callers can fall back to app-logged numbers.
 function erpRevenueForRange(from, to, repFilter){
   const ps = erpPeriods().filter(p => (!from || p.to >= from) && (!to || p.from <= to));
   if(!ps.length) return null;
   let sum = 0;
+  const match = erpMatchFn();
   ps.forEach(p => erpViewRows(p).forEach(r => {
     if(!UMCore.inRange(r.date, from, to)) return;
-    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{});
+    const rep = UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match);
     if(!rep) return;
     if(repFilter !== 'all' && rep !== repFilter) return;
     if(!erpRowCountsAsSales(r)) return;
@@ -139,18 +160,21 @@ function erpBrandMtd(rep){ const today = todayStr(); return erpBrandRange(rep, t
 // authoritative, even over more recent raw sales-detail invoices (which may
 // include rows the DSR excludes). Sales files only fill in when no
 // current-month DSR exists; app-logged orders are the last resort.
-function bestMonthRevenue(rep){ return UMCore.monthAchievement(rep, digestData()); }
+function bestMonthRevenue(rep, mtd){ return UMCore.monthAchievement(rep, digestData(), mtd); } // mtd: the month's lines of everyone, worked out once by the caller from the same data (UMCore.erpMtd)
 // ---- Team total against target ----
 // The SAME official figure as the per-rep lines (bestMonthRevenue), summed:
 // achieved ÷ target across every rep with a monthly sales target. Shown
 // wherever per-rep target figures appear (Today, reports, month reports,
 // admin panel, the upload note, the reconciliation sheet, the PDF cover).
+// asOf: the latest day the figures of the rows run to (an item's asOf: the day its figure runs to, none without a sales
+// file) — what the team's pace is judged to, as the Today card's Team line judges it (paceFor).
 function teamTargetTotal(items){
   const rows = (items || []).filter(x => x && x.goal > 0);
   const goal = rows.reduce((s, x) => s + x.goal, 0);
   const ach = rows.reduce((s, x) => s + (x.ach || 0), 0);
+  const asOf = rows.reduce((m, x) => x.asOf && (!m || x.asOf > m) ? x.asOf : m, null);
   return { n: rows.length, goal: Math.round(goal * 100) / 100, ach: Math.round(ach * 100) / 100,
-    pct: goal > 0 ? Math.round(ach / goal * 100) : null, any: rows.some(x => x.ach != null) };
+    pct: goal > 0 ? Math.round(ach / goal * 100) : null, any: rows.some(x => x.ach != null), asOf };
 }
 // A monthly target that was uploaded/set for an EARLIER month: the figure
 // still shows (last month's target is the best guess until this month's DSR
@@ -164,33 +188,58 @@ function staleTargetNote(rep){
   const m = targetStaleMonth(rep);
   return m ? `<div style="font-size:11px; color:var(--amber-ink); margin-top:1px;">⚠️ Target is from ${monthLabel(m)} — upload this month's DSR</div>` : '';
 }
-function teamTargetNow(){
-  return teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: bestMonthRevenue(r).amount } : null; }));
+// mtd (optional): the month's lines of everyone, worked out once by the caller's draw from the same data (UMCore.erpMtd)
+function teamTargetNow(mtd){
+  return teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; if(!(t.revenue > 0)) return null;
+    const bm = bestMonthRevenue(r, mtd); return { goal: t.revenue, ach: bm.amount, asOf: bm.basis === 'erp' ? bm.asOf : null }; }));
 }
-function pctInk(p){ return p >= 100 ? 'var(--sage-ink)' : p >= 60 ? 'var(--ink)' : 'var(--amber-ink)'; }
-// One compact "Team" bar row, same look as the per-rep rows on the Today card.
+// ---- The one pace rule (UMCore.paceOf; the owner's decision of 17 Nov: one rule everywhere, on pace from 90 %) ----
+// A month figure against its target, judged as the Today screen judges it (msPace, its words MS_STATE): an even share
+// of the target over the working days (Sun–Thu) from the 1st to the day the figure runs to (asOf), of the whole month
+// — 'reached' at the target, 'ahead' from the full even share, 'on' from 90 % of it, 'behind' below — judged on the
+// exact value; `pct` is that share cut to a whole percent on its word's side (89.7 % is 89, never 90). No day the
+// figure runs to (no sales file) → null: never judged. Reports, the Admin sheets, the month close, the printed report
+// and the clinic analysis word and colour a person's, the team's, a brand's and a clinic's month by it — until then the
+// team line said "On pace" from 60 % of the target and the colours turned at 60 % (brands 60/25, clinics 50), whatever
+// the day of the month.
+function paceFor(ach, goal, asOf, month){
+  if(ach == null || !(goal > 0) || !asOf) return null;
+  const wd = UMCore.monthWorkdays(month || String(asOf).slice(0, 7), asOf);
+  const state = msPace(ach, goal, wd.done, wd.total);
+  if(!state) return null;
+  const P = typeof UMCore.paceOf === 'function' ? UMCore.paceOf(ach, goal, wd.done, wd.total) : null;
+  return { state, words: MS_STATE[state], pct: P ? P.pct : null, wd };
+}
+// the colour of a state, for a figure (ink) or a bar: the target reached / on the way (on or ahead of pace, `on`) /
+// behind pace (`behind`); nothing judged: muted
+function paceInk(P, on, behind){ return !P ? 'var(--muted)' : P.state === 'reached' ? 'var(--sage-ink)' : P.state === 'behind' ? (behind || 'var(--amber-ink)') : (on || 'var(--ink)'); }
+function paceBar(P, on, behind){ return !P ? 'var(--line)' : P.state === 'reached' ? 'var(--sage)' : P.state === 'behind' ? (behind || 'var(--amber)') : (on || 'var(--teal)'); }
+// One compact "Team" bar row, same look as the per-rep rows on the Today card; judged as the Today card's Team line
+// (paceFor: the figures to the latest day the people's files reach — opts.asOf for one file, the reconciliation sheet's)
 function teamTargetRow(tt, opts){
   opts = opts || {};
   if(!tt || tt.pct == null || tt.n < 1) return '';
-  const state = tt.pct >= 100 ? ['Achieved', 'var(--sage-ink)', 'var(--sage)'] : tt.pct >= 60 ? ['On pace', 'var(--sage-ink)', 'var(--teal)'] : ['Behind', 'var(--amber-ink)', 'var(--amber)'];
-  return `<div style="padding:8px 0 2px; margin-top:6px; border-top:1px solid var(--line);">
+  const P = paceFor(tt.ach, tt.goal, opts.asOf || tt.asOf);
+  const pace = P && P.state !== 'reached' && P.pct != null ? ` · <span>${P.pct}% of an even pace</span>` : '';
+  return `<div style="padding:8px 0 2px; margin-top:6px; border-top:1px solid var(--line);"${P ? ` data-pace="${P.state}"` : ''}>
     <div style="display:flex; align-items:center; gap:10px;">
       <div style="width:${opts.labelWidth || 58}px; font-size:12.5px; font-weight:800; flex-shrink:0;">${opts.label || 'Team'}</div>
-      <div style="flex:1; height:8px; border-radius:4px; background:var(--paper); overflow:hidden;"><div style="width:${Math.min(100, tt.pct)}%; height:100%; border-radius:4px; background:${state[2]};"></div></div>
-      <div style="font-size:18px; font-weight:900; color:${state[1]}; flex-shrink:0; min-width:52px; text-align:end;">${tt.pct}%</div>
+      <div style="flex:1; height:8px; border-radius:4px; background:var(--paper); overflow:hidden;"><div style="width:${Math.max(0, Math.min(100, tt.pct))}%; height:100%; border-radius:4px; background:${paceBar(P)};"></div></div>
+      <div style="font-size:18px; font-weight:900; color:${paceInk(P, 'var(--sage-ink)')}; flex-shrink:0; min-width:52px; text-align:end;">${tt.pct}%</div>
     </div>
-    <div style="font-size:11.5px; color:var(--muted); margin-top:2px; padding-inline-start:${(opts.labelWidth || 58) + 10}px;">${money(tt.ach)} of ${money(tt.goal)} · ${state[0]} · ${tt.n} rep${tt.n === 1 ? '' : 's'}</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:2px; padding-inline-start:${(opts.labelWidth || 58) + 10}px;">${money(tt.ach)} <span>of</span> ${money(tt.goal)} · <span>${P ? P.words : 'no figure yet'}</span>${pace} · <span>${tt.n} rep${tt.n === 1 ? '' : 's'}</span></div>
   </div>`;
 }
 // Target % per rep exactly as the Today card shows it — captured before and
 // after every upload so the import can SAY what it changed ("Mariam 40% →
 // 45%"), and say why when nothing moved.
-function targetPctMap(){
+function targetPctMap(mtd){
   const out = {};
+  mtd = mtd || erpMtdMap(); // every person's figure from one pass of the month's lines (v126 speed)
   REPS.forEach(r => {
     const t = targets[r] || {};
     if(!(t.revenue > 0)) return;
-    const bm = bestMonthRevenue(r);
+    const bm = bestMonthRevenue(r, mtd);
     out[r] = { pct: Math.round(bm.amount / t.revenue * 100), amount: bm.amount, goal: t.revenue, src: bm.src, asOf: bm.asOf };
   });
   return out;
@@ -226,17 +275,17 @@ function erpShowImportNote(html){
 
 // The report's ONLY sales source: the ERP sales files (owner's rule) — never
 // the DSR's achieved column, never app-logged orders.
-function officialRevenue(rep){
-  const bm = bestMonthRevenue(rep);
+function officialRevenue(rep, mtd){
+  const bm = bestMonthRevenue(rep, mtd);
   if(bm.basis !== 'erp') return { amount: null, src: null, asOf: null, has: false };
   return { amount: bm.amount, src: bm.src, asOf: bm.asOf, has: true, basis: bm.basis };
 }
 // targets as the coach/insights see them: DSR targets, achieved from ERP only.
-function blendedTargets(){
+function blendedTargets(mtd){
   const out = {};
   Object.keys(targets).filter(k => !k.startsWith('_')).forEach(rep => {
     const t = Object.assign({}, targets[rep]);
-    const bm = bestMonthRevenue(rep);
+    const bm = bestMonthRevenue(rep, mtd);
     delete t.achievedBrands;
     if(bm.basis === 'erp'){ t.achieved = bm.amount; t.achievedAsOf = bm.asOf; }
     else { delete t.achieved; delete t.achievedAsOf; }
@@ -248,10 +297,11 @@ function blendedTargets(){
 // "achieved per brand" figure (the DSR gives the brand targets).
 function erpBrandRange(rep, from, to){
   const out = {}; let asOf = null;
+  const match = erpMatchFn();
   erpPeriods().filter(p => p.to >= from && p.from <= to).forEach(p => {
     erpViewRows(p).forEach(r => {
       if(r.date < from || r.date > to) return;
-      if(UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}) !== rep) return;
+      if(UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match) !== rep) return;
       const b = UMCore.normBrand(r.brand);
       out[b] = (out[b]||0) + r.net;
       if(!asOf || r.date > asOf) asOf = r.date;
@@ -293,6 +343,9 @@ function monthCloseData(m){
   const hist = (targets._history || {})[m] || {};
   const mStart = m + '-01', mEnd = monthEndOf(m);
   const reps = currentUser.role==='supervisor' ? REPS : [currentUser.name];
+  // the day each figure runs to — what its pace is judged to (paceFor): her month figure's own day (monthAchievement as of
+  // the month's last day — the running month: today — the Today card's and Month by month's rule)
+  const d0 = Object.assign({}, digestData(), { today: mEnd < todayStr() ? mEnd : todayStr() }), mtd0 = UMCore.erpMtd(d0);
   return reps.map(rep => {
     let t = hist[rep];
     const cur = targets[rep];
@@ -305,6 +358,7 @@ function monthCloseData(m){
     const src = erpMonth != null ? 'ERP' : 'لا يوجد ملف مبيعات لهذا الشهر';
     const mv = UMCore.dedupeVisits(visits.filter(v => v && v.rep === rep && (v.date||'').slice(0,7) === m)).unique;
     return { rep, t, achieved, src, erpMonth,
+      asOf: achieved != null ? (a0 => a0.basis === 'erp' ? a0.asOf : null)(UMCore.monthAchievement(rep, d0, mtd0)) : null,
       target: t && t.revenue > 0 ? t.revenue : null,
       pct: (t && t.revenue > 0 && achieved != null) ? Math.round(achieved / t.revenue * 100) : null,
       fieldVisits: mv.filter(UMCore.isFieldVisit).length,
@@ -324,14 +378,16 @@ function renderMonthClose(m){
       <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق (ERP)</td><td style="text-align:start;">%</td></tr>
       ${names.map(n=>{
         const tv = bt[n]||0, av = Math.round((ab[UMCore.normBrand(n)] || 0) * 100) / 100;
-        const p = tv>0 ? Math.round(av/tv*100) : null;
+        const p = tv>0 ? Math.round(av/tv*100) : null, P = tv>0 ? paceFor(av, tv, r.asOf, m) : null;   // the one pace rule, to the day her figure runs to
         return `<tr style="border-top:1px dashed var(--line);"><td style="padding:2px 4px;">${esc(n)}</td>
           <td style="text-align:start;">${tv?money(tv):'—'}</td><td style="text-align:start;">${av?money(av):'—'}</td>
-          <td style="text-align:start; font-weight:700; color:${p==null?'var(--muted)':p>=100?'var(--sage-ink)':p>=60?'var(--gold-ink)':'var(--coral-ink)'};">${p==null?'—':p+'%'}</td></tr>`;
+          <td style="text-align:start; font-weight:700; color:${p==null?'var(--muted)':paceInk(P, 'var(--gold-ink)', 'var(--coral-ink)')};"${P ? ` data-pace="${P.state}"` : ''}>${p==null?'—':p+'%'}</td></tr>`;
       }).join('')}
     </table></div>`;
   };
-  const tt = teamTargetTotal(rows.map(r => ({ goal: r.target, ach: r.achieved })));
+  const tt = teamTargetTotal(rows.map(r => ({ goal: r.target, ach: r.achieved, asOf: r.asOf })));
+  // the colours: the one pace rule (paceFor) — the target reached, on the way (from 90 % of an even pace), behind
+  const ttP = paceFor(tt.ach, tt.goal, tt.asOf, m), repP = r => paceFor(r.achieved, r.target, r.asOf, m);
   showModal(`
     <div class="row-between" style="align-items:flex-start;">
       <h3 style="margin:0;">📅 ${monthLabel(m)}</h3>
@@ -341,16 +397,16 @@ function renderMonthClose(m){
       <div class="card" style="padding:10px 12px;">
         <div class="spec-row"><span class="k">🎯 مجموع التارغت</span><span class="v">${money(tt.goal)}</span></div>
         <div class="spec-row"><span class="k">✅ مجموع المحقق</span><span class="v">${money(tt.ach)}</span></div>
-        <div class="spec-row"><span class="k">نسبة تحقيق الفريق</span><span class="v" style="font-weight:800; color:${tt.pct>=100?'var(--sage-ink)':tt.pct>=60?'var(--gold-ink)':'var(--coral-ink)'};">${tt.pct}%</span></div>
-        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.min(100,tt.pct)}%; height:100%; background:${tt.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>
+        <div class="spec-row"><span class="k">نسبة تحقيق الفريق</span><span class="v" style="font-weight:800; color:${paceInk(ttP, 'var(--gold-ink)', 'var(--coral-ink)')};"${ttP ? ` data-pace="${ttP.state}"` : ''}>${tt.pct}%</span></div>
+        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.max(0, Math.min(100,tt.pct))}%; height:100%; background:${ttP && ttP.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>
       </div>` : ''}
     ${rows.map(r=>`
       <div class="section-title">${esc(r.rep)}</div>
       <div class="card" style="padding:10px 12px;">
         <div class="spec-row"><span class="k">🎯 التارغت</span><span class="v">${r.target!=null?money(r.target):'—'}</span></div>
         <div class="spec-row"><span class="k">✅ المحقق</span><span class="v">${r.achieved!=null?money(r.achieved):'—'}${r.src?` <span style="color:var(--muted); font-size:10.5px;">(${r.src})</span>`:''}</span></div>
-        ${r.pct!=null?`<div class="spec-row"><span class="k">النسبة</span><span class="v" style="font-weight:800; color:${r.pct>=100?'var(--sage-ink)':r.pct>=60?'var(--gold-ink)':'var(--coral-ink)'};">${r.pct}%</span></div>
-        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.min(100,r.pct)}%; height:100%; background:${r.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>`:''}
+        ${r.pct!=null?(P => `<div class="spec-row"><span class="k">النسبة</span><span class="v" style="font-weight:800; color:${paceInk(P, 'var(--gold-ink)', 'var(--coral-ink)')};"${P ? ` data-pace="${P.state}"` : ''}>${r.pct}%</span></div>
+        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.max(0, Math.min(100,r.pct))}%; height:100%; background:${P && P.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>`)(repP(r)):''}
         ${r.erpMonth!=null?`<div class="spec-row"><span class="k">🧾 فواتير العيادات بالشهر (ERP)</span><span class="v">${money(r.erpMonth)}</span></div>`:''}
         <div class="spec-row"><span class="k">🚗 زيارات ميدانية · 📞 مكالمات · 🛒 طلبات</span><span class="v">${r.fieldVisits} · ${r.calls} · ${r.orders}</span></div>
         ${brandBlock(r)}
@@ -368,6 +424,16 @@ function erpStatus(msg, isErr){
   el.style.color = isErr ? 'var(--coral)' : 'var(--muted)';
   el.textContent = msg;
 }
+// The last sales / targets file import on this phone and how it ended (v121):
+// the alerts center shows a failed one until an import works. A cancel, an
+// empty paste or a file of ignored salesmen only is not a failure.
+const ERP_IMPORT_LOG = 'um_erpImport';
+function noteErpImport(ok, msg){
+  try{ localStorage.setItem(ERP_IMPORT_LOG, JSON.stringify({ at: Date.now(), ok: !!ok, msg: ok ? '' : String(msg || '').slice(0, 300), who: currentUser ? currentUser.name : null })); }catch(e){}
+  if(typeof renderAlertsBell === 'function') renderAlertsBell();
+}
+function lastErpImport(){ try{ const v = JSON.parse(localStorage.getItem(ERP_IMPORT_LOG) || 'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; }catch(e){ return null; } }
+function erpImportFailed(msg){ erpStatus(msg, true); noteErpImport(false, msg); }
 // ---- Product movement: every brand → its products ranked by real paid sales ----
 // Built from the stored ERP rows (team sales only — ignored salesmen are never
 // read), classified fast / mid / slow by invoice frequency and units per month.
@@ -378,11 +444,12 @@ function pmRows(){
   const sup = currentUser.role === 'supervisor';
   const rep = sup ? _pmRep : currentUser.name;
   const out = [];
+  const match = erpMatchFn();
   erpPeriods().forEach(p => {
     const map = p.repMap || {};
     unpackErpRows(p.rows).forEach(rw => {
-      if(UMCore.matchCustomer((rw.customer || '').trim(), clinics, erpMap).ignored) return; // accounts the supervisor set to ignore
-      if(rep !== 'all' && UMCore.erpRowRep(rw, clinics, erpMap, map) !== rep) return;
+      if(match((rw.customer || '').trim()).ignored) return; // accounts the supervisor set to ignore
+      if(rep !== 'all' && UMCore.erpRowRep(rw, clinics, erpMap, map, match) !== rep) return;
       out.push(rw);
     });
   });
@@ -533,9 +600,9 @@ function erpHandleFile(input){
   input.value = ''; // so picking the same file again always re-fires onchange
   if(_erpImporting){ erpStatus('⏳ ملف آخر قيد الاستيراد — انتظر حتى ينتهي', true); return; }
   erpStatus(`📖 Reading ${f.name}…`);
-  const fail = e => erpStatus('❌ Import failed: ' + (e && e.message ? e.message : e), true);
+  const fail = e => erpImportFailed('❌ Import failed: ' + (e && e.message ? e.message : e));
   const reader = new FileReader();
-  reader.onerror = () => erpStatus('❌ Could not read the file — try again, or paste the report text below', true);
+  reader.onerror = () => erpImportFailed('❌ Could not read the file — try again, or paste the report text below');
   if(/\.xlsx?$/i.test(f.name) || /spreadsheet|excel/i.test(f.type || '')){
     reader.onload = () => { try{ erpImportXlsx(reader.result, f.name).catch(fail); }catch(e){ fail(e); } };
     reader.readAsArrayBuffer(f);
@@ -567,12 +634,12 @@ function dsrDateFromName(name){
 }
 async function erpImportXlsx(buf, fname){
   if(typeof DecompressionStream === 'undefined'){
-    erpStatus('❌ This browser is too old to open Excel files — update the browser, or export the report as CSV and retry', true);
+    erpImportFailed('❌ This browser is too old to open Excel files — update the browser, or export the report as CSV and retry');
     return;
   }
   let sheets;
   try{ sheets = await UMCore.readXlsx(buf); }
-  catch(e){ erpStatus('❌ Could not open this Excel file — save it as CSV and retry', true); return; }
+  catch(e){ erpImportFailed('❌ Could not open this Excel file — save it as CSV and retry'); return; }
   erpStatus('🔎 File opened — detecting sales / targets…');
   const toCsv = rows => rows.map(r => (r||[]).map(v => {
     const s = String(v == null ? '' : v);
@@ -585,7 +652,7 @@ async function erpImportXlsx(buf, fname){
   const tg = UMCore.parseDsrTargets(sheets, REPS, {asOf: dsrDateFromName(fname) || todayStr()});
   if(!tg.error){ await applyTargetsFile(tg); return; }
   if(!UMCore.parseDistribution(sheets, REPS).error && openDistributionPreview(sheets)) return; // a clinic distribution file: preview, saved on tap
-  erpStatus('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export', true);
+  erpImportFailed('❌ Excel file read, but no sales or targets recognized in it — check it is the sales-detail or DSR export');
 }
 // One entry point, zero-touch: detect sales vs targets and enter the data.
 // Sales files auto-save when every ERP salesman is already known (stored
@@ -605,7 +672,7 @@ async function erpAutoImport(text){
       // allowed to replace a whole year of stored data with mis-read dates.
       const span = UMCore.daysBetween(totals.from, totals.to);
       if(span > 400 || totals.to > UMCore.localDateStr(new Date(Date.now() + 2 * 86400000))){
-        erpStatus(`❌ تواريخ الملف غير منطقية (${fmtDate(totals.from)} – ${fmtDate(totals.to)}) — تأكد من صيغة التاريخ في التصدير (يوم/شهر/سنة) ثم أعد الرفع`, true);
+        erpImportFailed(`❌ تواريخ الملف غير منطقية (${fmtDate(totals.from)} – ${fmtDate(totals.to)}) — تأكد من صيغة التاريخ في التصدير (يوم/شهر/سنة) ثم أعد الرفع`);
         return;
       }
       if(sales.dropped > 0 && !confirm(`${sales.dropped} سطرًا في الملف بلا تاريخ أو رقم فاتورة ولن تُقرأ (سيُقرأ ${sales.rows.length}).\nالمتابعة؟`)){
@@ -638,7 +705,7 @@ async function erpAutoImport(text){
     }
     const tg = UMCore.parseTargetsFile(text, REPS);
     if(!tg.error){ await applyTargetsFile(tg); return; }
-    erpStatus('❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry', true);
+    erpImportFailed('❌ Could not recognize this file — export the sales detail or the targets as CSV/Excel and retry');
   } finally { _erpImporting = false; }
 }
 // A new file only replaces its own salesmen's rows inside overlapping saved
@@ -671,7 +738,7 @@ function erpAbsorbOverlaps(t, newSalesmen, repMap){
 // the figures looked updated until the next open put the old file back.
 function erpSaveFailed(before){
   erpStateRestore(before);
-  erpStatus('❌ لم يُحفظ الملف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى', true);
+  erpImportFailed('❌ لم يُحفظ الملف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى');
   showToast('❌ لم يُحفظ ملف المبيعات — أعد المحاولة');
 }
 async function erpAutoSave(repMap){
@@ -687,6 +754,7 @@ async function erpAutoSave(repMap){
   erpSales.periods.push(period);
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   if(!await persist('erpSales')){ erpSaveFailed(before); return; }
+  noteErpImport(true);
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
   renderErpNudge();
@@ -735,12 +803,14 @@ async function applyTargetsFile(tg){
   await archiveTargetsMonth(); // the file's month keeps these figures permanently
   if(!await persist('targets')){
     targets = before;
-    erpStatus('❌ لم تُحفظ الأهداف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى', true);
+    erpImportFailed('❌ لم تُحفظ الأهداف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى');
     return;
   }
+  noteErpImport(true);
   renderToday();
-  if(document.getElementById('coachCard')) renderCoach();
-  const note = targetPctNote(pctBefore, targetPctMap());
+  const mtdNow = erpMtdMap(); // the data as it is now (a refresh may have landed while the targets saved): one pass for both
+  if(document.getElementById('coachCard')) renderCoach(mtdNow);
+  const note = targetPctNote(pctBefore, targetPctMap(mtdNow));
   showModal(`
     <h3 style="margin-top:0;" data-ic="target">🎯 Targets entered automatically</h3>
     <div class="card" style="border-inline-start:4px solid var(--sage, #9ED0AF); margin:8px 0 10px; font-size:12.5px; line-height:1.6;">${note}</div>
@@ -813,6 +883,7 @@ async function erpSavePeriod(){
   // Remember who-is-who forever, so every later import is zero-touch.
   erpSales.repMapGlobal = Object.assign({}, erpSales.repMapGlobal, repMap);
   if(!await persist('erpSales')){ erpStateRestore(before); closeModal(); openErpImport(); erpSaveFailed(before); return; } // roll back BEFORE the list renders
+  noteErpImport(true);
   _erpParsed = null;
   _erpCtxCache = { key: null, ctx: null };
   renderErpNudge();
@@ -855,13 +926,14 @@ function erpFileAudit(p){
   const salesmen = Object.values(bySales).map(a=>({...a, net:Math.round(a.net*100)/100})).sort((a,b)=>b.net-a.net);
   // 3) customer -> classification
   const byCust = Object.create(null);
+  const match = erpMatchFn();
   rows.forEach(r=>{
     const k=(r.customer||'').trim()||'(no name)';
-    const a=byCust[k]||(byCust[k]={name:k, rep:UMCore.erpRowRep(r, clinics, erpMap, repMap)||null, docs:new Set(), net:0});
+    const a=byCust[k]||(byCust[k]={name:k, rep:UMCore.erpRowRep(r, clinics, erpMap, repMap, match)||null, docs:new Set(), net:0});
     a.docs.add(r.doc); a.net+=r.net;
   });
   const customers = Object.values(byCust).map(a=>{
-    const m = UMCore.matchCustomer(a.name, clinics, erpMap);
+    const m = match(a.name);
     let kind, label, clinicName='';
     const closedTag = id => { const c = clinics.find(x=>x.id===id); return c && c.cls==='Closed' ? ' · مغلقة' : ''; };
     if(m.ignored){ kind='ignored'; label='⛔ متجاهَل'; }
@@ -931,16 +1003,20 @@ function openErpRecon(id){
   const rec = UMCore.reconcileErp({ rows, visits, clinics, erpMap, repMap: p.repMap||{}, from: p.from, to: p.to, isExchange: isExchangeLine });
   _erpUnmatched = rec.unmatchedCustomers.slice();
   const priorRows = erpPriorReturns(p);
-  const priorFor = rep => priorRows.filter(rw => UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) === rep);
+  // each line's person worked out once for the whole sheet (it was once per line per person per table, v126 speed)
+  const match = erpMatchFn(), repOfRow = new Map();
+  const rowRep = rw => { if(repOfRow.has(rw)) return repOfRow.get(rw); const v = UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}, match); repOfRow.set(rw, v); return v; };
+  const priorFor = rep => priorRows.filter(rw => rowRep(rw) === rep);
   const kdRow = (label, val, color) => `<div class="report-line"><span>${label}</span><span class="v" ${color?`style="color:${color};"`:''}>${val}</span></div>`;
   const monthPrefix = todayStr().slice(0,7);
+  const fileCut = p.to && p.to < todayStr() ? p.to : todayStr();   // the last day this file's figures run to — what their pace is judged to
   const repCard = r => {
     const t = targets[r.rep] || {};
     const inThisMonth = (p.from||'').slice(0,7) === monthPrefix;
     const targetBar = (t.revenue > 0 && inThisMonth) ? (()=>{
-      const pct = Math.min(100, Math.round(r.erp.net / t.revenue * 100));
-      return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)</div>
-        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${pct>=100?'var(--sage)':pct>=60?'#FF9500':'var(--coral)'};"></div></div>
+      const pct = Math.max(0, Math.min(100, Math.round(r.erp.net / t.revenue * 100))), P = paceFor(r.erp.net, t.revenue, fileCut);   // the one pace rule, to the file's last day
+      return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)${P ? ` · <span>${P.words}</span>` : ''}</div>
+        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"${P ? ` data-pace="${P.state}"` : ''}><div style="width:${pct}%; height:100%; background:${paceBar(P, 'var(--teal)', 'var(--coral)')};"></div></div>
 `;
     })() : '';
     return `
@@ -966,7 +1042,7 @@ function openErpRecon(id){
       const acc = Object.create(null); // keyed by customer names: no prototype
       rows.forEach(rw => {
         if(!UMCore.inRange(rw.date, p.from, p.to)) return; // a prior-invoice return re-dated to its own month leaves this period's table
-        if(UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) !== r.rep) return;
+        if(rowRep(rw) !== r.rep) return;
         const key = (rw.customer || '').trim() || '(no account name)';
         const a = acc[key] || (acc[key] = { net: 0, docs: new Set() });
         a.net += rw.net; a.docs.add(rw.doc);
@@ -981,7 +1057,7 @@ function openErpRecon(id){
             <th style="text-align:end; padding:4px 6px; color:var(--muted);">Invoices</th>
             <th style="text-align:end; padding:4px 6px; color:var(--muted);">Net sales</th></tr>
           ${items.map(([cust, a])=>{
-            const m = UMCore.matchCustomer(cust, clinics, erpMap);
+            const m = match(cust);
             const clinic = m.clinicId ? clinics.find(x=>x.id===m.clinicId) : null;
             const tag = m.channel ? '<span style="color:var(--muted); font-size:11px;"> · 🌐 channel</span>'
               : clinic ? `<span style="color:var(--muted); font-size:11px;"> · ${esc(clinic.name)}</span>` : '';
@@ -1004,7 +1080,7 @@ function openErpRecon(id){
       if(!bt || !Object.keys(bt).length) return '';
       const actual = Object.create(null);
       rows.forEach(rw => {
-        if(UMCore.erpRowRep(rw, clinics, erpMap, p.repMap||{}) !== r.rep) return;
+        if(rowRep(rw) !== r.rep) return;
         const b = UMCore.normBrand(rw.brand);
         actual[b] = (actual[b]||0) + rw.net;
       });
@@ -1024,17 +1100,17 @@ function openErpRecon(id){
             const official = ab[brand];
             const achBase = hasOfficial && official != null ? official : act;
             const pct = Math.round(achBase/tgt*100);
-            const col = pct>=60?'var(--sage)':pct>=25?'#FF9500':'var(--coral)';
+            const P = inThisMonth ? paceFor(achBase, tgt, fileCut) : null, col = paceInk(P, 'var(--sage-ink)', 'var(--coral-ink)');   // the one pace rule (a file of another month: not judged)
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(brand)}</td>
               <td style="text-align:end; padding:5px 6px;">${amt2(tgt, 0)}</td>
               <td style="text-align:end; padding:5px 6px;">${amt2(act)}</td>
               ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?amt2(official):'—'}</td>`:''}
-              <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
+              <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};"${P ? ` data-pace="${P.state}"` : ''}>${pct}%</td>
             </tr>`;
           }).join('')}
         </table></div>
-        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets from the DSR file · achieved = invoiced in this ERP period. Green ≥60%, orange ≥25%, red below.</div>
+        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets from the DSR file · achieved = invoiced in this ERP period.${inThisMonth ? ` Green: on pace or better — from 90% of an even share of the target over the working days (Sun–Thu) to ${fmtDate(fileCut)}, the pace rule of the Today card; red: behind.` : ''}</div>
       </div>`;
     })()}
     ${r.matched.length?`<div class="card" style="border-inline-start:4px solid var(--sage);">
@@ -1093,8 +1169,8 @@ function openErpRecon(id){
       const tt = teamTargetTotal(rec.perRep.map(r => { const t = targets[r.rep] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: r.erp.net } : null; }));
       return tt.pct != null && tt.n > 1 ? `<div class="section-title">🏁 Team</div><div class="card">
         <div style="font-size:12px; color:var(--muted);">Monthly target — team: ${money(tt.ach)} of ${money(tt.goal)} (ERP-verified, this file)</div>
-        ${teamTargetRow(tt, { label: 'Team' })}
-        <div style="font-size:11px; color:var(--muted); margin-top:4px;">The Today card blends the official DSR figure with these invoices — its team % can differ slightly.</div>
+        ${teamTargetRow(tt, { label: 'Team', asOf: fileCut })}
+        <div style="font-size:11px; color:var(--muted); margin-top:4px;">The Today card counts every sales file of this month, so its team % can differ from this file's.</div>
       </div>` : '';
     })()}
     ${rec.perRep.length?rec.perRep.map(repCard).join(''):'<div class="empty">No rows map to your team — check the salesman mapping when importing.</div>'}
@@ -1227,7 +1303,7 @@ function elSideHtml(x, extra){
 function erpLinkSideNow(name){
   name = String(name == null ? '' : name).trim();
   const v = Object.prototype.hasOwnProperty.call(erpMap, name) ? erpMap[name] : null;
-  try{ return UMCore.erpLinkPreview(digestData(), { name, to: v }).before; }catch(e){ console.warn('where an account counts', e); return null; }
+  try{ return UMCore.erpLinkPreview(digestDataKept(), { name, to: v }).before; }catch(e){ console.warn('where an account counts', e); return null; }
 }
 // "Where it counts" as a phrase: at a clinic (its name and how), or the badge
 // and what having no clinic means. mode 'now' (after a change), 'again' (the
@@ -1259,7 +1335,7 @@ function erpLinkPeople(people){
   const list = (people || []).filter(p => Math.abs(p.net) >= 0.0005);
   return list.length ? list.map(p => `${elWho(p.rep)} <span dir="ltr" style="color:var(--muted);">${money(p.net)}</span>`).join(' · ') : '—';
 }
-function erpAccountsNow(){ return UMCore.erpAccounts(digestData()); }
+function erpAccountsNow(){ return UMCore.erpAccounts(digestDataKept()); } // (kept for the data state and the day: UMCore.erpShareKept)
 const elNeedsLink = a => a.status === 'gone' || a.status === 'ambiguous' || a.status === 'none';
 const elRowsMissing = () => erpPeriods().some(p => p && p.rowsMissing);
 // Every editor sheet carries data-el-sheet="<n>" on its title. Work that ends
@@ -1405,7 +1481,7 @@ function renderErpLinks(){
 function elInit(name, back, keep){
   name = String(name == null ? '' : name).trim();
   if(!name || name === '(no name)') return false;   // a nameless line is never an account
-  const d = digestData();
+  const d = digestDataKept();
   const shownOld = Object.prototype.hasOwnProperty.call(erpMap, name) ? erpMap[name] : null;
   let acc = UMCore.erpAccounts(d).accounts.find(a => a.name === name);
   // Neither an account of the loaded files nor a stored link: not a name any
@@ -1424,8 +1500,8 @@ function elInit(name, back, keep){
   return true;
 }
 function erpAccountLines(name){ // one row per document: what "Show the invoices" lists
-  const docs = {};
-  erpPeriods().forEach(p => { if(p && !p.rowsMissing) erpViewRows(p).forEach(r => {
+  const docs = {}, sh = erpShareNow(); // (each file's lines from the pass kept for the data state: the same lines)
+  erpPeriods().forEach(p => { if(p && !p.rowsMissing) (sh ? sh.rows(p) : erpViewRows(p)).forEach(r => {
     if((r.customer || '').trim() !== name) return;
     const k = r.doc + '|' + r.type;
     const d = docs[k] || (docs[k] = { doc: r.doc, date: r.date, net: 0, salesman: r.salesman, type: r.type });
@@ -1474,7 +1550,7 @@ function openErpLinkEdit(name, back, keep){
     const m = UMCore.matchCustomer(_el.name, clinics, {}), c = erpLinkClinic(m.clinicId);
     let none = EL_TXT.noneNow;
     if(!m.channel && !c && !m.ambiguous){ // with no clinic: back to "Unrecognized customer names" only if a team member issued its invoices
-      try{ const ap = UMCore.erpLinkPreview(digestData(), { name: _el.name, to: null }); if(!ap.error) none = elNoneText(ap.people); }catch(e){ console.warn('automatic match', e); }
+      try{ const ap = UMCore.erpLinkPreview(digestDataKept(), { name: _el.name, to: null }); if(!ap.error) none = elNoneText(ap.people); }catch(e){ console.warn('automatic match', e); }
     }
     autoSub = m.channel ? `<span>Would count at:</span> ${erpLinkBadge({ status: 'channel' })}`
       : c ? `<span>Would count at:</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(c.name)}</b> ${erpLinkBadge({ status: m.method === 'family' ? 'family' : 'name', closed: c.cls === 'Closed' })}`
@@ -1687,7 +1763,7 @@ function elRenderMoves(){
     if(hint) hint.innerHTML = _el.fieldErr ? '' : elFamilyHint(nb);
   }
   let pv = null;
-  try{ pv = UMCore.erpLinkPreview(digestData(), { name: _el.name, to: _el.to, addClinic: nb || null }, { settings: typeof kpiSettings === 'function' ? kpiSettings() : {} }); }
+  try{ pv = UMCore.erpLinkPreview(digestDataKept(), { name: _el.name, to: _el.to, addClinic: nb || null }, { settings: typeof kpiSettings === 'function' ? kpiSettings() : {} }); }
   catch(e){ console.error('ERP link preview', e); }
   _elPv = pv;
   elHideErr();
@@ -1719,8 +1795,8 @@ function elRenderMoves(){
       const d1 = Object.assign({}, digestData(), pv.draft), withGoal = REPS.filter(r => (targets[r] || {}).revenue > 0);
       const nowKey = JSON.stringify([withGoal, erpReturnPolicy(), erpPeriods().map(p => p.id + ':' + (p.rev || '') + ':' + (p.rows || []).length), erpMap,
         clinics.map(c => [c.id, c.rep, c.prevRep, c.repSince, !!c.shared, c.sharedSince])]);
-      if(!_el.nowAch || _el.nowAch.key !== nowKey){ const v = {}; withGoal.forEach(r => { v[r] = bestMonthRevenue(r).amount; }); _el.nowAch = { key: nowKey, v }; } // unchanged while the name is typed
-      const now = _el.nowAch.v, aft = {}; withGoal.forEach(r => { aft[r] = UMCore.monthAchievement(r, d1).amount; });
+      if(!_el.nowAch || _el.nowAch.key !== nowKey){ const v = {}, mtd0 = erpMtdMap(); withGoal.forEach(r => { v[r] = bestMonthRevenue(r, mtd0).amount; }); _el.nowAch = { key: nowKey, v }; } // unchanged while the name is typed
+      const now = _el.nowAch.v, aft = {}, mtd1 = UMCore.erpMtd(d1); withGoal.forEach(r => { aft[r] = UMCore.monthAchievement(r, d1, mtd1).amount; }); // (each person's month from one pass of the draft's lines)
       const pct = (a, g) => `<span dir="ltr">${Math.round(a / g * 100)}%</span>`;
       const lines = withGoal.filter(r => Math.abs(now[r] - aft[r]) >= 0.005).map(r => `<div class="el-today" data-rep="${esc(r)}" style="font-size:12.5px; padding:2px 0;">${elWho(r)}: <span>now</span> ${pct(now[r], targets[r].revenue)} · <span>after saving</span> ${pct(aft[r], targets[r].revenue)}</div>`);
       const t0 = teamTargetTotal(withGoal.map(r => ({ goal: targets[r].revenue, ach: now[r] }))), t1 = teamTargetTotal(withGoal.map(r => ({ goal: targets[r].revenue, ach: aft[r] })));
@@ -2118,7 +2194,7 @@ function elBranchKeeps(c, name){
   const link = Object.keys(erpMap).find(k => k !== name && erpMap[k] === c.id);
   if(link != null) return { why: 'link', account: link };
   let acc = null;
-  try{ acc = UMCore.erpAccounts(digestData()).accounts.find(a => a.name !== name && a.clinicId === c.id) || null; }
+  try{ acc = UMCore.erpAccounts(digestDataKept()).accounts.find(a => a.name !== name && a.clinicId === c.id) || null; }
   catch(e){ console.warn('branch check', e); return { why: 'check' }; }
   return acc ? { why: 'account', account: acc.name } : null;
 }

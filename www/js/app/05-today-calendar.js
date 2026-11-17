@@ -5,7 +5,7 @@ const EVENT_TYPES = ['Meeting','Training','Conference','Marketing','Personal','O
 function calDayData(d){
   return UMCore.calendarDayItems(d, calRepFilter, {visits, clinics, tasks, events, dayPlans});
 }
-function setCalRepFilter(r){ calRepFilter = ownRepOnly(r); renderAll(); renderCalendar(); }
+function setCalRepFilter(r){ calRepFilter = ownRepOnly(r); renderAll(); if(activeView !== 'calendar') renderCalendar(); } // (renderAll draws the open view: once, not twice)
 function setCalMode(m){
   calMode = m;
   document.getElementById('calModeMonth').classList.toggle('on', m==='month');
@@ -339,25 +339,49 @@ function openSalesHub(){
       moreTile(I('activity'), 'Product movement', 'Every brand → its products ranked by real sales: fast, mid, slow', 'closeModal(); openProductMovement()'),
       moreTile(I('pill'), 'Prescriptions growth', 'Prescription pads given, by doctor and by center', "closeModal(); ddTab='rx'; switchView('doctors')")].join('')}</div>`);
 }
-// The bell: the follow-ups due of whoever is signed in (a rep: hers), the same count as the Today screen's.
-function msBell(){
-  const n = currentUser ? visibleDueClinics().length : 0, b = document.getElementById('bellCount');
-  if(b){ b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n); }
-}
-function bellOpen(){ if(activeView !== 'today') switchView('today'); msGo('msDueCard'); }
+// The bell (the top bar's one bell) is the alerts center's (19-alerts.js): every change drawn here asks for it, and it
+// is worked out after the drawing — never inside it, never while a refresh is on its way (alertsSoon).
+function msBell(){ if(typeof alertsAsk === 'function') alertsAsk(); }
 // Help & Support (the sidebar's last entry): the app's version, what this phone still has to send, and who to ask.
+// "Waiting to be sent" counts everything this phone has not put in the cloud (waitingOnPhone, 04-sync.js): the queued
+// lists (memory included), the lists kept on this phone and not sent, a change the cloud refused, the sales files'
+// changes, the visit photos waiting or kept on this phone — in the words of the bars, the photo notes and the alerts
+// center (their dictionary entries), each on its own line; "Nothing — everything has reached the cloud" only when it
+// is true (until v126 it read the queue alone, and said it while a visit photo waited to upload).
+function helpWaitingLines(){
+  let W = null;
+  try{ W = waitingOnPhone(); }catch(e){ console.warn('help: waiting', e); }
+  if(!W) return [];
+  const label = k => (UMCore.ALERT_KEY_LABEL && Object.prototype.hasOwnProperty.call(UMCore.ALERT_KEY_LABEL, k)) ? UMCore.ALERT_KEY_LABEL[k] : String(k);
+  const hhmm = ms => { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  const when = ms => { const d = localDateStr(new Date(ms)); return (d === todayStr() ? '' : fmtDate(d) + ', ') + hhmm(ms); };
+  const out = [];
+  W.lists.forEach(x => out.push(label(x.key) + (x.mem ? " — only in the app's memory" : ' — waiting since ' + when(x.since))));
+  W.held.forEach(x => out.push(label(x.key) + (x.kept ? ' — kept on this phone, not sent' : ' — not saved')));
+  W.refused.forEach(k => { if(!W.held.some(x => x.key === k)) out.push(label(k) + ' — not saved'); });
+  if(W.erp) out.push('Sales file changes not saved');
+  if(W.photos){
+    const n = W.photos, mem = W.photosMem, here = n - mem;
+    out.push([n + (n === 1 ? ' visit photo' : ' visit photos') + ' waiting to upload from this phone',
+      here ? (here === n ? 'kept on this phone' : here + ' kept on this phone') : '',
+      mem ? (mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open") : ''].filter(Boolean).join(' · '));
+  }
+  if(W.unheld) out.push(W.unheld + (W.unheld === 1 ? ' visit photo' : ' visit photos') + ' taken on this phone, not confirmed in the cloud yet');
+  if(W.elsewhere){
+    if(!W.mine) out.unshift('Nothing from this phone');
+    out.push(W.elsewhere + (W.elsewhere === 1 ? ' visit photo' : ' visit photos') + ' not arrived from another phone');
+  }
+  return out;
+}
 function openHelp(){
-  let queued = [];
-  try{ queued = outboxList(); }catch(e){}
   const online = navigator.onLine !== false;
   const sups = (staff || []).filter(s => s && s.role === 'supervisor' && s.active !== false).map(s => s.name);
-  const names = { clinics: 'Clinics', visits: 'Visits', tasks: 'Tasks', events: 'Events', dayPlans: "Day's plans", products: 'Products & prices', targets: 'Targets', chat: 'Team chat', memories: 'Memories' };
-  const list = queued.map(k => esc(trOf(names[k] || '') || names[k] || k)).join(uiLang === 'ar' ? '، ' : ', ');
+  const lines = helpWaitingLines();
   showModal(`<h3 style="margin-top:0;">${I('nhelp')} ${msT('Help & Support')}</h3>
     <div class="ms-how">
       <div class="kv"><span>${msT('App version')}</span><span data-notr>${esc(APP_REV)}</span></div>
       <div class="kv"><span>${msT('Connection')}</span><span>${msT(online ? 'Online' : 'Offline — changes are kept on this phone')}</span></div>
-      <div class="kv"><span>${msT('Waiting to be sent')}</span><span>${queued.length ? `${msN(queued.length)} · ${list}` : msT('Nothing — everything has reached the cloud')}</span></div>
+      <div class="kv"><span>${msT('Waiting to be sent')}</span><span id="helpWaiting">${lines.length ? lines.map(l => `<span style="display:block;">${esc(l)}</span>`).join('') : msT('Nothing — everything has reached the cloud')}</span></div>
       <h4>${msT('Who to ask')}</h4>
       <div>${sups.length ? `${msT('Your supervisor:')} <b>${msNames(sups)}</b> — ${msT('write in the team chat, or call.')}` : msT('Write in the team chat.')}</div>
       <div class="ms-note">${msT('A red bar at the bottom of the screen says when something could not be sent, and what to do.')}</div>
@@ -430,7 +454,9 @@ function syncShell(name){
   if(t && VIEW_TITLES[name] && t.dataset.for !== name){ t.dataset.for = name; t.textContent = VIEW_TITLES[name]; }   // a new text node: the translator picks it up
   syncNav();
 }
-function renderView(name){
+// again: a redraw of the screen already open (renderAll) — the Team screen is not read again for it: the refresh that
+// brought something reads its lists while it is open (teamDue, v126 speed); its tap (switchView) reads them at once.
+function renderView(name, again){
   if(name==='today') renderToday();
   if(name==='log') prepLogView();
   if(name==='calendar') renderCalendar();
@@ -439,7 +465,7 @@ function renderView(name){
   if(name==='playbook') renderPlaybookGrid();
   if(name==='clanalysis') renderClinicAnalysis();
   if(name==='doctors') renderDoctorsDb();
-  if(name==='team'){ setTeamTab(teamTab); loadTeam().then(()=>{ if(teamTab==='mem') renderMemories(); else renderChat(); }); }
+  if(name==='team'){ setTeamTab(teamTab); if(!again) loadTeam().then(()=>{ if(teamTab==='mem') renderMemories(); else renderChat(); }); }
   if(name==='reports') renderReports();
   if(name==='more') renderMore();
 }
@@ -501,17 +527,36 @@ function statusLabel(dateStr){
   return `Due ${fmtDate(dateStr)}`;
 }
 
-function renderAll(){
+// The date and the greeting of the hour (renderAll; msClock when the hour turns and nothing else changed).
+function renderGreeting(){
   const now = new Date();
-  document.getElementById('dateLabel').textContent =
-    now.toLocaleDateString(uiLang==='ar' ? 'ar-KW-u-nu-latn' : 'en-US', {weekday:'long', month:'long', day:'numeric'});
+  const dl = document.getElementById('dateLabel'), dt = now.toLocaleDateString(uiLang==='ar' ? 'ar-KW-u-nu-latn' : 'en-US', {weekday:'long', month:'long', day:'numeric'});
+  if(dl.textContent !== dt) dl.textContent = dt;
   const hr = now.getHours();
   const greet = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
   // the picture's greeting: the first name, without a title ("Dr. Ghaith" → "Ghaith"; Arabic «غيث»)
   const words = String(currentUser.name).trim().split(/\s+/), title = /^(dr|prof|mr|mrs|ms)\.?$/i.test(words[0]) && words[1];
   const first = title ? words[1] : words[0];
   const arFull = wdArNames(currentUser.name), arFirst = arFull !== currentUser.name ? arFull.replace(/^د\.\s*/, '').split(/\s+/)[0] : first;
-  document.getElementById('greeting').textContent = `${greet}, ${uiLang === 'ar' ? arFirst : first}`;
+  const g = document.getElementById('greeting'), gt = `${greet}, ${uiLang === 'ar' ? arFirst : first}`;
+  if(g.textContent !== gt) g.textContent = gt;
+}
+// A refresh that brought nothing new does not draw the screen again (loadAllNow, v126 speed): only the words that move
+// with the clock do — the hour's greeting and, on the home screen, the figures of the hour (msSig counts it) when the
+// hour turns; else how long ago the latest visits were logged ("5 min ago"), if that changed.
+function msClock(){
+  if(!currentUser) return;
+  if(typeof alertsClock === 'function') alertsClock(); // an alert due by now with no data change (19-alerts.js: worked out after this round)
+  const hr = new Date().getHours();
+  if(_onScreen.hour !== hr){ _onScreen.hour = hr; renderGreeting(); if(activeView === 'today') renderToday(); return; }
+  if(activeView === 'today' && !_msHeld){ const v = msView(); if(v) renderRecentVisits(v, true); } // (a frame kept whole while new figures are worked out: the swap draws it)
+}
+function renderAll(){
+  try{ renderAllNow(); }
+  finally{ screenDrawn(); } // this person's own screen is drawn: a screen covered for them shows (v126 speed, part 3; 04-sync.js)
+}
+function renderAllNow(){
+  renderGreeting();
   const stamp = document.getElementById('headerStamp');
   stamp.childNodes[0].textContent = msInitials(msName(currentUser.name));
   stamp.classList.toggle('sup', currentUser.role==='supervisor');
@@ -544,10 +589,10 @@ function renderAll(){
   // made each interaction slower as the data grew. The visit form is state,
   // not a projection, so on the Log tab only its history list refreshes.
   if(activeView === 'log') renderLogHistory();
-  else renderView(activeView);
+  else renderView(activeView, true);
 }
-function setClinicRepFilter(v){ clinicRepFilter=ownRepOnly(v); renderAll(); setClinicMode(clinicMode); }
-function setReportRepFilter(v){ reportRepFilter=ownRepOnly(v); renderAll(); renderReports(); }
+function setClinicRepFilter(v){ clinicRepFilter=ownRepOnly(v); renderAll(); if(activeView !== 'clinics') setClinicMode(clinicMode); } // (renderAll draws the open view: once, not twice)
+function setReportRepFilter(v){ reportRepFilter=ownRepOnly(v); renderAll(); if(activeView !== 'reports') renderReports(); }
 
 function visibleDueClinics(){
   let list = clinics.filter(c => c.cls !== 'Closed' && ['overdue','today'].includes(followStatus(c.nextFollowUp)));
@@ -655,6 +700,13 @@ function crossInvoiceNoteHTML(rep, data){
 // Nothing here writes to storage.
 let _msPerson = null, _msFor = null;                    // the supervisor's person switch (null = the team), and whose session it belongs to
 let _msModel = null, _msJob = null, _msTimer = null, _msWaiters = [];
+// The frame on the home screen (v126 speed): the view it shows, the data state (msSig) it was drawn from, and whether it
+// is whole — every figure and row of that one state drawn (no "Calculating…"). When the data changes, a whole frame of the
+// view stays exactly as it is while the new state's figures are worked out — nothing of the new state is drawn beside it —
+// and the new frame replaces it at once, in one task (msRun). "Calculating the month…" shows only for a view with no
+// earlier frame on screen (the first one of a session, another person's screen opened). _msHeld: a frame is kept so.
+let _msFrame = null, _msHeld = false;
+const _msModels = new Map();                            // view key → its last model (a few views: going back to one whose data did not change draws it at once)
 let _msMemo = { sig: null, v: Object.create(null) };    // the cheap parts of one data state (each person's month, the team line, the week), reused until the data changes
 const _msOpen = Object.create(null);                   // phone: the folded cards opened in this session
 
@@ -762,9 +814,11 @@ function msKpiPastKey(v, S){
 }
 // The view's figures. Sales lines are attributed once and shared by both calls
 // (the same lines More → KPI scorecard and the management sheet read).
-function msBuild(v){
-  const data = digestData();
-  try{ data.erpShare = UMCore.erpShare(data); }catch(e){}
+function msBuild(v, sig){
+  // the data of this state with its one shared pass of the lines — the very object the parts drawn at once used
+  // (msDigest: each customer matched once for both, v126)
+  const data = sig ? msDigest(sig) : digestData();
+  if(!sig){ try{ data.erpShare = msShareOf(data); }catch(e){} }
   let rows;
   try{ rows = UMCore.erpAttributedRows(data); }catch(e){ console.error('main screen: sales lines', e); rows = undefined; }
   const m = { key: msKey(v), view: v, D: null, K: null, W: null, S: null, brands: msBrandNames() };
@@ -774,8 +828,10 @@ function msBuild(v){
   // point to act on or watch that is not the target (the target card says it) nor the follow-ups (the advisor lists
   // them), and only one whose words the Arabic screen has too
   try{
-    const ins = UMCore.coachInsights({ erpMtd: UMCore.erpMtd(data), from: msMonth() + '-01', to: todayStr(), today: todayStr(),
-      repFilter: v.kind === 'person' ? v.rep : 'all', visits, clinics, targets: blendedTargets(), dayPlans });
+    // one pass of the month's lines for both: blendedTargets worked each person's out again (bestMonthRevenue), v126
+    const mtd = (sig && msMtd(sig)) || UMCore.erpMtd(data);
+    const ins = UMCore.coachInsights({ erpMtd: mtd, from: msMonth() + '-01', to: todayStr(), today: todayStr(),
+      repFilter: v.kind === 'person' ? v.rep : 'all', visits, clinics, targets: blendedTargets(mtd), dayPlans });
     const hasAr = t => !window.UMI18N || !!UMI18N.tr(t);
     m.coach = (ins || []).filter(i => i && (i.level === 'act' || i.level === 'watch') && !/^target-/.test(i.key || '') && i.key !== 'followups' && i.title && hasAr(i.title))[0] || null;
   }catch(e){ console.error('main screen: coach', e); m.coach = null; }
@@ -823,7 +879,10 @@ function msMemo(sig, key, fn){
 }
 // The data of this state with one shared pass of the sales lines (UMCore.erpShare: each customer matched once, each
 // file's rows read once) for the parts drawn at once — each person's month, the invoices on another rep's clinic, the week.
-function msDigest(sig){ return msMemo(sig, 'dd', () => { const d = digestData(); try{ d.erpShare = UMCore.erpShare(d); }catch(e){} return d; }); }
+function msDigest(sig){ return msMemo(sig, 'dd', () => { const d = digestData(); try{ d.erpShare = msShareOf(d); }catch(e){} return d; }); }
+// (the pass kept per data state of the sales lines, UMCore.erpShareKept — v126 speed part 4: a change of the visits or
+// the plans keeps it, a change of what it reads gives another; an older cached core.js: one pass per state, as before)
+function msShareOf(d){ return typeof UMCore.erpShareKept === 'function' ? UMCore.erpShareKept(d) : UMCore.erpShare(d); }
 // The month's lines of everyone, once per data state: each person's month figure reads it (monthAchievement with
 // its map is bestMonthRevenue's very figure — one pass instead of one per person).
 function msMtd(sig){ return msMemo(sig, 'mtd', () => { try{ return UMCore.erpMtd(msDigest(sig)); }catch(e){ console.error('main screen: month lines', e); return null; } }); }
@@ -835,20 +894,35 @@ function msTeamTotal(v, P, sig){
   return msMemo(sig, 'tt', () => v.kind === 'team' && v.reps.length === REPS.length && v.reps.every((r, i) => r === REPS[i])
     ? teamTargetTotal(P.map(p => p.goal ? { goal: p.goal, ach: p.bm.amount } : null)) : teamTargetNow());
 }
-// The model to draw now: the fresh one, else the last one of the same view
-// while its successor is computed (a moment), else none (the cards wait).
+// The model to draw now: the one of the data as it is now, else none — the
+// cards it fills say "Calculating the month…" while it is worked out (a
+// moment). The last model of the view is never drawn beside the figures each
+// person's rows show at once (v126 review: one painted frame showed the new
+// target and achieved beside the old target's ring and remaining).
 function msEnsure(v, sig){
   sig = sig || msSig(v);
   const key = msKey(v);
-  if(_msModel && _msModel.sig === sig) return _msModel;
+  if(_msModel && _msModel.sig === sig && _msModel.key === key) return _msModel;
+  const had = _msModels.get(key);
+  if(had && had.sig === sig){ _msModel = had; return had; }   // that view's figures of the data as it is now, worked out before
   if(!_msJob || _msJob.sig !== sig){
     _msJob = { sig, key };
-    clearTimeout(_msTimer);
-    _msTimer = setTimeout(msRun, 0);
+    msSchedule();
   }
-  return _msModel && _msModel.key === key ? _msModel : null;
+  return null;
 }
-function msModelFor(v){ return _msModel && v && _msModel.key === msKey(v) ? _msModel : null; }
+// The figures are worked out just AFTER the screen is painted (v126): the lists, the plan and each person's month
+// figure that renderToday draws show at once, the figures a moment later (the cards say "Calculating the month…").
+// Worked out in the next task, they held back the paint of the whole screen for as long as they took (about 2 s on
+// a slower phone with a heavy year). A page that paints no frame (hidden) works them out at once.
+function msSchedule(){
+  clearTimeout(_msTimer);
+  if(document.visibilityState !== 'visible' || typeof requestAnimationFrame !== 'function'){ _msTimer = setTimeout(msRun, 0); return; }
+  const tok = _msTimer = setTimeout(() => go(), 250);   // no frame within this: worked out all the same
+  const go = () => { if(_msTimer === tok){ clearTimeout(tok); _msTimer = setTimeout(msRun, 0); } };
+  requestAnimationFrame(go);
+}
+function msModelFor(v, sig){ if(!v) return null; const s = sig || msSig(v), m = _msModel && _msModel.key === msKey(v) ? _msModel : _msModels.get(msKey(v)); return m && m.sig === s ? m : null; } // the data as it is now only (msEnsure)
 function msRun(){
   _msTimer = null;
   const job = _msJob; _msJob = null;
@@ -857,25 +931,43 @@ function msRun(){
     if(!job || !v || !currentUser) return;
     if(msKey(v) !== job.key){ if(activeView === 'today') renderToday(); return; }   // the view changed meanwhile: its own run follows (if any is needed)
     const t0 = (window.performance && performance.now) ? performance.now() : Date.now();
-    const sig = msSig(v), m = msBuild(v);
+    const sig = msSig(v), m = msBuild(v, sig);
     m.sig = sig; m.ms = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - t0);
     _msModel = m;
-    if(activeView === 'today') msPaint(v, m, sig);
-  }catch(e){ console.error('main screen', e); }
+    _msModels.delete(m.key); _msModels.set(m.key, m); if(_msModels.size > 4) _msModels.delete(_msModels.keys().next().value);
+    // the whole frame kept on screen, or lists drawn from another state than these figures: the screen is drawn again as
+    // one, now (renderToday finds the figures ready); else the figures join the lists drawn from this same state
+    if(activeView === 'today'){ if(_msHeld || !_msFrame || _msFrame.key !== m.key || _msFrame.sig !== sig) renderToday(); else { msPaint(v, m, sig); _msFrame.whole = true; } }
+  }catch(e){
+    console.error('main screen', e);
+    // the figures could not be worked out at all (msBuild threw): the screen says so for the data as it is now — a whole
+    // frame of an earlier state is never kept on screen for ever as if it were current (v126 review 2, U3)
+    try{
+      const v = msView();
+      if(job && v && currentUser && msKey(v) === job.key){
+        const fm = { key: job.key, view: v, D: null, K: null, W: null, S: null, H: {}, coach: null, brands: (() => { try{ return msBrandNames(); }catch(e2){ return []; } })(), failed: true, sig: msSig(v) };
+        _msModel = fm; _msModels.delete(fm.key); _msModels.set(fm.key, fm);
+        if(activeView === 'today'){ _msHeld = false; renderToday(); }
+      }
+    }catch(e2){ console.error('main screen', e2); }
+  }
   finally{ msSettle(); }                                    // whoever waits is told, whatever happened
 }
 function msSettle(){ if(_msJob || _msTimer) return; const w = _msWaiters; _msWaiters = []; w.forEach(f => { try{ f(_msModel); }catch(e){} }); }
 // Settles once the figures on screen are those of the data as it is now (the harness waits on it).
 function msWhenReady(){ return (_msJob || _msTimer) ? new Promise(res => _msWaiters.push(res)) : Promise.resolve(_msModel); }
 
-// ---- pace: the management report's rule (13-exports.js) ----
-// Expected by now = working days (Sun–Thu) from day 1 to the day the figure
-// runs to ÷ the working days of the month. On pace from 90 % of that.
+// ---- pace: the one pace rule (UMCore.paceOf — the coach's, the alerts center's and the printed report's too) ----
+// Expected by now = working days (Sun–Thu) from day 1 to the day the figure runs to ÷ the working days of the month.
+// On pace from 90 % of that, judged on the exact value (89.7 % is behind: until the alerts review this card rounded
+// first and said "On pace" beside the alerts' "Month target at risk").
 function msPace(ach, goal, done, total){
-  if(!(goal > 0) || ach == null || !(total > 0)) return null;
+  if(ach == null) return null;
+  if(typeof UMCore.paceOf === 'function'){ const P = UMCore.paceOf(ach, goal, done, total); return !P ? null : P.state === 'hit' ? 'reached' : P.state; }
+  if(!(goal > 0) || !(total > 0)) return null;   // (an older cached core.js: the same comparison, exact)
   if(ach >= goal) return 'reached';
-  const pace = Math.round(ach / (goal * Math.max(1, done) / total) * 100);
-  return pace >= 100 ? 'ahead' : pace >= 90 ? 'on' : 'behind';
+  const r = ach / (goal * Math.max(1, done) / total);
+  return r >= 1 ? 'ahead' : r >= 0.9 ? 'on' : 'behind';
 }
 const MS_PILL = { reached: ['good', 'Target reached'], ahead: ['good', 'Ahead of pace'], on: ['good', 'On pace'], behind: ['warn', 'Behind pace'] };
 const MS_STATE = { reached: 'Target reached', ahead: 'Ahead of pace', on: 'On pace', behind: 'Behind pace' };   // the target card's rows: the pill's words, one word per state on the screen
@@ -1076,8 +1168,8 @@ function renderTargetCard(v, m, P, sig){
   if(!v && activeView === 'today' && currentUser){ renderToday(); return; }
   v = v || msView();
   if(!v){ el.innerHTML = ''; return; }
-  m = m || msModelFor(v);
   sig = sig || msSig(v);                                   // called on its own (after a change): the data as it is now
+  m = m || msModelFor(v, sig);
   P = P || msPeople(v, sig);
   if(v.kind === 'person'){
     const p = P[0], t = p.t, vN = t.visits > 0 ? msFieldVisits(p.rep) : 0;
@@ -1398,7 +1490,9 @@ function msKpisHTML(v, m, sig){
   out.push(card(over ? 'att' : '', 'clip2', 'Pending Follow-ups', '', msN(due.length),
     over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
     '', "msGo('msDueCard')", 'due', due.length));
-  // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result
+  // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result; its %
+  // is execDashboard's (the one pace rule, paceOf: cut, never rounded up across 90 % — the pace card's word and this
+  // card are on the same side of the line; until 17 Nov it was rounded: 89.7 % read "90%" beside "Behind pace")
   const withT = A.pct != null && F && F.pct != null && F.forTarget != null, fc = F && !F.closed ? (withT ? F.forTarget : F.amount) : null;
   let fSpark = '';
   if(fc != null){
@@ -1697,7 +1791,7 @@ function msGoClinics(r){ if(r && currentUser.role === 'supervisor') clinicRepFil
 // ---- "How it is calculated": the source, the formula and this view's own numbers ----
 function msHow(id){
   const v = msView(); if(!v) return;
-  const m = msModelFor(v), D = m && msOf(m.D), sig = msSig(v);
+  const sig = msSig(v), m = msModelFor(v, sig), D = m && msOf(m.D);
   const kv = (a, b) => `<div class="kv"><span>${a}</span><span>${b}</span></div>`;
   const sec = (t, src, formula, view) => `<h4>${msT(t)}</h4><div><b>${msT('Source')}:</b> ${msT(src)}</div>${formula ? `<div><b>${msT('Formula')}:</b> ${msT(formula)}</div>` : ''}${view ? `<div style="margin-top:4px;">${view}</div>` : ''}`;
   const f2 = n => UMCore.groupThousands((Number(n) || 0).toFixed(2));   // the sums are written as the amounts are shown
@@ -1757,7 +1851,7 @@ function msHow(id){
         'Expected % = working days done ÷ working days of the month × 100. On pace from 90% of the expected figure, ahead from 100% (the rule of the management report).', `<div>${msN(`${wd.done} ÷ ${wd.total} × 100 = ${exp}%`)}</div>`);
       // each person's line with her own invoiced figure in it; the card's "% of target" worked out for the people with a target
       if(F) body += sec('Forecast for the month', 'The pace of invoiced sales so far in the ERP files, person by person — the formula of the management report.',
-        'Forecast = invoiced so far ÷ working days done × working days of the month, for each person, then added up. A projection, not a sale.',
+        'Forecast = invoiced so far ÷ working days done × working days of the month, for each person, then added up. A projection, not a sale. Its % of the target is cut to a whole percent, never rounded up across 90% or 100% (the pace rule): 89.7% is 89%.',
         F.amount != null ? Object.keys(F.byRep || {}).map(r => { const x = F.byRep[r], b = (Array.isArray(D.byPerson) ? D.byPerson : []).find(p => p && p.rep === r);
             return kv(msWho(r), `${msN(`${f2(b ? b.amount : 0)} ÷ ${Math.max(1, x.done)} × ${x.total}`)} = ${msKd(x.amount)}`); }).join('') + kv(msT('Total'), msKd(F.amount))
           + (F.pct != null && F.forTarget != null && F.target != null ? kv(`${msT('% of target')} (${msNames(A.people)})`, msN(`${f2(F.forTarget)} ÷ ${f2(F.target)} × 100 = ${F.pct}%`)) : '') : '');
@@ -1834,6 +1928,7 @@ function msHow(id){
 
 // ---- MISSED PLANNED VISITS ----
 function renderMissedPlans(){
+  if(_msHeld) return; // a home frame kept whole while its new figures are worked out: the swap draws this card too (v126 speed)
   const el = document.getElementById('missedList');
   const title = document.getElementById('missedTitle');
   if(!el || !title) return;
@@ -1929,11 +2024,20 @@ function renderDormant(){
 }
 
 function renderToday(){
-  renderErpNudge();
-  renderDocCardsNudge();
   document.body.classList.toggle('on-today', activeView === 'today');
   const v = msView();
   if(!v) return;
+  // the figures: the ones of the data as it is now, or (msEnsure) worked out a moment later
+  let m = null, sig = null;
+  try{ sig = msSig(v); m = msEnsure(v, sig); }catch(e){ console.error('main screen', e); }
+  // a whole frame of this view is on screen and the data changed: it stays as it is until the new figures are ready,
+  // then the whole screen is drawn again at once (msRun) — never a frame of two states, never "Calculating…" over it
+  // (only a frame drawn for the person signed in now: the supervisor's frame of a person's screen — the same view key —
+  // is never kept on screen for that person after a sign-out and her sign-in on the same page, v126 review 2)
+  if(!m && sig && activeView === 'today' && _msFrame && _msFrame.whole && _msFrame.who === onScreenWho() && _msFrame.key === msKey(v) && _msFrame.sig !== sig && (_msJob || _msTimer)){ _msHeld = true; return; }
+  _msHeld = false;
+  renderErpNudge();
+  renderDocCardsNudge();
   const all = visibleDueClinics();
   const due = v.kind === 'person' ? all.filter(c => c.rep === v.rep) : all;   // a person's screen: her follow-ups
   const tts = document.getElementById('tileTeamSub');
@@ -1956,10 +2060,8 @@ function renderToday(){
   renderRecentVisits(v);
   msFoldSums(v, due);
   ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const el = document.getElementById(id); if(el) el.classList.toggle('open', !!_msOpen[id]); });
-  // the figures: the last ones of this view at once, the fresh ones a moment later (msRun)
-  let m = null, sig = null;
-  try{ sig = msSig(v); m = msEnsure(v, sig); }catch(e){ console.error('main screen', e); }
   msPaint(v, m, sig);
+  _msFrame = { key: msKey(v), sig, whole: !!m, who: onScreenWho() };
 }
 function renderDueList(due){
   const dueList = document.getElementById('dueList');
@@ -1983,16 +2085,18 @@ function renderDueList(due){
       </div>`).join('');
   }
 }
-function renderRecentVisits(v){
+// onlyIfChanged: the clock's redraw (msClock) — nothing is touched unless a word changed
+function renderRecentVisits(v, onlyIfChanged){
   const rv = document.getElementById('recentVisits');
   if(!rv) return;
+  const set = html => { if(onlyIfChanged && rv.__html === html) return; rv.__html = html; rv.innerHTML = html; };
   const r = v && v.kind === 'person' ? v.rep : null, sup = currentUser.role==='supervisor' && !r;
   const recent = visibleVisits().filter(x => !r || x.rep === r || x.withRep === r).sort((a,b)=>b.date.localeCompare(a.date) || (b.ts||0) - (a.ts||0)).slice(0,3);
   if(recent.length===0){
-    rv.innerHTML = `<div class="empty">🌱 Your first logged visit starts the story.</div>`;
+    set(`<div class="empty">🌱 Your first logged visit starts the story.</div>`);
   } else {
     // the picture's Recent Activity: what was logged (a field visit, a call, an order logged in the app — never a sale), where, how long ago
-    rv.innerHTML = `<div class="ms-tl">${recent.map(x=>{
+    set(`<div class="ms-tl">${recent.map(x=>{
       const clinic = clinics.find(c=>c.id===x.clinicId), name = clinic ? clinic.name : clinicLabel(x.clinicId, x);
       const kind = x.callOnly ? ['phone', 'Call logged'] : x.orderTaken ? ['cart', 'Order logged in the app'] : ['ncal', 'Visit logged'];
       return `<div class="card ms-tli">
@@ -2003,7 +2107,7 @@ function renderRecentVisits(v){
         </div>
         <span class="ms-ago">${msAgo(x)}</span>
       </div>`;
-    }).join('')}</div>`;
+    }).join('')}</div>`);
   }
 }
 // how long ago a visit was logged: minutes or hours on its day (its own time stamp), else days

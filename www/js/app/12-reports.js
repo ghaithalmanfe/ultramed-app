@@ -171,13 +171,15 @@ function reportRangeBounds(){
   const d = new Date(todayStr()+'T00:00:00'); d.setDate(d.getDate()-(reportRange-1));
   return {from: UMCore.localDateStr(d), to: todayStr()};
 }
-function renderCoach(){
+// mtd (optional): the month's lines of everyone, worked out once by the Report's draw (renderReports, v126 speed)
+function renderCoach(mtd){
   const el = document.getElementById('coachCard');
   if(!el) return;
   const b = reportRangeBounds();
-  const insights = UMCore.coachInsights({ erpMtd: erpMtdMap(),
+  mtd = mtd || erpMtdMap();
+  const insights = UMCore.coachInsights({ erpMtd: mtd,
     from: b.from, to: b.to, today: todayStr(), repFilter: reportRepFilter,
-    visits, clinics, targets: blendedTargets(), dayPlans,
+    visits, clinics, targets: blendedTargets(mtd), dayPlans,
   });
   const styles = {
     act:   {c:'var(--coral)',  ink:'var(--coral-ink)', label:'DO NOW'},
@@ -199,7 +201,10 @@ function renderCoach(){
   }).join('') + `</div></div>`;
 }
 function renderReports(){
-  renderCoach();
+  // the month's lines of everyone, once for the whole screen: the coach, each person's target row and the team's (each
+  // of them worked them out again before — about a second on a slower phone with a heavy year, v126 speed)
+  const mtd = erpMtdMap();
+  renderCoach(mtd);
   let rv = reportVisitsBase();
   if(reportRepFilter !== 'all') rv = rv.filter(v=>v.rep===reportRepFilter);
   document.getElementById('repVisits').textContent = rv.filter(isFieldVisit).length;
@@ -232,13 +237,13 @@ function renderReports(){
     const rows = REPS.map(r=>{
       const rvr = base.filter(v=>v.rep===r);
       return {rep:r, visits:rvr.length, revenue:rvr.reduce((s,v)=>s+(v.orderTotal||0),0),
-        erp: erpRevenueForRange(cmpBounds.from, cmpBounds.to, r), tgt: targetPct(r)};
+        erp: erpRevenueForRange(cmpBounds.from, cmpBounds.to, r), tgt: targetPct(r, mtd)};
     });
     const anyErp = rows.some(r=>r.erp != null);
     const anyTgt = rows.some(r=>r.tgt != null);
     const rowCls = 'compare-row ' + (anyErp && anyTgt ? 'c5' : (anyErp || anyTgt) ? 'c4' : '');
-    const tgtCell = r => anyTgt ? `<div style="font-weight:800; color:${r.tgt?(r.tgt.pct>=100?'var(--sage-ink)':r.tgt.pct>=60?'var(--ink)':'var(--amber-ink)'):'var(--muted)'};">${r.tgt?r.tgt.pct+'%':'—'}</div>` : '';
-    const tt0 = rows.length > 1 ? teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount } : null)) : null;
+    const tgtCell = r => anyTgt ? `<div style="font-weight:800; color:${r.tgt ? paceInk(r.tgt.pace) : 'var(--muted)'};"${r.tgt && r.tgt.pace ? ` data-pace="${r.tgt.pace.state}"` : ''}>${r.tgt?r.tgt.pct+'%':'—'}</div>` : '';
+    const tt0 = rows.length > 1 ? teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount, asOf: r.tgt.asOf } : null)) : null;
     const pc = (name, v, logged, erp, tgt, team) => `<div class="cmp-card${team ? ' team' : ''}"><div class="cmp-n">${name}</div><div class="cmp-g">
       <span><span>Visits</span><b>${v}</b></span><span><span>Logged</span><b>${logged}</b></span>${anyErp ? `<span><span>ERP</span><b>${erp}</b></span>` : ''}${anyTgt ? `<span><span>Target</span><b>${tgt}</b></span>` : ''}</div></div>`;
     const phone = `<div class="cmp-cards">${rows.map(r => pc(esc(r.rep), r.visits, money(r.revenue), r.erp != null ? money(r.erp) : '—', r.tgt ? r.tgt.pct + '%' : '—')).join('')}${rows.length > 1
@@ -249,9 +254,9 @@ function renderReports(){
       </div>
       ${rows.map(r=>`<div class="${rowCls}" style="padding:6px 0; border-top:1px solid var(--line);"><div>${esc(r.rep)}</div><div>${r.visits}</div><div>${money(r.revenue)}</div>${anyErp?`<div>${r.erp!=null?money(r.erp):'—'}</div>`:''}${tgtCell(r)}</div>`).join('')}
       ${rows.length>1?(()=>{ // team line: sums, and the team target % on the same official basis
-        const tt = teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount } : null));
+        const tt = teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount, asOf: r.tgt.asOf } : null)), ttP = tt.pct != null ? paceFor(tt.ach, tt.goal, tt.asOf) : null;
         const erpAny = rows.some(r=>r.erp!=null);
-        return `<div class="${rowCls}" style="padding:6px 0; border-top:2px solid var(--ink); font-weight:800;"><div>Team</div><div>${rows.reduce((s,r)=>s+r.visits,0)}</div><div>${money(rows.reduce((s,r)=>s+r.revenue,0))}</div>${anyErp?`<div>${erpAny?money(rows.reduce((s,r)=>s+(r.erp||0),0)):'—'}</div>`:''}${anyTgt?`<div style="color:${tt.pct!=null?pctInk(tt.pct):'var(--muted)'};">${tt.pct!=null?tt.pct+'%':'—'}</div>`:''}</div>`;
+        return `<div class="${rowCls}" style="padding:6px 0; border-top:2px solid var(--ink); font-weight:800;"><div>Team</div><div>${rows.reduce((s,r)=>s+r.visits,0)}</div><div>${money(rows.reduce((s,r)=>s+r.revenue,0))}</div>${anyErp?`<div>${erpAny?money(rows.reduce((s,r)=>s+(r.erp||0),0)):'—'}</div>`:''}${anyTgt?`<div style="color:${paceInk(ttP)};"${ttP ? ` data-pace="${ttP.state}"` : ''}>${tt.pct!=null?tt.pct+'%':'—'}</div>`:''}</div>`;
       })():''}
     </div>`;
   } else {
@@ -284,7 +289,7 @@ function renderReports(){
     </div>`).join('');
   }
   renderCharts();
-  renderScorecards();
+  renderScorecards(mtd);
 }
 
 
@@ -449,7 +454,14 @@ function photoDbDo(mode, fn){
 async function photoKeep(rec){
   _photoKept.set(rec.id, rec);
   const row = { id: rec.id, data: rec.data, visitId: rec.visitId || null, ts: rec.ts || Date.now() };
-  try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }catch(e){}
+  try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }
+  catch(e){
+    // no room left: the phone's copy of documents the cloud holds (um_keep, 04-sync.js) gives way to a photo that
+    // exists only here — before it would take the offline queue's room in web storage (v126 review)
+    if(e && /quota/i.test(String(e.name || '') + ' ' + String(e.message || '')) && await keepClear()){
+      try{ await photoDbDo('readwrite', st => st.put(row)); return (rec.on = 'idb'); }catch(e2){}
+    }
+  }
   if(deviceSet(PHOTO_LS + rec.id, JSON.stringify(row), true)) return (rec.on = 'ls');
   return (rec.on = 'mem');
 }
@@ -526,7 +538,7 @@ async function photoLanded(id){
     if(rec.on === 'mem' && typeof memOnlyPhotoLanded === 'function') memOnlyPhotoLanded(); // the red bar may say "Saved" (04)
     await photoForget(id);
     await settlePhotos();
-  } finally { rec.settling = false; }
+  } finally { rec.settling = false; if(typeof alertsSoon === 'function') alertsSoon(); } // the bell says what the notes say (19-alerts.js)
 }
 // Retry every photo this phone keeps (from flushOutbox: the queue's flush and
 // the 20-second refresh), then settle the marks this phone still owes.
@@ -560,7 +572,7 @@ function settlePhotos(){
   if(_photoSettling){ _photoSettleAgain = true; return _photoSettling; }
   _photoSettling = (async () => {
     do { _photoSettleAgain = false; await settlePhotosOnce(); } while(_photoSettleAgain);
-  })().finally(() => { _photoSettling = null; });
+  })().finally(() => { _photoSettling = null; if(typeof alertsSoon === 'function') alertsSoon(); }); // a verdict (lost, landed) reaches the bell even when its save did not land
   return _photoSettling;
 }
 async function settlePhotosOnce(){
@@ -639,17 +651,26 @@ function photoStaleText(days){ return days + ' days now — it can only come fro
 // kept on this phone (IndexedDB or the web storage), only in the app's memory,
 // or neither (on the phone that took it, or not kept yet) — and the photos
 // lost before they uploaded ({lost: true}: only the thumbnail exists).
-function photoWaitHTML(v){
+// photoWaitInfo is that reading, once: the note under the thumbnails draws it
+// (photoWaitHTML) and the alerts center lists its very lines (19-alerts.js) —
+// { wait, lostTxt (the note's lines, null when none), mem, here, old (days, another
+// phone's photo past PHOTO_STALE_DAYS; othersAt: when each of another phone's waiting photos was taken — its age
+// moves with the clock), own: [when each waiting photo this phone
+// holds was taken — kept here or only in memory; one with its mark that it no
+// longer holds is being settled, not kept], lostAt: [when each lost photo was taken],
+// unheld: this phone's own waiting photos it does not hold (being settled: not confirmed in the cloud yet),
+// others: another phone's waiting photos (Help & Support's "Waiting to be sent" counts both, v126) } or null.
+function photoWaitInfo(v){
   const ps = ((v && v.photos) || []).filter(p => p);
   // this phone knows before its mark's save lands: one it saw land is not
   // waiting, one it found in no store and not in the cloud is lost
   const waiting = ps.filter(p => p.pending && !_photoLanded.has(p.id) && !_photoLost.has(p.id));
   const lost = ps.filter(p => !_photoLanded.has(p.id) && ((p.lost && !p.pending) || (p.pending && _photoLost.has(p.id))));
-  const me = photoDevice();
-  let out = '';
+  if(!waiting.length && !lost.length) return null;
+  const me = photoDevice(), own = [], othersAt = [];
+  let here = 0, mem = 0, old = 0, wait = null, unheld = 0, others = 0;
   if(waiting.length){
-    let here = 0, mem = 0, old = 0;
-    waiting.forEach(p => { const r = _photoKept.get(p.id); if(!r){ if(p.dev !== me && photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
+    waiting.forEach(p => { const r = _photoKept.get(p.id); if(r) own.push(Number(p.at) || 0); if(!r){ if(p.dev !== me){ others++; if(Number(p.at) > 0) othersAt.push(Number(p.at)); if(photoWaitDays(p) >= PHOTO_STALE_DAYS) old = Math.max(old, photoWaitDays(p)); } else unheld++; return; } if(r.on === 'idb' || r.on === 'ls') here++; else if(r.on === 'mem' && !r.up) mem++; });
     const n = waiting.length, parts = [(mem ? '⚠️ ' : '⏳ ') + (n === 1 ? 'Photo waiting to upload' : n + ' photos waiting to upload')];
     if(here) parts.push(here === n ? 'kept on this phone' : here + ' kept on this phone');
     if(mem) parts.push(mem === n ? "only in the app's memory — keep the app open" : mem + " only in the app's memory — keep the app open");
@@ -657,12 +678,17 @@ function photoWaitHTML(v){
     // phone that took it — which may no longer have it (its data cleared, the
     // phone replaced). Never said of this phone's own: it holds it, sends it or settles it.
     if(old) parts.push(photoStaleText(old));
-    out += `<div class="photo-wait" style="font-size:12px; color:var(${mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(parts.join(' · '))}</div>`;
+    wait = parts.join(' · ');
   }
-  if(lost.length){
-    const txt = lost.length === 1 ? PHOTO_LOST_1 : '⚠️ ' + lost.length + ' photos lost before they uploaded — only their small previews are kept';
-    out += `<div class="photo-lost" style="font-size:12px; color:var(--coral-ink); margin-top:4px;">${esc(txt)}</div>`;
-  }
+  const lostTxt = !lost.length ? null : lost.length === 1 ? PHOTO_LOST_1 : '⚠️ ' + lost.length + ' photos lost before they uploaded — only their small previews are kept';
+  return { wait, lostTxt, mem, here, old, own, othersAt, lostAt: lost.map(p => Number(p.at) || 0), unheld, others };
+}
+function photoWaitHTML(v){
+  const w = photoWaitInfo(v);
+  if(!w) return '';
+  let out = '';
+  if(w.wait) out += `<div class="photo-wait" style="font-size:12px; color:var(${w.mem ? '--coral-ink' : '--amber-ink'}); margin-top:4px;">${esc(w.wait)}</div>`;
+  if(w.lostTxt) out += `<div class="photo-lost" style="font-size:12px; color:var(--coral-ink); margin-top:4px;">${esc(w.lostTxt)}</div>`;
   return out;
 }
 async function loadPhotoBlob(id){
@@ -768,6 +794,51 @@ function teamMerge(key, a, b){
   if(key === 'chat' && v.length > 300) v = v.slice(-300);
   return v;
 }
+// ---- When chat and memories are read (v126 speed) ----
+// They were downloaded at every start (before the screen was drawn) and every
+// 20-second round: about 1 MB a time on a heavy year, more than every other
+// list together. Now: every refresh while their screen (Team) is open, at once
+// when it opens and on "Refresh messages", and otherwise once every
+// TEAM_PACE_MS since the last real read (um_teamReadAt, kept on the phone across
+// starts) — never at a start, which draws this phone's copy of the last read
+// (teamFromPhone; a list this phone never read is read just after the first
+// paint). Nothing waits for them. What the screens say stays true: a list never
+// read here and still empty says it is loading (never "Start the conversation"),
+// and "Refresh messages" still says "Up to date" only after a real read.
+const TEAM_PACE_MS = 15 * 60000;
+const TEAM_READ_AT = 'um_teamReadAt';
+const _teamFrom = {};   // key → 'phone' (this phone's copy of the last read) | 'cloud' (read this session) | 'tried' (a read answered from neither)
+const _teamShown = {};  // key → { text, ref }: the cloud's text the list on screen was taken from (the same read again keeps it)
+function teamReadAt(key){ try{ const o = JSON.parse(localStorage.getItem(TEAM_READ_AT) || '{}'); return +(o && o[key]) || 0; }catch(e){ return 0; } }
+function teamReadNow(key){ try{ const o = JSON.parse(localStorage.getItem(TEAM_READ_AT) || '{}') || {}; o[key] = Date.now(); localStorage.setItem(TEAM_READ_AT, JSON.stringify(o)); }catch(e){} }
+// The lists the screens show until a read this session: this phone's copy of the last one (once per session; memory
+// that already holds a list — a sign-in after another — keeps it).
+function teamFromPhone(){
+  ['chat', 'memories'].forEach(key => {
+    if(_teamFrom[key]) return;
+    if(teamList(key).length){ _teamFrom[key] = 'phone'; return; }
+    const a = UMCore.safeParse(mirrorGet(key), null);
+    // no copy on this phone (never read here, or it did not fit: a full phone): unknown until a read — read just after the
+    // first paint (teamDue), its screens say it is loading meanwhile
+    if(Array.isArray(a)){ setTeamList(key, teamMerge(key, a, null)); _teamFrom[key] = 'phone'; }
+  });
+}
+// The lists a refresh reads: both while the Team screen is open; at a start only a list this phone never read (just
+// after the first paint, never waited for); otherwise those whose last real read is TEAM_PACE_MS old.
+function teamDue(boot){
+  const keys = ['chat', 'memories'];
+  if(typeof activeView !== 'undefined' && activeView === 'team') return keys;
+  if(boot) return keys.filter(k => !_teamFrom[k]);
+  const now = Date.now();
+  return keys.filter(k => { const t = teamReadAt(k); return !t || Math.abs(now - t) >= TEAM_PACE_MS; });
+}
+// A refresh's read of them is in (loadAllNow): drawn where they show, only if it changed what memory holds.
+function teamRead(before){
+  const chatNew = chatMsgs !== before.chat, memNew = memories !== before.memories;
+  if(!chatNew && !memNew) return;
+  if(typeof activeView !== 'undefined' && activeView === 'team'){ if(teamTab === 'mem'){ if(memNew) renderMemories(); } else if(chatNew) renderChat(); }
+  if(memNew && typeof activeView !== 'undefined' && activeView === 'today' && !_msHeld) renderBadges(); // the Memory Maker badge counts them (a home frame kept whole meanwhile: its swap draws them)
+}
 // keys: the lists to read (both when left out).
 async function loadTeam(keys){
   // each list is taken (or kept) the moment its own read is back: nothing runs between
@@ -787,17 +858,23 @@ async function loadTeam(keys){
     const src = {};
     const r = await cloudGet(key, src).catch(() => null);
     how[key] = src.cloud && !(r == null && !navigator.onLine) ? 'cloud' : 'phone';
+    if(how[key] === 'cloud'){ teamReadNow(key); _teamFrom[key] = 'cloud'; } else if(!_teamFrom[key]) _teamFrom[key] = 'tried';
     try{
       const mine = teamList(key);
       if(_teamGen[key] !== gen0 || _teamSaving[key] > 0){
         console.warn(key + ': a save ran while the refresh read — the list on screen is kept');
         mirrorSave(key, JSON.stringify(teamMerge(key, mine, UMCore.safeParse(mirrorGet(key), null))));
         how[key] = 'kept'; // "Refresh messages" reads it again once that save is over (it said "Up to date" here)
+        delete _teamShown[key];
         return;
       }
+      // v126 speed: the very text the list on screen was taken from, nothing of this phone's waiting: kept as it is
+      const txt = r && typeof r.value === 'string' ? r.value : null, sh = _teamShown[key];
+      if(how[key] === 'cloud' && !outboxHas(key) && sh && sh.text === txt && sh.ref === mine) return;
       const read = UMCore.safeParse(r && r.value, null);
       const got = Array.isArray(read) ? read : [];
-      if(!outboxHas(key)){ setTeamList(key, teamMerge(key, got, null)); return; } // one entry per id
+      if(!outboxHas(key)){ setTeamList(key, teamMerge(key, got, null)); if(how[key] === 'cloud') _teamShown[key] = { text: txt, ref: teamList(key) }; else delete _teamShown[key]; return; } // one entry per id
+      delete _teamShown[key];
       how[key] = 'queued'; // the queue as the read came back, not as it began
       const all = teamMerge(key, mine, got); // queued: nothing memory holds is dropped, nor left off the phone's copy
       setTeamList(key, all);
@@ -933,6 +1010,7 @@ function fmtWhen(ts){
 }
 function renderChat(){
   const el = document.getElementById('chatList');
+  if(!chatMsgs.length && _teamFrom.chat !== 'cloud' && _teamFrom.chat !== 'phone'){ el.innerHTML = `<div class="empty">Loading messages…</div>`; return; } // never read on this phone yet (v126 speed) — a read tried that answered from neither too (review 2: it said "Start the conversation"; it is read again at every round until it is in)
   if(!chatMsgs.length){
     el.innerHTML = `<div class="empty"><div class="big">\u{1F4AC} Start the conversation</div>Share a win, ask for help, or drop a photo from the road.</div>`;
     return;
@@ -1064,6 +1142,7 @@ async function saveMemory(){
 }
 function renderMemories(){
   const el = document.getElementById('memGrid');
+  if(!memories.length && _teamFrom.memories !== 'cloud' && _teamFrom.memories !== 'phone'){ el.innerHTML = `<div class="empty" style="grid-column:1/-1;">Loading memories…</div>`; return; } // never read on this phone yet (v126 speed), or a read tried that answered from neither (review 2)
   if(!memories.length){
     el.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div class="big">\u{1F4F8} No memories yet</div>Every team has a story. Add the first photo.</div>`;
     return;
@@ -1182,6 +1261,7 @@ function achievements(rep){
   ];
 }
 function renderBadges(){
+  if(typeof _msHeld !== 'undefined' && _msHeld) return; // a home frame kept whole meanwhile: its swap draws the badges (v126 speed)
   const list = achievements(currentUser.name);
   const earned = list.filter(a=>a.earned);
   const next = list.filter(a=>!a.earned).sort((a,b)=>(b.cur/b.goal)-(a.cur/a.goal));
@@ -1356,23 +1436,27 @@ function computeRepScore(repName){
 }
 // Month-to-date achievement against the rep's monthly sales target, as the
 // same official figure the Today card and the month reports use.
-function targetPct(rep){
+// asOf: the day the figure runs to (none without a sales file); pace: the one pace rule to that day (paceFor — the
+// Today card's verdict, here in the colours; until 17 Nov this row and the team comparison turned amber below 60 % of
+// the target, whatever the day of the month)
+function targetPct(rep, mtd){
   const t = targets[rep] || {};
   if(!(t.revenue>0)) return null;
-  const bm = bestMonthRevenue(rep);
-  return { pct: Math.round(bm.amount/t.revenue*100), amount: bm.amount, target: t.revenue, src: bm.src };
+  const bm = bestMonthRevenue(rep, mtd), asOf = bm.basis === 'erp' ? bm.asOf : null;
+  return { pct: Math.round(bm.amount/t.revenue*100), amount: bm.amount, target: t.revenue, src: bm.src, asOf, pace: paceFor(bm.amount, t.revenue, asOf) };
 }
-function targetBarRow(rep){
-  const tp = targetPct(rep);
+function targetBarRow(rep, mtd){
+  const tp = targetPct(rep, mtd);
   if(!tp) return '';
   const monthName = new Date(todayStr()+'T00:00:00').toLocaleDateString(uiLocale(),{month:'short'});
-  return `<div class="bar-row">
-        <div class="bar-label"><span>${monthName} target achieved</span><span><b style="color:${tp.pct>=100?'var(--sage-ink)':tp.pct>=60?'var(--ink)':'var(--amber-ink)'};">${tp.pct}%</b> · ${money(tp.amount)} / ${money(tp.target)}</span></div>
-        <div class="bar-track"><div class="bar-fill ${tp.pct<60?'coral':''}" style="width:${Math.min(100,tp.pct)}%;"></div></div>
+  return `<div class="bar-row"${tp.pace ? ` data-pace="${tp.pace.state}"` : ''}>
+        <div class="bar-label"><span>${monthName} target achieved</span><span><b style="color:${paceInk(tp.pace)};">${tp.pct}%</b> · ${money(tp.amount)} / ${money(tp.target)}</span></div>
+        <div class="bar-track"><div class="bar-fill ${tp.pace && tp.pace.state === 'behind'?'coral':''}" style="width:${Math.max(0, Math.min(100,tp.pct))}%;"></div></div>
       </div>`;
 }
-function renderScorecards(){
+function renderScorecards(mtd){
   const wrap = document.getElementById('scorecards');
+  mtd = mtd || erpMtdMap(); // every person's target row and the team's: one pass of the month's lines
   const repsToShow = currentUser.role==='supervisor' ? REPS : [currentUser.name];
   const sb = reportRangeBounds();
   wrap.innerHTML = repsToShow.map(r=>{
@@ -1392,7 +1476,7 @@ function renderScorecards(){
         <div class="kpi"><div class="n">${s.conversion}%</div><div class="l">Conversion rate</div></div>
         <div class="kpi"><div class="n">${s.overdue}</div><div class="l">Overdue follow-ups</div></div>
       </div>
-      ${targetBarRow(r)}
+      ${targetBarRow(r, mtd)}
       <div class="bar-row">
         <div class="bar-label"><span>Clinic coverage</span><span>${s.covered}/${s.assignedCount} (${s.coveragePct}%)</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${s.coveragePct}%;"></div></div>
@@ -1409,7 +1493,7 @@ function renderScorecards(){
     </div>`;
   }).join('') + (()=>{ // team target card under the scorecards, supervisor view
     if(currentUser.role!=='supervisor') return '';
-    const tt = teamTargetNow();
+    const tt = teamTargetNow(mtd);
     if(tt.pct == null || tt.n < 2) return '';
     const monthName = new Date(todayStr()+'T00:00:00').toLocaleDateString(uiLocale(),{month:'short'});
     return `<div class="card score-card"><div class="score-head"><div class="stamp">${I('target')}</div><div class="name">Team · ${monthName} target</div></div>${teamTargetRow(tt, { label: 'Team' })}</div>`;
