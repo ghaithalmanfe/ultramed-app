@@ -1,5 +1,6 @@
 // Small truth fixes found while the guides were checked against the code (alerts-v126 at 6b3f503). Each check
-// below fails on 6b3f503 and states the correct result. Invented data only.
+// below fails on 6b3f503 and states the correct result — but the guards, which pass on both: H0, H1's setup line and
+// its line once the photo has landed, and "no page errors". Invented data only.
 //   H  Help & Support's "Waiting to be sent" counts everything this phone has not put in the cloud: a visit photo
 //      waiting or kept on this phone (H1), only in the app's memory (H2), this phone's own photo not confirmed in the
 //      cloud yet (H3), a list kept only in the app's memory (H4), a list kept on this phone and not sent because the
