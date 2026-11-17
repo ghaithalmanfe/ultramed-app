@@ -28,7 +28,7 @@
 // limits become 2 s / 3 s) and the cloud's delays are scaled the same way. Invented data (fixtures/heavy-year.js at scale
 // 0.1, its visits cut to 16 in three past months and the running one). Port 8296.
 // Options (environment):
-//   CASES=F1,F2,F3,K1b  the minimal replays of what the seeds found (see CASES below); the default run is all four and
+//   CASES=F1,F2,F3,F4,K1b  the minimal replays of what the seeds found (see CASES below); the default run is all five and
 //                       6 seeds (about 2 minutes)
 //   SEEDS=n SEED0=s      n seeds from s (default 6 from 1) · STEPS=n actions a seed (14) · PAR=n worlds at once (2)
 //   REPLAY=seed          one seed, its actions printed as they run · SEEDLIST=3,7,9 those seeds
@@ -296,6 +296,10 @@ const CASES = {
   // K1b (the known K1, a worse outcome): the laptop moved a visit into September; the phone (its copy older) saves an edit
   // of another September visit — the union keeps the moved visit, then the tidy takes it out of September because the
   // phone's old read of the live month "holds" it: the visit is in no document at all
+  // F4: deleting the only visit of a past month: the save is told landed ("Moved to recycle bin") but that month's
+  // document is never written (Pass A looks only at the months the phone's list still has visits in) — the visit stays
+  // in the cloud, hidden only by the delete log (120 days; the daily e-mail does not read the log)
+  F4: { name: 'F4', steps: [{ dev: 'B', act: 'move', id: 'v202609-320', date: '2026-07-10' }, { dev: 'A', act: 'round' }, { dev: 'A', act: 'del', id: 'v202609-320' }] },
   K1b: { name: 'K1b', steps: [{ dev: 'B', act: 'move', id: 'v202611-374', date: '2026-09-10' }, { dev: 'A', act: 'notes', id: 'v202609-320' }] },
 };
 
@@ -381,10 +385,11 @@ async function runSeed(seed, script){
       after(await run);
       return null;
     };
-    const doDelete = async D => {
+    const doDelete = async (D, sc) => {
       const ids = await targets(D);
       if(!ids.length) return;
-      const id = pick(ids);
+      const id = sc && sc.id ? sc.id : pick(ids);
+      if(!ids.includes(id)) return;
       const t0 = Date.now();
       const r = await D.ev(async x => { const n0 = window.__um.toasts.length; await deleteVisit(x); const gone = !(visits || []).some(v => v && v.id === x); return { gone, toasts: window.__um.toasts.slice(n0) }; }, id);
       if(r.gone){ model.get(id).deleted.push({ dev: D.label, step }); }
@@ -426,7 +431,7 @@ async function runSeed(seed, script){
       const D = sc ? (sc.dev === 'A' ? A : B) : chance(0.5) ? A : B, act = sc ? sc.act : choose();
       if(act === 'log') await doLog(D);
       else if(['notes', 'fz', 'move', 'notesMove'].includes(act)) await doEdit(D, act, false, sc);
-      else if(act === 'del') await doDelete(D);
+      else if(act === 'del') await doDelete(D, sc);
       else if(act === 'photo') await doPhoto(D);
       else if(act === 'net'){
         if(sc ? sc.mode === 'online' : W.down.has(D.label)){ W.down.delete(D.label); await D.ev(() => window.__setOff(false)); say(`  ${step} ${D.label} back online`); }
