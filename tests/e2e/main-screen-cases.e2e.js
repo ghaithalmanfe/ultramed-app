@@ -27,6 +27,9 @@ function check(name, ok, info){ results.push((ok ? '✅' : '❌') + ' ' + name +
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const r2 = n => Math.round(n * 100) / 100;
 const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].replace(/,/g, '')) : null; };   // an amount is read grouped ("1,318.42")
+// a % beside a pace word as the one pace rule writes it (UMCore.paceOf, the owner's decision of 17 Nov): cut to a whole
+// percent on its word's side — never rounded up across 90 % or 100 % (until then the forecast's % was rounded)
+const paceCut = r => { const p = Math.floor(r * 100 + 1e-9); return r < 0.9 - 1e-9 ? Math.min(p, 89) : r < 1 - 1e-9 ? Math.min(Math.max(p, 90), 99) : Math.max(p, 100); };
 
 (async () => {
   await new Promise(r => server.listen(PORT, r));
@@ -143,8 +146,8 @@ const num = (s, re) => { const x = String(s).match(re); return x ? Number(x[1].r
   const nt = await dash({ rep: 'all', reps: await ev(() => REPS.slice()) });
   const ntS = { sales: await val('sales', '#msSales'), of: await val('of-target', '#msSales'), ach: await val('achievement', '#msSales'), rem: await val('remaining', '#msSales'), fc: await val('forecast', '#msKpis'), txt: await txt('#msSales') };
   const ntPct = num(await txt('#msKpis'), /Sales Forecast (\d+)%/), gAmt = await ev(() => bestMonthRevenue('Dr. Ghaith').amount);
-  check('No target for Dr. Ghaith: the sales card adds up on its own — its amount ÷ the target it shows = its %, the target − the amount = remaining, the forecast ÷ the target = the forecast\'s %',
-    ntS.of === 17000 && Math.round(ntS.sales / ntS.of * 100) === ntS.ach && Math.abs(r2(ntS.of - ntS.sales) - ntS.rem) < 0.011 && Math.round(ntS.fc / ntS.of * 100) === ntPct,
+  check('No target for Dr. Ghaith: the sales card adds up on its own — its amount ÷ the target it shows = its %, the target − the amount = remaining, the forecast ÷ the target = the forecast\'s % (cut by the pace rule)',
+    ntS.of === 17000 && Math.round(ntS.sales / ntS.of * 100) === ntS.ach && Math.abs(r2(ntS.of - ntS.sales) - ntS.rem) < 0.011 && paceCut(ntS.fc / ntS.of) === ntPct && ntPct === nt.forecast.pct,
     { shown: ntS, forecastPct: ntPct, dashboard: { achieved: nt.achievement.achieved, target: nt.achievement.target, pct: nt.achievement.pct, forTarget: nt.forecast.forTarget, all: nt.forecast.amount } });
   check('… his invoiced sales are said on their own line with his name and amount, and the team\'s total beside them', new RegExp('Dr\\. Ghaith[^.]*' + amtRe(gAmt) + ' KD').test(ntS.txt) && ntS.txt.includes(amt(nt.sales.amount)), ntS.txt.slice(-320));
   const ch2 = await ev(() => [...document.querySelectorAll('#msDaily svg text')].map(t => t.textContent));

@@ -5032,7 +5032,8 @@ describe('management dashboard (v123)', () => {
     const es = sales(), oct = es.periods.find(p => p.id === 'oct');
     oct.rows = oct.rows.filter(r => r[8] === MS); oct.repMap = { [MS]: M };
     const one = core.execDashboard(data({ erpSales: es }), { reps });
-    assert.deepEqual([one.forecast.people, one.forecast.amount, one.forecast.target, one.forecast.pct, one.byPerson[1].forecast], [[M], 808.5, 1000, 81, null]);
+    // 808.5 ÷ 1000 = 80.85 %: cut to 80 by the one pace rule (paceOf, 17 Nov) — it was rounded to 81 until then
+    assert.deepEqual([one.forecast.people, one.forecast.amount, one.forecast.target, one.forecast.pct, one.byPerson[1].forecast], [[M], 808.5, 1000, 80, null]);
   });
 
   test('the same month a year before: built as the same days of last month, only people measured in both', () => {
@@ -5919,5 +5920,73 @@ describe('alerts center (v121)', () => {
     // an amount as the Arabic UI writes it: the same grouping, د.ك after the figure (kdAr, v125)
     assert.equal(i18n.tr('Amberline Clinic — 100.00 KD vs 800.00 KD (−88%)'), 'Amberline Clinic — 100.00 د.ك مقابل 800.00 د.ك (−88%)');
     assert.equal(i18n.tr('Achieved 1,000.00 KD of the 10,000.00 KD target (10%) — ERP sales files to 9 نوفمبر.'), 'المحقق 1,000.00 د.ك من تارغت 10,000.00 د.ك (10%) — من ملفات مبيعات ERP حتى 9 نوفمبر.');
+  });
+});
+
+describe('one pace rule everywhere (the owner\'s decision of 17 Nov: on pace from 90 % — UMCore.paceOf)', () => {
+  // Mariam: a 10,000 KD target; the files to Nov 9 (7 of November's 22 working days: an even pace is 3,181.82 KD by
+  // then); she invoiced 2,854 KD = 89.70 % of that even pace — behind by the rule, "90%" once rounded.
+  const M = 'Mariam', R = 'Renova', MS = 'Mariam Sample', RS = 'Ranova Sample Person';
+  const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Waterpik Cordless Plus', 1, net, net, 0, sm, 'Waterpik', cust, 'Clinics', 0, ''];
+  const C = (id, name, rep) => ({ id, name, rep, cls: 'B', doctors: [] });
+  const data = (o) => { o = o || {};
+    const nov = o.nov || [row('2026-11-02', 'SINV11', 'Amberline Clinic', 1854, MS), row('2026-11-03', 'SINV12', 'Birchwood Center', 1000, MS), row('2026-11-04', 'SINV13', 'Garnetta Center', 900, RS)];
+    const periods = o.periods || [{ id: 'nov', from: '2026-11-01', to: '2026-11-09', repMap: { [MS]: M, [RS]: R }, rows: nov }];
+    return { today: o.today || '2026-11-11', clinics: [C('m1', 'Amberline Clinic', M), C('m2', 'Birchwood Center', M), C('r1', 'Garnetta Center', R)], visits: [], tasks: [], events: [], dayPlans: {}, erpMap: {},
+      targets: o.targets || { [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-11' } }, erpSales: { returnPolicy: 'origin', periods } }; };
+
+  test('the forecast\'s % of the target is the pace card\'s own percentage, cut on its word\'s side — 89.7 % reads 89, never 90 beside "Behind pace"', () => {
+    const D = core.execDashboard(data(), { rep: M, reps: [M, R] }), A = D.achievement, wd = D.perDay.workdays;
+    const word = core.paceOf(A.achieved, A.target, wd.done, wd.total);                       // the pace card's verdict (msPace)
+    assert.deepEqual([wd.done, wd.total, A.achieved, D.forecast.forTarget], [7, 22, 2854, 8969.71]);
+    assert.deepEqual([word.state, word.pct, D.forecast.pct], ['behind', 89, 89]);             // rounded, 8,969.71 ÷ 10,000 read 90%
+    // 2,864 KD = 90.01 %: on pace, 90
+    const on = core.execDashboard(data({ nov: [row('2026-11-02', 'SINV11', 'Amberline Clinic', 2864, MS)] }), { rep: M, reps: [M, R] });
+    assert.deepEqual([core.paceOf(on.achievement.achieved, on.achievement.target, 7, 22).state, on.forecast.pct], ['on', 90]);
+    // 99.8 % of an even pace: on pace, 99 — never 100 while the forecast stays under the target
+    const near = core.execDashboard(data({ nov: [row('2026-11-02', 'SINV11', 'Amberline Clinic', 3176, MS)] }), { rep: M, reps: [M, R] });
+    assert.deepEqual([near.forecast.forTarget < 10000, near.forecast.pct], [true, 99]);
+    // the team, every file to the same day: the team's pace card and its forecast, the same percentage
+    const T = core.execDashboard(data(), { rep: 'all', reps: [M, R] }), TA = T.achievement, tw = T.perDay.workdays;
+    assert.equal(T.forecast.pct, core.paceOf(TA.achieved, TA.target, tw.done, tw.total).pct);
+  });
+
+  test('files to different days: each person projected from her own day, the forecast\'s own ratio cut the same way', () => {
+    const periods = [{ id: 'novM', from: '2026-11-01', to: '2026-11-09', repMap: { [MS]: M }, rows: [row('2026-11-02', 'SINV11', 'Amberline Clinic', 2854, MS)] },
+      { id: 'novR', from: '2026-11-01', to: '2026-11-05', repMap: { [RS]: R }, rows: [row('2026-11-04', 'SINV13', 'Garnetta Center', 405, RS)] }];
+    const T = core.execDashboard(data({ periods }), { rep: 'all', reps: [M, R] }), F = T.forecast;
+    assert.deepEqual([F.byRep[M].done, F.byRep[R].done], [7, 5]);
+    // (8,969.71 + 405 ÷ 5 × 22 = 1,782) ÷ 12,000 = 89.6 %: 89 (it read 90%), on the side of the team's word ("behind")
+    assert.deepEqual([F.forTarget, F.target, F.pct], [10751.71, 12000, 89]);
+    assert.equal(F.pct, core.paceOf(F.forTarget, F.target, 1, 1).pct);
+    const TA = T.achievement, tw = T.perDay.workdays;
+    assert.equal(core.paceOf(TA.achieved, TA.target, tw.done, tw.total).state, 'behind');
+  });
+
+  test('the daily e-mail\'s "at this pace" is the same rule: working days to the day the files reach, cut — never the calendar to today, never "0%" without a file', () => {
+    const d = core.dailyDigest({ kind: 'morning', data: data(), reps: [M, R], rep: M });
+    // Nov 11, the files to Nov 9: 89.7 % of an even pace (by the calendar to today it read 78%: 2,854 ÷ 11 × 30)
+    assert.equal(d.blocks[0].target.pace, 89);
+    assert.match(d.text, /على هذا الإيقاع تصل إلى 89% بنهاية الشهر/);
+    const none = core.dailyDigest({ kind: 'morning', data: data({ periods: [] }), reps: [M, R], rep: M });
+    assert.equal(none.blocks[0].target.pace, null);
+    assert.doesNotMatch(none.text, /على هذا الإيقاع/);
+  });
+
+  test('the weekly deck says "on pace to pass the target" only when the rule says ahead of an even pace — never from the calendar straight line', () => {
+    // Nov 26: 20 of 22 working days (90.9 %), 26 of 30 calendar days (86.7 %). Mariam 8,818 of 10,000: 97.0 % of an even
+    // pace — "On pace" on the Today card, 101.7 % by the calendar straight line (the deck said "on pace to pass, 102%")
+    const file = net => [{ id: 'nov', from: '2026-11-01', to: '2026-11-26', repMap: { [MS]: M, [RS]: R }, rows: [row('2026-11-03', 'S1', 'Amberline Clinic', net, MS), row('2026-11-18', 'S2', 'Garnetta Center', 300, RS)] }];
+    const story = net => { const W = core.weeklyReport(data({ today: '2026-11-26', periods: file(net) }), { end: '2026-11-26', reps: [M, R] });
+      return { W, S: core.weeklyStory(W, { presenter: 'Dr. Ghaith' }), H: core.weeklyHighlights(W) }; };
+    const on = story(8818);
+    assert.deepEqual([on.W.perRep[M].paceRule.state, on.W.perRep[M].paceRule.pct], ['on', 96]);
+    assert.ok(on.W.perRep[M].pace > 1);                                                         // the straight line (A3 only)
+    assert.ok(!on.S.all.some(i => i.key === 'target-pace:' + M), 'no "on pace to pass" below an even pace');
+    assert.ok(!on.H.some(t => /on pace to exceed/.test(t)));
+    const ahead = story(9500);                                                                  // 104.5 % of an even pace
+    const it = ahead.S.all.find(i => i.key === 'target-pace:' + M);
+    assert.deepEqual([it.big, it.detail], ['104%', 'KD 9,500 of KD 10,000 by 26 Nov (working day 20 of 22)']);
+    assert.ok(ahead.H.includes('Mariam is on pace to exceed the month\'s target (104%).'));
   });
 });

@@ -166,12 +166,15 @@ function bestMonthRevenue(rep, mtd){ return UMCore.monthAchievement(rep, digestD
 // achieved ÷ target across every rep with a monthly sales target. Shown
 // wherever per-rep target figures appear (Today, reports, month reports,
 // admin panel, the upload note, the reconciliation sheet, the PDF cover).
+// asOf: the latest day the figures of the rows run to (an item's asOf: the day its figure runs to, none without a sales
+// file) — what the team's pace is judged to, as the Today card's Team line judges it (paceFor).
 function teamTargetTotal(items){
   const rows = (items || []).filter(x => x && x.goal > 0);
   const goal = rows.reduce((s, x) => s + x.goal, 0);
   const ach = rows.reduce((s, x) => s + (x.ach || 0), 0);
+  const asOf = rows.reduce((m, x) => x.asOf && (!m || x.asOf > m) ? x.asOf : m, null);
   return { n: rows.length, goal: Math.round(goal * 100) / 100, ach: Math.round(ach * 100) / 100,
-    pct: goal > 0 ? Math.round(ach / goal * 100) : null, any: rows.some(x => x.ach != null) };
+    pct: goal > 0 ? Math.round(ach / goal * 100) : null, any: rows.some(x => x.ach != null), asOf };
 }
 // A monthly target that was uploaded/set for an EARLIER month: the figure
 // still shows (last month's target is the best guess until this month's DSR
@@ -187,21 +190,44 @@ function staleTargetNote(rep){
 }
 // mtd (optional): the month's lines of everyone, worked out once by the caller's draw from the same data (UMCore.erpMtd)
 function teamTargetNow(mtd){
-  return teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: bestMonthRevenue(r, mtd).amount } : null; }));
+  return teamTargetTotal(REPS.map(r => { const t = targets[r] || {}; if(!(t.revenue > 0)) return null;
+    const bm = bestMonthRevenue(r, mtd); return { goal: t.revenue, ach: bm.amount, asOf: bm.basis === 'erp' ? bm.asOf : null }; }));
 }
-function pctInk(p){ return p >= 100 ? 'var(--sage-ink)' : p >= 60 ? 'var(--ink)' : 'var(--amber-ink)'; }
-// One compact "Team" bar row, same look as the per-rep rows on the Today card.
+// ---- The one pace rule (UMCore.paceOf; the owner's decision of 17 Nov: one rule everywhere, on pace from 90 %) ----
+// A month figure against its target, judged as the Today screen judges it (msPace, its words MS_STATE): an even share
+// of the target over the working days (Sun–Thu) from the 1st to the day the figure runs to (asOf), of the whole month
+// — 'reached' at the target, 'ahead' from the full even share, 'on' from 90 % of it, 'behind' below — judged on the
+// exact value; `pct` is that share cut to a whole percent on its word's side (89.7 % is 89, never 90). No day the
+// figure runs to (no sales file) → null: never judged. Reports, the Admin sheets, the month close, the printed report
+// and the clinic analysis word and colour a person's, the team's, a brand's and a clinic's month by it — until then the
+// team line said "On pace" from 60 % of the target and the colours turned at 60 % (brands 60/25, clinics 50), whatever
+// the day of the month.
+function paceFor(ach, goal, asOf, month){
+  if(ach == null || !(goal > 0) || !asOf) return null;
+  const wd = UMCore.monthWorkdays(month || String(asOf).slice(0, 7), asOf);
+  const state = msPace(ach, goal, wd.done, wd.total);
+  if(!state) return null;
+  const P = typeof UMCore.paceOf === 'function' ? UMCore.paceOf(ach, goal, wd.done, wd.total) : null;
+  return { state, words: MS_STATE[state], pct: P ? P.pct : null, wd };
+}
+// the colour of a state, for a figure (ink) or a bar: the target reached / on the way (on or ahead of pace, `on`) /
+// behind pace (`behind`); nothing judged: muted
+function paceInk(P, on, behind){ return !P ? 'var(--muted)' : P.state === 'reached' ? 'var(--sage-ink)' : P.state === 'behind' ? (behind || 'var(--amber-ink)') : (on || 'var(--ink)'); }
+function paceBar(P, on, behind){ return !P ? 'var(--line)' : P.state === 'reached' ? 'var(--sage)' : P.state === 'behind' ? (behind || 'var(--amber)') : (on || 'var(--teal)'); }
+// One compact "Team" bar row, same look as the per-rep rows on the Today card; judged as the Today card's Team line
+// (paceFor: the figures to the latest day the people's files reach — opts.asOf for one file, the reconciliation sheet's)
 function teamTargetRow(tt, opts){
   opts = opts || {};
   if(!tt || tt.pct == null || tt.n < 1) return '';
-  const state = tt.pct >= 100 ? ['Achieved', 'var(--sage-ink)', 'var(--sage)'] : tt.pct >= 60 ? ['On pace', 'var(--sage-ink)', 'var(--teal)'] : ['Behind', 'var(--amber-ink)', 'var(--amber)'];
-  return `<div style="padding:8px 0 2px; margin-top:6px; border-top:1px solid var(--line);">
+  const P = paceFor(tt.ach, tt.goal, opts.asOf || tt.asOf);
+  const pace = P && P.state !== 'reached' && P.pct != null ? ` · <span>${P.pct}% of an even pace</span>` : '';
+  return `<div style="padding:8px 0 2px; margin-top:6px; border-top:1px solid var(--line);"${P ? ` data-pace="${P.state}"` : ''}>
     <div style="display:flex; align-items:center; gap:10px;">
       <div style="width:${opts.labelWidth || 58}px; font-size:12.5px; font-weight:800; flex-shrink:0;">${opts.label || 'Team'}</div>
-      <div style="flex:1; height:8px; border-radius:4px; background:var(--paper); overflow:hidden;"><div style="width:${Math.min(100, tt.pct)}%; height:100%; border-radius:4px; background:${state[2]};"></div></div>
-      <div style="font-size:18px; font-weight:900; color:${state[1]}; flex-shrink:0; min-width:52px; text-align:end;">${tt.pct}%</div>
+      <div style="flex:1; height:8px; border-radius:4px; background:var(--paper); overflow:hidden;"><div style="width:${Math.max(0, Math.min(100, tt.pct))}%; height:100%; border-radius:4px; background:${paceBar(P)};"></div></div>
+      <div style="font-size:18px; font-weight:900; color:${paceInk(P, 'var(--sage-ink)')}; flex-shrink:0; min-width:52px; text-align:end;">${tt.pct}%</div>
     </div>
-    <div style="font-size:11.5px; color:var(--muted); margin-top:2px; padding-inline-start:${(opts.labelWidth || 58) + 10}px;">${money(tt.ach)} of ${money(tt.goal)} · ${state[0]} · ${tt.n} rep${tt.n === 1 ? '' : 's'}</div>
+    <div style="font-size:11.5px; color:var(--muted); margin-top:2px; padding-inline-start:${(opts.labelWidth || 58) + 10}px;">${money(tt.ach)} <span>of</span> ${money(tt.goal)} · <span>${P ? P.words : 'no figure yet'}</span>${pace} · <span>${tt.n} rep${tt.n === 1 ? '' : 's'}</span></div>
   </div>`;
 }
 // Target % per rep exactly as the Today card shows it — captured before and
@@ -317,6 +343,9 @@ function monthCloseData(m){
   const hist = (targets._history || {})[m] || {};
   const mStart = m + '-01', mEnd = monthEndOf(m);
   const reps = currentUser.role==='supervisor' ? REPS : [currentUser.name];
+  // the day each figure runs to — what its pace is judged to (paceFor): her month figure's own day (monthAchievement as of
+  // the month's last day — the running month: today — the Today card's and Month by month's rule)
+  const d0 = Object.assign({}, digestData(), { today: mEnd < todayStr() ? mEnd : todayStr() }), mtd0 = UMCore.erpMtd(d0);
   return reps.map(rep => {
     let t = hist[rep];
     const cur = targets[rep];
@@ -329,6 +358,7 @@ function monthCloseData(m){
     const src = erpMonth != null ? 'ERP' : 'لا يوجد ملف مبيعات لهذا الشهر';
     const mv = UMCore.dedupeVisits(visits.filter(v => v && v.rep === rep && (v.date||'').slice(0,7) === m)).unique;
     return { rep, t, achieved, src, erpMonth,
+      asOf: achieved != null ? (a0 => a0.basis === 'erp' ? a0.asOf : null)(UMCore.monthAchievement(rep, d0, mtd0)) : null,
       target: t && t.revenue > 0 ? t.revenue : null,
       pct: (t && t.revenue > 0 && achieved != null) ? Math.round(achieved / t.revenue * 100) : null,
       fieldVisits: mv.filter(UMCore.isFieldVisit).length,
@@ -348,14 +378,16 @@ function renderMonthClose(m){
       <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق (ERP)</td><td style="text-align:start;">%</td></tr>
       ${names.map(n=>{
         const tv = bt[n]||0, av = Math.round((ab[UMCore.normBrand(n)] || 0) * 100) / 100;
-        const p = tv>0 ? Math.round(av/tv*100) : null;
+        const p = tv>0 ? Math.round(av/tv*100) : null, P = tv>0 ? paceFor(av, tv, r.asOf, m) : null;   // the one pace rule, to the day her figure runs to
         return `<tr style="border-top:1px dashed var(--line);"><td style="padding:2px 4px;">${esc(n)}</td>
           <td style="text-align:start;">${tv?money(tv):'—'}</td><td style="text-align:start;">${av?money(av):'—'}</td>
-          <td style="text-align:start; font-weight:700; color:${p==null?'var(--muted)':p>=100?'var(--sage-ink)':p>=60?'var(--gold-ink)':'var(--coral-ink)'};">${p==null?'—':p+'%'}</td></tr>`;
+          <td style="text-align:start; font-weight:700; color:${p==null?'var(--muted)':paceInk(P, 'var(--gold-ink)', 'var(--coral-ink)')};"${P ? ` data-pace="${P.state}"` : ''}>${p==null?'—':p+'%'}</td></tr>`;
       }).join('')}
     </table></div>`;
   };
-  const tt = teamTargetTotal(rows.map(r => ({ goal: r.target, ach: r.achieved })));
+  const tt = teamTargetTotal(rows.map(r => ({ goal: r.target, ach: r.achieved, asOf: r.asOf })));
+  // the colours: the one pace rule (paceFor) — the target reached, on the way (from 90 % of an even pace), behind
+  const ttP = paceFor(tt.ach, tt.goal, tt.asOf, m), repP = r => paceFor(r.achieved, r.target, r.asOf, m);
   showModal(`
     <div class="row-between" style="align-items:flex-start;">
       <h3 style="margin:0;">📅 ${monthLabel(m)}</h3>
@@ -365,16 +397,16 @@ function renderMonthClose(m){
       <div class="card" style="padding:10px 12px;">
         <div class="spec-row"><span class="k">🎯 مجموع التارغت</span><span class="v">${money(tt.goal)}</span></div>
         <div class="spec-row"><span class="k">✅ مجموع المحقق</span><span class="v">${money(tt.ach)}</span></div>
-        <div class="spec-row"><span class="k">نسبة تحقيق الفريق</span><span class="v" style="font-weight:800; color:${tt.pct>=100?'var(--sage-ink)':tt.pct>=60?'var(--gold-ink)':'var(--coral-ink)'};">${tt.pct}%</span></div>
-        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.min(100,tt.pct)}%; height:100%; background:${tt.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>
+        <div class="spec-row"><span class="k">نسبة تحقيق الفريق</span><span class="v" style="font-weight:800; color:${paceInk(ttP, 'var(--gold-ink)', 'var(--coral-ink)')};"${ttP ? ` data-pace="${ttP.state}"` : ''}>${tt.pct}%</span></div>
+        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.max(0, Math.min(100,tt.pct))}%; height:100%; background:${ttP && ttP.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>
       </div>` : ''}
     ${rows.map(r=>`
       <div class="section-title">${esc(r.rep)}</div>
       <div class="card" style="padding:10px 12px;">
         <div class="spec-row"><span class="k">🎯 التارغت</span><span class="v">${r.target!=null?money(r.target):'—'}</span></div>
         <div class="spec-row"><span class="k">✅ المحقق</span><span class="v">${r.achieved!=null?money(r.achieved):'—'}${r.src?` <span style="color:var(--muted); font-size:10.5px;">(${r.src})</span>`:''}</span></div>
-        ${r.pct!=null?`<div class="spec-row"><span class="k">النسبة</span><span class="v" style="font-weight:800; color:${r.pct>=100?'var(--sage-ink)':r.pct>=60?'var(--gold-ink)':'var(--coral-ink)'};">${r.pct}%</span></div>
-        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.min(100,r.pct)}%; height:100%; background:${r.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>`:''}
+        ${r.pct!=null?(P => `<div class="spec-row"><span class="k">النسبة</span><span class="v" style="font-weight:800; color:${paceInk(P, 'var(--gold-ink)', 'var(--coral-ink)')};"${P ? ` data-pace="${P.state}"` : ''}>${r.pct}%</span></div>
+        <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.max(0, Math.min(100,r.pct))}%; height:100%; background:${P && P.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>`)(repP(r)):''}
         ${r.erpMonth!=null?`<div class="spec-row"><span class="k">🧾 فواتير العيادات بالشهر (ERP)</span><span class="v">${money(r.erpMonth)}</span></div>`:''}
         <div class="spec-row"><span class="k">🚗 زيارات ميدانية · 📞 مكالمات · 🛒 طلبات</span><span class="v">${r.fieldVisits} · ${r.calls} · ${r.orders}</span></div>
         ${brandBlock(r)}
@@ -977,13 +1009,14 @@ function openErpRecon(id){
   const priorFor = rep => priorRows.filter(rw => rowRep(rw) === rep);
   const kdRow = (label, val, color) => `<div class="report-line"><span>${label}</span><span class="v" ${color?`style="color:${color};"`:''}>${val}</span></div>`;
   const monthPrefix = todayStr().slice(0,7);
+  const fileCut = p.to && p.to < todayStr() ? p.to : todayStr();   // the last day this file's figures run to — what their pace is judged to
   const repCard = r => {
     const t = targets[r.rep] || {};
     const inThisMonth = (p.from||'').slice(0,7) === monthPrefix;
     const targetBar = (t.revenue > 0 && inThisMonth) ? (()=>{
-      const pct = Math.min(100, Math.round(r.erp.net / t.revenue * 100));
-      return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)</div>
-        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${pct>=100?'var(--sage)':pct>=60?'#FF9500':'var(--coral)'};"></div></div>
+      const pct = Math.max(0, Math.min(100, Math.round(r.erp.net / t.revenue * 100))), P = paceFor(r.erp.net, t.revenue, fileCut);   // the one pace rule, to the file's last day
+      return `<div style="margin:8px 0 2px; font-size:12px; color:var(--muted);">Monthly target: ${money(r.erp.net)} of ${money(t.revenue)} (ERP-verified)${P ? ` · <span>${P.words}</span>` : ''}</div>
+        <div style="background:var(--paper); border-radius:8px; height:10px; overflow:hidden;"${P ? ` data-pace="${P.state}"` : ''}><div style="width:${pct}%; height:100%; background:${paceBar(P, 'var(--teal)', 'var(--coral)')};"></div></div>
 `;
     })() : '';
     return `
@@ -1067,17 +1100,17 @@ function openErpRecon(id){
             const official = ab[brand];
             const achBase = hasOfficial && official != null ? official : act;
             const pct = Math.round(achBase/tgt*100);
-            const col = pct>=60?'var(--sage)':pct>=25?'#FF9500':'var(--coral)';
+            const P = inThisMonth ? paceFor(achBase, tgt, fileCut) : null, col = paceInk(P, 'var(--sage-ink)', 'var(--coral-ink)');   // the one pace rule (a file of another month: not judged)
             return `<tr style="border-top:1px solid var(--line);">
               <td style="padding:5px 6px;">${esc(brand)}</td>
               <td style="text-align:end; padding:5px 6px;">${amt2(tgt, 0)}</td>
               <td style="text-align:end; padding:5px 6px;">${amt2(act)}</td>
               ${hasOfficial?`<td style="text-align:end; padding:5px 6px;">${official!=null?amt2(official):'—'}</td>`:''}
-              <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};">${pct}%</td>
+              <td style="text-align:end; padding:5px 6px; font-weight:700; color:${col};"${P ? ` data-pace="${P.state}"` : ''}>${pct}%</td>
             </tr>`;
           }).join('')}
         </table></div>
-        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets from the DSR file · achieved = invoiced in this ERP period. Green ≥60%, orange ≥25%, red below.</div>
+        <div style="color:var(--muted); font-size:11.5px; margin-top:6px;">Targets from the DSR file · achieved = invoiced in this ERP period.${inThisMonth ? ` Green: on pace or better — from 90% of an even share of the target over the working days (Sun–Thu) to ${fmtDate(fileCut)}, the pace rule of the Today card; red: behind.` : ''}</div>
       </div>`;
     })()}
     ${r.matched.length?`<div class="card" style="border-inline-start:4px solid var(--sage);">
@@ -1136,8 +1169,8 @@ function openErpRecon(id){
       const tt = teamTargetTotal(rec.perRep.map(r => { const t = targets[r.rep] || {}; return t.revenue > 0 ? { goal: t.revenue, ach: r.erp.net } : null; }));
       return tt.pct != null && tt.n > 1 ? `<div class="section-title">🏁 Team</div><div class="card">
         <div style="font-size:12px; color:var(--muted);">Monthly target — team: ${money(tt.ach)} of ${money(tt.goal)} (ERP-verified, this file)</div>
-        ${teamTargetRow(tt, { label: 'Team' })}
-        <div style="font-size:11px; color:var(--muted); margin-top:4px;">The Today card blends the official DSR figure with these invoices — its team % can differ slightly.</div>
+        ${teamTargetRow(tt, { label: 'Team', asOf: fileCut })}
+        <div style="font-size:11px; color:var(--muted); margin-top:4px;">The Today card counts every sales file of this month, so its team % can differ from this file's.</div>
       </div>` : '';
     })()}
     ${rec.perRep.length?rec.perRep.map(repCard).join(''):'<div class="empty">No rows map to your team — check the salesman mapping when importing.</div>'}

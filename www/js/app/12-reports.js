@@ -242,8 +242,8 @@ function renderReports(){
     const anyErp = rows.some(r=>r.erp != null);
     const anyTgt = rows.some(r=>r.tgt != null);
     const rowCls = 'compare-row ' + (anyErp && anyTgt ? 'c5' : (anyErp || anyTgt) ? 'c4' : '');
-    const tgtCell = r => anyTgt ? `<div style="font-weight:800; color:${r.tgt?(r.tgt.pct>=100?'var(--sage-ink)':r.tgt.pct>=60?'var(--ink)':'var(--amber-ink)'):'var(--muted)'};">${r.tgt?r.tgt.pct+'%':'—'}</div>` : '';
-    const tt0 = rows.length > 1 ? teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount } : null)) : null;
+    const tgtCell = r => anyTgt ? `<div style="font-weight:800; color:${r.tgt ? paceInk(r.tgt.pace) : 'var(--muted)'};"${r.tgt && r.tgt.pace ? ` data-pace="${r.tgt.pace.state}"` : ''}>${r.tgt?r.tgt.pct+'%':'—'}</div>` : '';
+    const tt0 = rows.length > 1 ? teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount, asOf: r.tgt.asOf } : null)) : null;
     const pc = (name, v, logged, erp, tgt, team) => `<div class="cmp-card${team ? ' team' : ''}"><div class="cmp-n">${name}</div><div class="cmp-g">
       <span><span>Visits</span><b>${v}</b></span><span><span>Logged</span><b>${logged}</b></span>${anyErp ? `<span><span>ERP</span><b>${erp}</b></span>` : ''}${anyTgt ? `<span><span>Target</span><b>${tgt}</b></span>` : ''}</div></div>`;
     const phone = `<div class="cmp-cards">${rows.map(r => pc(esc(r.rep), r.visits, money(r.revenue), r.erp != null ? money(r.erp) : '—', r.tgt ? r.tgt.pct + '%' : '—')).join('')}${rows.length > 1
@@ -254,9 +254,9 @@ function renderReports(){
       </div>
       ${rows.map(r=>`<div class="${rowCls}" style="padding:6px 0; border-top:1px solid var(--line);"><div>${esc(r.rep)}</div><div>${r.visits}</div><div>${money(r.revenue)}</div>${anyErp?`<div>${r.erp!=null?money(r.erp):'—'}</div>`:''}${tgtCell(r)}</div>`).join('')}
       ${rows.length>1?(()=>{ // team line: sums, and the team target % on the same official basis
-        const tt = teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount } : null));
+        const tt = teamTargetTotal(rows.map(r => r.tgt ? { goal: r.tgt.target, ach: r.tgt.amount, asOf: r.tgt.asOf } : null)), ttP = tt.pct != null ? paceFor(tt.ach, tt.goal, tt.asOf) : null;
         const erpAny = rows.some(r=>r.erp!=null);
-        return `<div class="${rowCls}" style="padding:6px 0; border-top:2px solid var(--ink); font-weight:800;"><div>Team</div><div>${rows.reduce((s,r)=>s+r.visits,0)}</div><div>${money(rows.reduce((s,r)=>s+r.revenue,0))}</div>${anyErp?`<div>${erpAny?money(rows.reduce((s,r)=>s+(r.erp||0),0)):'—'}</div>`:''}${anyTgt?`<div style="color:${tt.pct!=null?pctInk(tt.pct):'var(--muted)'};">${tt.pct!=null?tt.pct+'%':'—'}</div>`:''}</div>`;
+        return `<div class="${rowCls}" style="padding:6px 0; border-top:2px solid var(--ink); font-weight:800;"><div>Team</div><div>${rows.reduce((s,r)=>s+r.visits,0)}</div><div>${money(rows.reduce((s,r)=>s+r.revenue,0))}</div>${anyErp?`<div>${erpAny?money(rows.reduce((s,r)=>s+(r.erp||0),0)):'—'}</div>`:''}${anyTgt?`<div style="color:${paceInk(ttP)};"${ttP ? ` data-pace="${ttP.state}"` : ''}>${tt.pct!=null?tt.pct+'%':'—'}</div>`:''}</div>`;
       })():''}
     </div>`;
   } else {
@@ -1436,19 +1436,22 @@ function computeRepScore(repName){
 }
 // Month-to-date achievement against the rep's monthly sales target, as the
 // same official figure the Today card and the month reports use.
+// asOf: the day the figure runs to (none without a sales file); pace: the one pace rule to that day (paceFor — the
+// Today card's verdict, here in the colours; until 17 Nov this row and the team comparison turned amber below 60 % of
+// the target, whatever the day of the month)
 function targetPct(rep, mtd){
   const t = targets[rep] || {};
   if(!(t.revenue>0)) return null;
-  const bm = bestMonthRevenue(rep, mtd);
-  return { pct: Math.round(bm.amount/t.revenue*100), amount: bm.amount, target: t.revenue, src: bm.src };
+  const bm = bestMonthRevenue(rep, mtd), asOf = bm.basis === 'erp' ? bm.asOf : null;
+  return { pct: Math.round(bm.amount/t.revenue*100), amount: bm.amount, target: t.revenue, src: bm.src, asOf, pace: paceFor(bm.amount, t.revenue, asOf) };
 }
 function targetBarRow(rep, mtd){
   const tp = targetPct(rep, mtd);
   if(!tp) return '';
   const monthName = new Date(todayStr()+'T00:00:00').toLocaleDateString(uiLocale(),{month:'short'});
-  return `<div class="bar-row">
-        <div class="bar-label"><span>${monthName} target achieved</span><span><b style="color:${tp.pct>=100?'var(--sage-ink)':tp.pct>=60?'var(--ink)':'var(--amber-ink)'};">${tp.pct}%</b> · ${money(tp.amount)} / ${money(tp.target)}</span></div>
-        <div class="bar-track"><div class="bar-fill ${tp.pct<60?'coral':''}" style="width:${Math.min(100,tp.pct)}%;"></div></div>
+  return `<div class="bar-row"${tp.pace ? ` data-pace="${tp.pace.state}"` : ''}>
+        <div class="bar-label"><span>${monthName} target achieved</span><span><b style="color:${paceInk(tp.pace)};">${tp.pct}%</b> · ${money(tp.amount)} / ${money(tp.target)}</span></div>
+        <div class="bar-track"><div class="bar-fill ${tp.pace && tp.pace.state === 'behind'?'coral':''}" style="width:${Math.max(0, Math.min(100,tp.pct))}%;"></div></div>
       </div>`;
 }
 function renderScorecards(mtd){

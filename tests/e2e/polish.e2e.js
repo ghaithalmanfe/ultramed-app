@@ -12,7 +12,12 @@
 //      its headings (A5), the KPI settings' fields and their saved message (A6)
 //   O  the order-only sheet never calls an order logged in the app revenue — the owner's rule: orders logged in the
 //      app are never sales (English and Arabic)
-// The clock is fixed (Wed 11 Nov 2026, 13:30, ticking). Port 8302. Env: ONLY=H,A,O  WWW=<dir>
+//   P  one pace rule everywhere (the owner's decision of 17 Nov: "on pace" from 90 % of the expected share, UMCore.paceOf)
+//      — each check fails on 239c2c3: the Reports and Admin team line (teamTargetRow) said "On pace" from 60 % of the
+//      target whatever the day (P1: 70 % of an even pace on Nov 26) and "Behind" below it (P1b: 94 % of an even pace on
+//      Nov 9); the Reports colours, the month close, the printed report's Total row and brand pills judged by 60 % too
+//      (P2–P4); the home's forecast tile rounded 89.7 % of an even pace to "90%" beside "Behind pace" (P5)
+// The clock is fixed (Wed 11 Nov 2026, 13:30, ticking; P1–P4: Thu 26 Nov). Port 8302. Env: ONLY=H,A,O,P  WWW=<dir>
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { chromium } = require('playwright');
 const { WWW, launchOpts, blockFirebase, twoRepStaff } = require('./_env.js');
@@ -33,7 +38,10 @@ const api = {
 };
 const results = []; let failed = 0;
 function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==undefined && !ok?'  → '+JSON.stringify(info):'')); if(!ok) failed++; }
-const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith';
+const M = 'Mariam', R = 'Renova', G = 'Dr. Ghaith', MS = 'Mariam Sample', RS = 'Ranova Sample Person';
+// a sales file of the month (invented lines, the ERP export's columns): its rows and its days
+const row = (d, doc, cust, net, sm) => [d, doc, 0, 'Waterpik Cordless Plus', 1, net, net, 0, sm, 'Waterpik', cust, 'Clinics', 0, ''];
+const file = (id, to, rows) => ({ id, from: '2026-11-01', to, repMap: { [MS]: M, [RS]: R }, rows, rowCount: rows.length, net: Math.round(rows.reduce((a, r) => a + r[6], 0) * 100) / 100 });
 const C = (id, name, rep, x) => Object.assign({ id, name, rep, cls: 'B', doctors: [] }, x || {});
 const FILL = Array.from({ length: 14 }, (_, i) => C('f' + (i + 1), 'Filler Clinic ' + (i + 1), i % 2 ? R : M));   // a team-sized list
 const THUMB = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
@@ -46,9 +54,9 @@ function seed(opts){
     C('m2', 'Birchwood Center', M, { doctors: [{ id: 'd2', name: 'Dr. Basil Sample' }] }), C('r1', 'Fernhill Center', R)].concat(FILL));
   cloud.visits = JSON.stringify(opts.visits || [{ id: 'v1', clinicId: 'm2', rep: M, date: '2026-11-09', doctorIds: ['d2'] }]);
   cloud.tasks = '[]'; cloud.events = '[]'; cloud.dayPlans = '{}'; cloud.erpMap = '{}';
-  cloud.targets = JSON.stringify({ [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-11' } });
-  // the one-time repair sweeps of earlier releases have run, as on the team's phones
-  const sp = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: {}, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true }, periods: [] });
+  cloud.targets = JSON.stringify(opts.targets || { [M]: { revenue: 10000, month: '2026-11' }, [R]: { revenue: 2000, month: '2026-11' } });
+  // the one-time repair sweeps of earlier releases have run, as on the team's phones; opts.periods: the month's sales files
+  const sp = core.erpSplitForStorage({ returnPolicy: 'origin', repMapGlobal: opts.periods ? { [MS]: M, [RS]: R } : {}, seeds: { sales3_aug26: true, orphanRestore_v58: true, autoRestore_v64: true, deepRestore_v65: true }, periods: opts.periods || [] });
   cloud.erpSales = JSON.stringify(sp.index); Object.keys(sp.docs).forEach(k => { cloud[k] = JSON.stringify(sp.docs[k]); });
 }
 
@@ -75,7 +83,7 @@ function seed(opts){
     await page.exposeFunction('__cGet', api.get); await page.exposeFunction('__cSet', api.set);
     await page.exposeFunction('__cDel', api.del); await page.exposeFunction('__cList', api.list);
     await page.exposeFunction('__cSetMany', api.setMany);
-    await page.addInitScript(({ noIDB, fullRe }) => {
+    await page.addInitScript(({ noIDB, fullRe, now }) => {
       window.storage = {
         get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; },
         set: async (k, v) => window.__cSet(k, v),
@@ -83,7 +91,7 @@ function seed(opts){
         delete: async k => window.__cDel(k),
         list: async p => ({ keys: await window.__cList(p) }),
       };
-      const off = new Date(2026, 10, 11, 13, 30, 0).getTime() - Date.now();
+      const off = (now || new Date(2026, 10, 11, 13, 30, 0).getTime()) - Date.now();
       const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
       // the 20-second round driven by hand
       const _si = window.setInterval.bind(window);
@@ -93,7 +101,7 @@ function seed(opts){
       // a photo as pickImage hands it over: a full image and its thumbnail (data URLs)
       window.__shot = n => { const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.fillStyle = ['#c33', '#3a3', '#33c'][n % 3]; x.fillRect(0, 0, w, h); return c.toDataURL('image/jpeg', 0.8); };
         return { id: uid(), full: mk(160, 120), thumb: mk(40, 30) }; };
-    }, { noIDB: !!opts.noIDB, fullRe: opts.fullRe || null });
+    }, { noIDB: !!opts.noIDB, fullRe: opts.fullRe || null, now: opts.now || null });
     const boot = async (who, role, local) => {
       await page.goto(URL); await page.waitForTimeout(150);
       await page.evaluate(l => { try{ localStorage.clear(); Object.keys(l || {}).forEach(k => localStorage.setItem(k, l[k])); }catch(e){} }, local || null);
@@ -333,6 +341,77 @@ function seed(opts){
     const ar = await ph.page.evaluate(async () => { openStandaloneOrder(); await new Promise(r => setTimeout(r, 80)); const p = document.querySelector('#modalInner p'); return p ? p.innerText : ''; });
     check('O: "Order only" never calls the order revenue — it is logged in the app as an order, not a field visit, and is not sales (English)', !!en && !/revenue/i.test(en) && /not (invoiced )?sales|never (counted as )?sales/i.test(en), en);
     check('O: …in Arabic: no «إيراد», and it says the order is not sales', !!ar && !/إيراد/.test(ar) && /(ليست|لا تُحسب) مبيعات/.test(ar) && !latin(ar.replace(/ERP/g, '')), ar);
+    await ph.ctx.close();
+  }
+
+  // ======================= P: one pace rule everywhere (the owner's decision of 17 Nov) =======================
+  if(want('P')){
+    const txt = el => el ? el.innerText.replace(/\s+/g, ' ').trim() : null;
+    // Reports as the supervisor sees it: the team line under the scorecards (teamTargetRow), the per-person target bars,
+    // the team comparison's Target column — and the Today card's Team line beside them, for the same figures
+    const reports = p => p.page.evaluate(async () => {
+      const t = el => el ? el.innerText.replace(/\s+/g, ' ').trim() : null;
+      const home = t(document.querySelector('#targetCard .ms-person.team'));
+      switchView('reports'); renderReports(); await new Promise(r => setTimeout(r, 80));   // (the Arabic is put in as the cards appear)
+      const cards = [...document.querySelectorAll('#scorecards .score-card')], team = cards[cards.length - 1];
+      const out = { home, team: t(team), line: t(team && team.querySelector('[data-pace]')),
+        bars: [...document.querySelectorAll('#scorecards .bar-row')].filter(b => /target achieved|المستهدف/.test(b.innerText)).map(b => ({ pace: b.dataset.pace || null, coral: !!b.querySelector('.bar-fill.coral') })),
+        cmp: [...document.querySelectorAll('#teamCompareCard .cmp-table [data-pace]')].map(e => e.dataset.pace) };
+      switchView('today'); return out; });
+    const NOV26 = new Date(2026, 10, 26, 13, 30, 0).getTime();   // a Thursday: the files to Nov 26 = 20 of November's 22 working days
+    // P1 — late in the month: the team 7,640 of 12,000 KD (64 % of the target) = 70 % of an even pace (10,909.09 KD by Nov 26);
+    // Mariam 6,440 of 10,000 (70.8 % of an even pace), her Waterpik 6,440 of 8,000 (88.6 %); Renova 1,200 of 2,000 (66 %)
+    seed({ targets: { [M]: { revenue: 10000, month: '2026-11', achievedAsOf: '2026-11-24', brands: { Waterpik: 8000 } }, [R]: { revenue: 2000, month: '2026-11', achievedAsOf: '2026-11-24' } },   // (a DSR of Nov 24: the month close takes the targets of its month)
+      periods: [file('nov26', '2026-11-26', [row('2026-11-03', 'SINV21', 'Amberline Clinic', 4000, MS), row('2026-11-17', 'SINV22', 'Birchwood Center', 2440, MS), row('2026-11-18', 'SINV23', 'Fernhill Center', 1200, RS)])] });
+    let ph = await phone({ now: NOV26, viewport: { width: 1280, height: 900 } });
+    await ph.boot(G, 'supervisor');
+    let r = await reports(ph);
+    check('P1: Reports — the team line at 70 % of an even pace (64 % of the target, Nov 26) says "Behind pace · 70% of an even pace", never "On pace" (the 60 % rule) — as the Today card\'s Team line says',
+      /Team · \w+ target/.test(r.team || '') && /64%/.test(r.line || '') && /Behind pace · 70% of an even pace · 2 reps/.test(r.line || '') && !/On pace/.test(r.team || '') && /Behind pace/.test(r.home || ''), r);
+    check('P2: Reports — the per-person target bars and the team comparison\'s Target column judge by the same rule: behind (amber / coral), not "fine" from 60 %',
+      r.bars.length === 2 && r.bars.every(b => b.pace === 'behind' && b.coral) && r.cmp.length === 3 && r.cmp.every(x => x === 'behind'), r);
+    // the reconciliation sheet of the file (Admin → ERP import): the people's target bars, the brand table, the team line
+    const rec = await ph.page.evaluate(() => { openErpRecon('nov26'); const box = document.getElementById('modalInner');
+      const out = { text: box.innerText.replace(/\s+/g, ' '), brand: [...box.querySelectorAll('td[data-pace]')].map(e => e.dataset.pace), bars: [...box.querySelectorAll('div[data-pace]')].map(e => e.dataset.pace) }; closeModal(); return out; });
+    const teamRec = (rec.text.match(/Monthly target — team:.*?reps/) || [''])[0];
+    check('P3: the reconciliation sheet — "Behind pace · 70% of an even pace" on the team line, each person\'s target bar and the brand table by the rule (no "Green ≥60%")',
+      /Behind pace · 70% of an even pace/.test(teamRec) && /Monthly target: 6,440\.00 KD of 10,000\.00 KD \(ERP-verified\) · Behind pace/.test(rec.text) && rec.brand.length === 1 && rec.brand[0] === 'behind'
+        && !/≥60%/.test(rec.text) && /Green: on pace or better — from 90% of an even share/.test(rec.text), { teamRec, brand: rec.brand, bars: rec.bars, text: rec.text.slice(0, 600) });
+    // the month close (Months → November): the team's, each person's and the brand's % coloured by the rule
+    const mc = await ph.page.evaluate(() => { renderMonthClose('2026-11'); const els = [...document.querySelectorAll('#modalInner [data-pace]')].map(e => ({ pace: e.dataset.pace, color: e.style.color, t: e.textContent.trim() })); closeModal(); return els; });
+    check('P4: the month close — the team\'s 64 %, Mariam\'s 64 %, Renova\'s 60 % and Waterpik\'s 81 % are behind (coral), not "gold" from 60 %',
+      mc.length === 4 && mc.every(x => x.pace === 'behind' && /coral-ink/.test(x.color)), mc);
+    // the printed management report: the Total row's Pace is the team's pace (it carried the % of the target), with its status; the brand pill by the rule
+    const pr = await ph.page.evaluate(() => { const box = document.createElement('div'); box.innerHTML = buildMasterReportBody('en');
+      const rowOf = re => { const tr = [...box.querySelectorAll('tr')].find(x => re.test(((x.querySelector('td b') || x.querySelector('td') || {}).textContent || '').trim())); return tr ? [...tr.querySelectorAll('td')].map(x => x.textContent.replace(/\s+/g, ' ').trim()) : null; };
+      const wp = [...box.querySelectorAll('tr')].find(x => ((x.querySelector('td') || {}).textContent || '').trim() === 'Waterpik');
+      return { total: rowOf(/^Total$/), mariam: rowOf(/^Mariam$/), brand: wp ? (wp.querySelector('.mr-pill') || {}).className : null }; });
+    check('P4b: the printed report — the Total row\'s Pace is the team\'s pace by the rule (70% · Behind), never the % of the target (64%); Waterpik\'s pill is red (behind), not green from 60 %',
+      !!pr.total && pr.total[3] === '70%' && pr.total[5] === 'Behind' && !!pr.mariam && pr.mariam[3] === '70%' && pr.mariam[5] === 'Behind' && /\br\b/.test(pr.brand || ''), pr);
+    // …and in Arabic: the team line has no English left
+    await ph.page.evaluate(() => setUiLang('ar')); await ph.page.waitForTimeout(300); await ph.settle();
+    r = await reports(ph);
+    check('P1 in Arabic: the team line «دون الوتيرة · 70% من الوتيرة المتساوية», no English left', !!r.line && /دون الوتيرة · 70% من الوتيرة المتساوية/.test(r.line) && !latin(r.line), r.line);
+    await ph.ctx.close();
+
+    // P1b — early in the month: the team 3,600 of 12,000 KD (30 % of the target) on Nov 9 = 94 % of an even pace (3,818.18 KD): on pace, never "Behind" (the 60 % rule)
+    seed({ periods: [file('nov9', '2026-11-09', [row('2026-11-02', 'SINV31', 'Amberline Clinic', 3000, MS), row('2026-11-04', 'SINV32', 'Fernhill Center', 600, RS)])] });
+    ph = await phone({ viewport: { width: 1280, height: 900 } });
+    await ph.boot(G, 'supervisor');
+    r = await reports(ph);
+    check('P1b: Reports — the team line at 94 % of an even pace (30 % of the target, Nov 9) says "On pace · 94% of an even pace", never "Behind" — as the Today card\'s Team line says',
+      /On pace · 94% of an even pace · 2 reps/.test(r.line || '') && !/Behind/.test(r.team || '') && /On pace/.test(r.home || ''), r);
+    await ph.ctx.close();
+
+    // P5 — the home's forecast tile: Mariam 2,854 of 10,000 KD to Nov 9 = 89.7 % of an even pace (8,969.71 KD forecast)
+    seed({ periods: [file('nov9b', '2026-11-09', [row('2026-11-02', 'SINV41', 'Amberline Clinic', 1854, MS), row('2026-11-03', 'SINV42', 'Birchwood Center', 1000, MS), row('2026-11-04', 'SINV43', 'Fernhill Center', 900, RS)])] });
+    ph = await phone();
+    await ph.boot(M, 'rep');
+    const home = await ph.page.evaluate(() => { const t = el => el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
+      const out = { tile: t(document.querySelector('#msKpis [data-ms="forecast"]')), value: (document.querySelector('#msKpis [data-ms="forecast"]') || {}).dataset?.value, pace: t(document.querySelector('#msStatus .ms-stt')) };
+      msHow('sales'); out.how = (document.getElementById('modalInner').innerText.match(/8,969\.71 ÷ 10,000\.00 × 100 = \d+%/) || [null])[0]; closeModal(); return out; });
+    check('P5: the forecast tile prints on the side of the line its pace card states — "89%" beside "Behind pace" (89.7 % of an even pace), never "90%"; the ⓘ works it out the same way',
+      home.tile === '89%' && Number(home.value) === 8969.71 && home.pace === 'Behind pace' && home.how === '8,969.71 ÷ 10,000.00 × 100 = 89%', home);
     await ph.ctx.close();
   }
 

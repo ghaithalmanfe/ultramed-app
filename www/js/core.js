@@ -369,7 +369,10 @@
   // one (89.7 % is behind); `pct` is that share cut to a whole percent and kept on its word's side (89.7 % → 89, never
   // 90), so no screen prints a percentage its word contradicts. The home's target card and pace card, the team's
   // leaderboard, the printed management report, the sales coach and the alerts center all judge by it (until v126
-  // the home and the report rounded first: at 89.5–90 % they said "On pace" while the coach said "behind").
+  // the home and the report rounded first: at 89.5–90 % they said "On pace" while the coach said "behind"); since the
+  // owner's decision of 17 Nov (one pace rule everywhere, 90 %) every other verdict too: the home's forecast %
+  // (execDashboard), Reports and the Admin sheets (paceFor, 11-erp.js), the daily e-mail's "at this pace" and the weekly
+  // deck's "on pace to pass" (weeklyReport's paceRule).
   var TARGET_BEHIND = 0.9;
   function paceOf(ach, goal, done, total){
     ach = Number(ach); goal = Number(goal); total = Number(total);
@@ -2968,7 +2971,10 @@
         week: sum(from, to, rep), prevWeek: sum(pFrom, pTo, rep),
         mtd: ach.amount, mtdSrc: ach.src, target: t.revenue > 0 ? t.revenue : null,
         pct: t.revenue > 0 ? ach.amount / t.revenue : null,
-        pace: t.revenue > 0 && day > 0 ? ach.amount / day * dim / t.revenue : null,
+        pace: t.revenue > 0 && day > 0 ? ach.amount / day * dim / t.revenue : null,   // the straight-line projection (calendar days; A3 only)
+        // the month's verdict by the one pace rule (paceOf, the Today card's): an even share of the target over the working
+        // days (Sun–Thu) to the day her files reach — { state, pct, done, total }; none without a sales file
+        paceRule: t.revenue > 0 && ach.basis === 'erp' && ach.asOf ? (function(w){ var P = paceOf(ach.amount, t.revenue, w.done, w.total); return P ? { state: P.state, pct: P.pct, done: w.done, total: w.total, asOf: ach.asOf } : null; })(monthWorkdays(to.slice(0, 7), ach.asOf)) : null,
         fieldVisits: Object.keys(cdays).length, logged: led.filter(isFieldVisit).length, calls: mine.filter(function(v){ return v.callOnly; }).length,
         phoneOrders: mine.filter(function(v){ return v.orderOnly; }).length,
         joint: field.filter(function(v){ return v.withRep; }).length,
@@ -3389,12 +3395,18 @@
     withT.forEach(function(r){ var p = P[r];
       if(p.pct >= 1) add({ key: 'target-past:' + r, kind: 'target', scope: 'rep', rep: r, big: pct(p.pct), headline: r + ' is past the ' + mName + ' target', detail: kd(p.mtd) + ' of ' + kd(p.target) + ' by ' + dm(W.to), basis: 'ERP month to date against the DSR target', icon: 'target', score: 95,
         ar: r + ': تجاوز مستهدف ' + mAr + ' — ' + num(p.mtd) + ' من ' + arDinar(p.target) + '.' });
-      else if(wdays >= 6 && p.pace >= 1) add({ key: 'target-pace:' + r, kind: 'target', scope: 'rep', rep: r, big: pct(p.pace), headline: r + ' is on pace to pass the ' + mName + ' target', detail: kd(p.mtd) + ' of ' + kd(p.target) + ' by ' + dm(W.to) + ' (day ' + day + ' of ' + dim + ')', basis: 'month to date projected over the calendar days, as on the Today card', icon: 'target', score: 88,
-        ar: r + ': على المسار لتجاوز مستهدف ' + mAr + ' — ' + num(p.mtd) + ' من ' + num(p.target) + ' حتى اليوم ' + day + '.' }); });
+      // "on pace to pass" = ahead of an even pace by the one pace rule (paceOf over the working days to the day her files
+      // reach — the Today card's; until 17 Nov the calendar days to the week's end, which called a person "on pace to pass"
+      // whom the Today card said was merely on pace)
+      else if(wdays >= 6 && p.paceRule && p.paceRule.state === 'ahead') add({ key: 'target-pace:' + r, kind: 'target', scope: 'rep', rep: r, big: p.paceRule.pct + '%', headline: r + ' is on pace to pass the ' + mName + ' target', detail: kd(p.mtd) + ' of ' + kd(p.target) + ' by ' + dm(p.paceRule.asOf) + ' (working day ' + p.paceRule.done + ' of ' + p.paceRule.total + ')', basis: 'ahead of an even pace in working days to the ERP cut-off (Today card)', icon: 'target', score: 88,
+        ar: r + ': على المسار لتجاوز مستهدف ' + mAr + ' — ' + num(p.mtd) + ' من ' + num(p.target) + ' حتى اليوم ' + parseInt(p.paceRule.asOf.slice(8, 10), 10) + '.' }); });
     var tMtd = withT.reduce(function(a, r){ return a + P[r].mtd; }, 0), tTgt = withT.reduce(function(a, r){ return a + P[r].target; }, 0);
-    var teamPct = tTgt > 0 ? tMtd / tTgt : null, teamPace = teamPct != null && day > 0 ? teamPct / day * dim : null;
+    var teamPct = tTgt > 0 ? tMtd / tTgt : null, teamPace = teamPct != null && day > 0 ? teamPct / day * dim : null;   // (the straight-line projection: A3 only)
+    // the team by the same rule, to the latest day the people's files reach (the Today card's Team line)
+    var tCut = withT.reduce(function(m, r){ var q = P[r].paceRule; return q && (!m || q.asOf > m) ? q.asOf : m; }, null);
+    var teamRule = tCut && tTgt > 0 ? (function(w){ var Q = paceOf(tMtd, tTgt, w.done, w.total); return Q ? { state: Q.state, pct: Q.pct, asOf: tCut } : null; })(monthWorkdays(W.to.slice(0, 7), tCut)) : null;
     if(teamPct != null && teamPct >= 1) add({ key: 'target-team-past', kind: 'target', big: pct(teamPct), headline: 'The team is past the ' + mName + ' target', detail: kd(tMtd) + ' of ' + kd(tTgt), basis: 'ERP month to date against the DSR targets', icon: 'target', score: 97, ar: 'تجاوز الفريق مستهدف ' + mAr + '.' });
-    else if(teamPace != null && wdays >= 6 && teamPace >= 1) add({ key: 'target-team-pace', kind: 'target', big: pct(teamPace), headline: 'The team is on pace to pass the ' + mName + ' target', detail: kd(tMtd) + ' of ' + kd(tTgt) + ' by ' + dm(W.to), basis: 'month to date projected over the calendar days', icon: 'target', score: 93, ar: 'الفريق على المسار لتجاوز مستهدف ' + mAr + '.' });
+    else if(teamRule && wdays >= 6 && teamRule.state === 'ahead') add({ key: 'target-team-pace', kind: 'target', big: teamRule.pct + '%', headline: 'The team is on pace to pass the ' + mName + ' target', detail: kd(tMtd) + ' of ' + kd(tTgt) + ' by ' + dm(tCut), basis: 'ahead of an even pace in working days to the ERP cut-off (Today card)', icon: 'target', score: 93, ar: 'الفريق على المسار لتجاوز مستهدف ' + mAr + '.' });
     // a closed month (days 1–10): KD AND % of target both up, for the same people
     var closed = null, closedRep = {};
     if(day <= 10 && opts.trend && opts.trend.months && opts.trend.months.length >= 3){
@@ -3546,8 +3558,8 @@
     var joint = (W.visits || []).filter(function(v){ return v.withRep && v.type === 'visit'; }).map(function(v){ return { reps: [v.rep, v.withRep], clinic: v.clinic, date: v.date }; });
     var orders = reps.reduce(function(a, r){ return { n: a.n + ((P[r] || {}).orders || 0), value: a.value + ((P[r] || {}).orderValue || 0) }; }, { n: 0, value: 0 });
     var field = W.team && W.team.fieldVisits ? { visits: W.team.fieldVisits, clinics: W.team.clinics, doctors: W.team.doctorsMet, products: W.team.productsPresented, followUpClinics: W.team.followUpClinics, joint: joint, orders: orders } : null;
-    var monthQ = withT.filter(function(r){ return P[r].pct >= 1 || (wdays >= 6 && P[r].pace >= 1); });
-    var month = { qualifies: monthQ, team: teamPct != null && (teamPct >= 1 || (wdays >= 6 && teamPace >= 1)) ? { mtd: tMtd, target: tTgt, pct: teamPct, pace: teamPace } : null, closed: closed, day: day, dim: dim, monthName: mName };
+    var monthQ = withT.filter(function(r){ return P[r].pct >= 1 || (wdays >= 6 && !!P[r].paceRule && P[r].paceRule.state === 'ahead'); });   // (the one pace rule, as above)
+    var month = { qualifies: monthQ, team: teamPct != null && (teamPct >= 1 || (wdays >= 6 && !!teamRule && teamRule.state === 'ahead')) ? { mtd: tMtd, target: tTgt, pct: teamPct, pace: teamPace, paceRule: teamRule } : null, closed: closed, day: day, dim: dim, monthName: mName };
     var nP = 0, nF = 0; reps.forEach(function(r){ var n = (W.next || {})[r]; if(n){ nP += n.planned.length; nF += n.followUps.length; } });
     var next = { planned: nP, followUps: nF, from: W.nextFrom, to: W.nextTo, people: reps.map(function(r){ var n = (W.next || {})[r] || { planned: [], followUps: [], aMissing: [] }; return { rep: r, planned: n.planned, followUps: n.followUps, aMissing: n.aMissing }; }) };
     // ---- what the main pages leave out (the notes say where it is)
@@ -4011,7 +4023,7 @@
     // the month
     (w.reps || []).forEach(function(rep){ var p = w.perRep[rep];
       if(p.pct != null && p.pct >= 1) add(95, rep + ' has already reached the month\'s target: ' + pct(p.pct) + ' (' + kd(p.mtd) + ').');
-      else if(p.pace != null && p.pace >= 1) add(88, rep + ' is on pace to exceed the month\'s target (' + pct(p.pace) + ').'); });
+      else if(p.paceRule && p.paceRule.state === 'ahead') add(88, rep + ' is on pace to exceed the month\'s target (' + p.paceRule.pct + '%).'); });   // the one pace rule (paceOf), as the weekly story
     var bOk = (w.brands || []).filter(function(b){ return b.target > 0 && b.mtd >= b.target; }).sort(function(a, b){ return b.mtd / b.target - a.mtd / a.target; });
     if(bOk.length) add(87, bOk.length + ' brand' + (bOk.length === 1 ? '' : 's') + ' already at or above the month\'s target: ' + bOk.slice(0, 4).map(function(b){ return bn(b.brand) + ' ' + pct(b.mtd / b.target); }).join(', ') + '.');
     // wins of the week
@@ -4360,7 +4372,16 @@
       forecast.amount = xdR2(sum(got, function(f){ return forecast.byRep[f.rep].amount; }));
       if(pair.length){
         var fT = sum(pair, function(r){ return forecast.byRep[r].amount; });
-        forecast.forTarget = xdR2(fT); forecast.target = xdR2(goal); forecast.pct = goal > 0 ? Math.round(fT / goal * 100) : null;
+        forecast.forTarget = xdR2(fT); forecast.target = xdR2(goal);
+        // its % of the target by the one pace rule (paceOf; the owner's decision of 17 Nov): cut to a whole percent on
+        // the side of its pace word, never rounded up across 90 % or 100 %. With every person's file to the same working
+        // day it is the pace card's ratio (the forecast ÷ the target = the month figure ÷ an even share of the target to
+        // that day): its very percentage, from the very figures the pace card judges; files to different days project
+        // each person from her own day — the forecast's own ratio, cut the same way. (Until then it was rounded: 89.7 %
+        // read "90%" beside "Behind pace".)
+        var oneDay = pair.every(function(r){ return forecast.byRep[r].done === forecast.byRep[pair[0]].done; });
+        var FP = oneDay ? paceOf(xdR2(ach), xdR2(goal), wd.done, wd.total) : paceOf(fT, goal, 1, 1);
+        forecast.pct = FP ? FP.pct : null;
       }
     }
     // against an earlier month (sameDays: the month before; lastYear: the same
@@ -4823,7 +4844,12 @@
       var a = monthAchievement(rep, data, mtd), pct = Math.round(a.amount / t.revenue * 100);
       var m = today.slice(0, 7), stale = (t.month || (t.achievedAsOf ? t.achievedAsOf.slice(0, 7) : m)) < m;
       var dim = getMonthDates(today).length, day = parseInt(today.slice(8, 10), 10), left = dim - day;
-      var pace = day > 0 ? Math.round(a.amount / day * dim / t.revenue * 100) : null;
+      // "at this pace": the one pace rule (paceOf, the Today screen's forecast) — the month figure against an even share
+      // of the target over the working days (Sun–Thu) to the day the ERP files reach, cut to a whole percent on its
+      // word's side; none without a sales file. (Until 17 Nov: the calendar days to today, rounded — a file two days old
+      // read as a slower pace, 89.7 % as "90%", and no file at all as "0%".)
+      var wdm = a.basis === 'erp' && a.asOf ? monthWorkdays(m, a.asOf) : null, P = wdm ? paceOf(a.amount, t.revenue, wdm.done, wdm.total) : null;
+      var pace = P ? P.pct : null;
       return { rep: rep, pct: pct, amount: a.amount, goal: t.revenue, src: a.src, asOf: a.asOf, stale: stale, left: left, pace: pace, alt: a.alt, why: a.why, basis: a.basis };
     };
     var repBlock = function(rep){

@@ -525,13 +525,16 @@ function buildMasterReportBody(lang, format){
     const P = typeof UMCore.paceOf === 'function' ? UMCore.paceOf(bm.amount, t.revenue, worked, totalWork) : null;
     const pace = P ? P.pct : Math.floor(bm.amount / (t.revenue * worked / totalWork) * 100);
     const state = bm.amount >= t.revenue ? 'hit' : P ? (P.state === 'behind' ? 'behind' : 'on') : pace >= 90 ? 'on' : 'behind';
-    return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, fc, pace, state };
+    return { rep, goal: t.revenue, ach: bm.amount, src: bm.src, asOf: bm.asOf || null, fc, pace, state };
   }).filter(Boolean);
 
   // Team sums across every rep in scope — the report must always show the
   // COMBINED number for both reps, not just per-rep lines.
   const goalSum = tstats.reduce((s,x)=>s+x.goal,0), achSum = tstats.reduce((s,x)=>s+(x.ach||0),0), fcSum = tstats.reduce((s,x)=>s+(x.fc||0),0);
   const anyOfficial = tstats.some(x=>x.ach!=null);
+  // the team's pace by the same rule (paceFor — the Today card's Team line): the sums to the latest day the people's
+  // files reach. (Until 17 Nov the Total row's Pace column carried the % of the target instead.)
+  const teamP = anyOfficial ? paceFor(achSum, goalSum, tstats.reduce((m, x) => x.ach != null && x.asOf && (!m || x.asOf > m) ? x.asOf : m, null)) : null;
 
   // 1 — executive summary
   let exec = '';
@@ -551,7 +554,7 @@ function buildMasterReportBody(lang, format){
       ? `<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td colspan="3"><span class="mr-note">${L.awaitErp}</span></td><td><span class="mr-pill o">${L.st_await}</span></td></tr>`
       : `<tr><td><b>${esc(x.rep)}</b></td><td>${mrMoney(x.goal,lang)}</td><td>${mrMoney(x.ach,lang)} <span class="mr-note num">${esc(x.src||'')}</span></td><td><span class="num">${x.pace}%</span></td><td>${mrMoney(x.fc,lang)}</td>
       <td><span class="mr-pill ${x.state==='hit'?'g':x.state==='on'?'g':'r'}">${x.state==='hit'?L.st_hit:x.state==='on'?L.st_on:L.st_behind}</span></td></tr>`).join('')}
-    ${tstats.length>1&&anyOfficial?`<tr style="border-top:2px solid #022917;"><td><b>${L.total}</b></td><td><b>${mrMoney(goalSum,lang)}</b></td><td><b>${mrMoney(achSum,lang)}</b></td><td><span class="num"><b>${goalSum?Math.round(achSum/goalSum*100):0}%</b></span></td><td><b>${mrMoney(fcSum,lang)}</b></td><td></td></tr>`:''}
+    ${tstats.length>1&&anyOfficial?`<tr style="border-top:2px solid #022917;"><td><b>${L.total}</b></td><td><b>${mrMoney(goalSum,lang)}</b></td><td><b>${mrMoney(achSum,lang)}</b></td><td><span class="num"><b>${teamP && teamP.pct != null ? teamP.pct + '%' : '—'}</b></span></td><td><b>${mrMoney(fcSum,lang)}</b></td><td>${teamP ? `<span class="mr-pill ${teamP.state === 'behind' ? 'r' : 'g'}">${teamP.state === 'reached' ? L.st_hit : teamP.state === 'behind' ? L.st_behind : L.st_on}</span>` : ''}</td></tr>`:''}
     </tbody></table><div class="mr-note">${L.officialNote}</div>` : `<p class="mr-note">${L.noData}</p>`;
 
   const brandParts = repsList.map(rep=>{
@@ -560,14 +563,14 @@ function buildMasterReportBody(lang, format){
     if(!items.length) return '';
     // Target per brand from the DSR, achieved per brand from the ERP sales files only.
     const eb = erpBrandMtd(rep);
-    const bm = bestMonthRevenue(rep, mtd);
+    const bm = bestMonthRevenue(rep, mtd), bCut = bm.basis === 'erp' ? bm.asOf : null;   // a brand is judged by the one pace rule to the day her figure runs to
     return `<h3 class="mr-rep">${esc(rep)}</h3><table class="mr-tbl">
       <thead><tr><th>${L.brandCol}</th><th>${L.target} (DSR)</th><th>${L.achieved} (${esc(bm.basis === 'erp' ? bm.src : 'ERP')})</th><th>${L.ach}</th></tr></thead><tbody>
       ${items.map(([br,tg])=>{
         const a = Math.round((eb.byBrand[UMCore.normBrand(br)]||0)*100)/100;
-        const pct = Math.round(a/tg*100);
+        const pct = Math.round(a/tg*100), P = paceFor(a, tg, bCut);   // (until 17 Nov: green from 60 %, orange from 25 %, whatever the day)
         return `<tr><td>${esc(br)}</td><td><span class="num">${amt2(tg, 0)}</span></td><td><span class="num">${amt2(a)}</span></td>
-          <td><span class="mr-pill ${pct>=60?'g':pct>=25?'o':'r'}"><span class="num">${pct}%</span></span></td></tr>`;
+          <td><span class="mr-pill ${!P ? 'o' : P.state === 'behind' ? 'r' : 'g'}"${P ? ` data-pace="${P.state}"` : ''}><span class="num">${pct}%</span></span></td></tr>`;
       }).join('')}</tbody></table>`;
   }).filter(Boolean);
 

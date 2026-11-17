@@ -1508,6 +1508,9 @@ function renderClinicAnalysis(){
         }
       }
       const barPct = Math.max(0, Math.min(100, cd.pct)); // returns can push actuals negative
+      // the clinic's share of the target judged by the one pace rule (paceFor, to the day her figure runs to; until 17 Nov:
+      // gold from 50 %, whatever the day of the month)
+      const cP = paceFor(cd.act, cd.tgt, bm.asOf);
       return `<div class="card ca-row" style="margin-bottom:10px;">
         <div class="row-between">
           <div style="display:flex; gap:8px; align-items:center;">
@@ -1519,10 +1522,10 @@ function renderClinicAnalysis(){
           </div>
           <div style="text-align:start; flex-shrink:0;">
             <div style="font-weight:800; font-size:14px;">${money(cd.act)} <span style="color:var(--muted); font-weight:500; font-size:11px;">/ ${money(cd.tgt)}</span></div>
-            <div style="font-size:10.5px; font-weight:700; color:${cd.pct>=100?'var(--sage-ink)':cd.pct>=50?'var(--gold-ink)':'var(--coral-ink)'};">${cd.pct}% of clinic target</div>
+            <div style="font-size:10.5px; font-weight:700; color:${paceInk(cP, 'var(--gold-ink)', 'var(--coral-ink)')};"${cP ? ` data-pace="${cP.state}"` : ''}>${cd.pct}% of clinic target</div>
           </div>
         </div>
-        <div style="height:6px; border-radius:3px; background:var(--paper); overflow:hidden; margin:8px 0;"><div style="width:${barPct}%; height:100%; background:${cd.pct>=100?'var(--sage)':'var(--teal)'};"></div></div>
+        <div style="height:6px; border-radius:3px; background:var(--paper); overflow:hidden; margin:8px 0;"><div style="width:${barPct}%; height:100%; background:${cP && cP.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>
         ${cd.opps.length?`<div style="font-size:12.5px; margin-bottom:6px;"><b>🎯 Sell next:</b> ${cd.opps.slice(0,3).map(o=>`${esc(o.brand)} <span class="num" style="color:var(--coral-ink);">${money(o.gap)}</span>`).join(' · ')}</div>${cd.topPlan?`<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; overflow:hidden;">
           ${cd.topPlan.slice(0,3).map(x=>`<div style="position:relative;">${playbookThumb(x.product, 42)}<span style="position:absolute; top:-5px; inset-inline-end:-5px; background:var(--teal); color:#fff; font-size:9.5px; font-weight:800; border-radius:99px; padding:1px 5px;">×${x.units}</span></div>`).join('')}
           <div style="font-size:11px; color:var(--teal); font-weight:600; min-width:0;">${esc(cd.opps[0].brand)}</div>

@@ -1490,7 +1490,9 @@ function msKpisHTML(v, m, sig){
   out.push(card(over ? 'att' : '', 'clip2', 'Pending Follow-ups', '', msN(due.length),
     over ? `<span class="ms-chip warn">${I('alert')}<span>${msT('Needs Attention')}</span></span><span class="sr"> ${msT(`${over} overdue · ${due.length - over} today`)}</span>` : `<span class="ms-ks">${msT(due.length ? `${due.length} today` : 'All caught up')}</span>`,
     '', "msGo('msDueCard')", 'due', due.length));
-  // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result
+  // 4 — the forecast: the month-end figure at the pace so far, as a % of the target — an estimate, never a result; its %
+  // is execDashboard's (the one pace rule, paceOf: cut, never rounded up across 90 % — the pace card's word and this
+  // card are on the same side of the line; until 17 Nov it was rounded: 89.7 % read "90%" beside "Behind pace")
   const withT = A.pct != null && F && F.pct != null && F.forTarget != null, fc = F && !F.closed ? (withT ? F.forTarget : F.amount) : null;
   let fSpark = '';
   if(fc != null){
@@ -1849,7 +1851,7 @@ function msHow(id){
         'Expected % = working days done ÷ working days of the month × 100. On pace from 90% of the expected figure, ahead from 100% (the rule of the management report).', `<div>${msN(`${wd.done} ÷ ${wd.total} × 100 = ${exp}%`)}</div>`);
       // each person's line with her own invoiced figure in it; the card's "% of target" worked out for the people with a target
       if(F) body += sec('Forecast for the month', 'The pace of invoiced sales so far in the ERP files, person by person — the formula of the management report.',
-        'Forecast = invoiced so far ÷ working days done × working days of the month, for each person, then added up. A projection, not a sale.',
+        'Forecast = invoiced so far ÷ working days done × working days of the month, for each person, then added up. A projection, not a sale. Its % of the target is cut to a whole percent, never rounded up across 90% or 100% (the pace rule): 89.7% is 89%.',
         F.amount != null ? Object.keys(F.byRep || {}).map(r => { const x = F.byRep[r], b = (Array.isArray(D.byPerson) ? D.byPerson : []).find(p => p && p.rep === r);
             return kv(msWho(r), `${msN(`${f2(b ? b.amount : 0)} ÷ ${Math.max(1, x.done)} × ${x.total}`)} = ${msKd(x.amount)}`); }).join('') + kv(msT('Total'), msKd(F.amount))
           + (F.pct != null && F.forTarget != null && F.target != null ? kv(`${msT('% of target')} (${msNames(A.people)})`, msN(`${f2(F.forTarget)} ÷ ${f2(F.target)} × 100 = ${F.pct}%`)) : '') : '');
