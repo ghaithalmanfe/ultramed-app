@@ -30,6 +30,8 @@
 //   W7  W5's edit waits in the queue, the app is closed and opened again with the month still slow, and the supervisor
 //       corrects that visit's date meanwhile: once the month answers, the upload keeps the correction and the phone's
 //       note (the edited visit's base record was kept on the phone when the save did not land)
+//   W8  (visits fuzz, minor) a visits WRITE with no answer within its 12 s while the phone is online says the cloud has
+//       not answered in time — never "when back online" — and the change lands once the cloud answers
 //   S2  …after S1, Mariam signs in again on the sign-in screen: she is signed in (the kept sign-out never locks her out)
 // The sign-in is the app's own (03-gate.js) over a stand-in for the Firebase SDK that keeps its session on the phone and
 // confirms it only when the harness says (as in speed-review-2.e2e.js, whose helpers this harness reuses); the cloud is a
@@ -302,6 +304,23 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
     check('W5: the edit is of a visit IN the slow month: the save does not land while that month cannot be read — nothing written to it, said as "the cloud has not answered in time" (never "when back online") — and lands once the month answers',
       drew && !out.ok && out.queued && /not answered in time/.test(out.words) && !said.some(t => /back online|No connection/i.test(t)) && !marchWritten && !whileSlow.inCloud && whileSlow.queued.includes('visits')
         && after.inCloud && !after.queued.includes('visits'), { drew, out, marchWrittenWhileSlow: marchWritten, whileSlow, after });
+    await done(P);
+  }
+  if(want('W8')){
+    seed(SMALL);
+    const P = await mkDevice('W8-phone');
+    await P.firstOpen(M);
+    const X = pick(sep0);
+    ctl.slow.set(P.label, { test: (k, kind) => kind === 'tx' && k === 'visitsArch:2026-09', ms: 14000 }); // the write's transaction answers after 14 s
+    const out = await P.ev(async a => { window.__um.toasts.length = 0; const v = visits.find(x => x.id === a); v.notes = (v.notes || '') + ' [slow write]';
+      const r = await persistTold('visits'); return { ok: r.ok, queued: outboxList().includes('visits'), words: !r.ok && typeof saveFailText === 'function' ? (saveFailText(r, 'visits') || [''])[0] : '', toasts: window.__um.toasts.slice(), online: navigator.onLine }; }, X.id);
+    ctl.slow.delete(P.label);
+    await sleep(3000); await round(P); await round(P);
+    const landed = /slow write/.test((((doc('visitsArch:2026-09') || []).find(v => v && v.id === X.id)) || {}).notes || '');
+    const queuedAfter = await P.ev(() => outboxList());
+    const said = [out.words].concat(out.toasts).filter(Boolean);
+    check('W8: a visits write with no answer within 12 s while the phone is online: "the cloud has not answered in time" — never "when back online" — and it lands once the cloud answers',
+      out.online && !out.ok && /not answered in time/.test(out.words) && !said.some(t => /back online|No connection/i.test(t)) && landed && !queuedAfter.includes('visits'), { out, landed, queuedAfter });
     await done(P);
   }
   if(want('W7')){
