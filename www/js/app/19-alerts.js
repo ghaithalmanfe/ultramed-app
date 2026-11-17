@@ -177,17 +177,19 @@ function alertsAsk(){
 }
 // A bar, a photo note, today's backup, the connection (04, 12): asks when what they say changed since the last compute.
 function alertsSoon(){ if(currentUser && alertsDeviceKey() !== _alertsDevKey) alertsAsk(); }
-// What this phone knows of itself, as one short text — the facts the sync, backup and basis cards read, without the
-// visits (cheap): the queue, what is only in memory, the red bar at the bottom, a refused document, the sales retry
+// What the alerts read beyond the lists on screen, as one short text (cheap: no visit is gone over) — what this phone
+// knows of itself (the queue, what is only in memory, the red bar at the bottom, a refused document, the sales retry
 // bar, the connection, the early open's line and the lists from the phone's copy, today's backup, the photos this
-// phone holds, saw land or found lost.
+// phone holds, saw land or found lost) and the settings saved without a drawing (the alert settings, the KPI
+// settings' hours to answer a client request).
 function alertsDeviceKey(){
   try{
     const kept = []; _photoKept.forEach((r, id) => kept.push(id + ':' + (r && r.on) + (r && r.up ? '+' : '')));
     let snapDay = null; try{ snapDay = localStorage.getItem(SNAP_DAY); }catch(e){}
     return JSON.stringify([outboxList(), [..._memOnly], memOnlyPhotos(), Object.keys(_tooLarge).map(k => k + ':' + (_tooLarge[k] && _tooLarge[k].kept ? 1 : 0)), [..._saveBlocked],
       [..._saveParked.entries()], [..._refused.entries()], !!_erpDirty, navigator.onLine !== false, earlyUnconfirmed(), _copyLine || null, alertsWindow(),
-      Object.keys(_mirrorUsed).sort(), Object.keys(_loadFailed).sort(), snapDay, snapFailInfo(), kept.sort(), _photoLanded.size, _photoLost.size]);
+      Object.keys(_mirrorUsed).sort(), Object.keys(_loadFailed).sort(), snapDay, snapFailInfo(), kept.sort(), _photoLanded.size, _photoLost.size,
+      (typeof BENCHMARKS !== 'undefined' && BENCHMARKS && BENCHMARKS.alerts) || null, typeof kpiSettings === 'function' ? kpiSettings().responseHours : null]);
   }catch(e){ return 'x' + Date.now(); }
 }
 // Settles once no compute is waiting (the harnesses wait on it, as on msWhenReady).
@@ -379,10 +381,14 @@ async function alertsUploadNow(btn){
   if(navigator.onLine === false){ showToast('📴 This phone is offline — the changes upload when the connection is back'); if(btn) btn.disabled = false; return; }
   if(_flushing){ showToast('⏳ Uploading…'); if(btn) btn.disabled = false; return; }
   await flushOutbox(); // the queue, and the photos this phone keeps (retryPhotos, in the background)
-  // what is left, in the words of the bars: a change only in the app's memory never "stays on this phone"
-  if(outboxList().length) showToast(_memOnly.size ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
+  // what is left, in the words of the bars: a change only in the app's memory never "stays on this phone"; a list too
+  // large for the cloud or refused is not "waiting for an answer" — the red bar at the bottom says why (v123)
+  const left = outboxList().filter(k => !_saveBlocked.has(k) && !_saveParked.has(k));
+  const ph = left.length ? 0 : photosToUpload(false), bar = tooLargeLines();
+  if(left.length) showToast(_memOnly.size ? "⚠️ Not uploaded yet — the cloud did not answer. They are only in the app's memory: keep the app open and connected until it says Saved"
     : '⚠️ Not uploaded yet — the cloud did not answer. The changes stay on this phone and upload by themselves.');
-  else { const left = photosToUpload(false); if(left) showToast('⏳ ' + photosLeftText(left)); }
+  else if(ph) showToast('⏳ ' + photosLeftText(ph));
+  else if(bar.length) showToast(bar[0], 5000); // only held lists are left: the red bar's own words
   refreshAlerts(true);
 }
 async function alertsRetryErp(btn){
