@@ -619,9 +619,20 @@ async function addDoctor(clinicId){
   const title = tEl ? tEl.dataset.title : '';
   const c = clinics.find(x=>x.id===clinicId);
   if(!c || !canViewClinic(c)){ showToast('🔒 Not your clinic'); return null; }
+  const had = new Set((c.doctors || []).map(d => d && d.id));
   const r = addDoctorsToClinic(c, name, title);
   if(!r.ids.length){ showToast('Enter a doctor name'); return null; }
   const saved = r.added ? await persistTold('clinics') : null;
+  if(saved && !saveGoesOn(saved)){
+    // a doctor whose save can never land as it is (refused, too large — or refused before any write) is not left on
+    // the clinic as if added, nor picked as met: off it again (never saved: no delete log), the name typed stays in
+    // the box, the toast says why
+    const cc = clinics.find(x => x && x.id === clinicId) || c;
+    cc.doctors = (cc.doctors || []).filter(d => d && had.has(d.id));
+    const dl = document.getElementById('docListInModal'); if(dl) dl.innerHTML = renderDoctorRows(cc);
+    saveToast(saved, 'clinics');
+    return null;
+  }
   // The clinic-detail sheet has this list; the quick-add sheet from Log visit doesn't
   const dl = document.getElementById('docListInModal');
   if(dl) dl.innerHTML = renderDoctorRows(c);

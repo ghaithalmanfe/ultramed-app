@@ -4,6 +4,7 @@
 function renderLogHistory(){
   const el = document.getElementById('logHistory');
   if(!el) return;
+  lvSavedNoteRefresh(); // (a refresh round redraws only this list on the visit form: the saved customer's note follows its save here too)
   const list = [...visibleVisits()].sort((a,b)=>(b.ts||0)-(a.ts||0) || b.date.localeCompare(a.date)).slice(0,12);
   if(!list.length){ el.innerHTML = '<div class="empty">No visits logged yet.</div>'; return; }
   el.innerHTML = list.map(v=>{
@@ -31,7 +32,8 @@ function jointPeople(){
   return [...REPS, ...sups.filter(n=>!REPS.includes(n))];
 }
 function prepLogView(qClinicId){
-  _logFormGen++; setLogFormBusy(false); // a new form: never locked by a save of an earlier one (saveVisit)
+  _logFormGen++; setLogFormBusy(false); setNewCustBusy(false); // a new form: never locked by a save of an earlier one (saveVisit, saveNewCustomer)
+  _lvNewSaved = null; // …nor showing a customer an earlier form saved
   renderLogHistory();
   const asOpts = logAsOptions();
   logAsRep = asOpts.includes(logAsRep) ? logAsRep : (REPS.includes(currentUser.name) || !REPS.length ? currentUser.name : REPS[0]);
@@ -119,13 +121,20 @@ function renderClinicSelect(qClinicId){
           <button class="chip small" onclick="clearClinicPick()">Change</button>
         </div>
         ${sellHintLine(c)}
-      </div>`;
+      </div>${lvSavedCustomerHTML(c)}`;
       renderDoctorPick(c);
       lvPaint();
       return;
     }
   }
-  cardEl.style.display='none';
+  cardEl.style.display='none'; cardEl.innerHTML = ''; // (nothing of the clinic picked before — its saved-customer note — stays behind, hidden)
+  if(newClinicMode){ // a new customer being typed (a redraw meanwhile — "Logging as" changed): its fields stay, never the list beside them
+    listEl.style.display='none';
+    document.getElementById('newClinicBtn').style.display='none';
+    lvNewCustomerHint();
+    renderRxStep();
+    return;
+  }
   listEl.style.display='block';
   document.getElementById('newClinicBtn').style.display='block';
   // Step 2 stays visible with a hint, so the numbered steps never skip 1 → 3.
@@ -182,6 +191,7 @@ function sellHintLine(c){
 function clearClinicPick(){
   selectedClinicId = null;
   selectedDoctorIds = [];
+  _lvNewSaved = null; // a customer saved here stays on the list (it is real): the form no longer points at it
   rxClearDraft('log'); // the pads typed were for that clinic's people
   document.getElementById('clinicSearchLog').value='';
   renderClinicSelect();
@@ -194,8 +204,16 @@ function startNewClinic(){
   document.getElementById('newClinicBtn').style.display='none';
   document.getElementById('newClinicClsChips').innerHTML = ['A','B','C','D','F'].map(c=>`<div class="chip small" data-cls="${c}" onclick="pickModalCls(this)">${c}</div>`).join('');
   document.getElementById('newClinicAcctChips').innerHTML = ACCOUNT_TYPES.map(a=>`<div class="chip small" data-acct="${a}" onclick="pickModalCls(this)">${a}</div>`).join('');
+  lvNewCustomerHint();
   renderRxStep(); // a new customer has no people on file yet: only "the clinic (no one person)"
   lvPaint();
+}
+// Step 2 while a new customer is typed: how its people come — the customer saved first ("Save customer"), then tapped or added there.
+function lvNewCustomerHint(){
+  document.getElementById('doctorPickWrap').style.display='block';
+  document.getElementById('doctorPickChips').innerHTML =
+    `<div style="color:var(--muted); font-size:13px; padding:2px 0 4px;">Tap “Save customer” in step 1 first — then add the people you met here.</div>`;
+  document.getElementById('docTipLink').innerHTML = '';
 }
 function cancelNewClinic(){
   newClinicMode = false;
@@ -210,10 +228,14 @@ function renderDoctorPick(c){
   const tip = document.getElementById('docTipLink');
   wrap.style.display='block';
   const docs = c.doctors||[];
+  // the contact person typed with a customer this form saved: offered as a person met (the same "Add doctor" sheet,
+  // the name filled in) — never made a doctor by itself (it may be the receptionist or the manager)
+  const sug = lvContactSuggestion(c);
   chips.innerHTML = docs.map(d=>{
     const pb = SPECIALTY_PLAYBOOK[d.title];
     return `<div class="chip small ${selectedDoctorIds.includes(d.id)?'on':''}" onclick="pickDoctorSeen('${d.id}')">${pb?pb.icon+' ':''}${esc(d.name)}</div>`;
-  }).join('') + `<div class="chip small" onclick="openQuickAddDoctor('${c.id}')">+ Add doctor</div>`;
+  }).join('') + (sug ? `<div class="chip small lv-sug" id="lvContactSug" data-name="${esc(sug)}" onclick="openQuickAddDoctor('${c.id}', this.dataset.name)"><span>+ Add</span> <span dir="auto">${esc(sug)}</span></div>` : '')
+    + `<div class="chip small" onclick="openQuickAddDoctor('${c.id}')">+ Add doctor</div>`;
   const d = docs.find(x=>x.id===selectedDoctorIds[selectedDoctorIds.length-1]);
   if(d && d.title && SPECIALTY_PLAYBOOK[d.title]){
     const pb = SPECIALTY_PLAYBOOK[d.title];
@@ -242,10 +264,11 @@ function visitDoctorNames(clinicId, ids){
   (ids || []).forEach(id => { const d = c && (c.doctors || []).find(x => x && x.id === id); if(d && d.name) out[id] = d.name; });
   return Object.keys(out).length ? out : null;
 }
-function openQuickAddDoctor(clinicId){
+// name: filled in for the person offered in step 2 (the contact typed with a new customer) — saved only by "Save doctor"
+function openQuickAddDoctor(clinicId, name){
   showModal(`
     <h3 style="margin-top:0;" data-ic="stethoscope">Add doctor</h3>
-    <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
+    <input type="text" id="newDocName" dir="auto" placeholder="Doctor name" value="${esc(name || '')}">
     <label>Specialty</label>
     <div class="chip-row" id="newDocTitleChips">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
     <button class="btn" onclick="quickAddDoctorSave('${clinicId}')">Save doctor</button>
@@ -253,7 +276,9 @@ function openQuickAddDoctor(clinicId){
 }
 async function quickAddDoctorSave(clinicId){
   // Adds the doctor and selects them as "who you met" — the reason the user
-  // opened this sheet mid-logging. Stays open if validation failed.
+  // opened this sheet mid-logging. Stays open if validation failed, or if the
+  // doctor's save can never land as it is (addDoctor takes them back off the
+  // clinic then: the sheet keeps the name typed, the toast says why).
   const r = await addDoctor(clinicId);
   if(r && r.ids.length){
     r.ids.forEach(id => { if(!selectedDoctorIds.includes(id)) selectedDoctorIds.push(id); }); // new AND already-listed ones
@@ -529,6 +554,7 @@ function lvPaint(){
   const sr = document.getElementById('lvSearch1'); if(sr) sr.style.display = (s.c || s.isNew) ? 'none' : '';
   const who = document.getElementById('lvWho');
   if(who){ const a = document.getElementById('logAsWrap'), j = document.getElementById('jointWrap'); who.style.display = ((a && a.style.display !== 'none') || (j && j.style.display !== 'none')) ? '' : 'none'; }
+  lvSavedNoteRefresh();
 }
 let _lvPaintT = 0;
 function lvPaintSoon(){ clearTimeout(_lvPaintT); _lvPaintT = setTimeout(lvPaint, 0); }
@@ -588,29 +614,11 @@ async function saveVisitNow(gen, confirmed){
   const joint = jointRep;
   if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ showToast('Choose which rep you are logging for'); return; }
   if(newClinicMode){
-    const name = document.getElementById('newClinicName').value.trim();
-    if(!name){ lvFlag(1, 'Enter a clinic name'); showToast('Enter a clinic name'); return; }
-    const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
-    if(dup){ lvFlag(1, 'A clinic with this name already exists'); showToast('A clinic with this name already exists'); return; }
-    const clsEl = document.querySelector('#newClinicClsChips .chip.on');
-    const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
-    const nc = normalizeClinic({id:uid(), name, rep,
-      cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'',
-      account: acctEl?acctEl.dataset.acct:null, isNew:true, addedOn:todayStr(),
-      contact: document.getElementById('newClinicContact').value.trim(),
-      phone: document.getElementById('newClinicPhone').value.trim()});
-    // the same sales check as "+ Add clinic" (v123 review): nothing is saved
-    // until it passes, and the form keeps everything typed
-    const askBox = document.getElementById('newClinicAsk');
-    const chk = newClinicSalesCheck(nc, confirmed, 'saveVisit', "document.getElementById('newClinicAsk').innerHTML=''");
-    if(!chk.ok){
-      if(askBox){ askBox.innerHTML = newClinicAskCard(chk.html); try{ askBox.scrollIntoView({ block: 'center' }); }catch(e){} }
-      showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000);
-      return;
-    }
-    if(askBox) askBox.innerHTML = '';
-    clinics.push(nc);
-    if(!await saveNewClinicFirst(nc, 'newClinicAsk')){ renderAll(); return; } // the clinic first: refused or too large → no visit either, the form keeps everything (round 4)
+    // the new customer typed in step 1 and not saved yet ("Save customer" not tapped): the same path —
+    // the name, the "+ Add clinic" sales check (v123 review), then the clinic saved first on its own
+    const nc = lvNewClinicDraft(rep);
+    if(!nc) return;
+    if(!await lvCreateNewClinic(nc, confirmed, 'saveVisit')) return; // the clinic first: refused or too large → no visit either, the form keeps everything (round 4)
     clinicId = nc.id;
   }
   if(!clinicId){ lvFlag(1, 'Pick a clinic first'); showToast('Pick a clinic first'); return; }
@@ -701,7 +709,12 @@ async function visitNotSaved(vs, cs, x){
   if(x.keeping){ await x.keeping.catch(() => null); x.shots.forEach(ph => photoForget(ph.id)); } // its photos stay in the form, not on the phone for a visit that does not exist
   let putBack = false;
   if(newClinicMode && x.clinicId){
-    if(cs && cs.ok){ pickClinic(x.clinicId); } // the new clinic itself was saved: the form now points at it, so a retry never adds it twice
+    if(cs && cs.ok){ // the new clinic itself was saved: the form now points at it, so a retry never adds it twice
+      const nc = clinics.find(c => c && c.id === x.clinicId);
+      _lvNewSaved = { gen: _logFormGen, id: x.clinicId, contact: (nc && nc.contact) || '', r: cs }; // shown as "Save customer" shows it
+      ['newClinicName', 'newClinicContact', 'newClinicPhone'].forEach(id => { const e = document.getElementById(id); if(e) e.value = ''; });
+      pickClinic(x.clinicId);
+    }
     else { clinics = clinics.filter(c => c && c.id !== x.clinicId); }
   } else if(x.clinic && x.was){
     x.clinic.lastVisit = x.was.lastVisit; x.clinic.nextFollowUp = x.was.nextFollowUp;
@@ -730,6 +743,135 @@ function visitSaveMsg(vs, kept, added){
   if(!kept) return saved ? visitSavedMsg() : '📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال';
   if(added) return saved ? '📸 Photo added — it uploads in the background and stays on this phone until it does' : '📴 Photo added on this phone — it uploads automatically when back online';
   return saved ? '✅ Visit saved — its photos upload in the background and stay on this phone until they do' : '📴 Visit and its photos saved on this phone — they upload automatically when back online';
+}
+
+// ---- Step 1's new customer: "Save customer" (owner's report, 17 Nov) ----
+// A new customer typed in step 1 was made only by "Save visit" (the clinic first, then the visit), so step 2 could
+// never list or add its people: it said "Pick the clinic in step 1 first". "Save customer" saves it now, on its own,
+// through the same path as "Save visit" — the name (required, new), the "+ Add clinic" sales check (a question is
+// asked in the card under the name, nothing saved before the answer), then the clinic saved first on its own
+// (saveNewClinicFirst, round 4: refused or too large, it comes off the list and the form keeps everything typed).
+// Saved, or kept on this phone and queued (no connection: said so), the form shows it as if it had been picked from
+// the list: step 2 lists its people and "+ Add doctor" — and, as for any clinic on the list, someone met is required
+// then. "Save visit" without "Save customer" is as before. The contact person typed is the clinic's contact: it is
+// offered in step 2 as a person met (the "Add doctor" sheet with the name filled in), never made a doctor by itself.
+// (_lvNewSaved, 02: the customer this form saved — declared with the form's other state)
+// The clinic step 1 holds, as it is saved: the one shape for both ways. rep: whose it is — a rep's own, the
+// supervisor's "Logging as". → the clinic, or null (no name, or the name taken: said in step 1 and the toast)
+function lvNewClinicDraft(rep){
+  const name = document.getElementById('newClinicName').value.trim();
+  if(!name){ lvFlag(1, 'Enter a clinic name'); showToast('Enter a clinic name'); return null; }
+  const dup = clinics.find(c=>c.name.toLowerCase()===name.toLowerCase());
+  if(dup){ lvFlag(1, 'A clinic with this name already exists'); showToast('A clinic with this name already exists'); return null; }
+  const clsEl = document.querySelector('#newClinicClsChips .chip.on');
+  const acctEl = document.querySelector('#newClinicAcctChips .chip.on');
+  return normalizeClinic({id:uid(), name, rep,
+    cls: clsEl?clsEl.dataset.cls:null, market:null, notes:'',
+    account: acctEl?acctEl.dataset.acct:null, isNew:true, addedOn:todayStr(),
+    contact: document.getElementById('newClinicContact').value.trim(),
+    phone: document.getElementById('newClinicPhone').value.trim()});
+}
+// The sales check, then the clinic saved first, on its own. retry: the function the question's buttons call with the
+// answer ('saveVisit' / 'saveNewCustomer'). → the save's outcome when the form may go on (saved, or kept on this phone
+// and queued), else null: nothing saved, the form keeps everything typed, the box under the name says why.
+async function lvCreateNewClinic(nc, confirmed, retry){
+  const askBox = document.getElementById('newClinicAsk');
+  const chk = newClinicSalesCheck(nc, confirmed, retry, "document.getElementById('newClinicAsk').innerHTML=''");
+  if(!chk.ok){
+    if(askBox){ askBox.innerHTML = newClinicAskCard(chk.html); try{ askBox.scrollIntoView({ block: 'center' }); }catch(e){} }
+    showToast('⚠️ Not saved — this clinic name needs a check first (see under the name)', 6000);
+    return null;
+  }
+  if(askBox) askBox.innerHTML = '';
+  clinics.push(nc);
+  const r = await saveNewClinicFirst(nc, 'newClinicAsk');
+  if(!r){ renderAll(); return null; }
+  return r;
+}
+// One save of a form at a time, the visit's guard (_visitSaveBusy): a second tap of "Save customer", or "Save visit"
+// while it runs, says "Already saving…" — a double tap never makes two clinics.
+async function saveNewCustomer(confirmed){
+  const gen = _logFormGen;
+  if(_visitSaveBusy.has(gen)){ showToast('Already saving…'); return; }
+  if(!newClinicMode) return; // the form shows a clinic already: nothing typed to save
+  _visitSaveBusy.add(gen);
+  setNewCustBusy(true);
+  try{ await saveNewCustomerNow(gen, typeof confirmed === 'string' ? confirmed : ''); }
+  finally{ _visitSaveBusy.delete(gen); if(gen === _logFormGen) setNewCustBusy(false); }
+}
+async function saveNewCustomerNow(gen, confirmed){
+  const rep = currentUser.role === 'supervisor' ? logAsRep : currentUser.name; // a rep's new clinic is hers
+  if(currentUser.role === 'supervisor' && !logAsOptions().includes(rep)){ showToast('Choose which rep you are logging for'); return; }
+  const nc = lvNewClinicDraft(rep);
+  if(!nc) return;
+  const r = await lvCreateNewClinic(nc, confirmed, 'saveNewCustomer');
+  if(!r) return;
+  // the customer is real now (saved, or kept on this phone and queued); a form opened meanwhile is left as it is
+  if(gen !== _logFormGen || !newClinicMode){ saveToast(r, 'clinics', '🌟 New customer saved'); return; }
+  _lvNewSaved = { gen, id: nc.id, contact: nc.contact || '', r };
+  ['newClinicName', 'newClinicContact', 'newClinicPhone'].forEach(id => { const e = document.getElementById(id); if(e) e.value = ''; }); // it is the clinic on the card now
+  pickClinic(nc.id); // as if picked from the list: step 2 lists its people
+  saveToast(r, 'clinics', '🌟 New customer saved — now tap who you met in step 2');
+}
+// While "Save customer" runs: the new customer's fields and "Logging as" take no taps (the save takes what was typed
+// when it was tapped — nothing typed meanwhile is lost); the rest of the form stays open.
+function setNewCustBusy(on){
+  const view = document.getElementById('view-log'), f = document.getElementById('newClinicFields');
+  if(!view) return;
+  if(on && f && document.activeElement && f.contains(document.activeElement) && document.activeElement.blur) document.activeElement.blur();
+  view.classList.toggle('nc-saving', !!on);
+  if(f) f.setAttribute('aria-busy', on ? 'true' : 'false');
+  const note = document.getElementById('newCustSavingNote');
+  if(on && !note){ const btn = document.getElementById('newClinicSaveBtn'); if(btn) btn.insertAdjacentHTML('afterend', '<div id="newCustSavingNote" class="log-saving-note" role="status">⏳ Saving the customer…</div>'); }
+  if(!on && note) note.remove();
+}
+function lvSavedLanded(s){ return !!(s && s.r && (s.r.ok === true || sentSince('clinics', s.r))); }
+// What became of this form's customer save: 'saved' (it reached the cloud), 'kept' (on this phone and queued: it
+// uploads by itself) — or, the queued clinics list then refused or found too large, 'parked-refused' /
+// 'parked-noAccess' / 'blocked' (kept on this phone, not sent: the red bar says why).
+function lvSavedState(s){
+  if(lvSavedLanded(s)) return 'saved';
+  if(_saveBlocked.has('clinics')) return 'blocked';
+  const p = _saveParked.get('clinics');
+  return p ? 'parked-' + p : 'kept';
+}
+function lvSavedFor(c){ const s = _lvNewSaved; return s && c && s.gen === _logFormGen && s.id === c.id ? s : null; }
+// Under the customer this form saved: what its save did, in that save's own words — and "Cancel": the customer is
+// real and stays on the list (nothing takes it back), the visit form is cleared.
+function lvSavedCustomerHTML(c){
+  const s = lvSavedFor(c);
+  if(!s) return '';
+  const st = lvSavedState(s);
+  return `<div class="lv-saved" id="lvSavedNote" role="status" data-state="${st}">${lvSavedNoteInner(s, st)}</div>
+    <button class="btn ghost" id="lvSavedCancel" onclick="cancelSavedCustomer()">Cancel</button>`;
+}
+function lvSavedNoteInner(s, st){
+  const words = st === 'saved' ? '✅ New customer saved.' : st === 'blocked' ? tooLargeText({ key: 'clinics', kept: true })
+    : st === 'parked-refused' ? PARKED_REFUSED : st === 'parked-noAccess' ? PARKED_NO_ACCESS
+    : ((saveFailText(s.r, 'clinics') || [])[0] || '📴 Saved on this device — uploads automatically when back online');
+  return `<span>${esc(words)}</span>` + (st === 'saved' || st === 'kept' ? ' <span>Now tap who you met in step 2.</span>' : '');
+}
+// The note follows its save: kept on this phone, it says "saved" once the queue has sent it (or why it was not sent).
+function lvSavedNoteRefresh(){
+  const el = document.getElementById('lvSavedNote'), s = _lvNewSaved;
+  if(!el || !s) return;
+  const st = lvSavedState(s);
+  if(el.dataset.state !== st){ el.dataset.state = st; el.innerHTML = lvSavedNoteInner(s, st); }
+}
+function cancelSavedCustomer(){
+  const st = _lvNewSaved ? lvSavedState(_lvNewSaved) : 'saved';
+  prepLogView(); // a new form: nothing of this visit is kept
+  showToast(st === 'saved' ? 'The new customer stays on the clinic list — the visit form was cleared, no visit was logged'
+    : st === 'kept' ? 'The new customer stays on this phone and uploads by itself — the visit form was cleared, no visit was logged'
+    : 'The new customer stays on this phone, not sent (the red bar says why) — the visit form was cleared, no visit was logged', 6000);
+}
+// The contact person typed with the customer this form saved, while someone of that name is not on its list yet.
+function lvContactSuggestion(c){
+  const s = lvSavedFor(c);
+  if(!s || !s.contact) return '';
+  const listed = new Set((c.doctors || []).map(d => d && UMCore.normDoctorName(d.name)).filter(Boolean));
+  const names = UMCore.splitDoctorNames(s.contact);
+  return names.some(n => !listed.has(UMCore.normDoctorName(n))) ? s.contact : '';
 }
 
 // ---- FOLLOW-UP AUTOMATION: auto-task + auto-schedule ----
