@@ -2813,7 +2813,7 @@
     var reqs = events.filter(function(e){ return e && e.kind === 'issue' && e.type === 'request' && e.rep === rep && String(e.at || '').slice(0, 10) >= from && String(e.at || '').slice(0, 10) <= to; });
     var lim = S.responseHours * 3600000, nowMs = opts.nowMs || Date.now(), onTime = 0, late = 0, open = 0;
     reqs.forEach(function(e){ var t0 = Date.parse(e.at), t1 = e.resolvedAt ? Date.parse(e.resolvedAt) : null;
-      if(t1 != null) (t1 - t0 <= lim ? onTime++ : late++); else if(nowMs - t0 > lim) late++; else open++; });
+      if(t1 != null) (t1 - t0 <= lim ? onTime++ : late++); else if(requestOpenLate(e, lim, nowMs)) late++; else open++; });
     items.response = { score: onTime + late ? onTime / (onTime + late) : null, value: reqs.length ? onTime + ' of ' + (onTime + late) + ' answered within ' + S.responseHours + 'h' + (open ? ' · ' + open + ' open' : '') : 'no client requests logged',
       target: '100% within ' + S.responseHours + 'h', detail: '' };
     // stands: tracked, no target
@@ -2825,6 +2825,9 @@
     var total = wSum ? Math.round(list.reduce(function(a2, x){ return a2 + (x.score == null ? 0 : x.score * x.weight); }, 0) / wSum * 100) : null;
     return { rep: rep, from: from, to: to, workdays: wd, total: total, items: list, stands: { active: stands.length, checked: checked.length } };
   }
+  // A client request still open is late once more than the agreed hours have passed since it was logged — the KPI
+  // scorecard's rule (measure 10, "answering clients on time"), and the alerts center's (its request alert): one rule.
+  function requestOpenLate(e, limMs, nowMs){ var t0 = Date.parse(e && e.at); return !!e && !e.resolvedAt && t0 > 0 && nowMs - t0 > limMs; }
   function addMonthsStr(d, n){ var x = new Date(d + 'T00:00:00'), day = x.getDate(); x.setDate(1); x.setMonth(x.getMonth() + n); var last = new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate(); x.setDate(Math.min(day, last)); return localDateStr(x); }
   // ---- WEEKLY MANAGEMENT UPDATE (the Thursday deck) ----
   // Everything the deck shows, from the same data and the same rules as the
@@ -7682,7 +7685,7 @@
   // user's dismiss / snooze. Sales figures come only from monthAchievement
   // and erpMonthLines (the ERP files). The texts are English sentences; the
   // Arabic is in i18n.js (PATTERNS). Pure.
-  var ALERT_TYPES = ['overdue', 'missed', 'noActivity', 'target', 'drop', 'sync', 'erpImport', 'backup'];
+  var ALERT_TYPES = ['overdue', 'missed', 'request', 'noActivity', 'target', 'drop', 'sync', 'erpImport', 'backup'];
   var ALERT_SUP_ONLY = { noActivity: true, erpImport: true, backup: true };
   var ALERT_DEFAULTS = { noActivityHour: 12, targetMinDays: 3, dropPct: 30, dropMinKD: 100, outboxMinutes: 30, backupHour: 16 };
   var ALERT_LIMITS = { noActivityHour: [0, 23], targetMinDays: [1, 15], dropPct: [5, 100], dropMinKD: [0, 100000], outboxMinutes: [5, 1440], backupHour: [0, 23] };
@@ -7784,6 +7787,28 @@
         items: g.ids.map(function(id){ var it = g.by[id]; it.dates.sort(alertByDate);
           return { clinicId: id, date: it.dates[0], text: (it.clinic.name || '—') + ' — planned ' + it.dates.map(function(d){ return c.fd(d); }).join(', ') }; }),
         open: { screen: 'missed' } };
+    });
+  }
+  // Client requests not answered in time (v126): an open request (More → Requests, escalations & stands: kind 'issue',
+  // type 'request', not marked answered) logged more than the agreed hours ago — the KPI scorecard's own rule
+  // (requestOpenLate; the hours are the KPI settings' responseHours). A rep: her clinics' requests (e.rep, whom the KPI
+  // scores), the supervisor: everyone's, one card per person. It comes due with the clock alone (alertsNextAt).
+  function alertRequests(c){
+    var lim = c.responseHours * 3600000, groups = Object.create(null), order = [];
+    c.events.forEach(function(e){
+      if(!e || e.kind !== 'issue' || e.type !== 'request' || !requestOpenLate(e, lim, c.now)) return;
+      var who = e.rep || '';
+      if(!c.sup && who !== c.user.name) return;
+      if(!groups[who]){ groups[who] = []; order.push(who); }
+      groups[who].push(e);
+    });
+    return order.map(function(who){
+      var list = groups[who].sort(function(a, b){ return Date.parse(a.at) - Date.parse(b.at); });
+      return { id: 'request:' + who, type: 'request', sev: 'medium', rep: who || null,
+        title: alertWho(c, who) + alertN(list.length, 'client request', 'client requests') + ' not answered in time',
+        why: ['Logged in Requests, escalations & stands and not marked answered within ' + alertN(c.responseHours, 'hour', 'hours') + " — the KPI scorecard's rule (KPI settings)."],
+        items: list.map(function(e){ var cl = c.byId[e.clinicId]; return { clinicId: cl ? cl.id : null, text: ((cl && cl.name) || '—') + ' — logged ' + alertWhen(c, Date.parse(e.at)) }; }),
+        open: { screen: 'requests' } };
     });
   }
   // The supervisor: a person on the team with no field visit logged today by
@@ -7960,6 +7985,8 @@
       var why = ['Saved on this phone while the cloud could not be reached. They upload by themselves when the connection is back — keep the app open until then.',
         'Shown when a change has waited longer than ' + alertN(c.S.outboxMinutes, 'minute', 'minutes') + ' (alert settings).'];
       if(d.online === false) why.push('This phone is offline right now.');
+      // the early open's window (v126 speed, part 3): nothing reaches the cloud before the sign-in is confirmed
+      if(d.basis && d.basis.unconfirmed) why.push('Nothing is sent before the sign-in is confirmed: then they upload by themselves.');
       out.push({ id: 'sync-wait', type: 'sync', sev: 'medium', rep: null, title: 'Changes on this phone waiting to upload', why: why,
         items: waiting.map(function(x){ return { key: x.key, text: alertKeyLabel(x.key) + ' — waiting since ' + alertWhen(c, x.since) }; }),
         open: { screen: 'sync' }, action: 'flush' });
@@ -8037,20 +8064,23 @@
     return [{ id: 'backup-unchecked:' + c.today, type: 'backup', sev: 'low', rep: null, title: "Today's backup is not confirmed yet",
       why: why, items: [], open: { screen: 'backup' }, action: d.snapHeld ? null : 'checkBackup' }];
   }
-  var ALERT_RULES = { overdue: alertOverdue, missed: alertMissed, noActivity: alertNoActivity, target: alertTarget, drop: alertDrops, sync: alertSync, erpImport: alertErpImport, backup: alertBackup };
+  var ALERT_RULES = { overdue: alertOverdue, missed: alertMissed, request: alertRequests, noActivity: alertNoActivity, target: alertTarget, drop: alertDrops, sync: alertSync, erpImport: alertErpImport, backup: alertBackup };
   // input = { today, now (ms), hour (local; default from now), user: { name, role },
   //   reps (REPS), team (every name on the team list), data: { clinics, visits,
-  //   dayPlans, events, targets, erpSales, erpMap }, settings (BENCHMARKS.alerts),
+  //   dayPlans, events, targets, erpSales, erpMap, erpShare? }, settings (BENCHMARKS.alerts),
+  //   responseHours (the KPI settings' hours to answer a client request),
   //   device: { online, outbox: [{ key, since }], memOnly: [key], memBar: [line],
   //   photos: [{ visitId, clinicId, label, date, rep, withRep, wait, lost, mem, here,
-  //   own: [ms], old: days, lostAt: [ms] }], held: [{ key, kept }], heldBar: [line], heldRetry, refused: [{ key, msg }],
+  //   own: [ms], old: days, othersAt: [ms], lostAt: [ms] }], held: [{ key, kept }], heldBar: [line], heldRetry, refused: [{ key, msg }],
   //   erpDirty, erpImport: { at, ok, msg, who },
-  //   snapDay, snapFail: { day, at, why, bytes }, snapHeld: null | 'copy' | 'queued' } (alertSync says what each is),
+  //   snapDay, snapFail: { day, at, why, bytes }, snapHeld: null | 'copy' | 'queued',
+  //   basis: { copy: null | 'updating' | 'failed', at: the copy's time as the screen writes it, phone: [lists from the
+  //   phone's copy], unconfirmed } } (alertSync says what each is),
   //   fmtDate (the screen's date format), monthLabel (its month names) }.
   // Returns the alerts, most urgent first, each id once: [{ id, type, sev, rep,
   //   title, why: [...], msg?, items: [{ text, note?, clinicId?, visitId?, date?, key? }],
   //   open: { screen, rep? }, action? }]. A rep never gets a supervisor-only type.
-  function alertsFor(input){
+  function alertsCtx(input){
     input = input || {};
     var S = alertSettings(input.settings), user = input.user || {}, data = input.data || {};
     var today = String(input.today || ''), now = Number(input.now) || Date.now();
@@ -8062,12 +8092,31 @@
       clinics: clinics, byId: byId, visits: visits, dayPlans: data.dayPlans && typeof data.dayPlans === 'object' ? data.dayPlans : {},
       events: Array.isArray(data.events) ? data.events : [], targets: data.targets || {},
       data: { today: today, clinics: clinics, visits: visits, targets: data.targets || {}, erpSales: data.erpSales || { periods: [] }, erpMap: data.erpMap || {} },
+      responseHours: Number(input.responseHours) > 0 ? Number(input.responseHours) : KPI_DEFAULTS.responseHours,
       S: S, device: input.device || {}, fd: typeof input.fmtDate === 'function' ? input.fmtDate : fmtDate,
       ml: typeof input.monthLabel === 'function' ? input.monthLabel : null };
     // the pass of the sales lines the screens use (the app's erpShareNow: UMCore.erpShareKept, v126 speed part 4) —
     // taken only for the very lists it was made from (erpShareOf), so the month figure and the customers' lines are
     // the screens' own; without it the rules make their own pass, with the same answers
     if(data.erpShare) c.data.erpShare = data.erpShare;
+    return c;
+  }
+  // What each rule's figures come from (its lists), and what a card says of them when they are not the cloud's: the early
+  // open's window (the phone's copy on screen, the start's read not in — its time is the copy's own) or a list this
+  // refresh served from the phone's copy (a read that failed, an offline start). Never "synced", never "up to date".
+  var ALERT_LISTS = { overdue: ['clinics'], missed: ['dayPlans', 'visits', 'clinics'], request: ['events', 'clinics'], noActivity: ['visits', 'dayPlans', 'events'],
+    target: ['erpSales', 'targets', 'clinics', 'erpMap'], drop: ['erpSales', 'clinics', 'erpMap'] };
+  var ALERT_LIST_LABEL = { clinics: 'clinics', visits: 'visits', dayPlans: 'day plans', events: 'calendar', targets: 'targets', erpSales: 'sales files', erpMap: 'account links' };
+  function alertBasis(c, t){
+    var b = c.device.basis;
+    if(!b || !ALERT_LISTS[t]) return null;
+    if(b.copy) return "From this phone's copy, saved " + (b.at || '—') + (b.copy === 'failed' ? ' — it could not update from the cloud; it is tried again.' : ' — updating from the cloud.');
+    var phone = Array.isArray(b.phone) ? b.phone : [], lists = ALERT_LISTS[t].filter(function(k){ return phone.indexOf(k) >= 0; });
+    return lists.length ? "From this phone's copy of the " + lists.map(function(k){ return ALERT_LIST_LABEL[k]; }).join(', ') + ' — not read from the cloud this time.' : null;
+  }
+  function alertsFor(input){
+    input = input || {};
+    var c = alertsCtx(input), S = c.S;
     // input.cache (an object the caller keeps): the two rules that read the
     // sales lines run again only when what they read changed
     var cache = input.cache && typeof input.cache === 'object' ? input.cache : null, erpKey = null;
@@ -8081,9 +8130,38 @@
         if(erpKey && slot && slot.key === erpKey) list = slot.list;
         else { list = ALERT_RULES[t](c); if(erpKey) cache[t] = { key: erpKey, list: list }; else delete cache[t]; }
       } else list = ALERT_RULES[t](c);
-      list.forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; out.push(a); } });
+      // what the card's figures come from, when they are not the cloud's (a copy: what is kept stays as it was)
+      var basis = alertBasis(c, t);
+      list.forEach(function(a){ if(a && !seen[a.id]){ seen[a.id] = 1; out.push(basis ? Object.assign({}, a, { why: (a.why || []).concat([basis]) }) : a); } });
     });
     return out.sort(function(a, b){ return ALERT_SEV[a.sev] - ALERT_SEV[b.sev] || ALERT_TYPES.indexOf(a.type) - ALERT_TYPES.indexOf(b.type) || erpCmp(a.rep, b.rep); });
+  }
+  // The next moment an alert may come, go or change its words with the clock alone — no data changed (v126 speed: a
+  // 20-second round that brings nothing new draws nothing, so the app looks again at exactly this moment): the next
+  // midnight (every day's rule: a follow-up turning overdue, a plan turning missed, the target's working days, the
+  // customers' windows, a dismissal ending), the hours set today (no field visit by …, today's backup after …), a client
+  // request turning late, a change or a photo waiting longer than the minutes set, another phone's photo a day older, a
+  // lost photo or a failed import leaving the list, a snooze ending (input.state). 0: none.
+  function alertsNextAt(input){
+    var c = alertsCtx(input), now = c.now, d = new Date(now), best = 0, DAY = 86400000;
+    var at = function(t){ t = Number(t); if(t > now && (!best || t < best)) best = t; };
+    at(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime());
+    [c.S.noActivityHour, c.S.backupHour].forEach(function(h){ at(new Date(d.getFullYear(), d.getMonth(), d.getDate(), h).getTime()); });
+    var lim = c.responseHours * 3600000;
+    c.events.forEach(function(e){ if(e && e.kind === 'issue' && e.type === 'request' && !e.resolvedAt){ var t0 = Date.parse(e.at); if(t0 > 0) at(t0 + lim + 1); } });
+    var dv = c.device || {}, mins = c.S.outboxMinutes * 60000;
+    (Array.isArray(dv.outbox) ? dv.outbox : []).forEach(function(x){ if(x && x.since > 0) at(x.since + mins); });
+    (Array.isArray(dv.photos) ? dv.photos : []).forEach(function(p){
+      if(!p) return;
+      (Array.isArray(p.own) ? p.own : []).forEach(function(t){ if(Number(t) > 0) at(Number(t) + mins); });
+      // another phone's photo: its note's age counts whole days (photoWaitDays), said from PHOTO_STALE_DAYS on
+      (Array.isArray(p.othersAt) ? p.othersAt : []).forEach(function(t){ t = Number(t); if(t > 0 && now - t < (ALERT_PHOTO_DAYS + 1) * DAY) at(t + (Math.floor((now - t) / DAY) + 1) * DAY); });
+      (Array.isArray(p.lostAt) ? p.lostAt : []).forEach(function(t){ if(Number(t) > 0) at(Number(t) + ALERT_PHOTO_DAYS * DAY + 1); });
+    });
+    if(dv.erpImport && dv.erpImport.at > 0) at(dv.erpImport.at + 7 * DAY + 1);
+    var st = input && input.state && typeof input.state === 'object' ? input.state : {};
+    Object.keys(st.snoozed || {}).forEach(function(k){ at(st.snoozed[k]); });
+    return best;
   }
   var ALERT_ERP_RULES = { target: true, drop: true };
   // Everything the target and customer rules read — the key of what input.cache keeps for them: the day (their only
@@ -8149,6 +8227,6 @@
     productMovement, pmNormName,
     cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
     backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder,
-    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, alertSettings, alertsFor, alertsVisible, alertStateNext, erpSpanCovered, targetPace
+    ALERT_TYPES, ALERT_SUP_ONLY, ALERT_DEFAULTS, ALERT_LIMITS, ALERT_PHOTO_DAYS, alertSettings, alertsFor, alertsNextAt, alertsVisible, alertStateNext, erpSpanCovered, targetPace, requestOpenLate
   };
 });

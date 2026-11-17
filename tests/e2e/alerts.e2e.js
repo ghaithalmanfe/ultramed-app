@@ -11,13 +11,23 @@
 // right screen; dismiss / snooze per person, not back the same day; the bell's
 // count is the number of cards; a rep never sees a supervisor-only alert, nor
 // anyone else's, nor changes the settings; Arabic; 390 px without sideways scroll.
-// The clock is fixed (Wed 11 Nov 2026, 13:30) and moves between reopenings.
-// Port 8243.
+// On the speed work (alerts-v126): the bell is the top bar's one bell (v125), the sheet the component layer's, the sales
+// alerts on the kept pass, sync as v123's bars say it. CLOCK & SPEED (ONLY=K): an alert that comes due with the clock
+// appears on time with no data change and no 20-second round — an overdue follow-up and a missed plan at midnight (K1),
+// the hour set for a field visit, on another screen and after a round that brought nothing new (K2), a client request
+// turning late, by the KPI scorecard's own rule (K3); a moment passed while the timer was held back is found by the next
+// round (K2b, a guard); the alerts are never worked out inside a drawing (P1) nor while a refresh is on its way — the
+// start's read, a round (P2); a round that brings nothing new works none out and leaves the bell untouched (P3). Each K
+// and P check (but the guard K2b) fails on 7d6ebae (the alerts before this change).
+// The clock is fixed (Wed 11 Nov 2026, 13:30) and moves between reopenings (K: it runs, from just before each moment).
+// Port 8243. Env: ONLY=main,K  WWW=<dir>
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { chromium } = require('playwright');
 const { WWW, launchOpts, blockFirebase, twoRepStaff } = require('./_env.js');
 const core = require(path.resolve(WWW, 'js/core.js'));
 const PORT = 8243, URL = `http://localhost:${PORT}/index.html`;
+const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
+const want = id => !ONLY || ONLY.has(id);
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json'};
 const cloud = {};
 const mode = { failSet: null, snapReads: [] };
@@ -98,6 +108,17 @@ function seed(){
     const base = isFinite(want) && want > 0 ? want : new Date(2026, 10, 11, 13, 30, 0).getTime();
     const off = base - Date.now();
     const _D = Date; class FakeDate extends _D { constructor(...a){ if(a.length === 0) super(_D.now() + off); else super(...a); } static now(){ return _D.now() + off; } static parse(s){ return _D.parse(s); } static UTC(...a){ return _D.UTC(...a); } } window.Date = FakeDate;
+    // (K) the 20-second round driven by hand, and every working out of the alerts recorded: when, inside a drawing or
+    // not, while a refresh was on its way or not
+    let flag = k => { try{ return localStorage.getItem(k) === '1'; }catch(e){ return false; } };
+    if(flag('__capRound')){ const _si = window.setInterval.bind(window); window.__ticks = 0; window.setInterval = (fn, ms, ...a) => { if(ms === 20000){ window.__bgTick = () => { window.__ticks++; return fn(); }; return -1; } return _si(fn, ms, ...a); }; }
+    if(flag('__probe')) document.addEventListener('DOMContentLoaded', () => {
+      const A = window.__al = { calls: [], depth: 0, draws: 0 };
+      ['renderAll', 'renderToday', 'msRun'].forEach(n => { const f = window[n]; if(typeof f === 'function') window[n] = function(){ A.depth++; if(n === 'renderAll') A.draws++; try{ return f.apply(this, arguments); } finally { A.depth--; } }; });
+      const af = UMCore.alertsFor;
+      UMCore.alertsFor = function(){ A.calls.push({ t: Date.now(), draw: A.depth > 0, refresh: typeof refreshRunning === 'function' && refreshRunning(), round: typeof _roundBusy !== 'undefined' && !!_roundBusy,
+        from: (new Error().stack || '').split('\n').slice(2, 8).map(x => x.trim().replace(/\(?http:\/\/localhost:\d+\//, '').replace(/\)$/, '')).join(' < ') }); return af.apply(this, arguments); };
+    });
   });
   const boot = async (who, role, local, clock) => {
     await page.goto(URL); await page.waitForTimeout(150);
@@ -157,6 +178,7 @@ function seed(){
     return { page: document.documentElement.scrollWidth <= W, sheet: s.scrollWidth <= s.clientWidth + 1, bell: inside('alertsBell'), header: inside('headerStamp'),
       w: [W, document.documentElement.scrollWidth, s.scrollWidth, s.clientWidth] }; });
 
+  if(want('main')){   // (the checks that came with the alerts center, on v125)
   // ---- a rep: her own clinics and figures ----
   seed();
   await boot(M, 'rep');
@@ -422,7 +444,7 @@ function seed(){
   mode.failSet = null;
   await page.evaluate(async () => { for(let i = 0; i < 10; i++){ if(await photoUpload('phKept', 'data:image/gif;base64,R0lGODlhAQABAAAAACw=')) break; await new Promise(r => setTimeout(r, 200)); }
     const t0 = Date.now(); while(Date.now() - t0 < 6000 && (document.getElementById('memOnlyBar') || (photoWaitInfo(visits.find(v => v.id === 'v1')) || {}).wait)) await new Promise(r => setTimeout(r, 100));
-    await new Promise(r => setTimeout(r, 200)); });   // the bar comes down on its own 1-second look (04); the bell follows 60 ms later
+    await new Promise(r => setTimeout(r, 200)); if(typeof alertsWhenReady === 'function') await alertsWhenReady(); });   // the bar comes down on its own 1-second look (04); the bell follows once worked out (after the drawing, in an idle moment)
   const badgeAfter = await page.evaluate(() => !document.getElementById('alertsBellN').hidden ? document.getElementById('alertsBellN').textContent : '');
   c = await center();
   const after = await page.evaluate(() => ({ bar: !!document.getElementById('memOnlyBar'), w: (photoWaitInfo(visits.find(v => v.id === 'v1')) || {}).wait || null }));
@@ -550,6 +572,109 @@ function seed(){
   mode.snapReads = [];
   await reopen(G, 'supervisor', T(11, 13, 40));
   check('the bell reads nothing from the cloud: no backup downloaded at start', !mode.snapReads.length, mode.snapReads);
+  }
+
+  // ===================================================================================================================
+  // K — CLOCK & SPEED (v126 speed work): no data change, no round — the bell follows the clock by itself; the alerts
+  // are worked out after the drawing and after the refresh, never inside either
+  // ===================================================================================================================
+  if(want('K')){
+    const probe = { __capRound: '1', __probe: '1' };
+    const ready = () => page.evaluate(() => typeof alertsWhenReady === 'function' ? alertsWhenReady().then(() => 1) : 1);
+    const bellNow = () => page.evaluate(() => { const b = document.getElementById('alertsBellN'); return { n: b.hidden ? 0 : +b.textContent, ids: _alerts.shown.map(a => a.id), now: Date.now() }; });
+    // waits (up to ms of real time) until the bell lists `id`, and says when — on the fake clock — it first did
+    const until = (id, ms) => page.waitForFunction(i => _alerts.shown.some(a => a.id === i), id, { timeout: ms, polling: 100 }).then(() => page.evaluate(() => Date.now()), () => null);
+    const probeLog = () => page.evaluate(() => window.__al ? window.__al.calls.slice() : null);
+    // K1: Mariam's follow-up at Dunevale is due today and Cobaltia is on today's plan; at midnight, with the app open
+    // and nothing saved or read, the follow-up is overdue and the plan missed — the bell says it within seconds
+    seed();
+    { const cl = JSON.parse(cloud.clinics); cl.find(x => x.id === 'm4').nextFollowUp = '2026-11-11'; cl.find(x => x.id === 'm2').nextFollowUp = '2026-11-20'; cl.find(x => x.id === 'mL').nextFollowUp = '2026-11-25'; cloud.clinics = JSON.stringify(cl);
+      const dp = JSON.parse(cloud.dayPlans); ['2026-11-05', '2026-11-09', '2026-11-10', '2026-10-20'].forEach(d => { delete dp[d]; }); dp['2026-11-11'] = Object.assign({}, dp['2026-11-11'], { [M]: ['m3'] }); cloud.dayPlans = JSON.stringify(dp);
+      // the visits as the app stores them: the live month, an index and a past month (an account with no past month
+      // puts its visits together again at every round — the speed work's own case, not the alerts')
+      cloud[core.visitsArchKey('2026-10')] = JSON.stringify([{ id: 'vo1', clinicId: 'm1', rep: M, date: '2026-10-05' }]);
+      cloud.visitsIndex = JSON.stringify({ months: { '2026-10': { n: 1, rev: 1 } }, v: 1, updated: 1 }); }
+    const MID = new Date(2026, 10, 12, 0, 0, 0).getTime();
+    await boot(M, 'rep', probe, MID - 9000);
+    await ready();
+    const k0 = await bellNow();
+    const k1at = await until('missed:Mariam', 15000);
+    const k1 = await bellNow();
+    const k1n = await page.evaluate(() => { const a = _alerts.shown.find(x => x.id === 'overdue:Mariam'); return { overdue: a ? a.items.map(i => i.clinicId) : null, ticks: window.__ticks || 0 }; });
+    check('K1: at midnight, with no data change and no round, the bell says the follow-up that turned overdue and the plan that turned missed within seconds (the card count on the bell)',
+      !k0.ids.some(i => /^(overdue|missed):/.test(i)) && k1at != null && k1at - MID <= 5000 && k1.ids.includes('overdue:Mariam') && JSON.stringify(k1n.overdue) === '["m4"]' && k1.n === k0.n + 2 && k1n.ticks === 0,
+      { before: k0, after: k1, late: k1at == null ? 'not within 15 s' : k1at - MID, overdue: k1n.overdue, rounds: k1n.ticks });
+    // P1 / P2 over that start: never worked out inside a drawing, nor while the start's read was on its way
+    let log = await probeLog();
+    // a round that brings a change of hers (a visit at Cobaltia logged on another phone): the bell follows — after the round
+    { const vs = JSON.parse(cloud.visits); vs.push({ id: 'vk1', clinicId: 'm3', rep: M, date: '2026-11-12', ts: Date.now() }); cloud.visits = JSON.stringify(vs); }
+    await page.evaluate(async () => { await window.__bgTick(); });
+    await ready();
+    const kr = await page.evaluate(() => ({ missed: _alerts.shown.some(a => a.id === 'missed:Mariam'), visit: visits.some(v => v.id === 'vk1') }));
+    log = await probeLog();
+    const inDraw = (log || []).filter(x => x.draw).length, inRefresh = (log || []).filter(x => x.refresh || x.round).length;
+    check('P1: the alerts are never worked out inside a drawing (renderAll, renderToday, the figures) — a start, a round that brought a change',
+      !!log && log.length > 0 && inDraw === 0, { calls: log && log.length, inDraw });
+    check('P2: …nor while a refresh is on its way (the start\'s read, the 20-second round); the bell follows the round\'s change once it is over (Cobaltia visited: not missed)',
+      !!log && log.length > 0 && inRefresh === 0 && kr.visit && !kr.missed, { calls: log && log.length, inRefresh, after: kr });
+    // P3: a round that brings nothing new works no alert out and leaves the bell as it is (v126 speed, part 2: it draws
+    // nothing — the bars' functions it calls ask for the alerts only when what this phone knows changed)
+    // (one round first: the round right after a change may still draw once — speed-rounds measures the round after it too)
+    await page.evaluate(async () => { await window.__bgTick(); });
+    await ready(); await page.waitForTimeout(400);
+    const n0 = await page.evaluate(() => { window.__bellMut = 0; window.__al.draws = 0; new MutationObserver(ms => { window.__bellMut += ms.length; }).observe(document.getElementById('alertsBell'), { childList: true, subtree: true, attributes: true, characterData: true }); return window.__al.calls.length; });
+    await page.evaluate(async () => { await window.__bgTick(); });
+    await ready(); await page.waitForTimeout(400);
+    const p3 = await page.evaluate(n => ({ draws: window.__al.draws, calls: window.__al.calls.length, mut: window.__bellMut, extra: window.__al.calls.slice(n).map(x => x.from) }), n0);
+    check('P3: a round that brings nothing new (it draws nothing) works out no alert and changes nothing on the bell', p3.draws === 0 && p3.calls === n0 && p3.mut === 0, Object.assign({ before: n0 }, p3));
+
+    // K2: the supervisor on the Clinics screen at 11:59:52 — Renova has no field visit today (only a call); at 12:00,
+    // the hour set, the bell says so by itself: no data change, no round
+    seed();
+    const NOON = new Date(2026, 10, 11, 12, 0, 0).getTime();
+    await boot(G, 'supervisor', probe, NOON - 8000);
+    await ready();
+    await page.evaluate(() => { closeModal(); switchView('clinics'); });
+    const k2a = await bellNow();
+    const k2at = await until('noActivity:Renova:2026-11-11', 15000);
+    const k2 = await bellNow(), k2r = await page.evaluate(() => window.__ticks || 0);
+    check('K2: at the hour set (12:00), on the Clinics screen, with no data change and no round, the bell says within seconds that Renova has no field visit today',
+      !k2a.ids.some(i => /^noActivity:/.test(i)) && k2at != null && k2at - NOON <= 5000 && k2.n === k2a.n + 1 && k2r === 0, { before: k2a, after: k2, late: k2at == null ? 'not within 15 s' : k2at - NOON, rounds: k2r });
+    // K2b (a guard): the moment passed while the phone's timer was held back (a phone asleep) — the next round that
+    // brings nothing new finds it passed and the bell says it (today's backup not confirmed after 16:00)
+    const FOUR = new Date(2026, 10, 11, 16, 0, 0).getTime();
+    await boot(G, 'supervisor', probe, FOUR - 6000);
+    await ready();
+    await page.evaluate(() => { closeModal(); switchView('clinics'); if(typeof _alertsTimer !== 'undefined'){ clearTimeout(_alertsTimer); _alertsTimer = 0; } });
+    await page.waitForFunction(t => Date.now() >= t, FOUR + 1500, { timeout: 20000, polling: 100 });
+    const k2bA = await bellNow();
+    await page.evaluate(async () => { await window.__bgTick(); });
+    const k2bAt = await until('backup-unchecked:2026-11-11', 6000);
+    check('K2b (guard): a moment passed while the timer was held back — the next round that brings nothing new finds it passed, and the bell says it',
+      k2bAt != null, { before: k2bA.ids, after: (await bellNow()).ids });
+
+    // K3: a client request Mariam logged yesterday at 13:59:56 is not answered; 24 hours later (the KPI settings'
+    // hours) it is late — by the KPI scorecard's own rule — and the bell says it at that moment, nothing changed
+    seed();
+    { const ev = JSON.parse(cloud.events); ev.push({ id: 'rq-k3', kind: 'issue', type: 'request', clinicId: 'm1', rep: M, text: 'Asked for the price list', at: '2026-11-10T13:59:56', createdBy: M }); cloud.events = JSON.stringify(ev); }
+    const LATE = new Date(2026, 10, 11, 13, 59, 56).getTime();
+    await boot(M, 'rep', probe, LATE - 7000);
+    await ready();
+    const k3a = await bellNow();
+    const kpiA = await page.evaluate(() => kpiCards([currentUser.name], 'month')[0].items.find(i => i.key === 'response').value);
+    const k3at = await until('request:Mariam', 15000);
+    const kpiB = await page.evaluate(() => kpiCards([currentUser.name], 'month')[0].items.find(i => i.key === 'response').value);
+    let k3c = null, k3w = {};
+    if(k3at != null){
+      const cc = await center();
+      k3c = byId(cc, 'request:Mariam');
+      await act('request:Mariam', 'open'); k3w = await where();
+    }
+    check('K3: a client request turning late (24 hours, the KPI settings\' hours) — the bell says it at that moment with no data change, the KPI scorecard counts it late too, and Open shows the requests',
+      !k3a.ids.some(i => /^request:/.test(i)) && k3at != null && k3at - LATE <= 5000 && /1 open/.test(kpiA) && kpiB === '0 of 1 answered within 24h' &&
+      !!k3c && k3c.title === '1 client request not answered in time' && JSON.stringify(k3c.items) === JSON.stringify(['Amberline Clinic — logged Nov 10, 13:59']) && /Requests, escalations & stands/.test(k3w.title || ''),
+      { before: k3a.ids, late: k3at == null ? 'not within 15 s' : k3at - LATE, kpiA, kpiB, card: k3c, opened: k3w.title });
+  }
 
   check('no page errors', errors.length === 0, errors);
   console.log(results.join('\n'));

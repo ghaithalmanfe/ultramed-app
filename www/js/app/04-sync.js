@@ -3607,8 +3607,9 @@ function snapFailInfo(){ try{ const f = UMCore.safeParse(localStorage.getItem(SN
 function snapFailed(day, why, bytes){
   console.warn('daily backup not saved: ' + why + (bytes ? ' (' + bytes + ' bytes)' : '')); // said on the backups screen
   try{ localStorage.setItem(SNAP_FAIL, JSON.stringify({ day, at: Date.now(), why, bytes: bytes || null })); }catch(e){}
+  if(typeof alertsSoon === 'function') alertsSoon(); // the top bar's bell says it too (19-alerts.js)
 }
-function snapDone(day){ try{ localStorage.setItem(SNAP_DAY, day); localStorage.removeItem(SNAP_FAIL); }catch(e){} }
+function snapDone(day){ try{ localStorage.setItem(SNAP_DAY, day); localStorage.removeItem(SNAP_FAIL); }catch(e){} if(typeof alertsSoon === 'function') alertsSoon(); }
 // The day's backup is taken only from a copy that is the cloud's: the lists it
 // holds all read in the refresh on screen — none failed (a new phone, cleared
 // site data: v123 review, a backup with none of the month's visits, which no

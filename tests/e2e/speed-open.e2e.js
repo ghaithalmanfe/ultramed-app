@@ -31,10 +31,14 @@
 //   P  the time to her own data and to the figures, on a 4x phone (4G) and a laptop (wifi), a rep and the supervisor, on
 //      a heavy year: drawn before the start's cloud read begins, the figures before its lists are taken; the first open
 //      (no copy) unchanged; the numbers printed (own data / figures / up to date)
+//   AL the alerts center in the window (alerts-v126): the bell works nothing out before the start's read has ended;
+//      opened by a tap there, the sheet says it is this phone's copy (the line's words, the copy's time) on its line and
+//      on every card the lists make, and nothing claims the cloud; after the read the bell has its number, worked out
+//      after it, and no card speaks of a copy (each fails on 7d6ebae, the alerts before this change)
 // The sign-in is the app's own (03-gate.js) over a stand-in for the Firebase SDK that keeps its session on the phone as
 // the real SDK does and confirms it with the sign-in service before it tells the app (here: when the harness answers);
 // the cloud is a fake in Node; the clock is fixed; the 20-second round is driven by hand. Invented data
-// (fixtures/heavy-year.js). Port 8292. Env: ONLY=W,F,A,N,S2,S3,S4,S5,S6,P  PROFILES=phone,laptop (P)  HEAVY_SCALE=x  WWW=<dir>
+// (fixtures/heavy-year.js). Port 8292. Env: ONLY=W,F,A,N,S2,S3,S4,S5,S6,P,AL  PROFILES=phone,laptop (P)  HEAVY_SCALE=x  WWW=<dir>
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts } = require('./_env.js');
@@ -171,6 +175,9 @@ function initScript(arg){
     const mr = window.msRun; if(typeof mr === 'function') window.msRun = function(){ const t0 = now(); try{ return mr.apply(this, arguments); } finally { U.msRuns.push([Math.round(t0), Math.round(now())]);
       try{ if(_msModel && _msModel.D && _msModel.key === msKey(msView()) && U.marks.figures == null){ mark('figures'); requestAnimationFrame(() => requestAnimationFrame(() => mark('figuresVisible'))); } }catch(err){} } };
     const st = window.showToast; if(typeof st === 'function') window.showToast = function(m, ms){ U.toasts.push(String(m)); return st.apply(this, arguments); };
+    // (AL) every working out of the alerts: when, and whether the harness's tap on the bell asked for it
+    U.alerts = [];
+    if(window.UMCore && typeof UMCore.alertsFor === 'function'){ const af = UMCore.alertsFor; UMCore.alertsFor = function(){ U.alerts.push({ t: Math.round(now()), tap: !!window.__umTap, early: typeof _early !== 'undefined' && !!_early && _early.state === 'drawn' && !_cloudRead }); return af.apply(this, arguments); }; }
   };
   // every painted frame: what the screen shows (whose greeting, the app visible, the line, the home's figures)
   const ex = arg.expect || null;
@@ -258,7 +265,7 @@ async function mkDevice(label, opts){
     // the same device again (the app opened the next morning): the phone's copies are there; the sign-in confirmed when the harness says
     async restart(o){ o = o || {}; if(o.hold) holdAuth(label); else auth[label] = null; await D.goto(); },
     tick: async () => { await page.waitForFunction(() => typeof _flushing === 'undefined' || !_flushing, null, { timeout: 60000 }); await page.evaluate(async () => { await window.__bgTick(); }); await page.evaluate(() => msWhenReady()); },
-    um: () => page.evaluate(() => { const U = window.__um; return { marks: U.marks, renderAll: U.renderAll, loadAlls: U.loadAlls || 0, mut: U.mut, mutLog: U.mutLog.slice(), toasts: U.toasts.slice(), frames: U.frames.slice(), msRuns: U.msRuns.slice(), timeline: U.timeline.slice() }; }),
+    um: () => page.evaluate(() => { const U = window.__um; return { marks: U.marks, renderAll: U.renderAll, loadAlls: U.loadAlls || 0, mut: U.mut, mutLog: U.mutLog.slice(), toasts: U.toasts.slice(), frames: U.frames.slice(), msRuns: U.msRuns.slice(), timeline: U.timeline.slice(), alerts: (U.alerts || []).slice() }; }),
     state: () => page.evaluate(() => ({ who: typeof currentUser !== 'undefined' && currentUser ? currentUser.name : null, mu: Object.keys(_mirrorUsed).sort(), lf: Object.keys(_loadFailed).sort(),
       line: (document.getElementById('copyLine') || {}).textContent || null, early: typeof _early !== 'undefined' && _early ? _early.state : null, booted: _bootLoaded, outbox: outboxList(),
       gate: getComputedStyle(document.getElementById('gate')).display !== 'none', app: getComputedStyle(document.getElementById('app')).display !== 'none' && !document.body.classList.contains('um-cover') })),
@@ -330,7 +337,9 @@ const LINE_RE = /This phone's copy, saved\s+(\S.*?)\s+— updating from the clou
       check(`W5 [${SHORT(who)}]: once the read is in, every list is the cloud's (no copy flag, none failed) and the line is gone`, !after.mu.length && !after.lf.length && !after.line && after.early === 'drawn', after);
       // (the Team screen's chat and memories are read on their own when their screen opens — the tour opened it in the
       // window, and their read draws them when it lands: speed-rounds B2; left out here)
-      const moved = u2.mutLog.filter(x => !/^#view-team/.test(x[2]) && !/^div\.msg/.test(x[2]));
+      // (the top bar's bell: the alerts are worked out once the start's read has ended — never in the window, AL1 — so its
+      // number shows then; nothing else of the page moves)
+      const moved = u2.mutLog.filter(x => !/^#view-team/.test(x[2]) && !/^div\.msg/.test(x[2]) && !/#alertsBell/.test(x[2]));
       check(`W6 [${SHORT(who)}]: nothing changed in the cloud: nothing is drawn again (no renderAll, nothing in the app's page changed after the copy's figures)`,
         u2.renderAll === before.renderAll && !moved.length, { renderAll: [before.renderAll, u2.renderAll], moved: moved.slice(0, 10) });
     }
@@ -776,6 +785,50 @@ const LINE_RE = /This phone's copy, saved\s+(\S.*?)\s+— updating from the clou
     }
     console.log('\nthe daily open, ms from the navigation start (own data shown / figures shown / up to date; the sign-in confirmed at):');
     rows.forEach(r => console.log(`  ${r.prof.padEnd(6)} ${SHORT(r.who).padEnd(7)} ${String(r.own).padStart(6)} / ${String(r.figures).padStart(6)} / ${String(r.upToDate).padStart(6)}   (sign-in confirmed ${r.confirm}, read began ${r.loadAllStart}; first open's own data ${r.firstOwn})`));
+  }
+
+  // =====================================================================================================
+  // AL — the alerts center in the early open's window (alerts-v126): nothing of the alerts between the copy's screen and
+  // the start's read; what a card rests on is said; nothing claims the cloud
+  // =====================================================================================================
+  if(want('AL')){
+    seed(SMALL);
+    const D = await mkDevice('AL-rep', { expect: expectFor(SMALL, M) });
+    await D.firstOpen(M);
+    const copyAt = await D.ev(() => { try{ return JSON.parse(localStorage.getItem('um_copyAt')).at; }catch(e){ return null; } });
+    await D.restart({ hold: true });
+    const drew = await waitEarly(D) && await waitOwn(D);
+    await D.ev(() => msWhenReady()); await sleep(1500);   // the copy's figures painted, and a moment for anything that would follow them
+    const bell = () => D.ev(() => { const b = document.getElementById('alertsBellN'); return b && !b.hidden ? b.textContent : ''; });
+    const w1 = await D.ev(() => ({ calls: window.__um.alerts.length, held: !!_early && _early.state === 'drawn' && !_cloudRead }));
+    const badge1 = await bell();
+    const lineTime = await D.ev(at => { try{ return copyTimeText(at); }catch(e){ return null; } }, copyAt);
+    // what the sheet says, read as a person reads it (a tap on the bell)
+    const readSheet = () => D.ev(async () => {
+      window.__umTap = true; try{ openAlerts(); } finally { window.__umTap = false; }
+      await new Promise(r => setTimeout(r, 200));
+      const txt = el => el ? el.innerText.replace(/\s+/g, ' ').trim() : '', box = document.getElementById('alertsCenter');
+      const out = { sub: txt(document.querySelector('#modalInner .al-sub')), all: txt(document.getElementById('modalInner')), empty: box ? txt(box.querySelector('.al-empty')) : null,
+        cards: box ? [...box.querySelectorAll('.al-card:not(.al-off)')].map(c => ({ id: c.dataset.alId, type: c.dataset.alType, why: [...c.querySelectorAll('.al-why > div')].map(txt) })) : [] };
+      closeModal(); return out; });
+    const win = await readSheet();
+    const DATA_TYPES = /^(overdue|missed|request|noActivity|target|drop)$/, CLAIM = /up to date|synced|\buploaded\b|(?:is|are) in the cloud|reached the cloud|Nothing needs attention right now/i;
+    const basisLine = "From this phone's copy, saved " + lineTime + ' — updating from the cloud.';
+    const dataCards = win.cards.filter(c => DATA_TYPES.test(c.type));
+    releaseAuth(D.label, 'ok');
+    await D.settled(); await D.ev(() => msWhenReady()); await D.ev(() => typeof alertsWhenReady === 'function' ? alertsWhenReady().then(() => 1) : 1); await sleep(600);
+    const u = await D.um(), badge2 = await bell();
+    const aft = await readSheet();
+    const auto = u.alerts.filter(x => !x.tap), firstAuto = auto.length ? auto[0].t : null;
+    check('AL1: in the early open\'s window (her copy drawn, the sign-in held) the bell works nothing out by itself and shows no number — nothing of the alerts between the copy\'s screen and the start\'s read',
+      drew && w1.held && w1.calls === 0 && badge1 === '', { drew, inWindow: w1, badge: badge1 });
+    check(`AL2: the sheet opened in the window says it is this phone's copy, saved ${lineTime} (the line's words and the copy's own time), every card the lists make says so (${dataCards.length} cards), and nothing claims the cloud`,
+      drew && win.sub.indexOf("This phone's copy, saved " + lineTime + ' — updating from the cloud…') >= 0 && dataCards.length > 0 && dataCards.every(c => c.why[c.why.length - 1] === basisLine) && !CLAIM.test(win.all),
+      { sub: win.sub, lineTime, cards: win.cards.map(c => [c.id, c.why.slice(-1)[0]]), claim: (win.all.match(CLAIM) || [])[0] || null });
+    check('AL3: once the read is in, the bell has its number — worked out after the start\'s read had ended — and no card speaks of a copy',
+      badge2 !== '' && +badge2 === aft.cards.length && firstAuto != null && u.marks.loadAllEnd != null && firstAuto >= u.marks.loadAllEnd && !aft.cards.some(c => c.why.some(l => /this phone's copy/i.test(l))) && aft.sub.indexOf("This phone's copy") < 0,
+      { badge: badge2, cards: aft.cards.length, firstAuto, loadAllEnd: u.marks.loadAllEnd, auto: auto.slice(0, 4), sub: aft.sub });
+    await done(D);
   }
 
   console.log('\n' + results.join('\n'));

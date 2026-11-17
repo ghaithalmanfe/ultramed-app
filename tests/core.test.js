@@ -5468,7 +5468,7 @@ describe('alerts center (v121)', () => {
     const role = who === G ? 'supervisor' : 'rep';
     const data = o.data || DATA();
     return core.alertsFor({ today: o.today || TODAY, now: o.now || at(13, 30), hour: o.hour != null ? o.hour : 13, user: { name: who, role },
-      reps: o.reps || [M, R], team: o.team || [M, R, G], data, settings: o.settings || null, device: o.device || {}, cache: o.cache, fmtDate: o.fmtDate, monthLabel: o.monthLabel });
+      reps: o.reps || [M, R], team: o.team || [M, R, G], data, settings: o.settings || null, device: o.device || {}, cache: o.cache, fmtDate: o.fmtDate, monthLabel: o.monthLabel, responseHours: o.responseHours });
   };
   const ids = list => list.map(a => a.id);
   const one = (list, id) => list.find(a => a.id === id);
@@ -5769,6 +5769,70 @@ describe('alerts center (v121)', () => {
     assert.ok(/^This phone does not take it now: not every list on it came from the cloud/.test(cp.why[1]));
     assert.equal(one(run(G, { hour: 17 }), 'backup-unchecked:2026-11-11').action, 'checkBackup');
   });
+  test('a client request not answered in time (v126): late exactly when the KPI scorecard counts it late — the one rule', () => {
+    const d = DATA(), logged = '2026-11-10T13:59:56', lateAt = new Date(2026, 10, 11, 13, 59, 56).getTime();
+    d.events.push({ id: 'rq1', kind: 'issue', type: 'request', clinicId: 'm1', rep: M, text: 'Price list', at: logged, createdBy: M },
+      { id: 'rq2', kind: 'issue', type: 'request', clinicId: 'r1', rep: R, text: 'Samples', at: '2026-11-09T09:00:00', createdBy: R },
+      { id: 'rq3', kind: 'issue', type: 'request', clinicId: 'm3', rep: M, text: 'Answered', at: '2026-11-08T09:00:00', resolvedAt: '2026-11-08T10:00:00', createdBy: M });
+    const kpiLate = now => core.kpiScorecard(Object.assign({ today: TODAY }, d), { rep: M, from: '2026-11-01', to: TODAY, nowMs: now }).items.find(i => i.key === 'response').value;
+    const before = run(M, { data: d, now: lateAt - 1000 }), after = run(M, { data: d, now: lateAt + 1000 });
+    assert.ok(!before.some(x => x.type === 'request'), 'a second before the 24 hours: not late');
+    assert.equal(kpiLate(lateAt - 1000), '1 of 1 answered within 24h · 1 open', 'the KPI scorecard: still open');
+    const a = one(after, 'request:Mariam');
+    assert.equal(kpiLate(lateAt + 1000), '1 of 2 answered within 24h', 'the KPI scorecard counts it late at the same moment');
+    assert.equal(a.title, '1 client request not answered in time');
+    assert.deepEqual(a.why, ["Logged in Requests, escalations & stands and not marked answered within 24 hours — the KPI scorecard's rule (KPI settings)."]);
+    assert.deepEqual(a.items.map(i => [i.clinicId, i.text]), [['m1', 'Amberline Clinic — logged Nov 10, 13:59']]);
+    assert.deepEqual(a.open, { screen: 'requests' });
+    assert.ok(!after.some(x => x.id === 'request:Renova'), 'a rep: only her clinics\' requests');
+    const g = run(G, { data: d, now: lateAt + 1000 });
+    assert.equal(one(g, 'request:Renova').title, 'Renova: 1 client request not answered in time');
+    assert.equal(one(g, 'request:Mariam').title, 'Mariam: 1 client request not answered in time');
+    // the hours are the KPI settings'
+    assert.ok(!run(M, { data: d, now: lateAt + 1000, responseHours: 48 }).some(x => x.type === 'request'));
+    // it comes due with the clock alone: the next moment the alerts must be worked out again is that one
+    assert.equal(core.alertsNextAt({ today: TODAY, now: lateAt - 60000, user: { name: M, role: 'rep' }, data: d }), lateAt + 1);
+    assert.ok(core.ALERT_TYPES.indexOf('request') >= 0 && !core.ALERT_SUP_ONLY.request);
+  });
+  test('the next moment an alert comes due with no data change (alertsNextAt): midnight, the hours set, the minutes waited, a photo a day older, a snooze', () => {
+    const base = { today: TODAY, user: { name: G, role: 'supervisor' }, data: DATA() };
+    const N = (now, o) => core.alertsNextAt(Object.assign({}, base, { now }, o || {}));
+    assert.equal(N(at(23, 59)), new Date(2026, 10, 12).getTime(), 'midnight: a follow-up turns overdue, a plan missed, a dismissal ends');
+    assert.equal(N(at(11, 0)), at(12, 0), 'the hour set for a field visit (12:00)');
+    assert.equal(N(at(13, 30)), at(16, 0), "the hour set for today's backup (16:00)");
+    assert.equal(N(at(13, 30), { settings: { backupHour: 23, noActivityHour: 9 } }), at(23, 0), 'the hours as set');
+    // (the hours set already passed today: the earliest moment is the one each case adds)
+    const Q = (now, o) => N(now, Object.assign({ settings: { noActivityHour: 0, backupHour: 0 } }, o));
+    assert.equal(Q(at(13, 30)), new Date(2026, 10, 12).getTime());
+    assert.equal(Q(at(13, 30), { device: { outbox: [{ key: 'tasks', since: at(13, 10) }] } }), at(13, 40), 'a change waiting longer than 30 minutes');
+    assert.equal(Q(at(13, 30), { device: { photos: [{ visitId: 'v1', own: [at(13, 20)] }] } }), at(13, 50), 'this phone\'s photo waiting longer than 30 minutes');
+    const day = 86400000, taken = at(15, 0) - 3 * day;   // 2 days and 22½ hours old: 3 days at 15:00
+    assert.equal(Q(at(13, 30), { device: { photos: [{ visitId: 'v2', othersAt: [taken] }] } }), at(15, 0), "another phone's photo: its note gives its age from 3 days, a day at a time");
+    assert.equal(Q(at(16, 0), { device: { photos: [{ visitId: 'v2', othersAt: [taken] }] } }), new Date(2026, 10, 12).getTime(), '…the next day older after midnight here');
+    assert.equal(Q(at(13, 30), { device: { photos: [{ visitId: 'v3', lostAt: [at(15, 0) - 14 * day] }] } }), at(15, 0) + 1, 'a lost photo leaves after 14 days');
+    assert.equal(Q(at(13, 30), { state: { snoozed: { 'drop:Mariam:2026-11': at(14, 5) } } }), at(14, 5), 'a snooze ending');
+    assert.equal(Q(at(13, 30), { device: { erpImport: { at: at(14, 0) - 7 * day, ok: false } } }), at(14, 0) + 1, 'a failed import leaves after 7 days');
+  });
+  test('in the early open\'s window every card the lists make says it is this phone\'s copy, with the copy\'s time — never "synced"; what is kept stays as it was', () => {
+    const cache = {}, d = DATA(), now = at(13, 30);
+    const plain = run(M, { data: d, cache });
+    const dev = { basis: { copy: 'updating', at: '08:12', phone: [], unconfirmed: true }, outbox: [{ key: 'tasks', since: now - 45 * 60000 }] };
+    const win = run(M, { data: d, cache, device: dev });
+    const line = "From this phone's copy, saved 08:12 — updating from the cloud.";
+    ['target', 'overdue', 'missed', 'drop'].forEach(t => { const a = win.find(x => x.type === t); assert.ok(a, t); assert.equal(a.why[a.why.length - 1], line, t + ': says what it rests on'); });
+    const w = one(win, 'sync-wait');
+    assert.ok(!w.why.includes(line), 'this phone\'s own queue is not the copy');
+    assert.equal(w.why[w.why.length - 1], 'Nothing is sent before the sign-in is confirmed: then they upload by themselves.');
+    assert.ok(!win.some(a => [a.title].concat(a.why).some(l => /up to date|synced|\buploaded\b|(?:is|are) in the cloud|reached the cloud/i.test(l))), 'nothing claims the cloud');
+    // the cached cards are not changed by the line (the next computation outside the window says nothing of a copy)
+    assert.deepEqual(run(M, { data: d, cache }), plain);
+    const failed = run(M, { data: d, device: { basis: { copy: 'failed', at: 'Nov 10 18:40', phone: [] } } });
+    assert.equal(one(failed, 'overdue:Mariam').why.slice(-1)[0], "From this phone's copy, saved Nov 10 18:40 — it could not update from the cloud; it is tried again.");
+    // outside the window: only the cards whose own lists came from the phone's copy say so
+    const off = run(M, { data: d, device: { basis: { copy: null, phone: ['visits'] } } });
+    assert.equal(one(off, 'missed:Mariam').why.slice(-1)[0], "From this phone's copy of the visits — not read from the cloud this time.");
+    assert.equal(one(off, 'overdue:Mariam').why.slice(-1)[0], one(plain, 'overdue:Mariam').why.slice(-1)[0], 'the follow-ups read the clinics only');
+  });
   test('erpSpanCovered: the files carrying the person cover every day, a weekend gap allowed', () => {
     const d = { erpSales: { periods: PERIODS() } };
     assert.equal(core.erpSpanCovered(d, '2026-10-01', '2026-10-09', M), true);
@@ -5781,6 +5845,7 @@ describe('alerts center (v121)', () => {
   test('every line of every alert has its Arabic (the names and figures stay)', () => {
     const now = at(13, 30), d = DATA();
     d.clinics.push(C('x1', 'Lonely Clinic', '', { nextFollowUp: '2026-11-02' }));
+    d.events.push({ id: 'rqA', kind: 'issue', type: 'request', clinicId: 'm1', rep: M, text: 'x', at: '2026-11-09T09:00:00', createdBy: M });   // late: a client request card
     const day = 86400000, P = o => Object.assign({ visitId: 'v1', clinicId: 'm1', label: 'Amberline Clinic', date: '2026-11-09', rep: M, withRep: null, wait: null, lost: null, mem: 0, here: 0, own: [], old: 0, lostAt: [] }, o);
     const photos = [P({ wait: '⏳ 2 photos waiting to upload · 1 kept on this phone · 1 only in the app\'s memory — keep the app open', here: 1, mem: 1, own: [now - 60000, now - 60000] }),
       P({ visitId: 'v2', wait: '⏳ Photo waiting to upload · kept on this phone', here: 1, own: [now - 45 * 60000] }),

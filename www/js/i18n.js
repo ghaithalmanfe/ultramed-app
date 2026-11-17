@@ -2513,6 +2513,12 @@
     'This phone does not take it now: changes on this phone are still waiting to upload. It is taken once they have uploaded — or by another phone of the team.': 'هذا الهاتف لا يحفظها الآن: تغييرات على هذا الهاتف ما زالت تنتظر الرفع. تُحفظ بعد رفعها — أو من هاتف آخر في الفريق.',
     "This phone does not take today's backup now: changes on this phone are still waiting to upload": 'هذا الهاتف لا يحفظ نسخة اليوم الاحتياطية الآن: تغييرات على هذا الهاتف ما زالت تنتظر الرفع',
     "This phone does not take today's backup now: not every list on it came from the cloud yet": 'هذا الهاتف لا يحفظ نسخة اليوم الاحتياطية الآن: ليست كل القوائم عليه من السحابة بعد',
+    // a client request not answered in time (the KPI scorecard's rule) and what a card rests on in the early open's window
+    'Client requests not answered in time': 'طلبات عملاء لم يُرد عليها في موعدها',
+    "Open client requests (More → Requests, escalations & stands) not marked answered within the hours of the KPI settings — the KPI scorecard's rule.": 'طلبات العملاء المفتوحة (المزيد ← الطلبات والتصعيدات والستاندات) التي لم تُعلَّم «تم الرد» خلال الساعات المحددة في إعدادات المؤشرات — قاعدة بطاقة مؤشرات الأداء.',
+    'Nothing is sent before the sign-in is confirmed: then they upload by themselves.': 'لا يُرسل شيء قبل تأكيد تسجيل الدخول: بعدها تُرفع وحدها.',
+    "Nothing needs attention in this phone's copy.": 'لا شيء يحتاج انتباهك في نسخة هذا الهاتف.',
+    'Not sent yet: the sign-in is still being confirmed — the changes upload by themselves once it is': 'لم تُرسل بعد: تسجيل الدخول ما زال قيد التأكيد — تُرفع التغييرات وحدها بعد تأكيده',
     // === END ALERTS ===
 
     // === SCREENS A ===
@@ -2967,6 +2973,12 @@
     [/^(.+) — not saved$/, function (m) { return alertKeyAr(m[1]) + ' — لم تُحفظ'; }],
     [/^(.+): not saved$/, function (m) { return alertKeyAr(m[1]) + ': لم تُحفظ'; }],
     [/^(\d+) changes? not saved$/, function (m) { return m[1] + ' تغيير لم يُحفظ'; }],
+    [/^(?:(.+): )?(\d+) client requests? not answered in time$/, function (m) { return alertWhoAr(m[1]) + (m[2] === '1' ? 'طلب عميل واحد لم يُرد عليه في موعده' : m[2] + ' طلبات عملاء لم يُرد عليها في موعدها'); }],
+    [/^Logged in Requests, escalations & stands and not marked answered within (\d+) hours? — the KPI scorecard's rule \(KPI settings\)\.$/, function (m) { return 'سُجّل في «الطلبات والتصعيدات والستاندات» ولم يُعلَّم «تم الرد» خلال ' + m[1] + ' ساعة — قاعدة بطاقة مؤشرات الأداء (إعدادات المؤشرات).'; }],
+    [/^(.+) — logged (.+)$/, function (m) { return m[1] + ' — سُجّل ' + alertListAr(m[2]); }],
+    [/^From this phone's copy, saved (.+) — updating from the cloud\.$/, function (m) { return 'من نسخة هذا الهاتف، المحفوظة ' + m[1] + ' — جارٍ التحديث من السحابة.'; }],
+    [/^From this phone's copy, saved (.+) — it could not update from the cloud; it is tried again\.$/, function (m) { return 'من نسخة هذا الهاتف، المحفوظة ' + m[1] + ' — تعذّر التحديث من السحابة، وستُعاد المحاولة.'; }],
+    [/^From this phone's copy of the (.+) — not read from the cloud this time\.$/, function (m) { var L = { clinics: 'العيادات', visits: 'الزيارات', 'day plans': 'خطط الأيام', calendar: 'التقويم', targets: 'الأهداف', 'sales files': 'ملفات المبيعات', 'account links': 'ربط حسابات ERP' }; return 'من نسخة هذا الهاتف (' + m[1].split(', ').map(function (x) { return L[x] || x; }).join('، ') + ') — لم تُقرأ من السحابة هذه المرة.'; }],
     // === END ALERTS ===
   ];
 

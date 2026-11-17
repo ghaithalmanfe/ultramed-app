@@ -339,8 +339,9 @@ function openSalesHub(){
       moreTile(I('activity'), 'Product movement', 'Every brand → its products ranked by real sales: fast, mid, slow', 'closeModal(); openProductMovement()'),
       moreTile(I('pill'), 'Prescriptions growth', 'Prescription pads given, by doctor and by center', "closeModal(); ddTab='rx'; switchView('doctors')")].join('')}</div>`);
 }
-// The bell (the top bar's one bell) is the alerts center's (19-alerts.js): it follows every change drawn here.
-function msBell(){ if(typeof renderAlertsBell === 'function') renderAlertsBell(); }
+// The bell (the top bar's one bell) is the alerts center's (19-alerts.js): every change drawn here asks for it, and it
+// is worked out after the drawing — never inside it, never while a refresh is on its way (alertsSoon).
+function msBell(){ if(typeof alertsAsk === 'function') alertsAsk(); }
 // Help & Support (the sidebar's last entry): the app's version, what this phone still has to send, and who to ask.
 function openHelp(){
   let queued = [];
@@ -518,6 +519,7 @@ function renderGreeting(){
 // hour turns; else how long ago the latest visits were logged ("5 min ago"), if that changed.
 function msClock(){
   if(!currentUser) return;
+  if(typeof alertsClock === 'function') alertsClock(); // an alert due by now with no data change (19-alerts.js: worked out after this round)
   const hr = new Date().getHours();
   if(_onScreen.hour !== hr){ _onScreen.hour = hr; renderGreeting(); if(activeView === 'today') renderToday(); return; }
   if(activeView === 'today' && !_msHeld){ const v = msView(); if(v) renderRecentVisits(v, true); } // (a frame kept whole while new figures are worked out: the swap draws it)

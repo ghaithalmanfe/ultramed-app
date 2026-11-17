@@ -17,10 +17,11 @@
 // cloud: the bell costs no download.
 const ALERT_STATE = 'um_alerts:';   // + the person's name → { dismissed: {id: day}, snoozed: {id: ms} }
 const ALERT_SHOW_MAX = 8;           // list lines shown per card; "+N more" after them
-const ALERT_ICON = { overdue: 'calendar', missed: 'clipboard', noActivity: 'users', target: 'target', drop: 'chart', sync: 'refresh', erpImport: 'download', backup: 'shield' };
+const ALERT_ICON = { overdue: 'calendar', missed: 'clipboard', request: 'chat', noActivity: 'users', target: 'target', drop: 'chart', sync: 'refresh', erpImport: 'download', backup: 'shield' };
 const ALERT_TYPE_INFO = {
   overdue: ['Overdue follow-ups', 'Clinics whose follow-up date has passed: each person her own, the supervisor everyone\'s.'],
   missed: ['Missed planned visits', 'Planned in the last 14 days, not visited on the day nor since.'],
+  request: ['Client requests not answered in time', "Open client requests (More → Requests, escalations & stands) not marked answered within the hours of the KPI settings — the KPI scorecard's rule."],
   noActivity: ['No field visit by a set hour', 'Supervisor only: a person with no field visit logged today by the hour below, on working days.'],
   target: ['Month target at risk', "The month figure (ERP files) below 90% of an even pace in working days to the ERP cut-off — the sales coach's rule; a target from an earlier month is named."],
   drop: ['Customers buying less than last month', 'Invoiced sales in the ERP files from day 1 to the cut-off, against the same days of last month.'],
@@ -57,7 +58,7 @@ function alertsPhotoFacts(){
     if(!w) return;
     out.push({ visitId: v.id, clinicId: onList.has(v.clinicId) ? v.clinicId : null, // its line opens the clinic only when it is on the list
       label: clinicLabel(v.clinicId, v), date: v.date, rep: v.rep || null, withRep: v.withRep || null,
-      wait: w.wait, lost: w.lostTxt, mem: w.mem, here: w.here, own: w.own, old: w.old, lostAt: w.lostAt });
+      wait: w.wait, lost: w.lostTxt, mem: w.mem, here: w.here, own: w.own, old: w.old, othersAt: w.othersAt || [], lostAt: w.lostAt });
   });
   return out;
 }
@@ -90,48 +91,143 @@ function alertsDevice(){
     snapDay,
     snapFail: snapFailInfo(),           // the daily backup's own record of its last failure (04, maybeSnapshot)
     snapHeld: snapshotBlockedWhy(),     // why this phone does not take it now ('copy' | 'queued' | null)
+    basis: alertsBasis(),
   };
 }
-function alertsCompute(){
-  // an older cached core.js (a release race) has no rules: no bell rather than a broken screen
-  if(!currentUser || typeof UMCore.alertsFor !== 'function') return { shown: [], hidden: [] };
+// The early open's window (v126 speed, part 3): the phone's copy drawn, the start's read from the cloud not ended.
+function alertsWindow(){ return typeof _early !== 'undefined' && !!_early && _early.state === 'drawn' && !_cloudRead; }
+// What the lists on screen are, for the cards that say what they are based on: while the early open's line is up (the
+// window, or a start whose read failed) the phone's copy and its own time — copyTimeText, the line's words —; else the
+// lists this refresh served from the phone's copy (a read that failed, an offline start; a list this phone holds
+// changes of waits in the queue: its copy is the newest, not a stale one). Nothing here says "synced" or "up to date".
+function alertsBasis(){
+  const copy = typeof _copyLine !== 'undefined' && _copyLine && _early ? (_copyLine === 'failed' ? 'failed' : 'updating') : alertsWindow() ? 'updating' : null;
+  return { copy, at: copy && _early && _early.at ? copyTimeText(_early.at) : null,
+    phone: Object.keys(_mirrorUsed).filter(k => !outboxHas(k)).concat(Object.keys(_loadFailed)), unconfirmed: earlyUnconfirmed() };
+}
+function alertsInput(){
   const now = Date.now(), today = todayStr();
-  const list = UMCore.alertsFor({ today, now, user: { name: currentUser.name, role: currentUser.role }, reps: REPS.slice(),
+  return { today, now, user: { name: currentUser.name, role: currentUser.role }, reps: REPS.slice(),
     team: staff.map(s => s && s.name).filter(Boolean),
     // the sales lines through the pass the screens use, kept per data state (erpShareNow, 11-erp.js; v126 speed part 4)
     data: { clinics, visits, dayPlans, events, targets, erpSales, erpMap, erpShare: erpShareNow() },
-    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, monthLabel, cache: _alertsCache });
-  return UMCore.alertsVisible(list, alertsState(), today, now);
+    responseHours: typeof kpiSettings === 'function' ? kpiSettings().responseHours : undefined,   // the KPI scorecard's hours (16-kpi.js)
+    settings: BENCHMARKS && BENCHMARKS.alerts, device: alertsDevice(), fmtDate, monthLabel, cache: _alertsCache, state: alertsState() };
+}
+function alertsCompute(){
+  // an older cached core.js (a release race) has no rules: no bell rather than a broken screen
+  if(!currentUser || typeof UMCore.alertsFor !== 'function') return { shown: [], hidden: [], nextAt: 0, devKey: null };
+  const devKey = alertsDeviceKey(), inp = alertsInput(), list = UMCore.alertsFor(inp);
+  const r = UMCore.alertsVisible(list, inp.state, inp.today, inp.now);
+  r.nextAt = typeof UMCore.alertsNextAt === 'function' ? UMCore.alertsNextAt(inp) : 0;
+  r.devKey = devKey;
+  return r;
 }
 function alertsSheetOpen(){
   const back = document.getElementById('modalBack');
   return !!(back && back.classList.contains('show') && document.getElementById('alertsCenter'));
 }
-// Recompute; the bell always, the open sheet when what it lists changed (or when asked).
+// Work the alerts out now: the bell, and the open sheet when what it lists changed (or when asked). Called when they
+// are due (alertsSoon) and by the sheet's own taps.
 function refreshAlerts(forceSheet){
-  const bell = document.getElementById('alertsBell'), badge = document.getElementById('alertsBellN');
-  if(!bell || !badge || !currentUser) return;
+  if(!currentUser || !document.getElementById('alertsBell')) return;
   let r;
   try{ r = alertsCompute(); }catch(e){ console.error('alerts center', e); return; }
   const sig = JSON.stringify([r.shown.map(a => [a.id, a.title, a.why, a.msg || '', (a.items || []).map(i => [i.text, i.note || ''])]), r.hidden.map(a => [a.id, a.hidden, a.until])]);
   const changed = sig !== _alertsSig;
-  _alerts = r; _alertsSig = sig;
-  const n = r.shown.length;
-  badge.textContent = n > 99 ? '99+' : String(n);
-  badge.hidden = !(n > 0);   // the top bar's bell (v125): its count is the cards in the sheet
-  bell.classList.toggle('has', n > 0);
-  bell.dataset.count = String(n);
-  const label = n ? `Alerts (${n})` : 'Alerts';
-  bell.setAttribute('aria-label', trOf(label) || label);
+  _alerts = r; _alertsSig = sig; _alertsDevKey = r.devKey; _alertsWho = currentUser.name + '|' + currentUser.role;
+  alertsBellPaint(r.shown.length);
+  alertsArm(r.nextAt);
   if((changed || forceSheet) && alertsSheetOpen()) renderAlertsSheet();
 }
-function renderAlertsBell(){ refreshAlerts(false); }
-// A bar or a photo note changed (04, 12): the bell follows, once per burst of changes.
-let _alertsSoonT = 0;
-function alertsSoon(){
-  if(_alertsSoonT || !currentUser) return;
-  _alertsSoonT = setTimeout(() => { _alertsSoonT = 0; refreshAlerts(false); }, 60);
+// The top bar's bell (v125): its number is the cards in the sheet. Written only where it changes — a 20-second round
+// that brings nothing new changes nothing on the page (v126 speed, part 2).
+function alertsBellPaint(n){
+  const bell = document.getElementById('alertsBell'), badge = document.getElementById('alertsBellN');
+  if(!bell || !badge) return;
+  const txt = n > 99 ? '99+' : String(n), label = n ? `Alerts (${n})` : 'Alerts', aria = trOf(label) || label;
+  if(badge.textContent !== txt) badge.textContent = txt;
+  if(badge.hidden !== !(n > 0)) badge.hidden = !(n > 0);
+  if(bell.classList.contains('has') !== n > 0) bell.classList.toggle('has', n > 0);
+  if(bell.dataset.count !== String(n)) bell.dataset.count = String(n);
+  if(bell.getAttribute('aria-label') !== aria) bell.setAttribute('aria-label', aria);
 }
+function renderAlertsBell(){ alertsAsk(); }
+
+// ---- when the alerts are worked out (v126 speed) ----
+// The drawings of 05 (msBell: the data on screen changed), the bars (04), the photo notes (12) and the clock only ASK.
+// The alerts are worked out — never inside a drawing, never while a refresh is on its way (the start's read, a 20-second
+// round: after it), never in the early open's window (the phone's copy drawn, the start's read not ended: after it — 15 s
+// at most), and after the home's figures (msWhenReady), just after the next paint. The sheet works them out
+// at once when it is opened, and after each of its own taps. A bar or a photo note asks only when what this phone knows
+// changed (alertsDeviceKey): a round that brings nothing new calls the bars' functions but works no alert out and
+// leaves the bell as it is (v126 speed, part 2).
+let _alertsAsk = 0;   // when a compute was asked for and is not done yet (0: none)
+let _alertsWaiters = [];
+let _alertsDevKey = null;   // what this phone knew (alertsDeviceKey) when the alerts were last worked out
+let _alertsWho = null;      // whose alerts the bell shows ('name|role')
+function alertsAsk(){
+  if(!currentUser) return;
+  // another person on the phone: the bell never shows the previous person's alerts while this person's are worked out
+  const who = currentUser.name + '|' + currentUser.role;
+  if(_alertsWho !== who){ _alertsWho = who; _alerts = { shown: [], hidden: [] }; _alertsSig = ''; _alertsDevKey = null; _alertsShowHidden = false; alertsArm(0); alertsBellPaint(0); }
+  if(_alertsAsk) return;
+  _alertsAsk = Date.now();
+  alertsWhenFree();
+}
+// A bar, a photo note, today's backup, the connection (04, 12): asks when what they say changed since the last compute.
+function alertsSoon(){ if(currentUser && alertsDeviceKey() !== _alertsDevKey) alertsAsk(); }
+// What this phone knows of itself, as one short text — the facts the sync, backup and basis cards read, without the
+// visits (cheap): the queue, what is only in memory, the red bar at the bottom, a refused document, the sales retry
+// bar, the connection, the early open's line and the lists from the phone's copy, today's backup, the photos this
+// phone holds, saw land or found lost.
+function alertsDeviceKey(){
+  try{
+    const kept = []; _photoKept.forEach((r, id) => kept.push(id + ':' + (r && r.on) + (r && r.up ? '+' : '')));
+    let snapDay = null; try{ snapDay = localStorage.getItem(SNAP_DAY); }catch(e){}
+    return JSON.stringify([outboxList(), [..._memOnly], memOnlyPhotos(), Object.keys(_tooLarge).map(k => k + ':' + (_tooLarge[k] && _tooLarge[k].kept ? 1 : 0)), [..._saveBlocked],
+      [..._saveParked.entries()], [..._refused.entries()], !!_erpDirty, navigator.onLine !== false, earlyUnconfirmed(), _copyLine || null, alertsWindow(),
+      Object.keys(_mirrorUsed).sort(), Object.keys(_loadFailed).sort(), snapDay, snapFailInfo(), kept.sort(), _photoLanded.size, _photoLost.size]);
+  }catch(e){ return 'x' + Date.now(); }
+}
+// Settles once no compute is waiting (the harnesses wait on it, as on msWhenReady).
+function alertsWhenReady(){ return _alertsAsk ? new Promise(res => _alertsWaiters.push(res)) : Promise.resolve(_alerts); }
+function alertsSettle(){ const w = _alertsWaiters; _alertsWaiters = []; w.forEach(f => { try{ f(_alerts); }catch(e){} }); }
+function alertsBusy(){
+  return (typeof _loadAllRun !== 'undefined' && !!_loadAllRun) || (typeof _roundBusy !== 'undefined' && _roundBusy)
+    || (alertsWindow() && Date.now() - _alertsAsk < 15000);
+}
+function alertsWhenFree(){
+  if(!currentUser){ _alertsAsk = 0; alertsSettle(); return; }
+  if(typeof _loadAllRun !== 'undefined' && _loadAllRun){ const p = _loadAllRun; p.then(alertsWhenFree, alertsWhenFree); return; }   // a refresh on its way: after it
+  if(alertsBusy()){ setTimeout(alertsWhenFree, 300); return; }                                                                      // a round's upload, the early open's window
+  const go = () => {
+    if(!currentUser){ _alertsAsk = 0; alertsSettle(); return; }
+    if(alertsBusy()){ alertsWhenFree(); return; }
+    _alertsAsk = 0;
+    try{ refreshAlerts(false); } finally { alertsSettle(); }
+  };
+  // just after the next paint (as the home's figures are: msSchedule), at once on a page that paints no frame (hidden)
+  const idle = () => { if(document.visibilityState !== 'visible' || typeof requestAnimationFrame !== 'function') setTimeout(go, 0); else requestAnimationFrame(() => setTimeout(go, 0)); };
+  if(typeof msWhenReady === 'function') Promise.resolve(msWhenReady()).then(idle, idle); else idle();
+}
+// ---- the clock: an alert that comes due with no data change (v126 speed: a round that brings nothing new draws nothing) ----
+// Every compute knows the next moment one may come, go or change its words with the clock alone (UMCore.alertsNextAt:
+// midnight, the hours set, a client request turning late, a change or a photo waiting longer than the minutes set …);
+// the alerts are worked out again at that moment, and whenever a round that brought nothing new finds it passed
+// (alertsClock, from msClock) or the page comes back on screen (a phone asleep holds its timers back).
+let _alertsDue = 0, _alertsTimer = 0;
+function alertsArm(next){
+  clearTimeout(_alertsTimer); _alertsTimer = 0;
+  _alertsDue = next > 0 ? next : 0;
+  if(!_alertsDue) return;
+  const ms = Math.max(250, Math.min(_alertsDue - Date.now() + 150, 6 * 3600000));
+  _alertsTimer = setTimeout(() => { _alertsTimer = 0; alertsAsk(); }, ms);
+}
+function alertsClock(){ if(!currentUser) return; if(_alertsDue && Date.now() >= _alertsDue) alertsAsk(); else alertsSoon(); }
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') alertsClock(); });
+window.addEventListener('online', () => alertsSoon());
+window.addEventListener('offline', () => alertsSoon());
 
 // ---- the sheet (v125's component layer: the sheet frame, cards, list rows, chips, the empty state) ----
 // The sheet opens with its <h3> (the frame's header tile, data-ic) and ends with its buttons (the frame's foot); only
@@ -151,11 +247,17 @@ function renderAlertsSheet(){
   if(box) box.innerHTML = alertsSheetHTML();
   if(sub) sub.innerHTML = alertsSubHTML();
 }
-function alertsSubHTML(){ return '<span>What needs attention now. Each card says why it shows.</span>'; }
+// The line under the title; while the early open's line is up, what the cards are worked out from — the line's own words
+// and the copy's own time (the screen is this phone's copy, not the cloud's: nothing here may read as "up to date").
+function alertsSubHTML(){
+  const b = alertsBasis(), base = '<span>What needs attention now. Each card says why it shows.</span>';
+  if(!b.copy) return base;
+  return base + `<span class="al-basis"><span>This phone's copy, saved</span> <span data-notr dir="auto">${esc(b.at || '')}</span> <span>${b.copy === 'failed' ? '— could not update from the cloud; it is tried again' : '— updating from the cloud…'}</span></span>`;
+}
 function alertsSheetHTML(){
   const r = _alerts;
   const cards = r.shown.length ? `<div class="al-list">${r.shown.map(a => alertCardHTML(a, false)).join('')}</div>`
-    : `<div class="empty al-empty"><div class="big">Nothing needs attention right now.</div></div>`;
+    : `<div class="empty al-empty"><div class="big">${alertsBasis().copy ? "Nothing needs attention in this phone's copy." : 'Nothing needs attention right now.'}</div></div>`;
   const hidden = r.hidden.length ? `<div class="al-hidden">
       <button class="chip small" id="alertsHiddenBtn" onclick="alertsToggleHidden()">${_alertsShowHidden ? 'Hide the dismissed and snoozed' : `Dismissed or snoozed (${r.hidden.length})`}</button>
       ${_alertsShowHidden ? `<div class="al-list">${r.hidden.map(a => alertCardHTML(a, true)).join('')}</div>` : ''}
@@ -227,6 +329,7 @@ const ALERT_OPEN = {
     if(el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
   },
   gallery: () => { closeModal(); openPhotoGallery(); },
+  requests: () => { closeModal(); openClientLog(); },   // where a request is marked answered (16-kpi.js)
   calendar: a => { closeModal(); const t = todayStr(); calAnchor = t; calSelected = t; calRepFilter = ownRepOnly((a.open && a.open.rep) || 'all'); switchView('calendar'); },
   clinics: () => { closeModal(); switchView('clinics'); setClinicMode('dash'); },
   erpImport: () => openErpImport(),
@@ -257,6 +360,7 @@ function alertsOpenItem(el){
   const a = alertOf(el);
   if(!a || !el) return;
   const cid = el.dataset.clinic, key = el.dataset.key;
+  if(a.type === 'request'){ closeModal(); openClientLog(); return; } // the request's own list: "✓ Answered" is there
   if(cid){
     const c = clinics.find(x => x && String(x.id) === cid), id = c ? c.id : cid;
     if(a.type === 'overdue' && c){ confirmFollowUp(id); return; } // log the visit, reschedule or clear: the follow-up's own sheet
@@ -270,6 +374,8 @@ function alertsOpenItem(el){
 // ---- the cards' own actions ----
 async function alertsUploadNow(btn){
   if(btn) btn.disabled = true;
+  // the early open's window: nothing reaches the cloud before the sign-in is confirmed — never "the cloud did not answer"
+  if(earlyUnconfirmed()){ showToast('⏳ Not sent yet: the sign-in is still being confirmed — the changes upload by themselves once it is', 6000); if(btn) btn.disabled = false; return; }
   if(navigator.onLine === false){ showToast('📴 This phone is offline — the changes upload when the connection is back'); if(btn) btn.disabled = false; return; }
   if(_flushing){ showToast('⏳ Uploading…'); if(btn) btn.disabled = false; return; }
   await flushOutbox(); // the queue, and the photos this phone keeps (retryPhotos, in the background)
@@ -355,10 +461,3 @@ async function saveAlertSettings(){
   openAlerts();
   return true;
 }
-
-// The time-based rules (the hour, how long a change has waited) move without
-// any save: the bell is looked at again every minute, and when the connection
-// comes or goes.
-setInterval(() => { if(currentUser && document.visibilityState === 'visible') refreshAlerts(false); }, 60000);
-window.addEventListener('online', () => refreshAlerts(false));
-window.addEventListener('offline', () => refreshAlerts(false));
