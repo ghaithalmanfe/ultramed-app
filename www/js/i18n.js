@@ -30,6 +30,9 @@
     "Today's backup was not saved from this phone yet — it tries again within the hour.": 'لم تُحفظ نسخة اليوم الاحتياطية من هذا الهاتف بعد — يحاول مرة أخرى خلال ساعة.',
     // v123 review: a phone with no access to the team's data (signed out, a sign-in that ended) keeps what it saves
     "Kept on this phone — no access to the team's data right now (signed out?). It uploads by itself after you sign in again": 'محفوظ على هذا الهاتف — لا صلاحية على بيانات الفريق الآن (هل خرجت من الحساب؟). يُرفع تلقائيًا بعد أن تسجّل الدخول مرة أخرى',
+    // v126 review 2: a save made while the screen is this phone's copy and the sign-in is not confirmed yet
+    'Kept on this phone — your sign-in is not confirmed yet. It uploads by itself once it is': 'محفوظ على هذا الهاتف — لم يتأكد تسجيل دخولك بعد. يُرفع تلقائيًا بعد أن يتأكد',
+    'Not saved yet — your sign-in is not confirmed yet. The screen says so if it is saved': 'لم يُحفظ بعد — لم يتأكد تسجيل دخولك بعد. تظهر رسالة إذا تم الحفظ',
     "Not saved — no access to the team's data right now (signed out?). Sign in again, then save again": 'لم يُحفظ — لا صلاحية على بيانات الفريق الآن (هل خرجت من الحساب؟). سجّل الدخول مرة أخرى ثم احفظ من جديد',
     "Changes wait on this phone, not sent: no access to the team's data right now (signed out, or the password was changed on another device). Sign in again — they upload by themselves.": 'تغييرات محفوظة على هذا الهاتف ولم تُرسل: لا صلاحية على بيانات الفريق الآن (خرجت من الحساب، أو غُيّرت كلمة المرور من جهاز آخر). سجّل الدخول مرة أخرى — وتُرفع تلقائيًا.',
     'Changes wait on this phone, not sent: the cloud does not allow this login to save them. Ask the supervisor — they stay on this phone.': 'تغييرات محفوظة على هذا الهاتف ولم تُرسل: السحابة لا تسمح لهذا الحساب بحفظها. اسأل المشرف — تبقى على هذا الهاتف.',

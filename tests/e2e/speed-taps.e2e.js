@@ -5,14 +5,21 @@
 // (tools/sweep-steps.js, the list phone-layout.e2e.js lays out). A step's time runs from the tap (its
 // handler called, as the button's onclick does) to the frame painted after it: the handler's work, its
 // promise when it returns one, the home figures when the step ends on the home screen (msWhenReady), then two
-// animation frames. Nothing leaves localhost; the cloud answers at once (the time measured is the phone's own
-// work), the clock is fixed, the 20-second round is driven by hand (never mid-step).
+// animation frames. The home's figures that the app works out just AFTER a paint (msRun, msSchedule) — a step redrew
+// the hidden home after its data changed: in the sweep the DSR upload (applyTargetsFile → renderToday) catches the home
+// up with the requests and stands the "requests" step added before, ~0.6–0.7 s on the phone right after its sheet shows;
+// a real upload's new targets do the same — are the home's work, not the tap's: they are timed apart (`after`, T1b) and
+// left out of the tap's time, so its first tap and a repeat time the same work. Nothing leaves localhost; the cloud
+// answers at once (the time measured is the phone's own work), the clock is fixed, the 20-second round is driven by
+// hand (never mid-step).
 // Checks: every step runs without an error, no page or console error; and T1 (fails on 8f2dd7e, the start-up speed
 // review's commit): on the 4x phone the taps that took seconds there — a clinic's card 24.5 s, the clinic sales
 // analysis 21.8 s, a doctor's profile 12.9 s, a clinic picked in Log a visit 11.3 s, the management report 12.9 s, the
 // Report 8.5 s, month by month 6.9 s … (every ERP line's customer matched against every clinic again, the month's lines
 // worked out again for each figure, every doctor going over every visit of the year) — paint within a budget a few
-// times what they take now, so a slower machine still passes and a return of the old work fails.
+// times what they take now, so a slower machine still passes and a return of the old work fails. T1b: the home's
+// figures a tap sets off for just after its paint keep the phone busy within their own budget. Both are judged at
+// the phone's speed around the tap (the calibration below), never retried.
 // T2 (v126 speed, part 4: what is kept between taps — the pass of the sales lines per data state, the free-goods lines,
 // the market's purchase lines, the pages of a long list — follows its inputs): a clinic's owner, a handover, an ERP link,
 // a new sales file, a visit and the language each change what month by month, the KPI scorecard, a clinic's card, the
@@ -54,14 +61,28 @@ const median = a => { const s = a.filter(x => x != null).sort((x, y) => x - y); 
 // admin-territory 1,241, recycle-bin 1,118, kpi-person 1,169 / 628. Part 4 (the taps still about 0.3 s or more on 0ae62ea,
 // first tap, supervisor / rep; the steps' `pre` not timed): doctors 419 / 233, clanalysis 715 / 662, analysis 617 / 614,
 // clinic-card 403 / 289, month-by-month 403 / 399, coverage 406, erp-preview 472, weekly-deck 413 — after part 4: 146 / 194,
-// 188 / 219, 144 / 149, 270 / 261, 257 / 292, 135, 132, 239; their budgets about twice that
+// 188 / 219, 144 / 149, 270 / 261, 257 / 292, 135, 132, 239; their budgets about twice that. dsr-upload: its own time (the
+// sheet, ~0.25–0.3 s at this machine's speed); until part 4's follow-up its first tap also counted the home's figures
+// worked out after the sheet's paint (328e2bc +0.6–0.7 s, 0ae62ea +1.0–1.5 s: 1.6 s in all on a CI runner, over 1500) —
+// T1b now; 8f2dd7e's own time is still over 1500 (~2.4 s at this machine's speed)
 const BUDGET = { 'clinic-card': 550, clanalysis: 450, analysis: 400, 'doctor-profile': 1500, 'log-filled': 1500, 'pro-report': 2000, reports: 1500,
   'report-chart': 1500, 'report-coach': 1500, 'report-score': 1500, 'month-by-month': 550, 'dsr-upload': 1500, 'admin-team': 1000, 'erp-preview': 350,
   coverage: 350, 'admin-territory': 800, 'recycle-bin': 800, 'kpi-person': 900, doctors: 350, 'weekly-deck': 550 };
 // A slower machine (a CI runner) is told apart from slower code: each phone first times a fixed piece of work (JSON.parse
-// of its clinics and visits, twice; the median of 9) and the budgets grow by how much slower than here it is (CAL_REF:
-// this machine's 4x phone, 46–56 ms), never shrink, at most 4 times — 8f2dd7e stays over them on the same machine.
+// of its clinics and visits as they are after the sign-in, twice; the median of 9), and again right before and right
+// after every tap T1 judges (the median of 3 each, on a collected heap), and that tap's budgets grow by how much slower
+// than here the phone was around it (the slower of the two; CAL_REF: this machine's 4x phone, 46–56 ms) — a machine
+// that other work slows down in the middle of the sweep (a shared host) is told apart too —, never shrink, at most 4
+// times; 8f2dd7e stays over them on the same machine. The heap is collected before each such tap (CDP, unthrottled,
+// not timed): what earlier steps left for the collector is not paid inside the next tap (the tap's own garbage still is).
 const CAL_REF = 50;
+// T1b (ms, the home's figures worked out just after a tap's paint, at this machine's speed): in the sweep once — the
+// DSR upload redraws the supervisor's hidden team home after the "requests" step (the past months' KPI scores worked
+// out again: their key holds the events; a real upload's new targets: the same, it holds the targets) — 328e2bc
+// ~0.6–0.7 s (two thirds homeKpiMonths, then execDashboard; up to ~0.85 s measured while other harnesses loaded the
+// host), 8f2dd7e ~0.95 s, 0ae62ea ~1.0–1.5 s (a fresh pass of the sales lines); the budget two to three times this
+// commit's: it runs ~1.3 s long, and a load that changes within it is not all in the calibration taken before the tap
+const AFTER_BUDGET = 1500;
 
 let cloud = new Map();
 const api = {
@@ -105,6 +126,11 @@ async function device(browser, profName, who, role){
       Date.prototype.toLocaleDateString = function(){ window.__work.dates++; return tl.apply(this, arguments); };
     };
     document.addEventListener('DOMContentLoaded', wrapCore);
+    // the home's figures (msRun — worked out just after a paint, msSchedule): when each run began and ended (T1, T1b)
+    window.__msRuns = [];
+    document.addEventListener('DOMContentLoaded', () => { const f = window.msRun; if(typeof f !== 'function' || f.__timed) return;
+      const w = function(){ const s = performance.now(); try{ return f.apply(this, arguments); } finally { window.__msRuns.push([s, performance.now()]); } };
+      w.__timed = true; window.msRun = w; });
   }, { clock: CLOCK, staff: FIX.docs.staff });
   await page.goto(`http://localhost:${PORT}/index.html`);
   await page.evaluate(() => document.fonts && document.fonts.ready).catch(() => {});
@@ -113,16 +139,32 @@ async function device(browser, profName, who, role){
   await page.evaluate(async ({ who, role }) => { await selectUser(who, role); await msWhenReady(); }, { who, role });
   await sleep(1500);
   await page.evaluate(() => msWhenReady());
-  const cal = await page.evaluate(() => { const s = JSON.stringify({ c: clinics, v: visits }), ts = [];
+  const cal = await page.evaluate(() => { const s = window.__calStr = JSON.stringify({ c: clinics, v: visits }), ts = []; // (the same piece before each tap)
     for(let i = 0; i < 9; i++){ const t = performance.now(); for(let j = 0; j < 2; j++) JSON.parse(s); ts.push(performance.now() - t); }
     ts.sort((a, b) => a - b); return Math.round(ts[4]); });
-  return { ctx, page, cdp, errors, cal };
+  // the start worked the home's figures out through msRun, timed: a tap can be told from them
+  const homeTimed = await page.evaluate(() => !!(window.msRun && window.msRun.__timed) && window.__msRuns.length > 0);
+  return { ctx, page, cdp, cpu: prof.cpu, errors, cal, homeTimed };
 }
 
-// one step, timed in the page: tap → its work (and promise) → the home figures if it ends there → painted
-async function timeStep(page, st){
-  return page.evaluate(async st => {
-    try{ closeModal(); const lb = document.getElementById('lightbox'); if(lb) lb.classList.remove('show'); try{ hideProReport(); }catch(e){} }catch(e){}
+// one step, timed in the page: tap → its work (and promise) → the home figures if it ends there → painted.
+// A tap T1 judges (`judged`) is bracketed by the phone's speed (the calibration's piece, on a collected heap) and
+// starts from a collected heap itself; none of it timed.
+async function collect(d){ // (unthrottled for the collection itself, then the phone's speed again)
+  await d.cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  try{ await d.cdp.send('HeapProfiler.collectGarbage'); } finally { await d.cdp.send('Emulation.setCPUThrottlingRate', { rate: d.cpu }); }
+}
+async function speedNow(d){ // ms, the median of 3 (each sample one synchronous piece: nothing of the app runs inside it)
+  await collect(d);
+  return d.page.evaluate(() => { const s = window.__calStr, ts = []; if(!s) return null;
+    for(let i = 0; i < 3; i++){ const t = performance.now(); for(let j = 0; j < 2; j++) JSON.parse(s); ts.push(performance.now() - t); }
+    ts.sort((a, b) => a - b); return Math.round(ts[1]); });
+}
+async function timeStep(d, st, judged){
+  await d.page.evaluate(() => { try{ closeModal(); const lb = document.getElementById('lightbox'); if(lb) lb.classList.remove('show'); try{ hideProReport(); }catch(e){} }catch(e){} });
+  const cal = judged ? await speedNow(d) : null;
+  if(judged) await collect(d);
+  const r = await d.page.evaluate(async st => {
     if(st.pre){ try{ const r0 = (0, eval)(st.pre); if(r0 && typeof r0.then === 'function') await r0; }catch(e){} } // what to open: the harness's, never timed
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     await new Promise(r => setTimeout(r, 30));
@@ -136,16 +178,23 @@ async function timeStep(page, st){
       if(typeof activeView !== 'undefined' && activeView === 'today' && typeof msWhenReady === 'function') await msWhenReady();
     }catch(e){ err = String(e && e.message || e).slice(0, 160); }
     const t1 = performance.now();
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    let tA = t1; // the tap's frame: its animation-frame callbacks run, then it is painted
+    await new Promise(r => requestAnimationFrame(() => { tA = performance.now(); requestAnimationFrame(r); }));
     const t2 = performance.now();
+    // the home's figures worked out after the tap's frame (msSchedule: a run that starts once a frame has run its
+    // callbacks) — the tap changed what they read while the home is not on screen: the home's work, timed apart (T1b);
+    // a run before the frame held its paint back and stays in the tap's time
+    const after = window.__msRuns.filter(x => x[0] >= tA && x[1] <= t2).reduce((s, x) => s + (x[1] - x[0]), 0);
     const lt = window.__lt.filter(l => l[0] >= t0 - 1);
     const sheet = document.getElementById('modalBack').classList.contains('show');
     const box = sheet ? document.getElementById('modalInner') : document.querySelector('.view.active');
     const text = box ? box.innerText.replace(/\s+/g, ' ').trim() : '';
     const w = window.__work;
-    return { ms: Math.round(t2 - t0), work: Math.round(t1 - t0), maxLong: Math.round(lt.reduce((m, l) => Math.max(m, l[1]), 0)), sheet, err, text,
+    return { ms: Math.round(t2 - t0 - after), after: Math.round(after), work: Math.round(t1 - t0), maxLong: Math.round(lt.reduce((m, l) => Math.max(m, l[1]), 0)), sheet, err, text,
       daCalls: w.daCalls - w0.daCalls, dates: w.dates - w0.dates, wait: !!document.querySelector('.view.active .ms-wait') };
   }, st);
+  r.cal = cal; r.calAfter = judged ? await speedNow(d) : null;
+  return r;
 }
 
 // ---- T2 / T3 (see the header): one laptop, the supervisor, the heavy year ----
@@ -249,13 +298,17 @@ async function keptChecks(browser){
     for(const [who, role] of PEOPLE){
       const cfg = `${profName} ${role === 'supervisor' ? 'sup' : 'rep'}`; cfgs.push(cfg);
       const d = await device(browser, profName, who, role); cals[cfg] = d.cal;
+      check(`${cfg}: the home's figures are seen being worked out (msRun timed) — the taps' time can leave them out`, d.homeTimed);
       for(const st of STEPS){
         if(st.gate || (st.sup && role !== 'supervisor')) continue;
         if(ONLY_STEPS && !ONLY_STEPS.has(st.name)) continue;
-        const runs = [];
-        for(let i = 0; i < REPEAT; i++) runs.push(await timeStep(d.page, st));
+        const runs = [], judged = !!BUDGET[st.name] && profName === 'phone';
+        for(let i = 0; i < REPEAT; i++) runs.push(await timeStep(d, st, judged));
         if(st.wait) await sleep(Math.min(st.wait, 1500));
-        const r = runs[0]; r.first = r.ms; r.ms = median(runs.map(x => x.ms)); r.work = median(runs.map(x => x.work)); // first: the step's first tap in the sweep
+        // first: the step's first tap in the sweep; f: how much slower than here the phone was at each tap (T1's budgets)
+        runs.forEach(x => { x.f = Math.round(Math.max(1, Math.min(4, (Math.max(x.cal || 0, x.calAfter || 0) || d.cal || CAL_REF) / CAL_REF)) * 100) / 100; });
+        const r = runs[0]; r.first = r.ms; r.afterFirst = r.after; r.fFirst = r.f; r.cals = runs.map(x => x.cal == null ? '—' : x.cal + '/' + x.calAfter);
+        r.norm = median(runs.map(x => x.ms / x.f)); r.ms = median(runs.map(x => x.ms)); r.work = median(runs.map(x => x.work)); r.f = median(runs.map(x => x.f));
         r.hash = crypto.createHash('sha1').update(r.text).digest('hex').slice(0, 10); r.chars = r.text.length; delete r.text;
         (table[st.name] = table[st.name] || {})[cfg] = r;
         process.stdout.write(r.err ? 'x' : '.');
@@ -270,16 +323,24 @@ async function keptChecks(browser){
   const names = Object.keys(table);
   console.log(`\ntap → painted (ms) on the heavy year · ${cfgs.join(' | ')}`);
   names.forEach(n => console.log(`${n.padEnd(16)} ${cfgs.map(c => { const r = table[n][c]; return r ? String(r.ms).padStart(6) + (r.err ? '!' : ' ') : '     —'; }).join(' ')}`));
+  const afters = []; names.forEach(n => cfgs.forEach(c => { const r = table[n][c]; if(r && r.afterFirst) afters.push(`${n} (${c}) +${r.afterFirst} ms`); }));
+  console.log(`the home's figures worked out after a tap's paint (first tap; not in the times above): ${afters.join(', ') || 'none'}`);
   if(OUT){ fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(path.join(OUT, 'speed-taps.json'), JSON.stringify({ www: WWW, cfgs, table }, null, 1)); }
   const errs = []; names.forEach(n => cfgs.forEach(c => { const r = table[n][c]; if(r && r.err) errs.push(`${n} (${c}): ${r.err}`); }));
   if(process.env.KEPT !== '1') check('every step of the sweep ran without an error', !errs.length, errs.slice(0, 8));
   if(!NOCHECK && PROFS.includes('phone') && process.env.KEPT !== '1'){
-    const over = [], measured = [], factors = {};
+    const over = [], measured = [], facs = {}, afterOver = [], afterSeen = [];
     cfgs.filter(c => c.startsWith('phone')).forEach(c => {
-      const f = factors[c] = Math.round(Math.max(1, Math.min(4, (cals[c] || CAL_REF) / CAL_REF)) * 100) / 100;
-      names.forEach(n => { const b0 = BUDGET[n], r = table[n][c]; if(!b0 || !r) return; const b = Math.round(b0 * f); measured.push(n); if(r.ms > b) over.push(`${n} (${c}) ${r.ms} ms > ${b}`); });
+      facs[c] = [];
+      names.forEach(n => { const b0 = BUDGET[n], r = table[n][c]; if(!b0 || !r) return; measured.push(n); facs[c].push(r.f);
+        // the tap's own time at the phone's speed at that tap (the median of its runs, each over its own calibration)
+        if(r.norm > b0) over.push(`${n} (${c}) ${r.ms} ms > ${Math.round(b0 * r.f)} (×${r.f}: the phone ${r.cals.join(', ')} ms before/after)`); });
+      names.forEach(n => { const r = table[n][c]; if(!r || !r.afterFirst) return; afterSeen.push(`${n} (${c}) +${r.afterFirst}`);
+        if(r.afterFirst / r.fFirst > AFTER_BUDGET) afterOver.push(`${n} (${c}) the home's figures +${r.afterFirst} ms after the paint > ${Math.round(AFTER_BUDGET * r.fFirst)} (×${r.fFirst})`); });
     });
-    check(`T1: on the 4x phone the taps that took seconds on 8f2dd7e paint within their budget (${measured.length} taps measured; this machine's phone ${cfgs.filter(c => c.startsWith('phone')).map(c => `${c} ${cals[c]} ms → budgets ×${factors[c]}`).join(', ')})`, measured.length > 0 && !over.length, over);
+    const span = a => a.length ? (Math.min(...a) === Math.max(...a) ? `×${a[0]}` : `×${Math.min(...a)}–${Math.max(...a)}`) : '—';
+    check(`T1: on the 4x phone the taps that took seconds on 8f2dd7e paint within their budget (${measured.length} taps measured; this machine's phone ${cfgs.filter(c => c.startsWith('phone')).map(c => `${c} ${cals[c]} ms, at each tap budgets ${span(facs[c])}`).join(', ')})`, measured.length > 0 && !over.length, over);
+    check(`T1b: the home's figures a step sets off for just after its paint (the hidden home redrawn after its data changed) keep the phone busy within ${AFTER_BUDGET} ms at this machine's speed (seen: ${afterSeen.join(', ') || 'none'})`, !afterOver.length, afterOver);
   }
   if(!NOCHECK && !ONLY_STEPS) await keptChecks(browser);
   console.log('\n' + results.join('\n'));

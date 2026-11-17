@@ -911,7 +911,19 @@ function msRun(){
     // the whole frame kept on screen, or lists drawn from another state than these figures: the screen is drawn again as
     // one, now (renderToday finds the figures ready); else the figures join the lists drawn from this same state
     if(activeView === 'today'){ if(_msHeld || !_msFrame || _msFrame.key !== m.key || _msFrame.sig !== sig) renderToday(); else { msPaint(v, m, sig); _msFrame.whole = true; } }
-  }catch(e){ console.error('main screen', e); }
+  }catch(e){
+    console.error('main screen', e);
+    // the figures could not be worked out at all (msBuild threw): the screen says so for the data as it is now — a whole
+    // frame of an earlier state is never kept on screen for ever as if it were current (v126 review 2, U3)
+    try{
+      const v = msView();
+      if(job && v && currentUser && msKey(v) === job.key){
+        const fm = { key: job.key, view: v, D: null, K: null, W: null, S: null, H: {}, coach: null, brands: (() => { try{ return msBrandNames(); }catch(e2){ return []; } })(), failed: true, sig: msSig(v) };
+        _msModel = fm; _msModels.delete(fm.key); _msModels.set(fm.key, fm);
+        if(activeView === 'today'){ _msHeld = false; renderToday(); }
+      }
+    }catch(e2){ console.error('main screen', e2); }
+  }
   finally{ msSettle(); }                                    // whoever waits is told, whatever happened
 }
 function msSettle(){ if(_msJob || _msTimer) return; const w = _msWaiters; _msWaiters = []; w.forEach(f => { try{ f(_msModel); }catch(e){} }); }
@@ -1988,7 +2000,9 @@ function renderToday(){
   try{ sig = msSig(v); m = msEnsure(v, sig); }catch(e){ console.error('main screen', e); }
   // a whole frame of this view is on screen and the data changed: it stays as it is until the new figures are ready,
   // then the whole screen is drawn again at once (msRun) — never a frame of two states, never "Calculating…" over it
-  if(!m && sig && activeView === 'today' && _msFrame && _msFrame.whole && _msFrame.key === msKey(v) && _msFrame.sig !== sig && (_msJob || _msTimer)){ _msHeld = true; return; }
+  // (only a frame drawn for the person signed in now: the supervisor's frame of a person's screen — the same view key —
+  // is never kept on screen for that person after a sign-out and her sign-in on the same page, v126 review 2)
+  if(!m && sig && activeView === 'today' && _msFrame && _msFrame.whole && _msFrame.who === onScreenWho() && _msFrame.key === msKey(v) && _msFrame.sig !== sig && (_msJob || _msTimer)){ _msHeld = true; return; }
   _msHeld = false;
   renderErpNudge();
   renderDocCardsNudge();
@@ -2015,7 +2029,7 @@ function renderToday(){
   msFoldSums(v, due);
   ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const el = document.getElementById(id); if(el) el.classList.toggle('open', !!_msOpen[id]); });
   msPaint(v, m, sig);
-  _msFrame = { key: msKey(v), sig, whole: !!m };
+  _msFrame = { key: msKey(v), sig, whole: !!m, who: onScreenWho() };
 }
 function renderDueList(due){
   const dueList = document.getElementById('dueList');

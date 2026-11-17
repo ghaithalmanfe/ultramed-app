@@ -34,6 +34,7 @@ function switchUser(){
 }
 // Signed out on this phone before the SDK had told who its saved session was (the early open's window, v126 speed part
 // 3): the SDK finishes its start first and tells that session, then the sign-out — that late word is not a sign-in.
+// Kept until the SDK says "nobody" (the sign-out has landed): a sign-in asked for meanwhile is told after it.
 let _signedOutOf = null;
 function showGateScreen(){
   document.body.classList.remove('on-today');   // the main screen's light page is not the sign-in page's
@@ -164,7 +165,9 @@ async function submitEmailLogin(){
   const pwd = document.getElementById('elPwd').value;
   if(!email || !pwd){ showToast('Enter email and password'); return; }
   try{
-    _signedOutOf = null; // a sign-in asked for here: whoever the SDK tells next is signing in
+    // (_signedOutOf stays until the SDK says "nobody": Firebase queues this sign-in behind a sign-out asked before its
+    // start had told the saved session — it tells that session first, then the sign-out, then this one; cleared here,
+    // the earlier person was signed in again for a moment and the new one was told "Signed out", v126 review 2, U1)
     await firebase.auth().signInWithEmailAndPassword(email, pwd);
     closeModal();
   }catch(e){
@@ -176,7 +179,7 @@ async function submitGateLogin(name){
   const pwd = document.getElementById('gatePassword').value;
   if(!pwd){ showToast('Enter your password'); return; }
   try{
-    _signedOutOf = null; // a sign-in asked for here: whoever the SDK tells next is signing in
+    // (_signedOutOf stays until the SDK says "nobody" — see submitEmailLogin: v126 review 2, U1)
     await firebase.auth().signInWithEmailAndPassword(USERS[name].email, pwd);
     closeModal();
   }catch(e){

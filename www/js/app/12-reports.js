@@ -1008,7 +1008,7 @@ function fmtWhen(ts){
 }
 function renderChat(){
   const el = document.getElementById('chatList');
-  if(!chatMsgs.length && !_teamFrom.chat){ el.innerHTML = `<div class="empty">Loading messages…</div>`; return; } // never read on this phone yet (v126 speed)
+  if(!chatMsgs.length && _teamFrom.chat !== 'cloud' && _teamFrom.chat !== 'phone'){ el.innerHTML = `<div class="empty">Loading messages…</div>`; return; } // never read on this phone yet (v126 speed) — a read tried that answered from neither too (review 2: it said "Start the conversation"; it is read again at every round until it is in)
   if(!chatMsgs.length){
     el.innerHTML = `<div class="empty"><div class="big">\u{1F4AC} Start the conversation</div>Share a win, ask for help, or drop a photo from the road.</div>`;
     return;
@@ -1140,7 +1140,7 @@ async function saveMemory(){
 }
 function renderMemories(){
   const el = document.getElementById('memGrid');
-  if(!memories.length && !_teamFrom.memories){ el.innerHTML = `<div class="empty" style="grid-column:1/-1;">Loading memories…</div>`; return; } // never read on this phone yet (v126 speed)
+  if(!memories.length && _teamFrom.memories !== 'cloud' && _teamFrom.memories !== 'phone'){ el.innerHTML = `<div class="empty" style="grid-column:1/-1;">Loading memories…</div>`; return; } // never read on this phone yet (v126 speed), or a read tried that answered from neither (review 2)
   if(!memories.length){
     el.innerHTML = `<div class="empty" style="grid-column:1/-1;"><div class="big">\u{1F4F8} No memories yet</div>Every team has a story. Add the first photo.</div>`;
     return;
