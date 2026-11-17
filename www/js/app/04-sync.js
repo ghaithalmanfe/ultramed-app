@@ -3025,7 +3025,10 @@ function visitsChangedBases(fps){
   };
   const fb = visitsFallbackBase();
   const fromBase = id => { const b = fb ? fb.get(id) : undefined; return b && typeof b === 'object' ? b : undefined; };
-  const fromDocs = id => { if(!docs){ docs = new Map(); index(docs, _visitsLoaded); Object.keys(_visitsArch).forEach(mo => { if(_visitsArch[mo].kept == null) index(docs, _visitsArch[mo].json); }); } return docs.get(id); }; // (a month kept for the screen is no evidence)
+  // (a month kept for the screen too: its text names the base record of a visit changed here — the very record its
+  // fingerprint was taken from, never evidence of the cloud; rerev W7: left out, the record of an edit to a month the
+  // read-first could not reach was lost when the save did not land, and after a reopen the correction was undone)
+  const fromDocs = id => { if(!docs){ docs = new Map(); index(docs, _visitsLoaded); Object.keys(_visitsArch).forEach(mo => index(docs, _visitsArch[mo].json)); } return docs.get(id); };
   const fromCopy = id => { if(!copy){ copy = new Map(); index(copy, mirrorGet('visits')); } return copy.get(id); };
   const is = (b, fp) => !!b && typeof b === 'object' && !Array.isArray(b) && UMCore.recordHash(b) === fp;
   (visits || []).forEach(v => {

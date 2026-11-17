@@ -27,6 +27,9 @@
 //   W6  with that month still slow, another device moved one visit out of it (to October) and another into it (from
 //       October) before this phone's daily open: the October edit saved in the window lands, neither move is undone in
 //       the cloud, and once the month answers the phone shows both where the other device put them
+//   W7  W5's edit waits in the queue, the app is closed and opened again with the month still slow, and the supervisor
+//       corrects that visit's date meanwhile: once the month answers, the upload keeps the correction and the phone's
+//       note (the edited visit's base record was kept on the phone when the save did not land)
 //   S2  …after S1, Mariam signs in again on the sign-in screen: she is signed in (the kept sign-out never locks her out)
 // The sign-in is the app's own (03-gate.js) over a stand-in for the Firebase SDK that keeps its session on the phone and
 // confirms it only when the harness says (as in speed-review-2.e2e.js, whose helpers this harness reuses); the cloud is a
@@ -299,6 +302,33 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
     check('W5: the edit is of a visit IN the slow month: the save does not land while that month cannot be read — nothing written to it, said as "the cloud has not answered in time" (never "when back online") — and lands once the month answers',
       drew && !out.ok && out.queued && /not answered in time/.test(out.words) && !said.some(t => /back online|No connection/i.test(t)) && !marchWritten && !whileSlow.inCloud && whileSlow.queued.includes('visits')
         && after.inCloud && !after.queued.includes('visits'), { drew, out, marchWrittenWhileSlow: marchWritten, whileSlow, after });
+    await done(P);
+  }
+  if(want('W7')){
+    seed(SMALL);
+    const P = await mkDevice('W7-phone'), L = await mkDevice('W7-sup');
+    await P.firstOpen(M); await L.firstOpen(G);
+    const SLOW = 'visitsArch:2026-03', X = pick(mar0);
+    await P.restart({ hold: true });
+    const drew = await waitEarly(P);
+    ctl.slow.set(P.label, { test: (k, kind) => kind === 'get' && k === SLOW, ms: 9000 });
+    await P.ev(a => { const v = visits.find(x => x.id === a); v.notes = (v.notes || '') + ' [March edit on the phone]'; window.__save = persistTold('visits'); }, X.id);
+    releaseAuth(P.label, 'ok');
+    const out = await P.ev(async () => { const r = await window.__save; return { ok: r.ok, queued: outboxList().includes('visits') }; });
+    const rec = await P.ev(a => { try{ return Object.keys(JSON.parse(localStorage.getItem('um_base:visitsRec') || '{}')).includes(a); }catch(e){ return null; } }, X.id);
+    await P.restart({ hold: false }); // closed and opened again, March still slow
+    await P.page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && currentUser.name === 'Mariam' && _bootLoaded, null, { timeout: 60000, polling: 100 });
+    await idle(P);
+    const moved = await L.ev(async a => { const v = visits.find(x => x.id === a); v.date = '2026-03-28'; v.editedBy = 'Dr. Ghaith'; v.editedAt = Date.now(); return (await persistTold('visits')).ok; }, X.id);
+    await done(L);
+    await round(P);
+    ctl.slow.delete(P.label); // the month answers again
+    await round(P); await round(P);
+    const where = findVisit(X.id), xv = visitDocs().map(k => (doc(k) || []).find(v => v && v.id === X.id)).find(Boolean) || {};
+    const queuedAfter = await P.ev(() => outboxList());
+    check('W7: W5\'s edit waits in the queue, the app is reopened with March still slow and the supervisor corrects that visit to 28 March meanwhile: once March answers, the upload keeps the correction and the phone\'s note',
+      drew && !out.ok && out.queued && moved && where.join() === 'visitsArch:2026-03@2026-03-28' && /March edit on the phone/.test(xv.notes || '') && !queuedAfter.includes('visits'),
+      { drew, out, baseRecordKept: rec, moved, where, phoneNoteIn: /March edit on the phone/.test(xv.notes || ''), queuedAfter });
     await done(P);
   }
   if(want('W6')){
