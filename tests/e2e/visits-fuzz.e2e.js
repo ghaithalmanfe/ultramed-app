@@ -26,7 +26,7 @@
 // The cloud, the Firebase stand-in, the sign-in and the clock are those of speed-review-2.e2e.js / rerev.e2e.js (whose
 // helpers this harness reuses); timers of 2.5 s and more run 4× faster in the pages (the app's 8 s read and 12 s write
 // limits become 2 s / 3 s) and the cloud's delays are scaled the same way. Invented data (fixtures/heavy-year.js at scale
-// 0.1, its visits cut to 16 in three past months and the running one). Port 8296.
+// 0.1, its visits cut to 16 in three past months and the running one). Port 8301.
 // Options (environment):
 //   CASES=F1,F2,F3,F4,K1b  the minimal replays of what the seeds found (see CASES below); the default run is all five and
 //                       6 seeds (about 2 minutes)
@@ -39,7 +39,7 @@
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts } = require('./_env.js');
-const PORT = 8296;
+const PORT = 8301;
 const fixture = require('./fixtures/heavy-year.js');
 const BASE = fixture.build({ scale: 0.1 });
 const env = process.env;

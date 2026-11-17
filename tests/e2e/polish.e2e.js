@@ -12,12 +12,12 @@
 //      its headings (A5), the KPI settings' fields and their saved message (A6)
 //   O  the order-only sheet never calls an order logged in the app revenue — the owner's rule: orders logged in the
 //      app are never sales (English and Arabic)
-// The clock is fixed (Wed 11 Nov 2026, 13:30, ticking). Port 8297. Env: ONLY=H,A,O  WWW=<dir>
+// The clock is fixed (Wed 11 Nov 2026, 13:30, ticking). Port 8302. Env: ONLY=H,A,O  WWW=<dir>
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { chromium } = require('playwright');
 const { WWW, launchOpts, blockFirebase, twoRepStaff } = require('./_env.js');
 const core = require(path.resolve(WWW, 'js/core.js'));
-const PORT = 8297, URL = `http://localhost:${PORT}/index.html`;
+const PORT = 8302, URL = `http://localhost:${PORT}/index.html`;
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 const want = id => !ONLY || ONLY.has(id);
 const MIME = {'.html':'text/html','.js':'text/javascript','.json':'application/json','.css':'text/css','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.woff2':'font/woff2'};

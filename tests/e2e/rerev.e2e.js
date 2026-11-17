@@ -36,11 +36,11 @@
 // The sign-in is the app's own (03-gate.js) over a stand-in for the Firebase SDK that keeps its session on the phone and
 // confirms it only when the harness says (as in speed-review-2.e2e.js, whose helpers this harness reuses); the cloud is a
 // fake in Node; the clock is fixed; the 20-second round is driven by hand. Invented data (fixtures/heavy-year.js, scale
-// 0.1). Port 8295. ONLY=W1,S1,… runs a subset.
+// 0.1). Port 8300. ONLY=W1,S1,… runs a subset.
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts } = require('./_env.js');
-const PORT = 8295;
+const PORT = 8300;
 const ONLY = process.env.ONLY ? new Set(process.env.ONLY.split(',')) : null;
 const want = id => !ONLY || ONLY.has(id);
 const fixture = require('./fixtures/heavy-year.js');
