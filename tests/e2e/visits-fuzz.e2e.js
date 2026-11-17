@@ -463,7 +463,7 @@ async function runSeed(seed, script){
         await D.idle();
       }
       await Promise.all(devs.map(x => x.idle().catch(() => {})));
-      if(TRACE) for(const D of devs){ const sc = await D.ev(() => ({ v: (visits || []).filter(v => v && v.rep === 'Mariam').map(v => v.id.replace(/^v2026/, '') + '@' + (v.date || '').slice(5)).join(' '), out: outboxList().join(','), unread: typeof visitsUnread === 'function' ? visitsUnread() : null })).catch(e => ({ v: 'n/a' })); say(`     [${D.label}] ${sc.v} | queued: ${sc.out || '-'}${sc.unread ? ' | unread' : ''}`); }
+      if(TRACE) for(const D of devs){ const sc = await D.ev(() => ({ v: (visits || []).filter(v => v && v.rep === 'Mariam').map(v => v.id.replace(/^v2026/, '') + '@' + (v.date || '').slice(5)).join(' '), out: outboxList().join(','), unread: typeof visitsUnread === 'function' ? visitsUnread() : null, owed: typeof _visitsIdxOwed === 'object' ? Object.keys(_visitsIdxOwed).join(',') : '' })).catch(e => ({ v: 'n/a' })); say(`     [${D.label}] ${sc.v} | queued: ${sc.out || '-'}${sc.unread ? ' | unread' : ''}${sc.owed ? ' | owed: ' + sc.owed : ''}`); }
     }
     // ---------- settle: everything online, every hold let go, rounds until nothing moves ----------
     step = 'settle';

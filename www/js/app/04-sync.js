@@ -919,6 +919,8 @@ async function persistVisitsInner(opts){
     const patches = []; // what the merges took from the cloud, put on screen once everything has landed
     const writeUnion = async (doc, arr) => {
       let merged = arr, tooBig = 0, took = [], changed = false;
+      if(doc !== 'live') idxOwe(doc, Array.isArray(arr) ? arr.length : 0); // owed before it is written (F2)
+      _visitsUnsure.add(doc);
       const res = await storageUpdate(keyOf(doc), cloudStr => {
         tooBig = 0; changed = false; // a transaction may run more than once
         if(opts.cancelled && opts.cancelled()) return null; // a whole-day restore that stopped: a run of its write after that writes nothing (round 4)
@@ -943,11 +945,22 @@ async function persistVisitsInner(opts){
     };
     // Pass A — union writes of every document this device changed (never loses).
     const dirty = [];
-    if(opts.authoritative || JSON.stringify(part.live) !== _visitsLoaded) dirty.push(['live', part.live]);
+    if(opts.authoritative || JSON.stringify(part.live) !== _visitsLoaded || _visitsUnsure.has('live')) dirty.push(['live', part.live]);
+    // a document this phone wrote while its copy of it does not yet say what that write left in the cloud (no answer in
+    // time, a failure, or the save stopped at a later step) may hold a visit deleted here since — that write landed, early
+    // or late (visits fuzz seed 121): written again, as a union, until a save that wrote it lands whole (_visitsUnsure)
     Object.keys(part.months).forEach(m => {
       if(_visitsBroken.includes(m) || unreadKept(m)) return; // a month we could not read is never written
       const have = _visitsArch[m];
-      if(!have || JSON.stringify(part.months[m]) !== have.json) dirty.push([m, part.months[m]]);
+      if(!have || JSON.stringify(part.months[m]) !== have.json || _visitsUnsure.has(m)) dirty.push([m, part.months[m]]);
+    });
+    // a month read here that has no visit left in this phone's list (its last one deleted, or moved out) is written too —
+    // until the visits fuzz (F4) it was never looked at: the delete was told "Moved to recycle bin" and the visit stayed in
+    // that month's document, hidden only by the delete log (120 days; the daily e-mail does not read the log)
+    [...new Set(Object.keys(_visitsArch).concat([..._visitsUnsure].filter(m => m !== 'live')))].forEach(m => {
+      if(part.months[m] || _visitsBroken.includes(m) || unreadKept(m)) return;
+      const have = _visitsArch[m];
+      if((have && Array.isArray(have.arr) && have.arr.some(v => v)) || _visitsUnsure.has(m)) dirty.push([m, []]);
     });
     _visitsDirtyDocs = new Set(dirty.map(([doc]) => doc)); // a save that does not land keeps the bases of what changed in these (visitsChangedBases)
     const overflow = {}; // cloud-only entries found in a document that is not their home
@@ -963,27 +976,72 @@ async function persistVisitsInner(opts){
       await writeUnion(h, base.concat(overflow[h].filter(v => !ids.has(v.id))));
     }
     // Pass B — tidy: shed a visit from a document once its home provably holds it.
+    // A copy left in the old document that differs from what this phone last saw there (its base: another device edited
+    // it since — a field, a photo) is merged three ways into the copy at its home first, and the home written again; the
+    // tidy then sheds only a copy still exactly as this phone saw it or merged it — one changed again meanwhile is
+    // merged again from what the tidy read (visits fuzz F3: the copy holding the other device's edit was shed unmerged,
+    // the edit lost; seed 57: left in two documents, a later read kept the older copy).
     const docs = new Set(['live', ...Object.keys(_visitsArch), ...Object.keys(written)]);
+    const fm3 = typeof UMCore.mergePhotos3 === 'function' ? { photos: (L, C, B) => UMCore.mergePhotos3(L, C, B) } : null;
+    const partOf = h => h === 'live' ? part.live : (part.months[h] || []);
     for(const doc of docs){
       if(doc !== 'live' && (_visitsBroken.includes(doc) || unreadKept(doc))) continue;
-      const arr = written[doc] || (doc === 'live' ? _visitsLive : _visitsArch[doc].arr);
-      const stray = UMCore.visitsStrayIds(doc, arr, homeById, (h, id) => stored.has(h + '|' + id));
-      if(!stray.length) continue;
-      const drop = new Set(stray);
-      let tidy = arr;
-      const res = await storageUpdate(keyOf(doc), cloudStr => {
-        const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
-        tidy = (Array.isArray(cloud) ? cloud : arr).filter(v => v && !drop.has(v.id) && !ts.has(v.id));
-        return JSON.stringify(tidy);
-      }, 12000);
-      if(res == null) throw new Error('visits tidy failed');
-      written[doc] = tidy;
-      writtenStr[doc] = committedStr(res, tidy);
+      let arr = written[doc] || (doc === 'live' ? _visitsLive : _visitsArch[doc].arr);
+      let todo = UMCore.visitsStrayIds(doc, arr, homeById, (h, id) => stored.has(h + '|' + id));
+      if(!todo.length) continue;
+      const guarded = !opts.authoritative && !!written[doc]; // (the copies as the cloud holds them: this save's union of that document)
+      const baseStr = doc === 'live' ? _visitsLoaded : (_visitsArch[doc] && _visitsArch[doc].json);
+      const baseArr = guarded && typeof baseStr === 'string' ? UMCore.safeParse(baseStr, null) : null;
+      const baseOfDoc = new Map((Array.isArray(baseArr) ? baseArr : []).filter(v => v && v.id != null).map(v => [v.id, v]));
+      // a copy changed again while this ran is merged again (the tidy's own read gives it): twice; the third time it is
+      // shed as before (never left in two documents for a later read to pick the older one)
+      for(let attempt = 0; attempt < 3 && todo.length; attempt++){
+        const drop = new Set(todo);
+        const expect = new Map(); // id → the copy (as text) the tidy may shed: as this phone saw it there, or as it merged it
+        if(guarded && attempt < 2){
+          for(const id of todo){
+            const cs = arr.find(v => v && v.id === id), bs = baseOfDoc.get(id);
+            if(!cs || !bs) continue; // not in what this phone saw there: shed as before
+            const csj = JSON.stringify(cs);
+            if(csj === JSON.stringify(bs)){ expect.set(id, csj); continue; } // as this phone saw it: nothing of another device's in it
+            const h = homeById[id], L = partOf(h).find(v => v && v.id === id), atHome = (written[h] || partOf(h)).find(v => v && v.id === id);
+            if(!L || !atHome || typeof UMCore.merge3Record !== 'function' || (h !== 'live' && (_visitsBroken.includes(h) || unreadKept(h)))){ drop.delete(id); continue; } // cannot merge it: kept
+            const r = UMCore.merge3Record(atHome, cs, bs, fm3), mv = r && r.value;
+            if(!mv){ drop.delete(id); continue; }
+            if(JSON.stringify(mv) !== JSON.stringify(atHome)){
+              await writeUnion(h, (written[h] || partOf(h)).map(v => v && v.id === id ? mv : v)); // the home holds the merged visit first
+              const fields = [], ks = new Set(Object.keys(L).concat(Object.keys(mv)));
+              ks.forEach(k => { const a = JSON.stringify(L[k] === undefined ? null : L[k]); if(a !== JSON.stringify(mv[k] === undefined ? null : mv[k])) fields.push([k, a, mv[k]]); });
+              if(fields.length) patches.push({ obj: L, fields }); // and the screen once the save has landed
+            }
+            expect.set(id, csj);
+          }
+        }
+        if(!drop.size) break;
+        let tidy = arr, again = [];
+        if(doc !== 'live') idxOwe(doc, Math.max(0, arr.length - drop.size)); // owed before it is written (F2)
+        _visitsUnsure.add(doc);
+        const res = await storageUpdate(keyOf(doc), cloudStr => {
+          const cloud = cloudStr != null ? UMCore.safeParse(cloudStr, null) : null;
+          again = [];
+          tidy = (Array.isArray(cloud) ? cloud : arr).filter(v => {
+            if(!v || ts.has(v.id)) return false;
+            if(!drop.has(v.id)) return true;
+            if(expect.has(v.id) && expect.get(v.id) !== JSON.stringify(v)){ again.push(v.id); return true; } // changed meanwhile: merged again
+            return false;
+          });
+          return JSON.stringify(tidy);
+        }, 12000);
+        if(res == null) throw new Error('visits tidy failed');
+        written[doc] = tidy;
+        writtenStr[doc] = committedStr(res, tidy);
+        arr = tidy; todo = again;
+      }
     }
     // Pass C — the month index (what exists, and a revision per month for cheap refreshes).
     const now = Date.now();
     const writtenMonths = Object.keys(written).filter(d => d !== 'live');
-    if(writtenMonths.length || opts.authoritative){
+    if(writtenMonths.length || opts.authoritative || visitsIndexOwed()){ // (a month owed from an earlier save that did not reach its index: moved now, F2)
       const owed = Object.keys(_visitsIdxOwed).filter(m => !writtenMonths.includes(m)); // a photo mark patched there: the phones read it again (this one too)
       const res = await storageUpdate('visitsIndex', cloudStr => {
         const idx = (cloudStr != null ? UMCore.safeParse(cloudStr, null) : null) || {};
@@ -995,10 +1053,11 @@ async function persistVisitsInner(opts){
         return JSON.stringify(idx);
       }, 12000);
       if(res == null) throw new Error('visits index failed');
-      writtenMonths.forEach(m => { _visitsArch[m] = { rev: now, arr: written[m], json: writtenStr[m] }; });
+      writtenMonths.forEach(m => { _visitsArch[m] = { rev: now, arr: written[m], json: writtenStr[m] }; _visitsUnsure.delete(m); }); // (this phone's copy is what it wrote: sure again)
       writtenMonths.concat(owed).forEach(m => { delete _visitsIdxOwed[m]; });
+      idxOwedSave();
     }
-    if(written.live){ _visitsLive = written.live; _visitsLoaded = writtenStr.live; }
+    if(written.live){ _visitsLive = written.live; _visitsLoaded = writtenStr.live; _visitsUnsure.delete('live'); }
     // What the merges took from the cloud (another phone's correction of a
     // visit this phone did not change) goes on the visits on screen, in place:
     // left on the older copy, the next save counted it as this phone's change
@@ -1051,7 +1110,19 @@ function visitDocOf(id){
 // the index that tells the phones to read it again has not moved yet: moved at
 // the next round (a failed index write was only logged — the other phones
 // kept "waiting to upload" until that month was written again).
-const _visitsIdxOwed = {};   // month → its visit count when patched
+// Since the visits fuzz (F2): every past month a visits save writes is owed BEFORE its write — a document that lands
+// with no index write after it (a weak link, the app closed between the two) still has its revision moved, at the next
+// save or round, also after a reopen (kept on the phone: um_visitsIdxOwed); cleared only once an index write with it
+// landed. Until then the other phones never read that month again in their session (only the photo marks were owed).
+// The visits documents this phone started a write of while its copy of them (_visitsArch, _visitsLoaded) does not yet
+// say what that write left in the cloud — no answer in time, a failure, or a later step of that save that did not land
+// (the copy moves only once the whole save has): the write may have landed, early or late, holding a visit deleted
+// here since (visits fuzz seed 121). Written again, as a union, by the next save. In memory: a page's writes end with it.
+const _visitsUnsure = new Set();
+const IDX_OWED = 'um_visitsIdxOwed';
+const _visitsIdxOwed = (() => { try{ const o = JSON.parse(localStorage.getItem(IDX_OWED) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; }catch(e){ return {}; } })(); // month → its visit count
+function idxOwedSave(){ try{ if(Object.keys(_visitsIdxOwed).length) localStorage.setItem(IDX_OWED, JSON.stringify(_visitsIdxOwed)); else localStorage.removeItem(IDX_OWED); }catch(e){} }
+function idxOwe(m, n){ if(!m || m === 'live') return; _visitsIdxOwed[m] = n; idxOwedSave(); }
 function visitsIndexOwed(){ return Object.keys(_visitsIdxOwed).length; }
 async function bumpVisitsIndex(){
   const months = Object.keys(_visitsIdxOwed);
@@ -1068,8 +1139,9 @@ async function bumpVisitsIndex(){
     }, 12000);
     if(res == null) throw new Error('visits index failed');
     months.forEach(m => { delete _visitsIdxOwed[m]; });
+    idxOwedSave();
     return true;
-  }catch(e){ console.warn('visits index (photo mark)', e); return false; } // asked again next round
+  }catch(e){ console.warn('visits index (owed revisions)', e); return false; } // asked again next round
 }
 function patchVisitPhotos(changes){
   const out = {}, todo = [];
@@ -1129,7 +1201,7 @@ async function patchVisitPhotosNow(changes){
         }, 12000);
       }catch(e){
         list.forEach(c => { out[c.photoId] = 'failed'; });
-        if(asked && doc !== 'live') _visitsIdxOwed[doc] = n; // it may have landed with no answer: the phones read it once more
+        if(asked && doc !== 'live') idxOwe(doc, n); // it may have landed with no answer: the phones read it once more
         continue;
       }
       Object.assign(out, res);
@@ -1141,7 +1213,7 @@ async function patchVisitPhotosNow(changes){
       // and its next save of the month put its old copy back (v122 review).
       // A transaction can run more than once (the cloud's answer lost, then a
       // retry that finds the mark settled): any run that asked to write counts.
-      if(asked && doc !== 'live') _visitsIdxOwed[doc] = n;
+      if(asked && doc !== 'live') idxOwe(doc, n);
       // What this phone knows the cloud holds gets the same marks settled, so
       // the next save of the list does not count them as a change of its own.
       const done = list.filter(c => res[c.photoId] === 'done');
@@ -3041,6 +3113,10 @@ function keepMergeBaseOnPhone(key){
     // take on the phone) — a reopen then still merges it field by field
     const recs = m && m.size ? visitsChangedBases(m) : {};
     try{ if(Object.keys(recs).length) localStorage.setItem('um_base:visitsRec', JSON.stringify(recs)); else localStorage.removeItem('um_base:visitsRec'); }catch(e){}
+    // …and in memory: visitsFallbackBase() takes its records from there (visits fuzz F1: a visit first changed after a
+    // start with the visits already queued had its record on the phone only — the base in memory held its fingerprint,
+    // and once the signal was back this phone's whole visit went over another device's move)
+    _visitsBaseRecs = Object.keys(recs).length ? new Map(Object.entries(recs)) : null; _visitsBaseMixed = null;
   }
   if(str != null){ try{ localStorage.setItem('um_base:' + key, str); }catch(e){} }
 }
@@ -3421,7 +3497,7 @@ async function persistNowInner(key, opts){
     const awaitingSignIn = typeof earlyUnconfirmed === 'function' && earlyUnconfirmed(); // (the early open's window: nothing is sent before the sign-in is confirmed)
     // the cloud's visits not read first because a read had no answer in time, the phone online (a weak link): said so —
     // never "when back online" (rerev W3)
-    const noAnswer = !!(e && e.visitsWait === 'timeout') && !(typeof navigator !== 'undefined' && navigator.onLine === false);
+    const noAnswer = (!!(e && e.visitsWait === 'timeout') || (key === 'visits' && /timeout/.test(String(e && e.message || '')))) && !(typeof navigator !== 'undefined' && navigator.onLine === false); // (a read or a write: visits fuzz)
     const acc = kind === 'refused' ? await accessCheck() : null;
     const lost = acc === 'lost', unsure = acc === 'unknown'; // unsure (round 3): kept and queued like an offline save, tried again by the round
     if(kind && !lost && !unsure){
