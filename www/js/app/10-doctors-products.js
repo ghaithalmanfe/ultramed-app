@@ -70,8 +70,11 @@ function prodThumb(p, cls){
   const col = brandColor(p.brand);
   const letter = esc(String(p.brand||'?').charAt(0).toUpperCase());
   const fb = `<div class="${c} pthumb-fb" style="background:${col};">${letter}</div>`;
-  if(!p.img) return fb;
-  return `<img class="${c}" src="${p.img}" alt="" loading="lazy" referrerpolicy="no-referrer" data-fbc="${col}" data-fbl="${letter}" onerror="imgFallback(this)">`;
+  // the image URL is team-typed data (a rep's "+ Add product" has no supervisor check, so any phone can store it):
+  // keep it inside src="…" (esc) and only an http(s) one (safeUrl), else the brand tile — never markup (security review)
+  const src = safeUrl(p.img);
+  if(!src) return fb;
+  return `<img class="${c}" src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-fbc="${col}" data-fbl="${letter}" onerror="imgFallback(this)">`;
 }
 function imgFallback(el){
   const d=document.createElement('div');
@@ -102,8 +105,12 @@ async function submitAddProduct(){
   const priceVal = parseFloat(document.getElementById('mProdPrice').value);
   const dupP = products.find(x=>x.name.toLowerCase()===name.toLowerCase());
   if(dupP){ showToast('That product already exists'); return; }
+  // a plain http(s) image link only — no spaces or quote/angle characters a link never has (security review: the
+  // render escapes it too, but a clean value never carries an attribute breakout in the first place)
   const imgVal = document.getElementById('mProdImg').value.trim();
-  products.push({id:uid(), name, brand: document.getElementById('mProdBrand').value.trim() || 'Other', price: isNaN(priceVal)?null:priceVal, img: imgVal||undefined});
+  const imgOk = safeUrl(imgVal) && !/[\s"'<>`]/.test(imgVal);
+  if(imgVal && !imgOk){ showToast('Image link must be a plain http:// or https:// address'); return; }
+  products.push({id:uid(), name, brand: document.getElementById('mProdBrand').value.trim() || 'Other', price: isNaN(priceVal)?null:priceVal, img: imgOk?imgVal:undefined});
   const r = await persistTold('products');
   closeModal();
   renderProducts();
@@ -1702,7 +1709,7 @@ function openProductDetail(pid){
     }
   })));
   showModal(`
-    ${p.img?`<img class="pbig" src="${p.img}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
+    ${safeUrl(p.img)?`<img class="pbig" src="${esc(safeUrl(p.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
     <div class="row-between" style="margin:0 0 4px;" data-sections>
       <h3 style="margin:0;">${esc(p.name)}</h3>
       ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">${I('pencil')} Edit</button>`:''}
