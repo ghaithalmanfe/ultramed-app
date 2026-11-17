@@ -11,11 +11,12 @@
      self), off-site form posts (form-action self), and pins where the app may talk (connect-src: Firestore + Auth).
      Images are arbitrary https (product and brand photos) plus data:/blob: (camera thumbnails). connect-src allows
      any https host because the weekly deck fetches product and brand images from whatever CDN the catalog points at
-     to embed them (so a fixed list would silently blank deck images on any new host); it still blocks http: and
-     ws:/data: exfiltration channels, and Firebase's own hosts. frame-ancestors is NOT honoured in a meta tag (it
+     to embed them (so a fixed list would silently blank deck images on any new host), and data:/blob: because the
+     deck reads a visit photo's inline preview (data:) with fetch() when the full photo is not on the phone (without
+     them those photos vanished from the deck — xss.e2e.js check 5); it still blocks http: and ws:. frame-ancestors is NOT honoured in a meta tag (it
      needs a real header GitHub Pages cannot send) — an iframe embed is not blocked here; the app guards nothing
      sensitive by framing. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' https:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; upgrade-insecure-requests">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' https: data: blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'; upgrade-insecure-requests">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <title>UltraMed Field Ops</title>
 <link rel="manifest" href="manifest.json">

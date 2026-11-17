@@ -50,6 +50,9 @@ const NESTED = '"><img src=y onerror="window.' + MARK + '=(window.' + MARK + '||
   await page.exposeFunction('__cDel', api.del); await page.exposeFunction('__cList', api.list); await page.exposeFunction('__cSetMany', api.setMany);
   await page.addInitScript(({ mark }) => {
     try{ window[mark] = 0; }catch(e){}
+    // every request the page's own Content-Security-Policy blocks, for the check at the end
+    window.__cspV = [];
+    document.addEventListener('securitypolicyviolation', e => { window.__cspV.push(e.violatedDirective + ' ' + String(e.blockedURI || '').slice(0, 80)); });
     window.storage = { get: async k => { const v = await window.__cGet(k); return v == null ? null : { value: v }; }, set: async (k, v) => window.__cSet(k, v),
       setMany: async e => window.__cSetMany(e), delete: async k => window.__cDel(k), list: async p => ({ keys: await window.__cList(p) }) };
     const off = new Date('2026-10-08T10:00:00').getTime() - Date.now();
@@ -113,6 +116,18 @@ const NESTED = '"><img src=y onerror="window.' + MARK + '=(window.' + MARK + '||
       anyMarkAttr: !!document.querySelector('[data-' + mark + ']') };
   }, { mark: MARK });
   check('Add product form: a non-http(s) / markup image URL is rejected, not stored as a live value', added.fired === 0 && (added.img == null || !/["<>]|onerror/.test(added.img)), added);
+
+  // 5) The weekly deck reads a visit photo's inline preview (a data: URL, the thumbnail kept on the visit) with
+  //    fetch() when the full photo is not on the phone (wdFetchBlob). The page's security policy must let that
+  //    through: a connect-src without data: made every such photo vanish from the deck, silently.
+  const deckImg = await page.evaluate(async () => {
+    const png = 'data:image/png;base64,' + 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    try{ const r = await wdPhoto(png, 2000, 100); return { ok: !!(r && r.data), w: r ? r.w : null }; }catch(e){ return { ok: false, err: String(e) }; }
+  });
+  check('Weekly deck: a visit photo kept as its inline preview (data:) still loads under the page\'s security policy', deckImg.ok, deckImg);
+
+  const csp = await page.evaluate(() => window.__cspV || []);
+  check('nothing the app itself asked for was blocked by its own security policy', csp.length === 0, csp.slice(0, 6));
 
   check('no page or console error while rendering the probes', errors.length === 0, errors.slice(0, 6));
 
