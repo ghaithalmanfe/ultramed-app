@@ -32,9 +32,13 @@ function openStaffForm(idx){
 function renameRepInLists(prevName, name){
   return holdRefresh(async () => {
     // every visit renamed must be the cloud's: a past month on screen from the phone's store is read first (v126
-    // review); not read, the visits are left as they are and "Finish the rename" offers them later (the note stays)
+    // review), and so are the visits of the phone's copy before a read of this session committed them (review 2: an
+    // early open's window, a start without a connection); not read, the visits are left as they are and "Finish the
+    // rename" offers them later (the note stays)
     let visitsOk = true;
-    if(keptMonthsOnScreen()){ try{ await visitsConfirmKept(); }catch(e){} visitsOk = !keptMonthsOnScreen(); }
+    if(visitsUnread()){ try{ await refreshTombs(); await visitsReadFirst(); }catch(e){} }
+    if(keptMonthsOnScreen()){ try{ await visitsConfirmKept(); }catch(e){} }
+    visitsOk = !keptMonthsOnScreen() && !visitsUnread();
     // Keep existing records pointing at this person — the owner, and the owner
     // before a handover: the earlier months of a handed-over clinic count for
     // prevRep — left on the old name, they counted for nobody on the team and

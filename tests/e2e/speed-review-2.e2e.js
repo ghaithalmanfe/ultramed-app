@@ -12,6 +12,14 @@
 //   V5  nothing held: the daily open as it comes (the past months over a phone's link) and the edit saved the moment
 //       her visits are on screen — the moved visit stays where the other device put it (on v125 the screen shows her
 //       visits only once the start's read is in)
+//   V6  that window save while the cloud's visits cannot be read: it does not land, writes nothing, says it is kept on
+//       this phone; once they can be read it lands and the move stays
+//   U1  (Firebase's own order of events) Mariam signs out before her sign-in is confirmed and Renova signs in on the
+//       sign-in screen: Mariam is never selected again, Renova is not told she was signed out
+//   U2  a rename made in the window: no visit in the cloud keeps the old name (one logged since the copy too)
+//   U3  the figures cannot be worked out at all after a change: the home screen says so, not the old figures as if current
+//   U4  no chat copy and its first read fails: "Loading messages…", never "Start the conversation"
+//   U5  saves in the window whose sign-in is not confirmed in time say they wait for the sign-in, not "back online"
 //   H1  the supervisor viewed Mariam's screen, signed out, and Mariam signs in on the same page: no painted frame of her
 //       screen says "Viewing: … · Back to the team" or greets the supervisor
 //   H2  Mariam signs out while her start's read is on its way and Renova signs in on the sign-in screen before that read
@@ -46,10 +54,11 @@ function seed(F){ cloud = new Map(Object.entries(F.docs).filter(([, v]) => v != 
 const doc = k => cloud.has(k) ? parse(cloud.get(k).value) : null;
 const ops = []; // { who, op, k, t }
 // hold: label → { test(key, kind), p, release } — kind 'get' (a plain read) or 'tx' (a transaction's read)
-const ctl = { hold: new Map(), slow: new Map() }; // slow: label → { test(key, kind), ms } (a phone's link: those reads take ms)
+const ctl = { hold: new Map(), slow: new Map(), fail: new Map() }; // slow: label → { test(key, kind), ms } (a phone's link: those reads take ms); fail: label → test(key, kind) (no signal for those reads)
 function holdReads(label, test){ let release; const p = new Promise(r => { release = r; }); ctl.hold.set(label, { test: test || (() => true), p, release }); }
 function releaseReads(label){ const h = ctl.hold.get(label); ctl.hold.delete(label); if(h) h.release(); }
-async function heldFor(who, k, kind){ const h = ctl.hold.get(who); if(h && h.test(k, kind)) await h.p; const s = ctl.slow.get(who); if(s && s.test(k, kind)) await sleep(s.ms); }
+async function heldFor(who, k, kind){ const h = ctl.hold.get(who); if(h && h.test(k, kind)) await h.p; const s = ctl.slow.get(who); if(s && s.test(k, kind)) await sleep(s.ms);
+  const f = ctl.fail.get(who); if(f && f(k, kind)){ const e = new Error('unavailable: no signal (harness)'); e.code = 'unavailable'; throw e; } }
 const locks = {};
 async function lockKey(k){ const prev = locks[k] || Promise.resolve(); let release; const mine = new Promise(r => { release = r; }); locks[k] = prev.then(() => mine); await prev; const tm = setTimeout(release, 30000); return () => { clearTimeout(tm); release(); }; }
 const held = {}; let txSeq = 0;
@@ -120,6 +129,17 @@ const FAKE_FB = `;(function(){
   window.firebase = fb;
 })();`;
 
+// The same stand-in with Firebase 10.13's order of events (U1): one queue of the signed-in user's changes, starting with
+// the confirmation of the saved session (its listeners are told the saved session first); a sign-out asked before it
+// is told after it, and a sign-in asked meanwhile is told after the sign-out (the SDK queues _updateCurrentUser).
+const FAKE_FB_QUEUE = FAKE_FB
+  .replace("signInWithEmailAndPassword: function(email, pwd){ return window.__fbSignIn(email, pwd).then(function(ok){\n      if(!ok){ var er = new Error('wrong password'); er.code = 'auth/wrong-password'; throw er; }\n      user = { email: email, uid: 'u-' + email }; try{ localStorage.setItem(LS, email); }catch(err){} saved(email); known = true;\n      setTimeout(tell, 0); return { user: user }; }); },",
+    "signInWithEmailAndPassword: function(email, pwd){ return window.__fbSignIn(email, pwd).then(function(ok){\n      if(!ok){ var er = new Error('wrong password'); er.code = 'auth/wrong-password'; throw er; }\n      queue = queue.then(function(){ user = { email: email, uid: 'u-' + email }; try{ localStorage.setItem(LS, email); }catch(err){} saved(email); known = true; tell(); });\n      return queue.then(function(){ return { user: user }; }); }); },")
+  .replace("signOut: function(){ var out = function(){ user = null; try{ localStorage.removeItem(LS); }catch(err){} saved(null); setTimeout(tell, 0); }; if(!known) return started.then(out); out(); return Promise.resolve(); },",
+    "signOut: function(){ queue = queue.then(function(){ user = null; try{ localStorage.removeItem(LS); }catch(err){} saved(null); tell(); }); return queue; },")
+  .replace("    known = true; tell();\n  });", "    known = true; tell();\n  });\n  var queue = started;");
+if(FAKE_FB_QUEUE.split('queue = queue.then').length !== 3 || FAKE_FB_QUEUE.indexOf('var queue = started;') < 0) throw new Error('harness: the queued stand-in was not built');
+
 // ---------- what each page records (before any page script) ----------
 function initScript(arg){
   const off = arg.off;
@@ -138,17 +158,20 @@ function initScript(arg){
   };
   const loop = () => { try{ const f = frame(); const last = U.frames[U.frames.length - 1]; if(!last || JSON.stringify(last) !== JSON.stringify(f)) U.frames.push(f); }catch(e){} requestAnimationFrame(loop); };
   requestAnimationFrame(loop);
-  document.addEventListener('DOMContentLoaded', () => { const st = window.showToast; if(typeof st === 'function') window.showToast = function(m, ms){ U.toasts.push(String(m)); return st.apply(this, arguments); }; });
+  U.selects = [];
+  document.addEventListener('DOMContentLoaded', () => { const st = window.showToast; if(typeof st === 'function') window.showToast = function(m, ms){ U.toasts.push(String(m)); return st.apply(this, arguments); };
+    const su = window.selectUser; if(typeof su === 'function') window.selectUser = function(name){ U.selects.push(name); return su.apply(this, arguments); }; });
 }
 
 // ---------- a device ----------
 let browser;
-async function mkDevice(label){
+async function mkDevice(label, opts){
+  opts = opts || {};
   const F = SMALL;
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US', timezoneId: 'Asia/Kuwait' });
   await ctx.route(/^https?:\/\/(?!localhost[:/])/, route => {
     const url = route.request().url();
-    if(/gstatic\.com\/firebasejs\/[\d.]+\/firebase-(app|firestore|auth)-compat\.js/.test(url)) return route.fulfill({ status: 200, contentType: 'text/javascript', body: /auth-compat/.test(url) ? FAKE_FB : '/* stand-in */' });
+    if(/gstatic\.com\/firebasejs\/[\d.]+\/firebase-(app|firestore|auth)-compat\.js/.test(url)) return route.fulfill({ status: 200, contentType: 'text/javascript', body: /auth-compat/.test(url) ? (opts.fb === 'queue' ? FAKE_FB_QUEUE : FAKE_FB) : '/* stand-in */' });
     if(/fonts\.googleapis\.com/.test(url)) return route.fulfill({ status: 200, contentType: 'text/css', body: '/* fonts stand-in */' });
     return route.abort();
   });
@@ -228,7 +251,8 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
       await P.page.waitForFunction(() => typeof _early !== 'undefined' && _early && _early.confirmed && typeof refreshRunning === 'function' && refreshRunning(), null, { timeout: 15000, polling: 50 }).catch(() => {});
       await sleep(300);
       started = await P.ev(edit, { y: Y.id }).catch(() => false);
-      await sleep(300);
+      await sleep(50);
+      releaseReads(P.label); // (the start's read goes on beside the save; whatever the save itself reads is its own)
     }
     const out = started ? await P.ev(async () => { const r = await window.__save; return { ok: r.ok }; }) : { ok: false };
     releaseReads(P.label); ctl.slow.delete(P.label);
@@ -285,6 +309,162 @@ const waitEarly = (D, ms) => D.page.waitForFunction(() => typeof _early !== 'und
     const bad = frames.filter(f => /Viewing:|Back to the team/.test(f.whose) || /Ghaith/.test(f.hello));
     check('H1: the supervisor viewed Mariam\'s screen and signed out; Mariam signs in on the same page — no frame shown to her says "Viewing: … · Back to the team" or greets the supervisor',
       /Viewing:/.test(sup.whose) && frames.length > 0 && !bad.length, { supervisorFrame: sup, framesShownToMariam: frames.length, bad: bad.slice(0, 3) });
+    await done(D);
+  }
+
+  // =====================================================================================================
+  // V6: the same window save while the cloud's visits cannot be read (no signal for them): it does not land, writes no
+  // visits document, says it is kept on this phone; once they can be read the queued save lands and the move stays
+  // =====================================================================================================
+  if(want('V6')){
+    seed(SMALL);
+    const P = await mkDevice('V6-phone'), L = await mkDevice('V6-laptop');
+    await P.firstOpen(M); await L.firstOpen(M);
+    const X = pick(sep0), Y = pick(oct0, [X.id]);
+    const moved = await L.ev(async a => { const v = visits.find(x => x.id === a.x); v.date = '2026-10-01'; v.editedBy = 'Mariam'; v.editedAt = Date.now(); return (await persistTold('visits')).ok; }, { x: X.id });
+    await done(L);
+    const t0 = Date.now();
+    await P.restart({ hold: true });
+    const drew = await waitEarly(P);
+    ctl.fail.set(P.label, (k, kind) => kind === 'get' && (k === 'visits' || k === 'visitsIndex' || /^visitsArch:/.test(k))); // no signal for the visits' plain reads
+    await P.ev(a => { window.__um.toasts.length = 0; const v = visits.find(x => x.id === a.y); v.notes = (v.notes || '') + ' [edited on the phone]'; window.__save = persistTold('visits'); }, { y: Y.id });
+    releaseAuth(P.label, 'ok');
+    const out = await P.ev(async () => { const r = await window.__save; return { ok: r.ok, queued: !!(r.outcome && r.outcome.queued), mirrored: !!(r.outcome && r.outcome.mirrored), words: (typeof saveFailText === 'function' ? (saveFailText(r, 'visits') || [''])[0] : ''), toasts: window.__um.toasts.slice() }; });
+    await P.settled(); await sleep(200);
+    const wroteWhileUnread = writesBy(P.label, t0).filter(w => /^visits/.test(w.k)).map(w => w.op + ' ' + w.k);
+    const whereThen = findVisit(X.id), queuedThen = await P.ev(() => outboxList());
+    ctl.fail.delete(P.label);
+    await P.tick(); await P.settled(); await P.tick(); await sleep(300);
+    const where = findVisit(X.id), yNotes = ((doc('visitsArch:2026-10') || []).find(v => v.id === Y.id) || {}).notes || '';
+    const queuedAfter = await P.ev(() => outboxList());
+    check('V6: the window save while the cloud\'s visits cannot be read does not land: no visits document written, said kept on this phone (queued); once they can be read it lands — the edit in, the move kept (visitsArch:2026-10@2026-10-01)',
+      moved && drew && !out.ok && out.queued && out.mirrored && /Saved on this device|Kept on this phone/i.test(out.words) && !wroteWhileUnread.length && whereThen.length === 1 && whereThen[0] === 'visitsArch:2026-10@2026-10-01'
+        && queuedThen.includes('visits') && /edited on the phone/.test(yNotes) && where.length === 1 && where[0] === 'visitsArch:2026-10@2026-10-01' && !queuedAfter.includes('visits'),
+      { moved, drew, out, wroteWhileUnread, whereThen, queuedThen, where, otherEditLanded: /edited on the phone/.test(yNotes), queuedAfter });
+    await done(P);
+  }
+
+  // =====================================================================================================
+  // U2: a rename made in the window (the supervisor's phone, its copy from before a visit Renova logged since):
+  // when the rename says every list saved, no visit in the cloud keeps the old name
+  // =====================================================================================================
+  if(want('U2')){
+    seed(SMALL);
+    const G2 = await mkDevice('U2-sup'), R2 = await mkDevice('U2-renova');
+    await G2.firstOpen(G); await R2.firstOpen(R);
+    const newId = await R2.ev(async () => { const c = clinics.find(x => x.rep === 'Renova' && x.cls !== 'Closed'); const id = 'u2-renova-visit';
+      visits.push({ id, date: todayStr(), ts: Date.now() - 60000, rep: 'Renova', clinicId: c.id, clinicName: c.name, doctorIds: [], notes: 'logged after the supervisor\'s copy', products: [] });
+      return (await persistTold('visits')).ok ? id : null; });
+    await done(R2);
+    await G2.restart({ hold: true });
+    const drew = await waitEarly(G2);
+    await G2.ev(() => { window.__ren = renameRepInLists('Renova', 'Renova Example'); });
+    releaseAuth(G2.label, 'ok');
+    const outs = await G2.ev(async () => { const got = await window.__ren; return got.map(([r, k]) => [k, !!(r && r.ok)]); });
+    await G2.settled(); await G2.tick(); await sleep(300);
+    const visitsOk = (outs.find(o => o[0] === 'visits') || [])[1];
+    const oldName = visitDocs().reduce((n, k) => n + (doc(k) || []).filter(v => v && (v.rep === 'Renova' || v.withRep === 'Renova')).length, 0);
+    const nv = visitDocs().map(k => (doc(k) || []).find(v => v && v.id === newId)).find(Boolean) || {};
+    check('U2: a rename made in the early open\'s window: when it says the visits saved, no visit in the cloud keeps the old name — also the one Renova logged after the supervisor\'s copy',
+      !!newId && drew && visitsOk === true && oldName === 0 && nv.rep === 'Renova Example', { newId, drew, outcomes: outs, visitsWithOldName: oldName, newVisitRep: nv.rep || null });
+    await done(G2);
+  }
+
+  // =====================================================================================================
+  // U3: the figures cannot be worked out at all (msBuild throws) after a change: the home screen says so — the earlier
+  // state's whole frame is not kept on screen for ever as if it were current
+  // =====================================================================================================
+  if(want('U3')){
+    seed(SMALL);
+    const D = await mkDevice('U3-rep');
+    await D.firstOpen(M);
+    await D.ev(async () => { switchView('today'); await msWhenReady(); });
+    await sleep(300);
+    const before = await D.ev(() => ({ goal: (document.querySelector('#targetCard [data-ms="of-target"]') || {}).getAttribute ? document.querySelector('#targetCard [data-ms="of-target"]').getAttribute('data-value') : null }));
+    await D.ev(() => { window.msBuild = function(){ throw new Error('harness: the figures cannot be worked out'); }; });
+    const tg = doc('targets'); tg[M].revenue = Math.round((tg[M].revenue || 10000) * 1.5); cloud.set('targets', { value: JSON.stringify(tg), updated: Date.now() });
+    await D.tick(); await sleep(800); await D.ev(() => msWhenReady()); await sleep(300);
+    const after = await D.ev(() => ({ held: typeof _msHeld !== 'undefined' && _msHeld, said: /could not be worked out/i.test((document.getElementById('view-today') || {}).innerText || ''),
+      goal: (() => { const e = document.querySelector('#targetCard [data-ms="of-target"]'); return e ? e.getAttribute('data-value') : null; })() }));
+    check('U3: the figures cannot be worked out (msBuild throws) after another device changed her target: the home screen says the month\'s figures could not be worked out — it does not keep the earlier figures on screen as if current',
+      !after.held && after.said, { before, after, newTarget: tg[M].revenue });
+    await done(D);
+  }
+
+  // =====================================================================================================
+  // U4: a phone with no copy of the team chat whose first read fails: the Team screen says it is loading, never
+  // "Start the conversation" (it has not been read)
+  // =====================================================================================================
+  if(want('U4')){
+    seed(SMALL);
+    const D = await mkDevice('U4-rep');
+    await D.firstOpen(M);
+    await D.ev(() => { ['um_mirror:chat', 'um_mirror:memories', 'um_teamReadAt'].forEach(k => localStorage.removeItem(k)); });
+    ctl.fail.set(D.label, (k, kind) => k === 'chat' || k === 'memories');
+    await D.restart({ hold: false });
+    await D.settled();
+    await D.ev(async () => { switchView('team'); await new Promise(r => setTimeout(r, 600)); });
+    const s4 = await D.ev(() => ({ chat: (document.getElementById('chatList') || {}).innerText || '', from: typeof _teamFrom !== 'undefined' ? _teamFrom.chat : null }));
+    ctl.fail.delete(D.label);
+    check('U4: no copy of the team chat on this phone and its first read fails: the Team screen says the messages are loading — not "Start the conversation" (they were never read)',
+      !/Start the conversation/.test(s4.chat) && /Loading messages/.test(s4.chat), s4);
+    await done(D);
+  }
+
+  // =====================================================================================================
+  // U5: a save in the early open's window whose sign-in is not confirmed within the save's wait: it says it waits for
+  // the sign-in — never "when back online" / "No connection" (the phone is online)
+  // =====================================================================================================
+  if(want('U5')){
+    seed(SMALL);
+    const D = await mkDevice('U5-sup');
+    await D.firstOpen(G);
+    await D.restart({ hold: true });
+    const drew = await waitEarly(D);
+    const t5 = await D.ev(async () => {
+      window.__um.toasts.length = 0;
+      tasks.push({ id: 'u5-task', text: 'added in the first second', done: false, created: todayStr(), rep: currentUser.name });
+      const a = persistTold('tasks');
+      targets.Renova = Object.assign({}, targets.Renova || {}, { visits: 41 });
+      const b = persistTold('targets');
+      const [ra, rb] = await Promise.all([a, b]);
+      return { tasks: { ok: ra.ok, queued: !!(ra.outcome && ra.outcome.queued), words: (saveFailText(ra, 'tasks') || [''])[0] }, targets: { ok: rb.ok, words: (saveFailText(rb, 'targets') || [''])[0] }, toasts: window.__um.toasts.slice() };
+    });
+    releaseAuth(D.label, 'ok');
+    await D.settled(); await D.tick(); await sleep(300);
+    const landed = (doc('tasks') || []).some(t => t && t.id === 'u5-task');
+    const words = [t5.tasks.words, t5.targets.words].concat(t5.toasts).join(' | ');
+    check('U5: saves made in the window while the sign-in is not confirmed (over 12 s): what they say is that they wait for the sign-in — never "when back online" or "No connection" — and the queued task lands once it is confirmed',
+      drew && !t5.tasks.ok && t5.tasks.queued && /sign-in/i.test(t5.tasks.words) && /sign-in/i.test(t5.targets.words) && !/back online|No connection|check the connection/i.test(words) && landed, Object.assign({ drew, landed }, t5));
+    await done(D);
+  }
+
+  // =====================================================================================================
+  // U1: with the SDK's own order of events (one queue: the saved session's confirmation, then a sign-out asked before
+  // it, then a sign-in asked meanwhile): Mariam's copy on screen, she signs out before her sign-in is confirmed and
+  // Renova signs in on the sign-in screen — Mariam is never selected again, Renova is not told she was signed out
+  // =====================================================================================================
+  if(want('U1')){
+    seed(SMALL);
+    const D = await mkDevice('U1', { fb: 'queue' });
+    await D.firstOpen(M);
+    await D.restart({ hold: true });
+    const drew = await waitEarly(D);
+    await D.ev(() => { window.__um.selects.length = 0; window.__um.toasts.length = 0; try{ switchUser(); }catch(e){} });
+    const f0 = await D.ev(() => window.__um.frames.length);
+    await D.page.click(`#gateGrid .gate-tile:has-text("${R}")`);
+    const pw = await Promise.race([D.page.waitForSelector('#elEmail', { timeout: 15000 }).then(() => 'email'), D.page.waitForSelector('#gatePassword', { timeout: 15000 }).then(() => 'pw')]);
+    if(pw === 'email'){ await D.page.fill('#elEmail', EMAIL[R]); await D.page.fill('#elPwd', 'invented-password'); } else await D.page.fill('#gatePassword', 'invented-password');
+    await D.page.click('#modalInner button.btn');
+    await sleep(300);
+    releaseAuth(D.label, 'ok'); // the SDK's start ends: it tells Mariam's saved session, then the sign-out, then Renova
+    await D.page.waitForFunction(() => typeof currentUser !== 'undefined' && currentUser && currentUser.name === 'Renova' && _bootLoaded && !refreshRunning(), null, { timeout: 30000, polling: 50 }).catch(() => {});
+    await sleep(600);
+    const u = await D.ev(() => ({ selects: window.__um.selects.slice(), toasts: window.__um.toasts.slice(), frames: window.__um.frames.slice(), who: typeof currentUser !== 'undefined' && currentUser ? currentUser.name : null, remembered: localStorage.getItem('um_lastUser') }));
+    const mariamShown = u.frames.slice(f0).filter(f => f.app && f.who === M);
+    check('U1: Mariam signs out before her sign-in is confirmed and Renova signs in on the sign-in screen (events in Firebase\'s order): Mariam is never selected or shown again, Renova is not told she was signed out, and she ends signed in',
+      drew && !u.selects.includes(M) && !mariamShown.length && !u.toasts.some(t => /Signed out/i.test(t)) && u.who === R && /Renova/.test(u.remembered || ''),
+      { drew, selects: u.selects, mariamFrames: mariamShown.length, toasts: u.toasts.filter(t => /sign/i.test(t)), who: u.who, remembered: u.remembered });
     await done(D);
   }
 
