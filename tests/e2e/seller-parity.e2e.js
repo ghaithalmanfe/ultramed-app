@@ -90,7 +90,7 @@ const G = 'Dr. Ghaith', M = 'Mariam';
   // ---- 1) target and achieved: the same function, a figure for each ----
   const ach = await page.evaluate(({G,M}) => ({ g: bestMonthRevenue(G), m: bestMonthRevenue(M) }), {G,M});
   check('achieved from the ERP file: his clinics give him a figure, as hers give her one', ach.g.amount > 0 && ach.m.amount > 0 && ach.g.basis === 'erp' && ach.m.basis === 'erp', { g: ach.g.amount, m: ach.m.amount });
-  const today = await page.evaluate(() => { switchView('today'); renderToday(); return { card: document.getElementById('targetCard').innerText }; });
+  const today = await page.evaluate(async () => { switchView('today'); renderToday(); await msWhenReady(); return { card: document.getElementById('targetCard').innerText }; }); // (the home's figures, and its frame, are those of the data as it is now — a later frame is held until they are: v126 speed part 2)
   check('Today target card has his own row next to the reps', today.card.includes(G) && today.card.includes(M), today.card.split('\n').slice(0,8));
 
   // ---- 2) scorecard + coaching for him ----
@@ -139,7 +139,8 @@ const G = 'Dr. Ghaith', M = 'Mariam';
 
   // ---- 8) as Mariam: the same features exist for her (the control) ----
   await boot(M, 'rep');
-  const her = await page.evaluate(() => { switchView('today'); renderToday(); const out = { card: document.getElementById('targetCard').innerText };
+  const her = await page.evaluate(async () => { switchView('today'); renderToday(); await msWhenReady(); const out = { card: document.getElementById('targetCard').innerText }; // (the home's figures, and its frame, are those of the data as it is now - a later frame is held until they are: v126 speed part 2)
+   
     switchView('reports'); renderReports(); out.sc = document.getElementById('scorecards').innerText;
     switchView('log'); prepLogView('m1'); out.joint = [...document.querySelectorAll('#jointChips .chip')].map(c => c.textContent.trim()); return out; });
   check('control: Mariam sees her own target and her own scorecard with "Your focus this period"', /KD/.test(her.card) && her.sc.includes('Mariam') && /YOUR FOCUS THIS PERIOD/i.test(her.sc), { card: her.card.split('\n').slice(0,3), sc: her.sc.split('\n').slice(0,3) });
