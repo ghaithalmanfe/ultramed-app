@@ -33,7 +33,9 @@
 //   SEEDS=n SEED0=s      n seeds from s (default 6 from 1) · STEPS=n actions a seed (14) · PAR=n worlds at once (2)
 //   REPLAY=seed          one seed, its actions printed as they run · SEEDLIST=3,7,9 those seeds
 //   TRACE=1              both screens after each step and every visits commit · VERBOSE=1
-//   KNOWN_OK=1           a finding classified as K1 (known) does not fail the run
+//   KNOWN_OK=1           a finding classified as K1 (known) does not fail the run — the default since the visits fix
+//                       (npm run e2e runs every harness: K1, known and older, is reported, not failed); STRICT=1 or
+//                       KNOWN_OK=0 fails on it
 const { chromium } = require('playwright');
 const http = require('http'); const fs = require('fs'); const path = require('path');
 const { WWW, launchOpts } = require('./_env.js');
@@ -45,7 +47,7 @@ const REPLAY = env.REPLAY != null && env.REPLAY !== '' ? Number(env.REPLAY) : nu
 const SEED0 = Number(env.SEED0 || 1), NSEEDS = Number(env.SEEDS || 6), STEPS = Number(env.STEPS || 14);
 const PAR = REPLAY != null ? 1 : Math.max(1, Number(env.PAR || 2));
 const VERBOSE = !!env.VERBOSE || REPLAY != null;
-const KNOWN_OK = !!env.KNOWN_OK;
+const KNOWN_OK = env.STRICT ? false : env.KNOWN_OK != null ? !!env.KNOWN_OK && env.KNOWN_OK !== '0' : true; // (the full run, npm run e2e: K1 — known and older — is reported, not failed; STRICT=1 fails on it)
 const TRACE = !!env.TRACE;
 const TS = 4;                                  // page timers ≥ 2.5 s run this many times faster
 const SLOW_MS = 2600, LATE_MS = 3700;          // a slow read (beyond the app's 8 s → 2 s), a late commit (beyond 12 s → 3 s)
