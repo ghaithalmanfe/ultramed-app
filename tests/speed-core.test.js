@@ -169,3 +169,139 @@ test('speed (v126): monthlyTrend with one shared pass and the months\' wins hand
   }));
   assert.ok(a.months.some(m => reps.some(r => m.byRep[r].sales != null)), 'some month has a sales figure');
 });
+
+// ---- v126 speed, part 4: the pass kept per data state, the lines of a range found by month, a clinic index ----
+//   - erpRepOfMatch with a clinic index made once for a pass = going over the clinic list (the first clinic with the id)
+//   - erpRowsIn (a list's lines put in their month once) = every line tested, in the list's order, both tests
+//   - the pass kept per data state (erpShareKept): its matches, each file's lines, every line, each clinic's lines, the
+//     attributed lines and the accounts of a day = a fresh pass; every figure worked out with it (and with the range
+//     index) = without it and with every line tested
+//   - it follows each of its inputs: a clinic's owner, a handover, sharing, a class, a name, a link, a new sales file, a
+//     file's rows replaced, a salesman map, the returns policy → another state and the fresh answers; a change it does
+//     not read (a doctor, a note, a visit) keeps it
+const kd = () => { const d = data(); d.erpShare = U.erpShareKept(d); return d; };
+const reps4 = () => Object.keys(F.people);
+const KS4 = Object.assign({}, U.KPI_DEFAULTS || {});
+
+test('speed (v126, part 4): erpRepOfMatch with a clinic index = going over the clinic list', () => {
+  const list = clinics.concat([Object.assign({}, clinics[0], { rep: 'Someone Else' })]); // a second clinic with the first one's id: the first counts
+  const match = U.erpMatcher(list, erpMap), idx = U.erpClinicIndex(list);
+  let n = 0;
+  (erpSales.periods || []).forEach(p => U.unpackErpRows(p.rows).forEach(r => {
+    const m = match((r.customer || '').trim());
+    assert.strictEqual(U.erpRepOfMatch(m, r, list, p.repMap || {}, idx), U.erpRepOfMatch(m, r, list, p.repMap || {}), r.customer);
+    n++;
+  }));
+  const r0 = U.unpackErpRows(erpSales.periods[0].rows)[0];
+  assert.strictEqual(U.erpRepOfMatch({ clinicId: 'removed-clinic' }, r0, list, { [r0.salesman]: 'X' }, idx), 'X', 'a link to a removed clinic: the salesman');
+  assert.strictEqual(U.erpRowRep(r0, list, erpMap, erpSales.periods[0].repMap || {}, match), U.erpRowRep(r0, list, erpMap, erpSales.periods[0].repMap || {}));
+  assert.ok(n > 3000);
+});
+
+test('speed (v126, part 4): the lines of a range found by month = every line tested, in the list\'s order', () => {
+  const rows = U.erpAttributedRows(data());
+  const odd = rows.concat([{ r: { date: undefined, net: 1 } }, { r: { date: null, net: 1 } }, { r: { date: '2026-1', net: 1 } }, { r: { date: '', net: 1 } }]);
+  const ranges = [['2026-11-01', '2026-11-24'], ['2026-10-26', '2026-11-03'], ['2025-12-15', '2026-03-02'], ['2026-02-29', '2026-03-01'], ['0000-01-01', '9999-12-31'],
+    ['2026-1', '2026-11'], ['2026-11-24', '2026-11-01'], ['', '2026-05-05'], ['2026-07-07', '2026-07-07']];
+  [rows, odd].forEach(list => ranges.forEach(([a, b]) => [false, true].forEach(loose => {
+    const want = list.filter(x => loose ? !(x.r.date < a) && !(x.r.date > b) : x.r.date >= a && x.r.date <= b);
+    const got = U.erpRowsIn(list, a, b, loose);
+    assert.strictEqual(got.length, want.length, a + '…' + b + ' ' + loose);
+    got.forEach((x, i) => assert.strictEqual(x, want[i]));
+  })));
+  // a list that grows is put in its months again
+  const grown = rows.slice(); U.erpRowsIn(grown, '2026-11-01', '2026-11-30');
+  grown.push({ r: { date: '2026-11-05', net: 2 } });
+  assert.ok(U.erpRowsIn(grown, '2026-11-01', '2026-11-30').includes(grown[grown.length - 1]));
+});
+
+test('speed (v126, part 4): the pass kept per data state = a fresh pass, and every figure worked out with it the same', () => {
+  const d = data(), sh = U.erpShareKept(d), fresh = U.erpShare(d);
+  const names = [...new Set(allRows().map(r => (r.customer || '').trim()))].concat(['', '(no name)', '__proto__', 'constructor']);
+  names.forEach(nm => assert.deepStrictEqual(sh.match(nm), U.matchCustomer(nm, clinics, erpMap), nm));
+  U.erpPeriodsOf(erpSales).forEach(p => assert.deepStrictEqual(sh.rows(p), fresh.rows(p)));
+  const lines = []; U.erpPeriodsOf(erpSales).forEach(p => fresh.rows(p).forEach(r => lines.push(r)));
+  assert.deepStrictEqual(sh.lines(), lines);
+  const by = {}; lines.forEach(r => { const m = U.matchCustomer((r.customer || '').trim(), clinics, erpMap); if(m.clinicId) (by[m.clinicId] = by[m.clinicId] || []).push(r); });
+  assert.deepStrictEqual(Object.assign({}, sh.byClinic()), by);
+  assert.deepStrictEqual(sh.attributed(), U.erpAttributedRows(data()));
+  assert.deepStrictEqual(sh.accounts(F.today), U.erpAccounts(data()));
+  assert.strictEqual(U.erpShareKept(data()), sh, 'the same state: the same pass');
+  // every figure with the kept pass and the range index = without the pass and with every line tested (the reference)
+  const reps = reps4(), figures = dd => ({
+    mtd: U.erpMtd(dd), att: U.erpAttributedRows(dd), acc: U.erpAccounts(dd),
+    week: U.weeklyReport(dd, { end: F.today, reps, settings: KS4 }), week2: U.weeklyReport(dd, { end: '2026-11-04', reps, settings: KS4 }),
+    trend: U.monthlyTrend(dd, { reps, months: 5, settings: KS4 }),
+    kpi: reps.map(rep => [U.kpiScorecard(dd, { rep, settings: KS4, nowMs: Date.parse(F.now) }), U.kpiScorecard(dd, { rep, from: '2026-09-20', to: '2026-11-10', settings: KS4, nowMs: Date.parse(F.now) })]),
+    dash: U.execDashboard(dd, { rep: 'all', reps }),
+    cust: U.monthCustomerSales(dd, { rep: 'all', fallback: true }),
+  });
+  const withKept = figures(kd());
+  U.erpRowsIn.off = true;
+  let ref; try{ ref = figures(data()); } finally { U.erpRowsIn.off = false; }
+  assert.deepStrictEqual(withKept, ref);
+  // a link preview with the kept pass = without it
+  const acc = ref.acc.accounts.filter(a => a.clinicId && a.invoices > 0).slice(0, 3);
+  acc.forEach(a => {
+    const c = clinics.find(x => x.id === a.clinicId), other = clinics.find(x => x.rep && x.rep !== c.rep && x.cls !== 'Closed');
+    [{ name: a.name, to: other.id }, { name: a.name, to: null }, { name: a.name, to: 'NEWB', addClinic: { id: 'NEWB', name: a.name + ' North', rep: other.rep, cls: 'B' } }].forEach(ch =>
+      assert.deepStrictEqual(U.erpLinkPreview(kd(), ch, { settings: KS4 }), U.erpLinkPreview(data(), ch, { settings: KS4 }), a.name));
+  });
+  // the discount check and the first dates looked at only for the documents and accounts a change credits otherwise =
+  // every document and account checked (erpLinkPreview.full, the reference)
+  acc.forEach(a => {
+    const c = clinics.find(x => x.id === a.clinicId), other = clinics.find(x => x.rep && x.rep !== c.rep && x.cls !== 'Closed');
+    [{ name: a.name, to: other.id }, { name: a.name, to: '@channel' }, { name: a.name, to: '@ignore' }, { name: a.name, to: 'NEWB', addClinic: { id: 'NEWB', name: a.name + ' North', rep: other.rep, cls: 'A' } }].forEach(ch => {
+      const quick = U.erpLinkPreview(kd(), ch, { settings: KS4 });
+      U.erpLinkPreview.full = true;
+      let full; try{ full = U.erpLinkPreview(data(), ch, { settings: KS4 }); } finally { U.erpLinkPreview.full = false; }
+      assert.deepStrictEqual(quick, full, a.name + ' → ' + ch.to);
+    });
+  });
+  // the sell guide with the kept pass's matcher = with its own
+  const products = parse(F.docs.products), dk = kd();
+  clinics.slice(0, 12).forEach(c => assert.deepStrictEqual(
+    U.crossSellPlan({ clinicId: c.id, clinics, products, visits, erpRows: dk.erpShare.lines(), erpMap, today: F.today, limit: 3, share: dk.erpShare }),
+    U.crossSellPlan({ clinicId: c.id, clinics, products, visits, erpRows: lines, erpMap, today: F.today, limit: 3 }), c.id));
+});
+
+test('speed (v126, part 4): the kept pass follows each of its inputs — and only them', () => {
+  const clone = x => JSON.parse(JSON.stringify(x));
+  const base = () => ({ today: F.today, targets, erpSales: { returnPolicy: erpSales.returnPolicy, periods: erpSales.periods.map(p => Object.assign({}, p)) }, clinics: clone(clinics), erpMap: clone(erpMap), visits });
+  const d0 = base(), s0 = U.erpShareKept(d0);
+  const answers = d => { const dk = Object.assign({}, d, { erpShare: U.erpShareKept(d) }); return { att: U.erpAttributedRows(dk).map(x => [x.rep, x.clinicId, x.channel, x.r.date, x.r.net]), acc: U.erpAccounts(dk), mtd: U.erpMtd(dk) }; };
+  const freshOf = d => { const dd = Object.assign({}, d); return { att: U.erpAttributedRows(dd).map(x => [x.rep, x.clinicId, x.channel, x.r.date, x.r.net]), acc: U.erpAccounts(dd), mtd: U.erpMtd(dd) }; };
+  const att0 = U.erpAttributedRows(Object.assign({}, d0, { erpShare: s0 }));
+  const sold = att0.find(x => x.clinicId && x.rep).clinicId, ci = d0.clinics.findIndex(c => c.id === sold), other = reps4().find(r => r !== d0.clinics[ci].rep);
+  const change = {
+    'a clinic\'s owner': d => { d.clinics[ci].rep = other; },
+    'a handover': d => { d.clinics[ci].prevRep = d.clinics[ci].rep; d.clinics[ci].rep = other; d.clinics[ci].repSince = F.today.slice(0, 7) + '-01'; },
+    'sharing': d => { d.clinics[ci].shared = true; d.clinics[ci].sharedSince = '2026-01-01'; },
+    'a class': d => { d.clinics[ci].cls = 'Closed'; },
+    'a name': d => { d.clinics[ci].name = 'Renamed Clinic Zeta'; },
+    'an account link': d => { const a = att0.find(x => x.clinicId === sold); d.erpMap[(a.r.customer || '').trim()] = '@channel'; },
+    'a new sales file': d => { d.erpSales.periods.push({ id: 'p-new', from: F.today, to: F.today, repMap: {}, rows: [[F.today, 'INV-NEW', 0, 'Brush', 1, 9, 9, 0, 'Someone', 'TePe', d.clinics[ci].name, 'A', 0, null]] }); },
+    'a file\'s rows replaced': d => { const p = d.erpSales.periods[d.erpSales.periods.length - 1]; p.rows = p.rows.map(a => a.slice(0, 5).concat([a[5], Math.round(a[6] * 0.5 * 1000) / 1000], a.slice(7))); },
+    'a salesman map': d => { const p = d.erpSales.periods[0]; p.repMap = Object.assign({}, p.repMap); Object.keys(p.repMap).forEach(k => { p.repMap[k] = other; }); },
+    'the returns policy': d => { d.erpSales.returnPolicy = d.erpSales.returnPolicy === 'erp' ? 'origin' : 'erp'; },
+  };
+  Object.keys(change).forEach(what => {
+    const d = base(), before = U.erpShareKept(d).attributed(); change[what](d);
+    const sh = U.erpShareKept(d);
+    assert.notStrictEqual(sh.attributed(), before, what + ': another state, worked out again');
+    assert.deepStrictEqual(answers(d), freshOf(d), what + ': the fresh answers');
+  });
+  assert.ok(s0);
+  // what it does not read keeps it (and the answers stay right)
+  const d = base(), s1 = U.erpShareKept(d), att1 = s1.attributed();
+  d.clinics[ci].doctors = (d.clinics[ci].doctors || []).concat([{ id: 'dz', name: 'Dr. Added' }]); d.clinics[ci].notes = 'a note'; d.clinics[ci].nextFollowUp = '2026-12-01';
+  assert.strictEqual(U.erpShareKept(d), s1, 'a doctor, a note, a follow-up: the same state');
+  assert.strictEqual(U.erpShareKept(d).attributed(), att1);
+  assert.deepStrictEqual(answers(d), freshOf(d));
+  // the same state under other lists (a read that brought the same texts back): what was worked out stays, the lists are these
+  const e = base(), s2 = U.erpShareKept(e);
+  const e2 = Object.assign({}, e, { clinics: clone(e.clinics) });
+  const s3 = U.erpShareKept(e2);
+  assert.strictEqual(s3.clinics, e2.clinics); assert.strictEqual(s3.attributed(), s2.attributed());
+  assert.deepStrictEqual(answers(e2), freshOf(e2));
+});

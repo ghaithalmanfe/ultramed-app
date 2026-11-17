@@ -942,8 +942,18 @@
   // The person one ERP line counts for, given its customer's match (the
   // matchCustomer result): erpRowRep's rule, split out so a caller can match
   // each distinct name once and then credit every line (v113).
-  function erpRepOfMatch(m, r, clinics, repMap){
+  // byId (optional): erpClinicIndex(clinics) — the clinic a match names found in a map made once for a pass, instead
+  // of going over the list for every line (v126 speed, part 4: the first clinic with that id, as the loop finds it).
+  function erpRepOfMatch(m, r, clinics, repMap, byId){
     if(m && m.clinicId){
+      if(byId){
+        var c = byId.get(m.clinicId);
+        if(c){
+          if(clinicSharedOn(c, r.date)) return (repMap || {})[r.salesman] || null;
+          return clinicRepOn(c, r.date) || (repMap || {})[r.salesman] || null;
+        }
+        return (repMap || {})[r.salesman] || null;
+      }
       for(var i = 0; i < (clinics || []).length; i++){
         if(clinics[i].id !== m.clinicId) continue;
         if(clinicSharedOn(clinics[i], r.date)) return (repMap || {})[r.salesman] || null;
@@ -952,11 +962,18 @@
     }
     return (repMap || {})[r.salesman] || null;
   }
+  // A clinic list by id, for one pass over many lines: the FIRST clinic with each id (the one erpRepOfMatch's loop stops at).
+  function erpClinicIndex(clinics){
+    var m = new Map();
+    (clinics || []).forEach(function(c){ if(c && !m.has(c.id)) m.set(c.id, c); });
+    return m;
+  }
   // match (optional): erpMatcher(clinics, erpMap) — a caller crediting many lines in one pass matches each distinct
-  // name once (the same answer: matchCustomer's), instead of normalizing every clinic's name again for every line.
+  // name once (the same answer: matchCustomer's), instead of normalizing every clinic's name again for every line;
+  // made for these very clinics, it also finds each match's clinic by id (its byId).
   function erpRowRep(r, clinics, erpMap, repMap, match){
     var name = (r.customer || '').trim();
-    return erpRepOfMatch(match ? match(name) : matchCustomer(name, clinics, erpMap), r, clinics, repMap);
+    return erpRepOfMatch(match ? match(name) : matchCustomer(name, clinics, erpMap), r, clinics, repMap, match && match.clinics === clinics && match.byId ? match.byId() : null);
   }
   // Split a rep's monthly brand targets (from the uploaded DSR) across her
   // clinics: each clinic's share of a brand's target follows its share of that
@@ -1133,6 +1150,31 @@
     return bestScore >= 0.5 ? best : null;
   }
 
+  // The ERP part of the purchase lines crossSellPlan reads — every clinic's (the market), each line's product in the
+  // catalog's words: from the lines, the customer matcher (each customer name once, v126 speed; the pass kept for these
+  // very clinics and links, erpShareKept, or one of its own) and the catalog alone, whichever clinic the guide is for.
+  function crossSellErpLines(erpRows, match, products){
+    var memo = {}, lines = [], seen = Object.create(null); // seen: a product text's catalogInfo, its first answer (the same object)
+    function catalogInfo(name){
+      var k = catKeyOf(name);
+      if(memo[k] !== undefined) return memo[k];
+      var pr = matchCatalogProduct(name, products);
+      return (memo[k] = pr ? { name: pr.name, cat: pr.cat || '', brand: pr.brand || '', price: pr.price || 0 } : null);
+    }
+    (erpRows || []).forEach(function(r){
+      if(!r || r.type === 'return') return;
+      if(!(r.net > 0) && !(r.qty > 0)) return;
+      var m = match((r.customer || '').trim());
+      if(!m.clinicId) return;
+      var pn = (r.product || '').trim();
+      if(!pn) return;
+      var ci = pn in seen ? seen[pn] : (seen[pn] = catalogInfo(pn));
+      lines.push({ clinicId: m.clinicId, product: (ci && ci.name) || pn,
+        brand: normBrand(r.brand || (ci && ci.brand) || ''), cat: (ci && ci.cat) || '',
+        qty: Math.max(0, r.qty || 0), net: Math.max(0, r.net || 0), date: r.date || '' });
+    });
+    return lines;
+  }
   function crossSellPlan(opts){
     opts = opts || {};
     var clinics = opts.clinics || [];
@@ -1144,30 +1186,11 @@
     clinics.forEach(function(c){ if(c && c.id === opts.clinicId) me = c; });
     if(!me) return out;
 
-    var memo = {};
-    function catalogInfo(name){
-      var k = catKeyOf(name);
-      if(memo[k] !== undefined) return memo[k];
-      var pr = matchCatalogProduct(name, products);
-      return (memo[k] = pr ? { name: pr.name, cat: pr.cat || '', brand: pr.brand || '', price: pr.price || 0 } : null);
-    }
-
     // Purchase lines: ERP invoices are authoritative; app-logged orders keep
     // the guide alive for clinics whose invoices have not been imported yet.
-    var lines = [];
-    var match = erpMatcher(clinics, opts.erpMap); // each customer name once (v126 speed)
-    (opts.erpRows || []).forEach(function(r){
-      if(!r || r.type === 'return') return;
-      if(!(r.net > 0) && !(r.qty > 0)) return;
-      var m = match((r.customer || '').trim());
-      if(!m.clinicId) return;
-      var pn = (r.product || '').trim();
-      if(!pn) return;
-      var ci = catalogInfo(pn);
-      lines.push({ clinicId: m.clinicId, product: (ci && ci.name) || pn,
-        brand: normBrand(r.brand || (ci && ci.brand) || ''), cat: (ci && ci.cat) || '',
-        qty: Math.max(0, r.qty || 0), net: Math.max(0, r.net || 0), date: r.date || '' });
-    });
+    // opts.erpLines: the ERP part made by crossSellErpLines from the very rows, clinics, links and catalog passed (a
+    // caller showing the guides of several clinics of one state makes it once, v126 speed part 4) — else made here
+    var lines = opts.erpLines ? opts.erpLines.slice() : crossSellErpLines(opts.erpRows, opts.share && opts.share.clinics === opts.clinics && opts.share.erpMap === opts.erpMap ? opts.share.match : erpMatcher(clinics, opts.erpMap), products);
     var byKey = {};
     products.forEach(function(pr){ byKey[pr._key || pr.id] = pr; });
     (opts.visits || []).forEach(function(v){
@@ -1806,13 +1829,13 @@
   // m = the line's customer match (matchCustomer).
   function erpMonthLines(data, from, to, fn){
     var es = data.erpSales, clinics = data.clinics || [], ctx = null, sh = erpShareOf(data);
-    var match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {});
+    var match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {}), byId = sh && sh.byId ? sh.byId() : match.byId ? match.byId() : null;
     erpPeriodsOf(es).filter(function(p){ return p.to >= from && p.from <= to; }).forEach(function(p){
       if(!sh) ctx = ctx || erpCtxOf(es);
       (sh ? sh.rows(p) : erpViewRowsOf(es, p, ctx)).forEach(function(r){
         if(r.date < from || r.date > to) return;
         var m = match((r.customer || '').trim());
-        fn(r, p, erpRepOfMatch(m, r, clinics, p.repMap || {}), m);
+        fn(r, p, erpRepOfMatch(m, r, clinics, p.repMap || {}, byId), m);
       });
     });
   }
@@ -1824,14 +1847,62 @@
   // erpSales, clinics and erpMap it was made from (erpShareOf); without one
   // every pass builds its own, as before. Nothing is kept between calls.
   function erpShare(data){
-    var es = data.erpSales, ctx = null, views = new Map(), clinics = data.clinics || [], erpMap = data.erpMap || {}, prep = null, memo = Object.create(null);
+    var es = data.erpSales, ctx = null, views = new Map(), clinics = data.clinics || [], erpMap = data.erpMap || {}, prep = null, memo = Object.create(null), ids = null;
     return { es: es, clinics: data.clinics, erpMap: data.erpMap,
       match: function(name){ return memo[name] || (memo[name] = matchCustomer(name, clinics, erpMap, prep || (prep = erpPrepClinics(clinics)))); },
-      rows: function(p){ var v = views.get(p); if(!v){ ctx = ctx || erpCtxOf(es); v = erpViewRowsOf(es, p, ctx); views.set(p, v); } return v; } };
+      rows: function(p){ var v = views.get(p); if(!v){ ctx = ctx || erpCtxOf(es); v = erpViewRowsOf(es, p, ctx); views.set(p, v); } return v; },
+      byId: function(){ return ids || (ids = erpClinicIndex(clinics)); } };
   }
   function erpShareOf(data){
     var sh = data.erpShare;
     return sh && sh.es === data.erpSales && sh.clinics === data.clinics && sh.erpMap === data.erpMap ? sh : null;
+  }
+  // ---- The pass kept per data state (v126 speed, part 4) ----
+  // erpShare's pass (each customer matched once, each file's lines with the returns policy applied) and what is worked
+  // out from it alone — the clinics by id, every line of the files, the lines of each clinic, the attributed lines,
+  // erpAccounts as of a day — kept from one tap to the next while the state they are of is the same: exactly what they
+  // read, as text (erpStateKey) — the sales files (each file's id, dates, whether its rows loaded, its salesman map, and
+  // its rows: the array, by a number given to it here, and its length — a file's rows are only ever replaced, never
+  // edited in place), the returns policy, the clinics' id, name, owner, handover, sharing and class in list order, and
+  // the account links. A rename, a handover, a new link, a new or purged file or another policy is another state, worked
+  // out again; nothing is kept by time. One state at a time. The lists asked with are the ones it serves (erpShareOf);
+  // the same state under other lists (a read that brought back the same texts) keeps what was worked out.
+  var _rowsNo = typeof WeakMap === 'function' ? new WeakMap() : null, _rowsNoN = 0, _erpKept = null;
+  function rowsNo(a){
+    if(!a || typeof a !== 'object') return 0;
+    var n = _rowsNo.get(a); if(!n){ n = ++_rowsNoN; _rowsNo.set(a, n); } return n;
+  }
+  function erpStateKey(data){
+    if(!_rowsNo) return null; // (nothing kept)
+    var es = data && data.erpSales, ps = es && Array.isArray(es.periods) ? es.periods : [], cl = (data && data.clinics) || [];
+    return JSON.stringify([es && es.returnPolicy === 'erp' ? 1 : 0,
+      ps.map(function(p){ return p ? [p.id, p.from, p.to, p.rowsMissing ? 1 : 0, rowsNo(p.rows), Array.isArray(p.rows) ? p.rows.length : -1, p.repMap || null] : null; }),
+      cl.map(function(c){ return c ? [c.id, c.name, c.rep, c.prevRep, c.repSince, c.shared, c.sharedSince, c.cls] : null; }),
+      (data && data.erpMap) || null]);
+  }
+  function erpShareKept(data){
+    var key = erpStateKey(data);
+    if(key == null) return erpShare(data);
+    var k = _erpKept;
+    if(!k || k.key !== key) k = _erpKept = { key: key, base: erpShare(data), sh: null, lines: null, byClinic: null, att: null, acc: Object.create(null) };
+    if(k.sh && k.sh.es === data.erpSales && k.sh.clinics === data.clinics && k.sh.erpMap === data.erpMap) return k.sh;
+    var b = k.base, clinics = data.clinics, ids = null;
+    var match = function(name){ return b.match(name); };
+    match.clinics = clinics; match.byId = function(){ return ids || (ids = erpClinicIndex(clinics)); };
+    var sh = k.sh = { es: data.erpSales, clinics: data.clinics, erpMap: data.erpMap, kept: true, match: match, rows: b.rows, byId: match.byId };
+    // every line of the files, in their order
+    sh.lines = function(){
+      if(!k.lines){ var all = []; erpPeriodsOf(b.es).forEach(function(p){ b.rows(p).forEach(function(r){ all.push(r); }); }); k.lines = all; }
+      return k.lines;
+    };
+    // the lines of each clinic its customer matches (clinic id → lines, in the files' order)
+    sh.byClinic = function(){
+      if(!k.byClinic){ var by = Object.create(null); sh.lines().forEach(function(r){ var m = b.match((r.customer || '').trim()); if(m.clinicId) (by[m.clinicId] || (by[m.clinicId] = [])).push(r); }); k.byClinic = by; }
+      return k.byClinic;
+    };
+    sh.attributed = function(){ return k.att || (k.att = erpAttributedRows({ erpSales: sh.es, clinics: sh.clinics, erpMap: sh.erpMap, erpShare: sh }, true)); };
+    sh.accounts = function(today){ var t = String(today || ''); return k.acc[t] || (k.acc[t] = erpAccounts({ today: t, erpSales: sh.es, clinics: sh.clinics, erpMap: sh.erpMap, erpShare: sh }, true)); };
+    return sh;
   }
   function erpMtd(data){
     var today = data.today, mStart = today.slice(0, 7) + '-01';
@@ -2156,13 +2227,16 @@
   // and the KPI scorecard): one pass over every stored file.
   // Each distinct customer name is matched once (erpMatcher): the same answer
   // as matching every line, without the wait on a year of files.
-  function erpAttributedRows(data){
+  // A pass kept per data state (erpShareKept) gives its own list — the same lines, worked out once for that state; it is
+  // only read (fresh: worked out here all the same).
+  function erpAttributedRows(data, fresh){
     var es = data.erpSales, clinics = data.clinics || [], sh = erpShareOf(data), ctx = sh ? null : erpCtxOf(es), rows = [];
-    var match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {});
+    if(sh && sh.attributed && !fresh) return sh.attributed();
+    var match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {}), byId = sh && sh.byId ? sh.byId() : match.byId ? match.byId() : null;
     erpPeriodsOf(es).forEach(function(p){ (sh ? sh.rows(p) : erpViewRowsOf(es, p, ctx)).forEach(function(r){
       var m = match((r.customer || '').trim());
       if(m.ignored) return;
-      rows.push({ r: r, rep: erpRepOfMatch(m, r, clinics, p.repMap || {}), clinicId: m.clinicId || null, channel: !!m.channel });
+      rows.push({ r: r, rep: erpRepOfMatch(m, r, clinics, p.repMap || {}, byId), clinicId: m.clinicId || null, channel: !!m.channel });
     }); });
     return rows;
   }
@@ -2203,6 +2277,31 @@
     while(lo < hi){ var mid = (lo + hi) >> 1; if(sorted[mid] < from) lo = mid + 1; else hi = mid; }
     return lo > 0 ? sorted[lo - 1] : undefined;
   }
+  // The attributed lines of a list dated in [from, to], in the list's own order (v126 speed, part 4): the list's lines are
+  // put in their month once (kept with the list and checked by its length, as erpWinsIndex), so a pass over a week or a
+  // month looks at that month's lines instead of the year's. The very lines testing every line gives, in the same order:
+  // a line whose date is not text is tested every time, and a text date can only pass the test in a month between the
+  // range's own (its first 7 characters). loose: clinicInvoices' test, "not before `from` and not after `to`", else
+  // "from ≤ date ≤ to". A range that is not text: every line tested, as before.
+  // (erpRowsIn.off: every line tested — the reference tests/speed-core.test.js compares the index with)
+  var _rowsIdx = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function erpRowsIn(rows, from, to, loose){
+    var test = loose ? function(d){ return !(d < from) && !(d > to); } : function(d){ return d >= from && d <= to; };
+    if(erpRowsIn.off || !_rowsIdx || typeof from !== 'string' || typeof to !== 'string' || !Array.isArray(rows)) return (rows || []).filter(function(x){ return test(x.r.date); });
+    var ix = _rowsIdx.get(rows);
+    if(!ix || ix.n !== rows.length){
+      var by = Object.create(null), other = [];
+      for(var i = 0; i < rows.length; i++){ var d = rows[i].r.date; if(typeof d === 'string'){ var k = d.slice(0, 7); (by[k] || (by[k] = [])).push(i); } else other.push(i); }
+      ix = { n: rows.length, by: by, keys: Object.keys(by).sort(), other: other };
+      _rowsIdx.set(rows, ix);
+    }
+    var fm = from.slice(0, 7), tm = to.slice(0, 7), lists = [];
+    for(var j = 0; j < ix.keys.length; j++){ var key = ix.keys[j]; if(key >= fm && key <= tm) lists.push(ix.by[key]); }
+    if(ix.other.length) lists.push(ix.other);
+    var at = lists.length === 1 ? lists[0] : [].concat.apply([], lists).sort(function(a, b){ return a - b; }), out = [];
+    for(var q = 0; q < at.length; q++){ var x = rows[at[q]]; if(test(x.r.date)) out.push(x); }
+    return out;
+  }
   function erpWinsInRange(rows, from, to, clinics){
     var byId = {}; (clinics || []).forEach(function(c){ byId[c.id] = c; });
     var custName = function(x){ return x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : (x.r.customer || '').trim(); };
@@ -2210,11 +2309,13 @@
     var W = erpWinsIndex(rows), firstSeen = W.firstSeen, prodSeen = W.prodSeen, lastBefore = {};
     Object.keys(W.dates).forEach(function(k){ var d = winsLastBefore(W.dates[k], from); if(d !== undefined) lastBefore[k] = d; });
     var wins = { newAccounts: {}, reactivated: {}, placements: {}, invoices: {} };
+    var quiet = Object.create(null); // an account's days since its last paid line before `from`, once per account
+    var quietDays = function(k){ return k in quiet ? quiet[k] : (quiet[k] = daysBetween(lastBefore[k], from)); };
     // free lines, by document: a free line on a document that also carries a
     // paid line is part of that deal (it is in the discount); a document with
     // free lines only is a sample — a seed, never a win (R16)
     var focDocs = {}, paidDoc = {};
-    rows.filter(function(x){ return x.rep && x.r.date >= from && x.r.date <= to; }).forEach(function(x){
+    erpRowsIn(rows, from, to).filter(function(x){ return x.rep; }).forEach(function(x){
       var r = x.r, k = custKey(x), name = custName(x), pk = k + '|' + String(r.product || '').toLowerCase();
       var internal = !x.clinicId && isInternalAccount(r.customer);
       var inv = wins.invoices[r.doc] || (wins.invoices[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, account: name, clinicId: x.clinicId || null, channel: x.channel, internal: internal, net: 0, gross: 0, lines: 0, brands: {}, items: {} });
@@ -2227,7 +2328,7 @@
       if(!(r.net > 0) || r.type === 'return') return;
       if(firstSeen[k] >= from && !wins.newAccounts[k]) wins.newAccounts[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, date: firstSeen[k], doc: r.doc, net: 0, products: {} };
       if(wins.newAccounts[k]){ var na = wins.newAccounts[k]; na.net += r.net; var np = na.products[r.product] || (na.products[r.product] = { product: String(r.product || '').trim(), brand: normBrand(r.brand), net: 0 }); np.net += r.net; }
-      else if(lastBefore[k] && daysBetween(lastBefore[k], from) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, date: r.date, doc: r.doc, lastBefore: lastBefore[k] };
+      else if(lastBefore[k] && quietDays(k) >= 60 && !wins.reactivated[k]) wins.reactivated[k] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, date: r.date, doc: r.doc, lastBefore: lastBefore[k] };
       if(!wins.newAccounts[k] && prodSeen[pk] >= from && firstSeen[k] < from){
         var pl = wins.placements[pk] || (wins.placements[pk] = { rep: x.rep, account: name, clinicId: x.clinicId || null, key: k, product: r.product, brand: r.brand, date: r.date, doc: r.doc, net: 0 });
         pl.net += r.net;
@@ -2267,10 +2368,10 @@
   // non-letters / non-digits collapsed to one space.
   function erpNameKey(s){ return String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
   // Every view row of the saved files, with its file and trimmed customer name.
-  function erpEachLine(es, fn){
-    var ctx = erpCtxOf(es);
+  function erpEachLine(es, fn, sh){
+    var ctx = sh ? null : erpCtxOf(es);
     erpPeriodsOf(es).forEach(function(p){
-      erpViewRowsOf(es, p, ctx).forEach(function(r){ fn(r, p, (r.customer || '').trim()); });
+      (sh ? sh.rows(p) : erpViewRowsOf(es, p, ctx)).forEach(function(r){ fn(r, p, (r.customer || '').trim()); });
     });
   }
   // matchCustomer once per distinct name, for one state (clinics + erpMap).
@@ -2278,8 +2379,10 @@
   // matchCustomer's very answers, for a pass over many lines against one clinic list and one link map that do not
   // change while it runs. A pass makes its own: nothing is kept between calls.
   function erpMatcher(clinics, erpMap){
-    var memo = Object.create(null), prep = null;
-    return function(name){ return memo[name] || (memo[name] = matchCustomer(name, clinics, erpMap, prep || (prep = erpPrepClinics(clinics)))); };
+    var memo = Object.create(null), prep = null, ids = null;
+    var f = function(name){ return memo[name] || (memo[name] = matchCustomer(name, clinics, erpMap, prep || (prep = erpPrepClinics(clinics)))); };
+    f.clinics = clinics; f.byId = function(){ return ids || (ids = erpClinicIndex(clinics)); };
+    return f;
   }
   // The clinic a match counts at, or null — then each line counts for the
   // salesman who issued it. A link to a removed clinic counts at no clinic.
@@ -2315,11 +2418,15 @@
   // Every ERP account (customer name) of the saved files: where it counts now
   // and why, its invoices and KD, and whom it counts for. data = { today,
   // clinics, erpMap, erpSales } (digestData()). Pure.
-  function erpAccounts(data){
+  // With a pass kept per data state (erpShareKept) the accounts of a day are its own — worked out once for that state and
+  // day, and only read (fresh: worked out here all the same).
+  function erpAccounts(data, fresh){
     data = data || {};
+    var sh = erpShareOf(data);
+    if(sh && sh.accounts && !fresh) return sh.accounts(data.today);
     var es = data.erpSales, clinics = data.clinics || [], erpMap = data.erpMap || {};
     var today = String(data.today || ''), mStart = today.slice(0, 7) + '-01';
-    var match = erpMatcher(clinics, erpMap), acc = Object.create(null), names = [], nameless = { lines: 0, net: 0 };
+    var match = sh ? sh.match : erpMatcher(clinics, erpMap), byId = sh && sh.byId ? sh.byId() : match.byId(), acc = Object.create(null), names = [], nameless = { lines: 0, net: 0 };
     erpEachLine(es, function(r, p, name){
       var net = Number(r.net) || 0;
       if(!name || name === ERP_NO_NAME){ nameless.lines++; nameless.net += net; return; }
@@ -2329,9 +2436,9 @@
       (r.type === 'return' ? a.ret : a.inv)[r.doc] = 1;
       if(r.date){ if(!a.first || r.date < a.first) a.first = r.date; if(!a.last || r.date > a.last) a.last = r.date; }
       if(r.date >= mStart && r.date <= today) a.monthNet += net;          // this month to date, as the month figures count it
-      var rep = erpRepOfMatch(match(name), r, clinics, p.repMap || {}) || '';
+      var rep = erpRepOfMatch(match(name), r, clinics, p.repMap || {}, byId) || '';
       a.people[rep] = (a.people[rep] || 0) + net;
-    });
+    }, sh);
     var groups = Object.create(null);
     names.forEach(function(n){ var k = erpNameKey(n); if(k) (groups[k] = groups[k] || []).push(n); });
     var accounts = names.map(function(name){
@@ -2387,7 +2494,8 @@
       months: [], outside: { lines: 0, net: 0 }, people: [], moves: [], others: [], limitFlips: [], firstInvoice: [], firstProduct: [],
       closedMonths: { sales: [], discount: [], wins: [] }, ledger: { returns: 0, free: 0 } };
     if(!name || name === ERP_NO_NAME){ out.error = 'NO_NAME'; return out; }
-    var match0 = erpMatcher(clinics0, map0), from = erpOwn(map0, name) ? map0[name] : null;
+    var sh = erpShareOf(data); // (the pass of this very state, when the caller has one: the same matches and lines)
+    var match0 = sh ? sh.match : erpMatcher(clinics0, map0), from = erpOwn(map0, name) ? map0[name] : null;
     out.before = erpLinkSide(match0(name), clinics0, from);
     var to = change.to == null ? null : change.to;
     // a branch already in the list (saved by an earlier tap) is not added twice
@@ -2403,17 +2511,21 @@
     var map1 = {}, put = function(k, v){ Object.defineProperty(map1, k, { value: v, enumerable: true, writable: true, configurable: true }); };
     Object.keys(map0).forEach(function(k){ put(k, map0[k]); });
     if(to === null) delete map1[name]; else put(name, to);
-    var match1 = erpMatcher(clinics1, map1);
+    var match1 = erpMatcher(clinics1, map1), byIdA = sh && sh.byId ? sh.byId() : match0.byId(), byIdB = match1.byId();
     out.after = erpLinkSide(match1(name), clinics1, to);
     out.draft = { erpMap: map1, clinics: clinics1 };
     var acctInv = Object.create(null), acctNet = 0, months = Object.create(null), people = Object.create(null);
     var moves = Object.create(null), others = Object.create(null), othersList = [], att0 = [], att1 = [];
+    var movedDocs = Object.create(null), movedKeys = Object.create(null);
+    // (each customer's and product's spelling worked out once per text: the same keys and labels, v126 speed part 4)
+    var custN = Object.create(null), prodL = Object.create(null), prodT = Object.create(null);
+    var custOf = function(c){ var t = c || ''; if(typeof t !== 'string') return [t.trim().toLowerCase(), t.trim()]; return custN[t] || (custN[t] = [t.trim().toLowerCase(), t.trim()]); };
     erpEachLine(es, function(r, p, n){
       var repMap = p.repMap || {}, net = Number(r.net) || 0, mo = String(r.date || '').slice(0, 7);
       // an erpMap change to one name never changes how another name matches:
       // only a new clinic can, so without one the other lines keep their match
       var a = match0(n), b = (n === name || add) ? match1(n) : a;
-      var ra = erpRepOfMatch(a, r, clinics0, repMap), rb = b === a && !add ? ra : erpRepOfMatch(b, r, clinics1, repMap);
+      var ra = erpRepOfMatch(a, r, clinics0, repMap, byIdA), rb = b === a && !add ? ra : erpRepOfMatch(b, r, clinics1, repMap, byIdB);
       if(n === name){
         out.lines++; acctNet += net;
         if(r.type !== 'return') acctInv[r.doc] = 1;
@@ -2443,7 +2555,13 @@
       // the attributed rows of both states, in erpAttributedRows' shape
       if(!a.ignored) att0.push({ r: r, rep: ra, clinicId: a.clinicId || null, channel: !!a.channel });
       if(!b.ignored) att1.push({ r: r, rep: rb, clinicId: b.clinicId || null, channel: !!b.channel });
-    });
+      // a line the change credits otherwise (counted or not, its clinic, a channel, its person): its document and its
+      // account's keys are the only ones whose discount check or first dates can change (v126 speed, part 4)
+      if(b !== a && (!!a.ignored !== !!b.ignored || (a.clinicId || null) !== (b.clinicId || null) || !!a.channel !== !!b.channel || ra !== rb)){
+        movedDocs[r.doc] = 1;
+        [a, b].forEach(function(m){ if(m.clinicId) movedKeys['c:' + m.clinicId] = 1; else movedKeys['n:' + custOf(r.customer)[0]] = 1; });
+      }
+    }, sh);
     out.invoices = Object.keys(acctInv).length; out.net = erpR3(acctNet); out.outside.net = erpR3(out.outside.net);
     out.months = Object.keys(months).sort().map(function(mo){ return { month: mo, invoices: Object.keys(months[mo].inv).length, net: erpR3(months[mo].net), closed: mo < month0 }; });
     out.people = erpPeopleList(people);
@@ -2461,7 +2579,10 @@
     var reps = Object.keys(repSet);
     var byId = function(list){ var o = {}; list.forEach(function(c){ o[c.id] = c; }); return o; };
     var byId0 = byId(clinics0), byId1 = byId(clinics1);
-    var inv0 = clinicInvoices(att0, reps, '0000-01-01', '9999-12-31', byId0, KS), inv1 = clinicInvoices(att1, reps, '0000-01-01', '9999-12-31', byId1, KS);
+    // only the documents with a line credited otherwise can change their check: the others are the same in both states
+    // (erpLinkPreview.full: every document and account checked — the reference tests/speed-core.test.js compares with)
+    var ofMoved = function(list){ return erpLinkPreview.full ? list : list.filter(function(x){ return movedDocs[x.r.doc] === 1; }); };
+    var inv0 = clinicInvoices(ofMoved(att0), reps, '0000-01-01', '9999-12-31', byId0, KS), inv1 = clinicInvoices(ofMoved(att1), reps, '0000-01-01', '9999-12-31', byId1, KS);
     var was = Object.create(null), seen = Object.create(null), flips = [];
     var flip = function(i, b, a){ return { doc: i.doc, date: i.date, pct: i.pct, net: i.net, before: b ? { limit: b.limit, within: b.within } : null,
       after: a ? { limit: a.limit, within: a.within } : null, closed: String(i.date).slice(0, 7) < month0 }; };
@@ -2471,15 +2592,20 @@
     out.limitFlips = flips.sort(function(x, y){ return erpCmp(x.date, y.date) || erpCmp(x.doc, y.doc); });
     // first paid invoice per account key, and per account key + product, with
     // erpWinsInRange's key and filter: new-account and first-time-product wins follow these dates
+    // (only the accounts with a line credited otherwise: every other key has the same dates in both states, and the keys
+    // kept are in the order the whole list gives them)
     var firstPaid = function(rows, ids){
       var acct = Object.create(null), prod = Object.create(null);
       rows.forEach(function(x){
         if(x.channel || !(x.r.net > 0) || x.r.type === 'return' || (!x.clinicId && isInternalAccount(x.r.customer))) return;
-        var k = x.clinicId ? 'c:' + x.clinicId : 'n:' + (x.r.customer || '').trim().toLowerCase();
-        var label = x.clinicId && ids[x.clinicId] ? ids[x.clinicId].name : (x.r.customer || '').trim();
+        var cn = x.clinicId ? null : custOf(x.r.customer);
+        var k = x.clinicId ? 'c:' + x.clinicId : 'n:' + cn[0];
+        if(movedKeys[k] !== 1 && !erpLinkPreview.full) return;
+        var label = x.clinicId && ids[x.clinicId] ? ids[x.clinicId].name : (cn || custOf(x.r.customer))[1];
         if(!acct[k] || x.r.date < acct[k].date) acct[k] = { key: k, date: x.r.date, label: label, product: null };
-        var pk = k + '\u0001' + String(x.r.product || '').toLowerCase();
-        if(!prod[pk] || x.r.date < prod[pk].date) prod[pk] = { key: k, date: x.r.date, label: label, product: String(x.r.product || '').trim() };
+        var pr = x.r.product, pt = String(pr || '');
+        var pk = k + '\u0001' + (pt in prodL ? prodL[pt] : (prodL[pt] = pt.toLowerCase()));
+        if(!prod[pk] || x.r.date < prod[pk].date) prod[pk] = { key: k, date: x.r.date, label: label, product: pt in prodT ? prodT[pt] : (prodT[pt] = String(pr || '').trim()) };
       });
       return { acct: acct, prod: prod };
     };
@@ -2570,7 +2696,7 @@
     var from = opts.from || to.slice(0, 7) + '-01';
     var clinics = data.clinics || [], byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
     var rows = opts.rows || erpAttributedRows(data);
-    var mine = rows.filter(function(x){ return x.rep === rep && x.r.date >= from && x.r.date <= to; });
+    var mine = erpRowsIn(rows, from, to).filter(function(x){ return x.rep === rep; }); // (the lines of the range, in the list's order: v126 speed, part 4)
     var days = [], d; for(d = from; d <= to; d = addDaysStr(d, 1)) if(isWorkday(d)) days.push(d);
     var wd = Math.max(1, days.length), share = Math.min(1, wd / S.workdaysPerMonth);
     var clamp = function(x){ return Math.max(0, Math.min(1, x)); };
@@ -2581,12 +2707,15 @@
     var items = {};
     // 1 sales: projected month-end achievement (70%) and brands on track (30%)
     var d2 = {}; for(var k in data) d2[k] = data[k]; d2.today = to;
-    var t = targetOf(data, rep, to.slice(0, 7)), ach = monthAchievement(rep, d2);
+    // opts.mtd: the month's lines of everyone as of `to`, worked out by the caller from these very lists (monthlyTrend: one
+    // per month for every person) — the same erpMtd(d2); else worked out here
+    var om = opts.mtd, mtdTo = om && om.today === to && om.erpSales === data.erpSales && om.clinics === data.clinics && om.erpMap === data.erpMap && om.map ? om.map : undefined;
+    var t = targetOf(data, rep, to.slice(0, 7)), ach = monthAchievement(rep, d2, mtdTo);
     var dim = getMonthDates(to).length, day = parseInt(to.slice(8, 10), 10);
     if(t.revenue > 0){
       var pace = ach.amount / day * dim / t.revenue;
       var bt = t.brands || {}, bOk = 0, bN = 0, bm = {};
-      rows.forEach(function(x){ if(x.rep === rep && x.r.date >= to.slice(0, 7) + '-01' && x.r.date <= to){ var b = normBrand(x.r.brand); bm[b] = (bm[b] || 0) + x.r.net; } });
+      erpRowsIn(rows, to.slice(0, 7) + '-01', to).forEach(function(x){ if(x.rep === rep){ var b = normBrand(x.r.brand); bm[b] = (bm[b] || 0) + x.r.net; } });
       Object.keys(bt).forEach(function(b){ if(!(bt[b] > 0)) return; bN++; if(((bm[normBrand(b)] || 0) / day * dim) / bt[b] >= 0.8) bOk++; });
       items.sales = { score: clamp(0.7 * Math.min(1, pace) + 0.3 * (bN ? bOk / bN : Math.min(1, pace))), value: Math.round(ach.amount / t.revenue * 100) + '% achieved · on pace for ' + Math.round(pace * 100) + '%',
         target: '100% of ' + Math.round(t.revenue).toLocaleString('en-US') + ' KD; every brand ≥ 80%', detail: bN ? bOk + ' of ' + bN + ' brands on pace for 80%+' : 'no brand targets' };
@@ -2641,8 +2770,9 @@
       detail: esc.slice(0, 4).map(function(e){ return (byId[e.clinicId] || {}).name + ': ' + (e.text || ''); }).join('; ') };
     // 7 prescriptions: My Fatoorah sales of this person vs the same days last month
     var rxNow = 0, rxPrev = 0, pf = addMonthsStr(from, -1), pt = addMonthsStr(to, -1);
-    rows.forEach(function(x){ if(x.rep !== rep || !/my fatoorah/i.test(x.r.customer || '')) return;
-      if(x.r.date >= from && x.r.date <= to) rxNow += x.r.net; else if(x.r.date >= pf && x.r.date <= pt) rxPrev += x.r.net; });
+    var rxOf = function(x){ return x.rep === rep && /my fatoorah/i.test(x.r.customer || ''); };
+    erpRowsIn(rows, from, to).forEach(function(x){ if(rxOf(x)) rxNow += x.r.net; });
+    erpRowsIn(rows, pf, pt).forEach(function(x){ if(rxOf(x) && !(x.r.date >= from && x.r.date <= to)) rxPrev += x.r.net; });
     var g = rxPrev > 0 ? (rxNow - rxPrev) / rxPrev : null;
     items.rx = { score: g == null ? (rxNow > 0 ? 1 : null) : clamp(0.5 + g / (2 * S.rxGrowth)),
       value: 'KD ' + groupThousands(String(Math.round(rxNow))) + (g == null ? '' : ' · ' + (g >= 0 ? '+' : '') + Math.round(g * 100) + '% on the same days last month'), target: '+' + Math.round(S.rxGrowth * 100) + '% a month', detail: '' };
@@ -2694,7 +2824,7 @@
   // KPI settings: A clinics, others, open days). Pure.
   function clinicInvoices(rows, reps, a, b, byId, KS){
     var inv = {};
-    rows.forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || x.channel || r.type === 'return' || r.date < a || r.date > b || (!x.clinicId && isInternalAccount(r.customer))) return;
+    erpRowsIn(rows, a, b, true).forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || x.channel || r.type === 'return' || (!x.clinicId && isInternalAccount(r.customer))) return; // (the lines of [a, b] in the list's order — its own test, loose)
       var i = inv[r.doc] || (inv[r.doc] = { doc: r.doc, date: r.date, rep: x.rep, clinicId: x.clinicId, account: x.clinicId && byId[x.clinicId] ? byId[x.clinicId].name : String(r.customer || '').trim(), gross: 0, net: 0 });
       i.gross += Number(r.gross) || 0; i.net += Number(r.net) || 0; });
     var list = Object.keys(inv).map(function(k){ return inv[k]; }).filter(function(i){ return i.gross > 0 && i.net > 0; });
@@ -2745,7 +2875,8 @@
     };
     // the last day of the week the sales files reach (null: no file for the week)
     var salesTo = erpPeriodsOf(es).reduce(function(m, p){ if(!(p.to >= from && p.from <= to)) return m; var t = p.to > to ? to : p.to; return !m || t > m ? t : m; }, null);
-    var sum = function(a, b, rep){ return Math.round(rows.reduce(function(s, x){ return s + (x.rep && (!rep || x.rep === rep) && x.r.date >= a && x.r.date <= b ? x.r.net : 0); }, 0) * 1000) / 1000; };
+    // (the lines of a range in the list's order — a line outside it added 0: v126 speed, part 4)
+    var sum = function(a, b, rep){ return Math.round(erpRowsIn(rows, a, b).reduce(function(s, x){ return s + (x.rep && (!rep || x.rep === rep) ? x.r.net : 0); }, 0) * 1000) / 1000; };
     var earliest = rows.reduce(function(m, x){ return !m || x.r.date < m ? x.r.date : m; }, null);
     // "new account", "back after 60+ days" and "new product placed" can only be
     // claimed for a person whose own files cover the 4 weeks before the period
@@ -2794,12 +2925,12 @@
     });
     // brands: this week (team) and month-to-date vs the DSR brand targets
     var bw = {}, bm = {}, bt = {};
-    rows.forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0) return; var b = normBrand(x.r.brand);
+    erpRowsIn(rows, from < mStart ? from : mStart, to).forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0) return; var b = normBrand(x.r.brand);
       if(x.r.date >= from && x.r.date <= to) bw[b] = (bw[b] || 0) + x.r.net;
       if(x.r.date >= mStart && x.r.date <= to) bm[b] = (bm[b] || 0) + x.r.net; });
     reps.forEach(function(rep){ var br = targetOf(data, rep, to.slice(0, 7)).brands || {}; Object.keys(br).forEach(function(b){ var n = normBrand(b); bt[n] = (bt[n] || 0) + br[b]; }); });
     var pmStart = addMonthsStr(mStart, -1), pmEnd = addDaysStr(mStart, -1), pmCov = covered(pmStart, pmEnd), bp = {};
-    rows.forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0 || x.r.date < pmStart || x.r.date > pmEnd) return; var b = normBrand(x.r.brand); bp[b] = (bp[b] || 0) + x.r.net; });
+    erpRowsIn(rows, pmStart, pmEnd, true).forEach(function(x){ if(!x.rep || reps.indexOf(x.rep) < 0) return; var b = normBrand(x.r.brand); bp[b] = (bp[b] || 0) + x.r.net; });
     var brands = Object.keys(bw).concat(Object.keys(bt)).filter(function(b, i, a){ return a.indexOf(b) === i; })
       .map(function(b){ return { brand: b, week: rnd(bw[b] || 0), mtd: rnd(bm[b] || 0), target: bt[b] ? rnd(bt[b]) : null, prevMonth: pmCov ? rnd(bp[b] || 0) : null }; })
       .sort(function(a, b){ return b.week - a.week || b.mtd - a.mtd; });
@@ -2812,7 +2943,7 @@
     // next week: plans and follow-ups; a key account still due carries what it
     // bought in the two months before this one (any person, our files)
     var p2From = addMonthsStr(mStart, -2), p2To = addDaysStr(mStart, -1), kd2 = {};
-    rows.forEach(function(x){ if(x.clinicId && !x.channel && x.r.date >= p2From && x.r.date <= p2To) kd2[x.clinicId] = (kd2[x.clinicId] || 0) + x.r.net; });
+    erpRowsIn(rows, p2From, p2To).forEach(function(x){ if(x.clinicId && !x.channel) kd2[x.clinicId] = (kd2[x.clinicId] || 0) + x.r.net; });
     var nFrom = addDaysStr(getWeekDates(to)[0], 7), nTo = addDaysStr(nFrom, 6), next = {};
     reps.forEach(function(rep){
       var planned = [];
@@ -2848,7 +2979,7 @@
     // the week's best-selling products (team, invoices with a value; internal
     // marketing moves excluded) and the photos taken on the week's visits
     var pAgg = {};
-    rows.forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || r.date < from || r.date > to || !(r.net > 0) || r.type === 'return' || (!x.clinicId && isInternalAccount(r.customer))) return;
+    erpRowsIn(rows, from, to, true).forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || !(r.net > 0) || r.type === 'return' || (!x.clinicId && isInternalAccount(r.customer))) return;
       var k = String(r.product || '').trim(); if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(k)) return;   // services (inspection fees, delivery) are not best sellers
       var a = pAgg[k] || (pAgg[k] = { product: k, brand: normBrand(r.brand), qty: 0, net: 0, accounts: {} });
       a.qty += Number(r.qty) || 0; a.net += r.net; a.accounts[x.clinicId || r.customer] = 1; });
@@ -3086,7 +3217,8 @@
           fieldVisits: mine.length, perDay: wd ? Math.round(mine.length / wd * 10) / 10 : 0, doctorsMet: Object.keys(docs).length,
           newAccounts: newOk ? wins.newAccounts.filter(function(x){ return x.rep === rep; }).length : null,
           placements: newOk ? wins.placements.filter(function(x){ return x.rep === rep; }).length : null,
-          kpi: S && logged ? kpiScorecard(data, { rep: rep, from: from, to: to, settings: S, rows: rows, wins: { rows: rows, from: from, to: to, clinics: clinics, w: wins } }).total : null   // no visit or call logged that month: the app was not in use, no score
+          kpi: S && logged ? kpiScorecard(data, { rep: rep, from: from, to: to, settings: S, rows: rows, wins: { rows: rows, from: from, to: to, clinics: clinics, w: wins },
+            mtd: { today: to, erpSales: data.erpSales, clinics: data.clinics, erpMap: data.erpMap, map: mtd } }).total : null   // no visit or call logged that month: the app was not in use, no score
         };
       });
       var sumOf = function(f){ var any = false, s = 0; reps.forEach(function(r){ var v = row.byRep[r][f]; if(v != null){ any = true; s += v; } }); return any ? rnd(s) : null; };
@@ -7542,7 +7674,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
     unionDoctorsById, possibleDuplicateDoctors, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpShareKept, erpStateKey, erpClinicIndex, erpRowsIn, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
@@ -7550,7 +7682,7 @@
     RX_MAX, RX_DEFAULT_TYPES, rxQty, rxTypeList, rxTypeName, rxTypesProblem, visitRxLines, cleanVisitRx, rxSig, rxText, remapVisitDoctors, rxWindows, rxLedger,
     daysToBirthday, DOC_ROLES, DOC_INFLUENCE, DOC_STAGES, doctorRecordCompleteness, clinicDecisionMap, parseContactRows, parseContactWorkbook, parseClinicRepSheet, matchClinicHint, normClinicHint, normPerson, phoneKey, samePerson, dedupeContacts, splitPersonHint, splitPeople, clinicDisplayName, parseDateLoose, matchSpecialty,
     detectClinicColumns, parseClinicRows, focLinesAnnotated,
-    matchCatalogProduct, crossSellPlan,
+    matchCatalogProduct, crossSellErpLines, crossSellPlan,
     productMovement, pmNormName,
     cloudInventory, fullBackupFile, BACKUP_SETS, BACKUP_FAMILIES, BACKUP_KIND, BACKUP_FORMAT, utf8Len, utf8Bytes, sha256Hex,
     backupSetOf, backupPartLabel, backupDocInfo, backupInventory, backupCanonical, backupBuilder, verifyBackupFile, backupRanges, backupReadOrder

@@ -12,8 +12,16 @@ function setClinicMode(m){
   document.getElementById('clinicListPane').style.display = m==='list'?'block':'none';
   if(m==='dash') renderClinicDash(); else renderClinics();
 }
-function clinicStats(c){
-  const vs = visits.filter(v=>v.clinicId===c.id);
+// The visits of each clinic, in the list's order (clinic id → visits), for a screen that reads every clinic's: found in
+// one pass over the visits instead of one per clinic (v126 speed, part 4). Made for one draw, never kept.
+function visitsByClinic(){
+  const by = new Map();
+  (visits || []).forEach(v => { if(!v) return; const a = by.get(v.clinicId); if(a) a.push(v); else by.set(v.clinicId, [v]); });
+  return by;
+}
+// vs (optional): this clinic's visits in the list's order, grouped once by the caller for every clinic (visitsByClinic)
+function clinicStats(c, vs){
+  vs = vs || visits.filter(v=>v.clinicId===c.id);
   const field = vs.filter(isFieldVisit);         // physical visits only
   const orders = vs.filter(v=>v.orderTaken);     // includes remote orders
   const rev = vs.reduce((a,v)=>a+(v.orderTotal||0),0);
@@ -35,7 +43,7 @@ function clinicStats(c){
 let erpDashTab = 'not';
 function erpDashData(repOverride){
   const effRep = repOverride || clinicRepFilter;
-  const ms = UMCore.monthCustomerSales(digestData(), { rep: effRep, fallback: true, isExchange: isExchangeLine });
+  const ms = UMCore.monthCustomerSales(digestDataKept(), { rep: effRep, fallback: true, isExchange: isExchangeLine }); // (the pass kept for the data state)
   const fams = UMCore.clinicFamilies(clinics);
   // a shared account invoiced by two people is one line naming both
   const buyers = ms.accounts.map(a => ({ name: a.name, rep: a.reps.join(' + '), clinicId: a.clinicId, channel: a.channel, family: a.family,
@@ -46,8 +54,9 @@ function erpDashData(repOverride){
   buyers.forEach(b=>{ if(b.family && fams.fams[b.family]) fams.fams[b.family].ids.forEach(id=>boughtIds.add(id)); });
   let pool = clinics.filter(c=>c.cls!=='Closed');
   if(effRep !== 'all') pool = pool.filter(c=>c.rep===effRep);
+  const vByC = visitsByClinic();
   const nonBuyers = pool.filter(c=>!boughtIds.has(c.id)).map(c=>{
-    const lastV = visits.filter(v=>v.clinicId===c.id).map(v=>v.date).sort().pop() || null;
+    const lastV = (vByC.get(c.id) || []).map(v=>v.date).sort().pop() || null;
     const days = lastV ? Math.round((new Date(todayStr())-new Date(lastV))/86400000) : null;
     return {c, lastV, days};
   }).sort((a,b)=>{
@@ -213,7 +222,8 @@ function renderClinicDash(){
   if(clinicRepFilter!=='all') pool = pool.filter(c=>c.rep===clinicRepFilter);
   const closed = clinics.filter(c=>c.cls==='Closed' && (clinicRepFilter==='all'||c.rep===clinicRepFilter)).length;
 
-  const stats = pool.map(c=>({c, s:clinicStats(c)}));
+  const vByC = visitsByClinic(); // (each clinic's visits found once, not every visit for every clinic: v126 speed, part 4)
+  const stats = pool.map(c=>({c, s:clinicStats(c, vByC.get(c.id) || [])}));
   const totRev = stats.reduce((a,x)=>a+x.s.rev,0);
   const totVisits = stats.reduce((a,x)=>a+x.s.visits,0);
   const totOrders = stats.reduce((a,x)=>a+x.s.orders,0);
@@ -1154,7 +1164,7 @@ function clinicErpAccountsSection(c){
 }
 function clinicErpAccountsHTML(c){
   if(!c || !currentUser || currentUser.role !== 'supervisor') return '';
-  const res = UMCore.erpAccounts(digestData());
+  const res = UMCore.erpAccounts(digestDataKept()); // (kept for the data state and the day)
   const here = res.accounts.filter(a => a.clinicId === c.id);
   const staleHere = (res.stale || []).filter(s => s.link === c.id);
   const inv = here.reduce((s, a) => s + a.invoices, 0), net = here.reduce((s, a) => s + a.net, 0);
@@ -1198,9 +1208,11 @@ function clinicErpRetry(id){
   }).catch(e => console.warn('retry sales rows', e));
 }
 function clinicErpLedger(clinicId){
-  const ret = [], all = [];
-  erpPeriods().forEach(p => erpViewRows(p).forEach(r => all.push(r)));
-  const focAll = UMCore.focLinesAnnotated(all);
+  const ret = [];
+  // every line of the files and their free-goods lines, from the pass kept for this data state (v126 speed, part 4)
+  const sh = erpShareNow(), all = sh ? sh.lines() : [];
+  if(!sh) erpPeriods().forEach(p => erpViewRows(p).forEach(r => all.push(r)));
+  const focAll = sh ? erpFocKept(sh) : UMCore.focLinesAnnotated(all);
   const match = erpMatchFn();
   all.forEach(r => {
     const m = match((r.customer||'').trim() || '(no name)');
@@ -1215,6 +1227,14 @@ function clinicErpLedger(clinicId){
   const byDate = (a,b)=>(b.date||'').localeCompare(a.date||'');
   ret.sort(byDate); foc.sort(byDate);
   return {ret, foc};
+}
+// The free-goods lines of every file, each with its default kind (UMCore.focLinesAnnotated over every line): one list per
+// data state of the kept pass — the same lines, in the same order. Read only (the ledger copies what it shows).
+let _focKept = { lines: null, foc: null };
+function erpFocKept(sh){
+  const all = sh.lines();
+  if(_focKept.lines !== all) _focKept = { lines: all, foc: UMCore.focLinesAnnotated(all) };
+  return _focKept.foc;
 }
 function erpNoteInput(key){
   return `<input type="text" data-key="${esc(key)}" value="${esc(erpNoteText(key))}"
