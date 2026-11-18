@@ -3,7 +3,7 @@
 > In the repository since 13 Nov 2026 (branch `redesign-v1`). The screenshots, page dumps, font and logo files, scripts and extraction outputs this document cites stayed in the working session's scratchpad and are not in the repository: paths that start with `/tmp/…`, `scratchpad/…`, `redesign-brand/…`, `redesign-docs/…`, `brand-scripts/…`, `safe-wt/…` or `home-wt/…` point there. Amounts and the promo code shown on the public shop were left out of this copy (nothing of the shop's prices goes in the repository).
 
 Audit step for the premium redesign (spec §1, §3.1–§3.6; Phase 1.5 and Phase 2 steps 1–2).
-Read on 13 Nov 2026 from https://ultramedgcc.com/ in Chromium (Playwright, through the session proxy), from the official logo files on the store's CDN, from the font files' own name tables, and from the two app checkouts (`safe-wt`, branch safety-v123; `home-wt`, branch main-screen-v1 at e40d293). Nothing in either checkout was changed.
+Read on 13 Nov 2026 from https://ultramedgcc.com/ in Chromium (Playwright, through the session proxy), from the official logo files on the store's CDN, from the font files' own name tables, and from the two app checkouts (`safe-wt`, branch safety-v123; `home-wt`, branch main-screen-v1 at 3bc411e). Nothing in either checkout was changed.
 
 Every value below has its source. "Site" means a value read from the live site's CSS, computed style or assets. "Derived" means a value I computed from a site value (for example a site color at the opacity the site itself uses). "Recommended" means my proposal for the app, with the reason given.
 

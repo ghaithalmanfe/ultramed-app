@@ -6,8 +6,8 @@ Phase 1 audit (spec ULTRAMED_PREMIUM_REDESIGN.md §12 Phase 1 steps 1–4 and 6)
 
 | | |
 |---|---|
-| Base of the redesign | `scratchpad/safe-wt` — branch `safety-v123`. Audited on the working tree while the v123 review fixes were being finished; they have since been committed (`d3482b5`, then `c3406ec` "a failing harness fails the run (no retry)", HEAD `0190dc0`, tree clean). The extraction tools re-run on `0190dc0` give **identical** contracts (0 differences in ids, selectors, functions, texts, regexes); sheet and inline-style counts unchanged |
-| Today screen that returns | `scratchpad/home-wt` — branch `main-screen-v1`, commit `e40d293` (05-today-calendar.js main screen, its CSS in index.html, `UMCore.execDashboard / execWeek / execDrill / planVisitKeys` in core.js, harnesses `main-screen.e2e.js` (port 8277) and `main-screen-cases.e2e.js` (8278)). In safe-wt it is held by commit `8670308` ("Hold the main screen …"), which set 16 files back to v122 |
+| Base of the redesign | `scratchpad/safe-wt` — branch `safety-v123`. Audited on the working tree while the v123 review fixes were being finished; they have since been committed (`8f94e37`, then `5fe51eb` "a failing harness fails the run (no retry)", HEAD `25c3a74`, tree clean). The extraction tools re-run on `25c3a74` give **identical** contracts (0 differences in ids, selectors, functions, texts, regexes); sheet and inline-style counts unchanged |
+| Today screen that returns | `scratchpad/home-wt` — branch `main-screen-v1`, commit `3bc411e` (05-today-calendar.js main screen, its CSS in index.html, `UMCore.execDashboard / execWeek / execDrill / planVisitKeys` in core.js, harnesses `main-screen.e2e.js` (port 8277) and `main-screen-cases.e2e.js` (8278)). In safe-wt it is held by commit `7252f5e` ("Hold the main screen …"), which set 16 files back to v122 |
 | Paths | `safe-wt/…` and `home-wt/…` below are relative to `/tmp/claude-0/-home-user-ultramed-app/3a55f116-358d-52a7-8820-6a19a1a37318/scratchpad/` |
 | Evidence | Raw extraction outputs in `redesign-docs/evidence/`, the scripts that made them in `redesign-docs/tools/` (re-runnable on the redesign branch to prove the contracts are still there — Appendix C) |
 
@@ -543,7 +543,7 @@ These are the official-logo variants already in the repo (dark wordmark, white w
 
 ---
 
-## 12. The held main screen (home-wt `e40d293`)
+## 12. The held main screen (home-wt `3bc411e`)
 
 ### 12.1 What it shows
 **Supervisor (team view, `.ms-vteam`)** — head: hello + date (laptop), the source line ("Invoiced sales from the ERP files to <day> · targets from the DSR · working days: n of m done"), the person switch `#msSwitch` (Team + every person of REPS, himself included, Arabic names in Arabic), account button. Cards:
@@ -601,7 +601,7 @@ Caching: `msSig(v)` fingerprints the inputs; `msEnsure` → `msRun` (setTimeout 
 | shared-accounts (1280) | "Dr. Ghaith 1% 121.25 KD of 9400.00 KD"; "October target"; notice "Invoices on another rep's clinic this month" + "Mariam invoiced at <clinic> · 1 × · 60.00 KD · counted for the clinic owner: Dr. Ghaith"; `#targetCard details` → `summary` click shows "SINV9101 · Oct 3 · 60.00 KD" and "Test product · Intensiv · 1 × · 60.00 KD" **without leaving Today** (the notice stops propagation); still renders with an older core.js |
 
 ### 12.6 Bringing it back onto safety-v123 (notes for the dashboard worker)
-- Revert `8670308` brings back 16 files; then keep safe-wt's v123 changes where they overlap: `saveEventForm` and `saveReschedulePlan` use `persistTold` + `saveToast` (safe-wt 05:265-267, 587-589) — home-wt still has `persist` + `showToast`; `switchUser`/`showGateScreen`/`signInEnded` were rewritten in 03 (put `document.body.classList.remove('on-today')` into the new `showGateScreen`); 09 `addToPlan` (`msPlanChanged()`); 10 `renderDocCardsNudge` (+ `_msNudge` written from 10, declared `var` in 05); `WD_NAMES_AR`/`wdArNames` move from 15 to 01; i18n.js (+325 lines), core.js (+774), tests/core.test.js (+617), `tests/e2e/fixtures/main-screen-data.js`.
+- Revert `7252f5e` brings back 16 files; then keep safe-wt's v123 changes where they overlap: `saveEventForm` and `saveReschedulePlan` use `persistTold` + `saveToast` (safe-wt 05:265-267, 587-589) — home-wt still has `persist` + `showToast`; `switchUser`/`showGateScreen`/`signInEnded` were rewritten in 03 (put `document.body.classList.remove('on-today')` into the new `showGateScreen`); 09 `addToPlan` (`msPlanChanged()`); 10 `renderDocCardsNudge` (+ `_msNudge` written from 10, declared `var` in 05); `WD_NAMES_AR`/`wdArNames` move from 15 to 01; i18n.js (+325 lines), core.js (+774), tests/core.test.js (+617), `tests/e2e/fixtures/main-screen-data.js`.
 - **Drop** what v123 removed: `<button class="ai-fab" id="aiFab">` (home-wt `index.html:1209`), the `fab.style.display='flex'` line in `renderAll` (home-wt 05:377-378) and the More tile "Assistant — Ask anything about your data" (home-wt 05:343) — save-truth F1 requires no ✨ button and no tile.
 - The held CSS centres every non-Today view at 640 px beside a 96 px rail; the redesign's shell replaces that.
 
@@ -708,7 +708,7 @@ Running harnesses in parallel: ports are fixed per file (Appendix A; **audit-fix
 | R28 | Performance: main-screen requires a render < 150 ms with 3 people × 12 months of lines; heavy DOM/CSS effects inside Today slow it | Keep the dashboard DOM lean; avoid backdrop-filter on large scrolling areas |
 | R29 | `#headerStamp`'s first child node must be the initials text node | Keep `#headerDot` inside after the text, or update 05:367 |
 | R30 | `.view .empty`, `.section-title` and labels change colour by context (`.view > …` vs inside `.card`/`.chartcard`/`.kpi`) — the cascade relies on the dark page | Redefine per surface in the token pass, not per screen |
-| R31 | `run-all.js` picks up every `*.e2e.js`, including the `_sh-*.e2e.js` copies `run-shifted.sh` writes while it runs; and since `c3406ec` there is **no retry** — one flaky harness fails the run (and the deploy) | Never run `run-all.js` in a checkout where a shifted run is in progress; a redesign change that makes a harness timing-sensitive (animations, transitions on elements the harness waits for) is a real failure. Keep motion off for `prefers-reduced-motion` and short elsewhere |
+| R31 | `run-all.js` picks up every `*.e2e.js`, including the `_sh-*.e2e.js` copies `run-shifted.sh` writes while it runs; and since `5fe51eb` there is **no retry** — one flaky harness fails the run (and the deploy) | Never run `run-all.js` in a checkout where a shifted run is in progress; a redesign change that makes a harness timing-sensitive (animations, transitions on elements the harness waits for) is a real failure. Keep motion off for `prefers-reduced-motion` and short elsewhere |
 
 ---
 
