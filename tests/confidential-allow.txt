@@ -7,3 +7,5 @@ mobile  tests/*             /^(\d)\1(\d)\2(\d)\3(\d)\4$/         # invented test
 email   tests/rules/*       /^test-[a-z0-9-]+@ultramed-kw\.com$/i   # invented emulator logins: the rules check the company domain, so test logins carry it; "test-" names reach no one
 email   tests/rules/*       SUPERVISOR_EMAIL@ultramed-kw.com      # the rules' placeholder, replaced in the Firebase console only
 email   tests/rules/*       JOB_LOGIN_EMAIL@ultramed-kw.com       # the rules' placeholder for the e-mail and backup jobs' read-only logins, replaced in the Firebase console only
+email   tests/rules/*       TEAM_EMAIL@ultramed-kw.com            # the rules' placeholder for the team list (security review), replaced in the Firebase console only
+email   tests/rules/*       stranger@ultramed-kw.com              # a fictional self-created account, to prove the team list keeps it out; reaches no one

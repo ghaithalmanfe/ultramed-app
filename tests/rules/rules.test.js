@@ -17,7 +17,7 @@ const {
   documentId, runTransaction, writeBatch, setLogLevel,
 } = require('firebase/firestore');
 const F = require('./fixtures');
-const { PROJECT, HOST, PORT, RAW_RULES, PLACEHOLDER, JOB_PLACEHOLDER, SUP, SUP2, REP_A, REP_B, REPORTS, BACKUPS, snap, utcDay, kuwaitDay,
+const { PROJECT, HOST, PORT, RAW_RULES, PLACEHOLDER, JOB_PLACEHOLDER, TEAM_PLACEHOLDER, SUP, SUP2, REP_A, REP_B, REPORTS, BACKUPS, snap, utcDay, kuwaitDay,
   PHOTO, CHUNK, TEAM_KEYS, SUPERVISOR_KEYS, JOB_KEYS, STARTUP_SEED_KEYS, SNAP_KEYS, ALL_KEYS, clinicList, asValue, stored } = F;
 setLogLevel('silent'); // the refusals below are expected; the SDK would log each one
 
@@ -53,16 +53,23 @@ after(async () => { if(env) await env.cleanup(); });
 beforeEach(seed);
 
 describe('the rules file as committed', () => {
-  test('names the supervisor and the job logins only by their placeholders — no real e-mail address in the file', () => {
+  test('names the supervisor, the job and the team logins only by their placeholders — no real e-mail address in the file', () => {
     assert.equal(RAW_RULES.split(`['${PLACEHOLDER}']`).length, 2, 'the SUPERVISOR_EMAILS() list holds the placeholder exactly once');
     assert.equal(RAW_RULES.split(`['${JOB_PLACEHOLDER}']`).length, 2, 'the JOB_EMAILS() list holds its placeholder exactly once');
+    assert.equal(RAW_RULES.split(`['${TEAM_PLACEHOLDER}']`).length, 2, 'the TEAM_EMAILS() list holds its placeholder exactly once');
     const emails = RAW_RULES.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
     assert.ok(emails.length > 0);
-    emails.forEach(e => assert.ok(e === PLACEHOLDER || e === JOB_PLACEHOLDER, 'an e-mail address other than the placeholders: ' + e));
+    emails.forEach(e => assert.ok(e === PLACEHOLDER || e === JOB_PLACEHOLDER || e === TEAM_PLACEHOLDER, 'an e-mail address other than the placeholders: ' + e));
   });
   test('the placeholders are upper case, so they can never match a login (Firebase e-mails are lower case)', () => {
     assert.notEqual(PLACEHOLDER, PLACEHOLDER.toLowerCase());
     assert.notEqual(JOB_PLACEHOLDER, JOB_PLACEHOLDER.toLowerCase());
+    assert.notEqual(TEAM_PLACEHOLDER, TEAM_PLACEHOLDER.toLowerCase());
+  });
+  test('the team placeholder appears nowhere but in its list — so replacing it everywhere in the console can never switch the list off', () => {
+    const code = RAW_RULES.replace(/\/\/[^\n]*/g, '');
+    assert.equal(code.split(TEAM_PLACEHOLDER).length, 2, 'TEAM_EMAILS() alone holds the placeholder');
+    assert.equal(code.split('TEAM_EMAIL@').length, 2, 'no part of it is repeated in a check either');
   });
 });
 
@@ -117,9 +124,86 @@ describe('only password logins on the company domain', () => {
   test('the domain check ignores letter case (Test-Rep-A@UltraMed-KW.com reads)', async () => {
     await assertSucceeds(read(login('Test-Rep-A@UltraMed-KW.com'), 'clinics'));
   });
-  test('an unverified company account is accepted (console-created accounts are unverified)', async () => {
+  test('an unverified company account on the team list is accepted (console-created accounts are unverified)', async () => {
     await assertSucceeds(read(login(REP_A, { email_verified: false }), 'clinics'));
     await assertSucceeds(save(login(REP_A, { email_verified: false }), 'visits'));
+  });
+});
+
+// Security review (17 Nov): the web API key is public by design and Firebase lets anyone create a password account
+// while "Enable create (sign-up)" is on (its default) — before TEAM_EMAILS(), any such account on the company domain
+// was the team. Filled in, the list is what decides.
+describe('the team list (TEAM_EMAILS), filled in as the owner does in the console', () => {
+  const STRANGER = 'stranger@ultramed-kw.com';   // a self-created account on an unused company address
+  test('a company-domain password login that is not on the list gets nothing: no read, list, write, seeding, backup or delete', async () => {
+    for(const db of [login(STRANGER), login(STRANGER, { email_verified: true }), login(STRANGER, { role: 'supervisor', admin: true })]){
+      for(const k of ALL_KEYS) await assertFails(read(db, k));
+      await assertFails(listPrefix(db, 'snap_'));
+      await assertFails(getDocs(collection(db, 'state')));
+      for(const k of TEAM_KEYS.concat(SUPERVISOR_KEYS, JOB_KEYS)) await assertFails(save(db, k));
+      await assertFails(remove(db, PHOTO));
+      await assertFails(remove(db, snap(-14)));
+    }
+    await unseed('benchmarks'); await unseed('snap_' + kuwaitDay(0));
+    await assertFails(save(login(STRANGER), 'benchmarks'));                 // not even the start-up seeding
+    await assertFails(save(login(STRANGER), 'snap_' + kuwaitDay(0)));        // nor today's backup
+    for(const k of TEAM_KEYS) assert.equal(await storedValue(k), asValue(SEED[k]), k + ' unchanged');
+    assert.ok(await exists(PHOTO) && await exists(snap(-14)));
+  });
+  test('the listed reps work as before, in any letter case', async () => {
+    for(const email of [REP_A, REP_B, REP_A.toUpperCase()]){
+      await assertSucceeds(read(login(email), 'clinics'));
+      await assertSucceeds(save(login(email), 'visits'));
+    }
+  });
+  test('the supervisors and the job logins need not be listed: their own lists make them team logins', async () => {
+    await assertSucceeds(save(login(SUP), 'targets'));
+    await assertSucceeds(save(login(SUP2), 'visits'));
+    for(const email of [REPORTS, BACKUPS]){
+      await assertSucceeds(read(login(email), 'clinics'));
+      await assertFails(save(login(email), 'visits'));                       // still read-only
+    }
+  });
+  describe('other ways the owner may fill it in', () => {
+    const rerun = async (rules) => { await env.cleanup(); env = await initializeTestEnvironment({ projectId: PROJECT, firestore: { rules, host: HOST, port: Number(PORT) } }); };
+    after(() => rerun(F.rulesFor(SUP, SUP2)));
+    test('the placeholder kept beside the real logins: the list is in force (the placeholder matches nobody)', async () => {
+      await rerun(F.withTeam(F.rulesNoTeamList(SUP), [TEAM_PLACEHOLDER, REP_A]));
+      await seed();
+      await assertSucceeds(read(login(REP_A), 'clinics'));
+      await assertFails(read(login(REP_B), 'clinics'));
+      await assertFails(read(login(STRANGER), 'clinics'));
+      await assertFails(read(login(TEAM_PLACEHOLDER.toLowerCase()), 'clinics'));
+    });
+    test('a single login: only she, the supervisors and the jobs', async () => {
+      await rerun(F.withTeam(F.rulesNoTeamList(SUP), [REP_B]));
+      await seed();
+      await assertSucceeds(save(login(REP_B), 'visits'));
+      await assertFails(read(login(REP_A), 'clinics'));
+      await assertSucceeds(read(login(SUP), 'clinics'));
+      await assertSucceeds(read(login(REPORTS), 'clinics'));
+    });
+    test('an empty list: the supervisors and the jobs only', async () => {
+      await rerun(F.withTeam(F.rulesNoTeamList(SUP), []));
+      await seed();
+      for(const email of [REP_A, REP_B, STRANGER]) await assertFails(read(login(email), 'clinics'));
+      await assertSucceeds(save(login(SUP), 'clinics'));
+      await assertSucceeds(read(login(BACKUPS), 'clinics'));
+    });
+    test('the placeholder replaced everywhere at once (find and replace): the list is in force', async () => {
+      await rerun(F.rulesNoTeamList(SUP).split(`'${TEAM_PLACEHOLDER}'`).join(`'${REP_A}'`));
+      await seed();
+      await assertSucceeds(read(login(REP_A), 'clinics'));
+      await assertFails(read(login(STRANGER), 'clinics'));
+    });
+    test('left as committed (the placeholder alone): the domain rule as before the list — nobody is locked out, and a stranger is still in until the list is filled in or sign-up is off', async () => {
+      await rerun(F.rulesNoTeamList(SUP));
+      await seed();
+      for(const email of [REP_A, REP_B, STRANGER]) await assertSucceeds(read(login(email), 'clinics'));
+      await assertSucceeds(save(login(REP_B), 'visits'));
+      await assertFails(save(login(STRANGER), 'targets'));                  // never the supervisor's documents
+      await assertFails(read(login('stranger@gmail.com'), 'clinics'));       // never another domain
+    });
   });
 });
 
@@ -241,6 +325,12 @@ describe('a rep (a password login on the company domain)', () => {
       await assertFails(remove(login(email), 'auditLog:2026-09'));
     }
     assert.ok(await exists(F.AUDIT) && await exists('auditLog:2026-09'));
+  });
+  test('a document above the cloud\'s size limit (1 MiB) never lands — Firestore refuses it before the rules (the app measures first, DOC_MAX_BYTES)', async () => {
+    let err = null;
+    try{ await save(login(REP_A), 'visits', 'x'.repeat(1100 * 1024)); }catch(e){ err = e; }
+    assert.ok(err, 'an oversized document was accepted');
+    assert.equal(await storedValue('visits'), asValue(SEED.visits));
   });
   test('only the app\'s document shape { value: string, updated: number } is accepted', async () => {
     const db = login(REP_A);

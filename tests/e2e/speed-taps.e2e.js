@@ -96,7 +96,11 @@ const api = {
 async function device(browser, profName, who, role){
   const prof = PROFILES[profName];
   cloud = new Map(Object.entries(FIX.docs));
-  const ctx = await browser.newContext({ viewport: prof.viewport, isMobile: prof.isMobile, hasTouch: prof.hasTouch, locale: 'en-US', timezoneId: 'Asia/Kuwait' });
+  // bypassCSP: the page's Content-Security-Policy (v127) has no 'unsafe-eval', and this harness runs each step's code
+  // with eval AFTER waiting for frames (timeStep) — outside DevTools' own evaluation, so the policy refuses it (phone-layout
+  // runs the same steps at once, inside that evaluation, which the policy allows). Timing is this harness's job; the
+  // policy's own checks are xss.e2e.js (nothing the app asks for is blocked) and phone-layout's sweep under the policy.
+  const ctx = await browser.newContext({ viewport: prof.viewport, isMobile: prof.isMobile, hasTouch: prof.hasTouch, locale: 'en-US', timezoneId: 'Asia/Kuwait', bypassCSP: true });
   await blockFirebase(ctx);
   await ctx.route(u => !/^(http:\/\/localhost[:/]|data:|blob:)/.test(u.href), r => r.abort());
   const page = await ctx.newPage();

@@ -2,11 +2,9 @@
 
 ## What's in this folder
 
-- `www/` — the app itself (this is what runs in the browser or inside the Android app)
+- `www/` — the app itself (this is what runs in the browser and as the installed app)
   - `www/js/core.js` — the app's calculations (order totals, rep scores, dates, CSV) as
     plain functions, shared with the automated tests
-- `android/` — the native Android project (built with Capacitor), produces the installable APK
-- `capacitor.config.json` — links the web app to the native shell
 - `tests/` — automated tests. Run them with `npm test` (needs Node.js, no installs).
   They also run automatically on GitHub for every change (see the "Actions" tab).
 
@@ -61,7 +59,7 @@ phones, connect it to a free Firebase project:
    message.
 
 Once this is done, host `www/` somewhere reachable (see below) and every device
-that opens that URL — and the Android app, once rebuilt — shares the same data.
+that opens that URL shares the same data.
 
 ## 2. Host it online (so it's reachable "from anywhere")
 
@@ -77,47 +75,13 @@ Once hosted over https, opening the URL in Chrome (Android) shows an **Install**
 prompt automatically; on iPhone, Safari → Share → **Add to Home Screen** does the
 same. It behaves like an installed app: full-screen, own icon, offline-capable.
 
-## 4. Real Android APK (native, not just a browser shortcut)
+## 4. No store app
 
-The `android/` folder is a real native Android Studio project. To rebuild it after
-changing anything under `www/`:
-
-```bash
-npx cap sync android
-cd android
-./gradlew assembleDebug
-```
-
-The output APK lands at `android/app/build/outputs/apk/debug/app-debug.apk` — copy
-it to a phone and install it directly (Android will ask you to allow installs from
-this source once).
-
-## 5. Publishing to Google Play
-
-1. Create a Google Play Developer account (one-time $25 fee, your Google account):
-   https://play.google.com/console/signup
-2. Build a **release** (signed) bundle instead of debug:
-   ```bash
-   cd android
-   ./gradlew bundleRelease
-   ```
-   You'll need to generate a signing keystore first — Android Studio can do this
-   for you (Build → Generate Signed Bundle), or `keytool` on the command line.
-3. Create the app listing in Play Console, upload the `.aab` file from
-   `android/app/build/outputs/bundle/release/`, fill in the store listing
-   (screenshots, description, privacy policy URL), and submit for review.
-   Google's review typically takes a few hours to a couple of days.
-
-## 6. iOS App Store
-
-Not possible from this Windows machine — Apple requires Xcode, which only runs on
-macOS. Options when you're ready:
-- Build on an actual Mac (`npx cap add ios`, then open in Xcode).
-- Use a cloud Mac build service (e.g. Codemagic, Ionic Appflow, GitHub Actions
-  macOS runners) that builds and signs the iOS app without you owning a Mac.
-Either way you'll also need an Apple Developer Program membership ($99/year).
-
-
+The team uses the installable web app of section 3 on every phone. The native Android
+project and its Capacitor tools were removed in v127 (the owner's decision of 18 Nov 2026:
+unused, and their build tools carried known vulnerabilities); they are in the git history
+before v127 if a store app is ever wanted. An APK built from that project held a frozen copy
+of the app of its day, so nobody should use one.
 
 ## Daily e-mail reports (v87)
 

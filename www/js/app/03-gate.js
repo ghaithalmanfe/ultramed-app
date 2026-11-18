@@ -110,7 +110,8 @@ async function submitChangePassword(){
     closeModal();
     showToast('✅ Password updated');
   }catch(e){
-    if(e.code==='auth/wrong-password') showToast('Current password is incorrect');
+    // (with Firebase's e-mail enumeration protection on, a wrong password is auth/invalid-credential — security review)
+    if(e.code==='auth/wrong-password' || e.code==='auth/invalid-credential' || e.code==='auth/invalid-login-credentials') showToast('Current password is incorrect');
     else if(e.code==='auth/weak-password') showToast('Choose a stronger password');
     else if(e.code==='auth/too-many-requests') showToast('Too many attempts — try again later');
     else showToast('Could not update password');
