@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 150 172" width="150" height="172">
+  <defs>
+    <radialGradient id="rbH" cx="36%" cy="24%" r="82%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".42" stop-color="#F6F8F9"/><stop offset=".74" stop-color="#DFE5E8"/><stop offset="1" stop-color="#B4C0C6"/>
+    </radialGradient>
+    <radialGradient id="rbB" cx="34%" cy="20%" r="92%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".5" stop-color="#F2F5F6"/><stop offset=".82" stop-color="#D9E0E3"/><stop offset="1" stop-color="#B2BEC4"/>
+    </radialGradient>
+    <radialGradient id="rbA" cx="35%" cy="22%" r="90%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".55" stop-color="#EEF2F3"/><stop offset="1" stop-color="#B9C4C9"/>
+    </radialGradient>
+    <linearGradient id="rbV" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#39494F"/><stop offset=".28" stop-color="#172125"/><stop offset="1" stop-color="#04080A"/>
+    </linearGradient>
+    <linearGradient id="rbVs" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".34"/><stop offset=".5" stop-color="#FFFFFF" stop-opacity=".06"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="rbE" cx="34%" cy="30%" r="80%">
+      <stop offset="0" stop-color="#9FF0D0"/><stop offset=".5" stop-color="#2FA47E"/><stop offset="1" stop-color="#0A5A43"/>
+    </radialGradient>
+    <radialGradient id="rbEye" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#1FA573"/><stop offset=".34" stop-color="#27B881"/><stop offset=".5" stop-color="#C6FFE6"/><stop offset=".78" stop-color="#5BF2AE"/><stop offset="1" stop-color="#1FC27F"/>
+    </radialGradient>
+    <filter id="rbBl2" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2"/></filter>
+    <filter id="rbBl3" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>
+    <filter id="rbBl5" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5"/></filter>
+    <clipPath id="rbVc"><rect x="50" y="38" width="62" height="40" rx="19"/></clipPath>
+    <clipPath id="rbHc"><ellipse cx="71" cy="57" rx="46" ry="38.5"/></clipPath>
+    <clipPath id="rbBc"><path d="M71 92c-19 0-33 6-33 20l-1 30c0 15 14 22 34 22s34-7 34-22l-1-30c0-14-14-20-33-20z"/></clipPath>
+  </defs>
+  <!-- the ground shadow -->
+  <ellipse cx="72" cy="165" rx="44" ry="5.5" fill="#0B3B30" opacity=".22" filter="url(#rbBl3)"/>
+  <!-- arms behind the body -->
+  <g>
+    <ellipse cx="31.5" cy="122" rx="9.6" ry="19.5" transform="rotate(11 31.5 122)" fill="url(#rbA)"/>
+    <circle cx="27" cy="141" r="9.6" fill="url(#rbA)"/>
+    <ellipse cx="110.5" cy="122" rx="9.6" ry="19.5" transform="rotate(-11 110.5 122)" fill="url(#rbA)"/>
+    <circle cx="115" cy="141" r="9.6" fill="url(#rbA)"/>
+    <ellipse cx="29" cy="146" rx="6" ry="2.6" fill="#8C9AA1" opacity=".3" filter="url(#rbBl2)"/>
+    <ellipse cx="117" cy="146" rx="6" ry="2.6" fill="#8C9AA1" opacity=".3" filter="url(#rbBl2)"/>
+  </g>
+  <!-- the body -->
+  <path d="M71 92c-19 0-33 6-33 20l-1 30c0 15 14 22 34 22s34-7 34-22l-1-30c0-14-14-20-33-20z" fill="url(#rbB)"/>
+  <g clip-path="url(#rbBc)">
+    <ellipse cx="71" cy="93" rx="34" ry="9" fill="#7E8D95" opacity=".42" filter="url(#rbBl3)"/>
+    <ellipse cx="100" cy="150" rx="18" ry="20" fill="#93A2A9" opacity=".3" filter="url(#rbBl5)"/>
+    <ellipse cx="52" cy="112" rx="10" ry="6" fill="#FFFFFF" opacity=".85" filter="url(#rbBl3)"/>
+  </g>
+  <path d="M49 113c7 9 37 9 44 0" fill="none" stroke="#C9D2D6" stroke-width="1.1" stroke-linecap="round" opacity=".9"/>
+  <path d="M49 114.2c7 9 37 9 44 0" fill="none" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round" opacity=".9"/>
+  <!-- the far ear cap (behind the head) -->
+  <ellipse cx="114" cy="59" rx="5.5" ry="11.5" fill="url(#rbE)"/>
+  <!-- the head -->
+  <circle cx="71" cy="19.6" r="2.4" fill="#D9E0E3"/>
+  <ellipse cx="71" cy="57" rx="46" ry="38.5" fill="url(#rbH)"/>
+  <g clip-path="url(#rbHc)">
+    <ellipse cx="86" cy="96" rx="40" ry="14" fill="#8FA0A8" opacity=".38" filter="url(#rbBl5)"/>
+    <ellipse cx="50" cy="32" rx="19" ry="8.5" fill="#FFFFFF" opacity=".95" filter="url(#rbBl3)" transform="rotate(-16 50 32)"/>
+  </g>
+  <!-- the near ear cap: a pale rim, a teal cap with a highlight -->
+  <ellipse cx="27.5" cy="59.5" rx="10" ry="14" fill="#8FA0A8" opacity=".35" filter="url(#rbBl2)"/>
+  <ellipse cx="26.5" cy="59" rx="9.6" ry="13.6" fill="#EDF0F2" stroke="#BFC9CE" stroke-width=".9"/>
+  <ellipse cx="25.6" cy="59" rx="6.6" ry="10.4" fill="url(#rbE)"/>
+  <ellipse cx="23.8" cy="54.4" rx="2" ry="3.6" fill="#DFFFF2" opacity=".65"/>
+  <!-- the glass visor -->
+  <rect x="49" y="37" width="64" height="42" rx="20" fill="#C9D2D6" opacity=".55"/>
+  <rect x="50" y="38" width="62" height="40" rx="19" fill="url(#rbV)"/>
+  <g clip-path="url(#rbVc)">
+    <path d="M56 36h20L62 80H46z" fill="url(#rbVs)"/>
+    <path d="M84 36h7L78 80h-6z" fill="#FFFFFF" opacity=".06"/>
+    <ellipse cx="81" cy="80" rx="26" ry="6" fill="#2FE39A" opacity=".16" filter="url(#rbBl3)"/>
+  </g>
+  <path d="M61 41.6c11-2.6 30-2.6 41 0" fill="none" stroke="#FFFFFF" stroke-opacity=".3" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- the glowing eyes -->
+  <ellipse cx="69" cy="58" rx="9.5" ry="10" fill="#2BF0A0" opacity=".55" filter="url(#rbBl3)"/>
+  <ellipse cx="95" cy="58" rx="9.5" ry="10" fill="#2BF0A0" opacity=".55" filter="url(#rbBl3)"/>
+  <ellipse cx="69" cy="58" rx="6.8" ry="7.4" fill="url(#rbEye)"/>
+  <ellipse cx="95" cy="58" rx="6.8" ry="7.4" fill="url(#rbEye)"/>
+  <!-- the smile -->
+  <path d="M77 85.2c3.4 2.4 8.6 2.4 12 0" fill="none" stroke="#8C99A0" stroke-width="1.7" stroke-linecap="round"/>
+</svg>
