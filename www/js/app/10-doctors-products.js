@@ -425,9 +425,8 @@ function openContactImport(){
   showModal(`
     <h3 style="margin-top:0;" data-ic="download">📥 Import all contacts at once</h3>
     <div style="color:var(--muted); font-size:12.5px; line-height:1.6; margin-bottom:10px;">
-      Excel أو CSV بأعمدة مثل: <b>اسم الطبيب، العيادة، الهاتف، التخصص، تاريخ الميلاد، ملاحظات</b>
-      (عربي أو إنجليزي — الترتيب لا يهم). النظام يوزّع كل طبيب على عيادته تلقائيًا،
-      ينشئ العيادات الجديدة، يحدّث الموجودين بدل تكرارهم، ويحوّل التخصصات والتواريخ بنفسه.</div>
+      Excel or CSV with columns such as: <b>doctor name, clinic, phone, specialty, birthday, notes</b>
+      (Arabic or English — any order). The app files each doctor under their clinic by itself, creates the new clinics, updates the people already there instead of duplicating them, and converts specialties and dates by itself.</div>
     <input type="file" accept=".csv,.txt,.xlsx,.xls" onchange="handleContactSheet(this)">
     <div id="ciPreview2" style="margin-top:10px;"></div>
   `);
@@ -445,7 +444,7 @@ async function handleContactSheet(input){
       : [{ name: f.name, rows: UMCore.parseCsvText(await f.text()) }];
     const wb = UMCore.parseContactWorkbook(sheets, SPECIALTIES, { clinics });
     const repSheet = UMCore.parseClinicRepSheet(sheets, REPS);
-    if(wb.error){ prev.innerHTML = '<div class="nudge">⚠️ لم أتعرف على الأعمدة — تأكد أن أحد الصفوف الأولى يحوي عناوين مثل "اسم الطبيب" أو "Hygienist" و"العيادة" و"رقم الهاتف".</div>'; return; }
+    if(wb.error){ prev.innerHTML = '<div class="nudge">⚠️ The columns were not recognised — make sure one of the first rows has headers such as "Doctor name" or "Hygienist", "Clinic" and "Phone".</div>'; return; }
     const norm = n => UMCore.normPerson(n);
     const plan = wb.contacts.map(ct => {
       let clinic = null, action;
@@ -475,28 +474,28 @@ async function handleContactSheet(input){
     const readSheets = wb.perSheet.filter(s=>s.contacts);
     const icon = t => t==='add'?'➕':t==='update'?'🔄':t==='newClinic'?'🏥':'⚠️';
     prev.innerHTML = `
-      <div style="color:var(--muted); font-size:12px; margin-bottom:6px;">قُرئت ${readSheets.length} ورقة: ${readSheets.map(s=>esc(s.sheet)+' ('+s.contacts+')').join(' · ')}${wb.duplicates?` — دُمج ${wb.duplicates} تكراراً`:''}</div>
+      <div style="color:var(--muted); font-size:12px; margin-bottom:6px;">Read ${readSheets.length} sheets: ${readSheets.map(s=>esc(s.sheet)+' ('+s.contacts+')').join(' · ')}${wb.duplicates?` — ${wb.duplicates} duplicates merged`:''}</div>
       <div class="card" style="padding:10px 12px;">
-        <div class="spec-row"><span class="k">👥 جهات اتصال فريدة</span><span class="v">${plan.length}</span></div>
-        <div class="spec-row"><span class="k">➕ أشخاص جدد لعيادات موجودة</span><span class="v">${counts.add}</span></div>
-        <div class="spec-row"><span class="k">🔄 تحديث أشخاص موجودين (بلا تكرار)</span><span class="v">${counts.update}</span></div>
-        <div class="spec-row"><span class="k">🏥 عيادات جديدة ستُنشأ</span><span class="v">${newList.length}</span></div>
-        ${counts.noClinic?`<div class="spec-row"><span class="k">⚠️ بدون اسم عيادة</span><span class="v">${counts.noClinic}</span></div>`:''}
+        <div class="spec-row"><span class="k">👥 Unique contacts</span><span class="v">${plan.length}</span></div>
+        <div class="spec-row"><span class="k">➕ New people for clinics on the list</span><span class="v">${counts.add}</span></div>
+        <div class="spec-row"><span class="k">🔄 People already there, updated (no duplicates)</span><span class="v">${counts.update}</span></div>
+        <div class="spec-row"><span class="k">🏥 New clinics to be created</span><span class="v">${newList.length}</span></div>
+        ${counts.noClinic?`<div class="spec-row"><span class="k">⚠️ No clinic name</span><span class="v">${counts.noClinic}</span></div>`:''}
       </div>
-      ${newList.length?`<div style="font-size:12.5px; margin-top:8px;"><b>العيادات الجديدة:</b> ${newList.map(x=>esc(x.name)+' ('+x.n+(x.rep?' · '+esc(x.rep):'')+')').join(' · ')}</div>
-      <label style="margin-top:8px;">مندوبة العيادات الجديدة التي لا يذكر الملف مندوبتها</label>
+      ${newList.length?`<div style="font-size:12.5px; margin-top:8px;"><b>New clinics:</b> ${newList.map(x=>esc(x.name)+' ('+x.n+(x.rep?' · '+esc(x.rep):'')+')').join(' · ')}</div>
+      <label style="margin-top:8px;">Rep for the new clinics whose rep the file does not name</label>
       <div class="chip-row" id="ciRep2">${REPS.map((r,i)=>`<div class="chip ${i===0?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>`:''}
-      ${noClinic.length?`<div style="font-size:12.5px; margin-top:8px;"><b>بلا عيادة في الملف:</b> ${noClinic.map(x=>esc(x.ct.name)).join('، ')}</div>
-      <label style="display:flex; gap:8px; align-items:center; margin-top:6px; font-size:12.5px;"><input type="checkbox" id="ciHold" style="width:auto;"> أضفهم إلى عيادة مؤقتة «Contacts without a clinic» لنقلهم لاحقاً</label>`:''}
+      ${noClinic.length?`<div style="font-size:12.5px; margin-top:8px;"><b>No clinic in the file:</b> ${noClinic.map(x=>esc(x.ct.name)).join(uiLang === 'ar' ? '، ' : ', ')}</div>
+      <label style="display:flex; gap:8px; align-items:center; margin-top:6px; font-size:12.5px;"><input type="checkbox" id="ciHold" style="width:auto;"> Add them to a holding clinic, «Contacts without a clinic», to move them later</label>`:''}
       <div style="max-height:220px; overflow:auto; margin-top:8px; font-size:12px;">
         ${plan.map(x=>`<div style="padding:3px 0; border-bottom:1px dashed var(--line);">
           ${icon(x.action.type)} <b>${esc(x.ct.name)}</b>${x.ct.title?` · ${esc(x.ct.title)}`:''}
-          → ${x.action.type==='newClinic'?esc(x.action.clinicName)+' (جديدة)':x.action.clinic?esc(x.action.clinic.name):'—'}
+          → ${x.action.type==='newClinic'?esc(x.action.clinicName)+(uiLang === 'ar' ? ' (جديدة)' : ' (new)'):x.action.clinic?esc(x.action.clinic.name):'—'}
           ${x.ct.area?` · 📍${esc(x.ct.area)}`:''}${x.ct.phone?' · 📞':''}${x.ct.birthday?' · 🎂':''}</div>`).join('')}
       </div>
       <div id="ciAsk2"></div>
-      <button class="btn" style="margin-top:10px;" onclick="commitContactImport()">✅ اعتماد الاستيراد</button>`;
-  }catch(e){ console.error(e); prev.innerHTML = '<div class="nudge">⚠️ تعذّر قراءة الملف — جرّب حفظه كـ CSV.</div>'; }
+      <button class="btn" style="margin-top:10px;" onclick="commitContactImport()">✅ Confirm the import</button>`;
+  }catch(e){ console.error(e); prev.innerHTML = '<div class="nudge">⚠️ The file could not be read — try saving it as CSV.</div>'; }
 }
 async function commitContactImport(confirmed){
   if(!requireAdmin() || !_contactImport) return;
@@ -540,7 +539,7 @@ async function commitContactImport(confirmed){
   closeModal();
   renderAll();
   if(document.getElementById('ddBody')) renderDoctorsDb();
-  saveToast(r, 'clinics', `✅ ${added} جهة اتصال جديدة · ${updated} تحديث${clinicsMade?` · ${clinicsMade} عيادة جديدة`:''}${skippedN?` · ${skippedN} بلا عيادة (لم تُستورد)`:''}`);
+  saveToast(r, 'clinics', `✅ ${added} new contacts · ${updated} updated${clinicsMade?` · ${clinicsMade} new clinics`:''}${skippedN?` · ${skippedN} without a clinic (not imported)`:''}`);
 }
 
 // ---- EASY DATA-ENTRY MODE: the girls complete missing data card by card ----
@@ -570,39 +569,39 @@ function dataGaps(){
 let _deQueue = [], _dePos = 0;
 function openDataEntry(){
   _deQueue = dataGaps(); _dePos = 0;
-  if(!_deQueue.length){ showModal(`<h3 style="margin-top:0;">🏆 البيانات مكتملة!</h3><p style="color:var(--muted); font-size:13px;">كل العيادات والأطباء لديك بياناتهم كاملة.</p><button class="btn" onclick="closeModal()">رائع</button>`); return; }
+  if(!_deQueue.length){ showModal(`<h3 style="margin-top:0;">🏆 The data is complete!</h3><p style="color:var(--muted); font-size:13px;">Every clinic and doctor on your list has complete data.</p><button class="btn" onclick="closeModal()">Great</button>`); return; }
   renderDataEntryStep();
 }
 function renderDataEntryStep(){
   if(_dePos >= _deQueue.length){
-    showModal(`<h3 style="margin-top:0;">🎉 انتهيت!</h3><p style="color:var(--muted); font-size:13px;">أكملتِ كل البيانات الناقصة في قائمتك.</p><button class="btn" onclick="closeModal(); renderDoctorsDb && renderDoctorsDb();">تم</button>`);
+    showModal(`<h3 style="margin-top:0;">🎉 All done!</h3><p style="color:var(--muted); font-size:13px;">You have completed all the missing data on your list.</p><button class="btn" onclick="closeModal(); renderDoctorsDb && renderDoctorsDb();">Done</button>`);
     return;
   }
   const it = _deQueue[_dePos];
   const prog = `<div style="height:5px; background:var(--paper); border-radius:3px; overflow:hidden; margin-bottom:10px;"><div style="width:${Math.round(_dePos/_deQueue.length*100)}%; height:100%; background:var(--teal);"></div></div>
-    <div style="color:var(--muted); font-size:11px; margin-bottom:8px;">${_dePos+1} من ${_deQueue.length}</div>`;
+    <div style="color:var(--muted); font-size:11px; margin-bottom:8px;">${_dePos+1} of ${_deQueue.length}</div>`;
   if(it.kind==='clinic'){
     showModal(`${prog}
       <h3 style="margin-top:0;" data-sections data-ic="building">🏥 ${esc(it.c.name)}</h3>
-      ${it.miss.includes('phone')?`<label>📞 هاتف العيادة</label><input type="text" id="deClinicPhone" placeholder="2XXXXXXX">`:''}
-      ${it.miss.includes('contact')?`<label style="margin-top:6px;">📇 جهة الاتصال (استقبال/مسؤول)</label><input type="text" id="deClinicContact" placeholder="مثال: الاستقبال — أ. هدى">`:''}
-      ${it.miss.includes('dealType')?`<label style="margin-top:6px;">🤝 طريقة التعامل</label>
-        <div class="chip-row" id="deDeal"><div class="chip" data-v="prescription" data-deal="prescription" onclick="pickModalMulti(this)">💊 بريسكريبشن</div><div class="chip" data-v="direct" data-deal="direct" onclick="pickModalMulti(this)">🛒 بيع مباشر</div></div>`:''}
-      <button class="btn" style="margin-top:12px;" onclick="saveDataEntryStep()">حفظ والتالي ←</button>
-      <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">تخطّي</button>`);
+      ${it.miss.includes('phone')?`<label>📞 Clinic phone</label><input type="text" id="deClinicPhone" placeholder="2XXXXXXX">`:''}
+      ${it.miss.includes('contact')?`<label style="margin-top:6px;">📇 Contact person (reception / manager)</label><input type="text" id="deClinicContact" placeholder="e.g. Reception — Ms. Huda">`:''}
+      ${it.miss.includes('dealType')?`<label style="margin-top:6px;">🤝 How the clinic works with us</label>
+        <div class="chip-row" id="deDeal"><div class="chip" data-v="prescription" data-deal="prescription" onclick="pickModalMulti(this)">💊 Prescription</div><div class="chip" data-v="direct" data-deal="direct" onclick="pickModalMulti(this)">🛒 Direct sales</div></div>`:''}
+      <button class="btn" style="margin-top:12px;" onclick="saveDataEntryStep()">Save &amp; next →</button>
+      <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">Skip</button>`);
   } else {
     showModal(`${prog}
       <h3 style="margin-top:0;" data-sections data-ic="stethoscope">👨‍⚕️ ${esc(it.d.name)} <span style="color:var(--muted); font-size:12px; font-weight:400;">${esc(it.c.name)}</span></h3>
-      ${it.miss.includes('title')?`<label>التخصص</label><div class="chip-row" id="deTitle">${SPECIALTIES.map(t=>`<div class="chip small" data-v="${esc(t)}" onclick="pickModalCls(this)">${SPECIALTY_PLAYBOOK[t].icon} ${esc(t)}</div>`).join('')}</div>`:''}
-      ${it.miss.includes('phone')?`<label style="margin-top:6px;">📞 هاتفه</label><input type="text" id="deDocPhone" placeholder="9XXXXXXX">`:''}
-      ${it.miss.includes('birthday')?`<label style="margin-top:6px;">🎂 تاريخ ميلاده</label><input type="date" id="deDocBday">`:''}
-      ${it.miss.includes('role')?`<label style="margin-top:6px;">🏷️ دوره في العيادة</label><div class="chip-row" id="deRole">${UMCore.DOC_ROLES.map(([k,l])=>`<div class="chip small" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`:''}
-      ${it.miss.includes('influence')?`<label style="margin-top:6px;">👑 قوة قراره في الشراء</label><div class="chip-row" id="deInfl">${UMCore.DOC_INFLUENCE.map(([k,l])=>`<div class="chip small" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`:''}
-      ${it.miss.includes('stage')?`<label style="margin-top:6px;">🤝 مرحلة العلاقة</label><div class="chip-row" id="deStage">${UMCore.DOC_STAGES.map(([k,l])=>`<div class="chip small" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`:''}
-      ${it.miss.includes('cadence')?`<label style="margin-top:6px;">📆 إيقاع زيارته</label>
-        <div class="chip-row" id="deCad"><div class="chip small" data-v="weekly" onclick="pickModalCls(this)">أسبوعي</div><div class="chip small" data-v="monthly" onclick="pickModalCls(this)">شهري</div><div class="chip small" data-v="quarterly" onclick="pickModalCls(this)">ربع سنوي</div></div>`:''}
-      <button class="btn" style="margin-top:12px;" onclick="saveDataEntryStep()">حفظ والتالي ←</button>
-      <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">تخطّي</button>`);
+      ${it.miss.includes('title')?`<label>Specialty</label><div class="chip-row" id="deTitle">${SPECIALTIES.map(t=>`<div class="chip small" data-v="${esc(t)}" onclick="pickModalCls(this)">${SPECIALTY_PLAYBOOK[t].icon} ${esc(t)}</div>`).join('')}</div>`:''}
+      ${it.miss.includes('phone')?`<label style="margin-top:6px;">📞 His phone</label><input type="text" id="deDocPhone" placeholder="9XXXXXXX">`:''}
+      ${it.miss.includes('birthday')?`<label style="margin-top:6px;">🎂 His birthday</label><input type="date" id="deDocBday">`:''}
+      ${it.miss.includes('role')?`<label style="margin-top:6px;">🏷️ His role in the clinic</label><div class="chip-row" id="deRole">${UMCore.DOC_ROLES.map(([k,l])=>`<div class="chip small" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`:''}
+      ${it.miss.includes('influence')?`<label style="margin-top:6px;">👑 His buying influence</label><div class="chip-row" id="deInfl">${UMCore.DOC_INFLUENCE.map(([k,l])=>`<div class="chip small" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`:''}
+      ${it.miss.includes('stage')?`<label style="margin-top:6px;">🤝 Relationship stage</label><div class="chip-row" id="deStage">${UMCore.DOC_STAGES.map(([k,l])=>`<div class="chip small" data-v="${k}" onclick="pickModalCls(this)">${esc(l)}</div>`).join('')}</div>`:''}
+      ${it.miss.includes('cadence')?`<label style="margin-top:6px;">📆 His visit rhythm</label>
+        <div class="chip-row" id="deCad"><div class="chip small" data-v="weekly" onclick="pickModalCls(this)">Weekly</div><div class="chip small" data-v="monthly" onclick="pickModalCls(this)">Monthly</div><div class="chip small" data-v="quarterly" onclick="pickModalCls(this)">Quarterly</div></div>`:''}
+      <button class="btn" style="margin-top:12px;" onclick="saveDataEntryStep()">Save &amp; next →</button>
+      <button class="btn secondary" style="margin-top:8px;" onclick="_dePos++; renderDataEntryStep();">Skip</button>`);
   }
 }
 async function saveDataEntryStep(){
@@ -799,19 +798,19 @@ function _docRow(clinicId, docId){
 function doctorNextActions(da, c){
   const acts = [];
   const d = ((c&&c.doctors)||[]).find(x=>x.id===da.id) || {};
-  if(!d.role || !d.influence || !d.stage) acts.push('🧭 أكملي كارت الطبيب (دوره في العيادة، قوة قراره، مرحلة العلاقة) — بعدها يظهر التوجيه المناسب له');
-  const STAGE_STEP = {new:'👋 لم تقابليه بعد — اطلبي من الاستقبال موعداً قصيراً للتعارف', met:'🧪 زيارة ثانية خلال أسبوعين مع عينات لتثبيت العلاقة', warm:'🛒 العلاقة جاهزة — اطلبي طلبية تجريبية أو وصفة', champion:'🤝 اطلبي منه تعريفك بصاحب القرار أو بالأطباء الآخرين، أو توصية لعيادة أخرى', blocked:'🚧 لا تضغطي عليه — اعملي عبر شخص آخر في العيادة (مؤثر أو أخصائي)'};
+  if(!d.role || !d.influence || !d.stage) acts.push('🧭 Complete the doctor card (his role in the clinic, buying influence, relationship stage) — then the right guidance for him shows here');
+  const STAGE_STEP = {new:'👋 Not met yet — ask the reception for a short appointment to get acquainted', met:'🧪 A second visit within two weeks, with samples, to settle the relationship', warm:'🛒 The relationship is ready — ask for a trial order or a prescription', champion:'🤝 Ask him to introduce you to the decision maker or the other doctors, or to recommend you to another clinic', blocked:'🚧 Do not press him — work through someone else in the clinic (an influencer or a specialist)'};
   if(STAGE_STEP[d.stage]) acts.push(STAGE_STEP[d.stage]);
-  if(d.influence==='decider' && da.lastVisit && daysBetween(da.lastVisit, todayStr())>=45) acts.push(`👑 صاحب القرار — لم يُزر منذ ${daysBetween(da.lastVisit, todayStr())} يوماً؛ ضعيه في خطة الأسبوع`);
-  if(d.influence==='decider' && !da.lastVisit) acts.push('👑 صاحب القرار ولم تُسجَّل معه أي زيارة — ابدئي به');
-  if(d.nextStep) acts.push('📌 الخطوة التالية المسجلة: ' + d.nextStep);
-  if(da.cadenceStatus==='due') acts.push(`⏰ زيارة مستحقة — متأخرة ${da.overdueDays} يوم عن إيقاع "${da.cadence}"`);
-  if(da.birthdayIn!=null && da.birthdayIn<=14) acts.push(`🎂 عيد ميلاده ${da.birthdayIn===0?'اليوم!':'بعد '+da.birthdayIn+' يوم'} — جهّزي تهنئة أو هدية مناسبة`);
-  if(clinicIsRx(c) && da.handovers.rxMonth===0) acts.push('💊 لم يستلم أي بريسكريبشن هذا الشهر — عيادته تعمل بنظام الوصفات');
-  if(!da.cadence) acts.push('📆 حددي إيقاع متابعة (أسبوعي/شهري/ربع سنوي) ليتابعه النظام تلقائيًا');
+  if(d.influence==='decider' && da.lastVisit && daysBetween(da.lastVisit, todayStr())>=45) acts.push(`👑 The decision maker — not visited for ${daysBetween(da.lastVisit, todayStr())} days; put him in this week's plan`);
+  if(d.influence==='decider' && !da.lastVisit) acts.push('👑 The decision maker, and no visit with him is logged — start with him');
+  if(d.nextStep) acts.push('📌 Next step on record: ' + d.nextStep);
+  if(da.cadenceStatus==='due') acts.push(`⏰ Visit due — ${da.overdueDays} days late on the "${da.cadence}" rhythm`);
+  if(da.birthdayIn!=null && da.birthdayIn<=14) acts.push(`🎂 Birthday ${da.birthdayIn===0?'today!':'in '+da.birthdayIn+(da.birthdayIn===1?' day':' days')} — get a greeting or a fitting gift ready`);
+  if(clinicIsRx(c) && da.handovers.rxMonth===0) acts.push('💊 No prescription pads this month — his clinic works by prescription');
+  if(!da.cadence) acts.push('📆 Set a follow-up rhythm (weekly / monthly / quarterly) so the app follows him up by itself');
   const lastV = da.visitLog[0];
-  if(lastV && lastV.noOrderReason) acts.push(`📝 آخر زيارة بلا طلب — السبب: "${lastV.noOrderReason}" — عالجيه في الزيارة القادمة`);
-  if(!acts.length) acts.push('✅ كل شيء منتظم — حافظي على الإيقاع الحالي');
+  if(lastV && lastV.noOrderReason) acts.push(`📝 The last visit had no order — reason: "${lastV.noOrderReason}" — deal with it on the next visit`);
+  if(!acts.length) acts.push('✅ All in order — keep the current rhythm');
   return acts;
 }
 function openDoctorProfile(clinicId, docId){
@@ -844,50 +843,50 @@ function openDoctorProfile(clinicId, docId){
   showModal(`
     <div class="row-between dp-head" style="align-items:flex-start;" data-sections>
       <h3 style="margin:0;">${pb?pb.icon+' ':''}${esc(d.name)}</h3>
-      <div style="display:flex; gap:4px;">${canEdit?`<button class="chip small" onclick="_drBack=null; openDoctorRecord('${clinicId}','${docId}')">${I('pencil')} Edit card</button>`:''}<button class="chip small" onclick="exportDoctorReportXlsx('${clinicId}','${docId}')">📄 تقرير مفصل</button></div>
+      <div style="display:flex; gap:4px;">${canEdit?`<button class="chip small" onclick="_drBack=null; openDoctorRecord('${clinicId}','${docId}')">${I('pencil')} Edit card</button>`:''}<button class="chip small" onclick="exportDoctorReportXlsx('${clinicId}','${docId}')">📄 Detailed report</button></div>
     </div>
     ${docBadges(d)}
     <p class="dp-sub" style="color:var(--muted); font-size:12.5px; margin:2px 0 10px;">${esc(d.title||'—')} · <a onclick="closeModal(); openClinicDetail('${clinicId}')" style="text-decoration:underline; cursor:pointer;">${esc(c.name)}</a>${currentUser.role==='supervisor'?' · '+esc(c.rep):''}${d.phone?` · <a href="tel:${esc(d.phone)}">📞 ${esc(d.phone)}</a>`:''}</p>
 
-    <div class="section-title" style="margin-top:0;">🎯 ما يجب عمله</div>
+    <div class="section-title" style="margin-top:0;">🎯 What to do</div>
     <div class="card" style="border-inline-start:4px solid var(--teal);">${acts.map(a=>`<div style="font-size:12.5px; padding:3px 0;">${esc(a)}</div>`).join('')}</div>
 
-    <div class="section-title">📊 الأرقام</div>
+    <div class="section-title">📊 Figures</div>
     <div class="card" style="padding:10px 12px;">
-      <div class="spec-row"><span class="k">زيارات ميدانية / مكالمات</span><span class="v">${da.fieldVisits} / ${da.calls}${da.lastVisit?` · آخرها ${fmtDate(da.lastVisit)}`:''}</span></div>
-      <div class="spec-row"><span class="k">💊 دفاتر البريسكريبشن (هذا الشهر / الإجمالي)</span><span class="v">${da.handovers.rxMonth} / ${da.handovers.prescription}</span></div>
-      <div class="spec-row"><span class="k">🧪 عينات · 🎁 هدايا</span><span class="v">${da.handovers.sample} · ${da.handovers.gift}</span></div>
-      <div class="spec-row"><span class="k">🏥 مبيعات عيادته هذا الشهر (ERP)</span><span class="v">${money(clinicMtd.net||0)}</span></div>
-      ${led.foc.length?`<div class="spec-row"><span class="k">مجاني/عينات لعيادته (من الفواتير)</span><span class="v">${led.foc.length} سطر</span></div>`:''}
+      <div class="spec-row"><span class="k">Field visits / calls</span><span class="v">${da.fieldVisits} / ${da.calls}${da.lastVisit?` · last visit ${fmtDate(da.lastVisit)}`:''}</span></div>
+      <div class="spec-row"><span class="k">💊 Prescription pads (this month / total)</span><span class="v">${da.handovers.rxMonth} / ${da.handovers.prescription}</span></div>
+      <div class="spec-row"><span class="k">🧪 Samples · 🎁 Gifts</span><span class="v">${da.handovers.sample} · ${da.handovers.gift}</span></div>
+      <div class="spec-row"><span class="k">🏥 His clinic's sales this month (ERP)</span><span class="v">${money(clinicMtd.net||0)}</span></div>
+      ${led.foc.length?`<div class="spec-row"><span class="k">Free goods / samples for his clinic (from the invoices)</span><span class="v">${led.foc.length} invoice lines</span></div>`:''}
     </div>
 
-    ${canEdit?`<div class="section-title">👤 الملف</div>
+    ${canEdit?`<div class="section-title">👤 Profile</div>
     <div class="card" style="padding:12px;">
-      <label>👨‍⚕️ الاسم (لتصحيحه)</label>
+      <label>👨‍⚕️ Name (to correct it)</label>
       <div style="display:flex; gap:6px;">
         <input type="text" value="${esc(d.name||'')}" style="flex:1; margin:0;">
         <button class="chip small" onclick="saveDoctorField('${clinicId}','${docId}','name',this.previousElementSibling.value); openDoctorProfile('${clinicId}','${docId}');">💾 Save</button>
       </div>
-      <label style="margin-top:8px;">🎂 تاريخ الميلاد</label>
+      <label style="margin-top:8px;">🎂 Date of birth</label>
       <input type="date" value="${esc(d.birthday||'')}" onchange="saveDoctorField('${clinicId}','${docId}','birthday',this.value)">
-      <label style="margin-top:8px;">📞 الهاتف</label>
+      <label style="margin-top:8px;">📞 Phone</label>
       <input type="text" value="${esc(d.phone||'')}" placeholder="9XXXXXXX" onchange="saveDoctorField('${clinicId}','${docId}','phone',this.value)">
-      <label style="margin-top:8px;">📆 إيقاع المتابعة</label>
-      <div class="chip-row">${[['weekly','أسبوعي'],['monthly','شهري'],['quarterly','ربع سنوي'],['','بدون']].map(([k,l])=>`<div class="chip small ${(d.cadence||'')===k?'on':''}" onclick="saveDoctorField('${clinicId}','${docId}','cadence','${k}'); openDoctorProfile('${clinicId}','${docId}');">${l}</div>`).join('')}</div>
-      <label style="margin-top:8px;">📝 تقرير عنه (اهتماماته، شخصيته، ملاحظات)</label>
+      <label style="margin-top:8px;">📆 Follow-up rhythm</label>
+      <div class="chip-row">${[['weekly','Weekly'],['monthly','Monthly'],['quarterly','Quarterly'],['','None']].map(([k,l])=>`<div class="chip small ${(d.cadence||'')===k?'on':''}" onclick="saveDoctorField('${clinicId}','${docId}','cadence','${k}'); openDoctorProfile('${clinicId}','${docId}');">${l}</div>`).join('')}</div>
+      <label style="margin-top:8px;">📝 About him (interests, personality, notes)</label>
       <textarea style="min-height:60px;" onchange="saveDoctorField('${clinicId}','${docId}','notes',this.value)">${esc(d.notes||'')}</textarea>
     </div>`:''}
 
-    <div class="section-title">🎁 التسليمات (${hoList.length})</div>
+    <div class="section-title">🎁 Handovers (${hoList.length})</div>
     ${canEdit?`<div class="card" style="padding:12px; margin-bottom:8px;">
       <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">${I('pill')} <span>Prescriptions are logged with the visit.</span></div>
       <div class="chip-row" id="hoKind">${NEW_KINDS.map(([k,l],i)=>`<div class="chip small ${i===0?'on':''}" data-kind="${k}" onclick="pickModalCls(this)">${l}</div>`).join('')}</div>
       <div style="display:flex; gap:6px; margin-top:8px;">
-        <input type="text" id="hoWhat" placeholder="ماذا سُلِّم؟" style="flex:2;">
-        <input type="number" id="hoQty" placeholder="عدد" min="1" value="1" style="flex:0.6;">
+        <input type="text" id="hoWhat" placeholder="What was handed over?" style="flex:2;">
+        <input type="number" id="hoQty" placeholder="Qty" min="1" value="1" style="flex:0.6;">
         <input type="date" id="hoDate" value="${todayStr()}" max="${todayStr()}" style="flex:1.1;">
       </div>
-      <button class="btn small" style="margin-top:8px;" onclick="addHandover('${clinicId}','${docId}')">➕ سجّل التسليم</button>
+      <button class="btn small" style="margin-top:8px;" onclick="addHandover('${clinicId}','${docId}')">➕ Record the handover</button>
     </div>`:''}
     ${hoList.slice(0,15).map(({ h, g }) => g ? (() => {
       const vv = visits.find(x => x.id === g.visitId);
@@ -900,17 +899,17 @@ function openDoctorProfile(clinicId, docId){
         <strong>${fmtDate(h.date)}</strong> · <span>${KINDS[h.kind]||esc(h.kind)}</span> · <span dir="auto">${esc(h.what||'')}${h.qty>1?` ×${h.qty}`:''}</span>
         <span style="color:var(--muted); font-size:11px;"> — ${esc(h.by||'')}</span>
         ${canEdit?`<button class="del" style="float:left;" onclick="removeHandover('${clinicId}','${docId}','${h.id}')">&times;</button>`:''}
-      </div>`).join('') || '<div style="color:var(--muted); font-size:12.5px;">لا تسليمات مسجلة بعد.</div>'}
+      </div>`).join('') || '<div style="color:var(--muted); font-size:12.5px;">No handovers recorded yet.</div>'}
 
-    <div class="section-title">🗓️ سجل الزيارات (${da.visitLog.length})</div>
+    <div class="section-title">🗓️ Visit log (${da.visitLog.length})</div>
     ${da.visitLog.slice(0,10).map(v=>`
       <div class="visit-hist"><strong>${fmtDate(v.date)}</strong> · ${esc(v.rep)}${v.callOnly?' · '+(CHANNEL_LABELS[v.channel]||'📞'):''}${v.orderTaken?' · 🛒 '+money(v.orderTotal):''}
       ${rxLinesHTML(v, c, { only: docId })}
       ${v.notes?`<div style="color:var(--muted); font-size:12px;">${esc(v.notes.slice(0,120))}</div>`:''}
-      ${v.noOrderReason?`<div style="color:var(--coral-ink); font-size:11.5px;">بلا طلب: ${esc(v.noOrderReason.slice(0,80))}</div>`:''}</div>`).join('')
-      || '<div style="color:var(--muted); font-size:12.5px;">لم تُسجَّل زيارات له بعد — اختاريه عند تسجيل الزيارة القادمة.</div>'}
-    ${da.visitLog.length>10?`<div style="color:var(--muted); font-size:11.5px; text-align:center;">+${da.visitLog.length-10} في التقرير المفصل</div>`:''}
-    <button class="btn secondary" style="margin-top:12px;" onclick="closeModal()">إغلاق</button>
+      ${v.noOrderReason?`<div style="color:var(--coral-ink); font-size:11.5px;">No order: ${esc(v.noOrderReason.slice(0,80))}</div>`:''}</div>`).join('')
+      || '<div style="color:var(--muted); font-size:12.5px;">No visits with him logged yet — pick him when you log the next visit.</div>'}
+    ${da.visitLog.length>10?`<div style="color:var(--muted); font-size:11.5px; text-align:center;">+${da.visitLog.length-10} more in the detailed report</div>`:''}
+    <button class="btn secondary" style="margin-top:12px;" onclick="closeModal()">Close</button>
   `);
 }
 async function saveDoctorField(clinicId, docId, field, value){
@@ -918,11 +917,11 @@ async function saveDoctorField(clinicId, docId, field, value){
   if(!c || !d || !canViewClinic(c)) return;
   if(field === 'name'){
     value = (value||'').trim();
-    if(!value){ showToast('الاسم لا يمكن أن يكون فارغًا'); return; }
+    if(!value){ showToast('The name cannot be empty'); return; }
   }
   d[field] = value;
   const r = await persistTold('clinics');
-  saveToast(r, 'clinics', '✅ حُفظ');
+  saveToast(r, 'clinics', "✅ Saved on the doctor's card");
   if(document.getElementById('ddBody')) renderDoctorsDb();
 }
 async function addHandover(clinicId, docId){
@@ -932,7 +931,7 @@ async function addHandover(clinicId, docId){
   const what = (document.getElementById('hoWhat').value||'').trim();
   const qty = Math.max(1, parseInt(document.getElementById('hoQty').value,10)||1);
   const date = document.getElementById('hoDate').value || todayStr();
-  if(!what){ showToast('اكتبي ماذا سُلِّم'); return; }
+  if(!what){ showToast('Write what was handed over'); return; }
   d.handovers = d.handovers || [];
   const entry = {id:uid(), date, kind: kindEl?kindEl.dataset.kind:'other', what, qty, by: currentUser.name};
   d.handovers.push(entry);
@@ -940,7 +939,7 @@ async function addHandover(clinicId, docId){
   // uploads by itself), or nothing — then the entry is taken back off the
   // screen, so nothing looks saved that is not.
   const told = await persistTold('clinics'); // this save's own outcome, never an earlier save's
-  if(told.ok) showToast('🎁 سُجِّل التسليم');
+  if(told.ok) showToast('🎁 Handover recorded');
   else {
     const out = told.outcome || {};
     if(out.denied || out.tooLarge){ // refused, or too large: never kept as "uploads by itself" — taken back off the screen
@@ -1007,7 +1006,7 @@ function exportDoctorReportXlsx(clinicId, docId){
     ...led.foc.map(r=>[r.date, r.doc, r.kind==='deal'?'Deal bonus':'Sample/FOC', r.product||r.brand||'', r.qty||'', 0]),
   ];
   downloadXlsx('UltraMed-Doctor-'+(d.name||'report').replace(/[^\w\u0600-\u06FF-]+/g,'_')+'.xlsx', rows, 'Doctor');
-  showToast('📄 التقرير المفصل ينزل الآن');
+  showToast('📄 The detailed report is downloading');
 }
 function exportDoctorsDbXlsx(){
   const repFilter = currentUser.role==='supervisor' ? 'all' : currentUser.name;
@@ -2083,22 +2082,22 @@ function renderCoverageBoard(){
 // every one of these used to look exactly like "the data disappeared".
 function erpHealthCard(){
   if(_loadFailed.erpSales) return `<div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:6px;">
-    <div style="font-weight:700; font-size:13.5px;">⚠️ ملفات المبيعات لم تُحمَّل من السحابة</div>
-    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">لا شيء ضاع — الاتصال لم يكتمل عند الفتح. أرقام المبيعات مخفية مؤقتًا، والحفظ موقوف حتى لا تُكتب صفحة فارغة فوق ملفاتك. <b>أعد فتح التطبيق على اتصال جيد.</b></div>
+    <div style="font-weight:700; font-size:13.5px;">⚠️ The sales files did not load from the cloud</div>
+    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">Nothing is lost — the connection did not complete when the app opened. The sales figures are hidden for now, and saving is stopped so that an empty page is never written over your files. <b>Reopen the app on a good connection.</b></div>
   </div>`;
   if(_erpBroken.length){
     const names = erpPeriods().filter(p => p && p.rowsMissing).map(p => `${fmtDate(p.from)} – ${fmtDate(p.to)}`).join(' · ');
     return `<div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:6px;">
-    <div style="font-weight:700; font-size:13.5px;">⚠️ سطور ${_erpBroken.length === 1 ? 'ملف مبيعات' : _erpBroken.length + ' ملفات مبيعات'} لم تُحمَّل</div>
-    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">${esc(names)} — الملفات محفوظة في السحابة لكن سطورها لم تصل لهذا الجهاز، فأرقامها غير ظاهرة الآن. لا يُكتب فوقها شيء.</div>
-    <div class="chip-row" style="margin-top:8px;"><div class="chip small on" onclick="retryErpRows()">🔄 إعادة التحميل</div><div class="chip small" onclick="openErpImport()">📥 أعد رفع الملف</div></div>
+    <div style="font-weight:700; font-size:13.5px;">⚠️ The lines of ${_erpBroken.length === 1 ? 'a sales file' : _erpBroken.length + ' sales files'} did not load</div>
+    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">${esc(names)} — the files are saved in the cloud but their lines did not reach this device, so their figures do not show now. Nothing is written over them.</div>
+    <div class="chip-row" style="margin-top:8px;"><div class="chip small on" onclick="retryErpRows()">🔄 Load again</div><div class="chip small" onclick="openErpImport()">📥 Upload the file again</div></div>
   </div>`;
   }
   // (while the early open's line is up it says so for the whole screen — and a read that changes nothing draws nothing again:
   // this card would stay up after the read is in, v126 speed part 3)
   if(_mirrorUsed.erpSales && !(typeof _copyLine !== 'undefined' && _copyLine)) return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
-    <div style="font-weight:700; font-size:13.5px;">📴 أرقام المبيعات من نسخة هذا الجهاز</div>
-    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">السحابة لم تُقرأ عند الفتح — الأرقام آخر ما شاهده هذا الجهاز وقد تكون أقدم من المحفوظ. أي رفع جديد يُدمج مع السحابة عند الحفظ.</div>
+    <div style="font-weight:700; font-size:13.5px;">📴 The sales figures are from this device's copy</div>
+    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">The cloud was not read when the app opened — the figures are the last this device saw and may be older than what is saved. Any new upload is merged with the cloud when it is saved.</div>
   </div>`;
   return '';
 }
@@ -2109,8 +2108,8 @@ function monthInputsCard(){
   if(!stale.length) return '';
   const m = targetStaleMonth(stale[0]);
   return `<div class="card clickable" style="border-inline-start:4px solid var(--amber); margin-bottom:6px;" onclick="openErpImport()">
-    <div style="font-weight:700; font-size:13.5px;">🗓️ ${monthLabel(todayStr().slice(0,7))} — المدخلات الشهرية مطلوبة</div>
-    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">التارغت المعروض الآن من ملف <b>${esc(monthLabel(m))}</b>. ارفع ملف DSR لهذا الشهر (يضبط التارغت والرقم الرسمي)، ثم ملف المبيعات الأسبوعي كالمعتاد. الزيارات والنِّسب تبدأ من الصفر تلقائيًا مع أول يوم في الشهر.</div>
+    <div style="font-weight:700; font-size:13.5px;">🗓️ ${monthLabel(todayStr().slice(0,7))} — the monthly inputs are needed</div>
+    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">The target shown now is from the file of <b>${esc(monthLabel(m))}</b>. Upload this month's DSR file (it sets the targets and the official figure), then the weekly sales file as usual. Visits and percentages start from zero by themselves on the first day of the month.</div>
   </div>`;
 }
 function renderErpNudge(){

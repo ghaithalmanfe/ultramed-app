@@ -134,10 +134,10 @@ function seed(){
   await boot(G, 'supervisor');
   const mc = await page.evaluate(async () => {
     openManageClinics(); await new Promise(r => setTimeout(r, 50));
-    const open = [...document.querySelectorAll('#modalInner button')].find(b => /العيادات الناقصة/.test(b.textContent));
+    const open = [...document.querySelectorAll('#modalInner button')].find(b => /Missing clinics — check and bring back/.test(b.textContent));
     if(!open) return { err: 'no missing-clinics button' };
     open.click(); await new Promise(r => setTimeout(r, 80));
-    const go = [...document.querySelectorAll('#modalInner button')].find(b => /إرجاع المعلَّم/.test(b.textContent));
+    const go = [...document.querySelectorAll('#modalInner button')].find(b => /Bring back the ticked/.test(b.textContent));
     if(!go) return { err: 'no bring-back button', text: document.getElementById('modalInner').innerText.slice(0, 300) };
     const n = (document.getElementById('mcCount') || {}).textContent;
     go.click(); await new Promise(r => setTimeout(r, 450));

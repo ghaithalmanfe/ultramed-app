@@ -83,8 +83,8 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
   });
   check('Oct 1: the app sees the new month', oct.today==='2026-10-01', oct.today);
   check('Oct 1: month-to-date sales restart from zero (no October invoices yet)', Object.keys(oct.mtd).length===0, oct.mtd);
-  check('Oct 1: the Today card flags that the target is from September and asks for the new DSR', /Target is from September 2026/.test(oct.card) && /المدخلات الشهرية مطلوبة/.test(oct.nudge) && /2026|October/.test(oct.nudge), { card: oct.card.split('\n').filter(l=>/Target is|Source/.test(l)), nudge: oct.nudge.slice(0,70) });
-  check('Oct 1: September\'s official figures were archived and its month report still shows target/achieved/%', oct.hist.includes('2026-09') && /التارغت/.test(oct.sepReport) && /9,000\.00/.test(oct.sepReport) && /%/.test(oct.sepReport), { hist: oct.hist, sep: oct.sepReport.split('\n').slice(0,10) });
+  check('Oct 1: the Today card flags that the target is from September and asks for the new DSR', /Target is from September 2026/.test(oct.card) && /the monthly inputs are needed/.test(oct.nudge) && /2026|October/.test(oct.nudge), { card: oct.card.split('\n').filter(l=>/Target is|Source/.test(l)), nudge: oct.nudge.slice(0,70) });
+  check('Oct 1: September\'s official figures were archived and its month report still shows target/achieved/%', oct.hist.includes('2026-09') && /Target \(DSR\)/.test(oct.sepReport) && /9,000\.00/.test(oct.sepReport) && /%/.test(oct.sepReport), { hist: oct.hist, sep: oct.sepReport.split('\n').slice(0,10) });
   check('Oct 1: the hero week (Sun 27 Sep – Thu 1 Oct) counts the Sep 29/30 visits, nothing from mid-September', /2 visits/.test(oct.hero), oct.hero.split('\n').slice(0,3));
   check('Oct 1: reports view renders across the month boundary', oct.reports > 200, oct.reports);
   // upload October's DSR (synthetic, as parseDsrTargets would return it)
@@ -94,7 +94,7 @@ const OFFSET = targetDay.getTime() - REAL_TODAY.getTime();
     await msWhenReady(); // (the DSR's new targets: their frame once their figures are worked out)
     return { pct: targetPctMap(), card: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '', month: targets.Mariam.month, hist: Object.keys(targets._history||{}) };
   });
-  check('Oct 1: after uploading October\'s DSR the target is October\'s, the stale note and the month-inputs card disappear, Sep stays archived', afterDsr.month==='2026-10' && !/Target is from/.test(afterDsr.card) && !/المدخلات الشهرية/.test(afterDsr.nudge) && afterDsr.pct.Mariam.pct===0 && afterDsr.pct.Mariam.goal===9500 && /no ERP/.test(afterDsr.pct.Mariam.src) && afterDsr.hist.includes('2026-09'), { pct: afterDsr.pct, month: afterDsr.month, hist: afterDsr.hist });
+  check('Oct 1: after uploading October\'s DSR the target is October\'s, the stale note and the month-inputs card disappear, Sep stays archived', afterDsr.month==='2026-10' && !/Target is from/.test(afterDsr.card) && !/the monthly inputs/.test(afterDsr.nudge) && afterDsr.pct.Mariam.pct===0 && afterDsr.pct.Mariam.goal===9500 && /no ERP/.test(afterDsr.pct.Mariam.src) && afterDsr.hist.includes('2026-09'), { pct: afterDsr.pct, month: afterDsr.month, hist: afterDsr.hist });
   check('Oct 1: no page errors', errors2.length===0 && errors.length===0, errors2.concat(errors).slice(0,4));
   console.log(results.join('\n'));
   console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');

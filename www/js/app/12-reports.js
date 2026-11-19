@@ -153,8 +153,8 @@ function openReportTools(){
     </div>
     <label>Format</label>
     <div class="chip-row" style="margin-bottom:12px;">
-      <div class="chip small ${reportFormat==='full'?'on':''}" onclick="reportFormat='full'; openReportTools()">Full report · كامل</div>
-      <div class="chip small ${reportFormat==='summary'?'on':''}" onclick="reportFormat='summary'; openReportTools()">One-pager · صفحة واحدة</div>
+      <div class="chip small ${reportFormat==='full'?'on':''}" onclick="reportFormat='full'; openReportTools()">Full report</div>
+      <div class="chip small ${reportFormat==='summary'?'on':''}" onclick="reportFormat='summary'; openReportTools()">One-pager</div>
     </div>
     <button class="btn" onclick="closeModal(); shareReportFile()">${I('share')} Share (WhatsApp / email)</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal(); downloadReportPdf()">${I('download')} Save as PDF</button>
@@ -1005,8 +1005,8 @@ async function refreshTeam(){
 function fmtWhen(ts){
   const d=new Date(ts), n=new Date();
   const sameDay = d.toDateString()===n.toDateString();
-  return sameDay ? d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})
-                 : d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  return sameDay ? d.toLocaleTimeString(uiLocale(), {hour:'numeric',minute:'2-digit'})   // the app's language, never the browser's (an Arabic computer showed Arabic times on English screens)
+                 : d.toLocaleDateString(uiLocale(), {month:'short',day:'numeric'})+' '+d.toLocaleTimeString(uiLocale(), {hour:'numeric',minute:'2-digit'});
 }
 function renderChat(){
   const el = document.getElementById('chatList');
@@ -1152,7 +1152,7 @@ function renderMemories(){
       ${m.thumb ? `<img src="${m.thumb}" alt="" onerror="this.style.display='none'">` : `<div style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:12.5px; color:var(--muted);">📷 <span>Photo — tap to open</span></div>`}
       <div class="mmeta">
         <div class="mcap">${m.tag?m.tag+' ':''}${esc(m.cap||'Untitled')}</div>
-        <div class="mwho">${esc(m.who)} \u00b7 ${new Date(m.ts).toLocaleDateString([], {month:'short',day:'numeric'})}</div>
+        <div class="mwho">${esc(m.who)} \u00b7 ${new Date(m.ts).toLocaleDateString(uiLocale(), {month:'short',day:'numeric'})}</div>
       </div>
     </div>`).join('');
 }

@@ -1149,8 +1149,8 @@ function retKindChips(r){
   const key = erpNoteKey('ret', r);
   const k = (erpNotes[key] && erpNotes[key].kind) === 'exchange' ? 'exchange' : 'return';
   return `<div class="chip-row" style="margin-top:6px;" onclick="event.stopPropagation()">
-    <div class="chip small ${k==='return'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'return',this)">↩️ Return / مرتجع</div>
-    <div class="chip small ${k==='exchange'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'exchange',this)">🔁 Exchange / تبديل</div>
+    <div class="chip small ${k==='return'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'return',this)">↩️ ${uiLang === 'ar' ? 'Return / مرتجع' : 'Return'}</div>
+    <div class="chip small ${k==='exchange'?'on':''}" data-key="${esc(key)}" onclick="saveRetKind(this.dataset.key,'exchange',this)">🔁 ${uiLang === 'ar' ? 'Exchange / تبديل' : 'Exchange'}</div>
   </div>`;
 }
 async function saveRetKind(key, kind, el){
@@ -1500,7 +1500,7 @@ async function moveToBin(kind, item, label){
     const o = r.outcome || {};
     showToast(o.denied ? '🔒 Not allowed — nothing was deleted (ask the supervisor)'
       : o.tooLarge ? '🛑 The recycle bin is too large for the cloud — nothing was deleted. Ask the supervisor.'
-      : '⚠️ لم يصل إلى سلة المحذوفات — لم يُحذف شيء، أعد المحاولة عند توفر الاتصال', 6000);
+      : '⚠️ It did not reach the recycle bin — nothing was deleted; try again when there is a connection', 6000);
   }
   return r.ok;
 }

@@ -2922,6 +2922,73 @@ describe('UMI18N dictionary', () => {
     assert.match(i18n.tr('Prescription types not saved — check the connection and make the change again.'), /لم تُحفظ أنواع البريسكريبشن/);
     assert.match(i18n.tr('The previous save is still on its way — tap Save again in a moment.'), /الحفظ السابق ما زال جارياً/);
   });
+  // v128 (19 Nov, the owner's English screens on an Arabic computer): text the code wrote in Arabic in both languages is
+  // English now, and the Arabic screen keeps, word for word, what it showed before — here the texts with figures or names
+  // (the dictionary's PATTERNS), for the sheets and messages no browser sweep opens (tests/e2e/english-screens.e2e.js has the rest)
+  test('v128: English in the code, the Arabic screen word for word as before', () => {
+    [
+      ["👑 The decision maker — not visited for 52 days; put him in this week's plan", "👑 صاحب القرار — لم يُزر منذ 52 يوماً؛ ضعيه في خطة الأسبوع"],
+      ["📌 Next step on record: Bring the Zoom kit", "📌 الخطوة التالية المسجلة: Bring the Zoom kit"],
+      ["⏰ Visit due — 9 days late on the \"monthly\" rhythm", "⏰ زيارة مستحقة — متأخرة 9 يوم عن إيقاع \"monthly\""],
+      ["🎂 Birthday today! — get a greeting or a fitting gift ready", "🎂 عيد ميلاده اليوم! — جهّزي تهنئة أو هدية مناسبة"],
+      ["🎂 Birthday in 1 day — get a greeting or a fitting gift ready", "🎂 عيد ميلاده بعد 1 يوم — جهّزي تهنئة أو هدية مناسبة"],
+      ["🎂 Birthday in 12 days — get a greeting or a fitting gift ready", "🎂 عيد ميلاده بعد 12 يوم — جهّزي تهنئة أو هدية مناسبة"],
+      ["📝 The last visit had no order — reason: \"Stock still available\" — deal with it on the next visit", "📝 آخر زيارة بلا طلب — السبب: \"Stock still available\" — عالجيه في الزيارة القادمة"],
+      ["10 / 0 · last visit 7 أكتوبر", "10 / 0 · آخرها 7 أكتوبر"],
+      ["3 invoice lines", "3 سطر"],
+      ["🎁 Handovers (0)", "🎁 التسليمات (0)"],
+      ["🗓️ Visit log (10)", "🗓️ سجل الزيارات (10)"],
+      ["No order: Stock still available", "بلا طلب: Stock still available"],
+      ["+4 more in the detailed report", "+4 في التقرير المفصل"],
+      ["2 of 52", "2 من 52"],
+      ["⚠️ Lines not loaded on this device — 1,234.00 د.ك net · 120 lines", "⚠️ السطور لم تُحمَّل على هذا الجهاز — 1,234.00 د.ك net · 120 lines"],
+      ["· 6,335.42 د.ك of 21,000.00 د.ك", "· 6,335.42 د.ك من 21,000.00 د.ك"],
+      ["· ⁦-35.42⁩ د.ك of 21,000.00 د.ك", "· ⁦-35.42⁩ د.ك من 21,000.00 د.ك"],
+      ["12 files · 20796 lines · data up to", "12 ملفات · 20796 سطر · آخر بيانات حتى"],
+      ["1 file · 3 lines · last confirmed save ٨‏/١٠‏/٢٠٢٦، ١٠:٠٠ ص ·", "1 ملف · 3 سطر · آخر حفظ مؤكَّد ٨‏/١٠‏/٢٠٢٦، ١٠:٠٠ ص ·"],
+      ["0 files · 0 lines ·", "0 ملفات · 0 سطر ·"],
+      ["· last confirmed save ٨‏/١٠‏/٢٠٢٦، ١٠:٠٠ ص ·", "· آخر حفظ مؤكَّد ٨‏/١٠‏/٢٠٢٦، ١٠:٠٠ ص ·"],
+      ["❌ The file's dates make no sense (1 يناير – 9 مارس) — check the date format of the export (day/month/year), then upload it again", "❌ تواريخ الملف غير منطقية (1 يناير – 9 مارس) — تأكد من صيغة التاريخ في التصدير (يوم/شهر/سنة) ثم أعد الرفع"],
+      ["5 lines of the file have no date or invoice number and will not be read (120 will be read).\nContinue?", "5 سطرًا في الملف بلا تاريخ أو رقم فاتورة ولن تُقرأ (سيُقرأ 120).\nالمتابعة؟"],
+      ["The file ends on 21 سبتمبر while what is saved runs to 7 أكتوبر.\nReplace the newer data with this older file?", "الملف ينتهي في 21 سبتمبر بينما المحفوظ يصل إلى 7 أكتوبر.\nاستبدال البيانات الأحدث بهذا الملف الأقدم؟"],
+      ["↩️ Import cancelled — the file is older than what is saved (7 أكتوبر)", "↩️ أُلغي الاستيراد — الملف أقدم من المحفوظ (7 أكتوبر)"],
+      ["✅ File saved to the cloud (1 أكتوبر – 7 أكتوبر · 1,234.00 د.ك)", "✅ حُفظ الملف في السحابة (1 أكتوبر – 7 أكتوبر · 1,234.00 د.ك)"],
+      ["Delete the file 1 أكتوبر – 7 أكتوبر (1,234.00 د.ك)?\nIt can be restored from the backups for 7 days.", "حذف ملف 1 أكتوبر – 7 أكتوبر (1,234.00 د.ك)؟\nيمكن استرجاعه خلال 7 أيام من النسخ الاحتياطية."],
+      ["(merged — 3 branches)", "(موحّد — 3 فروع)"],
+      ["⚠️ 4 customers need a link by hand (in yellow below) — their sales count for no clinic until you link them.", "⚠️ 4 عميل يحتاج ربطاً يدوياً (بالأصفر أدناه) — لن تُحسب مبيعاتهم لأي عيادة حتى تربطهم."],
+      ["17 clinics · 5 visits", "17 عيادة · 5 زيارة"],
+      ["17 clinics · 5 visits · 2 photos without a preview · the data as it was before restoring the backup of 2026-10-06", "17 عيادة · 5 زيارة · 2 صورة بلا معاينة · البيانات كما كانت قبل استعادة نسخة 2026-10-06"],
+      ["17 clinics · 5 visits · the data as it was before restoring the backup of 2026-10-06", "17 عيادة · 5 زيارة · البيانات كما كانت قبل استعادة نسخة 2026-10-06"],
+      ["(17 clinics)", "17 عيادة"],
+      ["⚠️ The clinic list now (12) is much smaller than the backup of 2026-10-07 (40 clinics) — the data is not lost.", "⚠️ قائمة العيادات الحالية (12) أصغر بكثير من النسخة الاحتياطية ليوم 2026-10-07 (40 عيادة) — البيانات ليست ضائعة."],
+      ["⚠️ The visits of 2026-09, 2026-08 did not load from the cloud", "⚠️ زيارات 2026-09، 2026-08 لم تُحمَّل من السحابة"],
+      ["⚠️ 2 periods still have no lines — check the connection or upload the file again", "⚠️ ما زالت 2 فترة بلا سطور — تحقق من الاتصال أو أعد رفع الملف"],
+      ["🛑 The visits of 2026-09 are too large — not saved: remove some of their photos, then try again", "🛑 زيارات شهر 2026-09 كبيرة جدًا — لم تُحفظ: احذف بعض صورها ثم أعد المحاولة"],
+      ["Last sent: ☀️ morning — الخميس، 8 أكتوبر في 08:00 ص (by hand)", "آخر إرسال: ☀️ الصباح — الخميس، 8 أكتوبر في 08:00 ص (يدوي)"],
+      ["Last sent: 🌙 evening — الخميس، 8 أكتوبر في 06:30 م", "آخر إرسال: 🌙 المساء — الخميس، 8 أكتوبر في 06:30 م"],
+      ["2 messages arrived ·", "2 رسائل وصلت ·"],
+      ["1 message arrived", "1 رسالة وصلت"],
+      ["1 failed", "1 فشلت"],
+      ["⚠️ The lines of a sales file did not load", "⚠️ سطور ملف مبيعات لم تُحمَّل"],
+      ["⚠️ The lines of 2 sales files did not load", "⚠️ سطور 2 ملفات مبيعات لم تُحمَّل"],
+      ["1 أغسطس – 31 أغسطس · 1 سبتمبر – 21 سبتمبر — the files are saved in the cloud but their lines did not reach this device, so their figures do not show now. Nothing is written over them.", "1 أغسطس – 31 أغسطس · 1 سبتمبر – 21 سبتمبر — الملفات محفوظة في السحابة لكن سطورها لم تصل لهذا الجهاز، فأرقامها غير ظاهرة الآن. لا يُكتب فوقها شيء."],
+      ["🗓️ أكتوبر 2026 — the monthly inputs are needed", "🗓️ أكتوبر 2026 — المدخلات الشهرية مطلوبة"],
+      ["🚗 3 visits logged under it", "🚗 له 3 زيارة مسجلة"],
+      ["🚗 3 visits logged under it · Mariam", "🚗 له 3 زيارة مسجلة · Mariam"],
+      ["🗑️ In the recycle bin · Renova", "🗑️ في سلة المحذوفات · Renova"],
+      ["🧾 An invoice customer (12 lines)", "🧾 عميل بالفواتير (12 سطر)"],
+      ["🧾 An invoice customer (12 lines) · Mariam", "🧾 عميل بالفواتير (12 سطر) · Mariam"],
+      ["✅ 3 clinics are back — but the recycle bin was not updated, so they may still show there. Do not restore them from the bin", "✅ رجعت 3 عيادة — لكن سلة المحذوفات لم تُحدَّث، فقد تظهر فيها بعد. لا تسترجعها من السلة"],
+      ["✅ 3 clinics are back", "✅ رجعت 3 عيادة"],
+      ["⚠️ 3 clinics are back on this device — they have not reached the cloud yet and upload when the connection is back", "⚠️ رجعت 3 عيادة على هذا الجهاز — لم تصل إلى السحابة بعد، وتُرفع عند عودة الاتصال"],
+      ["Read 2 sheets: Sheet1 (5) · Sheet2 (3)", "قُرئت 2 ورقة: Sheet1 (5) · Sheet2 (3)"],
+      ["Read 1 sheets: Contacts (9) — 2 duplicates merged", "قُرئت 1 ورقة: Contacts (9) — دُمج 2 تكراراً"],
+      ["✅ 5 new contacts · 2 updated", "✅ 5 جهة اتصال جديدة · 2 تحديث"],
+      ["✅ 5 new contacts · 2 updated · 1 new clinics · 3 without a clinic (not imported)", "✅ 5 جهة اتصال جديدة · 2 تحديث · 1 عيادة جديدة · 3 بلا عيادة (لم تُستورد)"],
+      ["✅ 5 new contacts · 0 updated · 3 without a clinic (not imported)", "✅ 5 جهة اتصال جديدة · 0 تحديث · 3 بلا عيادة (لم تُستورد)"],
+      ["(Arabic or English — any order). The app files each doctor under their clinic by itself,\n      creates the new clinics, updates the people already there instead of duplicating them, and converts specialties and dates by itself.", "(عربي أو إنجليزي — الترتيب لا يهم). النظام يوزّع كل طبيب على عيادته تلقائيًا، ينشئ العيادات الجديدة، يحدّث الموجودين بدل تكرارهم، ويحوّل التخصصات والتواريخ بنفسه."],
+    ].forEach(([en, ar]) => assert.equal(i18n.tr(en), ar, en));
+  });
 });
 
 describe('contact workbook import', () => {

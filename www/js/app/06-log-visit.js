@@ -738,9 +738,9 @@ function visitSaveMsg(vs, kept, added){
   if(onPhone && o.noAccess && !added) return '🔒 Visit kept on this phone — no access to the team\'s data right now (signed out?). It uploads by itself after you sign in again';
   // A photo added to a visit already saved: only that change is in memory (the red bar says until when)
   if(!saved && !onPhone && added) return "⚠️ This phone's storage is full — the photo was added only in the app's memory: keep the app open and connected until it says Saved";
-  if(!saved && !onPhone) return '⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال';
+  if(!saved && !onPhone) return '⚠️ The visit was not saved to the cloud or on this device (storage full) — keep the app open until the connection is back';
   if(kept === 'mem') return "⚠️ This phone's storage is full — the photo is only in the app's memory: keep the app open until it uploads";
-  if(!kept) return saved ? visitSavedMsg() : '📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال';
+  if(!kept) return saved ? visitSavedMsg() : '📴 Visit saved on this device — it uploads by itself when the connection is back';
   if(added) return saved ? '📸 Photo added — it uploads in the background and stays on this phone until it does' : '📴 Photo added on this phone — it uploads automatically when back online';
   return saved ? '✅ Visit saved — its photos upload in the background and stay on this phone until they do' : '📴 Visit and its photos saved on this phone — they upload automatically when back online';
 }

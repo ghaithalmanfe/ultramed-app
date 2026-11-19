@@ -297,7 +297,7 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
     window.storage.update = realUpd; window.storage.set = realSet; window.storage.get = realGet;
     return { toasts, kept: visits.some(v=>v.notes==='offline-full'), queued: outboxHas('visits') };
   }, m0[3].id);
-  check('RS-5: offline + full storage → no success toast, the visit stays in memory and is queued', rs5.kept && rs5.queued && rs5.toasts.some(t=>/لم تُحفظ|ممتلئة/.test(t)) && !rs5.toasts.some(t=>/Logged|Saved|✅/.test(t)), rs5);
+  check('RS-5: offline + full storage → no success toast, the visit stays in memory and is queued', rs5.kept && rs5.queued && rs5.toasts.some(t=>/لم تُحفظ|ممتلئة|storage full/.test(t)) && !rs5.toasts.some(t=>/Logged|Saved|✅/.test(t)), rs5);
   // RS-7: the 20-second refresh keeps the supervisor's rep filter
   await A.boot('Dr. Ghaith', 'supervisor');
   const rs7 = await A.page.evaluate(async (r) => { setReportRepFilter(r); await loadAll(); return { report: reportRepFilter, clinic: clinicRepFilter }; }, reps[1]);
@@ -396,13 +396,13 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
     previewDigest('evening', REPS[0]); const pe = document.getElementById('modalInner').innerText;
     return { tab, pm, pe, href: send && send.getAttribute('href'), target: send && send.getAttribute('target') };
   });
-  check('MAIL: admin tab lists recipients, schedule and status', /07:30/.test(mail1.tab) && /18:30/.test(mail1.tab) && /mariam@|@ultramed/.test(mail1.tab) && /لم يُرسَل أي تقرير بعد/.test(mail1.tab) && /GitHub/.test(mail1.tab), mail1.tab.split('\n').slice(0,4));
+  check('MAIL: admin tab lists recipients, schedule and status', /07:30/.test(mail1.tab) && /18:30/.test(mail1.tab) && /mariam@|@ultramed/.test(mail1.tab) && /No report has been sent yet/.test(mail1.tab) && /GitHub/.test(mail1.tab), mail1.tab.split('\n').slice(0,4));
   check('MAIL: team morning preview carries the team % and every rep\'s target line', /تحقيق الفريق/.test(mail1.pm) && /الفريق: \d+%/.test(mail1.pm) && ((mail1.pm.match(/: \d+% — /g)||[]).length + (mail1.pm.match(/لا يوجد ملف مبيعات ERP/g)||[]).length) >= 3 && /خطة اليوم/.test(mail1.pm), mail1.pm.split('\n').slice(0,6));
   check('MAIL: rep evening preview shows her day only', /حصيلة اليوم/.test(mail1.pe) && /Mariam/.test(mail1.pe.split('\n')[0]) && !/Renova/.test(mail1.pe), mail1.pe.split('\n').slice(0,3));
   check('MAIL: "send now" opens the GitHub Actions run page (no Netlify call)', mail1.href === 'https://github.com/ghaithalmanfe/ultramed-app/actions/workflows/daily-report.yml' && mail1.target === '_blank', mail1);
   cloud.mailLog = JSON.stringify({ last: { kind: 'morning', today, at: new Date().toISOString(), sent: 2, failed: 1, to: [{ to: 'a@x', name: 'Mariam', ok: true }, { to: 'b@x', name: 'Renova', ok: false, error: 'bounced' }] }, history: [] });
   const mail2 = await A.page.evaluate(async () => { openAdminPanel(); setAdminTab('mail'); await new Promise(r=>setTimeout(r,300)); return { status: document.getElementById('mailStatusCard').innerText }; });
-  check('MAIL: the status card shows the last run written by the sender', /آخر إرسال/.test(mail2.status) && /bounced/.test(mail2.status) && /1 فشلت/.test(mail2.status), mail2.status.split('\n').slice(0,3));
+  check('MAIL: the status card shows the last run written by the sender', /Last sent/.test(mail2.status) && /bounced/.test(mail2.status) && /1 failed/.test(mail2.status), mail2.status.split('\n').slice(0,3));
   // the e-mail's figure is the Today card's figure
   const same = await A.page.evaluate(() => { closeModal(); const d = UMCore.dailyDigest({ kind: 'morning', data: digestData(), reps: REPS }); const a = REPS.map(r => ({ r, mail: d.blocks.find(b=>b.rep===r).target, card: bestMonthRevenue(r) })); return a.map(x => ({ r: x.r, mail: x.mail && x.mail.amount, card: x.card.amount, team: d.team.pct, cardTeam: teamTargetNow().pct })); });
   check('MAIL: the e-mail figures equal the Today card figures (same code)', same.every(x => x.mail === x.card && x.team === x.cardTeam), same);

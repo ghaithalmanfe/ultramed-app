@@ -828,9 +828,9 @@ function renderVisitsNudge(){
   if(!_visitsBroken.length){ el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = '';
   el.innerHTML = `<div class="card" style="border-inline-start:4px solid var(--amber); margin-bottom:12px;">
-    <div style="font-weight:700; font-size:13.5px;" dir="auto">⚠️ زيارات ${_visitsBroken.map(m => esc(m)).join('، ')} لم تُحمَّل من السحابة</div>
-    <div style="color:var(--muted); font-size:12.5px; margin-top:2px;" dir="auto">التقارير لهذه الأشهر ناقصة مؤقتًا. الحفظ يعمل ولن يلمس هذه الأشهر.</div>
-    <button class="chip small" style="margin-top:8px;" onclick="retryVisitsArchives()">🔄 إعادة المحاولة</button>
+    <div style="font-weight:700; font-size:13.5px;">⚠️ The visits of ${_visitsBroken.map(m => esc(m)).join(', ')} did not load from the cloud</div>
+    <div style="color:var(--muted); font-size:12.5px; margin-top:2px;">The reports for these months are incomplete for now. Saving works and does not touch these months.</div>
+    <button class="chip small" style="margin-top:8px;" onclick="retryVisitsArchives()">🔄 Try again</button>
   </div>`;
 }
 async function retryVisitsArchives(){
@@ -843,7 +843,7 @@ async function retryVisitsArchives(){
     if(run.mirror.visits) _mirrorUsed.visits = true; else delete _mirrorUsed.visits;
     visits = all.filter(v => !(v && tombSet('visits').has(v.id))); renderAll();
   }
-  showToast(_visitsBroken.length ? '⚠️ ما زالت بعض الأشهر غير متاحة' : '✅ حُمِّلت كل الزيارات');
+  showToast(_visitsBroken.length ? '⚠️ Some months are still not available' : '✅ All the visits have loaded');
 }
 // One save at a time; throws on failure so persist() can queue it offline.
 function persistVisits(opts){
@@ -1324,7 +1324,7 @@ async function retryErpRows(opts){
   const heads = erpPeriods().filter(p => p && p.rowsMissing && p.rowsRef)
     .map(p => { const q = Object.assign({}, p); delete q.rows; delete q.rowsMissing; return q; }); // bare headers, like the index holds them
   if(!heads.length){ _erpBroken = []; renderErpNudge(); return true; }
-  if(!opts.quiet) showToast('⏳ جارٍ إعادة تحميل سطور المبيعات…');
+  if(!opts.quiet) showToast('⏳ Loading the sales lines again…');
   const docs = await erpFetchChunks(UMCore.erpChunkKeys({periods: heads}), opts.timeoutMs);
   const asm = UMCore.erpAssemble({periods: heads}, docs);
   const byId = {}; asm.sales.periods.forEach(p => { byId[p.id] = p; });
@@ -1334,8 +1334,8 @@ async function retryErpRows(opts){
   if(typeof _erpCtxCache !== 'undefined') _erpCtxCache = { key: null, ctx: null };
   if(!_erpBroken.length) erpMirrorSave(erpSales);
   if(!opts.quiet || _erpBroken.length !== before){ renderAll(); renderErpNudge(); }
-  if(!opts.quiet) showToast(_erpBroken.length ? `⚠️ ما زالت ${_erpBroken.length} فترة بلا سطور — تحقق من الاتصال أو أعد رفع الملف` : '✅ اكتملت بيانات المبيعات');
-  else if(!_erpBroken.length && before) showToast('✅ اكتملت بيانات المبيعات');
+  if(!opts.quiet) showToast(_erpBroken.length ? `⚠️ ${_erpBroken.length} periods still have no lines — check the connection or upload the file again` : '✅ The sales data is complete');
+  else if(!_erpBroken.length && before) showToast('✅ The sales data is complete');
   return !_erpBroken.length;
 }
 // The same for an account link (saveErpLink, 11-erp.js): the screen kept the
@@ -1389,7 +1389,7 @@ async function erpReloadFromCloud(){
     renderErpDirtyPill();
     if(typeof _erpCtxCache !== 'undefined') _erpCtxCache = { key: null, ctx: null };
     renderAll(); renderErpNudge();
-    showToast('☁️ وصل حفظٌ سابق للسحابة بعد تأخير — تم تحديث الشاشة');
+    showToast('☁️ An earlier save reached the cloud late — the screen was updated');
   }catch(e){ console.error('erpSales reload after late landing', e); }
 }
 // One save at a time: a second call (double tap, boot purge racing an import)
@@ -1416,7 +1416,7 @@ async function persistErpSalesInner(){
     // The index itself never loaded (cloud unreachable, no mirror): what is on
     // screen is empty, and writing it would erase every uploaded file.
     _erpSaveFail = { refused: true, quiet: true };
-    showToast('⚠️ بيانات المبيعات لم تُحمَّل — أعد فتح التطبيق على اتصال جيد ثم أعد المحاولة');
+    showToast('⚠️ The sales data did not load — reopen the app on a good connection, then try again');
     _erpDirty = true; renderErpDirtyPill();
     return false;
   }
@@ -1495,7 +1495,7 @@ async function persistErpSalesInner(){
     const kind = saveErrKind(e);
     _erpSaveFail = kind === 'refused' ? { refused: true, denied: true } : kind === 'tooLarge' ? { tooLarge: true } : /timeout/.test(String(e && e.message)) ? { timeout: true } : null;
     if(kind === 'refused') showToast(NOT_ALLOWED_MSG, 6000); // the rules said no: a retry cannot land until they change
-    else offlineToast('📴 لم يُحفظ ملف المبيعات — تحقق من الاتصال وأعد المحاولة');
+    else offlineToast('📴 The sales file was not saved — check the connection and try again');
     return false;
   }
 }
@@ -1511,10 +1511,10 @@ function renderErpDirtyPill(){
     el = document.createElement('div');
     el.id = 'erpDirtyPill';
     el.className = 'sbar sbar-pill sbar-danger sbar-tap';   // the look is in index.html (status bars)
-    el.onclick = async () => { el.textContent = '⏳ جارٍ الحفظ…'; const ok = await persist('erpSales'); if(ok) showToast('✅ حُفظت تغييرات المبيعات'); else renderErpDirtyPill(); };
+    el.onclick = async () => { el.textContent = '⏳ Saving…'; const ok = await persist('erpSales'); if(ok) showToast('✅ The sales changes are saved'); else renderErpDirtyPill(); };
     document.body.appendChild(el);
   }
-  el.textContent = '⚠️ تغييرات المبيعات غير محفوظة — اضغط لإعادة المحاولة';
+  el.textContent = '⚠️ Sales changes not saved — tap to try again';
 }
 // Undo buffer for an import that could not be saved: the screen must never
 // show figures the cloud does not hold.
@@ -3355,7 +3355,7 @@ async function persistNowInner(key, opts){
   // be on screen only because a boot went wrong — saving from that state is
   // exactly how a whole team's list gets destroyed.
   if(key === 'clinics' && _seedClinics && !opts.allowSeed){
-    showToast('⚠️ بيانات العيادات لم تُحمَّل بشكل صحيح — أعد فتح التطبيق قبل الحفظ');
+    showToast('⚠️ The clinic data did not load correctly — reopen the app before saving');
     tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: true }); // its own words above say why
     return false;
   }
@@ -3420,7 +3420,7 @@ async function persistNowInner(key, opts){
       };
       const written = await storageUpdate(key, mergeFn, 12000);
       if(refused){
-        showToast('🛑 مُنع حفظٌ كان سيحذف معظم العيادات — افتح النسخ الاحتياطية إذا كانت القائمة ناقصة');
+        showToast('🛑 A save that would have deleted most of the clinics was stopped — open the backups if the list is incomplete');
         tell({ ok: false, queued: false, mirrored: false, refused: true, quiet: true }); // its own words above say why
         return false;
       }
@@ -3499,7 +3499,7 @@ async function persistNowInner(key, opts){
     }
     if(conflict){
       if(!opts.quietConflict){
-        const msg = loaded === undefined ? '⚠️ هذه البيانات لم تُحمَّل من السحابة بعد — أعد فتح التطبيق قبل الحفظ' : '⚠️ Changed on another device — reopen the app, then save again';
+        const msg = loaded === undefined ? '⚠️ This data has not loaded from the cloud yet — reopen the app before saving' : '⚠️ Changed on another device — reopen the app, then save again';
         showToast(msg, 6000);
         refusedSave(key, loaded === undefined ? REFUSED_NOT_READ : REFUSED_ELSEWHERE); // stays said, whatever the screen that saved says next
       }
@@ -3782,7 +3782,7 @@ function saveBlocked(key, kind, e){
   if(queued) _saveBlocked.add(key);
   noteTooLarge(key === 'visits' && month ? 'visits:' + month : key, { key, month, bytes, kept: queued });
   showToast(key === 'visits'
-    ? (month && month !== todayStr().slice(0, 7) ? `🛑 زيارات شهر ${month} كبيرة جدًا — لم تُحفظ: احذف بعض صورها ثم أعد المحاولة` : '🛑 زيارات هذا الشهر كبيرة جدًا (صور كثيرة) — لم تُحفظ: احذف بعض الصور من الزيارات ثم أعد المحاولة')
+    ? (month && month !== todayStr().slice(0, 7) ? `🛑 The visits of ${month} are too large — not saved: remove some of their photos, then try again` : "🛑 This month's visits are too large (too many photos) — not saved: remove some photos from the visits, then try again")
     : tooLargeText({ key, month, kept: queued }), 7000);
   return { ok: false, tooLarge: true, month, bytes, queued, mirrored: queued };
 }

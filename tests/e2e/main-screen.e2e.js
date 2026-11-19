@@ -255,7 +255,7 @@ const { G, M, R, LINES, seed } = require('./fixtures/main-screen-data.js');
   // ---------- the Months button, the month report agrees ----------
   const months = (await act(() => { const b = [...document.querySelectorAll('#targetCard button.chip')].find(e => /Months/.test(e.textContent)); if(!b) return { list: '(no Months button)', rep: '' };
     b.click(); const list = document.getElementById('modalInner').innerText; renderMonthClose('2026-10'); const rep = document.getElementById('modalInner').innerText; closeModal(); return { list, rep }; })) || { list: '', rep: '' };
-  check('The Months button opens the month reports, and October\'s report shows each person\'s figure as the main screen does', /تقارير الشهور/.test(months.list) && truth.reps.every(r => months.rep.includes(amt(truth.people[r].amount))), months.rep.slice(0, 300));
+  check('The Months button opens the month reports, and October\'s report shows each person\'s figure as the main screen does', /Month reports/.test(months.list) && truth.reps.every(r => months.rep.includes(amt(truth.people[r].amount))), months.rep.slice(0, 300));
 
   // ---------- a brand someone sells with no target for it: the percentage counts only the people with its target ----------
   const bx = (await act(async () => {

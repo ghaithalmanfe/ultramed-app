@@ -43,19 +43,19 @@ const MAIL_WORKFLOW_URL = 'https://github.com/ghaithalmanfe/ultramed-app/actions
 function adminMailHTML(){
   const people = staff.filter(s=>s && s.email);
   return `
-    <p style="color:var(--muted); font-size:13px; margin-top:0;" dir="auto">يُرسَل تلقائيًا ملخصان كل يوم عمل (الأحد–الخميس): <b>الصباح 07:30</b> و<b>نهاية اليوم 18:30</b> بتوقيت الكويت. كل مندوبة تستلم يومها، والمشرف يستلم الفريق. الأرقام هي نفسها التي تظهر في شاشة اليوم.</p>
-    <div class="card" id="mailStatusCard"><div style="color:var(--muted); font-size:13px;">⏳ جارٍ قراءة حالة الإرسال…</div></div>
-    <div class="section-title">Recipients · المستلمون</div>
-    <div class="card">${people.length ? people.map(s=>`<div class="report-line"><span>${esc(s.name)} <span style="color:var(--muted); font-size:11.5px;">· ${s.role==='supervisor'?'الفريق':'يومها'}</span></span><span class="v" dir="ltr" style="font-size:12px;">${esc(s.email)}</span></div>`).join('') : '<div class="empty">لا توجد إيميلات في قائمة الفريق — أضفها من تبويب Team.</div>'}</div>
-    <div class="section-title">Preview · معاينة</div>
+    <p style="color:var(--muted); font-size:13px; margin-top:0;" dir="auto">${uiLang === 'ar' ? `يُرسَل تلقائيًا ملخصان كل يوم عمل (الأحد–الخميس): <b>الصباح 07:30</b> و<b>نهاية اليوم 18:30</b> بتوقيت الكويت. كل مندوبة تستلم يومها، والمشرف يستلم الفريق. الأرقام هي نفسها التي تظهر في شاشة اليوم.` : `Two digests are sent by themselves every working day (Sunday–Thursday): <b>the morning one at 07:30</b> and <b>the end-of-day one at 18:30</b>, Kuwait time. Each rep gets her own day and the supervisor gets the team. The figures are the very ones the Today screen shows.`}</p>
+    <div class="card" id="mailStatusCard"><div style="color:var(--muted); font-size:13px;">⏳ Reading the sending status…</div></div>
+    <div class="section-title">Recipients</div>
+    <div class="card">${people.length ? people.map(s=>`<div class="report-line"><span>${esc(s.name)} <span style="color:var(--muted); font-size:11.5px;">· ${s.role==='supervisor'?'the team':'her day'}</span></span><span class="v" dir="ltr" style="font-size:12px;">${esc(s.email)}</span></div>`).join('') : '<div class="empty">No e-mail addresses in the team list — add them in the Team tab.</div>'}</div>
+    <div class="section-title">Preview</div>
     <div class="chip-row" style="margin-bottom:10px;">
-      <div class="chip small" onclick="previewDigest('morning')">☀️ ملخص الصباح (الفريق)</div>
-      <div class="chip small" onclick="previewDigest('evening')">🌙 ملخص المساء (الفريق)</div>
+      <div class="chip small" onclick="previewDigest('morning')">☀️ The morning digest (team)</div>
+      <div class="chip small" onclick="previewDigest('evening')">🌙 The evening digest (team)</div>
       ${REPS.map(r=>`<div class="chip small" onclick="previewDigest('evening','${esc(r)}')">🌙 ${esc(r)}</div>`).join('')}
     </div>
-    <div class="section-title">Send now · إرسال الآن</div>
-    <a class="btn secondary" id="mailSendNow" href="${MAIL_WORKFLOW_URL}" target="_blank" rel="noopener">▶️ أرسل الآن من GitHub</a>
-    <div id="mailSendResult" style="font-size:12.5px; color:var(--muted); margin-top:6px;" dir="auto">تفتح صفحة الإرسال في GitHub: اضغط <b>Run workflow</b> واختر morning أو evening. بعد دقيقة يظهر الإرسال في البطاقة أعلاه.</div>`;
+    <div class="section-title">Send now</div>
+    <a class="btn secondary" id="mailSendNow" href="${MAIL_WORKFLOW_URL}" target="_blank" rel="noopener">▶️ Send now from GitHub</a>
+    <div id="mailSendResult" style="font-size:12.5px; color:var(--muted); margin-top:6px;" dir="auto">${uiLang === 'ar' ? `تفتح صفحة الإرسال في GitHub: اضغط <b>Run workflow</b> واختر morning أو evening. بعد دقيقة يظهر الإرسال في البطاقة أعلاه.` : `This opens the sending page on GitHub: tap <b>Run workflow</b> and choose morning or evening. A minute later the send shows in the card above.`}</div>`;
 }
 async function refreshMailStatus(){
   const el = document.getElementById('mailStatusCard');
@@ -64,14 +64,14 @@ async function refreshMailStatus(){
   try{ const r = await withTimeout(window.storage.get('mailLog', true), 8000); log = r ? UMCore.safeParse(r.value, null) : null; }catch(e){}
   if(!document.getElementById('mailStatusCard')) return;
   if(!log || !log.last){
-    el.innerHTML = `<div style="font-weight:700; font-size:13.5px;">لم يُرسَل أي تقرير بعد</div>
-      <div style="color:var(--muted); font-size:12.5px; margin-top:4px;" dir="auto">الإرسال يبدأ بعد إضافة أربعة أسرار في GitHub (Settings ← Secrets and variables ← Actions): بيانات دخول للقراءة، مفتاح Resend، وعنوان المرسل. ثم جرّب "أرسل الآن".</div>`;
+    el.innerHTML = `<div style="font-weight:700; font-size:13.5px;">No report has been sent yet</div>
+      <div style="color:var(--muted); font-size:12.5px; margin-top:4px;" dir="auto">${uiLang === 'ar' ? `الإرسال يبدأ بعد إضافة أربعة أسرار في GitHub (Settings ← Secrets and variables ← Actions): بيانات دخول للقراءة، مفتاح Resend، وعنوان المرسل. ثم جرّب "أرسل الآن".` : `Sending starts once four secrets are added on GitHub (Settings → Secrets and variables → Actions): a sign-in to read with, a Resend key and the sender's address. Then try "Send now".`}</div>`;
     return;
   }
   const L = log.last;
-  const when = new Date(L.at).toLocaleString('ar-KW-u-nu-latn', { timeZone: 'Asia/Kuwait', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-  el.innerHTML = `<div style="font-weight:700; font-size:13.5px;">آخر إرسال: ${L.kind==='morning'?'☀️ الصباح':'🌙 المساء'} — ${when}${L.manual?' (يدوي)':''}</div>
-    <div style="font-size:12.5px; margin-top:4px;">${L.sent} ${L.sent===1?'رسالة وصلت':'رسائل وصلت'}${L.failed?` · <span style="color:var(--coral-ink);">${L.failed} فشلت</span>`:''}</div>
+  const when = new Date(L.at).toLocaleString(uiLocale(), { timeZone: 'Asia/Kuwait', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  el.innerHTML = `<div style="font-weight:700; font-size:13.5px;">Last sent: ${L.kind==='morning'?'☀️ morning':'🌙 evening'} — ${when}${L.manual?' (by hand)':''}</div>
+    <div style="font-size:12.5px; margin-top:4px;">${L.sent} ${L.sent===1?'message arrived':'messages arrived'}${L.failed?` · <span style="color:var(--coral-ink);">${L.failed} failed</span>`:''}</div>
     ${(L.to||[]).map(t=>`<div class="report-line" style="font-size:12px;"><span>${esc(t.name||'')} <span dir="ltr" style="color:var(--muted);">${esc(t.to)}</span></span><span class="v">${t.ok?'✅':'❌ '+esc(t.error||'')}</span></div>`).join('')}
     ${(log.history||[]).length>1?`<div style="color:var(--muted); font-size:11.5px; margin-top:6px;">${(log.history||[]).slice(1,6).map(h=>`${h.kind==='morning'?'☀️':'🌙'} ${h.today} · ${h.sent}✅${h.failed?' '+h.failed+'❌':''}`).join(' · ')}</div>`:''}`;
 }
@@ -79,7 +79,7 @@ function previewDigest(kind, rep){
   const d = UMCore.dailyDigest({ kind, data: digestData(), reps: REPS, rep: rep || null });
   showModal(`
     <h3 style="margin-top:0;" data-ic="chat">${kind==='morning'?'☀️':'🌙'} ${esc(d.subject)}</h3>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;" dir="auto">هكذا تصل الرسالة بالضبط، بأرقام هذه اللحظة.</p>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;" dir="auto">${uiLang === 'ar' ? `هكذا تصل الرسالة بالضبط، بأرقام هذه اللحظة.` : `This is exactly how the message arrives, with the figures of this moment.`}</p>
     <div class="card" style="background:#fff; color:#111; max-height:60vh; overflow:auto;">${d.html}</div>
     <button class="btn secondary" onclick="openAdminPanel(); setAdminTab('mail')">Back</button>
   `);
@@ -752,7 +752,7 @@ function missingClinicCandidates(){
   // 1. the recycle bin — full clinic objects, deliberately deleted or swept there in the chaos
   (((recycleBin||{}).clinics)||[]).forEach(b=>{
     if(!b || haveIds.has(b.id)) return;
-    take({src:'bin', label:'🗑️ في سلة المحذوفات', obj:b, name:b.name, rep:b.rep||'', key:'bin:'+b.id});
+    take({src:'bin', label:'🗑️ In the recycle bin', obj:b, name:b.name, rep:b.rep||'', key:'bin:'+b.id});
   });
   // 2. names stamped on visits whose clinic no longer exists — history rejoins on restore
   const stamped = {};
@@ -762,7 +762,7 @@ function missingClinicCandidates(){
   });
   Object.keys(stamped).forEach(id=>{
     const s = stamped[id];
-    take({src:'visits', label:`🚗 له ${s.n} زيارة مسجلة`, id, name:s.name, rep:s.rep, key:'vis:'+id});
+    take({src:'visits', label:`🚗 ${s.n} visits logged under it`, id, name:s.name, rep:s.rep, key:'vis:'+id});
   });
   // 3. invoice customers that match no clinic (may include non-clinic accounts — unticked by default)
   const custs = {};
@@ -774,7 +774,7 @@ function missingClinicCandidates(){
     if(m.clinicId || m.ignored || m.channel){ custs[key] = {skip:true, n:1}; return; }
     custs[key] = {name:cu, n:1, rep: UMCore.erpRowRep(r, clinics, erpMap, p.repMap||{}, match) || ''};
   }));
-  Object.values(custs).forEach(cu=>{ if(!cu.skip) take({src:'erp', label:`🧾 عميل بالفواتير (${cu.n} سطر)`, name:cu.name, rep:cu.rep, key:'erp:'+_mcNorm(cu.name)}); });
+  Object.values(custs).forEach(cu=>{ if(!cu.skip) take({src:'erp', label:`🧾 An invoice customer (${cu.n} lines)`, name:cu.name, rep:cu.rep, key:'erp:'+_mcNorm(cu.name)}); });
   return out;
 }
 let _mcCands = [], _mcChecked = new Set();
@@ -786,19 +786,19 @@ function openMissingClinics(){
   const ORDER = {bin:0, visits:1, erp:2};
   _mcCands.sort((a,b)=>ORDER[a.src]-ORDER[b.src] || a.name.localeCompare(b.name));
   showModal(`
-    <h3 style="margin-top:0;" data-ic="search">🔍 العيادات الناقصة</h3>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">كل اسم يعرفه النظام وغير موجود في قائمتك الحالية. علّم ما تريد إرجاعه — عملاء الفواتير غير معلّمين تلقائيًا لأن بعضهم قد لا يكون عيادة.</p>
+    <h3 style="margin-top:0;" data-ic="search">🔍 Missing clinics</h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Every name the app knows that is not on your list now. Tick what you want back — invoice customers are not ticked by themselves, as some may not be clinics.</p>
     ${_mcCands.length ? `
     <div class="chip-row" style="margin:8px 0;">
-      <div class="chip small" onclick="_mcCands.forEach(x=>_mcChecked.add(x.key)); renderMcList();">تعليم الكل</div>
-      <div class="chip small" onclick="_mcChecked.clear(); renderMcList();">إلغاء الكل</div>
+      <div class="chip small" onclick="_mcCands.forEach(x=>_mcChecked.add(x.key)); renderMcList();">Tick all</div>
+      <div class="chip small" onclick="_mcChecked.clear(); renderMcList();">Untick all</div>
     </div>
     <div id="mcList" style="max-height:300px; overflow-y:auto;"></div>
-    <label style="margin-top:10px; font-size:12px;">مندوبة العيادات التي بلا مندوبة معروفة</label>
+    <label style="margin-top:10px; font-size:12px;">Rep for the clinics with no known rep</label>
     <div class="chip-row" id="mcRep">${REPS.map((r,i)=>`<div class="chip small ${i===0?'on':''}" data-rep="${esc(r)}" onclick="pickModalRep(this)">${esc(r)}</div>`).join('')}</div>
-    <button class="btn" style="margin-top:10px;" onclick="restoreTickedMissingClinics()">✅ إرجاع المعلَّم (<span id="mcCount">0</span>)</button>`
-    : `<div class="card" style="margin-top:8px;">🏆 لا يوجد أي اسم ناقص — كل ما يعرفه النظام موجود في قائمتك.</div>`}
-    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">إغلاق</button>
+    <button class="btn" style="margin-top:10px;" onclick="restoreTickedMissingClinics()">✅ Bring back the ticked (<span id="mcCount">0</span>)</button>`
+    : `<div class="card" style="margin-top:8px;">🏆 No name is missing — everything the app knows is on your list.</div>`}
+    <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">Close</button>
   `);
   renderMcList();
 }
@@ -821,7 +821,7 @@ function renderMcList(){
 async function restoreTickedMissingClinics(){
   if(!requireAdmin()) return;
   const picked = _mcCands.filter(x=>_mcChecked.has(x.key));
-  if(!picked.length){ showToast('لم تعلّم شيئًا'); return; }
+  if(!picked.length){ showToast('Nothing is ticked'); return; }
   const repEl = document.querySelector('#mcRep .chip.on');
   const fallbackRep = repEl ? repEl.dataset.rep : (REPS[0]||'');
   const live = new Set(storedClinics().map(c => c && c.id)), back = [];
@@ -837,7 +837,7 @@ async function restoreTickedMissingClinics(){
       back.push(normalizeClinic({id:uid(), name:x.name, rep, cls:'B', notes:'أُنشئت من عملاء الفواتير', addedOn:todayStr()}));
     }
   });
-  if(!back.length){ showToast('كل ما علّمته موجود في القائمة الآن'); openMissingClinics(); return; }
+  if(!back.length){ showToast('Everything you ticked is on the list now'); openMissingClinics(); return; }
   return holdRefresh(async () => {
     // the delete log first — otherwise the next merge would remove them again
     await untombMany({ clinics: back.map(c => c.id) });
@@ -850,8 +850,8 @@ async function restoreTickedMissingClinics(){
     renderAll();
     if(document.getElementById('clinicList')) renderClinics();
     const ok = r.ok || sentSince('clinics', r), o = r.outcome || {};
-    if(ok && rb && !rb.ok) showToast(`✅ رجعت ${back.length} عيادة — لكن سلة المحذوفات لم تُحدَّث، فقد تظهر فيها بعد. لا تسترجعها من السلة`, 6000);
-    else if(ok || (o.queued && o.mirrored && !o.tooLarge)) showToast(ok ? `✅ رجعت ${back.length} عيادة` : `⚠️ رجعت ${back.length} عيادة على هذا الجهاز — لم تصل إلى السحابة بعد، وتُرفع عند عودة الاتصال`, 4000);
+    if(ok && rb && !rb.ok) showToast(`✅ ${back.length} clinics are back — but the recycle bin was not updated, so they may still show there. Do not restore them from the bin`, 6000);
+    else if(ok || (o.queued && o.mirrored && !o.tooLarge)) showToast(ok ? `✅ ${back.length} clinics are back` : `⚠️ ${back.length} clinics are back on this device — they have not reached the cloud yet and upload when the connection is back`, 4000);
     else saveToast(r, 'clinics', ''); // refused, too large, not saved: said for what it is
   });
 }
@@ -864,7 +864,7 @@ function openManageClinics(){
   _clinicImport = null; _mgSelected = new Set();
   showModal(`
     <h3 style="margin-top:0;">${I('settings')} Manage clinics</h3>
-    <button class="btn" style="margin:6px 0 4px; background:var(--teal);" onclick="openMissingClinics()">🔍 العيادات الناقصة — افحص وأرجِع</button>
+    <button class="btn" style="margin:6px 0 4px; background:var(--teal);" onclick="openMissingClinics()">🔍 Missing clinics — check and bring back</button>
     <div class="section-title" style="margin-top:6px;">📥 Import clinics from Excel / CSV</div>
     <p style="color:var(--muted); font-size:12.5px; margin:0 0 8px;">Any sheet works: Arabic or English headers (اسم العيادة، رقم الهاتف، المندوبة…) — or just a plain list of names with phone numbers next to them. Duplicates are detected by name.</p>
     <label style="font-size:12px;">Assign imported clinics to</label>

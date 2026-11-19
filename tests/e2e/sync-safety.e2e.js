@@ -142,7 +142,7 @@ function seedCloud(){
   await S.page.waitForTimeout(200);
   const idx2 = parse(cloud.erpSales), refs = [];
   idx2.periods.forEach(p => { for(let i = 0; i < ((p.rowsRef || {}).chunks || 0); i++) refs.push(p.rowsRef.key + ':' + i); });
-  check('1h. on the supervisor\'s phone the same put-back is offered as a save (the red bar) — and the save puts the rows back in the cloud', s2.rows === 5 && /غير محفوظة/.test(s2.pill) && refs.every(k => k in cloud) && !(await S.page.evaluate(() => !!document.getElementById('erpDirtyPill'))), { s2, missing: refs.filter(k => !(k in cloud)) });
+  check('1h. on the supervisor\'s phone the same put-back is offered as a save (the red bar) — and the save puts the rows back in the cloud', s2.rows === 5 && /Sales changes not saved/.test(s2.pill) && refs.every(k => k in cloud) && !(await S.page.evaluate(() => !!document.getElementById('erpDirtyPill'))), { s2, missing: refs.filter(k => !(k in cloud)) });
   await A.ctx.close(); await B.ctx.close(); await S.ctx.close();
 
   // =====================================================================
@@ -243,7 +243,7 @@ function seedCloud(){
   await F.page.evaluate(() => loadAll()); // a refresh that reads anyway (after the queue's retries ran out)
   const f2 = await F.page.evaluate(() => ({ has: visits.some(v => v.id === 'vF1'), bar: (document.getElementById('memOnlyBar') || {}).textContent || '', toasts: window.__toasts.slice() }));
   check('4a. storage full, no connection: the visit is still there after a refresh tick and after a full refresh — the queue is kept in memory, the older phone copy is never served', f1.has && f1.outbox.includes('visits') && f2.has, { f1, has2: f2.has });
-  check('4b. …and a red bar says the truth until it uploads — nothing claims "Saved"', /storage is full — this visit is only in the app's memory/.test(f2.bar) && !f2.toasts.some(t => /Saved|محفوظة|حُفظ/.test(t)), { bar: f2.bar, toasts: f2.toasts });
+  check('4b. …and a red bar says the truth until it uploads — nothing claims "Saved"', /storage is full — this visit is only in the app's memory/.test(f2.bar) && !f2.toasts.some(t => /Saved|saved on this device|محفوظة|حُفظ/.test(t)), { bar: f2.bar, toasts: f2.toasts });
   mode.offline.delete('F-Mariam');
   await F.tick();
   const f3 = await F.page.evaluate(() => ({ outbox: outboxList(), bar: !!document.getElementById('memOnlyBar'), toasts: window.__toasts.slice(-3) }));
