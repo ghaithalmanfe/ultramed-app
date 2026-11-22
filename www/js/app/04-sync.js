@@ -2203,6 +2203,7 @@ async function loadAllNow(opts){
   }
   if(crashed || raced || took.size || _onScreen.drawn !== drawnFor){ renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours(); }
   else if(typeof msClock === 'function') msClock();
+  if(typeof erpNudgeSync === 'function') erpNudgeSync(); // the sales card says what holds now, even when nothing else was drawn again (10)
   _bootLoaded = true;
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: reads the daily backups at most once a day, only when the list looks wiped (13)

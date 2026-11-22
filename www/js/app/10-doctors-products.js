@@ -2081,6 +2081,10 @@ function renderCoverageBoard(){
 // an index that never loaded, or a copy served from this device's mirror —
 // every one of these used to look exactly like "the data disappeared".
 function erpHealthCard(){
+  // (while the early open's line is up it says so for the whole screen — and a read that changes nothing draws nothing again:
+  // this card would stay up after the read is in, v126 speed part 3)
+  const copyUp = !_loadFailed.erpSales && !_erpBroken.length && erpCopyUp();
+  if(!copyUp) erpCopyReset();
   if(_loadFailed.erpSales) return `<div class="card" style="border-inline-start:4px solid var(--coral); margin-bottom:6px;">
     <div style="font-weight:700; font-size:13.5px;">⚠️ The sales files did not load from the cloud</div>
     <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">Nothing is lost — the connection did not complete when the app opened. The sales figures are hidden for now, and saving is stopped so that an empty page is never written over your files. <b>Reopen the app on a good connection.</b></div>
@@ -2093,13 +2097,75 @@ function erpHealthCard(){
     <div class="chip-row" style="margin-top:8px;"><div class="chip small on" onclick="retryErpRows()">🔄 Load again</div><div class="chip small" onclick="openErpImport()">📥 Upload the file again</div></div>
   </div>`;
   }
-  // (while the early open's line is up it says so for the whole screen — and a read that changes nothing draws nothing again:
-  // this card would stay up after the read is in, v126 speed part 3)
-  if(_mirrorUsed.erpSales && !(typeof _copyLine !== 'undefined' && _copyLine)) return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
+  return copyUp ? erpCopyCard() : '';
+}
+// The sales figures from this device's copy (the owner's report of 19 Nov: the card stayed up a long time and said nothing
+// more). It says what keeps it up, offers Retry now (the owner, 22 Nov: professional words in English and Arabic), says
+// when a retry last ended without the cloud and — still up two minutes after it first showed — to check the connection.
+const ERP_COPY_HINT_MS = 120000;
+let _erpCopySince = 0;    // when the card first showed (0: not up)
+let _erpCopyTry = null;   // the Retry now on its way
+let _erpCopyTried = 0;    // when the last Retry now ended with the card still up
+let _erpCopyTimer = null; // draws the two-minute line when its time comes
+let _erpNudgeKey = null;  // what the nudge shows now (erpNudgeSync)
+function erpCopyUp(){ return !!_mirrorUsed.erpSales && !(typeof _copyLine !== 'undefined' && _copyLine); }
+function erpCopyReset(){ _erpCopySince = 0; _erpCopyTried = 0; if(_erpCopyTimer){ clearTimeout(_erpCopyTimer); _erpCopyTimer = null; } }
+// what keeps the card up: sales changes of this device the cloud does not hold (the red bar's), no connection, else a read that did not complete
+function erpCopyWhy(){
+  if(_erpDirty || _erpSaving || (typeof outboxHas === 'function' && outboxHas('erpSales'))) return 'unsaved';
+  return navigator.onLine === false ? 'offline' : 'read';
+}
+function erpCopyLong(){ return erpCopyWhy() === 'read' && !!_erpCopySince && Date.now() - _erpCopySince >= ERP_COPY_HINT_MS; }
+function erpCopyCard(){
+  const why = erpCopyWhy(), now = Date.now();
+  if(!_erpCopySince) _erpCopySince = now;
+  const long = erpCopyLong();
+  if(why === 'read' && !long && !_erpCopyTimer) _erpCopyTimer = setTimeout(() => { _erpCopyTimer = null; erpNudgeSync(); }, Math.max(0, ERP_COPY_HINT_MS - (now - _erpCopySince)) + 500);
+  const body = why === 'unsaved' ? "This device has sales changes the cloud does not hold yet, so the figures shown are this device's. Retry now saves them, then reads the cloud again."
+    : why === 'offline' ? 'This device is offline — the figures are the last it saw and may be older than what is saved. They update once it is back online.'
+    : 'The cloud could not be read — the figures are the last this device saw and may be older than what is saved. Any new upload is merged with the cloud when it is saved.';
+  const lines = [];
+  if(_erpCopyTried) lines.push(`<span>Last attempt:</span> <span data-notr dir="auto">${esc(copyTimeText(_erpCopyTried))}</span> <span>— not completed.</span>`);
+  else if(why === 'read') lines.push('<span>The app tries again by itself every 20 seconds while it is open.</span>');
+  if(long) lines.push(`<span style="color:var(--status-danger, #C8372D); font-weight:600;">Still not updated after 2 minutes — check this device's internet connection.</span>`);
+  const busy = !!_erpCopyTry;
+  return `<div class="card" style="border-inline-start:4px solid var(--gold-ink, #B8860B); margin-bottom:6px;">
     <div style="font-weight:700; font-size:13.5px;">📴 The sales figures are from this device's copy</div>
-    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">The cloud was not read when the app opened — the figures are the last this device saw and may be older than what is saved. Any new upload is merged with the cloud when it is saved.</div>
+    <div style="font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:3px;">${body}</div>
+    ${lines.map(l => `<div style="font-size:12.5px; line-height:1.5; margin-top:4px;">${l}</div>`).join('')}
+    <div class="chip-row" style="margin-top:8px;"><button type="button" class="chip small on" onclick="erpCopyRetry()"${busy ? ' disabled' : ''}>${busy ? 'Retrying…' : 'Retry now'}</button></div>
   </div>`;
-  return '';
+}
+// Retry now: this device's unsaved sales changes are saved first (the red bar's own save), what waits in the queue goes
+// up, then the cloud is read (the refresh on its way, if one is) — the 20-second round's own steps, at once.
+async function erpCopyRetry(){
+  if(_erpCopyTry) return _erpCopyTry;
+  const unsaved = erpCopyWhy() === 'unsaved';
+  let saved = null;
+  const run = (async () => {
+    if((typeof _erpImporting !== 'undefined' && _erpImporting) || _erpSaving) return; // a sales upload or save on its way decides the card by itself
+    if(typeof earlyUnconfirmed === 'function' && earlyUnconfirmed()) return;          // the sign-in is still being confirmed: the start's read follows by itself
+    if(currentUser && currentUser.role === 'supervisor' && _erpDirty) saved = await persist('erpSales');
+    if(outboxList().length) await flushOutbox();
+    await loadAll();
+    if(typeof _refreshFlush !== 'undefined' && _refreshFlush){ try{ await _refreshFlush; }catch(e){} }
+  })().catch(e => { console.warn('sales: Retry now', e); });
+  _erpCopyTry = run; renderErpNudge();
+  try{ await run; }
+  finally{
+    _erpCopyTry = null;
+    const up = erpCopyUp();
+    _erpCopyTried = up ? Date.now() : 0;
+    renderErpNudge();
+    if(!up) showToast(unsaved && saved ? '✅ The sales changes are saved' : '✅ The sales figures are up to date with the cloud');
+  }
+}
+function erpNudgeKeyNow(){ return [!!_loadFailed.erpSales, _erpBroken.length, erpCopyUp(), erpCopyWhy(), !!_erpCopyTry, _erpCopyTried, erpCopyLong()].join('|'); }
+// The nudge drawn again only when what it shows changed: a refresh that takes nothing anew draws nothing (v126), and the
+// card must still go once the cloud is read — 04-sync.js calls this at the end of every refresh.
+function erpNudgeSync(){
+  if(!currentUser || currentUser.role !== 'supervisor') return;
+  if(erpNudgeKeyNow() !== _erpNudgeKey) renderErpNudge();
 }
 // New month: the two monthly inputs (this month's DSR, then the weekly sales
 // file) are asked for explicitly — nothing rolls over unnoticed.
@@ -2117,6 +2183,9 @@ function renderErpNudge(){
   if(!el) return;
   if(currentUser.role !== 'supervisor'){ el.style.display = 'none'; return; }
   const health = erpHealthCard() + monthInputsCard();
+  // the same card in the ERP import sheet, when it is open (11-erp.js)
+  document.querySelectorAll('#modalInner [data-erp-health]').forEach(h => { h.innerHTML = erpHealthCard(); });
+  _erpNudgeKey = erpNudgeKeyNow();
   const latest = erpPeriods().slice().sort((a,b)=>(b.to||'').localeCompare(a.to||''))[0];
   const staleDays = latest ? UMCore.daysBetween(latest.to, todayStr()) : null;
   const stale = !latest || staleDays >= 7;

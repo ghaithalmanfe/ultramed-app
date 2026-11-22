@@ -546,7 +546,7 @@ function openErpImport(){
       Sales files import with zero clicks once I know who is who (I ask only the first time).
       <b>One file per rep works too</b> — upload Mariam's and Renova's exports separately and
       each is kept as its own report; re-importing one never touches the other.</div>
-    ${erpHealthCard()}
+    <div data-erp-health>${erpHealthCard()}</div>
     <input type="file" id="erpFile" accept=".csv,.txt,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="erpHandleFile(this)">
     <div id="erpStatus" style="display:none; margin-top:8px; font-size:12.5px; line-height:1.5;"></div>
     <div id="erpCloudStatus" style="margin-top:8px; font-size:12px; color:var(--muted); line-height:1.5;">☁️ Checking what the cloud really holds…</div>
