@@ -1582,7 +1582,7 @@ async function cloudGet(key, src, run){
   // does not know is a read that failed.
   if(run && run.local){
     if(src) src.cloud = false;
-    const m = mirrorGet(key);
+    const m = mirrorMine(key) ? mirrorGet(key) : null;   // (another login's copy is not drawn for this one, v129)
     if(m != null){ F.mirror[key] = true; return { value: m }; }
     if(run.none && run.none.has(key)){ F.mirror[key] = true; return null; }
     F.failed[key] = true;
@@ -1614,7 +1614,7 @@ async function cloudGet(key, src, run){
     if(src) src.cloud = false;
     noteNoAccess(key, e); // the rules refused this read: said, never taken for "no connection" (v123)
     if(_deviceStale[key]){ const mem = memoryCopy(key); if(mem != null){ F.mirror[key] = true; return { value: mem }; } } // the device copy is older than memory (a full phone)
-    const m = mirrorGet(key);
+    const m = mirrorMine(key) ? mirrorGet(key) : null;   // only the copy this login's own reads wrote (v129, C7)
     if(m != null){ F.mirror[key] = true; return { value: m }; }
     F.failed[key] = true;
     return null;
@@ -2225,6 +2225,7 @@ async function loadAllNow(opts){
   }
   else if(typeof msClock === 'function') msClock();
   if(typeof erpNudgeSync === 'function') erpNudgeSync(); // the sales card says what holds now, even when nothing else was drawn again (10)
+  if(typeof ownerWatch === 'function'){ try{ ownerWatch(); }catch(e){ console.error('owner watch', e); } } // owners and prices changed outside the supervisor's screens (v129, 09-admin.js)
   _bootLoaded = true;
   updateSyncBadge();
   checkWipeBanner(); // fire-and-forget: reads the daily backups at most once a day, only when the list looks wiped (13)
@@ -2331,8 +2332,26 @@ function freeDeviceRoom(){
   console.warn(`device storage full: ${freed} sales rows dropped from this phone's copy — they download again from the cloud`);
   return true;
 }
+// Whose reads wrote each copy (v129, the security audit's C7): a login whose read the cloud refused — removed from the
+// team — was shown the copy another login had synced on this phone since. A copy is served in place of a refused or
+// failed read, and drawn at a start, only to the login that wrote it; it is never deleted (the recovery tools read it).
+const MIRROR_BY = 'um_mirrorBy';
+let _mirrorBy = null;
+function mirrorByMap(){ if(!_mirrorBy){ let o = null; try{ o = JSON.parse(localStorage.getItem(MIRROR_BY) || 'null'); }catch(e){} _mirrorBy = o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } return _mirrorBy; }
+function mirrorOwnerNote(key){
+  const me = currentUser ? loginEmailOf(currentUser.name) : '';
+  if(!me) return;
+  const by = mirrorByMap();
+  if(by[key] === me) return;
+  by[key] = me; try{ localStorage.setItem(MIRROR_BY, JSON.stringify(by)); }catch(e){}
+}
+function mirrorMine(key){
+  const by = mirrorByMap(), o = Object.prototype.hasOwnProperty.call(by, key) ? by[key] : '';
+  const me = currentUser ? loginEmailOf(currentUser.name) : '';
+  return !o || !me || o === me;   // (a copy from before v129, or nobody known: as before)
+}
 function mirrorSave(key, str){
-  if(deviceSet('um_mirror:' + key, str, key !== 'erpSales')){ delete _deviceStale[key]; return true; }
+  if(deviceSet('um_mirror:' + key, str, key !== 'erpSales')){ delete _deviceStale[key]; mirrorOwnerNote(key); return true; }
   _deviceStale[key] = true;
   copyStale(); // the phone's copy is not the one a start may draw from any more (v126 speed, part 3)
   return false;
@@ -2409,8 +2428,78 @@ function outboxWrite(list){
   }
   _outboxDeviceBad = !ok; // an older device queue must not bring back what was sent
   outboxStamp(list);
+  outboxOwnerNote(list);
   updateSyncBadge();
   return ok;
+}
+// ---- Whose changes wait on this phone (v129, the security audit's C7) ----
+// Until v128 the queue belonged to the phone: whoever signed in next uploaded the changes another login had made — a
+// removed rep's queued visits, or a queue planted in the phone's storage — under their own login, told only "Offline
+// changes uploaded & merged". The login that queued the first change is noted beside the queue (um_outboxOwner); a
+// sign-in by another login is asked first (queueOwnerCheck, from selectUser): upload them under that login, named as
+// the other person's changes, or sign out and leave them for that person. Nothing of the queue is moved or dropped.
+const OUTBOX_OWNER = 'um_outboxOwner';
+let _outboxOwnerMem = '';
+function loginEmailOf(name){ const u = name && USERS[name]; return u ? String(u.email || '').trim().toLowerCase() : ''; }
+function outboxOwner(){ let v = ''; try{ v = localStorage.getItem(OUTBOX_OWNER) || ''; }catch(e){} return v || _outboxOwnerMem; }
+function outboxOwnerSet(email){ _outboxOwnerMem = email || ''; try{ if(email) localStorage.setItem(OUTBOX_OWNER, email); else localStorage.removeItem(OUTBOX_OWNER); }catch(e){} }
+function outboxOwnerNote(list){
+  if(!list.length){ if(outboxOwner()) outboxOwnerSet(''); return; }
+  if(outboxOwner()) return;
+  const me = currentUser ? loginEmailOf(currentUser.name) : '';
+  if(me) outboxOwnerSet(me);
+}
+// a queue left by v128 (no owner noted): the person this phone last signed in, when the phone remembers one
+(() => { try{
+  if(localStorage.getItem(OUTBOX_OWNER)) return;
+  const q = JSON.parse(localStorage.getItem('um_outbox') || '[]'), u = JSON.parse(localStorage.getItem(LAST_USER) || 'null');
+  if(Array.isArray(q) && q.length && u && typeof u.email === 'string' && u.email) localStorage.setItem(OUTBOX_OWNER, u.email.toLowerCase());
+}catch(e){} })();
+// The keys the app itself queues (persistNowInner: the merge-safe lists and the day plans; the delete log; chat and
+// memories). Any other key in the phone's queue was not put there by the app — a whole document never queues, it asks
+// for a retry — and is never sent (v129, C7: a planted "targets" was written under the supervisor's login).
+const QUEUE_KEYS = { visits: 1, tasks: 1, clinics: 1, events: 1, dayPlans: 1, tombs: 1, chat: 1, memories: 1 };
+function dropQueuedForeign(){
+  const l = outboxList(), keep = l.filter(k => QUEUE_KEYS[k]);
+  if(keep.length !== l.length){ console.warn('queue: left out what the app never queues: ' + l.filter(k => !QUEUE_KEYS[k]).join(', ')); outboxWrite(keep); }
+}
+async function queueOwnerCheck(name){
+  const list = outboxList().filter(k => QUEUE_KEYS[k]);
+  if(!list.length) return true;
+  const me = loginEmailOf(name), owner = outboxOwner();
+  if(!me || owner === me) return true;
+  currentUser = null;   // nothing goes to the cloud while this is asked (flushOutbox needs a person signed in)
+  const yes = await askQueueOwner(owner, list);
+  if(yes){ outboxOwnerSet(me); return true; }
+  if(FIREBASE_ENABLED && window.firebase){ _signedOutOf = me; signedOutKeep(me); firebase.auth().signOut().catch(()=>{}); }
+  forgetUser();
+  showGateScreen();
+  showToast('Signed out — the changes stay on this phone', 5000);
+  return false;
+}
+function askQueueOwner(owner, list){
+  const who = owner ? (Object.entries(USERS).find(([n, u]) => String(u.email || '').toLowerCase() === owner) || [null])[0] : null;
+  const named = who ? `<b dir="auto">${esc(typeof msName === 'function' ? msName(who) : who)}</b>` : owner ? `<bdi>${esc(owner)}</bdi>` : '';
+  const label = k => (UMCore.ALERT_KEY_LABEL && Object.prototype.hasOwnProperty.call(UMCore.ALERT_KEY_LABEL, k)) ? UMCore.ALERT_KEY_LABEL[k] : String(k);
+  const since = list.map(k => _outboxSince[k] || outboxSinceDevice()[k]).filter(Boolean).sort()[0];
+  const at = since ? new Date(since).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  return new Promise(resolve => {
+    let done = false;
+    const answer = v => { if(done) return; done = true; window.__queueAnswer = null; obs.disconnect(); closeModal(); resolve(v); };
+    window.__queueAnswer = answer;
+    showModal(`<h3 style="margin-top:0;" data-ic="cloud" data-tone="warn"><span>Changes waiting on this phone</span></h3>
+      <p style="font-size:13.5px; line-height:1.6;">${named ? `<span>This phone holds changes made by</span> ${named} <span>that have not reached the cloud yet:</span>` : '<span>This phone holds changes made by an earlier sign-in that have not reached the cloud yet:</span>'}</p>
+      <p style="font-size:13.5px; font-weight:600;">${list.map(k => `<span>${esc(label(k))}</span>`).join('<span data-notr> · </span>')}</p>
+      ${at ? `<p style="font-size:12.5px; color:var(--muted);"><span>Waiting since</span> <bdi>${esc(at)}</bdi></p>` : ''}
+      <p style="font-size:13px; line-height:1.55;"><span>If you go on, they are saved in the cloud under your login.</span></p>
+      <p style="font-size:12.5px; color:var(--muted); line-height:1.55;">${named ? `<span>Not now: you are signed out, and they stay on this phone until</span> ${named} <span>signs in here again.</span>` : '<span>Not now: you are signed out, and they stay on this phone.</span>'}</p>
+      <button class="btn secondary" data-queue="no" onclick="window.__queueAnswer && window.__queueAnswer(false)">Not now — sign out</button>
+      <button class="btn" data-queue="yes" onclick="window.__queueAnswer && window.__queueAnswer(true)">Upload them under my login</button>`);
+    // closed without an answer (the backdrop, the close button): "not now" — nothing is sent unasked
+    const back = document.getElementById('modalBack');
+    const obs = new MutationObserver(() => { if(!back.classList.contains('show')) answer(false); });
+    obs.observe(back, { attributes: true, attributeFilter: ['class'] });
+  });
 }
 function outboxAdd(key){ const l = outboxList(); if(!l.includes(key)){ l.push(key); return outboxWrite(l); } return !_outboxDeviceBad; }
 function outboxRemove(key){ outboxWrite(outboxList().filter(k=>k!==key)); }
@@ -2994,6 +3083,7 @@ async function flushOutbox(){
   if(_flushing || !navigator.onLine || !_bootLoaded || !currentUser) return;
   if(typeof retryPhotos === 'function') retryPhotos(); // photos kept on this phone until the cloud holds them (12-reports.js) — in the background, even with nothing queued
   dropQueuedErpMap(); // never replayed (see dropQueuedErpMap)
+  dropQueuedForeign(); // nor anything else the app never queues (v129)
   // A list the rules refused is sent again now and then (round 3: about hourly),
   // as well as at a sign-in and on the bar's "Try again".
   let due = 0;

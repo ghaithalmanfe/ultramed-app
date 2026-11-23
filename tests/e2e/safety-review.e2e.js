@@ -240,12 +240,19 @@ function seedCloud(extra){
     await P.page.waitForTimeout(300);
     const afterOut = await P.ev(() => ({ outbox: outboxList(), aside: Object.keys(localStorage).filter(k => /^um_refused:/.test(k)) }));
     mode.deny = null;
-    await P.ev(async () => { await selectUser('Dr. Ghaith', 'supervisor'); });
+    // v129 (the security audit's C7): her changes are never sent under his login unasked — he is asked first, naming her
+    // (queueOwnerCheck); here he chooses "Upload them under my login", and what had not uploaded then goes
+    await P.ev(() => { window.__selR1c = selectUser('Dr. Ghaith', 'supervisor'); });
+    await P.page.waitForTimeout(400);
+    const askedR1c = await P.ev(() => { const b = document.getElementById('modalBack'); return b && b.classList.contains('show') ? document.getElementById('modalInner').innerText.replace(/\s+/g, ' ') : ''; });
+    const unaskedR1c = { visit: cloudList('visits').some(v => v.notes === 'R1c visit logged offline'), task: cloudList('tasks').some(t => t.id === 'tR1c') };
+    await P.ev(async () => { const y = document.querySelector('#modalInner [data-queue="yes"]'); if(y) y.click(); await window.__selR1c; });
     await P.page.waitForTimeout(400);
     for(let i = 0; i < 3; i++) await P.tick();
-    check('R1c. she signs out on a shared phone while her queue uploads: what had not uploaded stays queued on the phone and uploads under the next sign-in',
-      afterOut.outbox.length > 0 && !afterOut.aside.length && cloudList('visits').some(v => v.notes === 'R1c visit logged offline') && cloudList('tasks').some(t => t.id === 'tR1c'),
-      { queued: q, afterSignOut: afterOut, visitInCloud: cloudList('visits').some(v => v.notes === 'R1c visit logged offline'), taskInCloud: cloudList('tasks').some(t => t.id === 'tR1c') });
+    check('R1c. she signs out on a shared phone while her queue uploads: what had not uploaded stays queued on the phone; the supervisor signing in on it is asked first (naming her), and it uploads once he chooses to',
+      afterOut.outbox.length > 0 && !afterOut.aside.length && /Changes waiting on this phone/.test(askedR1c) && /Mariam/.test(askedR1c)
+        && cloudList('visits').some(v => v.notes === 'R1c visit logged offline') && cloudList('tasks').some(t => t.id === 'tR1c'),
+      { queued: q, afterSignOut: afterOut, asked: askedR1c.slice(0, 160), unasked: unaskedR1c, visitInCloud: cloudList('visits').some(v => v.notes === 'R1c visit logged offline'), taskInCloud: cloudList('tasks').some(t => t.id === 'tR1c') });
     await P.ctx.close();
     // R1d — the sign-in ends while the app is open (Firebase says "no user"): the sign-in screen, the queue kept
     seedCloud();

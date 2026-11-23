@@ -129,7 +129,7 @@ function seed(cat){
   finally {
     await browser.close(); server.close();
     console.log(results.join('\n'));
-    console.log(failed ? `\n${failed} check(s) FAILED` : '\nAll checks passed');
+    console.log(failed ? `\n${failed} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
     process.exit(failed ? 1 : 0);
   }
 })();

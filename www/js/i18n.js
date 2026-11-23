@@ -2808,6 +2808,39 @@
     "Name A–Z": "الاسم A–Z",
     "Name Z–A": "الاسم Z–A",
     "Possible duplicate of": "قد تكون مكررة مع",
+    // the changes waiting on a phone belong to the login that made them (the security audit's C7)
+    "Changes waiting on this phone": "تغييرات بانتظار الإرسال على هذا الهاتف",
+    "This phone holds changes made by": "على هذا الهاتف تغييرات أجراها",
+    "that have not reached the cloud yet:": "ولم تصل إلى السحابة بعد:",
+    "This phone holds changes made by an earlier sign-in that have not reached the cloud yet:": "على هذا الهاتف تغييرات من تسجيل دخول سابق لم تصل إلى السحابة بعد:",
+    "Waiting since": "بانتظار الإرسال منذ",
+    "If you go on, they are saved in the cloud under your login.": "إن تابعت، تُحفظ في السحابة باسم حسابك.",
+    "Not now: you are signed out, and they stay on this phone until": "ليس الآن: يُسجَّل خروجك وتبقى على هذا الهاتف إلى أن يسجّل",
+    "signs in here again.": "دخوله هنا مرة أخرى.",
+    "Not now: you are signed out, and they stay on this phone.": "ليس الآن: يُسجَّل خروجك وتبقى على هذا الهاتف.",
+    "Not now — sign out": "ليس الآن — تسجيل الخروج",
+    "Upload them under my login": "ارفعها باسم حسابي",
+    "Signed out — the changes stay on this phone": "تم تسجيل الخروج — تبقى التغييرات على هذا الهاتف",
+    // owners and prices changed outside the supervisor's screens (the security audit's C4)
+    "Clinic owners or prices changed outside your screens": "أصحاب عيادات أو أسعار تغيّرت من خارج شاشاتك",
+    "Changed since this phone last saw them — on another device, or written directly. Nothing was changed back.": "تغيّرت منذ آخر مرة رآها هذا الهاتف — على جهاز آخر، أو كُتبت مباشرة. لم يُرجَع شيء.",
+    "Review": "مراجعة",
+    "Changed outside your screens": "تغيّرت من خارج شاشاتك",
+    "Any team login can write the clinic list and the catalog. These owners, handovers, shared or government marks and prices changed since this phone last saw them, other than by your own taps here.": "يستطيع أي حساب في الفريق أن يكتب قائمة العيادات والكتالوج. تغيّر هؤلاء المالكون والتسليمات وعلامات الحسابات المشتركة والحكومية والأسعار منذ آخر مرة رآها هذا الهاتف، بغير نقراتك أنت هنا.",
+    "Nothing changed outside your screens.": "لم يتغيّر شيء من خارج شاشاتك.",
+    "Keep all": "إبقاء الكل",
+    "Previous owner": "المالك السابق",
+    "Handover from": "التسليم من",
+    "Shared from": "مشترك من",
+    "Government account": "حساب حكومي",
+    "Price": "السعر",
+    "yes": "نعم",
+    "no": "لا",
+    "Put back what this phone saw before? The list is saved again with it.": "إرجاع ما رآه هذا الهاتف سابقًا؟ تُحفظ القائمة به مرة أخرى.",
+    "Yes, put it back": "نعم، أرجِعه",
+    "Put back": "إرجاع",
+    "Keep": "إبقاء",
+    "Kept — this phone now sees them as they are": "أُبقيت — يراها هذا الهاتف الآن كما هي",
     // ---- end of v129 ----
   };
 
@@ -3353,6 +3386,8 @@
     // === END POLISH ===
     // v129: the clinic list's duplicates filter
     [/^Possible duplicates \((\d+)\)$/, function (m) { return 'احتمال تكرار (' + m[1] + ')'; }],
+    [/^(.+): put back as this phone saw it$/, function (m) { return m[1] + ': أُرجِع كما رآه هذا الهاتف'; }],
+    [/^(.+): price put back$/, function (m) { return m[1] + ': أُرجِع السعر'; }],
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:

@@ -187,6 +187,7 @@ async function toggleGovClinic(clinicId){
   const c = clinics.find(x => x.id === clinicId); if(!c) return;
   c.gov = !UMCore.isGovClinic(c);
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) ownerSeenTake('clinic', c.id); // (this phone's own change: never listed as made elsewhere, v129)
   saveToast(r, 'clinics', `${c.name}: ${c.gov ? 'government account – visited every week' : 'not a government account'}`);
   renderAdminTerritory();
 }

@@ -1514,6 +1514,7 @@ async function saveEditProduct(key){
     if(document.getElementById('apPriceBody')) renderAdminPrices();
     return;
   }
+  if(typeof ownerSeenTake === 'function') ownerSeenTake('price', productKey(p)); // the supervisor's own price (v129)
   const pairs = await repoint(p);
   closeModal();
   saveToastAll([[pr, 'products']].concat(pairs), '✅ Product updated'); // "updated" only when every list it changed landed

@@ -69,6 +69,7 @@ function renameRepInLists(prevName, name){
     if(calRepFilter===prevName) calRepFilter = name;
     const keys = ['clinics', 'visits', 'tasks', 'dayPlans', 'events', 'targets', 'erpSales']; // (literal keys below: tests/rules scans every write target)
     const got = await Promise.all([persistTold('clinics'), visitsOk ? persistTold('visits') : Promise.resolve({ ok: false }), persistTold('tasks'), persistTold('dayPlans'), persistTold('events'), persistTold('targets'), persistTold('erpSales')]);
+    if(got[0] && (got[0].ok || (got[0].outcome && got[0].outcome.queued)) && typeof ownerSeenRename === 'function') ownerSeenRename(prevName, name); // (v129)
     return got.map((r, i) => [r, keys[i]]);
   });
 }

@@ -817,7 +817,7 @@ function teamFromPhone(){
   ['chat', 'memories'].forEach(key => {
     if(_teamFrom[key]) return;
     if(teamList(key).length){ _teamFrom[key] = 'phone'; return; }
-    const a = UMCore.safeParse(mirrorGet(key), null);
+    const a = typeof mirrorMine !== 'function' || mirrorMine(key) ? UMCore.safeParse(mirrorGet(key), null) : null;   // (only this login's own copy, v129)
     // no copy on this phone (never read here, or it did not fit: a full phone): unknown until a read — read just after the
     // first paint (teamDue), its screens say it is loading meanwhile
     if(Array.isArray(a)){ setTeamList(key, teamMerge(key, a, null)); _teamFrom[key] = 'phone'; }

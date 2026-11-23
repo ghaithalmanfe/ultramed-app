@@ -2,6 +2,9 @@
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- GATE / USER ----
 async function selectUser(name, role){
+  // the changes waiting on this phone belong to the login that made them (v129, the security audit's C7): another
+  // login is asked before they are sent under it, or signs out and leaves them (queueOwnerCheck, 04-sync.js)
+  if(typeof queueOwnerCheck === 'function' && !(await queueOwnerCheck(name))) return;
   if(typeof dropFullBackup === 'function') dropFullBackup(); // a full backup held for the last sign-in is never handed to the next (13-exports.js)
   // a screen drawn for someone else (another person's session, or the early open of the person this phone last signed
   // in) is never shown to this one: covered until this person's own screen is drawn (v126 speed, part 3; 04-sync.js)

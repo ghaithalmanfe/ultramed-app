@@ -266,6 +266,7 @@ async function toggleSharedClinic(clinicId){
   if(c.shared){ c.shared = false; c.sharedSince = null; }
   else { c.shared = true; c.sharedSince = todayStr().slice(0, 7) + '-01'; }
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) ownerSeenTake('clinic', c.id); // (this phone's own change: never listed as made elsewhere, v129)
   saveToast(r, 'clinics', c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
   renderAdminTerritory();
   renderAll();
@@ -310,7 +311,10 @@ async function applyDistributionUpload(){
   const plan = _distPlan; _distPlan = null;
   const before = JSON.stringify(clinics);
   const n = UMCore.applyDistributionPlan(plan, clinics, REPS);
+  const was = new Map((UMCore.safeParse(before, []) || []).map(c => [String(c && c.id), JSON.stringify(ownerPick(c || {}))]));
+  const moved = clinics.filter(c => c && was.get(String(c.id)) !== JSON.stringify(ownerPick(c))).map(c => c.id);
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) moved.forEach(id => ownerSeenTake('clinic', id)); // (v129)
   if(!r.ok){
     clinics = JSON.parse(before);
     mirrorSave('clinics', JSON.stringify(storedClinics())); // the phone's copy too: a queued save must never upload the distribution later
@@ -339,6 +343,7 @@ async function reassignClinic(clinicId, newRep){
   }
   c.rep = newRep;
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) ownerSeenTake('clinic', c.id); // (this phone's own change: never listed as made elsewhere, v129)
   saveToast(r, 'clinics', `${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
   renderAdminTerritory();
   renderAll();
@@ -432,6 +437,7 @@ async function updateProductPrice(key, val){
   if(isNaN(n) || n<0){ showToast('Enter a valid price'); return; }
   p.price = Math.round(n*100)/100;
   const r = await persistTold('products');
+  if(r.ok) ownerSeenTake('price', key); // (v129)
   saveToast(r, 'products', `${p.name.slice(0,28)} → ${money(p.price)}`);
 }
 
@@ -1018,3 +1024,147 @@ async function commitClinicImport(confirmed){
   saveToast(r, 'clinics', `✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
 }
 
+
+// ---- Clinic owners and prices changed outside the supervisor's screens (v129, the security audit's C4) ----
+// The rules let any team login write the clinic list and the catalog whole, so a rep's direct write could move another
+// rep's clinic — and its sales lines with it, closed months included — mark a clinic shared or government, or change a
+// price; the app's own screens let only the supervisor do these. Until those decisions have a supervisor-only document
+// (a data-model change and a rules change the owner publishes), the supervisor's phone keeps what it last saw of them
+// (um_ownerSeen, this phone only: each clinic's owner, previous owner, handover month, shared and government marks,
+// each product's price) and, after every read of the cloud, says what changed since other than by his own taps here
+// (ownerSeenTake): "Put back" (asked first) saves the earlier value again, "Keep" takes the new one. Nothing is
+// written without his tap; a clinic or product it has not seen before is only noted.
+const OWNER_SEEN = 'um_ownerSeen';
+const OWNER_FIELDS = ['rep', 'prevRep', 'repSince', 'shared', 'sharedSince', 'gov'];
+const OWNER_FIELD_LABEL = { rep: 'Owner', prevRep: 'Previous owner', repSince: 'Handover from', shared: 'Shared account', sharedSince: 'Shared from', gov: 'Government account', price: 'Price' };
+let _ownerDiffs = [], _ownerAsk = null, _ownerSig = '[]';
+function ownerVal(v){ return v === undefined || v === '' ? null : v; }
+function ownerPick(c){ const o = {}; OWNER_FIELDS.forEach(f => { o[f] = ownerVal(c[f]); }); return o; }
+function priceVal(p){ return p && p.price != null && p.price !== '' && isFinite(Number(p.price)) ? Number(p.price) : null; }
+function ownerSeenLoad(){
+  let o = null; try{ o = UMCore.safeParse(localStorage.getItem(OWNER_SEEN), null); }catch(e){}
+  if(!o || typeof o !== 'object' || !o.clinics || typeof o.clinics !== 'object' || !o.prices || typeof o.prices !== 'object') return null;
+  return { v: 1, clinics: Object.assign(Object.create(null), o.clinics), prices: Object.assign(Object.create(null), o.prices) };
+}
+function ownerSeenSave(seen){ try{ localStorage.setItem(OWNER_SEEN, JSON.stringify({ v: 1, clinics: seen.clinics, prices: seen.prices })); }catch(e){} }
+// the supervisor's own change landed: this phone sees it as it is now (never a change that came from elsewhere)
+function ownerSeenTake(kind, id){
+  const seen = ownerSeenLoad(); if(!seen) return;
+  if(kind === 'clinic'){ const c = clinics.find(x => x && String(x.id) === String(id)); if(c) seen.clinics[String(id)] = ownerPick(c); }
+  else { const p = findProduct(id); if(p) seen.prices[String(productKey(p))] = priceVal(p); }
+  ownerSeenSave(seen);
+  _ownerDiffs = _ownerDiffs.filter(d => !(d.kind === kind && d.id === String(kind === 'price' ? (findProduct(id) ? productKey(findProduct(id)) : id) : id)));
+  renderOwnerWatch();
+}
+function ownerSeenRename(prevName, name){
+  const seen = ownerSeenLoad(); if(!seen) return;
+  Object.keys(seen.clinics).forEach(k => { const o = seen.clinics[k]; if(o.rep === prevName) o.rep = name; if(o.prevRep === prevName) o.prevRep = name; });
+  ownerSeenSave(seen);
+}
+function ownerWatch(){
+  // another person signed in on this page: the card of the supervisor's session goes with him
+  if(!currentUser || currentUser.role !== 'supervisor'){ _ownerDiffs = []; _ownerSig = '[]'; renderOwnerWatch(); return; }
+  // only lists read from the cloud this refresh (never this phone's copy, never a read that failed)
+  if(_loadFailed.clinics || _mirrorUsed.clinics || _loadFailed.products || _mirrorUsed.products) return;
+  let seen = ownerSeenLoad(); const fresh = !seen;
+  if(!seen) seen = { v: 1, clinics: Object.create(null), prices: Object.create(null) };
+  const diffs = []; let grew = false;
+  clinics.forEach(c => {
+    if(!c || c.id == null) return;
+    const k = String(c.id), now = ownerPick(c), was = seen.clinics[k];
+    if(!was){ seen.clinics[k] = now; grew = true; return; }
+    OWNER_FIELDS.forEach(f => { const a = ownerVal(was[f]); if(JSON.stringify(a) !== JSON.stringify(now[f])) diffs.push({ kind: 'clinic', id: k, name: c.name, field: f, was: a, now: now[f] }); });
+  });
+  (products || []).forEach(p => {
+    if(!p) return;
+    const k = String(productKey(p)), now = priceVal(p);
+    if(!Object.prototype.hasOwnProperty.call(seen.prices, k)){ seen.prices[k] = now; grew = true; return; }
+    const was = ownerVal(seen.prices[k]);
+    if(was !== now) diffs.push({ kind: 'price', id: k, name: p.name, field: 'price', was, now });
+  });
+  if(fresh || grew) ownerSeenSave(seen);
+  // a round that finds what the last one found changes nothing on the page (v126 speed: a quiet round draws nothing)
+  const sig = JSON.stringify(diffs);
+  if(sig === _ownerSig) return;
+  _ownerSig = sig;
+  _ownerDiffs = diffs;
+  renderOwnerWatch();
+  if(document.getElementById('modalBack').classList.contains('show') && document.querySelector('#modalInner [data-ownerwatch]')) openOwnerWatch();
+}
+function ownerShow(field, v){
+  if(v == null) return '—';
+  if(field === 'price') return money(v);
+  if(field === 'shared' || field === 'gov') return v ? 'yes' : 'no';
+  if(field === 'repSince' || field === 'sharedSince') return fmtDate(v);
+  return String(v);
+}
+function ownerGroups(){
+  const by = new Map();
+  _ownerDiffs.forEach(d => { const k = d.kind + '|' + d.id; if(!by.has(k)) by.set(k, { kind: d.kind, id: d.id, name: d.name, rows: [] }); by.get(k).rows.push(d); });
+  return [...by.values()];
+}
+function renderOwnerWatch(){
+  const el = document.getElementById('ownerWatch'); if(!el) return;
+  const n = ownerGroups().length;
+  if(!currentUser || currentUser.role !== 'supervisor' || !n){ if(el.style.display !== 'none' || el.innerHTML) { el.style.display = 'none'; el.innerHTML = ''; } return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="card" style="border-inline-start:4px solid var(--amber-ink, #8a5a00); margin-bottom:10px;">
+    <div class="row-between" style="gap:10px; align-items:flex-start;">
+      <div style="flex:1; min-width:0;"><div class="clinic-name"><span>Clinic owners or prices changed outside your screens</span> (${n})</div>
+        <div class="clinic-sub"><span>Changed since this phone last saw them — on another device, or written directly. Nothing was changed back.</span></div></div>
+      <button class="chip small" onclick="openOwnerWatch()">Review</button>
+    </div></div>`;
+}
+function openOwnerWatch(){
+  if(!requireAdmin()) return;
+  const groups = ownerGroups();
+  const rows = groups.map(g => {
+    const key = g.kind + '|' + g.id, asking = _ownerAsk === key;
+    const lines = g.rows.map(d => `<div style="font-size:12.5px;"><span>${OWNER_FIELD_LABEL[d.field] || d.field}</span>: <bdi>${esc(ownerShow(d.field, d.was))}</bdi> → <b><bdi>${esc(ownerShow(d.field, d.now))}</bdi></b></div>`).join('');
+    const acts = asking
+      ? `<div style="font-size:12.5px; margin-top:6px;"><span>Put back what this phone saw before? The list is saved again with it.</span></div>
+         <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;"><button class="chip small" data-k="${esc(key)}" onclick="ownerPutBack(this.dataset.k, true)">↩️ <span>Yes, put it back</span></button><button class="chip small" onclick="_ownerAsk=null; openOwnerWatch()"><span>Cancel</span></button></div>`
+      : `<div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;"><button class="chip small" data-k="${esc(key)}" onclick="ownerPutBack(this.dataset.k)">↩️ <span>Put back</span></button><button class="chip small" data-k="${esc(key)}" onclick="ownerKeep(this.dataset.k)"><span>Keep</span></button></div>`;
+    return `<div class="card" style="margin-bottom:8px;"><div class="clinic-name" dir="auto">${esc(g.name || g.id)}</div><div class="clinic-sub"><span>${g.kind === 'price' ? 'Product' : 'Clinic'}</span></div>${lines}${acts}</div>`;
+  }).join('');
+  showModal(`<h3 style="margin-top:0;" data-ic="shield" data-tone="warn" data-ownerwatch="1"><span>Changed outside your screens</span></h3>
+    <p style="font-size:12.5px; color:var(--muted); line-height:1.55;"><span>Any team login can write the clinic list and the catalog. These owners, handovers, shared or government marks and prices changed since this phone last saw them, other than by your own taps here.</span></p>
+    ${rows || '<div class="empty"><span>Nothing changed outside your screens.</span></div>'}
+    ${groups.length ? `<button class="btn secondary" onclick="ownerKeepAll()">Keep all</button>` : ''}
+    <button class="btn" onclick="closeModal()">Close</button>`);
+}
+async function ownerPutBack(key, confirmed){
+  if(!requireAdmin()) return;
+  const [kind, id] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)];
+  if(!confirmed){ _ownerAsk = key; openOwnerWatch(); return; }
+  _ownerAsk = null;
+  const seen = ownerSeenLoad(); if(!seen){ openOwnerWatch(); return; }
+  if(kind === 'clinic'){
+    const c = clinics.find(x => x && String(x.id) === id), was = seen.clinics[id];
+    if(!c || !was){ showToast('This changed since you were asked — nothing was changed', 4000); openOwnerWatch(); return; }
+    OWNER_FIELDS.forEach(f => { c[f] = ownerVal(was[f]); });
+    const r = await persistTold('clinics');
+    saveToast(r, 'clinics', `↩️ ${c.name}: put back as this phone saw it`, 4000);
+    if(r.ok) _ownerDiffs = _ownerDiffs.filter(d => !(d.kind === 'clinic' && d.id === id));
+  } else {
+    const p = (products || []).find(x => x && String(productKey(x)) === id);
+    if(!p || !Object.prototype.hasOwnProperty.call(seen.prices, id)){ showToast('This changed since you were asked — nothing was changed', 4000); openOwnerWatch(); return; }
+    p.price = ownerVal(seen.prices[id]);
+    const r = await persistTold('products');
+    saveToast(r, 'products', `↩️ ${p.name}: price put back`, 4000);
+    if(r.ok) _ownerDiffs = _ownerDiffs.filter(d => !(d.kind === 'price' && d.id === id));
+  }
+  renderOwnerWatch(); renderAll(); openOwnerWatch();
+}
+function ownerKeep(key){
+  if(!requireAdmin()) return;
+  const [kind, id] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)];
+  ownerSeenTake(kind === 'price' ? 'price' : 'clinic', id);
+  openOwnerWatch();
+}
+function ownerKeepAll(){
+  if(!requireAdmin()) return;
+  ownerGroups().forEach(g => ownerSeenTake(g.kind === 'price' ? 'price' : 'clinic', g.id));
+  closeModal();
+  showToast('✅ Kept — this phone now sees them as they are', 3500);
+}
