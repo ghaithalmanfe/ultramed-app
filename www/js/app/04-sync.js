@@ -43,7 +43,14 @@ function applyDoctorRemap(){
   });
   return changed;
 }
+// A stored text field the screens call string methods on, as text (v129, the security audit's C6: a clinic name that
+// is a number stopped the main screen of its owner and the supervisor): a number becomes its digits, another type ''.
+function asText(v){ return typeof v === 'string' ? v : (typeof v === 'number' && isFinite(v)) ? String(v) : ''; }
 function normalizeClinic(c){
+  if(c.name != null && typeof c.name !== 'string') c.name = asText(c.name);
+  if(c.rep != null && typeof c.rep !== 'string') c.rep = asText(c.rep);
+  if(c.contact != null && typeof c.contact !== 'string') c.contact = asText(c.contact);
+  if(c.phone != null && typeof c.phone !== 'string') c.phone = asText(c.phone);
   c.profileNotes = c.profileNotes || '';
   c.account = c.account || null;
   // 'prescription' | 'direct' | 'both' | null — many clinics do both: they
@@ -846,8 +853,12 @@ async function retryVisitsArchives(){
   showToast(_visitsBroken.length ? '⚠️ Some months are still not available' : '✅ All the visits have loaded');
 }
 // One save at a time; throws on failure so persist() can queue it offline.
+// A save's options are its caller's own properties only (v129, the audit's C3): one read off Object.prototype — written
+// there by a stored "__proto__" in some tally — turned an ordinary visits save into the whole-day Restore's overwrite
+// (authoritative: other phones' visits not read yet were deleted) and could let a list shrink past its guard.
+function ownOpts(o){ const r = Object.create(null); if(o && typeof o === 'object') Object.keys(o).forEach(k => { r[k] = o[k]; }); return r; }
 function persistVisits(opts){
-  const run = () => persistVisitsInner(opts || {});
+  const run = () => persistVisitsInner(ownOpts(opts));
   _localGen++; _localSaving++; // a refresh on its way keeps the lists (see persist)
   const p = _visitsSaveChain.then(run, run);
   _visitsSaveChain = p.catch(() => {});
@@ -1971,7 +1982,13 @@ async function loadAllNow(opts){
       if(clinicsDoc) reinsertKeptClinics(clinicsBefore); // a branch saved while this read was on its way stays
       took.add('clinics');
     }
-    if(!sameText('products', p)){ products = docOf('products', p, null) || PRODUCTS_SEED; assignProductKeys(); took.add('products'); }
+    if(!sameText('products', p)){
+      // only products that are records, their name and brand as text (v129, the audit's C6): one odd entry no longer stops a screen
+      const pd = docOf('products', p, null);
+      products = Array.isArray(pd) ? pd.filter(x => x && typeof x === 'object' && !Array.isArray(x)).map(x => { if(x.name != null && typeof x.name !== 'string') x.name = asText(x.name); if(x.brand != null && typeof x.brand !== 'string') x.brand = asText(x.brand); return x; }) : (pd || PRODUCTS_SEED);
+      if(!Array.isArray(products)) products = PRODUCTS_SEED;
+      assignProductKeys(); took.add('products');
+    }
     if(!_visitsSaving){
       // the visits on screen are those texts already (loadVisits: run.visitsSame) — kept, unless the deletes known for
       // them or the doctor merges changed since (a merge is applied once, to the visits as read: applyDoctorRemap)
@@ -2006,7 +2023,7 @@ async function loadAllNow(opts){
     if(plansSame) settleHeld('dayPlans', _onScreen.ids.dayPlans); else { const d = docOf('dayPlans', dp, {}); if(dp && dp.value != null && d && typeof d === 'object') settleHeld('dayPlans', planKeysOf(d)); }
     if(!(tasksSame && keptAs('tasks'))){ const d = docOf('tasks', t, []); tasks = (Array.isArray(d) ? d : []).filter(notDeleted('tasks')); took.add('tasks'); }
     if(!(eventsSame && keptAs('events'))){ const d = docOf('events', ev, []); events = (Array.isArray(d) ? d : []).filter(notDeleted('events')); took.add('events'); }
-    if(!plansSame){ dayPlans = docOf('dayPlans', dp, {}); took.add('dayPlans'); }
+    if(!plansSame){ dayPlans = UMCore.cleanDayPlans(docOf('dayPlans', dp, {})); took.add('dayPlans'); }
     // The base of the next three-way merge: a real read is exactly what the
     // screen now shows; a key waiting in the queue keeps what the cloud last
     // confirmed (kept on the phone when it was queued — a reopened phone).
@@ -2196,12 +2213,16 @@ async function loadAllNow(opts){
     document.getElementById('app').style.display = 'block';
     document.getElementById('bottomNav').style.display = 'flex';
     welcomeDismissed = false;
-    renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours();
+    try{ renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours(); }catch(e){ console.error('drawing the screen', e); } // (v129: start-up goes on; the next round draws again)
     copyLineSet('updating');
     updateSyncBadge();
     return 'drawn';
   }
-  if(crashed || raced || took.size || _onScreen.drawn !== drawnFor){ renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours(); }
+  if(crashed || raced || took.size || _onScreen.drawn !== drawnFor){
+    // a screen that cannot be drawn never stops the start (v129, the audit's C6): the queue, the copy and the daily
+    // backup still run, and the next round draws again
+    try{ renderAll(); _onScreen.drawn = drawnFor; _onScreen.hour = new Date().getHours(); }catch(e){ console.error('drawing the screen', e); }
+  }
   else if(typeof msClock === 'function') msClock();
   if(typeof erpNudgeSync === 'function') erpNudgeSync(); // the sales card says what holds now, even when nothing else was drawn again (10)
   _bootLoaded = true;
@@ -3278,7 +3299,8 @@ function mergeDayPlans(local, cloud, baseStr){
   keepWhatCloudHolds('dayPlans', cloud); // (as mergeById: a plan an older app brought back stays)
   const b = baseStr !== undefined ? baseStr : _dpBase; // the base the saved list was taken with (an overlapping save may move _dpBase)
   const base = b ? UMCore.safeParse(b, null) : null;
-  return UMCore.mergeDayPlans3(local || {}, cloud || {}, base, _tombstones.dayPlans);
+  // each side read as the screens read it (UMCore.cleanDayPlans): a copy that is not day plans counts as no copy (v129)
+  return UMCore.mergeDayPlans3(UMCore.cleanDayPlans(local), UMCore.cleanDayPlans(cloud), base && typeof base === 'object' ? UMCore.cleanDayPlans(base) : null, _tombstones.dayPlans);
 }
 // ---- Saves vs the background refresh (v121) ----
 // loadAll reads every list at once and assigns them when the slowest read is
@@ -3338,7 +3360,7 @@ function persistNow(key, opts){
   return p;
 }
 async function persistNowInner(key, opts){
-  opts = opts || {};
+  opts = ownOpts(opts);
   // What THIS call did — kept for persistOutcome, and told to its own caller
   // (opts.told, see persistFor / persistTold): another save of the same key
   // can start before that caller gets to read persistOutcome.
@@ -3436,7 +3458,7 @@ async function persistNowInner(key, opts){
         else if(key === 'tasks') tasks = value;
         else if(key === 'clinics'){ clinics = normalizeClinics(value); hidePlaceholderClinics(); }
         else if(key === 'events') events = value;
-        else if(key === 'dayPlans') dayPlans = value;
+        else if(key === 'dayPlans') dayPlans = UMCore.cleanDayPlans(value);
         console.log(`merge-on-save: kept ${applied.recovered} ${key} entr${applied.recovered===1?'y':'ies'} saved by another device`);
       }
       if(key === 'dayPlans') _dpBase = written; // the cloud now holds exactly this

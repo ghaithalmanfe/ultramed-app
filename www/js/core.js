@@ -29,7 +29,7 @@
   // line break) would come back as another string — and be saved as another key.
   // A number is written as its digits (v129: it used to throw, so numeric fields were left unescaped); an empty value
   // (null, undefined, '', 0, false) is still ''.
-  function esc(s){ return (s ? String(s) : '').replace(/[&<>"'\r]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','\r':'&#13;'}[m])); }
+  function esc(s){ return (typeof s === 'string' ? s : (typeof s === 'number' && s) ? String(s) : '').replace(/[&<>"'\r]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','\r':'&#13;'}[m])); }
   // A value carried inside the JavaScript of an inline handler — onclick="f('${jsArg(v)}')" (v129, the security
   // audit's C1). esc() is the wrong layer there: the HTML parser turns &#39; back into ' before the handler is
   // compiled, so an escaped quote still ended the string. jsArg writes every character that could end the string,
@@ -106,18 +106,26 @@
   // ---- persistence helpers ----
   // One corrupt stored entry must not take the rest of the data down with it:
   // callers parse each key through this instead of a bare JSON.parse.
+  // A key named "__proto__" (v129, the security audit's C3): JSON.parse keeps it as an ordinary own property, and code
+  // that walks or copies such an object (the delete log's lists, a day's plan keys) would then write into
+  // Object.prototype for every object of the page. No record of this app has one, so it is left out. The text is
+  // searched first: a document without the word is parsed once, as before.
+  function protoKeyless(k, v){ return k === '__proto__' ? undefined : v; }
   function safeParse(raw, fallback){
     if(raw === null || raw === undefined) return fallback;
-    try{ return JSON.parse(raw); }catch(e){ return fallback; }
+    try{ return typeof raw === 'string' && raw.indexOf('"__proto__"') >= 0 ? JSON.parse(raw, protoKeyless) : JSON.parse(raw); }catch(e){ return fallback; }
   }
 
   // ---- CSV ----
   function csvEscape(v){
     if(v===null||v===undefined) return '';
-    let s = String(v);
-    // Neutralize spreadsheet formula injection (=CMD(), @SUM(), +/- payloads)
-    // while leaving plain numbers like "+96512345678" or "-5.5" untouched.
-    if(/^[=@]/.test(s) || (/^[+-]/.test(s) && !/^[+-]\d+(\.\d+)?$/.test(s))) s = "'" + s;
+    // A TAB, CR, VT or FF inside a value becomes a space (v129, the security audit's C8): a paste splits cells on TAB
+    // and rows on CR, so a stored "Clinic<TAB>=2+3" made a cell of its own that the spreadsheet evaluated.
+    let s = String(v).replace(/[\t\r\v\f]/g, ' ');
+    // Neutralize spreadsheet formula injection (=CMD(), @SUM(), +/- payloads) at the start of the value and of every
+    // line inside it, after any leading spaces, while leaving plain numbers like "+96512345678" or "-5.5" untouched.
+    const risky = line => /^\s*[=@]/.test(line) || (/^\s*[+-]/.test(line) && !/^\s*[+-]\d+(\.\d+)?\s*$/.test(line));
+    s = s.split('\n').map(line => risky(line) ? "'" + line : line).join('\n');
     if(s.includes(',')||s.includes('"')||s.includes('\n')) return '"'+s.replace(/"/g,'""')+'"';
     return s;
   }
@@ -293,7 +301,7 @@
       !t.done && inRange(t.dueDate, from, to) && (wantRep(t.rep) || t.rep === 'Team'));
     // per-rep breakdown from the visits in range — visits mean FIELD visits,
     // consistent with the top-level fieldVisits and the scorecard.
-    const byRep = {};
+    const byRep = Object.create(null);
     vis.forEach(v => {
       const r = byRep[v.rep] || (byRep[v.rep] = { rep: v.rep, visits: 0, orders: 0, revenue: 0, contacts: 0 });
       if(!v.orderOnly && !v.callOnly) r.visits++;
@@ -521,7 +529,7 @@
     }
 
     // 7. Clinics visited again and again with nothing to show for it.
-    const byClinic = {};
+    const byClinic = Object.create(null);
     field.forEach(v => {
       const b = byClinic[v.clinicId] || (byClinic[v.clinicId] = { n: 0, orders: 0 });
       b.n++; if(v.orderTaken) b.orders++;
@@ -536,7 +544,7 @@
 
     // 8. All the eggs in one basket.
     if(s.revenue > 0){
-      const revByClinic = {};
+      const revByClinic = Object.create(null);
       vis.forEach(v => { revByClinic[v.clinicId] = (revByClinic[v.clinicId] || 0) + (v.orderTotal || 0); });
       const ids = Object.keys(revByClinic).sort((a, b) => revByClinic[b] - revByClinic[a]);
       const share = Math.round(revByClinic[ids[0]] / s.revenue * 100);
@@ -947,7 +955,7 @@
     return FAMILY_TYPE_WORDS.filter(function(w){ return low.indexOf(w) >= 0; }).sort().join('+');
   }
   function clinicFamilies(clinics){
-    var byKey = {}, byClinic = {}, fams = {};
+    var byKey = Object.create(null), byClinic = {}, fams = {};
     (clinics || []).forEach(function(c){
       if(!c.rep) return; // unassigned clinics never auto-cluster
       var tok = normClinicName(c.name).split(' ')[0] || '';
@@ -1041,14 +1049,14 @@
     if(!clinics.length) return out;
     clinics.forEach(function(c){ out.byClinic[c.id] = { total: 0, byBrand: {} }; });
     // Brand sales per clinic from the ERP rows (invoice lines only).
-    var salesByBrand = {}; // brand -> {clinicId: net}
+    var salesByBrand = Object.create(null); // brand -> {clinicId: net}
     var match = erpMatcher(clinics, opts.erpMap); // each customer name once (v126 speed)
     (opts.erpRows || []).forEach(function(r){
       if(r.type === 'return') return;
       var m = match((r.customer || '').trim());
       if(!m.clinicId || !out.byClinic[m.clinicId]) return;
       var b = normBrand(r.brand);
-      (salesByBrand[b] = salesByBrand[b] || {})[m.clinicId] =
+      (salesByBrand[b] = salesByBrand[b] || Object.create(null))[m.clinicId] =
         (salesByBrand[b][m.clinicId] || 0) + Math.max(0, r.net || 0);
     });
     var clsW = { A: 3, B: 2, C: 1 };
@@ -1125,7 +1133,7 @@
     var target = normBrand(opts.brand);
     var gap = opts.gap || 0;
     if(!(gap > 0)) return [];
-    var stats = {};
+    var stats = Object.create(null);
     var add = function(rows, mine){
       (rows || []).forEach(function(r){
         if(r.type === 'return' || !(r.net > 0) || !(r.qty > 0)) return;
@@ -1242,7 +1250,7 @@
     // opts.erpLines: the ERP part made by crossSellErpLines from the very rows, clinics, links and catalog passed (a
     // caller showing the guides of several clinics of one state makes it once, v126 speed part 4) — else made here
     var lines = opts.erpLines ? opts.erpLines.slice() : crossSellErpLines(opts.erpRows, opts.share && opts.share.clinics === opts.clinics && opts.share.erpMap === opts.erpMap ? opts.share.match : erpMatcher(clinics, opts.erpMap), products);
-    var byKey = {};
+    var byKey = Object.create(null);
     products.forEach(function(pr){ byKey[pr._key || pr.id] = pr; });
     (opts.visits || []).forEach(function(v){
       if(!v || !v.clinicId) return;
@@ -1256,15 +1264,15 @@
       });
     });
 
-    var mineByProduct = {}, myCat = {}, clinicCats = {}, catClinics = {}, marketByCat = {};
+    var mineByProduct = Object.create(null), myCat = Object.create(null), clinicCats = Object.create(null), catClinics = Object.create(null), marketByCat = Object.create(null);
     lines.forEach(function(l){
       var cat = l.cat;
       if(cat){
-        (clinicCats[l.clinicId] = clinicCats[l.clinicId] || {})[cat] = true;
-        (catClinics[cat] = catClinics[cat] || {})[l.clinicId] = true;
-        var mc = marketByCat[cat] || (marketByCat[cat] = { qty: 0, net: 0, prods: {} });
+        (clinicCats[l.clinicId] = clinicCats[l.clinicId] || Object.create(null))[cat] = true;
+        (catClinics[cat] = catClinics[cat] || Object.create(null))[l.clinicId] = true;
+        var mc = marketByCat[cat] || (marketByCat[cat] = { qty: 0, net: 0, prods: Object.create(null) });
         mc.qty += l.qty; mc.net += l.net;
-        var mp = mc.prods[l.product] || (mc.prods[l.product] = { qty: 0, net: 0, clinics: {}, brand: l.brand });
+        var mp = mc.prods[l.product] || (mc.prods[l.product] = { qty: 0, net: 0, clinics: Object.create(null), brand: l.brand });
         mp.qty += l.qty; mp.net += l.net; mp.clinics[l.clinicId] = true;
       }
       if(l.clinicId !== me.id) return;
@@ -1663,7 +1671,7 @@
   // (planEntries3) — the list this device changed used to win whole, so a
   // clinic another phone added to the same day was lost.
   function mergeDayPlans3(local, cloud, base, tombs){
-    var out = {}, recovered = 0;
+    var out = Object.create(null), recovered = 0;
     var tomb = tombs || { has: function(){ return false; } };
     var keysOf = function(o){ var ks = []; Object.keys(o || {}).forEach(function(d){ Object.keys(o[d] || {}).forEach(function(r){ ks.push(d + '|' + r); }); }); return ks; };
     var get = function(o, k){ var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1); return o && o[d] ? o[d][r] : undefined; };
@@ -1684,7 +1692,7 @@
       }
       if(!pick || !pick.length) return;
       var i = k.indexOf('|'), d = k.slice(0, i), r = k.slice(i + 1);
-      (out[d] = out[d] || {})[r] = pick;
+      (out[d] = out[d] || Object.create(null))[r] = pick;
     });
     return { merged: out, recovered: recovered };
   }
@@ -1957,7 +1965,7 @@
   }
   function erpMtd(data){
     var today = data.today, mStart = today.slice(0, 7) + '-01';
-    var sums = {}, asOf = {}, spans = {}, curP = null, seen = {};
+    var sums = {}, asOf = {}, spans = Object.create(null), curP = null, seen = {};
     // the days each file covers count for the people it holds lines of
     var flush = function(){
       if(curP) Object.keys(seen).forEach(function(rep){
@@ -2247,7 +2255,7 @@
     var today = data.today, mStart = today.slice(0, 7) + '-01', es = data.erpSales, clinics = data.clinics || [];
     var byId = {}; clinics.forEach(function(c){ byId[c.id] = c; });
     // each customer name matched once (the caller's shared pass, data.erpShare, when it has one)
-    var out = {}, ctx = null, sh = erpShareOf(data), match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {});
+    var out = Object.create(null), ctx = null, sh = erpShareOf(data), match = sh ? sh.match : erpMatcher(clinics, data.erpMap || {});
     erpPeriodsOf(es).filter(function(p){ return p.to >= mStart && p.from <= today; }).forEach(function(p){
       if(!sh) ctx = ctx || erpCtxOf(es);
       (sh ? sh.rows(p) : erpViewRowsOf(es, p, ctx)).forEach(function(r){
@@ -2260,7 +2268,7 @@
         var owner = clinicRepOn(c, r.date);
         if(!owner || owner === issuer) return;
         var k = c.id + '|' + issuer + '|' + owner;
-        var a = out[k] || (out[k] = { clinicId: c.id, clinic: c.name, issuer: issuer, owner: owner, docs: {}, net: 0, from: r.date, to: r.date });
+        var a = out[k] || (out[k] = { clinicId: c.id, clinic: c.name, issuer: issuer, owner: owner, docs: Object.create(null), net: 0, from: r.date, to: r.date });
         var d = a.docs[r.doc] || (a.docs[r.doc] = { doc: r.doc, date: r.date, net: 0, items: [] });
         d.net += r.net; d.items.push({ product: r.product, brand: r.brand, qty: r.qty, net: r.net });
         a.net += r.net;
@@ -3065,10 +3073,10 @@
     }
     // the week's best-selling products (team, invoices with a value; internal
     // marketing moves excluded) and the photos taken on the week's visits
-    var pAgg = {};
+    var pAgg = Object.create(null);
     erpRowsIn(rows, from, to, true).forEach(function(x){ var r = x.r; if(!x.rep || reps.indexOf(x.rep) < 0 || !(r.net > 0) || r.type === 'return' || (!x.clinicId && isInternalAccount(r.customer))) return;
       var k = String(r.product || '').trim(); if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(k)) return;   // services (inspection fees, delivery) are not best sellers
-      var a = pAgg[k] || (pAgg[k] = { product: k, brand: normBrand(r.brand), qty: 0, net: 0, accounts: {} });
+      var a = pAgg[k] || (pAgg[k] = { product: k, brand: normBrand(r.brand), qty: 0, net: 0, accounts: Object.create(null) });
       a.qty += Number(r.qty) || 0; a.net += r.net; a.accounts[x.clinicId || r.customer] = 1; });
     var products = Object.keys(pAgg).map(function(k){ var a = pAgg[k]; return { product: a.product, brand: a.brand, qty: a.qty, net: rnd(a.net), accounts: Object.keys(a.accounts).length, accountKeys: Object.keys(a.accounts) }; })
       .sort(function(a, b){ return b.net - a.net; });
@@ -3087,7 +3095,7 @@
     rows.forEach(function(x){ if(x.clinicId && !x.channel && x.r.net > 0 && x.r.type !== 'return' && x.r.date >= since90 && x.r.date <= to) buying[x.clinicId] = 1; });
     var territory = clinics.filter(function(c){ return c.cls !== 'Closed' && (reps.indexOf(c.rep) >= 0 || (c.sharedWith || []).some(function(r){ return reps.indexOf(r) >= 0; })); });
     var mWins = keepWins(erpWinsInRange(rows, mStart, to, clinics), mStart), monthNewOk = reps.some(function(r){ return winsOk(r, mStart); });
-    var pipe = {};
+    var pipe = Object.create(null);
     vis.forEach(function(v){ if(!isFieldVisit(v) || !v.clinicId || buying[v.clinicId] || !byId[v.clinicId]) return;
       var p = pipe[v.clinicId] || (pipe[v.clinicId] = { clinic: byId[v.clinicId].name, rep: v.rep, visits: 0, last: v.date }); p.visits++; if(v.date > p.last) p.last = v.date; });
     var expansion = { territory: territory.length, active: territory.filter(function(c){ return buying[c.id]; }).length,
@@ -5134,7 +5142,7 @@
   function planDistribution(dist, clinics, erpMap, since){
     var live = (clinics || []).filter(function(c){ return c && c.cls !== 'Closed'; });
     var key = function(x){ return String(x || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
-    var byName = {}; live.forEach(function(c){ (byName[key(c.name)] = byName[key(c.name)] || []).push(c.id); });
+    var byName = Object.create(null); live.forEach(function(c){ (byName[key(c.name)] = byName[key(c.name)] || []).push(c.id); });
     var claimed = {}, found = {};
     dist.rows.forEach(function(r, i){
       var ids = (byName[key(r.account)] || []).slice();
@@ -5810,7 +5818,7 @@
   }
   function erpTotals(rows, opts){
     var isEx = (opts && opts.isExchange) || function(){ return false; };
-    var t = { net: 0, gross: 0, sret: 0, lines: 0, invoices: {}, returns: {}, bySalesman: {}, from: null, to: null };
+    var t = { net: 0, gross: 0, sret: 0, lines: 0, invoices: Object.create(null), returns: Object.create(null), bySalesman: Object.create(null), from: null, to: null };
     (rows || []).forEach(function(r){
       t.net += r.net; t.gross += r.gross;
       if(isEx(r)) t.exchanged = Math.round(((t.exchanged || 0) + returnValue(r)) * 1000) / 1000;
@@ -6096,6 +6104,25 @@
         for(var i = 0; i < g.length && !open; i++) for(var j = i + 1; j < g.length; j++) if(!marked[distinctPair(g[i].id, g[j].id)]){ open = true; break; }
         if(open) out.push({ clinicId: c.id, key: k, doctors: g.slice() });
       });
+    });
+    return out;
+  }
+  // The day plans as every screen reads them — { day: { person: [entry, …] } } (v129, the security audit's C6: one stored
+  // "dayPlans": null stopped the main screen of every person on every open). A day that is not an object, a person's
+  // value that is not a list and an entry that is neither a clinic id nor an object with one are left out; every shape
+  // the app writes stays as it is.
+  function cleanDayPlans(d){
+    var out = {};
+    if(!d || typeof d !== 'object' || Array.isArray(d)) return out;
+    Object.keys(d).forEach(function(day){
+      var v = d[day];
+      if(day === '__proto__' || !v || typeof v !== 'object' || Array.isArray(v)) return;
+      var o = {};
+      Object.keys(v).forEach(function(r){
+        if(r === '__proto__' || !Array.isArray(v[r])) return;
+        o[r] = v[r].filter(function(e){ return typeof e === 'string' || typeof e === 'number' || (!!e && typeof e === 'object' && !Array.isArray(e) && (typeof e.id === 'string' || typeof e.id === 'number')); });
+      });
+      out[day] = o;
     });
     return out;
   }
@@ -6613,13 +6640,13 @@
       var c = {}; for(var k in p) c[k] = p[k];
       out.push({ product: c, source: 'list', sold: 0, last: null });
     });
-    var agg = {}, listIdx = {}, listPrices = {};
+    var agg = {}, listIdx = {}, listPrices = Object.create(null);
     out.forEach(function(x, i){ listIdx[key(x.product.name)] = i; });
     (rows || []).forEach(function(r){
       var b = normBrand(r.brand), k = key(r.product), u = unit(r);
       if(listIdx[k] != null && r.type !== 'return'){
         var li = out[listIdx[k]]; li.sold += Number(r.qty) || 0; if(!li.last || r.date > li.last) li.last = r.date;
-        if(u != null){ var lp = listPrices[k] || (listPrices[k] = {}); lp[u] = (lp[u] || 0) + 1; }
+        if(u != null){ var lp = listPrices[k] || (listPrices[k] = Object.create(null)); lp[u] = (lp[u] || 0) + 1; }
       }
       if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(r.product || '') || b === 'bundles' || brands[b] || names[k] || taken[k]) return;
       var a = agg[k] || (agg[k] = { name: String(r.product).replace(/\s+/g, ' ').trim(), brand: String(r.brand || 'Other').trim(), prices: {}, sold: 0, last: '' });
@@ -7028,10 +7055,10 @@
   function focAnalysis(rows){
     var foc = (rows || []).filter(isFocRow);
     var round3 = function(n){ return Math.round(n * 1000) / 1000; };
-    var byCust = {}, byProd = {};
+    var byCust = Object.create(null), byProd = Object.create(null);
     foc.forEach(function(r){
       var ck = (r.customer || '').trim() || '—';
-      var c = byCust[ck] || (byCust[ck] = { name: ck, qty: 0, gross: 0, lines: 0, items: {} });
+      var c = byCust[ck] || (byCust[ck] = { name: ck, qty: 0, gross: 0, lines: 0, items: Object.create(null) });
       c.qty += (r.qty || 0); c.gross += (r.gross || 0); c.lines++;
       var pk = (r.product || '').trim() || '—';
       c.items[pk] = (c.items[pk] || 0) + (r.qty || 0);
@@ -7068,10 +7095,10 @@
     // NOT cover a clinic, consistent with the visit count everywhere else.
     var vis = inWindow.filter(isFieldVisit);
     var today = opts.today;
-    var byClinic = {};
+    var byClinic = Object.create(null);
     vis.forEach(function(v){ (byClinic[v.clinicId] = byClinic[v.clinicId] || []).push(v); });
     // Calls in-window, kept only as a sub-metric of an already-covered clinic.
-    var callsByClinic = {};
+    var callsByClinic = Object.create(null);
     inWindow.forEach(function(v){ if(v.callOnly) callsByClinic[v.clinicId] = (callsByClinic[v.clinicId] || 0) + 1; });
     // never-visited / dormant / last-visit are judged from FIELD visits only,
     // so a clinic that was only phoned still reads as never actually visited.
@@ -7106,7 +7133,7 @@
     // covered this window
     var missed = missedPlans(opts.dayPlans, opts.visits, today, { daysBack: 14 })
       .filter(function(m){ return wantRep(m.rep); });
-    var missedByClinic = {};
+    var missedByClinic = Object.create(null);
     missed.forEach(function(m){ (missedByClinic[m.clinicId] = missedByClinic[m.clinicId] || []).push(m); });
     var soon = new Date(today + 'T00:00:00'); soon.setDate(soon.getDate() + 7);
     var soonStr = localDateStr(soon);
@@ -7213,14 +7240,14 @@
     out.provisional = span < 2;
     var floor = Math.min(minWin, Math.max(span, 1));
     var l3Start = new Date(Date.parse(d1 + 'T00:00:00Z') - 91 * 86400000).toISOString().slice(0, 10);
-    var P = {}, rawNames = {};
+    var P = {}, rawNames = Object.create(null);
     list.forEach(function(r){
       var bkey = normBrand(r.brand), pkey = bkey + '||' + pmNormName(r.product);
       var d = P[pkey];
       if(!d) d = P[pkey] = { bkey: bkey, brandNames: {}, names: {}, hasPaid: false, paid: 0, paidKd: 0, foc: 0, focBack: 0, retInv: 0, retNoInv: 0, exchanged: 0, kd: 0, invs: {}, custs: {}, months: {}, byMonth: {}, first: null, last: null, l3: 0 };
       var q = +r.qty || 0, net = +r.net || 0, b = String(r.brand || '').trim(), n = String(r.product || '').trim();
       d.brandNames[b] = (d.brandNames[b] || 0) + 1;
-      (rawNames[pkey] = rawNames[pkey] || {})[n] = 1;
+      (rawNames[pkey] = rawNames[pkey] || Object.create(null))[n] = 1;
       d.kd += net;
       var retLine = r.type === 'return' || (r.sret > 0 && !(net > 0)); // legacy shape: a return valued in the Sales Return column of an invoice line
       if(retLine){
@@ -7241,7 +7268,7 @@
       if(!d.last || r.date > d.last) d.last = r.date;
     });
     var pick = function(o){ var best = null; Object.keys(o).forEach(function(x){ if(best === null || o[x] > o[best]) best = x; }); return best; };
-    var brands = {};
+    var brands = Object.create(null);
     Object.keys(P).forEach(function(k){
       var d = P[k];
       var names = Object.keys(rawNames[k] || {});
@@ -7283,7 +7310,7 @@
       }
       if(d.otherNames.length) flags.push({ k: 'merged', names: d.otherNames });
       d.flags = flags;
-      var B = brands[d.bkey] || (brands[d.bkey] = { key: d.bkey, names: {}, kd: 0, paid: 0, retInv: 0, retNoInv: 0, foc: 0, sold: 0, counts: { fast: 0, mid: 0, slow: 0, none: 0 }, products: [] });
+      var B = brands[d.bkey] || (brands[d.bkey] = { key: d.bkey, names: Object.create(null), kd: 0, paid: 0, retInv: 0, retNoInv: 0, foc: 0, sold: 0, counts: { fast: 0, mid: 0, slow: 0, none: 0 }, products: [] });
       B.names[d.brand] = (B.names[d.brand] || 0) + 1;
       B.kd += d.kd; B.paid += d.paid; B.retInv += d.retInv; B.retNoInv += d.retNoInv; B.foc += d.focNet; B.counts[d.cls]++; if(d.hasPaid) B.sold++;
       B.products.push(d);
@@ -8390,7 +8417,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
-    unionDoctorsById, possibleDuplicateDoctors, clinicDupKey, possibleDuplicateClinics, clinicNameCompare, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
+    unionDoctorsById, possibleDuplicateDoctors, cleanDayPlans, clinicDupKey, possibleDuplicateClinics, clinicNameCompare, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpShareKept, erpStateKey, erpClinicIndex, erpRowsIn, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,

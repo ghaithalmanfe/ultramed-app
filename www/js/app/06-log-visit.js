@@ -48,7 +48,7 @@ function prepLogView(qClinicId){
   renderJointChips();
   selectedClinicId = qClinicId || null;
   selectedDoctorIds = [];
-  rxOn = false; rxDrafts.log = {}; // a new form starts at "No", nothing typed (drawn by renderClinicSelect below)
+  rxOn = false; rxDrafts.log = Object.create(null); // a new form starts at "No", nothing typed (drawn by renderClinicSelect below)
   newClinicMode = false;
   document.getElementById('clinicSearchLog').value='';
   document.getElementById('newClinicFields').style.display='none';
@@ -967,7 +967,7 @@ let rxOn = false;
 // { personKey: { typeId: pads } }. personKey '' = the clinic (no one person);
 // its presence means its block is shown. Edited in place, so the 20-second
 // refresh (which redraws only the history on this tab) never loses it.
-const rxDrafts = { log: {}, edit: {} };
+const rxDrafts = { log: Object.create(null), edit: Object.create(null) };   // keyed by stored doctor ids: no prototype (v129)
 // the edit sheet: { visitId, clinicId, names: {typeId: the name saved on the visit},
 //   held: the people who already had pads on the visit when the sheet opened, in line order }
 let _rxEdit = null;
@@ -1030,7 +1030,7 @@ function rxDraftTotal(scope, keys){
 // were for the previous clinic's people — dropped, and said so.
 function rxClearDraft(scope){
   const had = rxDraftTotal(scope) > 0;
-  rxDrafts[scope] = {};
+  rxDrafts[scope] = Object.create(null);
   if(had) showToast('Pads typed for the previous clinic were cleared');
 }
 // A person un-tapped takes the pads typed for them along, like a deselected
@@ -1116,7 +1116,7 @@ function rxCtx(el){
 function rxGet(scope, key, type){ const b = rxDrafts[scope] && rxDrafts[scope][key]; return b ? (Number(b[type]) || 0) : 0; }
 function rxPut(scope, key, type, q){
   const draft = rxDrafts[scope]; if(!draft) return;
-  (draft[key] || (draft[key] = {}))[type] = q;
+  (draft[key] || (draft[key] = Object.create(null)))[type] = q;
 }
 function rxRefresh(scope, row, q, rewrite){
   const input = row && row.querySelector('input.rx-qty'), minus = row && row.querySelector('button.rx-minus');
@@ -1173,10 +1173,10 @@ function rxDraftLines(scope){
 // the counts to 0 — never silently because the sheet did not show them.
 function rxEditInit(v){
   _rxEdit = { visitId: v.id, clinicId: v.clinicId, names: {}, held: [] };
-  rxDrafts.edit = {};
+  rxDrafts.edit = Object.create(null);
   if(rxReady()) UMCore.visitRxLines(v).forEach(l => {
     const k = l.doctorId == null ? '' : String(l.doctorId);
-    const b = rxDrafts.edit[k] || (rxDrafts.edit[k] = {});
+    const b = rxDrafts.edit[k] || (rxDrafts.edit[k] = Object.create(null));
     b[l.type] = UMCore.rxQty((Number(b[l.type]) || 0) + l.qty);
     if(!_rxEdit.names[l.type] && l.name) _rxEdit.names[l.type] = l.name;
     if(k !== '' && !_rxEdit.held.includes(k)) _rxEdit.held.push(k);

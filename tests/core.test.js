@@ -174,6 +174,25 @@ describe('csvEscape', () => {
     assert.equal(core.csvEscape('+96512345678'), '+96512345678');
     assert.equal(core.csvEscape('-5.5'), '-5.5');
   });
+  // v129, the security audit's C8: a stored TAB or CR split a value into a new cell or row of a paste, and that cell —
+  // "=2+3" — was evaluated by the spreadsheet (the guard looked only at the value's first character)
+  test('a TAB, CR, VT or FF inside a value can never add a cell or a row', () => {
+    assert.equal(core.csvEscape('Alpha Clinic\t=2+3\t'), 'Alpha Clinic =2+3 ');
+    assert.equal(core.csvEscape('Beta Clinic\r=2+3'), 'Beta Clinic =2+3');
+    assert.equal(core.csvEscape('a\vb\fc'), 'a b c');
+  });
+  test('a formula after leading spaces, a TAB, or at the start of any line inside the value is neutralized', () => {
+    assert.equal(core.csvEscape('\t=1+1\t'), "' =1+1 ");
+    assert.equal(core.csvEscape('  @SUM(A1)'), "'  @SUM(A1)");
+    assert.equal(core.csvEscape('note\n=2+3'), '"note\n\'=2+3"');
+    assert.equal(core.csvEscape('note\n-5'), '"note\n-5"');
+    for(const p of ['x\t=CMD()', '\r@SUM(1)', 'a\n+cmd|x', ' =1', '\t\t-HYPERLINK("x")']){
+      const out = core.csvEscape(p);
+      assert.ok(!/[\t\r\v\f]/.test(out), JSON.stringify(out));
+      const body = out[0] === '"' ? out.slice(1, -1).replace(/""/g, '"') : out;
+      body.split('\n').forEach(line => assert.ok(!/^\s*[=@+-]/.test(line) || /^\s*[+-]\d+(\.\d+)?\s*$/.test(line), JSON.stringify([p, out])));
+    }
+  });
 });
 
 // ---------- order math ----------

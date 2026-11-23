@@ -2047,17 +2047,19 @@ function renderToday(){
   document.getElementById('navDotToday').classList.toggle('show', hasAlerts);
   msBell();
 
-  renderWelcome();
-  renderFocusCard();
-  renderOccasionsCard();
-  renderMissedPlans();
-  renderDormant();
-  renderStreak();
-  renderBadges();
-  renderPlanList();
-  renderDueList(due);
-  renderTasks();
-  renderRecentVisits(v);
+  // one card that cannot be drawn leaves only itself empty (v129, the security audit's C6: one odd record stopped the screen)
+  const card = (name, f) => { try{ f(); }catch(e){ console.error('main screen card ' + name, e); } };
+  card('welcome', renderWelcome);
+  card('focus', renderFocusCard);
+  card('occasions', renderOccasionsCard);
+  card('missed', renderMissedPlans);
+  card('dormant', renderDormant);
+  card('streak', renderStreak);
+  card('badges', renderBadges);
+  card('plan', renderPlanList);
+  card('due', () => renderDueList(due));
+  card('tasks', renderTasks);
+  card('recent', () => renderRecentVisits(v));
   msFoldSums(v, due);
   ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const el = document.getElementById(id); if(el) el.classList.toggle('open', !!_msOpen[id]); });
   msPaint(v, m, sig);

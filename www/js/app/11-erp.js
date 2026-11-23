@@ -1500,7 +1500,7 @@ function elInit(name, back, keep){
   return true;
 }
 function erpAccountLines(name){ // one row per document: what "Show the invoices" lists
-  const docs = {}, sh = erpShareNow(); // (each file's lines from the pass kept for the data state: the same lines)
+  const docs = Object.create(null), sh = erpShareNow(); // (each file's lines from the pass kept for the data state: the same lines)
   erpPeriods().forEach(p => { if(p && !p.rowsMissing) (sh ? sh.rows(p) : erpViewRows(p)).forEach(r => {
     if((r.customer || '').trim() !== name) return;
     const k = r.doc + '|' + r.type;

@@ -144,7 +144,7 @@ function openCatalogGaps(){
   if(!requireAdmin()) return;
   const g = catalogGapList();
   if(!g.length){ showToast('Nothing missing from the catalog'); return; }
-  const byB = {}; g.forEach((x, i) => { (byB[x.product.brand] = byB[x.product.brand] || []).push(i); });
+  const byB = Object.create(null); g.forEach((x, i) => { (byB[x.product.brand] = byB[x.product.brand] || []).push(i); });
   showModal(`
     <h3 style="margin-top:0;">Missing from the catalog</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Products sold in the ERP sales files under a brand the catalog has nothing of, and the Intensiv handpieces and Ortho-Strips. Price = the usual invoiced unit price. Untick anything you do not want, then tap Add.</p>
@@ -1395,7 +1395,7 @@ function sellGuideBlock(c){
 function caAllRowsByClinic(){
   const sh = erpShareNow();
   if(sh) return { by: sh.byClinic(), all: sh.lines() };
-  const by = {};
+  const by = Object.create(null);
   let all = [];
   erpPeriods().forEach(p2=>{ all = all.concat(erpViewRows(p2)); });
   const match = erpMatchFn();

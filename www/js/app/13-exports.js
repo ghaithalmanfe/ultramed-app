@@ -1970,7 +1970,8 @@ async function restoreSnapshotNow(dateStr){
   try{
     const res = await window.storage.get('snap_'+dateStr, true);
     if(!res){ showToast('Backup not found'); return; }
-    snap = JSON.parse(res.value);
+    snap = UMCore.safeParse(res.value, null);   // (no "__proto__" key reaches the restore, v129)
+    if(!snap || typeof snap !== 'object') throw new Error('the backup is not a JSON object');
   }catch(e){ console.error(e); showToast('Restore failed — the backup could not be read'); return; }
   const today = todayStr(), todayKey = 'snap_' + today, monthKey = UMCore.visitsArchKey(today.slice(0, 7));
   // The lists it counts, keeps and replaces must be the cloud's (v123 review):
@@ -2124,16 +2125,10 @@ async function restoreSnapshotNow(dateStr){
       return await stop('Restore stopped — the visits could not be written.', e);
     }
     for(const [k, str] of wrote){ if(k !== 'visits'){ mirrorSave(k, str); setMergeBase(k, str); } } // the cloud now holds exactly this (the next merge's base)
-    // The sales files stay as they are: an older index would drop every file
-    // imported since that day from every figure. Only a wiped index (no file
-    // at all) takes the backup's.
-    const haveFiles = !!(erpSales && Array.isArray(erpSales.periods) && erpSales.periods.length);
-    if(!haveFiles && snap.erpIndex && Array.isArray(snap.erpIndex.periods) && snap.erpIndex.periods.length){
-      // that day's sales index; its chunks are still in the cloud (7-day grace)
-      await window.storage.set('erpSales', JSON.stringify(snap.erpIndex), true);
-      _erpDirty = false; renderErpDirtyPill();
-      erpAdoptLoaded(await loadErpSales());
-    }
+    // The sales files stay as they are, always (v129, the security audit's C5): a daily backup is written by whichever
+    // team login opens the app first that day, so its sales index could be anyone's — until v128 a phone holding no
+    // sales file (none in the cloud, or its read had failed) put that index back, forged or older, as the supervisor's
+    // own write. A lost sales index comes back from the nightly encrypted backup (docs/backup.md) or a new import.
     // Records the backup brought back to life leave the recycle bin, or a
     // later "Restore" there would push a second copy with the same id.
     let binChanged = false;

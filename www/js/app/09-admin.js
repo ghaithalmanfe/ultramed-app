@@ -753,7 +753,7 @@ function missingClinicCandidates(){
     take({src:'bin', label:'🗑️ In the recycle bin', obj:b, name:b.name, rep:b.rep||'', key:'bin:'+b.id});
   });
   // 2. names stamped on visits whose clinic no longer exists — history rejoins on restore
-  const stamped = {};
+  const stamped = Object.create(null);
   visits.forEach(v=>{
     if(!v || !v.clinicId || haveIds.has(v.clinicId) || !v.clinicName) return;
     const s = (stamped[v.clinicId] = stamped[v.clinicId] || {name:v.clinicName, n:0, rep:v.rep||''}); s.n++;
