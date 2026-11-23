@@ -353,6 +353,23 @@ function setClinicClsFilter(v){ clinicClsFilter = v; renderClinics(); }
 // From the dashboard's class bar: "which clinics are class A?" → the list, filtered.
 function showClinicClass(k){ clinicClsFilter = k; clinicVisitFilter = 'all'; setClinicMode('list'); }
 function clinicVisitBucket(n){ return n===0 ? '0' : n<=2 ? '1-2' : n<=5 ? '3-5' : '6+'; }
+// The list's order and the same-name hint (v129, the owner's request: "sort the clinics A–Z or Z–A so I can catch
+// the ones typed in twice"). The order is remembered on this device. The hint is UMCore.possibleDuplicateClinics
+// over the clinics of the person chosen (the supervisor's All: every clinic): it only shows, nothing is merged.
+let clinicSortMode = (() => { try { const v = localStorage.getItem('um_clinicSort'); return v === 'az' || v === 'za' ? v : 'priority'; } catch(e){ return 'priority'; } })();
+let clinicDupOnly = false;
+function setClinicSort(m){
+  clinicSortMode = m === 'az' || m === 'za' ? m : 'priority';
+  try { localStorage.setItem('um_clinicSort', clinicSortMode); } catch(e){}
+  renderClinics();
+}
+function toggleClinicDupOnly(){ clinicDupOnly = !clinicDupOnly; renderClinics(); }
+let _clinicDupKept = null;   // { sig, res }: worked out again only when a clinic's id or name changed
+function clinicDupsOf(list){
+  const sig = list.map(c => c.id + '\u0001' + c.name).join('\u0002');
+  if(!_clinicDupKept || _clinicDupKept.sig !== sig) _clinicDupKept = { sig, res: UMCore.possibleDuplicateClinics(list) };
+  return _clinicDupKept.res;
+}
 // What should happen next with this clinic — one honest line per card.
 function clinicNextAction(c, stats){
   const fs = followStatus(c.nextFollowUp);
@@ -371,8 +388,9 @@ function renderClinics(){
   renderNamelessCard();
   const q = (document.getElementById('clinicSearch').value||'').toLowerCase();
   const list = document.getElementById('clinicList');
-  let filtered = clinics.filter(c=>c.name.toLowerCase().includes(q));
-  if(clinicRepFilter !== 'all') filtered = filtered.filter(c=>c.rep===clinicRepFilter);
+  const pool = clinicRepFilter !== 'all' ? clinics.filter(c=>c.rep===clinicRepFilter) : clinics;
+  const dups = clinicDupsOf(pool), byIdC = new Map(pool.map(c=>[String(c.id), c]));
+  let filtered = pool.filter(c=>String(c.name).toLowerCase().includes(q));
   // Visit stats per clinic: field visits + phone orders count as "visited",
   // call logs shown separately so a phone call never masks a missing visit.
   const statFor = {};
@@ -402,7 +420,22 @@ function renderClinics(){
     .filter(([k])=>k==='all' || clsCounts[k] || clinicClsFilter===k)
     .map(([k,l])=>`<div class="chip small ${clinicClsFilter===k?'on':''}" onclick="setClinicClsFilter('${k}')">${l} (${clsCounts[k]||0})</div>`).join('');
   if(clinicClsFilter!=='all') filtered = filtered.filter(c=>clsOf(c)===clinicClsFilter);
-  filtered.sort((a,b)=>{
+  // Order: priority (follow-up urgency, least visited, class), or the name A–Z / Z–A; with the duplicates
+  // filter on, each group of look-alike names stays together (groups in name order, A–Z unless Z–A is chosen).
+  const nDup = Object.keys(dups.byId).length;
+  const sortEl = document.getElementById('clinicSortChips');
+  if(sortEl) sortEl.innerHTML = [['priority','Priority order'],['az','Name A–Z'],['za','Name Z–A']]
+    .map(([k,l])=>`<button type="button" class="chip small ${clinicSortMode===k?'on':''}" aria-pressed="${clinicSortMode===k}" onclick="setClinicSort('${k}')">${l}</button>`).join('')
+    + (nDup || clinicDupOnly ? `<button type="button" class="chip small cl-dupchip ${clinicDupOnly?'on':''}" aria-pressed="${clinicDupOnly}" onclick="toggleClinicDupOnly()">${I('alert')} <span>Possible duplicates (${nDup})</span></button>` : '');
+  if(clinicDupOnly) filtered = filtered.filter(c=>dups.byId[c.id]);
+  const dir = clinicSortMode === 'za' ? -1 : 1;
+  if(clinicDupOnly){
+    const lead = new Map();
+    dups.groups.forEach(g => { const cs = g.map(id => byIdC.get(id)).filter(Boolean).sort(UMCore.clinicNameCompare); cs.forEach(c => lead.set(String(c.id), cs[0])); });
+    filtered.sort((a,b) => dir * (UMCore.clinicNameCompare(lead.get(String(a.id)) || a, lead.get(String(b.id)) || b) || UMCore.clinicNameCompare(a, b)));
+  } else if(clinicSortMode !== 'priority'){
+    filtered.sort((a,b) => dir * UMCore.clinicNameCompare(a, b));
+  } else filtered.sort((a,b)=>{
     const order = {overdue:0, today:1, upcoming:2, none:3};
     const d = order[followStatus(a.nextFollowUp)] - order[followStatus(b.nextFollowUp)];
     if(d!==0) return d;
@@ -426,6 +459,7 @@ function renderClinics(){
         <div class="clinic-name">${esc(c.name)}${c.isNew?' <span style="font-size:11px;">🆕</span>':''}</div>
         <div class="clinic-sub">${[`${nd} doctor${nd===1?'':'s'}`, esc(c.rep||''), visitTxt, st.calls?`📞 ${st.calls} call${st.calls===1?'':'s'}`:'', st.last?`last ${fmtDate(st.last)}`:'', c.account?esc(c.account):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('<span data-notr> · </span>')}</div>
         ${nd?`<div class="cl-spec">${c.doctors.slice(0,6).map(d=>SPECIALTY_PLAYBOOK[d.title]?SPECIALTY_PLAYBOOK[d.title].icon:'👤').join(' ')}</div>`:''}
+        ${dups.byId[c.id]?`<div class="cl-dup">${I('alert')} <span>Possible duplicate of</span> <bdi>${dups.byId[c.id].map(id=>byIdC.get(id)).filter(Boolean).map(o=>esc(o.name)).join('<span data-notr> · </span>')}</bdi></div>`:''}
         <div class="cl-act" style="color:${actColor[act.cls]||'var(--muted)'};"><span>${act.icon} ${act.text}</span>${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">${I('calendar')} Reschedule</button>`:''}</div>
       </div>
       <span class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp).split('·')[0].trim()}</span>

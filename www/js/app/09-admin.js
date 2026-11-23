@@ -372,12 +372,10 @@ function adminHealthHTML(){
   const overdue = active.filter(c=>followStatus(c.nextFollowUp)==='overdue');
   const noClass = active.filter(c=>!c.cls);
   const noContact = active.filter(c=>!c.contact && !c.phone && !(c.doctors||[]).length);
-  const dupes = [];
-  const seen = {};
-  active.forEach(c=>{
-    const k = c.name.toLowerCase().replace(/[^a-z0-9]/g,'');
-    if(seen[k]) dupes.push(c.name+' / '+seen[k]); else seen[k]=c.name;
-  });
+  // the clinic list's own rule (v129, UMCore.possibleDuplicateClinics): one line per group of look-alike names —
+  // until then only Latin letters were compared, so every two clinics named in Arabic counted as a duplicate
+  const byIdA = new Map(active.map(c=>[String(c.id), c]));
+  const dupes = UMCore.possibleDuplicateClinics(active).groups.map(g => g.map(id => (byIdA.get(id) || {}).name).filter(Boolean).join(' / '));
   const row = (label, items, color) => {
     const n = items.length;
     return `<div class="card" style="margin-bottom:8px; ${n?'border-inline-start:4px solid '+color+';':''}">

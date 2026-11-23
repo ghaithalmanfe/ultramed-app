@@ -6082,6 +6082,57 @@
     });
     return out;
   }
+  // ---- Possible duplicate clinics (v129, the owner's request) ----
+  // A clinic typed in twice by hand is usually the same letters with other spaces, capitals or punctuation, or a
+  // letter or two typed wrong. clinicDupKey keeps letters and digits only (accents dropped, Arabic letter forms
+  // folded: أ إ آ → ا, ة → ه, ى → ي). Two clinics are possible duplicates when their keys are equal, or differ by
+  // one edit (both keys 6+ characters) or two (both 12+), with the same digits ("Smile 1" and "Smile 2" are two
+  // branches, not a typo). A hint for the eye only: nothing is merged or changed.
+  function clinicDupKey(s){
+    return String(s == null ? '' : s).normalize('NFKD').replace(/[̀-ͯؐ-ًؚ-ٰٟـ]/g, '')
+      .toLowerCase().replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[^\p{L}\p{N}]+/gu, '');
+  }
+  // → { byId: {id: [the ids of the other clinics of its group]}, groups: [[id, …]] } — groups and ids in list order
+  function possibleDuplicateClinics(list){
+    var items = [];
+    (list || []).forEach(function(c, i){
+      if(!c || c.id == null) return;
+      var k = clinicDupKey(c.name);
+      if(k.length < 3) return;   // too short to tell a typo from another name
+      items.push({ id: String(c.id), k: k, d: k.replace(/[^\p{N}]+/gu, ''), i: i });
+    });
+    var parent = items.map(function(_, i){ return i; });
+    var find = function(x){ while(parent[x] !== x){ parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    var join = function(a, b){ a = find(a); b = find(b); if(a !== b) parent[Math.max(a, b)] = Math.min(a, b); };
+    var order = items.map(function(_, i){ return i; }).sort(function(a, b){ return items[a].k.length - items[b].k.length || a - b; });
+    for(var x = 0; x < order.length; x++){
+      var A = items[order[x]];
+      for(var y = x + 1; y < order.length; y++){
+        var B = items[order[y]];
+        if(B.k.length - A.k.length > 2) break;   // sorted by length: nothing further can be within two edits
+        if(A.k === B.k){ join(order[x], order[y]); continue; }
+        if(A.d !== B.d) continue;
+        var short = Math.min(A.k.length, B.k.length), allow = short >= 12 ? 2 : short >= 6 ? 1 : 0;
+        if(!allow || B.k.length - A.k.length > allow) continue;
+        if(levenshtein(A.k, B.k) <= allow) join(order[x], order[y]);
+      }
+    }
+    var by = Object.create(null), roots = [];
+    items.forEach(function(it, i){ var r = find(i); if(!by[r]){ by[r] = []; roots.push(r); } by[r].push(it.id); });
+    var groups = roots.map(function(r){ return by[r]; }).filter(function(g){ return g.length > 1; });
+    var byId = Object.create(null);
+    groups.forEach(function(g){ g.forEach(function(id){ byId[id] = g.filter(function(o){ return o !== id; }); }); });
+    return { byId: byId, groups: groups };
+  }
+  // The clinic list's alphabetical order: capitals, accents, spaces and punctuation do not count, numbers in
+  // number order ("Clinic 2" before "Clinic 10"); a tie keeps the names' own text, then the ids, so the order never
+  // changes between two drawings.
+  var _nameColl = null;
+  function clinicNameCompare(a, b){
+    if(!_nameColl) _nameColl = new Intl.Collator(['en', 'ar'], { sensitivity: 'base', ignorePunctuation: true, numeric: true });
+    var x = String(a && a.name != null ? a.name : ''), y = String(b && b.name != null ? b.name : '');
+    return _nameColl.compare(x, y) || (x < y ? -1 : x > y ? 1 : 0) || String(a && a.id).localeCompare(String(b && b.id));
+  }
   // The record a tap-made merge keeps: `keep` with every field `drop` holds
   // that `keep` lacks; a field both filled differently stays `keep`'s, and
   // the other value is written into the notes ("Also recorded: phone 222") —
@@ -8322,7 +8373,7 @@
     matchCustomer, erpRowRep, erpRepOfMatch, erpAccounts, erpLinkPreview, erpBranchCandidates, clinicRepOn, clinicSharedOn, parseDistribution, planDistribution, applyDistributionPlan, dedupeVisits, erpTotals, reconcileErp, clinicCoverage, erpWeeklyTrend, erpRefFromRemarks, returnContext, returnOrigin, applyReturnPolicy,
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
-    unionDoctorsById, possibleDuplicateDoctors, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
+    unionDoctorsById, possibleDuplicateDoctors, clinicDupKey, possibleDuplicateClinics, clinicNameCompare, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
     unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpShareKept, erpStateKey, erpClinicIndex, erpRowsIn, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,

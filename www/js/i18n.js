@@ -2802,6 +2802,13 @@
     "No usable copy on this device": "لا توجد نسخة صالحة على هذا الجهاز",
     "Restore now": "استرجاع الآن",
     // ---- end of v128 ----
+    // ---- v129: the clinic list's order and the same-name hint (the owner's request of 23 Nov) ----
+    "Sort clinics": "ترتيب العيادات",
+    "Priority order": "حسب الأولوية",
+    "Name A–Z": "الاسم A–Z",
+    "Name Z–A": "الاسم Z–A",
+    "Possible duplicate of": "قد تكون مكررة مع",
+    // ---- end of v129 ----
   };
 
   // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
@@ -3344,6 +3351,8 @@
     // the KPI settings: an open day that is not a date (the field and its limits: "Not saved — <field>: from … to …" above)
     [/^Not saved — Open days: write each date as 2026-10-15 \(not a date: (.+)\)$/, function (m) { return 'لم يُحفظ — الأيام المفتوحة: اكتب كل تاريخ هكذا 2026-10-15 (ليس تاريخًا: ' + alertListAr(m[1]) + ')'; }],
     // === END POLISH ===
+    // v129: the clinic list's duplicates filter
+    [/^Possible duplicates \((\d+)\)$/, function (m) { return 'احتمال تكرار (' + m[1] + ')'; }],
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:
