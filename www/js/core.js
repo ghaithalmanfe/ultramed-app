@@ -27,9 +27,24 @@
   // A CR becomes &#13;: the HTML parser turns a raw CR (or CR LF) into a line
   // feed, so a name carried in a data-* attribute (an ERP cell can hold a
   // line break) would come back as another string — and be saved as another key.
-  function esc(s){ return (s||'').replace(/[&<>"'\r]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','\r':'&#13;'}[m])); }
+  // A number is written as its digits (v129: it used to throw, so numeric fields were left unescaped); an empty value
+  // (null, undefined, '', 0, false) is still ''.
+  function esc(s){ return (s ? String(s) : '').replace(/[&<>"'\r]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','\r':'&#13;'}[m])); }
+  // A value carried inside the JavaScript of an inline handler — onclick="f('${jsArg(v)}')" (v129, the security
+  // audit's C1). esc() is the wrong layer there: the HTML parser turns &#39; back into ' before the handler is
+  // compiled, so an escaped quote still ended the string. jsArg writes every character that could end the string,
+  // the attribute or the markup (\ ' " < > & line breaks) as a JavaScript \uXXXX escape, which the HTML parser leaves
+  // alone and the handler reads back as the very same character. The text is String(v), as ${v} itself writes it.
+  function jsArg(s){ return String(s).replace(/[\\'"<>&\r\n\u2028\u2029`]/g, function(c){ return '\\u' + ('000' + c.charCodeAt(0).toString(16)).slice(-4); }); }
   // Only http(s) links are ever rendered as href — blocks javascript:/data: URI injection via saved fields.
   function safeUrl(u){ u=(u||'').trim(); return /^https?:\/\//i.test(u) ? u : ''; }
+  // A stored photo preview is only ever the app's own canvas thumbnail (canvas.toDataURL: a base64 JPEG, PNG or WebP
+  // data: URL); anything else is no picture (v129, the audit's C2: a preview went into src="…" as written).
+  function safeImg(u){ u = u == null ? '' : String(u).trim(); return /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/i.test(u) ? u : ''; }
+  // A clinic's class as a CSS token and a label: only the classes the app offers (A–F, Closed), else none.
+  function clsKey(k){ return ['A', 'B', 'C', 'D', 'F', 'Closed'].indexOf(k) >= 0 ? k : 'none'; }
+  // A stored number for value="…" or a sum: its number, or '' when it is not one (a text can never carry markup).
+  function numAttr(x){ if(x == null || x === '') return ''; var n = Number(x); return isFinite(n) ? String(n) : ''; }
   // Initials as every avatar writes them (the home screen's rule, one helper for the leaderboard, the chat, the
   // sign-in tiles and the score cards): a title ("Dr.", "د.") is left out, then the first letters of up to two
   // words — "Dr. Ghaith" → "G", "Mariam Ali" → "MA"; a name that is only a title keeps its own first letter.
@@ -42,7 +57,9 @@
   // (the same rounding to the fils as before); only the grouping is added. Files and exports never use it — a CSV
   // or a spreadsheet writes the plain number (toFixed), so it stays machine-readable.
   function groupThousands(s){ var p = String(s).split('.'); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ','); return p.join('.'); }
-  function money(n){ return groupThousands((n||0).toFixed(2))+' KD'; }
+  // a stored amount that is text ("5.5", or anything a team member typed into a shared list) is read as its number, as
+  // moneyWhole and moneyFils read it (v129: a text price stopped the Products screen, a text total the Reports screen)
+  function money(n){ return groupThousands((Number(n)||0).toFixed(2))+' KD'; }
   function slugify(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,'-'); }
 
   // ---- calendar helpers ----
@@ -8362,7 +8379,7 @@
   }
 
   return {
-    uid, localDateStr, todayStr, fmtDate, daysBetween, esc, safeUrl, initials,
+    uid, localDateStr, todayStr, fmtDate, daysBetween, esc, jsArg, safeUrl, safeImg, clsKey, numAttr, initials,
     money, groupThousands, slugify, getWeekDates, getMonthDates, isWorkday, workingDaysBetween, followStatus, safeParse,
     csvEscape, orderGross, orderNet, orderTotals,
     computeScoreForVisits, computeRepScore, calcStreak, calendarDayItems, isFieldVisit, repWasThere,

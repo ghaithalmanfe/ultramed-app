@@ -123,8 +123,8 @@ function renderGate(){
   const reps = staff.filter(s=>s.role==='rep');
   const sups = staff.filter(s=>s.role!=='rep');
   const tile = (s, wide) => `
-    <div class="gate-tile${wide?' wide':''}" onclick="gateTap('${esc(s.name)}')">
-      <div class="gate-av" style="background:${(s.av==='linear-gradient(140deg,#0B3D22,#01150C)'?AVATARS[0]:s.av)||AVATARS[0]};">${initials(s.name)}</div>
+    <div class="gate-tile${wide?' wide':''}" onclick="gateTap('${jsArg(s.name)}')">
+      <div class="gate-av" style="background:${esc((s.av==='linear-gradient(140deg,#0B3D22,#01150C)'?AVATARS[0]:s.av)||AVATARS[0])};">${esc(initials(s.name))}</div>
       <div>
         <div class="gate-name">${esc(s.name)}</div>
         <div class="gate-role">${s.role==='rep'?I('tooth')+' Sales Rep':I('star')+' Supervisor'}</div>
@@ -145,7 +145,7 @@ function gateTap(name){
     <h3 style="margin-top:0;" data-ic="lock">${esc(name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your password to continue.</p>
     <input type="password" id="gatePassword" placeholder="Password">
-    <button class="btn" onclick="submitGateLogin('${name}')">Log in</button>
+    <button class="btn" onclick="submitGateLogin('${jsArg(name)}')">Log in</button>
   `);
   setTimeout(()=>{
     const el = document.getElementById('gatePassword');

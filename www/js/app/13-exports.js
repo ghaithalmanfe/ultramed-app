@@ -93,7 +93,7 @@ function renderRepReportSection(rep){
   return `
   <div class="pr-rep-section">
     <div class="pr-rep-head">
-      <div class="stamp">${initials(rep)}</div>
+      <div class="stamp">${esc(initials(rep))}</div>
       <div>
         <h2>${esc(rep)}</h2>
         <div class="sub">Sales Representative — ${periodLabel()}</div>
@@ -1066,7 +1066,7 @@ function buildErpReconFileHtml(id){
   const dateStr = new Date().toLocaleDateString('en-US',{year:'numeric', month:'long', day:'numeric'});
   const sec = r => `
   <div class="pr-rep-section">
-    <div class="pr-rep-head"><div class="stamp">${initials(r.rep)}</div>
+    <div class="pr-rep-head"><div class="stamp">${esc(initials(r.rep))}</div>
       <div><h2>${esc(r.rep)}</h2><div class="sub">ERP reconciliation — ${fmtDate(p.from)} – ${fmtDate(p.to)}</div></div></div>
     <table class="pr-tbl">
       <tr><th>ERP net sales</th><td>${money(r.erp.net)}</td></tr>
@@ -1410,13 +1410,13 @@ async function renderBackupsList(){
       try{
         const res = await window.storage.get('snap_'+d, true);
         const snap = res ? UMCore.safeParse(res.value, null) : null;
-        if(snap) info = `${(snap.clinics||[]).length} clinics · ${(snap.visits||[]).length} visits` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} photos without a preview` : '')
+        if(snap) info = `${(snap.clinics||[]).length} clinics · ${(snap.visits||[]).length} visits` + (snap.slim && snap.slim.photos ? ` · ${Number(snap.slim.photos)||0} photos without a preview` : '')
           + (snap.keptBeforeRestore ? ` · the data as it was before restoring the backup of ${esc(String(snap.keptBeforeRestore).slice(0, 10))}` : ''); // the copy a whole-day Restore kept first (v123 review)
       }catch(e){}
       html += `
       <div class="card row-between">
         <span>${esc(d)} <span style="color:var(--muted); font-size:11.5px;">${info}</span></span>
-        <button class="btn secondary small" style="width:auto; margin:0;" onclick="restoreSnapshot('${d}')">Restore</button>
+        <button class="btn secondary small" style="width:auto; margin:0;" onclick="restoreSnapshot('${jsArg(d)}')">Restore</button>
       </div>`;
     }
     if(!html) html = `<div style="color:var(--muted); font-size:13px;">No backups yet — one will be created automatically today.</div>`;
@@ -1442,7 +1442,7 @@ async function renderBackupsList(){
         try{ const arr = UMCore.safeParse(localStorage.getItem(k), null); n = Array.isArray(arr)?arr.length:0; }catch(e){}
         return n ? `<div class="card row-between">
           <span>📱 ${label} <span style="color:var(--muted); font-size:11.5px;">(${n} clinics)</span></span>
-          <button class="btn secondary small" style="width:auto; margin:0;" onclick="restoreDeviceClinics('${which}')">Restore</button>
+          <button class="btn secondary small" style="width:auto; margin:0;" onclick="restoreDeviceClinics('${jsArg(which)}')">Restore</button>
         </div>` : '';
       }).join('');
     el.innerHTML = html + devRows;

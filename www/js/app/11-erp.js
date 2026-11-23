@@ -93,8 +93,8 @@ function returnPolicyChips(reopenId){
   const pol = erpReturnPolicy();
   return `<div style="margin-top:10px;"><label>Returns of earlier months' invoices</label>
     <div class="chip-row">
-      <div class="chip small ${pol==='origin'?'on':''}" onclick="setReturnPolicy('origin'${reopenId?`,'${reopenId}'`:''})">Count in the original invoice's month</div>
-      <div class="chip small ${pol==='erp'?'on':''}" onclick="setReturnPolicy('erp'${reopenId?`,'${reopenId}'`:''})">Count in the month returned (as the ERP file)</div>
+      <div class="chip small ${pol==='origin'?'on':''}" onclick="setReturnPolicy('origin'${reopenId?`,'${jsArg(reopenId)}'`:''})">Count in the original invoice's month</div>
+      <div class="chip small ${pol==='erp'?'on':''}" onclick="setReturnPolicy('erp'${reopenId?`,'${jsArg(reopenId)}'`:''})">Count in the month returned (as the ERP file)</div>
     </div></div>`;
 }
 
@@ -333,7 +333,7 @@ function openMonthReports(){
   showModal(`
     <h3 style="margin-top:0;" data-ic="book">📚 Month reports</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Open any month — even after it has ended — to see its target, achieved, % and every detail. Uploading the DSR file of the month's last day (or later) updates its month by itself.</p>
-    ${sorted.map(m=>`<div class="card clickable row-between" onclick="renderMonthClose('${m}')">
+    ${sorted.map(m=>`<div class="card clickable row-between" onclick="renderMonthClose('${jsArg(m)}')">
       <span style="font-weight:700;">${monthLabel(m)}</span><span style="color:var(--muted);">›</span>
     </div>`).join('')}
     <button class="btn secondary" style="margin-top:10px;" onclick="closeModal()">Close</button>
@@ -565,8 +565,8 @@ function openErpImport(){
           <div><div style="font-weight:700; font-size:13.5px;">${fmtDate(p.from)} – ${fmtDate(p.to)}${who?` <span style="color:var(--gold-ink); font-size:12px;">· ${esc(who)}</span>`:''}</div>
           <div style="color:var(--muted); font-size:12px;">${p.rowsMissing ? '⚠️ Lines not loaded on this device — ' : ''}${money(p.net)} net · ${p.rowCount} lines</div></div>
           <div style="display:flex; gap:6px; flex-shrink:0;">
-            ${p.rowsMissing ? `<button class="chip small on" onclick="retryErpRows().then(()=>openErpImport())">🔄</button>` : `<button class="chip small" onclick="openErpRecon('${p.id}')">📊 Report</button>`}
-            <button class="chip small" onclick="deleteErpPeriod('${p.id}')">🗑</button>
+            ${p.rowsMissing ? `<button class="chip small on" onclick="retryErpRows().then(()=>openErpImport())">🔄</button>` : `<button class="chip small" onclick="openErpRecon('${jsArg(p.id)}')">📊 Report</button>`}
+            <button class="chip small" onclick="deleteErpPeriod('${jsArg(p.id)}')">🗑</button>
           </div>
         </div>
       </div>`;}).join('')}`:''}
@@ -967,7 +967,7 @@ function erpAuditSection(p){
   const custRows = a.customers.map(x=>{
     const bg = attn(x) ? 'background:var(--amber-dim);' : '';
     // every named account can be moved from here: the editor shows what moves before anything is saved
-    const change = x.name !== '(no name)' ? `<div><button class="chip small" style="padding:3px 8px; font-size:11px; margin-top:3px;" data-erp-link="${esc(x.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${esc(p.id)}')">${I('pencil')} Change</button></div>` : '';
+    const change = x.name !== '(no name)' ? `<div><button class="chip small" style="padding:3px 8px; font-size:11px; margin-top:3px;" data-erp-link="${esc(x.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${jsArg(p.id)}')">${I('pencil')} Change</button></div>` : '';
     return `<tr style="border-top:1px solid var(--line); ${bg}">
       <td style="padding:5px 6px; overflow-wrap:anywhere;"><span dir="auto">${esc(x.name)}</span></td>
       <td style="padding:5px 6px; font-size:11.5px;">${x.label}${change}</td>
@@ -990,7 +990,7 @@ function erpAuditSection(p){
     ${salesmanRows}
   </table></div>
   <div class="mr-note" style="color:var(--muted); font-size:11.5px; margin:6px 2px;">${uiLang === 'ar' ? 'ملاحظة: مبيعات أي عيادة مطابَقة تُنسب لِـ<b>المندوبة المالكة للعيادة</b>، بغض النظر عن اسم البائع في الملف. الجدول أعلاه يبيّن ربط الأسماء كما في الملف فقط.' : "Note: the sales of any matched clinic count for <b>the rep who owns the clinic</b>, whatever the salesman's name in the file. The table above only shows how the names in the file are linked."}</div>
-  <div class="section-title"><span>🏥 How each customer was classified (the source of the match)</span> <span class="link" onclick="openErpLinks({back:'recon:${esc(p.id)}'})">All accounts</span></div>
+  <div class="section-title"><span>🏥 How each customer was classified (the source of the match)</span> <span class="link" onclick="openErpLinks({back:'recon:${jsArg(p.id)}'})">All accounts</span></div>
   <div class="card" style="overflow-x:auto; max-height:340px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
     <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">Customer in the file</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">Classified as</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">Invoice count</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">Net (KD)</th></tr>
     ${custRows}
@@ -1185,13 +1185,13 @@ function openErpRecon(id){
       ${named.map((cust,i)=>`
         <div class="row-between" style="gap:8px; padding:6px 0; align-items:center; ${i?'border-top:1px solid var(--line);':''}">
           <div dir="auto" style="flex:1; min-width:0; font-size:13px; overflow-wrap:anywhere;">${esc(cust)}</div>
-          <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(cust)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${esc(p.id)}')">Link…</button>
+          <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(cust)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${jsArg(p.id)}')">Link…</button>
         </div>`).join('')}
       ${nl.length ? `<div id="erpUnrNameless" style="color:var(--muted); font-size:12px; line-height:1.55; padding:6px 0 0; ${named.length?'border-top:1px solid var(--line);':''}"><span>Lines with no customer name cannot be linked — each counts for the salesman who issued it:</span> ${nl.length} · <span dir="ltr">${money(nl.reduce((t, r) => t + (Number(r.net) || 0), 0))}</span></div>` : ''}
     </div>`; })():''}
     <button class="btn" style="margin-top:12px;" onclick="closeModal()">✅ Done</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="downloadErpReconFile('${esc(p.id)}')">⬇️ Save this report as a file</button>
-    <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${esc(p.id)}')">${I('share')} Share (WhatsApp / email)</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="downloadErpReconFile('${jsArg(p.id)}')">⬇️ Save this report as a file</button>
+    <button class="btn secondary" style="margin-top:8px;" onclick="shareErpReconFile('${jsArg(p.id)}')">${I('share')} Share (WhatsApp / email)</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="openErpImport()">‹ Back to imports</button>
   `);
 }
@@ -1445,7 +1445,7 @@ function renderErpLinks(){
   const f = EL_FILTERS[_elListOpts.filter] ? _elListOpts.filter : 'all';
   const fil = document.getElementById('elFilters');
   if(fil) fil.innerHTML = [['all', 'All'], ['need', 'Need a link'], ['hand', 'By hand'], ['notclinic', 'Not a clinic']].map(([k, label]) =>
-    `<div class="chip small ${f === k ? 'on' : ''}" onclick="elSetFilter('${k}')"><span>${label}</span> (${accs.filter(EL_FILTERS[k]).length})</div>`).join('');
+    `<div class="chip small ${f === k ? 'on' : ''}" onclick="elSetFilter('${jsArg(k)}')"><span>${label}</span> (${accs.filter(EL_FILTERS[k]).length})</div>`).join('');
   const hit = a => !q || a.name.toLowerCase().includes(q) || erpLinkWhere(a).toLowerCase().includes(q);
   let list = accs.filter(EL_FILTERS[f]).filter(hit), html = '';
   if(pickFor && !q){

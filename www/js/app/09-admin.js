@@ -51,7 +51,7 @@ function adminMailHTML(){
     <div class="chip-row" style="margin-bottom:10px;">
       <div class="chip small" onclick="previewDigest('morning')">☀️ The morning digest (team)</div>
       <div class="chip small" onclick="previewDigest('evening')">🌙 The evening digest (team)</div>
-      ${REPS.map(r=>`<div class="chip small" onclick="previewDigest('evening','${esc(r)}')">🌙 ${esc(r)}</div>`).join('')}
+      ${REPS.map(r=>`<div class="chip small" onclick="previewDigest('evening','${jsArg(r)}')">🌙 ${esc(r)}</div>`).join('')}
     </div>
     <div class="section-title">Send now</div>
     <a class="btn secondary" id="mailSendNow" href="${MAIL_WORKFLOW_URL}" target="_blank" rel="noopener">▶️ Send now from GitHub</a>
@@ -215,7 +215,7 @@ function adminTerritoryHTML(){
     <input type="text" id="apTerrSearch" placeholder="Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
     <div class="chip-row" style="margin-bottom:10px;" id="apTerrFilter">
       <div class="chip small on" data-f="all" onclick="setTerrFilter(this,'all')">All</div>
-      ${REPS.map(r=>`<div class="chip small" data-f="${esc(r)}" onclick="setTerrFilter(this,'${esc(r)}')">${esc(r)}</div>`).join('')}
+      ${REPS.map(r=>`<div class="chip small" data-f="${esc(r)}" onclick="setTerrFilter(this,'${jsArg(r)}')">${esc(r)}</div>`).join('')}
       <div class="chip small" data-f="__none" onclick="setTerrFilter(this,'__none')">Unassigned</div>
     </div>
     <div id="apTerrBody"></div>`;
@@ -249,9 +249,9 @@ function renderAdminTerritory(){
       <div class="clinic-name">${esc(c.name)}</div>
       <div class="clinic-sub" style="margin-bottom:8px;">${parts.join('<span data-notr> · </span>')}</div>
       <div class="chip-row">
-        ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
-        <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
-        <div class="chip small ${UMCore.isGovClinic(c)?'on':''}" onclick="toggleGovClinic('${c.id}')" title="Government account: must be visited every week">${I('building')} Gov</div>
+        ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${jsArg(c.id)}','${jsArg(r)}')">${esc(r)}</div>`).join('')}
+        <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${jsArg(c.id)}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
+        <div class="chip small ${UMCore.isGovClinic(c)?'on':''}" onclick="toggleGovClinic('${jsArg(c.id)}')" title="Government account: must be visited every week">${I('building')} Gov</div>
       </div>
     </div>`;
   }).join('') + (total>40 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Showing 40 of ${total} — type a clinic name above to find the others</div>` : '');
@@ -421,7 +421,7 @@ function renderAdminPrices(){
   el.innerHTML = list.map(p=>`
     <div class="qty-row">
       <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')} · ${esc(p.id)}</span></div>
-      <input type="number" step="0.01" min="0" value="${p.price!=null?p.price:''}" onchange="updateProductPrice('${esc(productKey(p))}', this.value)" style="width:82px;">
+      <input type="number" step="0.01" min="0" value="${numAttr(p.price)}" onchange="updateProductPrice('${jsArg(productKey(p))}', this.value)" style="width:82px;">
     </div>`).join('') + (!q && products.length>25 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:8px;">Showing 25 of ${products.length} — search to find others</div>` : '');
 }
 async function updateProductPrice(key, val){
@@ -521,16 +521,16 @@ function renderVisitLog(){
     const canEdit = canEditVisit(v);
     html += `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c?c.cls:null)};">
       <div class="row-between">
-        <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
+        <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${jsArg(v.clinicId)}')">
           <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
           <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
           ${rxLinesHTML(v,c)}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
-          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${esc(safeImg(ph.thumb))}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${jsArg(ph.id)}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
         </div>
-        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
+        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${jsArg(v.id)}')">Edit</button>`:''}
       </div>
     </div>`;
   });
@@ -545,7 +545,7 @@ function openPhotoGallery(){
   const all = withPhotos.flatMap(v => v.photos.filter(Boolean));
   const nWait = all.filter(p => p.pending).length, nLost = all.filter(p => p.lost && !p.pending).length;
   const stateOf = ph => ph.pending ? 'waiting' : ph.lost ? 'lost' : '';
-  const tile = (v, ph) => { const img = `<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${ph.id}', this.dataset.cap)">`, st = stateOf(ph);
+  const tile = (v, ph) => { const img = `<img src="${esc(safeImg(ph.thumb))}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${jsArg(ph.id)}', this.dataset.cap)">`, st = stateOf(ph);
     return st ? `<div data-photo-state="${st}" style="position:relative;">${img}<span aria-hidden="true" style="position:absolute; top:4px; inset-inline-start:4px; font-size:13px; line-height:1; padding:3px; border-radius:8px; background:rgba(255,255,255,.88); pointer-events:none;">${st === 'waiting' ? '⏳' : '⚠️'}</span></div>` : img; };
   showModal(`
     <h3 style="margin-top:0;">${I('camera')} Visit photos</h3>
@@ -588,9 +588,9 @@ function renderDoctorRows(c){
         <div><div class="dname">${esc(d.name)}</div>${d.title?`<div class="dsub" style="color:${pb?pb.color:'var(--muted)'}; font-weight:600;">${esc(d.title)}</div>`:''}${docBadges(d)}</div>
       </div>
       <div style="display:flex; align-items:center; gap:4px;">
-        ${canViewClinic(c)?`<button class="chip small" onclick="event.stopPropagation(); _drBack=null; openDoctorRecord('${c.id}','${d.id}')">${I('pencil')} Card</button>`:''}
-        ${pb?`<button class="chip small" onclick="event.stopPropagation(); openPlaybook('${d.title}')">Tips</button>`:''}
-        <button class="del" onclick="removeDoctor('${c.id}','${d.id}')">&times;</button>
+        ${canViewClinic(c)?`<button class="chip small" onclick="event.stopPropagation(); _drBack=null; openDoctorRecord('${jsArg(c.id)}','${jsArg(d.id)}')">${I('pencil')} Card</button>`:''}
+        ${pb?`<button class="chip small" onclick="event.stopPropagation(); openPlaybook('${jsArg(d.title)}')">Tips</button>`:''}
+        <button class="del" onclick="removeDoctor('${jsArg(c.id)}','${jsArg(d.id)}')">&times;</button>
       </div>
     </div>`;
   }).join('');
@@ -696,8 +696,8 @@ async function deleteClinic(id){
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
     ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
-    <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${id}')">Yes, remove</button>
-    <button class="btn secondary" onclick="openClinicDetail('${id}')">Cancel</button>
+    <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${jsArg(id)}')">Yes, remove</button>
+    <button class="btn secondary" onclick="openClinicDetail('${jsArg(id)}')">Cancel</button>
   `);
 }
 async function confirmDeleteClinic(id){
@@ -806,7 +806,7 @@ function renderMcList(){
   el.innerHTML = _mcCands.map(x=>`
     <div class="row-between" style="padding:7px 4px; border-bottom:1px solid var(--line);">
       <label style="display:flex; align-items:center; gap:10px; flex:1; font-size:13px;">
-        <input type="checkbox" ${_mcChecked.has(x.key)?'checked':''} onchange="if(this.checked)_mcChecked.add('${x.key}'); else _mcChecked.delete('${x.key}'); const c=document.getElementById('mcCount'); if(c)c.textContent=_mcChecked.size;">
+        <input type="checkbox" ${_mcChecked.has(x.key)?'checked':''} onchange="if(this.checked)_mcChecked.add('${jsArg(x.key)}'); else _mcChecked.delete('${jsArg(x.key)}'); const c=document.getElementById('mcCount'); if(c)c.textContent=_mcChecked.size;">
         <span><b>${esc(x.name)}</b><br><span style="color:var(--muted); font-size:11px;">${x.label}${x.rep?' · '+esc(x.rep):''}</span></span>
       </label>
     </div>`).join('');
@@ -893,7 +893,7 @@ function renderMgList(){
   el.innerHTML = mgVisible().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`
     <div class="row-between" style="padding:8px 4px; border-bottom:1px solid var(--line);">
       <label style="display:flex; align-items:center; gap:10px; flex:1; font-size:13.5px;">
-        <input type="checkbox" ${_mgSelected.has(c.id)?'checked':''} onchange="mgToggle('${c.id}', this.checked)">
+        <input type="checkbox" ${_mgSelected.has(c.id)?'checked':''} onchange="mgToggle('${jsArg(c.id)}', this.checked)">
         <span><b>${esc(c.name)}</b> <span style="color:var(--muted); font-size:11.5px;">· ${esc(c.rep||'—')} · ${c.cls||'—'} · ${visits.filter(v=>v.clinicId===c.id).length} visits</span></span>
       </label>
     </div>`).join('') || '<div class="empty">No clinics match.</div>';

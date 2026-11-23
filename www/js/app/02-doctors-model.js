@@ -123,6 +123,12 @@ function esc(s){ return UMCore.esc(s); }
 // Chrome icon helper — renders one symbol from the inline sprite at text size
 function I(name){ return `<svg class="svgi" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
 function safeUrl(u){ return UMCore.safeUrl(u); }
+// v129 (the security audit): a value inside an inline handler's JavaScript, a stored photo preview, a clinic class
+// as a CSS token, a stored number in value="…" (tests/handler-args.test.js fails on a handler value left raw)
+function jsArg(s){ return UMCore.jsArg(s); }
+function safeImg(u){ return UMCore.safeImg(u); }
+function clsKey(k){ return UMCore.clsKey(k); }
+function numAttr(x){ return UMCore.numAttr(x); }
 function initials(n){ return UMCore.initials(n); }
 // An amount on screen (the one formatter, UMCore.money: two decimals, thousands grouped). In the Arabic UI the
 // currency is د.ك after the figure, as on the home screen; a negative figure is kept left to right in an isolate so

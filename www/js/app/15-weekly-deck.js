@@ -49,7 +49,7 @@ function openWeeklyDeck(){
     <input type="date" id="wdEnd" value="${todayStr()}" max="${todayStr()}" onchange="wdRenderChecks()" style="margin:4px 0 12px;">
     <label style="font-size:12.5px; font-weight:700;">Language of the slides</label>
     <div id="wdLang" style="display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 12px;">
-      ${[['en', 'English'], ['ar', 'العربية'], ['both', uiLang === 'ar' ? 'الاثنتان (ملفان)' : 'Both (two files)']].map(([k, l]) => `<div class="chip ${k === wdLangPick() ? 'on' : ''}" data-k="${k}" onclick="wdSetLang('${k}')">${l}</div>`).join('')}
+      ${[['en', 'English'], ['ar', 'العربية'], ['both', uiLang === 'ar' ? 'الاثنتان (ملفان)' : 'Both (two files)']].map(([k, l]) => `<div class="chip ${k === wdLangPick() ? 'on' : ''}" data-k="${k}" onclick="wdSetLang('${jsArg(k)}')">${l}</div>`).join('')}
     </div>
     <label style="font-size:12.5px; font-weight:700;">Our ask (optional)</label>
     <input type="text" id="wdAsk" maxlength="90" placeholder="${esc(ph)}" value="${esc(ask)}" style="margin:4px 0 8px;">

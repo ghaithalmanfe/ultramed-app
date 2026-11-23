@@ -281,7 +281,7 @@ function renderSoClinics(){
   if(soClinicId){
     const c = clinics.find(x=>x.id===soClinicId);
     if(c){
-      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${c.cls}">${c.cls||'-'}</span><div class="clinic-name">${esc(c.name)}</div></div>
+      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span><div class="clinic-name">${esc(c.name)}</div></div>
         <button class="del" onclick="soClinicId=null; renderSoClinics();" aria-label="Change">&times;</button></div></div>`;
       return;
     }
@@ -291,8 +291,8 @@ function renderSoClinics(){
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
   el.innerHTML = pool.length ? `<div class="lrows">` + pool.map(c=>`
-    <div class="lrow clickable" role="button" tabindex="0" onclick="soClinicId='${c.id}'; renderSoClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
-      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+    <div class="lrow clickable" role="button" tabindex="0" onclick="soClinicId='${jsArg(c.id)}'; renderSoClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
       <div class="lr-t"><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${esc(c.rep||'')}</div></div>
       <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
     </div>`).join('') + `</div>` : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
@@ -303,7 +303,7 @@ function renderSoProducts(){
   if(q) list = list.filter(p=>p.name.toLowerCase().includes(q) || (p.brand||'').toLowerCase().includes(q));
   list = list.slice(0, q?40:14);
   document.getElementById('soProdChips').innerHTML = list.map(p=>
-    `<div class="chip small ${soItems[productKey(p)]?'on':''}" data-key="${esc(productKey(p))}" onclick="toggleSoProduct('${esc(productKey(p))}')">${esc(p.name)}</div>`).join('');
+    `<div class="chip small ${soItems[productKey(p)]?'on':''}" data-key="${esc(productKey(p))}" onclick="toggleSoProduct('${jsArg(productKey(p))}')">${esc(p.name)}</div>`).join('');
 }
 function toggleSoProduct(id){
   if(soItems[id]) delete soItems[id]; else soItems[id] = 1;
@@ -317,7 +317,7 @@ function renderSoQty(){
     if(!p) return '';
     return `<div class="qty-row">
       <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${p.price!=null?money(p.price)+' each':'no price'}</span></div>
-      <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="9999" step="1" value="${soItems[id]}" onfocus="this.select()" oninput="setSoQty('${esc(id)}', this.value)" onchange="settleSoQty('${esc(id)}', this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
+      <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="9999" step="1" value="${numAttr(soItems[id])}" onfocus="this.select()" oninput="setSoQty('${jsArg(id)}', this.value)" onchange="settleSoQty('${jsArg(id)}', this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
     </div>`;
   }).join('') + `</div>` : '';
   renderSoTotal();
@@ -482,7 +482,7 @@ function renderClClinics(){
   if(clClinicId){
     const c = clinics.find(x=>x.id===clClinicId);
     if(c){
-      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${c.cls}">${c.cls||'-'}</span><div class="clinic-name">${esc(c.name)}</div></div>
+      el.innerHTML = `<div class="card pick-sel"><div class="row-between"><div style="display:flex; align-items:center; gap:11px; min-width:0;"><span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span><div class="clinic-name">${esc(c.name)}</div></div>
         <button class="del" onclick="clClinicId=null; clDoctorId=null; renderClClinics();" aria-label="Change">&times;</button></div></div>`;
       renderClDoctors();
       return;
@@ -493,8 +493,8 @@ function renderClClinics(){
   if(q) pool = pool.filter(c=>c.name.toLowerCase().includes(q));
   pool = pool.sort((a,b)=>a.name.localeCompare(b.name)).slice(0, q?12:6);
   el.innerHTML = pool.length ? `<div class="lrows">` + pool.map(c=>`
-    <div class="lrow clickable" role="button" tabindex="0" onclick="clClinicId='${c.id}'; renderClClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
-      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+    <div class="lrow clickable" role="button" tabindex="0" onclick="clClinicId='${jsArg(c.id)}'; renderClClinics();" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+      <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
       <div class="lr-t"><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${esc(c.rep||'')}</div></div>
       <svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg>
     </div>`).join('') + `</div>` : `<div style="color:var(--muted); font-size:13px;">No clinic matches.</div>`;
@@ -504,7 +504,7 @@ function renderClDoctors(){
   const wrap = document.getElementById('clDoctorWrap');
   const c = clinics.find(x=>x.id===clClinicId);
   if(!c || !(c.doctors||[]).length){ wrap.innerHTML=''; return; }
-  wrap.innerHTML = `<label>Doctor (optional)</label><div class="chip-row">${c.doctors.map(d=>`<div class="chip small ${clDoctorId===d.id?'on':''}" onclick="clDoctorId=(clDoctorId==='${d.id}'?null:'${d.id}'); renderClDoctors();">${esc(d.name)}</div>`).join('')}</div>`;
+  wrap.innerHTML = `<label>Doctor (optional)</label><div class="chip-row">${c.doctors.map(d=>`<div class="chip small ${clDoctorId===d.id?'on':''}" onclick="clDoctorId=(clDoctorId==='${jsArg(d.id)}'?null:'${jsArg(d.id)}'); renderClDoctors();">${esc(d.name)}</div>`).join('')}</div>`;
 }
 function pickClQuickDate(days){
   document.querySelectorAll('#clQuickDates button').forEach(b=>b.classList.toggle('on', parseInt(b.dataset.days)===days));
@@ -572,7 +572,7 @@ function openEditVisit(visitId){
     <h3 style="margin-top:0;" data-ic="pencil">Edit ${v.orderOnly?'order':'visit'}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:clinicLabel(v.clinicId, v))}</p>
     <label>Date</label>
-    <input type="date" id="evDate" value="${v.date}" max="${todayStr()}">
+    <input type="date" id="evDate" value="${esc(v.date)}" max="${todayStr()}">
     ${!v.orderOnly && !v.callOnly ? `
     <label>Joint visit with</label>
     <select id="evJoint">
@@ -580,7 +580,7 @@ function openEditVisit(visitId){
       ${REPS.filter(r=>r!==v.rep).map(r=>`<option value="${esc(r)}" ${v.withRep===r?'selected':''}>🤝 ${esc(r)}</option>`).join('')}
     </select>` : ''}
     <label>Next follow-up</label>
-    <input type="date" id="evFollow" value="${v.nextFollowUp||''}">
+    <input type="date" id="evFollow" value="${esc(v.nextFollowUp||'')}">
     <label>Notes</label>
     <textarea id="evNotes" dir="auto" placeholder="What happened on this visit...">${esc(v.notes||'')}</textarea>
     ${!v.orderOnly && !v.callOnly ? `
@@ -592,11 +592,11 @@ function openEditVisit(visitId){
     <div class="photo-row" id="editPhotoRow"></div>` : ''}
     ${v.orderTaken?`
       <label>Order total (KD)</label>
-      <input type="number" step="0.01" min="0" id="evTotal" value="${v.orderTotal||0}">
+      <input type="number" step="0.01" min="0" id="evTotal" value="${numAttr(v.orderTotal)||0}">
       <p style="color:var(--muted); font-size:12px; margin-top:6px;">Adjusts the recorded value. To change line items, delete and re-enter the order.</p>
     `:''}
-    <button class="btn" onclick="saveEditVisit('${v.id}')">Save changes</button>
-    ${(currentUser.role==='supervisor' || v.rep===currentUser.name) ? `<button class="btn ghost" onclick="confirmDeleteVisit('${v.id}')">Delete this ${v.orderOnly?'order':'visit'}</button>` : `<div style="color:var(--muted); font-size:12px; text-align:center; margin-top:6px;">Only ${esc(v.rep)} or the supervisor can delete this visit.</div>`}
+    <button class="btn" onclick="saveEditVisit('${jsArg(v.id)}')">Save changes</button>
+    ${(currentUser.role==='supervisor' || v.rep===currentUser.name) ? `<button class="btn ghost" onclick="confirmDeleteVisit('${jsArg(v.id)}')">Delete this ${v.orderOnly?'order':'visit'}</button>` : `<div style="color:var(--muted); font-size:12px; text-align:center; margin-top:6px;">Only ${esc(v.rep)} or the supervisor can delete this visit.</div>`}
   `);
   if(!v.orderOnly && !v.callOnly){
     window._editDocIds = Array.isArray(v.doctorIds) && v.doctorIds.length ? v.doctorIds.slice() : (v.doctorId ? [v.doctorId] : []);
@@ -612,7 +612,7 @@ function renderEditDocChips(visitId){
   const c = clinics.find(x=>x.id===v.clinicId);
   const docs = (c && c.doctors) || [];
   el.innerHTML = docs.length
-    ? docs.map(d=>`<div class="chip small ${window._editDocIds.includes(d.id)?'on':''}" onclick="toggleEditDoc('${visitId}','${d.id}')">${esc(d.name)}</div>`).join('')
+    ? docs.map(d=>`<div class="chip small ${window._editDocIds.includes(d.id)?'on':''}" onclick="toggleEditDoc('${jsArg(visitId)}','${jsArg(d.id)}')">${esc(d.name)}</div>`).join('')
     : '<div style="color:var(--muted); font-size:12.5px;">No doctors on this clinic\'s profile yet — add them from the clinic page.</div>';
 }
 function toggleEditDoc(visitId, docId){
@@ -630,10 +630,10 @@ function renderEditPhotos(visitId){
   if(!v || !el) return;
   el.dataset.visit = visitId; // repainted when one of its photos finishes uploading (photoLanded, 12)
   el.innerHTML = (v.photos||[]).map(p=>`<div class="ph-wrap">
-      <img class="photo-thumb" src="${p.thumb}" onclick="showLightbox('${p.id}','Visit photo')">
-      <button class="ph-del" onclick="removeEditPhoto('${visitId}','${p.id}')">&times;</button>
+      <img class="photo-thumb" src="${esc(safeImg(p.thumb))}" onclick="showLightbox('${jsArg(p.id)}','Visit photo')">
+      <button class="ph-del" onclick="removeEditPhoto('${jsArg(visitId)}','${jsArg(p.id)}')">&times;</button>
     </div>`).join('') +
-    `<div class="photo-add" onclick="addEditPhoto('${visitId}')">\u{1F4F7}<span>ADD</span></div>`;
+    `<div class="photo-add" onclick="addEditPhoto('${jsArg(visitId)}')">\u{1F4F7}<span>ADD</span></div>`;
   const prev = document.getElementById('editPhotoWait'); if(prev) prev.remove();
   const note = photoWaitHTML(v);
   if(note) el.insertAdjacentHTML('afterend', `<div id="editPhotoWait">${note}</div>`);
@@ -804,8 +804,8 @@ function confirmDeleteVisit(visitId){
       ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px;">${esc(v.notes)}</div>`:''}
     </div>
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
-    <button class="btn" style="background:var(--coral);" onclick="deleteVisit('${v.id}')">Yes, delete it</button>
-    <button class="btn secondary" onclick="openEditVisit('${v.id}')">Cancel</button>
+    <button class="btn" style="background:var(--coral);" onclick="deleteVisit('${jsArg(v.id)}')">Yes, delete it</button>
+    <button class="btn secondary" onclick="openEditVisit('${jsArg(v.id)}')">Cancel</button>
   `);
 }
 async function deleteVisit(visitId){

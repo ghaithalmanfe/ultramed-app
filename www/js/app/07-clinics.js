@@ -164,7 +164,7 @@ function erpDashSection(){
   const clsBars = svgBars(CLS.map(k=>({l:k, v:d.nonBuyers.filter(x=>x.c.cls===k).length, c:clsColor(k)})));
   const rows = erpDashTab==='not'
     ? d.nonBuyers.slice(0,40).map(x=>`
-      <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${x.c.id}')">
+      <div class="card clickable" style="padding:11px 14px; border-inline-start:4px solid ${clsColor(x.c.cls)};" onclick="openClinicDetail('${jsArg(x.c.id)}')">
         <div class="row-between">
           <div>
             <div class="clinic-name">${esc(x.c.name)}${clinicIsRx(x.c)?' <span style="font-size:11px; color:var(--teal); font-weight:700;">'+(clinicIsDirect(x.c)?'℞ + direct':'℞ prescription')+'</span>':''}</div>
@@ -172,18 +172,18 @@ function erpDashSection(){
           </div>
           <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
             <span class="badge ${followStatus(x.c.nextFollowUp)}">${statusLabel(x.c.nextFollowUp).split('·')[0].trim()}</span>
-            <button class="chip small" onclick="event.stopPropagation(); openCallLog('${x.c.id}')">📞</button>
+            <button class="chip small" onclick="event.stopPropagation(); openCallLog('${jsArg(x.c.id)}')">📞</button>
           </div>
         </div>
         <div style="display:flex; gap:6px; margin-top:8px; align-items:center;" onclick="event.stopPropagation()">
           <input type="text" value="${esc(x.c.noSaleReason||'')}" placeholder="Why no sales yet? Add the reason…" dir="auto"
-            onchange="saveNoSaleReason('${x.c.id}', this.value)"
+            onchange="saveNoSaleReason('${jsArg(x.c.id)}', this.value)"
             style="flex:1; margin:0; font-size:12.5px; padding:7px 10px;">
-          <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${x.c.id}', this.parentElement.querySelector('input').value)">💾 Save</button>
+          <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${jsArg(x.c.id)}', this.parentElement.querySelector('input').value)">💾 Save</button>
         </div>
       </div>`).join('') + (d.nonBuyers.length>40?`<div style="color:var(--muted); font-size:12.5px; text-align:center; padding:6px;">+${d.nonBuyers.length-40} more in the list view</div>`:'')
     : clinicBuyers.slice(0,40).map(b=>`
-      <div class="card ${b.clinicId?'clickable':''}" style="padding:11px 14px; border-inline-start:4px solid ${b.net<0?'var(--coral)':'var(--sage)'};" ${b.clinicId?`onclick="openClinicDetail('${b.clinicId}')"`:''}>
+      <div class="card ${b.clinicId?'clickable':''}" style="padding:11px 14px; border-inline-start:4px solid ${b.net<0?'var(--coral)':'var(--sage)'};" ${b.clinicId?`onclick="openClinicDetail('${jsArg(b.clinicId)}')"`:''}>
         <div class="row-between">
           <div>
             <div class="clinic-name">${esc(b.name)}${b.clinicId?'':' <span style="font-size:11px; color:var(--muted);">⚠ not linked</span>'}</div>
@@ -284,11 +284,11 @@ function renderClinicDash(){
     ${secHead('layers', 'Portfolio by class')}
     <div class="csub">Sales potential mix</div>
     <div class="segbar">
-      ${byCls.filter(x=>x.n).map(x=>`<div style="flex:${x.n}; background:${x.c}; cursor:pointer;" title="Class ${x.k}: ${x.n} — tap to list them" onclick="showClinicClass('${x.k}')">${x.n}</div>`).join('')}
+      ${byCls.filter(x=>x.n).map(x=>`<div style="flex:${x.n}; background:${x.c}; cursor:pointer;" title="Class ${x.k}: ${x.n} — tap to list them" onclick="showClinicClass('${jsArg(x.k)}')">${x.n}</div>`).join('')}
       ${unc?`<div style="flex:${unc}; background:#C7C7CC; cursor:pointer;" title="Unclassified — tap to list them" onclick="showClinicClass('none')">${unc}</div>`:''}
     </div>
     <div class="seglegend">
-      ${byCls.filter(x=>x.n).map(x=>`<span style="cursor:pointer;" onclick="showClinicClass('${x.k}')"><i class="swatch" style="background:${x.c}"></i>Class ${x.k} \u00b7 ${x.n} (${Math.round(x.n/clsTotal*100)}%)</span>`).join('')}
+      ${byCls.filter(x=>x.n).map(x=>`<span style="cursor:pointer;" onclick="showClinicClass('${jsArg(x.k)}')"><i class="swatch" style="background:${x.c}"></i>Class ${x.k} \u00b7 ${x.n} (${Math.round(x.n/clsTotal*100)}%)</span>`).join('')}
       ${unc?`<span style="cursor:pointer;" onclick="showClinicClass('none')"><i class="swatch" style="background:#C7C7CC"></i>Unclassified \u00b7 ${unc}</span>`:''}
     </div>
     <div class="csub" style="margin-top:6px;">Tap a class to see its clinics by name</div>
@@ -333,7 +333,7 @@ function renderClinicDash(){
     <div class="csub">${totDocs} recorded \u00b7 tap for the selling playbook</div>
     ${specList.length? specList.map(([sp,n])=>{
       const pb=SPECIALTY_PLAYBOOK[sp];
-      return `<div class="rank" style="cursor:pointer;" onclick="openPlaybook('${sp}')">
+      return `<div class="rank" style="cursor:pointer;" onclick="openPlaybook('${jsArg(sp)}')">
         <div style="width:30px; height:30px; border-radius:50%; background:${pb?pb.color+'22':'var(--paper)'}; display:flex; align-items:center; justify-content:center; font-size:15px;">${pb?pb.icon:'\u{1F464}'}</div>
         <div class="rinfo"><div class="rname">${esc(sp)}</div><div class="rsub">Tap for tips &amp; objections</div></div>
         <div class="rval">${n}</div></div>`;
@@ -409,7 +409,7 @@ function renderClinics(){
   ];
   const chipsEl = document.getElementById('clinicVisitChips');
   if(chipsEl) chipsEl.innerHTML = chipDefs.map(([k,l])=>
-    `<div class="chip small ${clinicVisitFilter===k?'on':''}" onclick="setClinicVisitFilter('${k}')">${l} (${buckets[k]})</div>`).join('');
+    `<div class="chip small ${clinicVisitFilter===k?'on':''}" onclick="setClinicVisitFilter('${jsArg(k)}')">${l} (${buckets[k]})</div>`).join('');
   if(clinicVisitFilter!=='all') filtered = filtered.filter(c=>clinicVisitBucket(statFor[c.id].total)===clinicVisitFilter);
   // Class chips — the names behind each slice of the portfolio bar.
   const clsOf = c => (c.cls && c.cls!=='Closed') ? c.cls : 'none';
@@ -418,14 +418,14 @@ function renderClinics(){
   const clsEl = document.getElementById('clinicClsChips');
   if(clsEl) clsEl.innerHTML = [['all','All classes'],['A','Class A'],['B','Class B'],['C','Class C'],['D','Class D'],['F','Class F'],['none','Unclassified']]
     .filter(([k])=>k==='all' || clsCounts[k] || clinicClsFilter===k)
-    .map(([k,l])=>`<div class="chip small ${clinicClsFilter===k?'on':''}" onclick="setClinicClsFilter('${k}')">${l} (${clsCounts[k]||0})</div>`).join('');
+    .map(([k,l])=>`<div class="chip small ${clinicClsFilter===k?'on':''}" onclick="setClinicClsFilter('${jsArg(k)}')">${l} (${clsCounts[k]||0})</div>`).join('');
   if(clinicClsFilter!=='all') filtered = filtered.filter(c=>clsOf(c)===clinicClsFilter);
   // Order: priority (follow-up urgency, least visited, class), or the name A–Z / Z–A; with the duplicates
   // filter on, each group of look-alike names stays together (groups in name order, A–Z unless Z–A is chosen).
   const nDup = Object.keys(dups.byId).length;
   const sortEl = document.getElementById('clinicSortChips');
   if(sortEl) sortEl.innerHTML = [['priority','Priority order'],['az','Name A–Z'],['za','Name Z–A']]
-    .map(([k,l])=>`<button type="button" class="chip small ${clinicSortMode===k?'on':''}" aria-pressed="${clinicSortMode===k}" onclick="setClinicSort('${k}')">${l}</button>`).join('')
+    .map(([k,l])=>`<button type="button" class="chip small ${clinicSortMode===k?'on':''}" aria-pressed="${clinicSortMode===k}" onclick="setClinicSort('${jsArg(k)}')">${l}</button>`).join('')
     + (nDup || clinicDupOnly ? `<button type="button" class="chip small cl-dupchip ${clinicDupOnly?'on':''}" aria-pressed="${clinicDupOnly}" onclick="toggleClinicDupOnly()">${I('alert')} <span>Possible duplicates (${nDup})</span></button>` : '');
   if(clinicDupOnly) filtered = filtered.filter(c=>dups.byId[c.id]);
   const dir = clinicSortMode === 'za' ? -1 : 1;
@@ -453,14 +453,14 @@ function renderClinics(){
     const visitTxt = st.total===0 ? '⭕ no visits yet' : `${st.total} visit${st.total===1?'':'s'}`;
     const nd = (c.doctors||[]).length;
     return `
-    <div class="lrow cl-row" role="button" tabindex="0" onclick="openClinicDetail('${c.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openClinicDetail('${c.id}');}">
-      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+    <div class="lrow cl-row" role="button" tabindex="0" onclick="openClinicDetail('${jsArg(c.id)}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openClinicDetail('${jsArg(c.id)}');}">
+      <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
       <div class="lr-t">
         <div class="clinic-name">${esc(c.name)}${c.isNew?' <span style="font-size:11px;">🆕</span>':''}</div>
         <div class="clinic-sub">${[`${nd} doctor${nd===1?'':'s'}`, esc(c.rep||''), visitTxt, st.calls?`📞 ${st.calls} call${st.calls===1?'':'s'}`:'', st.last?`last ${fmtDate(st.last)}`:'', c.account?esc(c.account):''].filter(Boolean).map(x=>`<span>${x}</span>`).join('<span data-notr> · </span>')}</div>
         ${nd?`<div class="cl-spec">${c.doctors.slice(0,6).map(d=>SPECIALTY_PLAYBOOK[d.title]?SPECIALTY_PLAYBOOK[d.title].icon:'👤').join(' ')}</div>`:''}
         ${dups.byId[c.id]?`<div class="cl-dup">${I('alert')} <span>Possible duplicate of</span> <bdi>${dups.byId[c.id].map(id=>byIdC.get(id)).filter(Boolean).map(o=>esc(o.name)).join('<span data-notr> · </span>')}</bdi></div>`:''}
-        <div class="cl-act" style="color:${actColor[act.cls]||'var(--muted)'};"><span>${act.icon} ${act.text}</span>${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${c.id}')">${I('calendar')} Reschedule</button>`:''}</div>
+        <div class="cl-act" style="color:${actColor[act.cls]||'var(--muted)'};"><span>${act.icon} ${act.text}</span>${act.reschedule?`<button class="chip small" onclick="event.stopPropagation(); openRescheduleFollowUp('${jsArg(c.id)}')">${I('calendar')} Reschedule</button>`:''}</div>
       </div>
       <span class="badge ${followStatus(c.nextFollowUp)}">${statusLabel(c.nextFollowUp).split('·')[0].trim()}</span>
     </div>`;
@@ -1069,7 +1069,7 @@ function openClinicDetail(id){
   const ownSec = (icon, html) => html ? `<section class="cd-sec">${html.replace(/<div class="section-title"([^>]*)>/, `<div class="section-title cd-st"$1><span class="sec-ic" aria-hidden="true">${I(icon)}</span>`)}</section>` : '';
   showModal(`
     <div class="cd-head" data-wide>
-      <span class="cls cls-${c.cls} cd-cls">${c.cls||'-'}</span>
+      <span class="cls cls-${clsKey(c.cls)} cd-cls">${esc(c.cls||'-')}</span>
       <div class="cd-ht">
         <h3 style="margin-top:0;">${esc(c.name)}</h3>
         <div class="clinic-sub">${esc(c.rep||'')}${c.contact?' · '+esc(c.contact):''}${c.phone?' · '+esc(c.phone):''}</div>
@@ -1082,12 +1082,12 @@ function openClinicDetail(id){
       </div>
     </div>
     <div class="cd-acts">
-      <button class="btn" onclick="quickLogFrom('${c.id}'); closeModal();">Log a visit here</button>
+      <button class="btn" onclick="quickLogFrom('${jsArg(c.id)}'); closeModal();">Log a visit here</button>
       <div class="chip-row">
-        <div class="chip small" onclick="openStandaloneOrder('${c.id}')">${I('cart')} Order only</div>
-        <div class="chip small" onclick="openCallLog('${c.id}')">${I('phone')} Log a call</div>
-        ${canPlan ? `<div class="chip small" onclick="addToPlan('${c.id}')">${I('calendar')} Today's plan</div>` : ''}
-        ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${c.id}')">${I('pencil')} Edit</div>` : ''}
+        <div class="chip small" onclick="openStandaloneOrder('${jsArg(c.id)}')">${I('cart')} Order only</div>
+        <div class="chip small" onclick="openCallLog('${jsArg(c.id)}')">${I('phone')} Log a call</div>
+        ${canPlan ? `<div class="chip small" onclick="addToPlan('${jsArg(c.id)}')">${I('calendar')} Today's plan</div>` : ''}
+        ${currentUser.role==='supervisor' ? `<div class="chip small" onclick="openEditClinic('${jsArg(c.id)}')">${I('pencil')} Edit</div>` : ''}
       </div>
     </div>
     <div class="cd-grid">
@@ -1098,11 +1098,11 @@ function openClinicDetail(id){
           <div id="docListInModal">${renderDoctorRows(c)}</div>
           <input type="text" id="newDocName" dir="auto" placeholder="Doctor name">
           <div class="chip-row" id="newDocTitleChips" style="margin-top:8px;">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
-          <button class="btn secondary small" onclick="addDoctor('${c.id}')">Add doctor</button>`)}
+          <button class="btn secondary small" onclick="addDoctor('${jsArg(c.id)}')">Add doctor</button>`)}
         ${ownSec('compass', decisionMapBlock(c))}
         ${sec('clock', 'Visit history', cVisits.length===0 ? '<div style="color:var(--muted); font-size:13.5px;">No visits yet.</div>' :
-      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.mood?' · '+({pleased:'😊',neutral:'😐',concerned:'😟'}[v.mood]||''):''}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber-ink); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${v.id}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${rxLinesHTML(v,c)}${v.notes ? (rxPadsOf(v) ? '' : '<br>')+esc(v.notes) : ''}
-        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c.name)}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
+      cVisits.map(v=>`<div class="visit-hist">${v.callOnly?`<em>${CHANNEL_LABELS[v.channel]||'📞 Call'}${v.contactName?' with '+esc(v.contactName):''}</em> · `:''}<strong>${fmtDate(v.date)}</strong>${v.orderTaken?' · '+money(v.orderTotal):''} · ${esc(v.rep)}${jointTag(v)}${v.mood?' · '+({pleased:'😊',neutral:'😐',concerned:'😟'}[v.mood]||''):''}${v.editHistory&&v.editHistory.length?` · <span style="color:var(--amber-ink); cursor:pointer;" onclick="event.stopPropagation(); showEditHistory('${jsArg(v.id)}')">✏️ edited</span>`:''}${contactNames(v,c)?`<br><span style="color:var(--muted); font-size:12.5px;">👥 ${esc(contactNames(v,c))}</span>`:''}${rxLinesHTML(v,c)}${v.notes ? (rxPadsOf(v) ? '' : '<br>')+esc(v.notes) : ''}
+        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${esc(safeImg(ph.thumb))}" data-cap="${esc(c.name)}" onclick="event.stopPropagation(); showLightbox('${jsArg(ph.id)}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
       </div>`).join(''))}
       </div>
       <div class="cd-col">
@@ -1112,13 +1112,13 @@ function openClinicDetail(id){
         ${ownSec('refresh', clinicErpSection(id))}
         ${sec('pencil', 'Clinic profile notes', `
           <textarea id="profileNotesEdit" dir="auto" placeholder="Preferences, competitor products in use, best time to visit...">${esc(c.profileNotes)}</textarea>
-          <button class="btn secondary small" onclick="saveProfileNotes('${c.id}')">Save notes</button>`)}
+          <button class="btn secondary small" onclick="saveProfileNotes('${jsArg(c.id)}')">Save notes</button>`)}
         ${sec('chat', 'No-sales reason', `
           <p style="color:var(--muted); font-size:12px; margin:0 0 6px;">If this account isn't buying yet, note why (e.g. prescription-only, budget cycle, stock on hand) — shown in the management report.</p>
           <div style="display:flex; gap:6px; align-items:center;">
             <input type="text" value="${esc(c.noSaleReason||'')}" placeholder="e.g. Works on prescriptions — patients buy from pharmacy"
-              onchange="saveNoSaleReason('${c.id}', this.value)" style="flex:1; margin:0;">
-            <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${c.id}', this.parentElement.querySelector('input').value)">💾 Save</button>
+              onchange="saveNoSaleReason('${jsArg(c.id)}', this.value)" style="flex:1; margin:0;">
+            <button class="chip small" style="flex-shrink:0;" onclick="saveNoSaleReason('${jsArg(c.id)}', this.parentElement.querySelector('input').value)">💾 Save</button>
           </div>`)}
       </div>
     </div>
@@ -1234,7 +1234,7 @@ function clinicErpAccountsHTML(c){
         <div dir="auto" style="font-size:13px; font-weight:700; overflow-wrap:anywhere;">${esc(a.name)}</div>
         <div class="clinic-sub" style="display:flex; flex-wrap:wrap; gap:4px 6px; align-items:center;">${erpLinkBadge(a)} ${stale ? `<span>${noInv}</span>` : `<span>${a.invoices} × · <span dir="ltr">${money(a.net)}</span>${a.last ? ` · <span>last invoice</span> ${fmtDate(a.last)}` : ''}</span>`}</div>
       </div>
-      <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(a.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'clinic:${c.id}')">Move…</button>
+      <button class="chip small" style="flex-shrink:0;" data-erp-link="${esc(a.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'clinic:${jsArg(c.id)}')">Move…</button>
     </div>`;
   // the group's own name (no branch word) counts once, on its first branch — say where, on the other branches
   let famLine = '';
@@ -1246,7 +1246,7 @@ function clinicErpAccountsHTML(c){
       famLine = `<div class="clinic-sub" style="padding-top:6px; line-height:1.5;"><span>Accounts named after the whole group count once, on</span> <b dir="auto" style="overflow-wrap:anywhere;">${esc(land ? land.name : '')}</b></div>`;
     }
   }
-  return `<div class="section-title" style="margin-top:20px;"><span>ERP accounts counted here</span> <span class="link" onclick="openErpLinks({back:'clinic:${c.id}'})">All accounts</span></div>
+  return `<div class="section-title" style="margin-top:20px;"><span>ERP accounts counted here</span> <span class="link" onclick="openErpLinks({back:'clinic:${jsArg(c.id)}'})">All accounts</span></div>
     <div class="card" id="clinicErpAccounts" data-clinic="${esc(c.id)}" style="padding:8px 12px 12px;">
       ${here.map(a => row(a, false)).join('')}${staleHere.map(s => row({ name: s.name, status: s.status }, true)).join('')}
       ${here.length || staleHere.length ? '' : `<div class="clinic-sub" style="padding:6px 0;">${missing ? 'No ERP account counts here in the files loaded on this device.' : 'No ERP account counts here yet.'}</div>`}
@@ -1254,7 +1254,7 @@ function clinicErpAccountsHTML(c){
       ${missing ? `<div id="clinicErpMissing" style="color:var(--amber-ink); font-weight:600; font-size:12px; line-height:1.55; padding-top:6px;">⚠️ ${missing} <span>sales files did not load on this device — their invoices are not counted here.</span> <span class="link" style="color:var(--teal); cursor:pointer;" onclick="clinicErpRetry(this.closest('#clinicErpAccounts').dataset.clinic)">🔄 <span>Load them again</span></span></div>` : ''}
       ${famLine}
       ${c.cls === 'Closed' ? '' /* a Closed clinic takes no new account: its own accounts can still be moved away */
-        : `<button class="chip small" style="margin-top:10px;" onclick="openErpLinks({pickFor:'${c.id}', back:'clinic:${c.id}'})">${I('plus')} <span>Count another ERP account here…</span></button>`}
+        : `<button class="chip small" style="margin-top:10px;" onclick="openErpLinks({pickFor:'${jsArg(c.id)}', back:'clinic:${jsArg(c.id)}'})">${I('plus')} <span>Count another ERP account here…</span></button>`}
     </div>`;
 }
 // The card's retry: the rows load, and the card is redrawn only if it is
@@ -1389,8 +1389,8 @@ function openEditClinic(id){
       <div class="chip small ${c.cls!=='Closed'?'on':''}" data-st="open" onclick="pickModalCls(this)">Active</div>
       <div class="chip small ${c.cls==='Closed'?'on':''}" data-st="closed" onclick="pickModalCls(this)">Closed</div>
     </div>
-    <button class="btn" onclick="saveEditClinic('${c.id}')">Save changes</button>
-    <button class="btn ghost" onclick="deleteClinic('${c.id}')">Remove clinic</button>
+    <button class="btn" onclick="saveEditClinic('${jsArg(c.id)}')">Save changes</button>
+    <button class="btn ghost" onclick="deleteClinic('${jsArg(c.id)}')">Remove clinic</button>
   `);
   window._ecBase = clinicFormFields(c); // what the form was opened with — only fields the user changes are written
 }
@@ -1453,14 +1453,14 @@ function openEditProduct(key){
     <input type="text" id="epCode" value="${esc(p.id)}">
     ${sharing>1?`<p style="color:var(--coral-ink); font-size:12.5px; margin-top:6px;">⚠️ ${sharing} products share this code. Giving each a unique code prevents pricing mistakes.</p>`:''}
     <label>Price (KD)</label>
-    <input type="number" step="0.01" min="0" id="epPrice" value="${p.price!=null?p.price:''}">
+    <input type="number" step="0.01" min="0" id="epPrice" value="${numAttr(p.price)}">
     <label>Description</label>
     <textarea id="epDesc" placeholder="Short product description shown to the whole team">${esc(p.desc||'')}</textarea>
     <label>Recommend for these doctor specialties</label>
     <p style="color:var(--muted); font-size:12px; margin:-4px 0 8px;">Tag the specialties this product is a good fit for — it'll show up under "Lead with these products" in that specialty's playbook.</p>
     <div class="chip-row" id="epSpecialtyChips">${SPECIALTIES.map(t=>`<div class="chip small ${mySpecs.has(t)?'on':''}" data-spec="${esc(t)}" onclick="this.classList.toggle('on')">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
-    <button class="btn" onclick="saveEditProduct('${esc(key)}')">Save changes</button>
-    <button class="btn ghost" onclick="removeProduct('${esc(key)}')">Remove product</button>
+    <button class="btn" onclick="saveEditProduct('${jsArg(key)}')">Save changes</button>
+    <button class="btn ghost" onclick="removeProduct('${jsArg(key)}')">Remove product</button>
   `);
 }
 async function saveEditProduct(key){
@@ -1588,7 +1588,7 @@ function openDeletedClinic(id){
     ${cVisits.slice(0,8).map(v=>`<div class="visit-hist"><strong>${fmtDate(v.date)}</strong> · ${esc(v.rep)}${v.callOnly?' · '+(CHANNEL_LABELS[v.channel]||'📞'):''}${v.orderTaken?' · '+money(v.orderTotal):''}${v.notes?`<div style="color:var(--muted); font-size:12px;">${esc(v.notes.slice(0,90))}</div>`:''}</div>`).join('') || '<div style="color:var(--muted); font-size:13px;">No visits recorded.</div>'}
     ${cVisits.length>8?`<div style="color:var(--muted); font-size:12px; text-align:center; padding:4px;">+${cVisits.length-8} more</div>`:''}
     ${b && sup ? `<button class="btn" style="margin-top:12px;" onclick="restoreFromBin('clinics', ${binIdx}); closeModal();">♻️ Restore this clinic</button>` : ''}
-    ${!b && sup ? `<button class="btn" style="margin-top:12px;" onclick="openRecreateClinic('${esc(id)}')">♻️ Re-create this clinic (keeps all its history)</button>` : ''}
+    ${!b && sup ? `<button class="btn" style="margin-top:12px;" onclick="openRecreateClinic('${jsArg(id)}')">♻️ Re-create this clinic (keeps all its history)</button>` : ''}
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">Close</button>
   `);
 }
@@ -1616,7 +1616,7 @@ function openRecreateClinic(id){
     <label>Class</label>
     <div class="chip-row" id="rcClsChips">${['A','B','C'].map(k=>`<div class="chip ${k==='B'?'on':''}" data-cls="${k}" onclick="pickModalCls(this)">${k}</div>`).join('')}</div>
     <div id="rcAsk"></div>
-    <button class="btn" style="margin-top:12px;" onclick="confirmRecreateClinic('${esc(id)}')">Create</button>
+    <button class="btn" style="margin-top:12px;" onclick="confirmRecreateClinic('${jsArg(id)}')">Create</button>
     <button class="btn secondary" style="margin-top:8px;" onclick="closeModal()">Cancel</button>
   `);
 }
@@ -1699,8 +1699,8 @@ function adminBinHTML(){
             <div class="clinic-sub">${labels[kind]} · ${days} day${days===1?'':'s'} left</div>
           </div>
           <div style="display:flex; gap:6px; flex-shrink:0;">
-            <button class="chip small" onclick="restoreFromBin('${kind}',${i})">Restore</button>
-            <button class="del" onclick="purgeFromBin('${kind}',${i})">&times;</button>
+            <button class="chip small" onclick="restoreFromBin('${jsArg(kind)}',${i})">Restore</button>
+            <button class="del" onclick="purgeFromBin('${jsArg(kind)}',${i})">&times;</button>
           </div>
         </div>
       </div>`;

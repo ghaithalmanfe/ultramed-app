@@ -75,7 +75,7 @@ function pagedRows(list, key, items, row){
 }
 function pageMoreHTML(list, shown, total){
   if(shown >= total) return '';
-  return `<div class="pg-more" data-list="${list}"><button type="button" class="btn secondary" onclick="pageMore('${list}', this)">Show ${Math.min(PAGE_ROWS[list], total - shown)} more (${total - shown} not shown yet)</button></div>`;
+  return `<div class="pg-more" data-list="${list}"><button type="button" class="btn secondary" onclick="pageMore('${jsArg(list)}', this)">Show ${Math.min(PAGE_ROWS[list], total - shown)} more (${total - shown} not shown yet)</button></div>`;
 }
 function pageMore(list, btn){
   const p = _pages[list], wrap = btn && btn.closest('.pg-more');

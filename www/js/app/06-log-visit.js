@@ -15,7 +15,7 @@ function renderLogHistory(){
           <div class="clinic-name" style="font-size:13.5px;">${v.callOnly?(CHANNEL_LABELS[v.channel]||'📞')+' ':''}${v.orderOnly?'🛒 ':''}${esc(clinicNameOf(v.clinicId))}</div>
           <div class="clinic-sub">${fmtDate(v.date)} · ${esc(v.rep)}${jointTag(v)}${v.orderTaken?' · '+money(v.orderTotal):''}${rxShortHTML(v)}</div>
         </div>
-        ${canEditVisit(v)?`<button class="chip small" onclick="openEditVisit('${v.id}')">${I('pencil')}</button>`:''}
+        ${canEditVisit(v)?`<button class="chip small" onclick="openEditVisit('${jsArg(v.id)}')">${I('pencil')}</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -40,7 +40,7 @@ function prepLogView(qClinicId){
   const wrap = document.getElementById('logAsWrap');
   if(currentUser.role==='supervisor'){
     wrap.style.display = 'block';
-    document.getElementById('logAsChips').innerHTML = asOpts.map(r=>`<div class="chip ${logAsRep===r?'on':''}" onclick="setLogAsRep('${esc(r)}')">${esc(r)}</div>`).join('');
+    document.getElementById('logAsChips').innerHTML = asOpts.map(r=>`<div class="chip ${logAsRep===r?'on':''}" onclick="setLogAsRep('${jsArg(r)}')">${esc(r)}</div>`).join('');
   } else {
     wrap.style.display = 'none';
   }
@@ -94,7 +94,7 @@ function renderJointChips(){
   const options = jointPeople().filter(r=>r!==logAsRep);
   if(wrap) wrap.style.display = options.length ? 'block' : 'none';
   el.innerHTML = `<div class="chip small ${!jointRep?'on':''}" onclick="setJointRep(null)">Solo</div>`
-    + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${esc(r)}')">🤝 ${esc(r)}</div>`).join('');
+    + options.map(r=>`<div class="chip small ${jointRep===r?'on':''}" onclick="setJointRep('${jsArg(r)}')">🤝 ${esc(r)}</div>`).join('');
 }
 function setJointRep(r){ jointRep = r; renderJointChips(); lvPaint(); }
 function renderClinicSelect(qClinicId){
@@ -112,7 +112,7 @@ function renderClinicSelect(qClinicId){
       cardEl.innerHTML = `<div class="card">
         <div class="row-between">
           <div style="display:flex; align-items:center; gap:11px;">
-            <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+            <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
             <div>
               <div class="clinic-name">${esc(c.name)}</div>
               <div class="clinic-sub">${esc(c.rep||'')}${c.account?' · '+esc(c.account):''}${c.isNew?' · 🆕 New customer':''}</div>
@@ -157,8 +157,8 @@ function renderClinicSelect(qClinicId){
   }
   // rows as in Recent Activity: the class badge, the name, "2 doctors · owner", a chevron
   listEl.innerHTML = `<div class="lrows">` + list.map(c=>`
-    <div class="lrow clickable" role="button" tabindex="0" onclick="pickClinic('${c.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickClinic('${c.id}');}">
-      <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+    <div class="lrow clickable" role="button" tabindex="0" onclick="pickClinic('${jsArg(c.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pickClinic('${jsArg(c.id)}');}">
+      <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
       <div class="lr-t">
         <div class="clinic-name">${esc(c.name)}</div>
         <div class="clinic-sub">${(c.doctors||[]).length} doctor${(c.doctors||[]).length===1?'':'s'}${c.rep!==logAsRep?' · '+esc(c.rep):''}</div>
@@ -233,13 +233,13 @@ function renderDoctorPick(c){
   const sug = lvContactSuggestion(c);
   chips.innerHTML = docs.map(d=>{
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    return `<div class="chip small ${selectedDoctorIds.includes(d.id)?'on':''}" onclick="pickDoctorSeen('${d.id}')">${pb?pb.icon+' ':''}${esc(d.name)}</div>`;
-  }).join('') + (sug ? `<div class="chip small lv-sug" id="lvContactSug" data-name="${esc(sug)}" onclick="openQuickAddDoctor('${c.id}', this.dataset.name)"><span>+ Add</span> <span dir="auto">${esc(sug)}</span></div>` : '')
-    + `<div class="chip small" onclick="openQuickAddDoctor('${c.id}')">+ Add doctor</div>`;
+    return `<div class="chip small ${selectedDoctorIds.includes(d.id)?'on':''}" onclick="pickDoctorSeen('${jsArg(d.id)}')">${pb?pb.icon+' ':''}${esc(d.name)}</div>`;
+  }).join('') + (sug ? `<div class="chip small lv-sug" id="lvContactSug" data-name="${esc(sug)}" onclick="openQuickAddDoctor('${jsArg(c.id)}', this.dataset.name)"><span>+ Add</span> <span dir="auto">${esc(sug)}</span></div>` : '')
+    + `<div class="chip small" onclick="openQuickAddDoctor('${jsArg(c.id)}')">+ Add doctor</div>`;
   const d = docs.find(x=>x.id===selectedDoctorIds[selectedDoctorIds.length-1]);
   if(d && d.title && SPECIALTY_PLAYBOOK[d.title]){
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    tip.innerHTML = `<div class="card clickable" style="margin-top:10px; background:${pb.color}14; border-inline-start:4px solid ${pb.color};" onclick="openPlaybook('${d.title}')">
+    tip.innerHTML = `<div class="card clickable" style="margin-top:10px; background:${pb.color}14; border-inline-start:4px solid ${pb.color};" onclick="openPlaybook('${jsArg(d.title)}')">
       <div style="font-size:12px; font-weight:700; color:${pb.color}; text-transform:uppercase; letter-spacing:.05em;">${pb.icon} ${esc(d.title)}</div>
       <div style="font-size:13px; margin-top:5px; line-height:1.5;">${esc(pb.lead[0])}</div>
       <div style="font-size:12.5px; color:${pb.color}; font-weight:600; margin-top:6px;">Open full playbook ›</div>
@@ -271,7 +271,7 @@ function openQuickAddDoctor(clinicId, name){
     <input type="text" id="newDocName" dir="auto" placeholder="Doctor name" value="${esc(name || '')}">
     <label>Specialty</label>
     <div class="chip-row" id="newDocTitleChips">${SPECIALTIES.map(t=>`<div class="chip small" data-title="${t}" onclick="pickDocTitle(this)">${SPECIALTY_PLAYBOOK[t].icon} ${t}</div>`).join('')}</div>
-    <button class="btn" onclick="quickAddDoctorSave('${clinicId}')">Save doctor</button>
+    <button class="btn" onclick="quickAddDoctorSave('${jsArg(clinicId)}')">Save doctor</button>
   `);
 }
 async function quickAddDoctorSave(clinicId){
@@ -301,7 +301,7 @@ function renderProductChips(){
     <div class="chip-brand-group">
       <div class="chip-brand-label"><span class="swatch" style="background:${brandColor(b)}"></span>${esc(b)}</div>
       <div class="chip-row">
-        ${byBrand[b].map(p=>`<div class="chip small withimg ${selectedProducts.includes(productKey(p))?'on':''}" data-id="${productKey(p)}" onclick="toggleProductChip('${productKey(p)}')">${prodThumb(p,'pthumb')}<span>${esc(p.name)}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="chip small withimg ${selectedProducts.includes(productKey(p))?'on':''}" data-id="${productKey(p)}" onclick="toggleProductChip('${jsArg(productKey(p))}')">${prodThumb(p,'pthumb')}<span>${esc(p.name)}</span></div>`).join('')}
       </div>
     </div>`).join('');
   lvPaint();
@@ -316,7 +316,7 @@ function toggleProductChip(id){
   if(orderTaken) renderOrders();
 }
 function renderNoOrderChips(){
-  document.getElementById('noOrderChips').innerHTML = NO_ORDER_REASONS.map(r=>`<div class="chip small ${noOrderReason===r?'on':''}" onclick="pickNoOrderReason('${r.replace(/'/g,"\\'")}')">${r}</div>`).join('');
+  document.getElementById('noOrderChips').innerHTML = NO_ORDER_REASONS.map(r=>`<div class="chip small ${noOrderReason===r?'on':''}" onclick="pickNoOrderReason('${jsArg(r)}')">${r}</div>`).join('');
 }
 function pickNoOrderReason(r){
   noOrderReason = (noOrderReason===r) ? null : r;
@@ -369,7 +369,7 @@ function renderOrders(){
     return `<div class="card">
       <div class="row-between" style="margin-bottom:8px;">
         <strong style="font-size:14px;">Order ${idx+1}</strong>
-        ${draftOrders.length>1?`<button class="del" onclick="removeDraftOrder('${o.id}')">&times;</button>`:''}
+        ${draftOrders.length>1?`<button class="del" onclick="removeDraftOrder('${jsArg(o.id)}')">&times;</button>`:''}
       </div>
       ${(()=>{
         const opsByBrand = {};
@@ -390,10 +390,10 @@ function renderOrders(){
               ${prodThumb(p,'pthumb')}
               <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:12px;">${p.price!=null?money(p.price)+' each':'no price'}</span></div>
               <div class="stepper">
-                <button type="button" onclick="bumpQty('${o.id}','${key}',-1)" ${q<=0?'disabled':''} aria-label="less">−</button>
-                <input class="val" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="9999" step="1" value="${q}" id="q-${o.id}-${slugify(key)}" aria-label="quantity"
-                  onfocus="this.select()" oninput="setQtyLive('${o.id}','${key}',this.value)" onchange="setQty('${o.id}','${key}',this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
-                <button type="button" onclick="bumpQty('${o.id}','${key}',1)" aria-label="more">+</button>
+                <button type="button" onclick="bumpQty('${jsArg(o.id)}','${jsArg(key)}',-1)" ${q<=0?'disabled':''} aria-label="less">−</button>
+                <input class="val" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="9999" step="1" value="${numAttr(q)||0}" id="q-${esc(o.id)}-${slugify(key)}" aria-label="quantity"
+                  onfocus="this.select()" oninput="setQtyLive('${jsArg(o.id)}','${jsArg(key)}',this.value)" onchange="setQty('${jsArg(o.id)}','${jsArg(key)}',this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
+                <button type="button" onclick="bumpQty('${jsArg(o.id)}','${jsArg(key)}',1)" aria-label="more">+</button>
               </div>
             </div>`;
           }).join('')}`).join('');
@@ -401,9 +401,9 @@ function renderOrders(){
       <div style="padding:12px 0 4px; border-top:1px solid var(--line);">
         <div style="font-size:14px; font-weight:600; margin-bottom:2px;">Discount</div>
         <div class="disc-chips">
-          ${DISCOUNT_PRESETS.map(d=>`<div class="chip ${(o.discountPct||0)===d?'on':''}" data-pct="${d}" onclick="setDraftDiscount('${o.id}',${d})">${d===0?'None':d+'%'}</div>`).join('')}
+          ${DISCOUNT_PRESETS.map(d=>`<div class="chip ${(o.discountPct||0)===d?'on':''}" data-pct="${d}" onclick="setDraftDiscount('${jsArg(o.id)}',${d})">${d===0?'None':d+'%'}</div>`).join('')}
           <input class="disc-other ${DISCOUNT_PRESETS.includes(o.discountPct||0)?'':'on'}" type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="Other %" aria-label="other discount percent"
-            value="${DISCOUNT_PRESETS.includes(o.discountPct||0)?'':o.discountPct}" onchange="setDraftDiscountTyped('${o.id}',this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
+            value="${DISCOUNT_PRESETS.includes(o.discountPct||0)?'':numAttr(o.discountPct)}" onchange="setDraftDiscountTyped('${jsArg(o.id)}',this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
         </div>
       </div>
       <div style="font-size:13px; color:var(--muted); padding-top:10px;">
@@ -411,7 +411,7 @@ function renderOrders(){
         <div class="row-between"><span>Discount (${o.discountPct||0}%)</span><span style="color:var(--coral-ink);">− ${moneyUi(disc)}</span></div>
         <div class="row-between" style="color:var(--ink); font-weight:700; margin-top:4px;"><span>Net</span><span>${moneyUi(net)}</span></div>
       </div>
-      <input type="text" placeholder="Order notes (optional)" dir="auto" value="${esc(o.notes)}" oninput="setDraftNotes('${o.id}',this.value)" style="margin-top:10px;">
+      <input type="text" placeholder="Order notes (optional)" dir="auto" value="${esc(o.notes)}" oninput="setDraftNotes('${jsArg(o.id)}',this.value)" style="margin-top:10px;">
     </div>`;
   }).join('');
   updateOrderTotalDisplay();
@@ -896,9 +896,9 @@ function confirmFollowUp(clinicId){
   showModal(`
     <h3 style="margin-top:0;" data-ic="calendar">${esc(c.name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;"><span>${statusLabel(c.nextFollowUp)}</span>. <span>What's the next step?</span></p>
-    <button class="btn" onclick="closeModal(); quickLogFrom('${c.id}')">${I('check')} Log the visit now</button>
-    <button class="btn secondary" onclick="openRescheduleFollowUp('${c.id}')">${I('calendar')} Not yet — reschedule</button>
-    <button class="btn ghost" onclick="clearFollowUp('${c.id}')">Clear — no longer needed</button>
+    <button class="btn" onclick="closeModal(); quickLogFrom('${jsArg(c.id)}')">${I('check')} Log the visit now</button>
+    <button class="btn secondary" onclick="openRescheduleFollowUp('${jsArg(c.id)}')">${I('calendar')} Not yet — reschedule</button>
+    <button class="btn ghost" onclick="clearFollowUp('${jsArg(c.id)}')">Clear — no longer needed</button>
   `);
 }
 function openRescheduleFollowUp(clinicId){
@@ -911,7 +911,7 @@ function openRescheduleFollowUp(clinicId){
       ${[{l:'+3 days',d:3},{l:'+1 week',d:7},{l:'+2 weeks',d:14},{l:'+1 month',d:30}].map(o=>`<button data-days="${o.d}" onclick="pickRescheduleDate(${o.d})">${o.l}</button>`).join('')}
     </div>
     <input type="date" id="rfDate">
-    <button class="btn" onclick="saveReschedule('${clinicId}')">Save new date</button>
+    <button class="btn" onclick="saveReschedule('${jsArg(clinicId)}')">Save new date</button>
   `);
 }
 function pickRescheduleDate(days){
@@ -948,7 +948,7 @@ const VISIT_MOODS = [['pleased', '😊 Pleased'], ['neutral', '😐 Neutral'], [
 let visitMood = null;
 function renderMoodChips(){
   const el = document.getElementById('moodChips'); if(!el) return;
-  el.innerHTML = VISIT_MOODS.map(([k, l]) => `<div class="chip small ${visitMood === k ? 'on' : ''}" onclick="pickMood('${k}')">${l}</div>`).join('');
+  el.innerHTML = VISIT_MOODS.map(([k, l]) => `<div class="chip small ${visitMood === k ? 'on' : ''}" onclick="pickMood('${jsArg(k)}')">${l}</div>`).join('');
 }
 function pickMood(k){ visitMood = visitMood === k ? null : k; renderMoodChips(); lvPaint(); }
 
@@ -1101,7 +1101,7 @@ function rxRowHTML(scope, key, id, t, q){
       <div class="pname" style="min-width:0; overflow-wrap:anywhere;"><span dir="auto">${esc(name)}</span>${t && !t.active ? ' <span style="color:var(--muted); font-size:11.5px; white-space:nowrap;">(retired)</span>' : ''}</div>
       <div class="stepper" style="flex-shrink:0;">
         <button type="button" class="rx-minus" onclick="rxBumpEl(this,-1)" ${q <= 0 ? 'disabled' : ''} aria-label="less">−</button>
-        <input class="val rx-qty" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="999" step="1" value="${q}" id="${esc('rxq-' + scope + '-' + (key || '_') + '-' + id)}" aria-label="pads"
+        <input class="val rx-qty" type="number" inputmode="numeric" pattern="[0-9]*" min="0" max="999" step="1" value="${numAttr(q)||0}" id="${esc('rxq-' + scope + '-' + (key || '_') + '-' + id)}" aria-label="pads"
           onfocus="this.select()" oninput="rxSetLiveEl(this)" onchange="rxSettleEl(this)" onkeydown="if(event.key==='Enter'){event.preventDefault(); this.blur();}">
         <button type="button" class="rx-plus" onclick="rxBumpEl(this,1)" aria-label="more">+</button>
       </div>
