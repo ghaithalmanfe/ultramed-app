@@ -446,7 +446,7 @@ reseed();
   a = await ui('list');
   check('the account linked to a removed clinic is listed first, as "removed clinic"', a.first === 'Orion Dental Clinic - Hawally' && /removed clinic/.test(a.text || ''), a);
   a = await ui('auditRow', 'Orion Dental Clinic - Hawally');
-  check('the audit says عيادة محذوفة (counted for whoever issued it), not ✅', /عيادة محذوفة/.test(a.row || '') && !/✅/.test(a.row || ''), a);
+  check('the audit says "Deleted clinic" (counted for whoever issued it), not ✅', /Deleted clinic \(by hand\) — counts for whoever issued the invoice/.test(a.row || '') && !/✅/.test(a.row || ''), a);
   const del = await page.evaluate(() => { deleteClinic('al1'); return document.getElementById('modalInner').innerText.replace(/\s+/g, ' '); });
   check('removing Salmiya warns that an ERP account is linked to it by hand', /linked to this clinic by hand/.test(del) && /move them first/.test(del), del.slice(0, 300));
 

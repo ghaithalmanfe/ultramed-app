@@ -396,7 +396,7 @@ function seed(extra){
   // E — Edit visit → add photo on a full phone with no signal
   // =====================================================================
   await phase('E', 'Edit visit → add photo, full phone, no signal', async () => {
-    const NOT_SAVED = '⚠️ لم تُحفظ الزيارة على السحابة ولا على الجهاز (الذاكرة ممتلئة) — أبقِ التطبيق مفتوحًا حتى يعود الاتصال';
+    const NOT_SAVED = '⚠️ The visit was not saved to the cloud or on this device (storage full) — keep the app open until the connection is back';
     for(const [id, label, opts] of [['E1', 'E-F-Mariam-full', { fullRe: '^(um_mirror:visits$|um_outbox$)' }], ['E2', 'E-F2-Mariam-full-noIDB', { noIDB: true, fullRe: '^(um_photo|um_mirror:visits$|um_outbox$)' }]]){
       seed({ visits: [visitRec('vE1', 'c1', 'd1', 'E visit saved this morning')] });
       const F = await mkPhone(label, opts);

@@ -336,7 +336,7 @@ function seed(extra){
     await A.page.evaluate(async () => { window._lastVisitSaveAt = 0; await saveVisit(); });
     const s2 = await state(A, 'P5 offline no photo');
     check('P5b. no signal, no photo: the same toast as before ("saved on this device") and no photos field',
-      s2.mem === 1 && s2.queued && s2.photos === null && s2.toasts[s2.toasts.length - 1] === '📴 الزيارة محفوظة على هذا الجهاز — سترفع تلقائيًا عند عودة الاتصال', s2);
+      s2.mem === 1 && s2.queued && s2.photos === null && s2.toasts[s2.toasts.length - 1] === '📴 Visit saved on this device — it uploads by itself when the connection is back', s2);
     net.down.delete(A.label); await A.tick();
     await until(() => inCloud('P5 offline no photo').length === 1);
   });

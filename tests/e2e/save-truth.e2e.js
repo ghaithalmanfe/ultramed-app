@@ -161,7 +161,7 @@ function seedCloud(extra){
     mode.deny = null;
     await A.tick();
     check('A2. a visit the rules refuse is never queued: "Visit not saved — not allowed (ask the supervisor)", off the lists, the form still holds what she typed, never "saved on this device", and nothing uploads later',
-      !a2.inMem && !a2.queued && a2.view === 'log' && a2.notes === 'A2 refused visit' && a2.toasts.some(t => /Visit not saved — not allowed/.test(t)) && !a2.toasts.some(t => /محفوظة على هذا الجهاز|Saved on this device|on this phone/.test(t)) && !cloudVisits().some(v => v.notes === 'A2 refused visit'), a2);
+      !a2.inMem && !a2.queued && a2.view === 'log' && a2.notes === 'A2 refused visit' && a2.toasts.some(t => /Visit not saved — not allowed/.test(t)) && !a2.toasts.some(t => /محفوظة على هذا الجهاز|[Ss]aved on this device|on this phone/.test(t)) && !cloudVisits().some(v => v.notes === 'A2 refused visit'), a2);
     await A.ctx.close();
 
     // A3 — a change queued with no connection, then refused at upload (the login still reads the team's data:
@@ -222,7 +222,7 @@ function seedCloud(extra){
     const b1 = await A.ev(() => ({ inMem: visits.some(v => v && /^B1 visit/.test(v.notes || '')), queued: outboxHas('visits'), view: activeView, notes: ((document.getElementById('visitNotes') || {}).value || '').slice(0, 8),
       bar: (document.getElementById('tooLargeBar') || {}).textContent || '', toasts: window.__toasts.slice() }));
     check('B1. a visit that would make this month too large is not saved and never queued: the form keeps it, the visit screen says "Visit not saved", never "saved on this device"',
-      !b1.inMem && !b1.queued && b1.view === 'log' && b1.notes === 'B1 visit' && b1.toasts.some(t => /Visit not saved — this month's visits are too large/.test(t)) && !b1.toasts.some(t => /محفوظة على هذا الجهاز|Saved on this device/.test(t)), { ...b1, bar: b1.bar.slice(0, 200) });
+      !b1.inMem && !b1.queued && b1.view === 'log' && b1.notes === 'B1 visit' && b1.toasts.some(t => /Visit not saved — this month's visits are too large/.test(t)) && !b1.toasts.some(t => /محفوظة على هذا الجهاز|[Ss]aved on this device/.test(t)), { ...b1, bar: b1.bar.slice(0, 200) });
     check('B1b. …and a lasting bar names the month and what to do (remove some photos, then save again)',
       /November 2026/.test(b1.bar) && /too large for the cloud/.test(b1.bar) && /Remove some photos/.test(b1.bar), b1.bar);
     await A.ev(() => { window.__toasts = []; });

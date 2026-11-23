@@ -63,7 +63,7 @@ async function setSalesmanMap(name, value){
   const ok = await persist('erpSales');
   const removed = value ? 0 : await purgeIgnoredSalesmen();
   renderAll();
-  showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : value ? `${name} → ${value}` : `${name} ignored${removed ? ` — ${removed} stored lines removed` : ''}`);
+  showToast(!ok ? '⚠️ Not saved yet — tap the retry bar' : value ? `${name} → ${value}` : `${name} ignored${removed ? ` — ${removed} stored lines removed` : ''}`);
   openErpImport();
 }
 // A salesman's name comes from the ERP file: it reaches setSalesmanMap through
@@ -86,7 +86,7 @@ async function setReturnPolicy(v, reopenId){
   erpSales.returnPolicy = v === 'erp' ? 'erp' : 'origin';
   const ok = await persist('erpSales');
   renderAll();
-  showToast(!ok ? '⚠️ لم يُحفظ بعد — اضغط شريط إعادة المحاولة' : v === 'erp' ? 'Returns now count in the month they were booked' : "Returns now count in the original invoice's month");
+  showToast(!ok ? '⚠️ Not saved yet — tap the retry bar' : v === 'erp' ? 'Returns now count in the month they were booked' : "Returns now count in the original invoice's month");
   if(reopenId) openErpRecon(reopenId);
 }
 function returnPolicyChips(reopenId){
@@ -246,18 +246,18 @@ function targetPctMap(mtd){
 }
 function targetPctNote(before, after){
   const reps = Object.keys(after);
-  if(!reps.length) return '🎯 لا يوجد تارغت لهذا الشهر بعد — ارفع ملف DSR ليظهر % التحقيق في شاشة اليوم.';
+  if(!reps.length) return '🎯 No target for this month yet — upload the DSR file so the Today screen shows the % achieved.';
   const parts = reps.map(r => {
     const b = before[r], a = after[r];
     const moved = !b || b.pct !== a.pct || b.amount !== a.amount;
-    return `${esc(r)}: ${b ? b.pct + '% → ' : ''}<b>${a.pct}%</b>${moved ? '' : ' (بدون تغيير)'} <span style="color:var(--muted);">· ${esc(a.src)}</span>`;
+    return `${esc(r)}: ${b ? b.pct + '% → ' : ''}<b>${a.pct}%</b>${moved ? '' : ' (unchanged)'} <span style="color:var(--muted);">· ${esc(a.src)}</span>`;
   });
   const teamOf = m => teamTargetTotal(Object.values(m).map(x => ({ goal: x.goal, ach: x.amount })));
   const tb = teamOf(before), ta = teamOf(after);
-  if(ta.pct != null) parts.push(`<b>الفريق</b>: ${tb.pct != null ? tb.pct + '% → ' : ''}<b>${ta.pct}%</b> <span style="color:var(--muted);">· ${money(ta.ach)} من ${money(ta.goal)}</span>`);
+  if(ta.pct != null) parts.push(`<b>Team</b>: ${tb.pct != null ? tb.pct + '% → ' : ''}<b>${ta.pct}%</b> <span style="color:var(--muted);">· ${money(ta.ach)} of ${money(ta.goal)}</span>`);
   const none = reps.every(r => before[r] && before[r].pct === after[r].pct && before[r].amount === after[r].amount);
-  const why = none ? '<div style="font-size:11.5px; color:var(--muted); margin-top:3px;">لم تتغير النسبة: المحقق يُحسب من ملفات مبيعات ERP فقط. ملف DSR يحدّد التارغت (لكل براند ولكل مندوبة وللفريق) ولا يُستخدم كمصدر للمحقق.</div>' : '';
-  return `🎯 <b>شاشة اليوم الآن:</b> ${parts.join(' · ')}${why}`;
+  const why = none ? '<div style="font-size:11.5px; color:var(--muted); margin-top:3px;">The % did not change: achieved is counted from the ERP sales files only. The DSR file sets the targets (per brand, per rep and for the team) and is never used as a source of achieved.</div>' : '';
+  return `🎯 <b>The Today screen now:</b> ${parts.join(' · ')}${why}`;
 }
 // Shown on top of whichever modal is open right after an upload.
 function erpShowImportNote(html){
@@ -329,14 +329,14 @@ function openMonthReports(){
   });
   erpPeriods().forEach(p => { if(p.from) months.add(p.from.slice(0,7)); if(p.to) months.add(p.to.slice(0,7)); });
   const sorted = [...months].filter(Boolean).sort().reverse();
-  if(!sorted.length){ showToast('لا توجد بيانات شهور بعد — ارفع ملف DSR أو المبيعات أولًا'); return; }
+  if(!sorted.length){ showToast('No months to show yet — upload a DSR or sales file first'); return; }
   showModal(`
-    <h3 style="margin-top:0;" data-ic="book">📚 تقارير الشهور</h3>
-    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">افتح أي شهر — حتى بعد انتهائه — لترى التارغت والمحقق والنسبة وكل تفاصيله. رفع ملف DSR آخر يوم بالشهر (أو بعده) يُحدّث شهرَه تلقائيًا.</p>
+    <h3 style="margin-top:0;" data-ic="book">📚 Month reports</h3>
+    <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Open any month — even after it has ended — to see its target, achieved, % and every detail. Uploading the DSR file of the month's last day (or later) updates its month by itself.</p>
     ${sorted.map(m=>`<div class="card clickable row-between" onclick="renderMonthClose('${m}')">
       <span style="font-weight:700;">${monthLabel(m)}</span><span style="color:var(--muted);">›</span>
     </div>`).join('')}
-    <button class="btn secondary" style="margin-top:10px;" onclick="closeModal()">إغلاق</button>
+    <button class="btn secondary" style="margin-top:10px;" onclick="closeModal()">Close</button>
   `);
 }
 function monthCloseData(m){
@@ -355,7 +355,7 @@ function monthCloseData(m){
     const erpMonth = erpRevenueForRange(mStart, mEnd, rep);
     // Achieved = the ERP sales files for that month only (owner's rule); the DSR gives the target.
     const achieved = erpMonth;
-    const src = erpMonth != null ? 'ERP' : 'لا يوجد ملف مبيعات لهذا الشهر';
+    const src = erpMonth != null ? 'ERP' : 'no sales file for this month';
     const mv = UMCore.dedupeVisits(visits.filter(v => v && v.rep === rep && (v.date||'').slice(0,7) === m)).unique;
     return { rep, t, achieved, src, erpMonth,
       asOf: achieved != null ? (a0 => a0.basis === 'erp' ? a0.asOf : null)(UMCore.monthAchievement(rep, d0, mtd0)) : null,
@@ -375,7 +375,7 @@ function renderMonthClose(m){
     const names = [...Object.keys(bt), ...Object.keys(ab).filter(n => !tNorm.has(n))].sort((a,b)=>(bt[b]||0)-(bt[a]||0));
     if(!names.length) return '';
     return `<div style="margin-top:6px; overflow-x:auto;"><table style="width:100%; font-size:11.5px; border-collapse:collapse;">
-      <tr style="color:var(--muted);"><td style="padding:2px 4px;">البراند</td><td style="text-align:start;">تارغت</td><td style="text-align:start;">محقق (ERP)</td><td style="text-align:start;">%</td></tr>
+      <tr style="color:var(--muted);"><td style="padding:2px 4px;">Brand</td><td style="text-align:start;">Target (DSR)</td><td style="text-align:start;">Achieved (ERP)</td><td style="text-align:start;">%</td></tr>
       ${names.map(n=>{
         const tv = bt[n]||0, av = Math.round((ab[UMCore.normBrand(n)] || 0) * 100) / 100;
         const p = tv>0 ? Math.round(av/tv*100) : null, P = tv>0 ? paceFor(av, tv, r.asOf, m) : null;   // the one pace rule, to the day her figure runs to
@@ -391,28 +391,28 @@ function renderMonthClose(m){
   showModal(`
     <div class="row-between" style="align-items:flex-start;">
       <h3 style="margin:0;">📅 ${monthLabel(m)}</h3>
-      <button class="chip small" onclick="openMonthReports()">‹ الشهور</button>
+      <button class="chip small" onclick="openMonthReports()">‹ Months</button>
     </div>
-    ${tt.pct != null && tt.n > 1 ? `<div class="section-title">🏁 الفريق</div>
+    ${tt.pct != null && tt.n > 1 ? `<div class="section-title">🏁 Team</div>
       <div class="card" style="padding:10px 12px;">
-        <div class="spec-row"><span class="k">🎯 مجموع التارغت</span><span class="v">${money(tt.goal)}</span></div>
-        <div class="spec-row"><span class="k">✅ مجموع المحقق</span><span class="v">${money(tt.ach)}</span></div>
-        <div class="spec-row"><span class="k">نسبة تحقيق الفريق</span><span class="v" style="font-weight:800; color:${paceInk(ttP, 'var(--gold-ink)', 'var(--coral-ink)')};"${ttP ? ` data-pace="${ttP.state}"` : ''}>${tt.pct}%</span></div>
+        <div class="spec-row"><span class="k">🎯 Total target</span><span class="v">${money(tt.goal)}</span></div>
+        <div class="spec-row"><span class="k">✅ Total achieved</span><span class="v">${money(tt.ach)}</span></div>
+        <div class="spec-row"><span class="k">Team's % achieved</span><span class="v" style="font-weight:800; color:${paceInk(ttP, 'var(--gold-ink)', 'var(--coral-ink)')};"${ttP ? ` data-pace="${ttP.state}"` : ''}>${tt.pct}%</span></div>
         <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.max(0, Math.min(100,tt.pct))}%; height:100%; background:${ttP && ttP.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>
       </div>` : ''}
     ${rows.map(r=>`
       <div class="section-title">${esc(r.rep)}</div>
       <div class="card" style="padding:10px 12px;">
-        <div class="spec-row"><span class="k">🎯 التارغت</span><span class="v">${r.target!=null?money(r.target):'—'}</span></div>
-        <div class="spec-row"><span class="k">✅ المحقق</span><span class="v">${r.achieved!=null?money(r.achieved):'—'}${r.src?` <span style="color:var(--muted); font-size:10.5px;">(${r.src})</span>`:''}</span></div>
-        ${r.pct!=null?(P => `<div class="spec-row"><span class="k">النسبة</span><span class="v" style="font-weight:800; color:${paceInk(P, 'var(--gold-ink)', 'var(--coral-ink)')};"${P ? ` data-pace="${P.state}"` : ''}>${r.pct}%</span></div>
+        <div class="spec-row"><span class="k">🎯 Target (DSR)</span><span class="v">${r.target!=null?money(r.target):'—'}</span></div>
+        <div class="spec-row"><span class="k">✅ Achieved (ERP)</span><span class="v">${r.achieved!=null?money(r.achieved):'—'}${r.src?` <span style="color:var(--muted); font-size:10.5px;">(${r.src})</span>`:''}</span></div>
+        ${r.pct!=null?(P => `<div class="spec-row"><span class="k">% of the target</span><span class="v" style="font-weight:800; color:${paceInk(P, 'var(--gold-ink)', 'var(--coral-ink)')};"${P ? ` data-pace="${P.state}"` : ''}>${r.pct}%</span></div>
         <div style="height:7px; border-radius:4px; background:var(--paper); overflow:hidden; margin:4px 0 2px;"><div style="width:${Math.max(0, Math.min(100,r.pct))}%; height:100%; background:${P && P.state === 'reached'?'var(--sage)':'var(--teal)'};"></div></div>`)(repP(r)):''}
-        ${r.erpMonth!=null?`<div class="spec-row"><span class="k">🧾 فواتير العيادات بالشهر (ERP)</span><span class="v">${money(r.erpMonth)}</span></div>`:''}
-        <div class="spec-row"><span class="k">🚗 زيارات ميدانية · 📞 مكالمات · 🛒 طلبات</span><span class="v">${r.fieldVisits} · ${r.calls} · ${r.orders}</span></div>
+        ${r.erpMonth!=null?`<div class="spec-row"><span class="k">🧾 The clinics' invoices in the month (ERP)</span><span class="v">${money(r.erpMonth)}</span></div>`:''}
+        <div class="spec-row"><span class="k">🚗 Field visits · 📞 Calls · 🛒 Orders</span><span class="v">${r.fieldVisits} · ${r.calls} · ${r.orders}</span></div>
         ${brandBlock(r)}
       </div>`).join('')}
-    <p style="color:var(--muted); font-size:11.5px; margin-top:8px;">لتحديث الشهر بعد انتهائه: ارفع ملف DSR الخاص بآخر يوم فيه من شاشة الاستيراد — يُقفَل الشهر على أرقامه تلقائيًا.</p>
-    <button class="btn secondary" onclick="closeModal()">إغلاق</button>
+    <p style="color:var(--muted); font-size:11.5px; margin-top:8px;">To update a month after it ends: upload the DSR file of its last day on the import screen — the month is closed on its figures by itself.</p>
+    <button class="btn secondary" onclick="closeModal()">Close</button>
   `);
 }
 // Persistent status line inside the import modal — file handling must never
@@ -546,10 +546,10 @@ function openErpImport(){
       Sales files import with zero clicks once I know who is who (I ask only the first time).
       <b>One file per rep works too</b> — upload Mariam's and Renova's exports separately and
       each is kept as its own report; re-importing one never touches the other.</div>
-    ${erpHealthCard()}
+    <div data-erp-health>${erpHealthCard()}</div>
     <input type="file" id="erpFile" accept=".csv,.txt,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="erpHandleFile(this)">
     <div id="erpStatus" style="display:none; margin-top:8px; font-size:12.5px; line-height:1.5;"></div>
-    <div id="erpCloudStatus" style="margin-top:8px; font-size:12px; color:var(--muted); line-height:1.5;">☁️ جارٍ التحقق مما تحمله السحابة فعلًا…</div>
+    <div id="erpCloudStatus" style="margin-top:8px; font-size:12px; color:var(--muted); line-height:1.5;">☁️ Checking what the cloud really holds…</div>
     ${returnPolicyChips()}
     <label style="margin-top:10px;">…or paste the report text here</label>
     <textarea id="erpPaste" style="min-height:90px;" placeholder="Paste CSV rows, PDF report text, or target lines like: Renova 12000"></textarea>
@@ -563,7 +563,7 @@ function openErpImport(){
         return `<div class="card" style="padding:12px 14px; margin-bottom:8px;${p.rowsMissing?' border-inline-start:4px solid var(--coral);':''}">
         <div class="row-between">
           <div><div style="font-weight:700; font-size:13.5px;">${fmtDate(p.from)} – ${fmtDate(p.to)}${who?` <span style="color:var(--gold-ink); font-size:12px;">· ${esc(who)}</span>`:''}</div>
-          <div style="color:var(--muted); font-size:12px;">${p.rowsMissing ? '⚠️ السطور لم تُحمَّل على هذا الجهاز — ' : ''}${money(p.net)} net · ${p.rowCount} lines</div></div>
+          <div style="color:var(--muted); font-size:12px;">${p.rowsMissing ? '⚠️ Lines not loaded on this device — ' : ''}${money(p.net)} net · ${p.rowCount} lines</div></div>
           <div style="display:flex; gap:6px; flex-shrink:0;">
             ${p.rowsMissing ? `<button class="chip small on" onclick="retryErpRows().then(()=>openErpImport())">🔄</button>` : `<button class="chip small" onclick="openErpRecon('${p.id}')">📊 Report</button>`}
             <button class="chip small" onclick="deleteErpPeriod('${p.id}')">🗑</button>
@@ -588,9 +588,9 @@ async function erpCloudStatus(){
     const latest = ps.slice().sort((a,b)=>(b.to||'').localeCompare(a.to||''))[0];
     const localIds = new Set(erpPeriods().map(p => p.id));
     const same = ps.length === localIds.size && ps.every(p => localIds.has(p.id));
-    el.innerHTML = `☁️ <b>السحابة الآن:</b> ${ps.length} ${ps.length === 1 ? 'ملف' : 'ملفات'} · ${rows} سطر${latest ? ` · آخر بيانات حتى <b>${fmtDate(latest.to)}</b>` : ''}${idx && idx.savedAt ? ` · آخر حفظ مؤكَّد ${new Date(idx.savedAt).toLocaleString('ar-KW', {dateStyle:'short', timeStyle:'short'})}` : ''}${same ? ' · <span style="color:var(--green, #1D7A38);">مطابقة لما تراه ✓</span>' : ' · <span style="color:var(--coral);">تختلف عمّا تراه هنا — أعد فتح التطبيق</span>'}`;
+    el.innerHTML = `☁️ <b>The cloud now:</b> ${ps.length} ${ps.length === 1 ? 'file' : 'files'} · ${rows} lines${latest ? ` · data up to <b>${fmtDate(latest.to)}</b>` : ''}${idx && idx.savedAt ? ` · last confirmed save ${new Date(idx.savedAt).toLocaleString(uiLang === 'ar' ? 'ar-KW' : 'en-US', {dateStyle:'short', timeStyle:'short'})}` : ''}${same ? ' · <span style="color:var(--green, #1D7A38);">Matches what you see ✓</span>' : ' · <span style="color:var(--coral);">Differs from what you see here — reopen the app</span>'}`;
   }catch(e){
-    el.innerHTML = '☁️ <span style="color:var(--coral);">تعذّر الوصول إلى السحابة الآن</span> — الرفع سيفشل بوضوح (لن يُعرض نجاح كاذب) حتى يعود الاتصال.';
+    el.innerHTML = '☁️ <span style="color:var(--coral);">The cloud cannot be reached right now</span> — an upload will fail clearly (no false success is shown) until the connection is back.';
   }
 }
 let _erpImporting = false; // one file at a time — a double tap must not race two saves
@@ -598,7 +598,7 @@ function erpHandleFile(input){
   const f = input.files && input.files[0];
   if(!f) return;
   input.value = ''; // so picking the same file again always re-fires onchange
-  if(_erpImporting){ erpStatus('⏳ ملف آخر قيد الاستيراد — انتظر حتى ينتهي', true); return; }
+  if(_erpImporting){ erpStatus('⏳ Another file is being imported — wait until it finishes', true); return; }
   erpStatus(`📖 Reading ${f.name}…`);
   const fail = e => erpImportFailed('❌ Import failed: ' + (e && e.message ? e.message : e));
   const reader = new FileReader();
@@ -659,7 +659,7 @@ async function erpImportXlsx(buf, fname){
 // mapping from a previous import, or a confident fuzzy guess).
 async function erpAutoImport(text){
   if(!text || !text.trim()){ erpStatus('Nothing to read yet', true); return; }
-  if(_erpImporting){ erpStatus('⏳ ملف آخر قيد الاستيراد — انتظر حتى ينتهي', true); return; }
+  if(_erpImporting){ erpStatus('⏳ Another file is being imported — wait until it finishes', true); return; }
   _erpImporting = true;
   try{
     const sales = UMCore.parseErpFile(text);
@@ -672,11 +672,11 @@ async function erpAutoImport(text){
       // allowed to replace a whole year of stored data with mis-read dates.
       const span = UMCore.daysBetween(totals.from, totals.to);
       if(span > 400 || totals.to > UMCore.localDateStr(new Date(Date.now() + 2 * 86400000))){
-        erpImportFailed(`❌ تواريخ الملف غير منطقية (${fmtDate(totals.from)} – ${fmtDate(totals.to)}) — تأكد من صيغة التاريخ في التصدير (يوم/شهر/سنة) ثم أعد الرفع`);
+        erpImportFailed(`❌ The file's dates make no sense (${fmtDate(totals.from)} – ${fmtDate(totals.to)}) — check the date format of the export (day/month/year), then upload it again`);
         return;
       }
-      if(sales.dropped > 0 && !confirm(`${sales.dropped} سطرًا في الملف بلا تاريخ أو رقم فاتورة ولن تُقرأ (سيُقرأ ${sales.rows.length}).\nالمتابعة؟`)){
-        erpStatus('↩️ أُلغي الاستيراد — راجع الملف', true);
+      if(sales.dropped > 0 && !confirmTr(`${sales.dropped} lines of the file have no date or invoice number and will not be read (${sales.rows.length} will be read).\nContinue?`)){
+        erpStatus('↩️ Import cancelled — check the file', true);
         return;
       }
       const stored = erpSales.repMapGlobal || {};
@@ -690,8 +690,8 @@ async function erpAutoImport(text){
         // An older export than what is already stored (e.g. last week's file
         // picked by mistake) would silently roll the figures back — ask first.
         const storedTo = erpOlderThanStored(totals, salesmen);
-        if(storedTo && !confirm(`الملف ينتهي في ${fmtDate(totals.to)} بينما المحفوظ يصل إلى ${fmtDate(storedTo)}.\nاستبدال البيانات الأحدث بهذا الملف الأقدم؟`)){
-          erpStatus(`↩️ أُلغي الاستيراد — الملف أقدم من المحفوظ (${fmtDate(storedTo)})`, true);
+        if(storedTo && !confirmTr(`The file ends on ${fmtDate(totals.to)} while what is saved runs to ${fmtDate(storedTo)}.\nReplace the newer data with this older file?`)){
+          erpStatus(`↩️ Import cancelled — the file is older than what is saved (${fmtDate(storedTo)})`, true);
           return;
         }
         const repMap = {};
@@ -738,8 +738,8 @@ function erpAbsorbOverlaps(t, newSalesmen, repMap){
 // the figures looked updated until the next open put the old file back.
 function erpSaveFailed(before){
   erpStateRestore(before);
-  erpImportFailed('❌ لم يُحفظ الملف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى');
-  showToast('❌ لم يُحفظ ملف المبيعات — أعد المحاولة');
+  erpImportFailed('❌ The file was not saved to the cloud — check the connection and upload the file again');
+  showToast('❌ The sales file was not saved — try again');
 }
 async function erpAutoSave(repMap){
   if(!_erpParsed) return;
@@ -762,7 +762,7 @@ async function erpAutoSave(repMap){
   renderView(activeView); // repaint the live tab so new figures show at once
   showToast(`✅ Auto-imported ${fmtDate(period.from)}–${fmtDate(period.to)} · ${money(period.net)}${replaced?` (replaced ${replaced} older)`:''}${d.dropped?` · ignored ${d.dropped} lines (${d.names.join(', ')})`:''}`);
   openErpRecon(period.id);
-  erpShowImportNote(`✅ حُفظ الملف في السحابة (${fmtDate(period.from)} – ${fmtDate(period.to)} · ${money(period.net)})<br>${targetPctNote(pctBefore, targetPctMap())}`);
+  erpShowImportNote(`✅ File saved to the cloud (${fmtDate(period.from)} – ${fmtDate(period.to)} · ${money(period.net)})<br>${targetPctNote(pctBefore, targetPctMap())}`);
 }
 // A month that ended must keep its target/achieved figures forever. Whenever a
 // rep's stored figures carry an as-of date, a copy lands in
@@ -803,7 +803,7 @@ async function applyTargetsFile(tg){
   await archiveTargetsMonth(); // the file's month keeps these figures permanently
   if(!await persist('targets')){
     targets = before;
-    erpImportFailed('❌ لم تُحفظ الأهداف على السحابة — تحقق من الاتصال وارفع الملف مرة أخرى');
+    erpImportFailed('❌ The targets were not saved to the cloud — check the connection and upload the file again');
     return;
   }
   noteErpImport(true);
@@ -870,7 +870,7 @@ async function erpSavePeriod(){
   if(!d.kept.length){ showToast('Nothing to import — every salesman in this file is ignored'); return; }
   const t = UMCore.erpTotals(d.kept);
   const storedTo = erpOlderThanStored(_erpParsed.totals, salesmen);
-  if(storedTo && !confirm(`الملف ينتهي في ${fmtDate(_erpParsed.totals.to)} بينما المحفوظ يصل إلى ${fmtDate(storedTo)}.\nاستبدال البيانات الأحدث بهذا الملف الأقدم؟`)){ showToast('↩️ أُلغي — الملف أقدم من المحفوظ'); return; }
+  if(storedTo && !confirmTr(`The file ends on ${fmtDate(_erpParsed.totals.to)} while what is saved runs to ${fmtDate(storedTo)}.\nReplace the newer data with this older file?`)){ showToast('↩️ Cancelled — the file is older than what is saved'); return; }
   const before = erpStateSnapshot();
   const pctBefore = targetPctMap();
   // A new file replaces only its own salesmen's data in overlapping periods —
@@ -891,11 +891,11 @@ async function erpSavePeriod(){
   renderView(activeView); // repaint the live tab so new figures show at once
   showToast(`📥 Sales period saved — future imports of these names are automatic${d.dropped?` · ignored ${d.dropped} lines (${d.names.join(', ')})`:''}`);
   openErpRecon(period.id);
-  erpShowImportNote(`✅ حُفظ الملف في السحابة (${fmtDate(period.from)} – ${fmtDate(period.to)} · ${money(period.net)})<br>${targetPctNote(pctBefore, targetPctMap())}`);
+  erpShowImportNote(`✅ File saved to the cloud (${fmtDate(period.from)} – ${fmtDate(period.to)} · ${money(period.net)})<br>${targetPctNote(pctBefore, targetPctMap())}`);
 }
 async function deleteErpPeriod(id){
   const p0 = erpPeriods().find(p => p.id === id);
-  if(p0 && !confirm(`حذف ملف ${fmtDate(p0.from)} – ${fmtDate(p0.to)} (${money(p0.net)})؟\nيمكن استرجاعه خلال 7 أيام من النسخ الاحتياطية.`)) return;
+  if(p0 && !confirmTr(`Delete the file ${fmtDate(p0.from)} – ${fmtDate(p0.to)} (${money(p0.net)})?\nIt can be restored from the backups for 7 days.`)) return;
   erpSales.periods = erpPeriods().filter(p=>p.id!==id);
   erpTombstone(id); // so a merge with another device never brings it back
   // A delete that could not be saved is NOT undone on screen: the tombstone
@@ -904,7 +904,7 @@ async function deleteErpPeriod(id){
   // "come back" and then vanish again.
   const ok = await persist('erpSales');
   renderView(activeView); // repaint the live tab so figures drop the deleted file
-  showToast(ok ? 'Deleted' : '⚠️ الحذف لم يُحفظ بعد — اضغط شريط إعادة المحاولة');
+  showToast(ok ? 'Deleted' : '⚠️ The delete is not saved yet — tap the retry bar');
   openErpImport();
 }
 // A fast, precise "what did the app do with this file?" audit: every salesman
@@ -935,19 +935,19 @@ function erpFileAudit(p){
   const customers = Object.values(byCust).map(a=>{
     const m = match(a.name);
     let kind, label, clinicName='';
-    const closedTag = id => { const c = clinics.find(x=>x.id===id); return c && c.cls==='Closed' ? ' · مغلقة' : ''; };
-    if(m.ignored){ kind='ignored'; label='⛔ متجاهَل'; }
-    else if(m.channel){ kind='channel'; label='🌐 قناة / أونلاين'; }
-    else if(m.ambiguous){ kind='ambiguous'; label='⚠️ ملتبس — عدة فروع'; }
-    else if(m.method==='family'){ kind='clinic'; clinicName=m.familyLabel||''; label='✅ <span dir="auto">'+esc(m.familyLabel||'')+'</span> <span style="color:var(--muted); font-size:10.5px;">(موحّد — '+m.branches+' فروع)</span>'+closedTag(m.clinicId); }
+    const closedTag = id => { const c = clinics.find(x=>x.id===id); return c && c.cls==='Closed' ? ' · closed' : ''; };
+    if(m.ignored){ kind='ignored'; label='⛔ Ignored'; }
+    else if(m.channel){ kind='channel'; label='🌐 Channel / online'; }
+    else if(m.ambiguous){ kind='ambiguous'; label='⚠️ Ambiguous — several branches'; }
+    else if(m.method==='family'){ kind='clinic'; clinicName=m.familyLabel||''; label='✅ <span dir="auto">'+esc(m.familyLabel||'')+'</span> <span style="color:var(--muted); font-size:10.5px;">(merged — '+m.branches+' branches)</span>'+closedTag(m.clinicId); }
     else if(m.clinicId){
       const c=clinics.find(x=>x.id===m.clinicId);
       // a hand link to a clinic that was removed counts at no clinic: each
       // invoice counts for the salesman who issued it (erpRowRep) — say so
-      if(!c){ kind='gone'; label='⛔ عيادة محذوفة (يدوي) — تُحسب لمن أصدر الفاتورة'; }
-      else { clinicName=c.name; kind='clinic'; label='✅ <span dir="auto">'+esc(clinicName)+'</span>'+(m.method==='fuzzy'?' <span style="color:var(--muted);">(تقريبي)</span>':m.method==='map'?' <span style="color:var(--muted);">(يدوي)</span>':'')+closedTag(c.id); }
+      if(!c){ kind='gone'; label='⛔ Deleted clinic (by hand) — counts for whoever issued the invoice'; }
+      else { clinicName=c.name; kind='clinic'; label='✅ <span dir="auto">'+esc(clinicName)+'</span>'+(m.method==='fuzzy'?' <span style="color:var(--muted);">(approximate)</span>':m.method==='map'?' <span style="color:var(--muted);">(linked by hand)</span>':'')+closedTag(c.id); }
     }
-    else { kind='none'; label='⚠️ غير مطابق'; }
+    else { kind='none'; label='⚠️ Not matched'; }
     return {name:a.name, rep:a.rep, invoices:a.docs.size, net:Math.round(a.net*100)/100, kind, label, method:m.method};
   }).sort((a,b)=>b.net-a.net);
   const counts = customers.reduce((c,x)=>{ c[x.kind]=(c[x.kind]||0)+1; return c; },{});
@@ -959,7 +959,7 @@ function erpAuditSection(p){
   const c = a.counts;
   const salesmanRows = a.salesmen.map(s=>`<tr style="border-top:1px solid var(--line);">
     <td style="padding:5px 6px; overflow-wrap:anywhere;">${esc(s.name)}</td>
-    <td style="padding:5px 6px;">${s.rep?esc(s.rep):'<span style="color:var(--coral-ink);">— خارج الفريق —</span>'}</td>
+    <td style="padding:5px 6px;">${s.rep?esc(s.rep):'<span style="color:var(--coral-ink);">— not on the team —</span>'}</td>
     <td style="text-align:end; padding:5px 6px;">${s.rows}</td>
     <td style="text-align:end; padding:5px 6px; font-weight:700;">${money(s.net)}</td></tr>`).join('');
   const attn = x => x.kind==='none' || x.kind==='ambiguous' || x.kind==='gone';
@@ -967,7 +967,7 @@ function erpAuditSection(p){
   const custRows = a.customers.map(x=>{
     const bg = attn(x) ? 'background:var(--amber-dim);' : '';
     // every named account can be moved from here: the editor shows what moves before anything is saved
-    const change = x.name !== '(no name)' ? `<div><button class="chip small" style="padding:3px 8px; font-size:11px; margin-top:3px;" data-erp-link="${esc(x.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${esc(p.id)}')">${I('pencil')} تغيير</button></div>` : '';
+    const change = x.name !== '(no name)' ? `<div><button class="chip small" style="padding:3px 8px; font-size:11px; margin-top:3px;" data-erp-link="${esc(x.name)}" onclick="openErpLinkEdit(this.dataset.erpLink,'recon:${esc(p.id)}')">${I('pencil')} Change</button></div>` : '';
     return `<tr style="border-top:1px solid var(--line); ${bg}">
       <td style="padding:5px 6px; overflow-wrap:anywhere;"><span dir="auto">${esc(x.name)}</span></td>
       <td style="padding:5px 6px; font-size:11.5px;">${x.label}${change}</td>
@@ -975,24 +975,24 @@ function erpAuditSection(p){
       <td style="text-align:end; padding:5px 6px; font-weight:700; ${x.net<0?'color:var(--coral-ink);':''}">${money(x.net)}</td></tr>`;
   }).join('');
   return `
-  <div class="section-title" style="margin-top:0;">🔍 مرجع المعالجة — كيف قرأ الموقع هذا الملف</div>
+  <div class="section-title" style="margin-top:0;">🔍 Processing reference — how the app read this file</div>
   <div class="card">
-    <div class="report-line"><span>سطور الملف</span><span class="v">${T.rows}</span></div>
-    <div class="report-line"><span>فواتير · مرتجعات</span><span class="v">${Object.keys(T.inv).length} · ${Object.keys(T.ret).length}</span></div>
-    <div class="report-line"><span>صافي الملف الكامل</span><span class="v">${money(T.net)}</span></div>
-    ${T.retVal>0.005?`<div class="report-line"><span>قيمة المرتجعات</span><span class="v" style="color:var(--coral-ink);">${money(T.retVal)}</span></div>`:''}
-    <div class="report-line"><span>تصنيف العملاء</span><span class="v" style="font-size:12px;">✅ ${c.clinic||0} · 🌐 ${c.channel||0} · ⛔ ${c.ignored||0} · ⚠️ ${(c.none||0)+(c.ambiguous||0)+(c.gone||0)}</span></div>
+    <div class="report-line"><span>Lines in the file</span><span class="v">${T.rows}</span></div>
+    <div class="report-line"><span>Invoices · returns</span><span class="v">${Object.keys(T.inv).length} · ${Object.keys(T.ret).length}</span></div>
+    <div class="report-line"><span>Net of the whole file</span><span class="v">${money(T.net)}</span></div>
+    ${T.retVal>0.005?`<div class="report-line"><span>Value of the returns</span><span class="v" style="color:var(--coral-ink);">${money(T.retVal)}</span></div>`:''}
+    <div class="report-line"><span>How the customers are classified</span><span class="v" style="font-size:12px;">✅ ${c.clinic||0} · 🌐 ${c.channel||0} · ⛔ ${c.ignored||0} · ⚠️ ${(c.none||0)+(c.ambiguous||0)+(c.gone||0)}</span></div>
   </div>
-  ${needAttn.length?`<div class="nudge" style="margin-bottom:10px; border-color:#FF9500;">⚠️ ${needAttn.length} عميل يحتاج ربطاً يدوياً (بالأصفر أدناه) — لن تُحسب مبيعاتهم لأي عيادة حتى تربطهم.</div>`:'<div class="nudge" style="margin-bottom:10px;">✅ كل العملاء مصنّفون — لا شيء معلّق.</div>'}
-  <div class="section-title">👥 ربط البائعين بالمندوبات</div>
+  ${needAttn.length?`<div class="nudge" style="margin-bottom:10px; border-color:#FF9500;">⚠️ ${needAttn.length} customers need a link by hand (in yellow below) — their sales count for no clinic until you link them.</div>`:'<div class="nudge" style="margin-bottom:10px;">✅ Every customer is classified — nothing pending.</div>'}
+  <div class="section-title">👥 Salesmen linked to reps</div>
   <div class="card" style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">البائع في الملف</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">المندوبة</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">سطور</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">صافي</th></tr>
+    <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">Salesman in the file</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">Rep</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">Line count</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">Net (KD)</th></tr>
     ${salesmanRows}
   </table></div>
-  <div class="mr-note" style="color:var(--muted); font-size:11.5px; margin:6px 2px;">ملاحظة: مبيعات أي عيادة مطابَقة تُنسب لِـ<b>المندوبة المالكة للعيادة</b>، بغض النظر عن اسم البائع في الملف. الجدول أعلاه يبيّن ربط الأسماء كما في الملف فقط.</div>
-  <div class="section-title"><span>🏥 تصنيف كل عميل (مصدر المطابقة)</span> <span class="link" onclick="openErpLinks({back:'recon:${esc(p.id)}'})">كل الحسابات</span></div>
+  <div class="mr-note" style="color:var(--muted); font-size:11.5px; margin:6px 2px;">${uiLang === 'ar' ? 'ملاحظة: مبيعات أي عيادة مطابَقة تُنسب لِـ<b>المندوبة المالكة للعيادة</b>، بغض النظر عن اسم البائع في الملف. الجدول أعلاه يبيّن ربط الأسماء كما في الملف فقط.' : "Note: the sales of any matched clinic count for <b>the rep who owns the clinic</b>, whatever the salesman's name in the file. The table above only shows how the names in the file are linked."}</div>
+  <div class="section-title"><span>🏥 How each customer was classified (the source of the match)</span> <span class="link" onclick="openErpLinks({back:'recon:${esc(p.id)}'})">All accounts</span></div>
   <div class="card" style="overflow-x:auto; max-height:340px; overflow-y:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">العميل في الملف</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">صُنّف كـ</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">فواتير</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">صافي</th></tr>
+    <tr><th style="text-align:start; padding:4px 6px; color:var(--muted);">Customer in the file</th><th style="text-align:start; padding:4px 6px; color:var(--muted);">Classified as</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">Invoice count</th><th style="text-align:end; padding:4px 6px; color:var(--muted);">Net (KD)</th></tr>
     ${custRows}
   </table></div>`;
 }

@@ -107,7 +107,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
 
   // ---------- 1b) team total % everywhere target figures appear ----------
   const expTeamPct = Math.round((pctAfter.Mariam.amount + pctAfter.Renova.amount) / 22000 * 100);
-  check('upload note carries the team total', /الفريق/.test(s.modal) && new RegExp('الفريق: \\d+% → ' + expTeamPct + '%').test(s.modal), s.modal.split('\n').filter(l=>/الفريق/.test(l)));
+  check('upload note carries the team total', /Team/.test(s.modal) && new RegExp('Team: \\d+% → ' + expTeamPct + '%').test(s.modal), s.modal.split('\n').filter(l=>/Team/.test(l)));
   await page.evaluate(() => msWhenReady()); // (the home's figures, and its frame, are those of the data as it is now — a later frame is held until they are: v126 speed part 2)
   const team = await page.evaluate(() => {
     const grab = () => (document.getElementById('modalInner')||{}).innerText || '';
@@ -119,11 +119,11 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   });
   check('teamTargetNow = sum achieved ÷ sum target', team.tt.goal===22000 && team.tt.pct===expTeamPct && team.tt.n===2, team.tt);
   check('Today card shows the Team row with that %', /Team/.test(team.today) && new RegExp('\\b' + expTeamPct + '%').test(team.today) && /2 reps/.test(team.today), team.today.split('\n').slice(-3));
-  check('month report shows the team card with that %', /نسبة تحقيق الفريق/.test(team.month) && new RegExp(expTeamPct + '%').test(team.month), team.month.split('\n').slice(0,8));
+  check('month report shows the team card with that %', /Team's % achieved/.test(team.month) && new RegExp(expTeamPct + '%').test(team.month), team.month.split('\n').slice(0,8));
   check('reports: team comparison has a Team row with that %', /Team/.test(team.cmp) && new RegExp(expTeamPct + '%').test(team.cmp), team.cmp.split('\n').slice(-4));
   check('reports: scorecards end with the Team target card', /Team · \w+ target/.test(team.sc) && new RegExp(expTeamPct + '%').test(team.sc), team.sc.split('\n').slice(-6));
   check('PDF cover: achieved sales KPI states the % of target', team.cover === String(expTeamPct), { cover: team.cover, expTeamPct });
-  check('import note on the report modal shows the Today % before → after', /شاشة اليوم الآن/.test(s.modal) && new RegExp(pctBefore.Mariam.pct + '% → ' + pctAfter.Mariam.pct + '%').test(s.modal), s.modal.split('\n').slice(0,4));
+  check('import note on the report modal shows the Today % before → after', /The Today screen now/.test(s.modal) && new RegExp(pctBefore.Mariam.pct + '% → ' + pctAfter.Mariam.pct + '%').test(s.modal), s.modal.split('\n').slice(0,4));
   check('Today card: achieved from ERP, target from DSR, no DSR achieved figure anywhere', /Achieved: ERP to Sep 21 · target: DSR/.test(s.target) && !/3,?000\.00/.test(s.target), s.target.split('\n').slice(0,8));
   check('cloud index carries savedAt and is small', !!JSON.parse(cloud.erpSales).savedAt && cloud.erpSales.length < 3000, { bytes: cloud.erpSales.length });
 
@@ -138,7 +138,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   const beforeOld = await state();
   await page.evaluate(async (csv) => { openErpImport(); await erpAutoImport(csv); }, olderCsv);
   s = await state();
-  check('an older file than what is stored asks first; dismissed → nothing changes', dialogs.length===1 && /أقدم/.test(s.status) && JSON.stringify(s.periods)===JSON.stringify(beforeOld.periods), { dialogs, status: s.status });
+  check('an older file than what is stored asks first; dismissed → nothing changes', dialogs.length===1 && /older than what is saved/.test(s.status) && JSON.stringify(s.periods)===JSON.stringify(beforeOld.periods), { dialogs, status: s.status });
   acceptDialogs = true; dialogs.length = 0;
   await page.evaluate(async (csv) => { openErpImport(); await erpAutoImport(csv); }, olderCsv);
   s = await state();
@@ -166,7 +166,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   await page.evaluate(() => localStorage.removeItem('um_mirror:erpSales'));
   mode.failGet = /^erpRows:seed_/;
   await boot(); s = await state();
-  check('August chunks unreadable → period listed as missing, warning card with retry, September intact', s.broken.length===1 && s.periods.find(p=>p.id==='seed_sales3_aug26').missing && s.periods.find(p=>p.rows===146) && /لم تُحمَّل/.test(s.nudge) && !s.loadFailed, { broken: s.broken, nudge: s.nudge.slice(0,80) });
+  check('August chunks unreadable → period listed as missing, warning card with retry, September intact', s.broken.length===1 && s.periods.find(p=>p.id==='seed_sales3_aug26').missing && s.periods.find(p=>p.rows===146) && /did not load/.test(s.nudge) && !s.loadFailed, { broken: s.broken, nudge: s.nudge.slice(0,80) });
   const idxBefore = JSON.parse(cloud.erpSales);
   const okSave = await page.evaluate(async () => { erpSales.returnPolicy = 'erp'; return persist('erpSales'); });
   const idxAfter = JSON.parse(cloud.erpSales);
@@ -174,14 +174,14 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   mode.failGet = null;
   const retried = await page.evaluate(() => retryErpRows());
   s = await state();
-  check('retry button reloads the rows and clears the warning', retried && s.broken.length===0 && s.periods.every(p=>p.rows>0) && !/لم تُحمَّل/.test(s.nudge), s.periods);
+  check('retry button reloads the rows and clears the warning', retried && s.broken.length===0 && s.periods.every(p=>p.rows>0) && !/did not load/.test(s.nudge), s.periods);
 
   // ---------- 6) small edit fails to save → red pill, tap retries ----------
   mode.failSet = /^erpSales$/;
   await page.evaluate(() => setReturnPolicy('origin'));
   await page.waitForTimeout(200);
   s = await state();
-  check('return-policy change that could not be saved shows the unsaved pill', s.dirty && /غير محفوظة/.test(s.pill), s.pill);
+  check('return-policy change that could not be saved shows the unsaved pill', s.dirty && /Sales changes not saved/.test(s.pill), s.pill);
   mode.failSet = null;
   await page.evaluate(() => document.getElementById('erpDirtyPill').click());
   await page.waitForTimeout(400);
@@ -193,7 +193,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
   mode.failGet = /^erpSales$/;
   await boot(); s = await state();
   const refused = await page.evaluate(async () => !(await persist('erpSales')));
-  check('index unreadable (no mirror) → banner, save refused, nothing written', s.loadFailed && /لم تُحمَّل من السحابة/.test(s.nudge) && refused && JSON.parse(cloud.erpSales).periods.length===2, { nudge: s.nudge.slice(0,60) });
+  check('index unreadable (no mirror) → banner, save refused, nothing written', s.loadFailed && /did not load from the cloud/.test(s.nudge) && refused && JSON.parse(cloud.erpSales).periods.length===2, { nudge: s.nudge.slice(0,60) });
   mode.failGet = null;
 
   // ---------- 8) mirror survives a quota failure by shrinking ----------
@@ -307,7 +307,7 @@ function check(name, ok, info){ results.push((ok?'✅':'❌')+' '+name+(info!==u
 
   // ---------- 13) month rollover: targets are stamped with their month and flagged when stale ----------
   const stale2 = await page.evaluate(async () => { targets.Mariam.month = '2026-08'; renderToday(); await msWhenReady(); return { note: (document.getElementById('targetCard')||{}).innerText || '', nudge: (document.getElementById('erpNudge')||{}).innerText || '' }; });
-  check('a target from an earlier month is flagged on the Today card and a month-inputs card asks for this month\'s DSR', /Target is from August 2026/.test(stale2.note) && /المدخلات الشهرية مطلوبة/.test(stale2.nudge), { note: stale2.note.split('\n').filter(l=>/Target is/.test(l)), nudge: stale2.nudge.slice(0,60) });
+  check('a target from an earlier month is flagged on the Today card and a month-inputs card asks for this month\'s DSR', /Target is from August 2026/.test(stale2.note) && /the monthly inputs are needed/.test(stale2.nudge), { note: stale2.note.split('\n').filter(l=>/Target is/.test(l)), nudge: stale2.nudge.slice(0,60) });
 
   check('no page errors', errors.length===0, errors.slice(0,5));
   console.log(results.join('\n'));

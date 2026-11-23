@@ -1410,8 +1410,8 @@ async function renderBackupsList(){
       try{
         const res = await window.storage.get('snap_'+d, true);
         const snap = res ? UMCore.safeParse(res.value, null) : null;
-        if(snap) info = `${(snap.clinics||[]).length} عيادة · ${(snap.visits||[]).length} زيارة` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} صورة بلا معاينة` : '')
-          + (snap.keptBeforeRestore ? ` · البيانات كما كانت قبل استعادة نسخة ${esc(String(snap.keptBeforeRestore).slice(0, 10))}` : ''); // the copy a whole-day Restore kept first (v123 review)
+        if(snap) info = `${(snap.clinics||[]).length} clinics · ${(snap.visits||[]).length} visits` + (snap.slim && snap.slim.photos ? ` · ${snap.slim.photos} photos without a preview` : '')
+          + (snap.keptBeforeRestore ? ` · the data as it was before restoring the backup of ${esc(String(snap.keptBeforeRestore).slice(0, 10))}` : ''); // the copy a whole-day Restore kept first (v123 review)
       }catch(e){}
       html += `
       <div class="card row-between">
@@ -1435,13 +1435,13 @@ async function renderBackupsList(){
       html = `<div class="card" data-snap-held style="border-inline-start:4px solid var(--amber); font-size:13px; margin-bottom:8px;">⚠️ ${esc(trOf(why) || why)}</div>` + html;
     }
     // Copies kept on THIS device — the last resort if every cloud backup is bad.
-    const devRows = [['um_mirror_prev:clinics','نسخة محفوظة قبل آخر تغيّر كبير','prev'],
-                     ['um_mirror:clinics','آخر نسخة شاهدها هذا الجهاز','cur']]
+    const devRows = [['um_mirror_prev:clinics','A copy kept before the last big change','prev'],
+                     ['um_mirror:clinics','The last copy this device saw','cur']]
       .map(([k,label,which])=>{
         let n = 0;
         try{ const arr = UMCore.safeParse(localStorage.getItem(k), null); n = Array.isArray(arr)?arr.length:0; }catch(e){}
         return n ? `<div class="card row-between">
-          <span>📱 ${label} <span style="color:var(--muted); font-size:11.5px;">${n} عيادة</span></span>
+          <span>📱 ${label} <span style="color:var(--muted); font-size:11.5px;">(${n} clinics)</span></span>
           <button class="btn secondary small" style="width:auto; margin:0;" onclick="restoreDeviceClinics('${which}')">Restore</button>
         </div>` : '';
       }).join('');
@@ -2204,7 +2204,7 @@ function restoreDeviceClinics(which){
   if(!requireAdmin()) return;
   if(_loadFailed.clinics || _mirrorUsed.clinics){ showToast('⚠️ The clinic list did not load from the cloud — check the connection and open this again'); return; }
   const copy = devCopyRaw(which);
-  if(!copy.length){ showToast('لا توجد نسخة صالحة على هذا الجهاز'); return; }
+  if(!copy.length){ showToast('No usable copy on this device'); return; }
   const diff = UMCore.deviceCopyDiff(storedClinics(), copy, { binIds: ((recycleBin && recycleBin.clinics) || []).map(x => x && x.id), tombIds: [...tombSet('clinics')], doctorTombs: [...tombSet('doctors')] });
   _devCopy = { which, diff, picked: new Set() };
   showModal(`<h3 style="margin-top:0;" data-ic="refresh">📱 <span>This phone's copy of the clinic list</span></h3><div id="devCopyBody"></div>`);
@@ -2325,8 +2325,8 @@ async function checkWipeBanner(){
       bar.className = 'sbar';   // the look is in index.html (status bars)
       document.body.appendChild(bar);
     }
-    bar.innerHTML = `⚠️ قائمة العيادات الحالية (${clinics.length}) أصغر بكثير من النسخة الاحتياطية ليوم ${esc(best.d)} (${best.n} عيادة) — البيانات ليست ضائعة.
-      <button onclick="openExport()" style="margin-inline-start:10px; background:#fff; color:#8B1A0E; border:0; border-radius:999px; padding:6px 14px; font-weight:600; font-family:inherit; cursor:pointer;">استرجاع الآن</button>`;
+    bar.innerHTML = `⚠️ The clinic list now (${clinics.length}) is much smaller than the backup of ${esc(best.d)} (${best.n} clinics) — the data is not lost.
+      <button onclick="openExport()" style="margin-inline-start:10px; background:#fff; color:#8B1A0E; border:0; border-radius:999px; padding:6px 14px; font-weight:600; font-family:inherit; cursor:pointer;">Restore now</button>`;
   }catch(e){}
 }
 function copyReport(){

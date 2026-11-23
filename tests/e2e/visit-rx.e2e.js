@@ -250,7 +250,7 @@ function reseed(o = {}){
     mode.failSet = /^clinics$/;
     await ev(() => { document.getElementById('hoWhat').value = 'Toothbrush samples'; document.getElementById('hoQty').value = '3'; _lastOfflineToast = 0; window.__toasts.length = 0; });
     await ev(() => addHandover('m1', 'm1-d1')); await sleep(150); const t9 = await toasts(); mode.failSet = null;
-    check('R9 a handover the cloud refuses never says "سُجِّل التسليم" — it says it is kept on this device', !t9.some(t => /سُجِّل التسليم/.test(t)) && t9.some(t => /Handover kept on this device|على هذا الجهاز/.test(t)), t9);
+    check('R9 a handover the cloud refuses never says "سُجِّل التسليم" — it says it is kept on this device', !t9.some(t => /سُجِّل التسليم|Handover recorded/.test(t)) && t9.some(t => /Handover kept on this device|على هذا الجهاز/.test(t)), t9);
   });
 
   // ======================= P1 — logging (Mariam) =======================
@@ -387,7 +387,7 @@ function reseed(o = {}){
     mode.failSet = /^visits/; await form('m1', ['m1-d1']); await typeQty('m1-d1', 'tortho', 5); let s = await save('offline rx');
     const queued = await ev(() => outboxHas('visits'));
     check('the cloud refuses: no "logged", the phone says it kept the visit, the cloud holds nothing, queued',
-      s.v && copies(s.v.id).length === 0 && queued && s.toasts.some(t => /الزيارة محفوظة على هذا الجهاز/.test(t)) && !s.toasts.some(t => /✅|logged|captured|books|momentum|Saved —/i.test(t)), s.toasts);
+      s.v && copies(s.v.id).length === 0 && queued && s.toasts.some(t => /Visit saved on this device/.test(t)) && !s.toasts.some(t => /✅|logged|captured|books|momentum|Saved —/i.test(t)), s.toasts);
     mode.failSet = null; await ev(() => flushOutbox()); await sleep(300); let f = await figs();
     check('back online: it lands once and counts once (Huda 8 → 13)', copies(s.v.id).length === 1 && f.huda.total === 13, f.huda);
     mode.failSet = /^visits/; await ev(id => openEditVisit(id), s.v.id); await typeQty('m1-d1', 'tortho', 1, '#evRx'); await toasts();
@@ -400,11 +400,11 @@ function reseed(o = {}){
     await ev(() => flushOutbox()); await sleep(200);
     f = await figs(); const before = f.huda.total;
     mode.failSet = /^recycleBin$/; await toasts(); await ev(id => deleteVisit(id), s.v.id); await sleep(150); const d = await toasts(); mode.failSet = null; f = await figs();
-    check('a delete whose bin copy fails: nothing deleted, said so; the count is unchanged', d.some(t => /لم يُحذف شيء/.test(t)) && f.huda.total === before && copies(s.v.id).length === 1, { d, before, now: f.huda.total });
+    check('a delete whose bin copy fails: nothing deleted, said so; the count is unchanged', d.some(t => /لم يُحذف شيء|nothing was deleted/.test(t)) && f.huda.total === before && copies(s.v.id).length === 1, { d, before, now: f.huda.total });
     await ev(() => { closeModal(); openDoctorProfile('m1', 'm1-d1'); document.getElementById('hoWhat').value = 'Floss samples'; _seedClinics = true; window.__toasts.length = 0; }); // the clinics save is refused outright (nothing queued)
     await ev(() => addHandover('m1', 'm1-d1')); await sleep(150); const rt = await toasts();
     const kept = await ev(() => { _seedClinics = false; const d = clinics.find(c => c.id === 'm1').doctors.find(x => x.id === 'm1-d1'); const shown = /Floss samples/.test(document.getElementById('modalInner').innerText); closeModal(); return { n: d.handovers.filter(h => h.what === 'Floss samples').length, shown }; });
-    check('a handover that could not be saved anywhere is taken back and said so ("⚠️ Not saved — the handover was not added…"), never "سُجِّل التسليم"', rt.includes('⚠️ Not saved — the handover was not added. Try again with a connection.') && !rt.some(t => /سُجِّل التسليم/.test(t)) && kept.n === 0 && !kept.shown, { rt, kept });
+    check('a handover that could not be saved anywhere is taken back and said so ("⚠️ Not saved — the handover was not added…"), never "سُجِّل التسليم"', rt.includes('⚠️ Not saved — the handover was not added. Try again with a connection.') && !rt.some(t => /سُجِّل التسليم|Handover recorded/.test(t)) && kept.n === 0 && !kept.shown, { rt, kept });
   });
 
   // ======================= P6 — Arabic =======================
@@ -651,7 +651,7 @@ function reseed(o = {}){
     await form('m1', ['m1-d1']); await typeQty('m1-d1', 'twhite', 2); await flushDuringFollowUp('stuck'); mode.failSet = /^visits/;
     const s7 = await save('queued while sending');
     check('F7 a new visit queued on the phone while the queue is being sent says it is kept on this device, never "storage full"',
-      s7.toasts.some(t => /الزيارة محفوظة على هذا الجهاز/.test(t)) && !s7.toasts.some(t => /الذاكرة ممتلئة/.test(t)), s7.toasts);
+      s7.toasts.some(t => /Visit saved on this device/.test(t)) && !s7.toasts.some(t => /الذاكرة ممتلئة|storage full/.test(t)), s7.toasts);
     await settle();
     check('F7 …and it lands once the queue goes through', !!(s7.v && copies(s7.v.id).length === 1), s7.v && s7.v.id);
   });

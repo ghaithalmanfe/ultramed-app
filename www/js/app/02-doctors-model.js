@@ -117,6 +117,8 @@ function visitSavedMsg(){ return SAVE_MSGS[Math.floor(Math.random()*SAVE_MSGS.le
 // owns the timer, so an earlier, shorter one never cuts a later one short.
 let _toastTimer = null;
 function showToast(msg, ms){ const t = document.getElementById('toast'); t.textContent = trOf(msg) || msg; t.classList.add('show'); clearTimeout(_toastTimer); _toastTimer = setTimeout(()=>t.classList.remove('show'), ms || 1800); }
+// The browser's own question in the screen's language (the dictionary, as a toast): the English is the code's
+function confirmTr(msg){ return confirm(trOf(msg) || msg); }
 function esc(s){ return UMCore.esc(s); }
 // Chrome icon helper — renders one symbol from the inline sprite at text size
 function I(name){ return `<svg class="svgi" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
