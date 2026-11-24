@@ -146,6 +146,13 @@ describe('safeParse', () => {
     assert.equal(core.safeParse(null, 'x'), 'x');
     assert.equal(core.safeParse(undefined, 'x'), 'x');
   });
+  test('leaves out "__proto__" keys (v129, C3) — but the ERP links keep an account of that name when asked', () => {
+    const t = '{"__proto__":{"polluted":1},"visits":{"__proto__":2,"a":3}}';
+    const d = core.safeParse(t, null);
+    assert.deepEqual(Object.keys(d), ['visits']); assert.deepEqual(Object.keys(d.visits), ['a']); assert.equal(({}).polluted, undefined);
+    const m = core.safeParse('{"__proto__":"al2","Orion":"al1"}', null, true);
+    assert.ok(Object.prototype.hasOwnProperty.call(m, '__proto__') && m.Orion === 'al1' && Object.getPrototypeOf(m) === Object.prototype);
+  });
 });
 
 // ---------- CSV ----------

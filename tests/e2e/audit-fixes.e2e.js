@@ -63,7 +63,13 @@ const SEP_OFFSET = new Date('2026-09-21T10:00:00').getTime() - Date.now();
       // code too). A delete shares the delete log in the background (persistTombs): that save ends first.
       for(let i = 0; i < 100 && releaseFn; i++) await new Promise(r => setTimeout(r, 50));
       await page.goto(`http://localhost:${PORT}/index.html`); await page.waitForTimeout(250);
-      await page.evaluate(async ({who, role}) => { await selectUser(who, role); }, {who, role});
+      // v129 (the security audit's C7): a device holding another login's queued changes asks first; this harness's
+      // devices are shared by the whole team, so it answers "Upload them under my login" — what v128 did by itself
+      // (RS-5 leaves a rep's visit queued on device A before the supervisor signs in there)
+      await page.evaluate(async ({who, role}) => {
+        const t = setInterval(() => { const b = document.querySelector('#modalInner [data-queue="yes"]'); if(b) b.click(); }, 50);
+        try{ await selectUser(who, role); } finally { clearInterval(t); }
+      }, {who, role});
       await page.waitForTimeout(300);
       await page.evaluate(() => msWhenReady()); // the home's figures and its frame are those of the data as it is now (a later frame is held until they are)
     };

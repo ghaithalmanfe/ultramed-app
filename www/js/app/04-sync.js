@@ -1360,7 +1360,7 @@ async function retryErpRows(opts){
 async function erpMapReloadFromCloud(info){
   try{
     const r = await withTimeout(window.storage.get('erpMap', true), 8000);
-    const v = UMCore.safeParse(r && r.value, null);
+    const v = UMCore.safeParse(r && r.value, null, true);
     if(!v || typeof v !== 'object' || Array.isArray(v)) return;
     erpMap = v; _erpMapGen++;
     mirrorSave('erpMap', r.value);
@@ -1961,7 +1961,7 @@ async function loadAllNow(opts){
     const sameText = (k, r) => sameBase && !local && fromCloud(k) && !outboxHas(k) && (k in _onScreen.texts) && _onScreen.texts[k] === textOf(r) && _onScreen.refs[k] === ON_SCREEN[k]()
       && (k !== 'erpMap' || _onScreen.mapGen === _erpMapGen) && (k !== 'rxTypes' || _onScreen.rxGen === _rxTypesGen);
     const parsed = Object.create(null); // each document parsed at most once by this refresh
-    const docOf = (k, r, dflt) => (k in parsed) ? parsed[k] : (parsed[k] = UMCore.safeParse(r && r.value, dflt));
+    const docOf = (k, r, dflt) => (k in parsed) ? parsed[k] : (parsed[k] = UMCore.safeParse(r && r.value, dflt, k === 'erpMap')); // (an ERP account named "__proto__" is a link like any other)
     const keptAs = k => _onScreen.tfp[k] === tombsFp(k); // the deletes known for it are those its copy on screen was filtered with
     const clinicsSame = sameText('clinics', c);
     const clinicsBefore = clinics;

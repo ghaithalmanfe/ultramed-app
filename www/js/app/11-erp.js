@@ -2057,7 +2057,7 @@ async function saveErpLink(name, next, shownOld, s, opts){
     // JSON.parse keeps every key as an own property, "__proto__" included; a
     // copy through JSON does too, and the one key changed is defined, never
     // assigned — Object.assign and `out[name] = …` drop or ignore "__proto__"
-    const v = cloudStr == null ? null : UMCore.safeParse(cloudStr, null);
+    const v = cloudStr == null ? null : UMCore.safeParse(cloudStr, null, true);   // (keeps "__proto__" as a name)
     const cloud = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
     seen = cloud;
     const cur = has(cloud, name) ? cloud[name] : null;

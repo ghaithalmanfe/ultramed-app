@@ -1037,16 +1037,21 @@ async function commitClinicImport(confirmed){
 const OWNER_SEEN = 'um_ownerSeen';
 const OWNER_FIELDS = ['rep', 'prevRep', 'repSince', 'shared', 'sharedSince', 'gov'];
 const OWNER_FIELD_LABEL = { rep: 'Owner', prevRep: 'Previous owner', repSince: 'Handover from', shared: 'Shared account', sharedSince: 'Shared from', gov: 'Government account', price: 'Price' };
-let _ownerDiffs = [], _ownerAsk = null, _ownerSig = '[]';
+let _ownerDiffs = [], _ownerAsk = null, _ownerSig = '[]', _ownerSeenMem = null, _ownerSeenGen = 0, _ownerWalked = null;
 function ownerVal(v){ return v === undefined || v === '' ? null : v; }
 function ownerPick(c){ const o = {}; OWNER_FIELDS.forEach(f => { o[f] = ownerVal(c[f]); }); return o; }
 function priceVal(p){ return p && p.price != null && p.price !== '' && isFinite(Number(p.price)) ? Number(p.price) : null; }
+// read from the phone once a session, then kept in memory (a quiet 20-second round parses nothing — speed-rounds R1)
 function ownerSeenLoad(){
+  if(_ownerSeenMem) return _ownerSeenMem;
   let o = null; try{ o = UMCore.safeParse(localStorage.getItem(OWNER_SEEN), null); }catch(e){}
   if(!o || typeof o !== 'object' || !o.clinics || typeof o.clinics !== 'object' || !o.prices || typeof o.prices !== 'object') return null;
-  return { v: 1, clinics: Object.assign(Object.create(null), o.clinics), prices: Object.assign(Object.create(null), o.prices) };
+  const seen = { v: 1, clinics: Object.create(null), prices: Object.create(null) };
+  Object.keys(o.clinics).forEach(k => { const c = o.clinics[k]; if(c && typeof c === 'object') seen.clinics[k] = c; });
+  Object.keys(o.prices).forEach(k => { seen.prices[k] = o.prices[k]; });
+  return (_ownerSeenMem = seen);
 }
-function ownerSeenSave(seen){ try{ localStorage.setItem(OWNER_SEEN, JSON.stringify({ v: 1, clinics: seen.clinics, prices: seen.prices })); }catch(e){} }
+function ownerSeenSave(seen){ _ownerSeenMem = seen; _ownerSeenGen++; try{ localStorage.setItem(OWNER_SEEN, JSON.stringify({ v: 1, clinics: seen.clinics, prices: seen.prices })); }catch(e){} }
 // the supervisor's own change landed: this phone sees it as it is now (never a change that came from elsewhere)
 function ownerSeenTake(kind, id){
   const seen = ownerSeenLoad(); if(!seen) return;
@@ -1063,9 +1068,13 @@ function ownerSeenRename(prevName, name){
 }
 function ownerWatch(){
   // another person signed in on this page: the card of the supervisor's session goes with him
-  if(!currentUser || currentUser.role !== 'supervisor'){ _ownerDiffs = []; _ownerSig = '[]'; renderOwnerWatch(); return; }
+  if(!currentUser || currentUser.role !== 'supervisor'){ _ownerDiffs = []; _ownerSig = '[]'; _ownerWalked = null; _ownerSeenMem = null; renderOwnerWatch(); return; }
   // only lists read from the cloud this refresh (never this phone's copy, never a read that failed)
   if(_loadFailed.clinics || _mirrorUsed.clinics || _loadFailed.products || _mirrorUsed.products) return;
+  // a quiet round (v126 speed): the very lists the last look read, no save of this phone since, nothing new seen —
+  // nothing to look at again (a list taken anew is another object; a save of this phone moves _localGen)
+  const w = _ownerWalked;
+  if(w && w.c === clinics && w.p === products && w.gen === _localGen && w.seen === _ownerSeenGen && w.who === currentUser.name) return;
   let seen = ownerSeenLoad(); const fresh = !seen;
   if(!seen) seen = { v: 1, clinics: Object.create(null), prices: Object.create(null) };
   const diffs = []; let grew = false;
@@ -1083,6 +1092,7 @@ function ownerWatch(){
     if(was !== now) diffs.push({ kind: 'price', id: k, name: p.name, field: 'price', was, now });
   });
   if(fresh || grew) ownerSeenSave(seen);
+  _ownerWalked = { c: clinics, p: products, gen: _localGen, seen: _ownerSeenGen, who: currentUser.name };
   // a round that finds what the last one found changes nothing on the page (v126 speed: a quiet round draws nothing)
   const sig = JSON.stringify(diffs);
   if(sig === _ownerSig) return;

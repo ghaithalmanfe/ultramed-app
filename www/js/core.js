@@ -111,9 +111,11 @@
   // Object.prototype for every object of the page. No record of this app has one, so it is left out. The text is
   // searched first: a document without the word is parsed once, as before.
   function protoKeyless(k, v){ return k === '__proto__' ? undefined : v; }
-  function safeParse(raw, fallback){
+  // keepProtoKeys: the ERP links document only (erpMap) — its keys are ERP customer names, and its code keeps an
+  // account named "__proto__" as an own key (v113: read with hasOwnProperty, written with defineProperty; erp-links S2)
+  function safeParse(raw, fallback, keepProtoKeys){
     if(raw === null || raw === undefined) return fallback;
-    try{ return typeof raw === 'string' && raw.indexOf('"__proto__"') >= 0 ? JSON.parse(raw, protoKeyless) : JSON.parse(raw); }catch(e){ return fallback; }
+    try{ return !keepProtoKeys && typeof raw === 'string' && raw.indexOf('"__proto__"') >= 0 ? JSON.parse(raw, protoKeyless) : JSON.parse(raw); }catch(e){ return fallback; }
   }
 
   // ---- CSV ----
