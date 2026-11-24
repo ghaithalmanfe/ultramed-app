@@ -43,7 +43,7 @@ async function readDocs(idToken, keys){
       if(!x.found) return;
       const name = x.found.name.split('/').pop();
       const v = x.found.fields && x.found.fields.value && x.found.fields.value.stringValue;
-      out[decodeURIComponent(name)] = v == null ? null : core.safeParse(v, null);
+      out[decodeURIComponent(name)] = v == null ? null : core.safeParse(v, null, decodeURIComponent(name) === 'erpMap'); // (the ERP links keep an account named "__proto__", as the app does)
     });
   }
   return out;

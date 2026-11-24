@@ -32,11 +32,11 @@ function openKpiScorecard(){
   const pct = x => x == null ? '—' : Math.round(x * 100) + '%';
   const color = x => x == null ? 'var(--muted)' : x >= 0.85 ? 'var(--sage-ink)' : x >= 0.6 ? 'var(--amber-ink)' : 'var(--coral-ink)';
   const bar = x => `<div style="height:6px; border-radius:3px; background:var(--paper); overflow:hidden; margin-top:3px;"><div style="width:${x == null ? 0 : Math.round(Math.min(1, x) * 100)}%; height:100%; background:${x == null ? 'transparent' : x >= 0.85 ? 'var(--sage)' : x >= 0.6 ? 'var(--amber)' : 'var(--coral)'};"></div></div>`;
-  const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_kpiRep === x ? 'on' : ''}" onclick="_kpiRep='${esc(x)}'; openKpiScorecard()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
-  const per = [['month', 'This month'], ['week', 'This week'], ['last', 'Last month']].map(([k, l]) => `<div class="chip small ${_kpiPeriod === k ? 'on' : ''}" onclick="_kpiPeriod='${k}'; openKpiScorecard()">${l}</div>`).join('');
+  const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_kpiRep === x ? 'on' : ''}" onclick="_kpiRep='${jsArg(x)}'; openKpiScorecard()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
+  const per = [['month', 'This month'], ['week', 'This week'], ['last', 'Last month']].map(([k, l]) => `<div class="chip small ${_kpiPeriod === k ? 'on' : ''}" onclick="_kpiPeriod='${jsArg(k)}'; openKpiScorecard()">${l}</div>`).join('');
   let body;
   if(_kpiRep === 'all'){
-    body = `<div class="kpi-people">${cards.map(c => `<button class="kpi-pc" onclick="_kpiRep='${esc(c.rep)}'; openKpiScorecard()">${kpiRing(c.total, 64)}<span class="kpi-pt"><span class="kpi-pn">${esc(c.rep)}</span><span class="kpi-ps" style="color:${color(c.total == null ? null : c.total / 100)};">${c.total == null ? '—' : c.total + '/100'}</span></span><svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg></button>`).join('')}</div>
+    body = `<div class="kpi-people">${cards.map(c => `<button class="kpi-pc" onclick="_kpiRep='${jsArg(c.rep)}'; openKpiScorecard()">${kpiRing(c.total, 64)}<span class="kpi-pt"><span class="kpi-pn">${esc(c.rep)}</span><span class="kpi-ps" style="color:${color(c.total == null ? null : c.total / 100)};">${c.total == null ? '—' : c.total + '/100'}</span></span><svg class="svgi lr-go" aria-hidden="true"><use href="#i-chev"/></svg></button>`).join('')}</div>
     <div class="card kpi-table" style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
       <tr><th style="text-align:start; padding:4px;">KPI</th><th style="padding:4px;">Weight</th>${cards.map(c => `<th style="padding:4px;">${esc(c.rep)}</th>`).join('')}</tr>
       <tr style="font-weight:800; font-size:14px;"><td style="padding:4px;">Total score</td><td></td>${cards.map(c => `<td style="text-align:center; padding:4px; color:${color(c.total == null ? null : c.total / 100)};">${c.total == null ? '—' : c.total + '/100'}</td>`).join('')}</tr>
@@ -131,12 +131,12 @@ function openClientLog(){
       <div class="chip small" onclick="openClientLogForm('stand')">+ Stand</div>
     </div>
     <div class="section-title">Open requests (${open.length})</div>
-    ${open.length ? open.map(e => `<div class="card req-row" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:${Date.now() - Date.parse(e.at) > lim * 3600000 ? 'var(--coral-ink)' : 'var(--muted)'};">${age(e)} · ${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.text || '')}</div><button class="chip small" style="margin-top:6px;" onclick="resolveClientLog('${e.id}')">✓ Answered</button></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">None open.</div>'}
+    ${open.length ? open.map(e => `<div class="card req-row" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:${Date.now() - Date.parse(e.at) > lim * 3600000 ? 'var(--coral-ink)' : 'var(--muted)'};">${age(e)} · ${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.text || '')}</div><button class="chip small" style="margin-top:6px;" onclick="resolveClientLog('${jsArg(e.id)}')">✓ Answered</button></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">None open.</div>'}
     <div class="section-title">This month</div>
     ${recent.length ? recent.map(e => `<div class="req-line" style="font-size:12.5px; padding:4px 0; border-bottom:1px solid var(--line, #eee);"><span class="badge ${e.type === 'escalation' ? 'overdue' : 'done'}">${e.type === 'escalation' ? '⚠️ Escalation' : '✓ Request'}</span> · <b>${esc(cl(e.clinicId))}</b> · ${esc(e.rep || '')} · ${fmtDate(String(e.at).slice(0, 10))}${e.via ? ' · went to ' + esc(e.via) : ''}${e.text ? ' — ' + esc(e.text) : ''}${e.resolvedAt ? ' <span style="color:var(--muted);">(answered in ' + Math.max(0, Math.round((Date.parse(e.resolvedAt) - Date.parse(e.at)) / 3600000)) + 'h)</span>' : ''}</div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">Nothing logged this month.</div>'}
     <div class="section-title">Stands (${stands.length})</div>
     ${stands.length ? stands.map(e => `<div class="card req-row" style="margin-bottom:6px;"><div class="row-between"><b>${esc(cl(e.clinicId))}</b><span style="font-size:11.5px; color:var(--muted);">${esc(e.rep || '')}</span></div><div style="font-size:12.5px;">${esc(e.brand || '')}${e.text ? ' — ' + esc(e.text) : ''}</div><div style="font-size:11.5px; color:var(--muted);">Placed ${fmtDate(String(e.at).slice(0, 10))} · last checked ${(e.checks || []).length ? fmtDate(e.checks[e.checks.length - 1]) : 'never'}</div>
-      <div style="display:flex; gap:6px; margin-top:6px;"><button class="chip small" onclick="checkStand('${e.id}')">✓ Checked today</button><button class="chip small" onclick="removeStand('${e.id}')">Removed</button></div></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">No stands recorded.</div>'}
+      <div style="display:flex; gap:6px; margin-top:6px;"><button class="chip small" onclick="checkStand('${jsArg(e.id)}')">✓ Checked today</button><button class="chip small" onclick="removeStand('${jsArg(e.id)}')">Removed</button></div></div>`).join('') : '<div style="color:var(--muted); font-size:12.5px;">No stands recorded.</div>'}
     <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn secondary" onclick="openKpiScorecard()">KPI scorecard</button><button class="btn secondary" onclick="closeModal()">Close</button></div>`);
 }
 function openClientLogForm(kind){
@@ -148,7 +148,7 @@ function openClientLogForm(kind){
     ${kind === 'escalation' ? `<label style="display:block; font-size:12.5px; margin-top:8px;">Who did the clinic contact instead?<input type="text" id="clForm_via" placeholder="e.g. the manager, accounts, warehouse" style="margin-top:3px;"></label>` : ''}
     ${kind === 'stand' ? `<label style="display:block; font-size:12.5px; margin-top:8px;">Brand / stand<input type="text" id="clForm_brand" placeholder="e.g. Philips Sonicare counter stand" style="margin-top:3px;"></label>` : ''}
     <label style="display:block; font-size:12.5px; margin-top:8px;">${kind === 'request' ? 'What did they ask for?' : kind === 'escalation' ? 'What was it about?' : 'Note'}<textarea id="clForm_text" rows="3" style="margin-top:3px;"></textarea></label>
-    <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn" onclick="saveClientLog('${kind}')">Save</button><button class="btn secondary" onclick="openClientLog()">Back</button></div>`);
+    <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn" onclick="saveClientLog('${jsArg(kind)}')">Save</button><button class="btn secondary" onclick="openClientLog()">Back</button></div>`);
 }
 async function saveClientLog(kind){
   const c = clinicByName((document.getElementById('clForm_clinic') || {}).value);
@@ -187,6 +187,7 @@ async function toggleGovClinic(clinicId){
   const c = clinics.find(x => x.id === clinicId); if(!c) return;
   c.gov = !UMCore.isGovClinic(c);
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) ownerSeenTake('clinic', c.id); // (this phone's own change: never listed as made elsewhere, v129)
   saveToast(r, 'clinics', `${c.name}: ${c.gov ? 'government account – visited every week' : 'not a government account'}`);
   renderAdminTerritory();
 }
@@ -205,7 +206,7 @@ function openMonthByMonth(){
   const kd = n => moneyWhole(n);   // grouped, the currency after the figure (د.ك in Arabic)
   const arrow = (a, b) => a == null || b == null || !(b > 0) || a === b ? '' : a >= b ? `<span style="color:var(--sage-ink); font-weight:700;">▲ ${Math.round((a - b) / b * 100)}%</span>` : `<span style="color:var(--coral-ink); font-weight:700;">▼ ${Math.round((b - a) / b * 100)}%</span>`;
   const bar = (x, max, color) => `<div style="height:8px; border-radius:4px; background:var(--paper); overflow:hidden; margin-top:3px;"><div style="width:${max > 0 && x ? Math.round(Math.min(1, x / max) * 100) : 0}%; height:100%; background:${color};"></div></div>`;
-  const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_mbmRep === x ? 'on' : ''}" onclick="_mbmRep='${esc(x)}'; openMonthByMonth()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
+  const chips = (sup ? ['all', ...reps] : reps).map(x => `<div class="chip small ${_mbmRep === x ? 'on' : ''}" onclick="_mbmRep='${jsArg(x)}'; openMonthByMonth()">${x === 'all' ? 'Team' : esc(x)}</div>`).join('');
   const per = [[6, '6 months'], [12, '12 months']].map(([k, l]) => `<div class="chip small ${_mbmN === k ? 'on' : ''}" onclick="_mbmN=${k}; openMonthByMonth()">${l}</div>`).join('');
   const dayN = parseInt(T.end.slice(8, 10), 10);
   const maxS = Math.max(0, ...M.map(m => Math.max(of(m).sales || 0, of(m).target || 0)));

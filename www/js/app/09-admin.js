@@ -51,7 +51,7 @@ function adminMailHTML(){
     <div class="chip-row" style="margin-bottom:10px;">
       <div class="chip small" onclick="previewDigest('morning')">☀️ The morning digest (team)</div>
       <div class="chip small" onclick="previewDigest('evening')">🌙 The evening digest (team)</div>
-      ${REPS.map(r=>`<div class="chip small" onclick="previewDigest('evening','${esc(r)}')">🌙 ${esc(r)}</div>`).join('')}
+      ${REPS.map(r=>`<div class="chip small" onclick="previewDigest('evening','${jsArg(r)}')">🌙 ${esc(r)}</div>`).join('')}
     </div>
     <div class="section-title">Send now</div>
     <a class="btn secondary" id="mailSendNow" href="${MAIL_WORKFLOW_URL}" target="_blank" rel="noopener">▶️ Send now from GitHub</a>
@@ -215,7 +215,7 @@ function adminTerritoryHTML(){
     <input type="text" id="apTerrSearch" placeholder="Search clinics..." oninput="renderAdminTerritory()" style="margin-bottom:10px;">
     <div class="chip-row" style="margin-bottom:10px;" id="apTerrFilter">
       <div class="chip small on" data-f="all" onclick="setTerrFilter(this,'all')">All</div>
-      ${REPS.map(r=>`<div class="chip small" data-f="${esc(r)}" onclick="setTerrFilter(this,'${esc(r)}')">${esc(r)}</div>`).join('')}
+      ${REPS.map(r=>`<div class="chip small" data-f="${esc(r)}" onclick="setTerrFilter(this,'${jsArg(r)}')">${esc(r)}</div>`).join('')}
       <div class="chip small" data-f="__none" onclick="setTerrFilter(this,'__none')">Unassigned</div>
     </div>
     <div id="apTerrBody"></div>`;
@@ -249,9 +249,9 @@ function renderAdminTerritory(){
       <div class="clinic-name">${esc(c.name)}</div>
       <div class="clinic-sub" style="margin-bottom:8px;">${parts.join('<span data-notr> · </span>')}</div>
       <div class="chip-row">
-        ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${c.id}','${esc(r)}')">${esc(r)}</div>`).join('')}
-        <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${c.id}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
-        <div class="chip small ${UMCore.isGovClinic(c)?'on':''}" onclick="toggleGovClinic('${c.id}')" title="Government account: must be visited every week">${I('building')} Gov</div>
+        ${REPS.map(r=>`<div class="chip small ${c.rep===r?'on':''}" onclick="reassignClinic('${jsArg(c.id)}','${jsArg(r)}')">${esc(r)}</div>`).join('')}
+        <div class="chip small ${c.shared?'on':''}" onclick="toggleSharedClinic('${jsArg(c.id)}')" title="Hospitals, the ministry, universities: sales go to whoever issues the invoice">${I('users')} Shared</div>
+        <div class="chip small ${UMCore.isGovClinic(c)?'on':''}" onclick="toggleGovClinic('${jsArg(c.id)}')" title="Government account: must be visited every week">${I('building')} Gov</div>
       </div>
     </div>`;
   }).join('') + (total>40 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:6px;">Showing 40 of ${total} — type a clinic name above to find the others</div>` : '');
@@ -266,6 +266,7 @@ async function toggleSharedClinic(clinicId){
   if(c.shared){ c.shared = false; c.sharedSince = null; }
   else { c.shared = true; c.sharedSince = todayStr().slice(0, 7) + '-01'; }
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) ownerSeenTake('clinic', c.id); // (this phone's own change: never listed as made elsewhere, v129)
   saveToast(r, 'clinics', c.shared ? `${c.name}: shared – sales by invoice issuer from ${fmtDate(c.sharedSince)}` : `${c.name}: back to its owner`);
   renderAdminTerritory();
   renderAll();
@@ -310,7 +311,10 @@ async function applyDistributionUpload(){
   const plan = _distPlan; _distPlan = null;
   const before = JSON.stringify(clinics);
   const n = UMCore.applyDistributionPlan(plan, clinics, REPS);
+  const was = new Map((UMCore.safeParse(before, []) || []).map(c => [String(c && c.id), JSON.stringify(ownerPick(c || {}))]));
+  const moved = clinics.filter(c => c && was.get(String(c.id)) !== JSON.stringify(ownerPick(c))).map(c => c.id);
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) moved.forEach(id => ownerSeenTake('clinic', id)); // (v129)
   if(!r.ok){
     clinics = JSON.parse(before);
     mirrorSave('clinics', JSON.stringify(storedClinics())); // the phone's copy too: a queued save must never upload the distribution later
@@ -339,6 +343,7 @@ async function reassignClinic(clinicId, newRep){
   }
   c.rep = newRep;
   const r = await persistTold('clinics');
+  if(r.ok || (r.outcome && r.outcome.queued)) ownerSeenTake('clinic', c.id); // (this phone's own change: never listed as made elsewhere, v129)
   saveToast(r, 'clinics', `${c.name} → ${newRep}${c.repSince?` (from ${fmtDate(c.repSince)})`:''}`);
   renderAdminTerritory();
   renderAll();
@@ -372,12 +377,10 @@ function adminHealthHTML(){
   const overdue = active.filter(c=>followStatus(c.nextFollowUp)==='overdue');
   const noClass = active.filter(c=>!c.cls);
   const noContact = active.filter(c=>!c.contact && !c.phone && !(c.doctors||[]).length);
-  const dupes = [];
-  const seen = {};
-  active.forEach(c=>{
-    const k = c.name.toLowerCase().replace(/[^a-z0-9]/g,'');
-    if(seen[k]) dupes.push(c.name+' / '+seen[k]); else seen[k]=c.name;
-  });
+  // the clinic list's own rule (v129, UMCore.possibleDuplicateClinics): one line per group of look-alike names —
+  // until then only Latin letters were compared, so every two clinics named in Arabic counted as a duplicate
+  const byIdA = new Map(active.map(c=>[String(c.id), c]));
+  const dupes = UMCore.possibleDuplicateClinics(active).groups.map(g => g.map(id => (byIdA.get(id) || {}).name).filter(Boolean).join(' / '));
   const row = (label, items, color) => {
     const n = items.length;
     return `<div class="card" style="margin-bottom:8px; ${n?'border-inline-start:4px solid '+color+';':''}">
@@ -423,7 +426,7 @@ function renderAdminPrices(){
   el.innerHTML = list.map(p=>`
     <div class="qty-row">
       <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')} · ${esc(p.id)}</span></div>
-      <input type="number" step="0.01" min="0" value="${p.price!=null?p.price:''}" onchange="updateProductPrice('${esc(productKey(p))}', this.value)" style="width:82px;">
+      <input type="number" step="0.01" min="0" value="${numAttr(p.price)}" onchange="updateProductPrice('${jsArg(productKey(p))}', this.value)" style="width:82px;">
     </div>`).join('') + (!q && products.length>25 ? `<div style="text-align:center; color:var(--muted); font-size:12.5px; padding:8px;">Showing 25 of ${products.length} — search to find others</div>` : '');
 }
 async function updateProductPrice(key, val){
@@ -434,6 +437,7 @@ async function updateProductPrice(key, val){
   if(isNaN(n) || n<0){ showToast('Enter a valid price'); return; }
   p.price = Math.round(n*100)/100;
   const r = await persistTold('products');
+  if(r.ok) ownerSeenTake('price', key); // (v129)
   saveToast(r, 'products', `${p.name.slice(0,28)} → ${money(p.price)}`);
 }
 
@@ -523,16 +527,16 @@ function renderVisitLog(){
     const canEdit = canEditVisit(v);
     html += `<div class="card" style="margin-bottom:8px; border-inline-start:4px solid ${clsColor(c?c.cls:null)};">
       <div class="row-between">
-        <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${v.clinicId}')">
+        <div style="flex:1; cursor:pointer;" onclick="closeModal(); openClinicDetail('${jsArg(v.clinicId)}')">
           <div class="clinic-name">${esc(c?c.name:clinicLabel(v.clinicId, v))}${v.orderOnly?' <span class="rep-tag">order only</span>':''}${v.callOnly?` <span class="rep-tag">${CHANNEL_LABELS[v.channel]||'📞 Call'}</span>`:''}</div>
           <div class="clinic-sub">${v.orderTaken?'🛒 '+money(v.orderTotal):(v.callOnly?(v.contactName?'With '+esc(v.contactName)+(v.contactRole?' ('+esc(v.contactRole)+')':''):'Call logged'):'Visit only')}${currentUser.role==='supervisor'?' · '+esc(v.rep):''}${jointTag(v)}</div>
           ${contactNames(v,c)?`<div style="font-size:12px; color:var(--muted); margin-top:4px;">👥 ${esc(contactNames(v,c))}</div>`:''}
           ${rxLinesHTML(v,c)}
           ${prods.length?`<div style="font-size:12px; color:var(--muted); margin-top:5px;">${esc(prods.slice(0,3).join(', '))}${prods.length>3?' +'+(prods.length-3)+' more':''}</div>`:''}
           ${v.notes?`<div dir="auto" style="font-size:12.5px; margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);">${esc(v.notes)}</div>`:''}
-          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
+          ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${esc(safeImg(ph.thumb))}" data-cap="${esc(c?c.name:'Visit photo')}" onclick="event.stopPropagation(); showLightbox('${jsArg(ph.id)}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
         </div>
-        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${v.id}')">Edit</button>`:''}
+        ${canEdit?`<button class="chip small" style="flex-shrink:0; margin-inline-start:8px;" onclick="event.stopPropagation(); openEditVisit('${jsArg(v.id)}')">Edit</button>`:''}
       </div>
     </div>`;
   });
@@ -547,7 +551,7 @@ function openPhotoGallery(){
   const all = withPhotos.flatMap(v => v.photos.filter(Boolean));
   const nWait = all.filter(p => p.pending).length, nLost = all.filter(p => p.lost && !p.pending).length;
   const stateOf = ph => ph.pending ? 'waiting' : ph.lost ? 'lost' : '';
-  const tile = (v, ph) => { const img = `<img src="${ph.thumb}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${ph.id}', this.dataset.cap)">`, st = stateOf(ph);
+  const tile = (v, ph) => { const img = `<img src="${esc(safeImg(ph.thumb))}" style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:10px; cursor:pointer;" data-cap="${esc(cname(v.clinicId) + ' · ' + fmtDate(v.date))}" onclick="showLightbox('${jsArg(ph.id)}', this.dataset.cap)">`, st = stateOf(ph);
     return st ? `<div data-photo-state="${st}" style="position:relative;">${img}<span aria-hidden="true" style="position:absolute; top:4px; inset-inline-start:4px; font-size:13px; line-height:1; padding:3px; border-radius:8px; background:rgba(255,255,255,.88); pointer-events:none;">${st === 'waiting' ? '⏳' : '⚠️'}</span></div>` : img; };
   showModal(`
     <h3 style="margin-top:0;">${I('camera')} Visit photos</h3>
@@ -590,9 +594,9 @@ function renderDoctorRows(c){
         <div><div class="dname">${esc(d.name)}</div>${d.title?`<div class="dsub" style="color:${pb?pb.color:'var(--muted)'}; font-weight:600;">${esc(d.title)}</div>`:''}${docBadges(d)}</div>
       </div>
       <div style="display:flex; align-items:center; gap:4px;">
-        ${canViewClinic(c)?`<button class="chip small" onclick="event.stopPropagation(); _drBack=null; openDoctorRecord('${c.id}','${d.id}')">${I('pencil')} Card</button>`:''}
-        ${pb?`<button class="chip small" onclick="event.stopPropagation(); openPlaybook('${d.title}')">Tips</button>`:''}
-        <button class="del" onclick="removeDoctor('${c.id}','${d.id}')">&times;</button>
+        ${canViewClinic(c)?`<button class="chip small" onclick="event.stopPropagation(); _drBack=null; openDoctorRecord('${jsArg(c.id)}','${jsArg(d.id)}')">${I('pencil')} Card</button>`:''}
+        ${pb?`<button class="chip small" onclick="event.stopPropagation(); openPlaybook('${jsArg(d.title)}')">Tips</button>`:''}
+        <button class="del" onclick="removeDoctor('${jsArg(c.id)}','${jsArg(d.id)}')">&times;</button>
       </div>
     </div>`;
   }).join('');
@@ -698,8 +702,8 @@ async function deleteClinic(id){
     ${vCount?`<div class="card" style="background:var(--amber-dim); margin-bottom:12px;">This clinic has <strong>${vCount}</strong> logged visit${vCount===1?'':'s'}. They stay in your reports.</div>`:''}
     ${nLinks?`<div class="card" style="background:var(--amber-dim); border-inline-start:4px solid var(--amber); margin-bottom:12px; font-size:13px; line-height:1.55;"><span>ERP accounts linked to this clinic by hand:</span> <strong>${nLinks}</strong>. <span>Once it is removed their invoices count for the salesman who issued them — move them first from the clinic card.</span></div>`:''}
     <p style="color:var(--muted); font-size:13px;">It moves to the recycle bin and can be restored within ${BIN_DAYS} days.</p>
-    <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${id}')">Yes, remove</button>
-    <button class="btn secondary" onclick="openClinicDetail('${id}')">Cancel</button>
+    <button class="btn" style="background:var(--coral);" onclick="confirmDeleteClinic('${jsArg(id)}')">Yes, remove</button>
+    <button class="btn secondary" onclick="openClinicDetail('${jsArg(id)}')">Cancel</button>
   `);
 }
 async function confirmDeleteClinic(id){
@@ -755,7 +759,7 @@ function missingClinicCandidates(){
     take({src:'bin', label:'🗑️ In the recycle bin', obj:b, name:b.name, rep:b.rep||'', key:'bin:'+b.id});
   });
   // 2. names stamped on visits whose clinic no longer exists — history rejoins on restore
-  const stamped = {};
+  const stamped = Object.create(null);
   visits.forEach(v=>{
     if(!v || !v.clinicId || haveIds.has(v.clinicId) || !v.clinicName) return;
     const s = (stamped[v.clinicId] = stamped[v.clinicId] || {name:v.clinicName, n:0, rep:v.rep||''}); s.n++;
@@ -808,7 +812,7 @@ function renderMcList(){
   el.innerHTML = _mcCands.map(x=>`
     <div class="row-between" style="padding:7px 4px; border-bottom:1px solid var(--line);">
       <label style="display:flex; align-items:center; gap:10px; flex:1; font-size:13px;">
-        <input type="checkbox" ${_mcChecked.has(x.key)?'checked':''} onchange="if(this.checked)_mcChecked.add('${x.key}'); else _mcChecked.delete('${x.key}'); const c=document.getElementById('mcCount'); if(c)c.textContent=_mcChecked.size;">
+        <input type="checkbox" ${_mcChecked.has(x.key)?'checked':''} onchange="if(this.checked)_mcChecked.add('${jsArg(x.key)}'); else _mcChecked.delete('${jsArg(x.key)}'); const c=document.getElementById('mcCount'); if(c)c.textContent=_mcChecked.size;">
         <span><b>${esc(x.name)}</b><br><span style="color:var(--muted); font-size:11px;">${x.label}${x.rep?' · '+esc(x.rep):''}</span></span>
       </label>
     </div>`).join('');
@@ -895,7 +899,7 @@ function renderMgList(){
   el.innerHTML = mgVisible().sort((a,b)=>a.name.localeCompare(b.name)).map(c=>`
     <div class="row-between" style="padding:8px 4px; border-bottom:1px solid var(--line);">
       <label style="display:flex; align-items:center; gap:10px; flex:1; font-size:13.5px;">
-        <input type="checkbox" ${_mgSelected.has(c.id)?'checked':''} onchange="mgToggle('${c.id}', this.checked)">
+        <input type="checkbox" ${_mgSelected.has(c.id)?'checked':''} onchange="mgToggle('${jsArg(c.id)}', this.checked)">
         <span><b>${esc(c.name)}</b> <span style="color:var(--muted); font-size:11.5px;">· ${esc(c.rep||'—')} · ${c.cls||'—'} · ${visits.filter(v=>v.clinicId===c.id).length} visits</span></span>
       </label>
     </div>`).join('') || '<div class="empty">No clinics match.</div>';
@@ -1020,3 +1024,157 @@ async function commitClinicImport(confirmed){
   saveToast(r, 'clinics', `✅ ${added} added${updated?` · ${updated} updated`:''}${skipped?` · ${skipped} skipped`:''}`);
 }
 
+
+// ---- Clinic owners and prices changed outside the supervisor's screens (v129, the security audit's C4) ----
+// The rules let any team login write the clinic list and the catalog whole, so a rep's direct write could move another
+// rep's clinic — and its sales lines with it, closed months included — mark a clinic shared or government, or change a
+// price; the app's own screens let only the supervisor do these. Until those decisions have a supervisor-only document
+// (a data-model change and a rules change the owner publishes), the supervisor's phone keeps what it last saw of them
+// (um_ownerSeen, this phone only: each clinic's owner, previous owner, handover month, shared and government marks,
+// each product's price) and, after every read of the cloud, says what changed since other than by his own taps here
+// (ownerSeenTake): "Put back" (asked first) saves the earlier value again, "Keep" takes the new one. Nothing is
+// written without his tap; a clinic or product it has not seen before is only noted.
+const OWNER_SEEN = 'um_ownerSeen';
+const OWNER_FIELDS = ['rep', 'prevRep', 'repSince', 'shared', 'sharedSince', 'gov'];
+const OWNER_FIELD_LABEL = { rep: 'Owner', prevRep: 'Previous owner', repSince: 'Handover from', shared: 'Shared account', sharedSince: 'Shared from', gov: 'Government account', price: 'Price' };
+let _ownerDiffs = [], _ownerAsk = null, _ownerSig = '[]', _ownerSeenMem = null, _ownerSeenGen = 0, _ownerWalked = null;
+function ownerVal(v){ return v === undefined || v === '' ? null : v; }
+function ownerPick(c){ const o = {}; OWNER_FIELDS.forEach(f => { o[f] = ownerVal(c[f]); }); return o; }
+function priceVal(p){ return p && p.price != null && p.price !== '' && isFinite(Number(p.price)) ? Number(p.price) : null; }
+// read from the phone once a session, then kept in memory (a quiet 20-second round parses nothing — speed-rounds R1)
+function ownerSeenLoad(){
+  if(_ownerSeenMem) return _ownerSeenMem;
+  let o = null; try{ o = UMCore.safeParse(localStorage.getItem(OWNER_SEEN), null); }catch(e){}
+  if(!o || typeof o !== 'object' || !o.clinics || typeof o.clinics !== 'object' || !o.prices || typeof o.prices !== 'object') return null;
+  const seen = { v: 1, clinics: Object.create(null), prices: Object.create(null) };
+  Object.keys(o.clinics).forEach(k => { const c = o.clinics[k]; if(c && typeof c === 'object') seen.clinics[k] = c; });
+  Object.keys(o.prices).forEach(k => { seen.prices[k] = o.prices[k]; });
+  return (_ownerSeenMem = seen);
+}
+function ownerSeenSave(seen){ _ownerSeenMem = seen; _ownerSeenGen++; try{ localStorage.setItem(OWNER_SEEN, JSON.stringify({ v: 1, clinics: seen.clinics, prices: seen.prices })); }catch(e){} }
+// the supervisor's own change landed: this phone sees it as it is now (never a change that came from elsewhere)
+function ownerSeenTake(kind, id){
+  const seen = ownerSeenLoad(); if(!seen) return;
+  if(kind === 'clinic'){ const c = clinics.find(x => x && String(x.id) === String(id)); if(c) seen.clinics[String(id)] = ownerPick(c); }
+  else { const p = findProduct(id); if(p) seen.prices[String(productKey(p))] = priceVal(p); }
+  ownerSeenSave(seen);
+  _ownerDiffs = _ownerDiffs.filter(d => !(d.kind === kind && d.id === String(kind === 'price' ? (findProduct(id) ? productKey(findProduct(id)) : id) : id)));
+  renderOwnerWatch();
+}
+function ownerSeenRename(prevName, name){
+  const seen = ownerSeenLoad(); if(!seen) return;
+  Object.keys(seen.clinics).forEach(k => { const o = seen.clinics[k]; if(o.rep === prevName) o.rep = name; if(o.prevRep === prevName) o.prevRep = name; });
+  ownerSeenSave(seen);
+}
+function ownerWatch(){
+  // another person signed in on this page: the card of the supervisor's session goes with him
+  if(!currentUser || currentUser.role !== 'supervisor'){ _ownerDiffs = []; _ownerSig = '[]'; _ownerWalked = null; _ownerSeenMem = null; renderOwnerWatch(); return; }
+  // only lists read from the cloud this refresh (never this phone's copy, never a read that failed)
+  if(_loadFailed.clinics || _mirrorUsed.clinics || _loadFailed.products || _mirrorUsed.products) return;
+  // a quiet round (v126 speed): the very lists the last look read, no save of this phone since, nothing new seen —
+  // nothing to look at again (a list taken anew is another object; a save of this phone moves _localGen)
+  const w = _ownerWalked;
+  if(w && w.c === clinics && w.p === products && w.gen === _localGen && w.seen === _ownerSeenGen && w.who === currentUser.name) return;
+  let seen = ownerSeenLoad(); const fresh = !seen;
+  if(!seen) seen = { v: 1, clinics: Object.create(null), prices: Object.create(null) };
+  const diffs = []; let grew = false;
+  clinics.forEach(c => {
+    if(!c || c.id == null) return;
+    const k = String(c.id), now = ownerPick(c), was = seen.clinics[k];
+    if(!was){ seen.clinics[k] = now; grew = true; return; }
+    OWNER_FIELDS.forEach(f => { const a = ownerVal(was[f]); if(JSON.stringify(a) !== JSON.stringify(now[f])) diffs.push({ kind: 'clinic', id: k, name: c.name, field: f, was: a, now: now[f] }); });
+  });
+  (products || []).forEach(p => {
+    if(!p) return;
+    const k = String(productKey(p)), now = priceVal(p);
+    if(!Object.prototype.hasOwnProperty.call(seen.prices, k)){ seen.prices[k] = now; grew = true; return; }
+    const was = ownerVal(seen.prices[k]);
+    if(was !== now) diffs.push({ kind: 'price', id: k, name: p.name, field: 'price', was, now });
+  });
+  if(fresh || grew) ownerSeenSave(seen);
+  _ownerWalked = { c: clinics, p: products, gen: _localGen, seen: _ownerSeenGen, who: currentUser.name };
+  // a round that finds what the last one found changes nothing on the page (v126 speed: a quiet round draws nothing)
+  const sig = JSON.stringify(diffs);
+  if(sig === _ownerSig) return;
+  _ownerSig = sig;
+  _ownerDiffs = diffs;
+  renderOwnerWatch();
+  if(document.getElementById('modalBack').classList.contains('show') && document.querySelector('#modalInner [data-ownerwatch]')) openOwnerWatch();
+}
+function ownerShow(field, v){
+  if(v == null) return '—';
+  if(field === 'price') return money(v);
+  if(field === 'shared' || field === 'gov') return v ? 'yes' : 'no';
+  if(field === 'repSince' || field === 'sharedSince') return fmtDate(v);
+  return String(v);
+}
+function ownerGroups(){
+  const by = new Map();
+  _ownerDiffs.forEach(d => { const k = d.kind + '|' + d.id; if(!by.has(k)) by.set(k, { kind: d.kind, id: d.id, name: d.name, rows: [] }); by.get(k).rows.push(d); });
+  return [...by.values()];
+}
+function renderOwnerWatch(){
+  const el = document.getElementById('ownerWatch'); if(!el) return;
+  const n = ownerGroups().length;
+  if(!currentUser || currentUser.role !== 'supervisor' || !n){ if(el.style.display !== 'none' || el.innerHTML) { el.style.display = 'none'; el.innerHTML = ''; } return; }
+  el.style.display = '';
+  el.innerHTML = `<div class="card" style="border-inline-start:4px solid var(--amber-ink, #8a5a00); margin-bottom:10px;">
+    <div class="row-between" style="gap:10px; align-items:flex-start;">
+      <div style="flex:1; min-width:0;"><div class="clinic-name"><span>Clinic owners or prices changed outside your screens</span> (${n})</div>
+        <div class="clinic-sub"><span>Changed since this phone last saw them — on another device, or written directly. Nothing was changed back.</span></div></div>
+      <button class="chip small" onclick="openOwnerWatch()">Review</button>
+    </div></div>`;
+}
+function openOwnerWatch(){
+  if(!requireAdmin()) return;
+  const groups = ownerGroups();
+  const rows = groups.map(g => {
+    const key = g.kind + '|' + g.id, asking = _ownerAsk === key;
+    const lines = g.rows.map(d => `<div style="font-size:12.5px;"><span>${OWNER_FIELD_LABEL[d.field] || d.field}</span>: <bdi>${esc(ownerShow(d.field, d.was))}</bdi> → <b><bdi>${esc(ownerShow(d.field, d.now))}</bdi></b></div>`).join('');
+    const acts = asking
+      ? `<div style="font-size:12.5px; margin-top:6px;"><span>Put back what this phone saw before? The list is saved again with it.</span></div>
+         <div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;"><button class="chip small" data-k="${esc(key)}" onclick="ownerPutBack(this.dataset.k, true)">↩️ <span>Yes, put it back</span></button><button class="chip small" onclick="_ownerAsk=null; openOwnerWatch()"><span>Cancel</span></button></div>`
+      : `<div style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;"><button class="chip small" data-k="${esc(key)}" onclick="ownerPutBack(this.dataset.k)">↩️ <span>Put back</span></button><button class="chip small" data-k="${esc(key)}" onclick="ownerKeep(this.dataset.k)"><span>Keep</span></button></div>`;
+    return `<div class="card" style="margin-bottom:8px;"><div class="clinic-name" dir="auto">${esc(g.name || g.id)}</div><div class="clinic-sub"><span>${g.kind === 'price' ? 'Product' : 'Clinic'}</span></div>${lines}${acts}</div>`;
+  }).join('');
+  showModal(`<h3 style="margin-top:0;" data-ic="shield" data-tone="warn" data-ownerwatch="1"><span>Changed outside your screens</span></h3>
+    <p style="font-size:12.5px; color:var(--muted); line-height:1.55;"><span>Any team login can write the clinic list and the catalog. These owners, handovers, shared or government marks and prices changed since this phone last saw them, other than by your own taps here.</span></p>
+    ${rows || '<div class="empty"><span>Nothing changed outside your screens.</span></div>'}
+    ${groups.length ? `<button class="btn secondary" onclick="ownerKeepAll()">Keep all</button>` : ''}
+    <button class="btn" onclick="closeModal()">Close</button>`);
+}
+async function ownerPutBack(key, confirmed){
+  if(!requireAdmin()) return;
+  const [kind, id] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)];
+  if(!confirmed){ _ownerAsk = key; openOwnerWatch(); return; }
+  _ownerAsk = null;
+  const seen = ownerSeenLoad(); if(!seen){ openOwnerWatch(); return; }
+  if(kind === 'clinic'){
+    const c = clinics.find(x => x && String(x.id) === id), was = seen.clinics[id];
+    if(!c || !was){ showToast('This changed since you were asked — nothing was changed', 4000); openOwnerWatch(); return; }
+    OWNER_FIELDS.forEach(f => { c[f] = ownerVal(was[f]); });
+    const r = await persistTold('clinics');
+    saveToast(r, 'clinics', `↩️ ${c.name}: put back as this phone saw it`, 4000);
+    if(r.ok) _ownerDiffs = _ownerDiffs.filter(d => !(d.kind === 'clinic' && d.id === id));
+  } else {
+    const p = (products || []).find(x => x && String(productKey(x)) === id);
+    if(!p || !Object.prototype.hasOwnProperty.call(seen.prices, id)){ showToast('This changed since you were asked — nothing was changed', 4000); openOwnerWatch(); return; }
+    p.price = ownerVal(seen.prices[id]);
+    const r = await persistTold('products');
+    saveToast(r, 'products', `↩️ ${p.name}: price put back`, 4000);
+    if(r.ok) _ownerDiffs = _ownerDiffs.filter(d => !(d.kind === 'price' && d.id === id));
+  }
+  renderOwnerWatch(); renderAll(); openOwnerWatch();
+}
+function ownerKeep(key){
+  if(!requireAdmin()) return;
+  const [kind, id] = [key.slice(0, key.indexOf('|')), key.slice(key.indexOf('|') + 1)];
+  ownerSeenTake(kind === 'price' ? 'price' : 'clinic', id);
+  openOwnerWatch();
+}
+function ownerKeepAll(){
+  if(!requireAdmin()) return;
+  ownerGroups().forEach(g => ownerSeenTake(g.kind === 'price' ? 'price' : 'clinic', g.id));
+  closeModal();
+  showToast('✅ Kept — this phone now sees them as they are', 3500);
+}

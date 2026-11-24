@@ -20,11 +20,13 @@ jobs:
   # jobs side by side: one after the other they passed 45 minutes once the
   # redesign's phone-layout checks were added (run 43713295389 was stopped by
   # the time limit with every harness on the source green). The deploy still
-  # waits for the whole Tests run (pages.yml), so both must pass.
+  # waits for the whole Tests run (pages.yml), so both must pass. Each job took
+  # 38-40 minutes by v128 (run 45088442381), so the limit is 60: a run stopped by
+  # the limit is "cancelled", never green, and publishes nothing.
   e2e:
     name: e2e (source)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,7 +40,7 @@ jobs:
   e2e-dist:
     name: e2e (dist)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

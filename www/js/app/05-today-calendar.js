@@ -50,7 +50,7 @@ function renderCalendar(){
       const n = parseInt(d.slice(8),10);
       const wkend = !UMCore.isWorkday(d); // Fri/Sat — the weekend
       const cls = ['cal-cell', d===todayStr()?'today':'', d===calSelected?'sel':'', wkend?'wkend':''].join(' ');
-      html += `<button class="${cls}" onclick="selectCalDay('${d}')"><span>${n}</span><span class="cal-dots">${calDots(info)}</span></button>`;
+      html += `<button class="${cls}" onclick="selectCalDay('${jsArg(d)}')"><span>${n}</span><span class="cal-dots">${calDots(info)}</span></button>`;
     }
     html += '</div>';
     body.innerHTML = html;
@@ -62,7 +62,7 @@ function renderCalendar(){
     if(window.matchMedia && window.matchMedia('(max-width: 600px)').matches){
       body.innerHTML = `<div class="cal-rail">${dates.map((d, i) => {
         const info = calDayData(d), cls = ['cal-cell', 'rail', d===todayStr()?'today':'', d===calSelected?'sel':'', !UMCore.isWorkday(d)?'wkend':''].join(' ');
-        return `<button class="${cls}" onclick="selectCalDay('${d}')"><span class="rd">${DOW[i]}</span><span>${parseInt(d.slice(8),10)}</span><span class="cal-dots">${calDots(info)}</span></button>`;
+        return `<button class="${cls}" onclick="selectCalDay('${jsArg(d)}')"><span class="rd">${DOW[i]}</span><span>${parseInt(d.slice(8),10)}</span><span class="cal-dots">${calDots(info)}</span></button>`;
       }).join('')}</div>`;
       renderCalAgenda();
       return;
@@ -78,7 +78,7 @@ function renderCalendar(){
         info.tasks.length ? `<span style="color:var(--purple-ink);">${info.tasks.length} task${info.tasks.length>1?'s':''}</span>` : '',
         info.events.length ? `<span style="color:#3478F6;">${info.events.length} event${info.events.length>1?'s':''}</span>` : '',
       ].filter(Boolean).join(' · ');
-      return `<div class="card clickable" onclick="selectCalDay('${d}')" style="margin-bottom:6px; padding:10px 14px; ${isSel?'border-color:var(--green); border-width:1.5px;':''}">
+      return `<div class="card clickable" onclick="selectCalDay('${jsArg(d)}')" style="margin-bottom:6px; padding:10px 14px; ${isSel?'border-color:var(--green); border-width:1.5px;':''}">
         <div class="row-between">
           <div>
             <div style="font-weight:700; font-size:13.5px;">${dt.toLocaleDateString(uiLocale(),{weekday:'short', month:'short', day:'numeric'})}${isToday?' · Today':''}</div>
@@ -102,7 +102,7 @@ function renderCalAgenda(){
   const repTag = r => calRepFilter==='all' ? ` <span style="color:var(--muted); font-weight:400;">· ${esc(r)}</span>` : '';
   const rows = [];
   info.events.forEach(ev=>{
-    rows.push(`<div class="cal-item clickable" onclick="openEditEvent('${ev.id}')">
+    rows.push(`<div class="cal-item clickable" onclick="openEditEvent('${jsArg(ev.id)}')">
       <span class="tag" style="background:#E8F0FE; color:#3478F6;">EVENT</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(ev.title)}${ev.rep==='all'?' <span style="color:var(--muted); font-weight:400;">· Whole team</span>':repTag(ev.rep)}</div>
@@ -111,7 +111,7 @@ function renderCalAgenda(){
     </div>`);
   });
   info.planned.forEach(p=>{
-    rows.push(`<div class="cal-item clickable" onclick="calOpenPlanner('${d}')">
+    rows.push(`<div class="cal-item clickable" onclick="calOpenPlanner('${jsArg(d)}')">
       <span class="tag" style="background:var(--green-dim); color:var(--green);">PLAN</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(cname(p.clinicId))}${repTag(p.rep)}</div>
@@ -120,7 +120,7 @@ function renderCalAgenda(){
     </div>`);
   });
   info.followUps.forEach(c=>{
-    rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${c.id}')">
+    rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${jsArg(c.id)}')">
       <span class="tag" style="background:var(--amber-dim); color:var(--amber-ink);">FOLLOW-UP</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(c.name)}${repTag(c.rep)}</div>
@@ -130,12 +130,12 @@ function renderCalAgenda(){
   });
   info.visits.forEach(v=>{
     const kind = v.callOnly ? 'CALL' : v.orderOnly ? 'ORDER' : 'VISITED';
-    rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${v.clinicId}')">
+    rows.push(`<div class="cal-item clickable" onclick="openClinicDetail('${jsArg(v.clinicId)}')">
       <span class="tag" style="background:var(--sage-dim); color:var(--sage-ink);">${kind}</span>
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(cname(v.clinicId))}${repTag(v.rep)}${jointTag(v)}</div>
         <div style="font-size:12px; color:var(--muted);">${v.orderTaken?'Order taken · '+money(v.orderTotal||0):(v.callOnly?'Remote follow-up':'No order')}${rxShortHTML(v)}</div>
-        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${ph.thumb}" data-cap="${esc(cname(v.clinicId))}" onclick="event.stopPropagation(); showLightbox('${ph.id}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
+        ${(v.photos&&v.photos.length)?`<div class="photo-row">${v.photos.map(ph=>`<img class="photo-thumb" src="${esc(safeImg(ph.thumb))}" data-cap="${esc(cname(v.clinicId))}" onclick="event.stopPropagation(); showLightbox('${jsArg(ph.id)}', this.dataset.cap)">`).join('')}</div>${photoWaitHTML(v)}`:''}
       </div>
     </div>`);
   });
@@ -145,14 +145,14 @@ function renderCalAgenda(){
       <div style="flex:1;">
         <div style="font-size:14px; font-weight:600;">${esc(t.text)}${repTag(t.rep)}</div>
       </div>
-      <button class="chip small" style="flex-shrink:0;" onclick="calDoneTask('${t.id}')">Done</button>
+      <button class="chip small" style="flex-shrink:0;" onclick="calDoneTask('${jsArg(t.id)}')">Done</button>
     </div>`);
   });
   el.innerHTML = `
     <div class="card">
       <div class="cal-acts">
-        <button class="btn secondary" onclick="openAddEvent('${d}')">+ Event</button>
-        <button class="btn secondary" onclick="calOpenPlanner('${d}')">+ Plan visits</button>
+        <button class="btn secondary" onclick="openAddEvent('${jsArg(d)}')">+ Event</button>
+        <button class="btn secondary" onclick="calOpenPlanner('${jsArg(d)}')">+ Plan visits</button>
       </div>
       ${rows.join('') || `<div style="color:var(--muted); font-size:13px; text-align:center; padding:8px 0 2px;">Nothing scheduled this day yet.</div>`}
     </div>`;
@@ -211,7 +211,7 @@ function renderCalRangeSummary(){
       ${tile(s.tasksDue, 'Open tasks due')}
     </div>
     ${repRows}
-    <button class="btn secondary" style="margin-top:12px; padding:11px;" onclick="openReportForRange('${from}','${to}')">Open this period in Report →</button>`;
+    <button class="btn secondary" style="margin-top:12px; padding:11px;" onclick="openReportForRange('${jsArg(from)}','${jsArg(to)}')">Open this period in Report →</button>`;
 }
 async function calDoneTask(id){
   const t = tasks.find(x=>x.id===id);
@@ -247,8 +247,8 @@ function openEventForm(ev, dateStr){
     <select id="evRep">${repOpts}</select>
     <label>Notes (optional)</label>
     <input type="text" id="evNotes" dir="auto" placeholder="Location, agenda, what to bring..." value="${ev&&ev.notes?esc(ev.notes):''}">
-    <button class="btn" onclick="saveEventForm('${ev?ev.id:''}')">${isNew?'Add to calendar':'Save changes'}</button>
-    ${isNew?'':`<button class="btn secondary" style="margin-top:8px; color:var(--coral-ink);" onclick="deleteEvent('${ev.id}')">Delete event</button>`}
+    <button class="btn" onclick="saveEventForm('${jsArg(ev?ev.id:'')}')">${isNew?'Add to calendar':'Save changes'}</button>
+    ${isNew?'':`<button class="btn secondary" style="margin-top:8px; color:var(--coral-ink);" onclick="deleteEvent('${jsArg(ev.id)}')">Delete event</button>`}
   `);
 }
 async function saveEventForm(id){
@@ -579,7 +579,7 @@ function renderAllNow(){
     const opts = currentUser.role==='supervisor' ? ['all', ...REPS] : [currentUser.name];
     const seen = new Set();
     el.innerHTML = opts.filter(o=>{ if(seen.has(o)) return false; seen.add(o); return true; })
-      .map(o=>`<div class="chip small ${current===o?'on':''}" onclick="${setter}('${o}')">${o==='all'?'All':o}</div>`).join('');
+      .map(o=>`<div class="chip small ${current===o?'on':''}" onclick="${setter}('${jsArg(o)}')">${o==='all'?'All':o}</div>`).join('');
   };
   chipsFor('clinicRepFilter', clinicRepFilter, 'setClinicRepFilter');
   chipsFor('reportRepFilter', reportRepFilter, 'setReportRepFilter');
@@ -730,7 +730,7 @@ function msCount(n, one, many){ return `${n} ${n === 1 ? one : many}`; }
 // The noun alone, to sit beside a big number: the dictionary's agreeing form, without the number.
 function msUnit(n, one, many){ const s = msCount(n, one, many), t = trOf(s); return t ? t.replace(/^\S+\s+/, '') : (n === 1 ? one : many); }
 function msChev(){ return '<svg class="svgi ms-chev" aria-hidden="true"><use href="#i-chev"/></svg>'; }
-function msInfo(id){ return `<button class="ms-i" onclick="event.stopPropagation(); msHow('${id}')" aria-label="How it is calculated">${I('info')}</button>`; }
+function msInfo(id){ return `<button class="ms-i" onclick="event.stopPropagation(); msHow('${jsArg(id)}')" aria-label="How it is calculated">${I('info')}</button>`; }
 function msOf(x){ return x && typeof x === 'object' ? x : null; }   // a core field read defensively
 function msMonth(){ return todayStr().slice(0, 7); }
 
@@ -1382,7 +1382,7 @@ function msStatusHTML(v, m, P){
   const sub = A.pct != null ? `${msPct(A.pct)} ${msT('achieved')}${exp != null ? ` · ${msT('expected by')} ${msDate(wd.asOf)}: ${msPct(exp)}` : ''}` : '';
   return `<div class="ms-st ${tone}"><span class="ms-stic">${I(pace === 'behind' ? 'alert' : pace ? 'trend' : 'info')}</span>
     <div class="ms-stt">${msT(title)}</div>${sub ? `<div class="ms-sts">${sub}</div>` : ''}${msFcNote(D)}
-    <button class="ms-stb" onclick="renderMonthClose('${msMonth()}')"><span>${msT('View detailed report')}</span>${msChev()}</button></div>`;
+    <button class="ms-stb" onclick="renderMonthClose('${jsArg(msMonth())}')"><span>${msT('View detailed report')}</span>${msChev()}</button></div>`;
 }
 // ---- your next actions (the phone's list in the picture; a person's card beside the chart on a laptop) ----
 // A planned clinic is visited by a field visit that day with the person on it (UMCore.planVisitKeys, the missed plans'
@@ -1943,13 +1943,13 @@ function renderMissedPlans(){
   el.innerHTML = list.map(m=>`
     <div class="card" style="margin-bottom:8px;">
       <div class="row-between">
-        <div style="flex:1; cursor:pointer;" onclick="openClinicDetail('${m.clinicId}')">
+        <div style="flex:1; cursor:pointer;" onclick="openClinicDetail('${jsArg(m.clinicId)}')">
           <div class="clinic-name" dir="auto">${esc(cname(m.clinicId))}</div>
           <div class="clinic-sub"><span>Planned ${fmtDate(m.date)}</span>${currentUser.role==='supervisor' && !lr?' · '+msWho(m.rep):''}${m.note?` · <span dir="auto">${esc(m.note)}</span>`:''} · <span>not visited</span></div>
         </div>
         <div style="display:flex; gap:6px; flex-shrink:0; margin-inline-start:8px;">
-          <button class="chip small" onclick="openReschedulePlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">${I('calendar')} Reschedule</button>
-          <button class="chip small" onclick="removeMissedPlan('${m.date}','${esc(m.rep)}','${m.clinicId}')">✕</button>
+          <button class="chip small" onclick="openReschedulePlan('${jsArg(m.date)}','${jsArg(m.rep)}','${jsArg(m.clinicId)}')">${I('calendar')} Reschedule</button>
+          <button class="chip small" onclick="removeMissedPlan('${jsArg(m.date)}','${jsArg(m.rep)}','${jsArg(m.clinicId)}')">✕</button>
         </div>
       </div>
     </div>`).join('');
@@ -1962,7 +1962,7 @@ function openReschedulePlan(date, rep, clinicId){
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">${esc(c?c.name:'Clinic')} — was planned for ${fmtDate(date)}.</p>
     <label>New date</label>
     <input type="date" id="rsDate" value="${localDateStr(d)}" min="${todayStr()}">
-    <button class="btn" onclick="saveReschedulePlan('${date}','${esc(rep)}','${clinicId}')">Move visit</button>
+    <button class="btn" onclick="saveReschedulePlan('${jsArg(date)}','${jsArg(rep)}','${jsArg(clinicId)}')">Move visit</button>
   `);
 }
 async function saveReschedulePlan(oldDate, rep, clinicId){
@@ -2011,7 +2011,7 @@ function renderDormant(){
   if(list.length===0){ title.style.display='none'; el.innerHTML=''; return; }
   title.style.display='';
   el.innerHTML = list.map(c=>`
-    <div class="card clickable" onclick="openClinicDetail('${c.id}')" style="margin-bottom:8px;">
+    <div class="card clickable" onclick="openClinicDetail('${jsArg(c.id)}')" style="margin-bottom:8px;">
       <div class="row-between">
         <div>
           <div class="clinic-name">${esc(c.name)}</div>
@@ -2047,17 +2047,19 @@ function renderToday(){
   document.getElementById('navDotToday').classList.toggle('show', hasAlerts);
   msBell();
 
-  renderWelcome();
-  renderFocusCard();
-  renderOccasionsCard();
-  renderMissedPlans();
-  renderDormant();
-  renderStreak();
-  renderBadges();
-  renderPlanList();
-  renderDueList(due);
-  renderTasks();
-  renderRecentVisits(v);
+  // one card that cannot be drawn leaves only itself empty (v129, the security audit's C6: one odd record stopped the screen)
+  const card = (name, f) => { try{ f(); }catch(e){ console.error('main screen card ' + name, e); } };
+  card('welcome', renderWelcome);
+  card('focus', renderFocusCard);
+  card('occasions', renderOccasionsCard);
+  card('missed', renderMissedPlans);
+  card('dormant', renderDormant);
+  card('streak', renderStreak);
+  card('badges', renderBadges);
+  card('plan', renderPlanList);
+  card('due', () => renderDueList(due));
+  card('tasks', renderTasks);
+  card('recent', () => renderRecentVisits(v));
   msFoldSums(v, due);
   ['msPlanCard', 'msDueCard', 'msTaskCard', 'msRecentCard'].forEach(id => { const el = document.getElementById(id); if(el) el.classList.toggle('open', !!_msOpen[id]); });
   msPaint(v, m, sig);
@@ -2071,10 +2073,10 @@ function renderDueList(due){
     dueList.innerHTML = `<div class="empty"><div class="big">✅ All caught up</div>Zero overdue follow-ups. That is discipline — well done.</div>`;
   } else {
     dueList.innerHTML = due.map(c => `
-      <div class="card clickable" onclick="confirmFollowUp('${c.id}')">
+      <div class="card clickable" onclick="confirmFollowUp('${jsArg(c.id)}')">
         <div class="row-between">
           <div class="row-between" style="gap:10px;">
-            <span class="cls cls-${c.cls}" data-notr>${c.cls||'-'}</span>
+            <span class="cls cls-${clsKey(c.cls)}" data-notr>${esc(c.cls||'-')}</span>
             <div>
               <div class="clinic-name" dir="auto">${esc(c.name)}</div>
               <div class="clinic-sub"><span>${statusLabel(c.nextFollowUp)}</span>${sup?' · '+msWho(c.rep):''}</div>
@@ -2163,9 +2165,9 @@ function renderTasks(){
     const clickable = t.kind==='followup' && t.clinicId;
     return `
     <div class="task-item" style="padding:7px 0;">
-      <div class="task-check ${t.done?'checked':''}" onclick="toggleTask('${t.id}')">${t.done?'✓':''}</div>
-      <div class="task-text ${t.done?'done':''}" ${clickable?`style="cursor:pointer;" onclick="confirmFollowUp('${t.clinicId}')"`:''}>${t.source==='email'?'<span style="color:var(--purple-ink);">✉ </span>':''}<span dir="auto">${esc(t.text)}</span>${dueBadge}${currentUser.role==='supervisor' && !lr && t.rep!=='Team' ? ' <span style=\"color:var(--muted); font-weight:500;\">— '+msWho(t.rep)+'</span>' : ''}</div>
-      <button class="del" onclick="deleteTask('${t.id}')">&times;</button>
+      <div class="task-check ${t.done?'checked':''}" onclick="toggleTask('${jsArg(t.id)}')">${t.done?'✓':''}</div>
+      <div class="task-text ${t.done?'done':''}" ${clickable?`style="cursor:pointer;" onclick="confirmFollowUp('${jsArg(t.clinicId)}')"`:''}>${t.source==='email'?'<span style="color:var(--purple-ink);">✉ </span>':''}<span dir="auto">${esc(t.text)}</span>${dueBadge}${currentUser.role==='supervisor' && !lr && t.rep!=='Team' ? ' <span style=\"color:var(--muted); font-weight:500;\">— '+msWho(t.rep)+'</span>' : ''}</div>
+      <button class="del" onclick="deleteTask('${jsArg(t.id)}')">&times;</button>
     </div>`;
   }).join('');
 }
@@ -2209,7 +2211,7 @@ function renderPlanList(){
       const c = clinics.find(x=>x.id===cid);
       if(!c) return;
       const visitedToday = keys.has(today + '|' + r + '|' + cid);      // a field visit she was on (planDoneKeys)
-      html += `<div class="card ${visitedToday?'dim':''}" ${visitedToday?'':`onclick="quickLogFrom('${cid}')"`}>
+      html += `<div class="card ${visitedToday?'dim':''}" ${visitedToday?'':`onclick="quickLogFrom('${jsArg(cid)}')"`}>
         <div class="row-between">
           <div class="row-between clickable" style="gap:10px;">
             <div class="plan-check ${visitedToday?'done':''}">${visitedToday?'✓':''}</div>
@@ -2218,7 +2220,7 @@ function renderPlanList(){
               <div class="clinic-sub">${visitedToday?'Visited today':(note?`<span dir="auto">${esc(note)}</span>`:'Tap to log visit')}</div>
             </div>
           </div>
-          <span class="cls cls-${c.cls}" data-notr>${c.cls||'-'}</span>
+          <span class="cls cls-${clsKey(c.cls)}" data-notr>${esc(c.cls||'-')}</span>
         </div>
       </div>`;
     });
@@ -2257,7 +2259,7 @@ function renderPlanPicker(){
   const q = (document.getElementById('planSearch').value||'').toLowerCase();
   const el = document.getElementById('planPicker');
   const list = window._planClinics.filter(c=>c.name.toLowerCase().includes(q));
-  el.innerHTML = list.map(c=>`<div class="chip small ${window._planMine.has(c.id)?'on':''}" onclick="togglePlanClinic('${c.id}')">${esc(c.name)}</div>`).join('');
+  el.innerHTML = list.map(c=>`<div class="chip small ${window._planMine.has(c.id)?'on':''}" onclick="togglePlanClinic('${jsArg(c.id)}')">${esc(c.name)}</div>`).join('');
 }
 async function togglePlanClinic(id){
   const today = todayStr();
@@ -2291,7 +2293,7 @@ function openWeekMonthPlan(){
     <h3 style="margin-top:0;">Visit plan</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Plan clinics ahead by day, with notes.</p>
     ${currentUser.role==='supervisor' ? `<label>Viewing schedule for</label>
-    <div class="chip-row" id="pvRepChips" style="margin-bottom:14px;">${[currentUser.name, ...REPS.filter(r=>r!==currentUser.name)].map(r=>`<div class="chip small ${planViewRep===r?'on':''}" data-rep="${esc(r)}" onclick="setPlanViewRep('${esc(r)}')">${esc(r)}</div>`).join('')}</div>` : ''}
+    <div class="chip-row" id="pvRepChips" style="margin-bottom:14px;">${[currentUser.name, ...REPS.filter(r=>r!==currentUser.name)].map(r=>`<div class="chip small ${planViewRep===r?'on':''}" data-rep="${esc(r)}" onclick="setPlanViewRep('${jsArg(r)}')">${esc(r)}</div>`).join('')}</div>` : ''}
     <div class="toggle-row" style="margin-bottom:14px;">
       <div class="chip on" id="pvModeWeek" onclick="setPlanViewMode('week')">Weekly</div>
       <div class="chip" id="pvModeMonth" onclick="setPlanViewMode('month')">Monthly</div>
@@ -2337,7 +2339,7 @@ function renderWeekMonthPlan(){
     const dow = new Date(d+'T00:00:00').toLocaleDateString(uiLocale(),{weekday:'short'});
     const dnum = new Date(d+'T00:00:00').toLocaleDateString(uiLocale(),{month:'short',day:'numeric'});
     const isToday = d===todayStr();
-    return `<div class="card clickable" onclick="openDatePlanner('${d}')" style="${isToday?'border-color:var(--teal); border-width:1.5px;':''} margin-bottom:8px;">
+    return `<div class="card clickable" onclick="openDatePlanner('${jsArg(d)}')" style="${isToday?'border-color:var(--teal); border-width:1.5px;':''} margin-bottom:8px;">
       <div class="row-between">
         <div>
           <div class="clinic-name">${dow}, ${dnum}${isToday?' · Today':''}</div>
@@ -2361,7 +2363,7 @@ function openDatePlanner(dateStr, repOverride){
   showModal(`
     <h3 style="margin-top:0;">${fmtDate(dateStr)} plan${currentUser.role==='supervisor'?' — '+esc(rep):''}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Tap a clinic to add it, then add an optional note.</p>
-    ${currentUser.role==='supervisor' ? `<label>Plan for</label><div class="chip-row" id="dpRepChips" style="margin-bottom:8px;">${REPS.map(r=>`<div class="chip small ${r===rep?'on':''}" data-rep="${esc(r)}" onclick="openDatePlanner('${dateStr}','${esc(r)}')">${esc(r)}</div>`).join('')}</div>` : ''}
+    ${currentUser.role==='supervisor' ? `<label>Plan for</label><div class="chip-row" id="dpRepChips" style="margin-bottom:8px;">${REPS.map(r=>`<div class="chip small ${r===rep?'on':''}" data-rep="${esc(r)}" onclick="openDatePlanner('${jsArg(dateStr)}','${jsArg(r)}')">${esc(r)}</div>`).join('')}</div>` : ''}
     <input type="text" id="dpSearch" placeholder="Search clinics..." oninput="renderDatePlanPicker()" style="margin-bottom:10px;">
     <div class="chip-row" id="dpPicker"></div>
     <div class="section-title" style="margin-top:18px;">Planned</div>
@@ -2380,7 +2382,7 @@ function renderDatePlanPicker(){
   const el = document.getElementById('dpPicker');
   const mineIds = new Set(window._dpMine.map(e=>e.id));
   const list = window._dpClinics.filter(c=>c.name.toLowerCase().includes(q) && !mineIds.has(c.id));
-  el.innerHTML = list.map(c=>`<div class="chip small" onclick="addDatePlanClinic('${c.id}')">${esc(c.name)}</div>`).join('') || `<div style="color:var(--muted); font-size:13px;">No more clinics match.</div>`;
+  el.innerHTML = list.map(c=>`<div class="chip small" onclick="addDatePlanClinic('${jsArg(c.id)}')">${esc(c.name)}</div>`).join('') || `<div style="color:var(--muted); font-size:13px;">No more clinics match.</div>`;
 }
 async function saveDatePlan(){
   const d = window._dpDate;
@@ -2414,9 +2416,9 @@ function renderDatePlanSelected(){
     return `<div class="card" style="margin-bottom:8px;">
       <div class="row-between">
         <div class="clinic-name">${esc(c.name)}</div>
-        <button class="del" onclick="removeDatePlanClinic('${e.id}')">&times;</button>
+        <button class="del" onclick="removeDatePlanClinic('${jsArg(e.id)}')">&times;</button>
       </div>
-      <input type="text" placeholder="Note (optional) — e.g. discuss new order" value="${esc(e.note)}" onchange="updateDatePlanNote('${e.id}', this.value)" style="margin-top:8px; font-size:13px;">
+      <input type="text" placeholder="Note (optional) — e.g. discuss new order" value="${esc(e.note)}" onchange="updateDatePlanNote('${jsArg(e.id)}', this.value)" style="margin-top:8px; font-size:13px;">
     </div>`;
   }).join('');
 }

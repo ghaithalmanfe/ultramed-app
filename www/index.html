@@ -1945,6 +1945,7 @@
   .cl-spec{margin-top:4px; font-size:14px; line-height:1.3;}
   .cl-act{display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:6px; font-size:12.5px; line-height:1.45;}
   .cl-act .chip.small{padding:5px 11px; font-size:12.5px; color:var(--p-ink2);}
+  .cl-act .chip.small::after{inset:-6px 0;}   /* a 44 px thumb target around the 32 px chip (Reschedule) */
   #clinicList{margin-top:2px;}
   #namelessCard .card{border-radius:14px;}
   /* the clinic card: header, actions, sections as cards (wide sheet on a laptop, full height on the phone) */
@@ -2025,6 +2026,10 @@
   .cl-chipline{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
   .cl-chipline > .chip-row{display:contents;}
   .cl-docs{display:inline-flex; align-items:center; gap:6px; color:var(--p-green); font-weight:600;}
+  /* the list's order and the same-name hint (v129): the duplicates chip in the warning colour, the hint line under the name */
+  .cl-dupchip{display:inline-flex; align-items:center; gap:6px; color:var(--amber-ink, #8a5a00); font-weight:600;}
+  .cl-dup{display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-top:4px; font-size:12px; color:var(--amber-ink, #8a5a00);}
+  .cl-dup .svgi{width:14px; height:14px; flex:none;}
   @media (max-width:1023px){
     .cl-chipline{flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; margin:0 -14px; padding:6px 14px; -webkit-mask-image:linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 22px), transparent); mask-image:linear-gradient(90deg, transparent 0, #000 12px, #000 calc(100% - 22px), transparent);}
     .cl-chipline::-webkit-scrollbar{display:none;}
@@ -2548,6 +2553,7 @@
       <div class="ms-whose" id="msWhose" style="display:none;"></div>
     </div>
     <div id="erpNudge" style="display:none;"></div>
+    <div id="ownerWatch" style="display:none;"></div>
     <div id="visitsNudge" style="display:none;"></div>
     <!-- The owner's picture (15 Nov): the target card, the four figures, Sales Performance beside the leaderboard (a person:
          her next actions), the sales advisor, the recent activity and the clinic photo; then, in the same cards, everything
@@ -2755,6 +2761,7 @@
       <div class="cl-filters">
         <div class="inp-ic"><svg class="svgi" aria-hidden="true"><use href="#i-search"/></svg><input type="text" class="search-box" id="clinicSearch" placeholder="Search clinics..." oninput="renderClinics()"></div>
         <div class="cl-chipline">
+          <div class="chip-row" id="clinicSortChips" role="group" aria-label="Sort clinics"></div>
           <div class="chip-row" id="clinicVisitChips"></div>
           <div class="chip-row" id="clinicClsChips"></div>
           <button class="chip small cl-docs" onclick="switchView('doctors')"><svg class="svgi" aria-hidden="true"><use href="#i-stethoscope"/></svg> <span>Doctors database</span></button>

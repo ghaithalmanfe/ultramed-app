@@ -700,8 +700,8 @@ async function loadPhotoBlob(id){
 function renderVisitPhotos(){
   const el = document.getElementById('visitPhotoRow');
   el.innerHTML = visitPhotos.map(p=>`<div class="ph-wrap">
-      <img class="photo-thumb" src="${p.thumb}" onclick="showLightbox('${p.id}','Visit photo')">
-      <button class="ph-del" onclick="removeVisitPhoto('${p.id}')">&times;</button>
+      <img class="photo-thumb" src="${esc(safeImg(p.thumb))}" onclick="showLightbox('${jsArg(p.id)}','Visit photo')">
+      <button class="ph-del" onclick="removeVisitPhoto('${jsArg(p.id)}')">&times;</button>
     </div>`).join('') +
     `<div class="photo-add" onclick="addVisitPhoto()">\u{1F4F7}<span>ADD</span></div>`;
 }
@@ -817,7 +817,7 @@ function teamFromPhone(){
   ['chat', 'memories'].forEach(key => {
     if(_teamFrom[key]) return;
     if(teamList(key).length){ _teamFrom[key] = 'phone'; return; }
-    const a = UMCore.safeParse(mirrorGet(key), null);
+    const a = typeof mirrorMine !== 'function' || mirrorMine(key) ? UMCore.safeParse(mirrorGet(key), null) : null;   // (only this login's own copy, v129)
     // no copy on this phone (never read here, or it did not fit: a full phone): unknown until a read — read just after the
     // first paint (teamDue), its screens say it is loading meanwhile
     if(Array.isArray(a)){ setTeamList(key, teamMerge(key, a, null)); _teamFrom[key] = 'phone'; }
@@ -1026,8 +1026,8 @@ function renderChat(){
     return `${sep}<div class="msg-row ${me?'me':'them'}"><span class="msg-av" data-notr aria-hidden="true">${esc(ini)}</span><div class="msg ${me?'me':'them'}">
       ${me?'':`<div class="who">${esc(m.who)}</div>`}
       ${m.text?`<div dir="auto">${esc(m.text)}</div>`:''}
-      ${m.photoId?(m.thumb?`<img src="${m.thumb}" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">`
-        :`<button class="chip small" style="margin-top:4px;" onclick="showLightbox('${m.photoId}','${esc((m.text||'').replace(/'/g,''))}')">📷 <span>Photo — tap to open</span></button>`):''}
+      ${m.photoId?(safeImg(m.thumb)?`<img src="${esc(safeImg(m.thumb))}" onclick="showLightbox('${jsArg(m.photoId)}','${jsArg(m.text||'')}')">`
+        :`<button class="chip small" style="margin-top:4px;" onclick="showLightbox('${jsArg(m.photoId)}','${jsArg(m.text||'')}')">📷 <span>Photo — tap to open</span></button>`):''}
       <div class="when">${fmtWhen(m.ts)}</div>
     </div></div>`;
   }).join('');
@@ -1036,7 +1036,7 @@ function pickChatPhoto(useCamera){
   pickImage(({full,thumb})=>{
     pendingChatPhoto = {id:uid(), full, thumb};
     document.getElementById('chatPhotoPreview').innerHTML =
-      `<div class="ph-wrap" style="margin-bottom:8px;"><img class="photo-thumb" src="${thumb}">
+      `<div class="ph-wrap" style="margin-bottom:8px;"><img class="photo-thumb" src="${esc(safeImg(thumb))}">
        <button class="ph-del" onclick="clearChatPhoto()">&times;</button></div>`;
   }, !!useCamera);
 }
@@ -1076,7 +1076,7 @@ async function sendChat(){
       // back, and what she wrote goes back in the box (its words were already said on screen)
       chatMsgs = chatMsgs.filter(x => !(x && x.id === msg.id));
       if(!inp.value.trim()) inp.value = text;
-      if(ph && !pendingChatPhoto){ pendingChatPhoto = ph; const pv = document.getElementById('chatPhotoPreview'); if(pv) pv.innerHTML = `<div class="ph-wrap" style="margin-bottom:8px;"><img class="photo-thumb" src="${ph.thumb}"><button class="ph-del" onclick="clearChatPhoto()">&times;</button></div>`; }
+      if(ph && !pendingChatPhoto){ pendingChatPhoto = ph; const pv = document.getElementById('chatPhotoPreview'); if(pv) pv.innerHTML = `<div class="ph-wrap" style="margin-bottom:8px;"><img class="photo-thumb" src="${esc(safeImg(ph.thumb))}"><button class="ph-del" onclick="clearChatPhoto()">&times;</button></div>`; }
     }
     renderChat();
     window.scrollTo(0, document.body.scrollHeight);
@@ -1092,7 +1092,7 @@ function pickMemoryPhoto(){
     const pm = {id:uid(), full, thumb};
     showModal(`
       <h3 style="margin-top:0;">\u{1F4F8} Add a memory</h3>
-      <img src="${thumb}" style="width:100%; border-radius:14px; margin-bottom:12px;">
+      <img src="${esc(safeImg(thumb))}" style="width:100%; border-radius:14px; margin-bottom:12px;">
       <label>Caption</label>
       <input type="text" id="memCap" placeholder="What's happening here?">
       <label>Tag it</label>
@@ -1148,10 +1148,10 @@ function renderMemories(){
     return;
   }
   el.innerHTML = [...memories].sort((a,b)=>b.ts-a.ts).map(m=>`
-    <div class="mcard" onclick="showLightbox('${m.id}','${esc((m.cap||'').replace(/'/g,''))}')">
-      ${m.thumb ? `<img src="${m.thumb}" alt="" onerror="this.style.display='none'">` : `<div style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:12.5px; color:var(--muted);">📷 <span>Photo — tap to open</span></div>`}
+    <div class="mcard" onclick="showLightbox('${jsArg(m.id)}','${jsArg(m.cap||'')}')">
+      ${safeImg(m.thumb) ? `<img src="${esc(safeImg(m.thumb))}" alt="" onerror="this.style.display='none'">` : `<div style="aspect-ratio:1; display:flex; align-items:center; justify-content:center; font-size:12.5px; color:var(--muted);">📷 <span>Photo — tap to open</span></div>`}
       <div class="mmeta">
-        <div class="mcap">${m.tag?m.tag+' ':''}${esc(m.cap||'Untitled')}</div>
+        <div class="mcap">${m.tag?esc(m.tag)+' ':''}${esc(m.cap||'Untitled')}</div>
         <div class="mwho">${esc(m.who)} \u00b7 ${new Date(m.ts).toLocaleDateString(uiLocale(), {month:'short',day:'numeric'})}</div>
       </div>
     </div>`).join('');
@@ -1467,7 +1467,7 @@ function renderScorecards(mtd){
     return `
     <div class="card score-card">
       <div class="score-head">
-        <div class="stamp">${initials(r)}</div>
+        <div class="stamp">${esc(initials(r))}</div>
         <div class="name">${esc(r)}</div>
       </div>
       <div class="kpi-grid">

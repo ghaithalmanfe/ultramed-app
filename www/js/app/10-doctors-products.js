@@ -54,7 +54,7 @@ function renderProducts(){
         <span style="color:var(--muted);">${open?'−':'+'}</span>
       </div>
       <div class="brand-body ${open?'open':''}" id="brand-${slugify(b)}">
-        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}${p.id ? ` <span data-notr>· ${esc(p.id)}</span>` : ''}</div></div><span class="product-price">${p.price!=null?money(p.price):''}</span></div>`).join('')}
+        ${byBrand[b].map(p=>`<div class="product-item" style="cursor:pointer;" onclick="openProductDetail('${jsArg(productKey(p))}')">${prodThumb(p)}<div class="pinfo"><div class="pname2">${esc(p.name)}${p.stock===false?' <span style="font-size:10px; background:var(--coral-dim); color:var(--coral-ink); padding:1px 6px; border-radius:6px; font-weight:700;">OUT</span>':''}</div><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">${esc(p.cat||'Tap for specs')}${p.id ? ` <span data-notr>· ${esc(p.id)}</span>` : ''}</div></div><span class="product-price">${p.price!=null?money(p.price):''}</span></div>`).join('')}
       </div>
     </div>`;
   }).join('');
@@ -144,12 +144,12 @@ function openCatalogGaps(){
   if(!requireAdmin()) return;
   const g = catalogGapList();
   if(!g.length){ showToast('Nothing missing from the catalog'); return; }
-  const byB = {}; g.forEach((x, i) => { (byB[x.product.brand] = byB[x.product.brand] || []).push(i); });
+  const byB = Object.create(null); g.forEach((x, i) => { (byB[x.product.brand] = byB[x.product.brand] || []).push(i); });
   showModal(`
     <h3 style="margin-top:0;">Missing from the catalog</h3>
     <p style="color:var(--muted); font-size:12.5px; margin-top:-6px;">Products sold in the ERP sales files under a brand the catalog has nothing of, and the Intensiv handpieces and Ortho-Strips. Price = the usual invoiced unit price. Untick anything you do not want, then tap Add.</p>
     ${Object.keys(byB).map(b => `<div class="card" style="margin-bottom:8px; padding:8px 12px;">
-      <label style="display:flex; align-items:center; gap:8px; font-weight:800; margin:0;"><input type="checkbox" checked onchange="document.querySelectorAll('.cgap-${slugify(b)}').forEach(x => x.checked = this.checked)"> ${esc(b)} <span style="color:var(--muted); font-weight:400;">(${byB[b].length})</span></label>
+      <label style="display:flex; align-items:center; gap:8px; font-weight:800; margin:0;"><input type="checkbox" checked onchange="document.querySelectorAll('.cgap-${jsArg(slugify(b))}').forEach(x => x.checked = this.checked)"> ${esc(b)} <span style="color:var(--muted); font-weight:400;">(${byB[b].length})</span></label>
       ${byB[b].map(i => { const x = g[i], p = x.product; return `<label style="display:flex; align-items:flex-start; gap:8px; font-size:12.5px; margin:7px 0 0; font-weight:400;">
         <input type="checkbox" class="cgap cgap-${slugify(b)}" data-i="${i}" checked style="margin-top:3px;">
         <span style="flex:1;">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${p.cat && p.cat !== p.brand ? esc(p.cat) + ' · ' : ''}${x.sold ? x.sold + ' sold in the files' + (x.last ? ', last ' + fmtDate(x.last) : '') : x.source === 'list' ? 'Intensiv list' : ''}</span></span>
@@ -289,7 +289,7 @@ function renderDoctorsDb(){
     ['all', `All (${docs.length})`], ['due', `${I('bell')} Follow-up due (${dueN})`],
     ['bday', `${I('cake')} Birthdays soon (${bdayN})`], ['rx', `${I('pill')} On prescriptions`],
     ['incomplete', `${I('pencil')} Incomplete cards (${incN})`],
-  ].map(([k,l])=>`<div class="chip small ${ddFilter===k?'on':''}" onclick="ddFilter='${k}'; renderDoctorsDb();">${l}</div>`).join('');
+  ].map(([k,l])=>`<div class="chip small ${ddFilter===k?'on':''}" onclick="ddFilter='${jsArg(k)}'; renderDoctorsDb();">${l}</div>`).join('');
   let list = docs;
   if(ddFilter==='due') list = list.filter(d=>d.cadenceStatus==='due');
   if(ddFilter==='bday') list = list.filter(d=>d.birthdayIn!=null && d.birthdayIn<=14);
@@ -314,7 +314,7 @@ function renderDoctorsDb(){
     </div>
     ` + (list.length ? `<div class="lrows dd-rows">` : '') + (pagedRows('dd', [ddFilter, q, currentUser.name, currentUser.role].join('\u0001'), list, d=>{ // (the first rows, then "Show more": v126 speed, part 4)
     const pb = SPECIALTY_PLAYBOOK[d.title];
-    return `<div class="lrow dd-row clickable" role="button" tabindex="0" onclick="openDoctorProfile('${d.clinicId}','${d.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+    return `<div class="lrow dd-row clickable" role="button" tabindex="0" onclick="openDoctorProfile('${jsArg(d.clinicId)}','${jsArg(d.id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
       <span class="lr-ic" aria-hidden="true">${pb ? `<span class="dd-emo">${pb.icon}</span>` : I('stethoscope')}</span>
       <div class="row-between" style="flex:1; min-width:0; align-items:flex-start;">
         <div style="min-width:0;">
@@ -648,7 +648,7 @@ function openDoctorRecords(clinicId){
   showModal(`
     <h3 style="margin-top:0;" data-sections>${I('clipboard')} Doctor records</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">One card per doctor: who they are, what they decide, where the relationship stands. The coach turns the cards into next steps for every clinic.</p>
-    ${currentUser.role==='supervisor'?`<div class="chip-row" style="margin-bottom:8px;">${['all',...REPS].map(r=>`<div class="chip small ${_drRep===r?'on':''}" onclick="_drRep='${r}'; openDoctorRecords();">${r==='all'?'All':esc(r)}</div>`).join('')}</div>`:''}
+    ${currentUser.role==='supervisor'?`<div class="chip-row" style="margin-bottom:8px;">${['all',...REPS].map(r=>`<div class="chip small ${_drRep===r?'on':''}" onclick="_drRep='${jsArg(r)}'; openDoctorRecords();">${r==='all'?'All':esc(r)}</div>`).join('')}</div>`:''}
     <div class="card" style="padding:12px; margin-bottom:12px;">
       <div class="row-between"><strong>${complete} of ${allDocs.length} cards complete</strong><span style="color:var(--muted); font-size:12.5px;">${avg}%</span></div>
       <div class="bar-track" style="height:8px; margin-top:6px;"><div class="bar-fill" style="width:${avg}%;"></div></div>
@@ -666,19 +666,19 @@ function renderDrList(){
     const open = _drOpenClinic===c.id || (q && (c.doctors||[]).some(d=>d.name.toLowerCase().includes(q)));
     const pct = drClinicPct(c), n = (c.doctors||[]).length;
     return `<div class="card" style="margin-bottom:8px; padding:12px 14px;">
-      <div class="row-between clickable" onclick="_drOpenClinic = _drOpenClinic==='${c.id}' ? null : '${c.id}'; renderDrList();">
+      <div class="row-between clickable" onclick="_drOpenClinic = _drOpenClinic==='${jsArg(c.id)}' ? null : '${jsArg(c.id)}'; renderDrList();">
         <div><div class="clinic-name">${esc(c.name)}</div><div class="clinic-sub">${currentUser.role==='supervisor'?esc(c.rep||'')+' · ':''}${n} doctor${n===1?'':'s'}${n?` · ${pct}% complete`:''}</div></div>
         <span style="color:var(--muted);">${open?'▾':'›'}</span>
       </div>
       ${open?`<div style="margin-top:10px; border-top:1px solid var(--line); padding-top:8px;">
         ${(c.doctors||[]).map(d=>{ const comp=UMCore.doctorRecordCompleteness(d); const pb=SPECIALTY_PLAYBOOK[d.title];
-          return `<div class="doc-row row-between clickable" onclick="_drBack='records'; openDoctorRecord('${c.id}','${d.id}')">
+          return `<div class="doc-row row-between clickable" onclick="_drBack='records'; openDoctorRecord('${jsArg(c.id)}','${jsArg(d.id)}')">
             <div><div class="dname">${pb?pb.icon+' ':''}${esc(d.name)}${d.title?` <span style="color:var(--muted); font-size:11.5px; font-weight:400;">${esc(d.title)}</span>`:''}</div>${docBadges(d)}</div>
             <span class="badge ${comp.pct===100?'upcoming':'overdue'}">${comp.pct===100?'✓ complete':comp.pct+'%'}</span>
           </div>`; }).join('') || '<div style="color:var(--muted); font-size:12.5px;">No doctors recorded yet.</div>'}
         <div style="display:flex; gap:6px; margin-top:8px;">
-          <input type="text" id="drNew-${c.id}" dir="auto" placeholder="Doctor name" style="flex:1; margin:0;">
-          <button class="chip small" onclick="addDoctorFromRecords('${c.id}')">+ Add</button>
+          <input type="text" id="drNew-${esc(c.id)}" dir="auto" placeholder="Doctor name" style="flex:1; margin:0;">
+          <button class="chip small" onclick="addDoctorFromRecords('${jsArg(c.id)}')">+ Add</button>
         </div>
       </div>`:''}
     </div>`;
@@ -736,8 +736,8 @@ function openDoctorRecord(clinicId, docId){
     <input type="text" id="drNextStep" dir="auto" value="${esc(d.nextStep||'')}" placeholder="e.g. bring the Sonicare demo on the next visit">
     <label>Notes</label>
     <textarea id="drNotes" dir="auto" style="min-height:60px;">${esc(d.notes||'')}</textarea>
-    <button class="btn" onclick="saveDoctorRecord('${clinicId}','${docId}')">Save card</button>
-    <button class="btn secondary" onclick="closeModal(); openDoctorProfile('${clinicId}','${docId}')">Open profile & history</button>
+    <button class="btn" onclick="saveDoctorRecord('${jsArg(clinicId)}','${jsArg(docId)}')">Save card</button>
+    <button class="btn secondary" onclick="closeModal(); openDoctorProfile('${jsArg(clinicId)}','${jsArg(docId)}')">Open profile & history</button>
   `);
 }
 async function saveDoctorRecord(clinicId, docId){
@@ -768,7 +768,7 @@ function decisionMapBlock(c){
       ${who('Decision maker', m.deciders)}${who('Influencers', m.influencers)}${who('Champions', m.champions)}${who('Blocked', m.blocked)}
       ${m.gaps.length?`<div style="margin-top:6px; font-size:12px; font-weight:700; color:var(--amber-ink);">Gaps in what we know</div>${m.gaps.map(g=>`<div style="font-size:12.5px; padding:2px 0;">• ${esc(g)}</div>`).join('')}`:''}
       ${m.steps.length?`<div style="margin-top:6px; font-size:12px; font-weight:700; color:var(--teal);">Next steps</div>${m.steps.map(x=>`<div style="font-size:12.5px; padding:2px 0;">→ ${esc(x)}</div>`).join('')}`:''}
-      ${canViewClinic(c)?`<button class="chip small" style="margin-top:8px;" onclick="_drBack=null; openDoctorRecords('${c.id}')">${I('pencil')} Fill the doctor cards</button>`:''}
+      ${canViewClinic(c)?`<button class="chip small" style="margin-top:8px;" onclick="_drBack=null; openDoctorRecords('${jsArg(c.id)}')">${I('pencil')} Fill the doctor cards</button>`:''}
     </div>`;
 }
 // Today: a nudge while cards are incomplete or a clinic has no known decision maker.
@@ -843,10 +843,10 @@ function openDoctorProfile(clinicId, docId){
   showModal(`
     <div class="row-between dp-head" style="align-items:flex-start;" data-sections>
       <h3 style="margin:0;">${pb?pb.icon+' ':''}${esc(d.name)}</h3>
-      <div style="display:flex; gap:4px;">${canEdit?`<button class="chip small" onclick="_drBack=null; openDoctorRecord('${clinicId}','${docId}')">${I('pencil')} Edit card</button>`:''}<button class="chip small" onclick="exportDoctorReportXlsx('${clinicId}','${docId}')">📄 Detailed report</button></div>
+      <div style="display:flex; gap:4px;">${canEdit?`<button class="chip small" onclick="_drBack=null; openDoctorRecord('${jsArg(clinicId)}','${jsArg(docId)}')">${I('pencil')} Edit card</button>`:''}<button class="chip small" onclick="exportDoctorReportXlsx('${jsArg(clinicId)}','${jsArg(docId)}')">📄 Detailed report</button></div>
     </div>
     ${docBadges(d)}
-    <p class="dp-sub" style="color:var(--muted); font-size:12.5px; margin:2px 0 10px;">${esc(d.title||'—')} · <a onclick="closeModal(); openClinicDetail('${clinicId}')" style="text-decoration:underline; cursor:pointer;">${esc(c.name)}</a>${currentUser.role==='supervisor'?' · '+esc(c.rep):''}${d.phone?` · <a href="tel:${esc(d.phone)}">📞 ${esc(d.phone)}</a>`:''}</p>
+    <p class="dp-sub" style="color:var(--muted); font-size:12.5px; margin:2px 0 10px;">${esc(d.title||'—')} · <a onclick="closeModal(); openClinicDetail('${jsArg(clinicId)}')" style="text-decoration:underline; cursor:pointer;">${esc(c.name)}</a>${currentUser.role==='supervisor'?' · '+esc(c.rep):''}${d.phone?` · <a href="tel:${esc(d.phone)}">📞 ${esc(d.phone)}</a>`:''}</p>
 
     <div class="section-title" style="margin-top:0;">🎯 What to do</div>
     <div class="card" style="border-inline-start:4px solid var(--teal);">${acts.map(a=>`<div style="font-size:12.5px; padding:3px 0;">${esc(a)}</div>`).join('')}</div>
@@ -865,16 +865,16 @@ function openDoctorProfile(clinicId, docId){
       <label>👨‍⚕️ Name (to correct it)</label>
       <div style="display:flex; gap:6px;">
         <input type="text" value="${esc(d.name||'')}" style="flex:1; margin:0;">
-        <button class="chip small" onclick="saveDoctorField('${clinicId}','${docId}','name',this.previousElementSibling.value); openDoctorProfile('${clinicId}','${docId}');">💾 Save</button>
+        <button class="chip small" onclick="saveDoctorField('${jsArg(clinicId)}','${jsArg(docId)}','name',this.previousElementSibling.value); openDoctorProfile('${jsArg(clinicId)}','${jsArg(docId)}');">💾 Save</button>
       </div>
       <label style="margin-top:8px;">🎂 Date of birth</label>
-      <input type="date" value="${esc(d.birthday||'')}" onchange="saveDoctorField('${clinicId}','${docId}','birthday',this.value)">
+      <input type="date" value="${esc(d.birthday||'')}" onchange="saveDoctorField('${jsArg(clinicId)}','${jsArg(docId)}','birthday',this.value)">
       <label style="margin-top:8px;">📞 Phone</label>
-      <input type="text" value="${esc(d.phone||'')}" placeholder="9XXXXXXX" onchange="saveDoctorField('${clinicId}','${docId}','phone',this.value)">
+      <input type="text" value="${esc(d.phone||'')}" placeholder="9XXXXXXX" onchange="saveDoctorField('${jsArg(clinicId)}','${jsArg(docId)}','phone',this.value)">
       <label style="margin-top:8px;">📆 Follow-up rhythm</label>
-      <div class="chip-row">${[['weekly','Weekly'],['monthly','Monthly'],['quarterly','Quarterly'],['','None']].map(([k,l])=>`<div class="chip small ${(d.cadence||'')===k?'on':''}" onclick="saveDoctorField('${clinicId}','${docId}','cadence','${k}'); openDoctorProfile('${clinicId}','${docId}');">${l}</div>`).join('')}</div>
+      <div class="chip-row">${[['weekly','Weekly'],['monthly','Monthly'],['quarterly','Quarterly'],['','None']].map(([k,l])=>`<div class="chip small ${(d.cadence||'')===k?'on':''}" onclick="saveDoctorField('${jsArg(clinicId)}','${jsArg(docId)}','cadence','${jsArg(k)}'); openDoctorProfile('${jsArg(clinicId)}','${jsArg(docId)}');">${l}</div>`).join('')}</div>
       <label style="margin-top:8px;">📝 About him (interests, personality, notes)</label>
-      <textarea style="min-height:60px;" onchange="saveDoctorField('${clinicId}','${docId}','notes',this.value)">${esc(d.notes||'')}</textarea>
+      <textarea style="min-height:60px;" onchange="saveDoctorField('${jsArg(clinicId)}','${jsArg(docId)}','notes',this.value)">${esc(d.notes||'')}</textarea>
     </div>`:''}
 
     <div class="section-title">🎁 Handovers (${hoList.length})</div>
@@ -886,19 +886,19 @@ function openDoctorProfile(clinicId, docId){
         <input type="number" id="hoQty" placeholder="Qty" min="1" value="1" style="flex:0.6;">
         <input type="date" id="hoDate" value="${todayStr()}" max="${todayStr()}" style="flex:1.1;">
       </div>
-      <button class="btn small" style="margin-top:8px;" onclick="addHandover('${clinicId}','${docId}')">➕ Record the handover</button>
+      <button class="btn small" style="margin-top:8px;" onclick="addHandover('${jsArg(clinicId)}','${jsArg(docId)}')">➕ Record the handover</button>
     </div>`:''}
     ${hoList.slice(0,15).map(({ h, g }) => g ? (() => {
       const vv = visits.find(x => x.id === g.visitId);
       return `<div class="visit-hist ho-visit" style="border-inline-start:3px solid var(--teal); padding-inline-start:10px;">
         <strong>${fmtDate(g.date)}</strong> · ${I('pill')} ${g.items.map(r => `<span dir="auto">${esc(rxTypeNameOf(r.type, r.name))} ×${r.qty}</span>`).join(', ')}
         <span style="color:var(--muted); font-size:11px;"> — <span dir="auto">${esc(g.rep)}${g.withRep ? ' 🤝 ' + esc(g.withRep) : ''}</span></span>
-        <div style="font-size:11px; color:var(--muted); margin-top:3px; display:flex; align-items:center; gap:8px;"><span>from the visit — edit it there</span>${vv && canEditVisit(vv) ? `<button class="chip small" aria-label="Edit visit" onclick="openEditVisit('${esc(g.visitId)}')">${I('pencil')}</button>` : ''}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:3px; display:flex; align-items:center; gap:8px;"><span>from the visit — edit it there</span>${vv && canEditVisit(vv) ? `<button class="chip small" aria-label="Edit visit" onclick="openEditVisit('${jsArg(g.visitId)}')">${I('pencil')}</button>` : ''}</div>
       </div>`; })() : `
       <div class="visit-hist" style="border-inline-start:3px solid ${h.kind==='prescription'?'var(--teal)':h.kind==='gift'?'var(--gold)':'var(--sage)'}; padding-inline-start:10px;">
         <strong>${fmtDate(h.date)}</strong> · <span>${KINDS[h.kind]||esc(h.kind)}</span> · <span dir="auto">${esc(h.what||'')}${h.qty>1?` ×${h.qty}`:''}</span>
         <span style="color:var(--muted); font-size:11px;"> — ${esc(h.by||'')}</span>
-        ${canEdit?`<button class="del" style="float:left;" onclick="removeHandover('${clinicId}','${docId}','${h.id}')">&times;</button>`:''}
+        ${canEdit?`<button class="del" style="float:left;" onclick="removeHandover('${jsArg(clinicId)}','${jsArg(docId)}','${jsArg(h.id)}')">&times;</button>`:''}
       </div>`).join('') || '<div style="color:var(--muted); font-size:12.5px;">No handovers recorded yet.</div>'}
 
     <div class="section-title">🗓️ Visit log (${da.visitLog.length})</div>
@@ -1395,7 +1395,7 @@ function sellGuideBlock(c){
 function caAllRowsByClinic(){
   const sh = erpShareNow();
   if(sh) return { by: sh.byClinic(), all: sh.lines() };
-  const by = {};
+  const by = Object.create(null);
   let all = [];
   erpPeriods().forEach(p2=>{ all = all.concat(erpViewRows(p2)); });
   const match = erpMatchFn();
@@ -1429,7 +1429,7 @@ function renderClinicAnalysis(){
   const sup = currentUser.role === 'supervisor';
   if(!caRep) caRep = sup ? (REPS[0] || null) : currentUser.name;
   if(!sup) caRep = currentUser.name;
-  chipsEl.innerHTML = sup ? REPS.map(r=>`<div class="chip ${caRep===r?'on':''}" onclick="caRep='${esc(r)}'; renderClinicAnalysis();">${esc(r)}</div>`).join('') : '';
+  chipsEl.innerHTML = sup ? REPS.map(r=>`<div class="chip ${caRep===r?'on':''}" onclick="caRep='${jsArg(r)}'; renderClinicAnalysis();">${esc(r)}</div>`).join('') : '';
   const rep = caRep;
   if(!rep){ body.innerHTML = '<div class="empty">No reps configured yet.</div>'; return; }
   const t = targets[rep] || {};
@@ -1520,7 +1520,7 @@ function renderClinicAnalysis(){
       return `<div class="card ca-row" style="margin-bottom:10px;">
         <div class="row-between">
           <div style="display:flex; gap:8px; align-items:center;">
-            <span class="cls cls-${cd.cls}">${cd.cls||'-'}</span>
+            <span class="cls cls-${clsKey(cd.cls)}">${esc(cd.cls||'-')}</span>
             <div>
               <div class="clinic-name">${esc(cd.label)}</div>
               <div class="clinic-sub">${cd.fieldN} visit${cd.fieldN===1?'':'s'} · ${cd.callsN} call${cd.callsN===1?'':'s'} this month${cd.lastV?` · last ${fmtDate(cd.lastV.date)}`:' · never visited'}</div>
@@ -1540,8 +1540,8 @@ function renderClinicAnalysis(){
         ${cd.contact?`<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">📇 ${esc(cd.contact)}</div>`:''}
         ${cd.notes.length?`<div style="font-size:11.5px; color:var(--muted); border-top:1px dashed var(--line); padding-top:5px; margin-top:5px;">${cd.notes.map(n=>`📝 <i>${fmtDate(n.date)}:</i> ${esc(n.txt)}`).join('<br>')}</div>`:''}
         <div style="display:flex; gap:6px; margin-top:8px;">
-          <button class="chip small" onclick="openClinicAllocDetail('${cd.id}')">📊 Brand plan</button>
-          <button class="chip small" onclick="openClinicDetail('${cd.id}')">${I('file')} Clinic file</button>
+          <button class="chip small" onclick="openClinicAllocDetail('${jsArg(cd.id)}')">📊 Brand plan</button>
+          <button class="chip small" onclick="openClinicDetail('${jsArg(cd.id)}')">${I('file')} Clinic file</button>
           ${cd.nextFollowUp?`<span class="chip small" style="pointer-events:none;">⏰ ${fmtDate(cd.nextFollowUp)}</span>`:''}
         </div>
       </div>`;
@@ -1630,14 +1630,14 @@ function renderPlaybookGrid(){
       ${untagged.slice(0,12).map(u=>`
         <div style="padding:7px 0; border-top:1px solid var(--line);">
           <div style="font-size:13.5px; font-weight:600;">${esc(u.name)} <span style="color:var(--muted); font-weight:400; font-size:12px;">· ${esc(u.clinic)}</span></div>
-          <div class="chip-row" style="margin-top:5px;">${SPECIALTIES.map(t=>`<div class="chip small" onclick="tagDoctorSpecialty('${u.clinicId}','${u.docId}','${t}')">${SPECIALTY_PLAYBOOK[t].icon} ${esc(t)}</div>`).join('')}</div>
+          <div class="chip-row" style="margin-top:5px;">${SPECIALTIES.map(t=>`<div class="chip small" onclick="tagDoctorSpecialty('${jsArg(u.clinicId)}','${jsArg(u.docId)}','${jsArg(t)}')">${SPECIALTY_PLAYBOOK[t].icon} ${esc(t)}</div>`).join('')}</div>
         </div>`).join('')}
       ${untagged.length>12?`<div style="color:var(--muted); font-size:12px; text-align:center; padding-top:6px;">+${untagged.length-12} more — tag these first</div>`:''}
     </div>` : '';
   document.getElementById('playbookGrid').innerHTML = untaggedCard + SPECIALTIES.map(sp=>{
     const pb = SPECIALTY_PLAYBOOK[sp];
     const n = counts[sp]||0;
-    return `<div class="tile" onclick="openPlaybook('${sp}')">
+    return `<div class="tile" onclick="openPlaybook('${jsArg(sp)}')">
       <div class="ic">${pb.icon}</div>
       <div class="tname">${esc(sp)}</div>
       <div class="tsub">${n?n+' in your clinics':'No doctors tagged yet'}</div>
@@ -1674,7 +1674,7 @@ function openPlaybook(sp){
 
     ${(()=>{ const tagged = products.filter(p=>(p.specialties||[]).includes(sp));
       return tagged.length ? `<div class="section-title">From our catalog</div>
-        <div class="card">${tagged.map(p=>`<div class="qty-row" style="cursor:pointer; align-items:center; gap:10px;" onclick="closeModal(); openProductDetail('${esc(productKey(p))}')">
+        <div class="card">${tagged.map(p=>`<div class="qty-row" style="cursor:pointer; align-items:center; gap:10px;" onclick="closeModal(); openProductDetail('${jsArg(productKey(p))}')">
           ${playbookThumb(p.name, 44)}
           <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+money(p.price):''}</span></div>
         </div>`).join('')}</div>` : ''; })()}
@@ -1702,16 +1702,16 @@ function openProductDetail(pid){
   let unitsSold = 0, revenue = 0;
   visits.forEach(v=>(v.orders||[]).forEach(o=>o.items.forEach(it=>{
     if(keys.includes(it.productId)){
-      unitsSold += it.qty;
+      unitsSold += Number(it.qty) || 0;
       const unit = it.unitPrice!=null ? it.unitPrice : (p.price!=null ? p.price : 0);
-      revenue += unit*it.qty*(1-(o.discountPct||0)/100);
+      revenue += unit*(Number(it.qty) || 0)*(1-(o.discountPct||0)/100);
     }
   })));
   showModal(`
     ${safeUrl(p.img)?`<img class="pbig" src="${esc(safeUrl(p.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
     <div class="row-between" style="margin:0 0 4px;" data-sections>
       <h3 style="margin:0;">${esc(p.name)}</h3>
-      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${esc(productKey(p))}')">${I('pencil')} Edit</button>`:''}
+      ${currentUser.role==='supervisor'?`<button class="chip small" style="flex-shrink:0;" onclick="openEditProduct('${jsArg(productKey(p))}')">${I('pencil')} Edit</button>`:''}
     </div>
     <div style="color:var(--muted); font-size:13.5px; margin-bottom:16px;">${esc(p.brand||'')}</div>
 
@@ -1730,13 +1730,13 @@ function openProductDetail(pid){
       <div class="card" style="font-size:13.5px; line-height:1.6;">${esc(p.desc)}</div>`:''}
 
     ${(p.specialties&&p.specialties.length)?`<div class="section-title">Best fit for</div>
-      <div class="chip-row">${p.specialties.map(sp=>SPECIALTY_PLAYBOOK[sp]?`<div class="chip small" onclick="closeModal(); openPlaybook('${esc(sp)}')">${SPECIALTY_PLAYBOOK[sp].icon} ${esc(sp)}</div>`:'').join('')}</div>`:''}
+      <div class="chip-row">${p.specialties.map(sp=>SPECIALTY_PLAYBOOK[sp]?`<div class="chip small" onclick="closeModal(); openPlaybook('${jsArg(sp)}')">${SPECIALTY_PLAYBOOK[sp].icon} ${esc(sp)}</div>`:'').join('')}</div>`:''}
 
     <div class="section-title">Sales notes &amp; materials</div>
     <div class="card">
       ${currentUser.role==='supervisor' ? `
         <textarea id="pNotesEdit" placeholder="Key selling points, clinical claims, competitor comparison...">${esc(p.salesNotes||'')}</textarea>
-        <button class="btn secondary small" onclick="saveProductNotes('${esc(productKey(p))}')">Save notes</button>
+        <button class="btn secondary small" onclick="saveProductNotes('${jsArg(productKey(p))}')">Save notes</button>
       ` : `
         ${p.salesNotes?`<div style="font-size:13.5px; line-height:1.6; white-space:pre-wrap;">${esc(p.salesNotes)}</div>`:`<div style="color:var(--muted); font-size:13px;">No sales notes yet.</div>`}
       `}
@@ -1745,7 +1745,7 @@ function openProductDetail(pid){
         <div style="border-top:1px solid var(--line); margin-top:10px; padding-top:10px;">
           <input type="text" id="pMatTitle" placeholder="Material name (e.g. Brochure, Price list, Video)">
           <input type="text" id="pMatUrl" placeholder="Link (https://...)" style="margin-top:8px;">
-          <button class="btn secondary small" style="margin-top:8px;" onclick="addProductMaterial('${esc(productKey(p))}')">+ Add material</button>
+          <button class="btn secondary small" style="margin-top:8px;" onclick="addProductMaterial('${jsArg(productKey(p))}')">+ Add material</button>
         </div>
       ` : ''}
     </div>
@@ -1785,7 +1785,7 @@ function renderProductMaterials(pid){
   el.innerHTML = mats.map((m,i)=>`
     <div class="row-between" style="gap:8px; margin-top:6px;">
       <a href="${esc(safeUrl(m.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="flex:1; display:block; text-align:center; text-decoration:none;">📄 ${esc(m.title||'Material')}</a>
-      ${currentUser.role==='supervisor'?`<button class="chip small" onclick="removeProductMaterial('${esc(productKey(p))}',${i})">✕</button>`:''}
+      ${currentUser.role==='supervisor'?`<button class="chip small" onclick="removeProductMaterial('${jsArg(productKey(p))}',${i})">✕</button>`:''}
     </div>`).join('');
 }
 async function addProductMaterial(pid){
@@ -1880,7 +1880,7 @@ function openCategoryGuide(cat){
         <a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer" class="btn secondary small" style="display:block; text-align:center; text-decoration:none; margin-top:6px;">🔗 ${esc(l.title||'Link')}</a>`).join('')}</div>`:''}
     </div>`:`<div class="empty">No guide for this category yet.${currentUser.role==='supervisor'?' Tap ✏️ Edit to write one.':''}</div>`}
     ${catProds.length?`<div class="section-title">Products in this category</div>
-      <div class="card">${catProds.map(p=>`<div class="qty-row" style="cursor:pointer;" onclick="openProductDetail('${productKey(p)}')">
+      <div class="card">${catProds.map(p=>`<div class="qty-row" style="cursor:pointer;" onclick="openProductDetail('${jsArg(productKey(p))}')">
         <div class="pname">${esc(p.name)}<br><span style="color:var(--muted); font-size:11.5px;">${esc(p.brand||'')}${p.price!=null?' · '+money(p.price):''}</span></div>
         <span style="color:var(--muted);">›</span></div>`).join('')}</div>`:''}
     <button class="btn secondary" style="margin-top:12px;" onclick="openCategoryGuides()">‹ All guides</button>
@@ -1992,7 +1992,7 @@ function renderCoverageBoard(){
     .filter(i => i.level !== 'good').slice(0, 3);
   const repChips = currentUser.role === 'supervisor'
     ? `<div class="chip-row" style="margin-bottom:8px;">${['all', ...REPS].map(r =>
-        `<div class="chip small ${covRep===r?'on':''}" onclick="setCovRep('${esc(r)}')">${r==='all'?'Whole team':esc(r)}</div>`).join('')}</div>` : '';
+        `<div class="chip small ${covRep===r?'on':''}" onclick="setCovRep('${jsArg(r)}')">${r==='all'?'Whole team':esc(r)}</div>`).join('')}</div>` : '';
   const tile = (n, l) => `<div class="ins-tile"><div class="it-n">${n}</div><div class="it-l">${l}</div></div>`;
   const byId = new Map(); clinics.forEach(c => { if(c && !byId.has(c.id)) byId.set(c.id, c); }); // (the first clinic with each id, as find() gives)
   const clinicOf = id => byId.get(id);
@@ -2012,7 +2012,7 @@ function renderCoverageBoard(){
       <summary style="cursor:pointer; list-style:none;">
         <div class="row-between">
           <div style="display:flex; align-items:center; gap:9px;">
-            <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+            <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
             <div>
               <div style="font-weight:700; font-size:14px;">${esc(c.name)}</div>
               <div style="color:var(--muted); font-size:12px;">${c.visits} visit${c.visits===1?'':'s'}${c.calls?` (${c.calls} call${c.calls===1?'':'s'})`:''} · ${c.contacts} contact${c.contacts===1?'':'s'} · ${c.orders?`🛒 ${money(c.revenue)}`:'no orders logged'}${ew && ew.byClinic[c.id]?` · 💠 ${money(ew.byClinic[c.id])} invoiced`:''}</div>
@@ -2023,14 +2023,14 @@ function renderCoverageBoard(){
       </summary>
       ${detail}
       ${c.nextFollowUp?`<div style="font-size:12px; color:var(--muted); margin-top:6px;">Next follow-up: ${fmtDate(c.nextFollowUp)}</div>`:''}
-      <button class="chip small" style="margin-top:8px;" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">${I('file')} Open clinic</button>
+      <button class="chip small" style="margin-top:8px;" onclick="closeModal(); openClinicDetail('${jsArg(c.id)}')">${I('file')} Open clinic</button>
     </details>`;
   });
   const needsRows = pagedRows('covN', pick, cov.needsVisit, c => `
     <div class="card" style="padding:12px 14px; margin-bottom:8px; border-inline-start:4px solid ${c.weight<=1?'var(--coral)':c.weight<=4?'#FF9500':'var(--teal)'};">
       <div class="row-between">
         <div style="display:flex; align-items:center; gap:9px;">
-          <span class="cls cls-${c.cls}">${c.cls||'-'}</span>
+          <span class="cls cls-${clsKey(c.cls)}">${esc(c.cls||'-')}</span>
           <div>
             <div style="font-weight:700; font-size:14px;">${esc(c.name)}</div>
             <div style="color:var(--muted); font-size:12px;">${esc(c.rep||'')}${c.lastVisit?` · last visit ${fmtDate(c.lastVisit)}`:' · never visited'}${ew && ew.byClinic[c.id]?` · 💠 ${money(ew.byClinic[c.id])} invoiced (no visit!)`:''}</div>
@@ -2039,8 +2039,8 @@ function renderCoverageBoard(){
       </div>
       ${c.reasons.map(r=>`<div style="font-size:12.5px; line-height:1.5; margin-top:6px;">${covReasonLabel(r)}</div>`).join('')}
       <div style="display:flex; gap:8px; margin-top:8px;">
-        <button class="chip small" onclick="closeModal(); quickLogFrom('${esc(c.id)}')">${I('plus')} Log a visit</button>
-        <button class="chip small" onclick="closeModal(); openClinicDetail('${esc(c.id)}')">${I('file')} Open clinic</button>
+        <button class="chip small" onclick="closeModal(); quickLogFrom('${jsArg(c.id)}')">${I('plus')} Log a visit</button>
+        <button class="chip small" onclick="closeModal(); openClinicDetail('${jsArg(c.id)}')">${I('file')} Open clinic</button>
       </div>
     </div>`);
   showModal(`

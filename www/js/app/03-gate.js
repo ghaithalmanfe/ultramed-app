@@ -2,6 +2,9 @@
 // (part of the UltraMed app script — the files under js/app load in order and share one global scope)
 // ---- GATE / USER ----
 async function selectUser(name, role){
+  // the changes waiting on this phone belong to the login that made them (v129, the security audit's C7): another
+  // login is asked before they are sent under it, or signs out and leaves them (queueOwnerCheck, 04-sync.js)
+  if(typeof queueOwnerCheck === 'function' && !(await queueOwnerCheck(name))) return;
   if(typeof dropFullBackup === 'function') dropFullBackup(); // a full backup held for the last sign-in is never handed to the next (13-exports.js)
   // a screen drawn for someone else (another person's session, or the early open of the person this phone last signed
   // in) is never shown to this one: covered until this person's own screen is drawn (v126 speed, part 3; 04-sync.js)
@@ -123,8 +126,8 @@ function renderGate(){
   const reps = staff.filter(s=>s.role==='rep');
   const sups = staff.filter(s=>s.role!=='rep');
   const tile = (s, wide) => `
-    <div class="gate-tile${wide?' wide':''}" onclick="gateTap('${esc(s.name)}')">
-      <div class="gate-av" style="background:${(s.av==='linear-gradient(140deg,#0B3D22,#01150C)'?AVATARS[0]:s.av)||AVATARS[0]};">${initials(s.name)}</div>
+    <div class="gate-tile${wide?' wide':''}" onclick="gateTap('${jsArg(s.name)}')">
+      <div class="gate-av" style="background:${esc((s.av==='linear-gradient(140deg,#0B3D22,#01150C)'?AVATARS[0]:s.av)||AVATARS[0])};">${esc(initials(s.name))}</div>
       <div>
         <div class="gate-name">${esc(s.name)}</div>
         <div class="gate-role">${s.role==='rep'?I('tooth')+' Sales Rep':I('star')+' Supervisor'}</div>
@@ -145,7 +148,7 @@ function gateTap(name){
     <h3 style="margin-top:0;" data-ic="lock">${esc(name)}</h3>
     <p style="color:var(--muted); font-size:13px; margin-top:-6px;">Enter your password to continue.</p>
     <input type="password" id="gatePassword" placeholder="Password">
-    <button class="btn" onclick="submitGateLogin('${name}')">Log in</button>
+    <button class="btn" onclick="submitGateLogin('${jsArg(name)}')">Log in</button>
   `);
   setTimeout(()=>{
     const el = document.getElementById('gatePassword');

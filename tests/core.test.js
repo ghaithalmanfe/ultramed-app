@@ -146,6 +146,13 @@ describe('safeParse', () => {
     assert.equal(core.safeParse(null, 'x'), 'x');
     assert.equal(core.safeParse(undefined, 'x'), 'x');
   });
+  test('leaves out "__proto__" keys (v129, C3) — but the ERP links keep an account of that name when asked', () => {
+    const t = '{"__proto__":{"polluted":1},"visits":{"__proto__":2,"a":3}}';
+    const d = core.safeParse(t, null);
+    assert.deepEqual(Object.keys(d), ['visits']); assert.deepEqual(Object.keys(d.visits), ['a']); assert.equal(({}).polluted, undefined);
+    const m = core.safeParse('{"__proto__":"al2","Orion":"al1"}', null, true);
+    assert.ok(Object.prototype.hasOwnProperty.call(m, '__proto__') && m.Orion === 'al1' && Object.getPrototypeOf(m) === Object.prototype);
+  });
 });
 
 // ---------- CSV ----------
@@ -173,6 +180,25 @@ describe('csvEscape', () => {
   test('leaves plain signed numbers (e.g. phone numbers) untouched', () => {
     assert.equal(core.csvEscape('+96512345678'), '+96512345678');
     assert.equal(core.csvEscape('-5.5'), '-5.5');
+  });
+  // v129, the security audit's C8: a stored TAB or CR split a value into a new cell or row of a paste, and that cell —
+  // "=2+3" — was evaluated by the spreadsheet (the guard looked only at the value's first character)
+  test('a TAB, CR, VT or FF inside a value can never add a cell or a row', () => {
+    assert.equal(core.csvEscape('Alpha Clinic\t=2+3\t'), 'Alpha Clinic =2+3 ');
+    assert.equal(core.csvEscape('Beta Clinic\r=2+3'), 'Beta Clinic =2+3');
+    assert.equal(core.csvEscape('a\vb\fc'), 'a b c');
+  });
+  test('a formula after leading spaces, a TAB, or at the start of any line inside the value is neutralized', () => {
+    assert.equal(core.csvEscape('\t=1+1\t'), "' =1+1 ");
+    assert.equal(core.csvEscape('  @SUM(A1)'), "'  @SUM(A1)");
+    assert.equal(core.csvEscape('note\n=2+3'), '"note\n\'=2+3"');
+    assert.equal(core.csvEscape('note\n-5'), '"note\n-5"');
+    for(const p of ['x\t=CMD()', '\r@SUM(1)', 'a\n+cmd|x', ' =1', '\t\t-HYPERLINK("x")']){
+      const out = core.csvEscape(p);
+      assert.ok(!/[\t\r\v\f]/.test(out), JSON.stringify(out));
+      const body = out[0] === '"' ? out.slice(1, -1).replace(/""/g, '"') : out;
+      body.split('\n').forEach(line => assert.ok(!/^\s*[=@+-]/.test(line) || /^\s*[+-]\d+(\.\d+)?\s*$/.test(line), JSON.stringify([p, out])));
+    }
   });
 });
 
@@ -6055,5 +6081,44 @@ describe('one pace rule everywhere (the owner\'s decision of 17 Nov: on pace fro
     const it = ahead.S.all.find(i => i.key === 'target-pace:' + M);
     assert.deepEqual([it.big, it.detail], ['104%', 'KD 9,500 of KD 10,000 by 26 Nov (working day 20 of 22)']);
     assert.ok(ahead.H.includes('Mariam is on pace to exceed the month\'s target (104%).'));
+  });
+});
+
+describe('possible duplicate clinics and the A–Z order (v129, the owner\'s request of 23 Nov)', () => {
+  const grouped = (a, b) => core.possibleDuplicateClinics([{ id: 'a', name: a }, { id: 'b', name: b }]).groups.length > 0;
+  test('the same name typed another way is flagged: spaces, capitals, punctuation, common words, "Al", one typo', () => {
+    [['Smile Dental Clinic', 'smile-dental  clinic'], ['Smile Dental Clinic', 'Smile Dentel Clinic'], ['Smile Dental Clinic', 'Smile Dental Center'],
+      ['Smile Dental Clinic', 'Smile Clinic'], ['Al Noor Dental Clinic', 'Alnoor Dental Clinic'], ['Al Noor Dental Clinic', 'Al-Nour Dental Center'],
+      ['Al Noor Dental Clinic', 'Noor Dental'], ['Dr. Ahmad Clinic', 'Dr Ahmed Clinic'], ['Bayan Dental Centre', 'Bayan Dental Center'],
+      ['Royal Smile Dental', 'Royal Smyle Dental'], ['Hawally Dental Clinik', 'Hawally Dental Clinic'], ['Dnetal Pearl', 'Dental Pearl'],
+      ['عيادة النور', 'عياده النور'], ['عيادة النور', 'مركز النور'], ['عيادة النور للأسنان', 'مركز النور التخصصي لطب الأسنان'], ['Al Noor Specialized Dental Center', 'Alnoor Medical Complex'], ['عيادة د. ريم', 'عياده الدكتور ريم'], ['Clinic ٢', 'Clinic 2']]
+      .forEach(p => assert.ok(grouped(p[0], p[1]), p.join(' | ')));
+  });
+  test('different names are not: two typos, another number (branches), another Arabic name, another word', () => {
+    [['Coral Sample Dental Clinic', 'Opal Sample Dental Clinic'], ['Smile Dental 1', 'Smile Dental 2'], ['Clinic 10', 'Clinic 2'],
+      ['عيادة النور', 'عيادة الياسمين'], ['Bright Smile', 'Bright Style'], ['Bright Care', 'Bright Smile'], ['Dr. Sara Clinic', 'Dr. Sana Clinic'],
+      ['Salam Clinic', 'Islam Clinic'], ['Smile Dental', 'Smile Dental 2'], ['Smile Dental Salmiya', 'Smile Dental Hawally'],
+      ['Dental Clinic', 'Medical Center'], ['Al Salam Hospital', 'Al Salam Dental Clinic']]
+      .forEach(p => assert.ok(!grouped(p[0], p[1]), p.join(' | ')));
+  });
+  test('groups join through a common member, in list order; odd records and short names are left out; nothing is changed', () => {
+    const list = [{ id: 1, name: 'Smile Dental Clinic' }, null, { id: 'x', name: 42 }, { name: 'no id' }, { id: 'q', name: 'Dr.' },
+      { id: 2, name: 'Zenith' }, { id: 3, name: 'Smile Clinic' }, { id: 4, name: 'SMILE dentel' }, { id: '__proto__', name: 'Zenith Dental' }];
+    const before = JSON.stringify(list);
+    const r = core.possibleDuplicateClinics(list);
+    assert.deepEqual(r.groups, [['1', '3', '4'], ['2', '__proto__']]);
+    assert.deepEqual(r.byId['3'], ['1', '4']);
+    assert.equal(Object.getPrototypeOf(r.byId), null);
+    assert.equal(JSON.stringify(list), before);
+    assert.deepEqual(core.possibleDuplicateClinics([]), { byId: Object.assign(Object.create(null)), groups: [] });
+  });
+  test('clinicNameCompare: capitals, accents, spaces and punctuation do not count; numbers in number order', () => {
+    const C = n => ({ id: n, name: n });
+    const az = ['clinic 10', 'Clinic 2', 'Zeta', 'Ámber', 'Beta-Dental', 'عيادة'].map(C).sort(core.clinicNameCompare).map(c => c.name);
+    assert.ok(az.indexOf('Clinic 2') < az.indexOf('clinic 10'), az.join(' | '));
+    assert.ok(az.indexOf('Ámber') < az.indexOf('Beta-Dental') && az.indexOf('Beta-Dental') < az.indexOf('Clinic 2') && az.indexOf('clinic 10') < az.indexOf('Zeta'), az.join(' | '));
+    const cmp = (a, b) => core.clinicNameCompare(C(a), C(b));
+    assert.ok(cmp('Ámber', 'amber') !== 0 && Math.sign(cmp('Ámber', 'amber')) === -Math.sign(cmp('amber', 'Ámber')));   // equal names still sort the same way every time
+    assert.ok(cmp('Beta-Dental', 'beta dentam') < 0 && cmp('beta dentam', 'Beta-Dental') > 0);
   });
 });
