@@ -6127,40 +6127,91 @@
     return out;
   }
   // ---- Possible duplicate clinics (v129, the owner's request) ----
-  // A clinic typed in twice by hand is usually the same letters with other spaces, capitals or punctuation, or a
-  // letter or two typed wrong. clinicDupKey keeps letters and digits only (accents dropped, Arabic letter forms
-  // folded: أ إ آ → ا, ة → ه, ى → ي). Two clinics are possible duplicates when their keys are equal, or differ by
-  // one edit (both keys 6+ characters) or two (both 12+), with the same digits ("Smile 1" and "Smile 2" are two
-  // branches, not a typo). A hint for the eye only: nothing is merged or changed.
-  function clinicDupKey(s){
+  // A clinic typed in twice by hand is usually the same name with other spaces, capitals or punctuation, the same name
+  // with other common words ("Clinic" / "Center", «عيادة» / «مركز», "Dr.", "Al"), or one letter typed wrong, missing,
+  // extra or two letters swapped ("Dentel", "Nour" / "Noor", "Centre"). Names are folded (accents and Arabic marks
+  // dropped, أ إ آ → ا, ة → ه, ى → ي, Arabic digits → 0–9), then two clinics may be one when
+  //   (a) the folded names have the same letters and digits (clinicDupKey);
+  //   (b) they are the same once the common words are left out (DUP_STOP, and those words with one such typo) —
+  //       "Al" / «ال» tried both kept and left out: "Al Noor" = "Alnoor" = "Noor";
+  //   (c) what is left differs by ONE such typo, is 5+ characters long and has the same digits ("Smile 1" and
+  //       "Smile 2" are branches).
+  // "Coral Sample" and "Opal Sample" are two names (two typos). A hint for the eye only: nothing is merged or changed.
+  var DUP_STOP = Object.create(null), DUP_AL = Object.create(null);
+  ['dental', 'dentist', 'dentists', 'dentistry', 'clinic', 'clinics', 'center', 'centre', 'centers', 'centres', 'medical',
+    'polyclinic', 'poly', 'complex', 'specialized', 'specialised', 'specialist', 'specialty', 'speciality', 'the', 'and', 'of',
+    'for', 'dr', 'doctor', 'co',
+    'عياده', 'العياده', 'عيادات', 'العيادات', 'مركز', 'المركز', 'مجمع', 'المجمع', 'مستوصف', 'طبي', 'الطبي', 'طبيه', 'الطبيه',
+    'تخصصي', 'التخصصي', 'اسنان', 'الاسنان', 'للاسنان', 'لطب', 'د', 'دكتور', 'الدكتور']
+    .forEach(function(w){ DUP_STOP[w] = 1; });
+  ['al', 'el', 'ال'].forEach(function(w){ DUP_AL[w] = 1; });
+  var DUP_STOP_LONG = Object.keys(DUP_STOP).filter(function(w){ return w.length >= 6; });
+  function clinicDupFold(s){
     return String(s == null ? '' : s).normalize('NFKD').replace(/[̀-ͯؐ-ًؚ-ٰٟـ]/g, '')
-      .toLowerCase().replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[^\p{L}\p{N}]+/gu, '');
+      .toLowerCase().replace(/[أإآٱ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+      .replace(/[٠-٩]/g, function(d){ return String(d.charCodeAt(0) - 0x660); })
+      .replace(/[۰-۹]/g, function(d){ return String(d.charCodeAt(0) - 0x6f0); });
+  }
+  function clinicDupKey(s){ return clinicDupFold(s).replace(/[^\p{L}\p{N}]+/gu, ''); }
+  // true when a and b are the same or one typo apart: a letter wrong, missing or extra, or two neighbours swapped
+  function dupOneTypo(a, b){
+    if(a === b) return true;
+    var la = a.length, lb = b.length;
+    if(la - lb > 1 || lb - la > 1) return false;
+    var i = 0;
+    while(i < la && i < lb && a[i] === b[i]) i++;
+    if(la === lb){
+      if(a.slice(i + 1) === b.slice(i + 1)) return true;
+      return i + 1 < la && a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2);
+    }
+    return la > lb ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
+  }
+  function dupIsStop(w){
+    return DUP_STOP[w] === 1 || (w.length >= 6 && DUP_STOP_LONG.some(function(s){ return dupOneTypo(w, s); }));
+  }
+  // → { key: the letters and digits, forms: what is left once the common words are out (with "Al", then without it) }
+  function clinicDupForms(name){
+    var words = clinicDupFold(name).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    var core = words.filter(function(w){ return !dupIsStop(w); });
+    var withAl = core.join('');
+    var noAl = core.filter(function(w){ return DUP_AL[w] !== 1; }).map(function(w){
+      if(/^(?:al|el)[a-z]{4,}$/.test(w) || /^ال\p{L}{2,}$/u.test(w)) return w.slice(2);
+      return w;
+    }).join('');
+    return { key: words.join(''), forms: withAl === noAl ? [withAl] : [withAl, noAl] };
   }
   // → { byId: {id: [the ids of the other clinics of its group]}, groups: [[id, …]] } — groups and ids in list order
   function possibleDuplicateClinics(list){
     var items = [];
-    (list || []).forEach(function(c, i){
+    (list || []).forEach(function(c){
       if(!c || c.id == null) return;
-      var k = clinicDupKey(c.name);
-      if(k.length < 3) return;   // too short to tell a typo from another name
-      items.push({ id: String(c.id), k: k, d: k.replace(/[^\p{N}]+/gu, ''), i: i });
+      var f = clinicDupForms(c.name);
+      if(f.key.length < 3) return;   // too short to tell a typo from another name
+      items.push({ id: String(c.id), key: f.key, forms: f.forms });
     });
     var parent = items.map(function(_, i){ return i; });
     var find = function(x){ while(parent[x] !== x){ parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
     var join = function(a, b){ a = find(a); b = find(b); if(a !== b) parent[Math.max(a, b)] = Math.min(a, b); };
-    var order = items.map(function(_, i){ return i; }).sort(function(a, b){ return items[a].k.length - items[b].k.length || a - b; });
-    for(var x = 0; x < order.length; x++){
-      var A = items[order[x]];
-      for(var y = x + 1; y < order.length; y++){
-        var B = items[order[y]];
-        if(B.k.length - A.k.length > 2) break;   // sorted by length: nothing further can be within two edits
-        if(A.k === B.k){ join(order[x], order[y]); continue; }
-        if(A.d !== B.d) continue;
-        var short = Math.min(A.k.length, B.k.length), allow = short >= 12 ? 2 : short >= 6 ? 1 : 0;
-        if(!allow || B.k.length - A.k.length > allow) continue;
-        if(levenshtein(A.k, B.k) <= allow) join(order[x], order[y]);
+    // (a) and (b): the same text
+    var first = Object.create(null);
+    var same = function(k, i){ if(first[k] != null) join(first[k], i); else first[k] = i; };
+    items.forEach(function(it, i){
+      same('k:' + it.key, i);
+      it.forms.forEach(function(f){ if(f.length >= 3) same('f:' + f, i); });
+    });
+    // (c) one typo apart: only forms of the same length or one apart are compared
+    var byLen = Object.create(null);
+    items.forEach(function(it, i){
+      it.forms.forEach(function(f){ if(f.length >= 5) (byLen[f.length] = byLen[f.length] || []).push({ i: i, f: f, d: f.replace(/\D+/g, '') }); });
+    });
+    var near = function(x, y){ if(x.i !== y.i && x.d === y.d && dupOneTypo(x.f, y.f)) join(x.i, y.i); };
+    Object.keys(byLen).forEach(function(L){
+      var a = byLen[L], b = byLen[Number(L) + 1] || [];
+      for(var x = 0; x < a.length; x++){
+        for(var y = x + 1; y < a.length; y++) near(a[x], a[y]);
+        for(var z = 0; z < b.length; z++) near(a[x], b[z]);
       }
-    }
+    });
     var by = Object.create(null), roots = [];
     items.forEach(function(it, i){ var r = find(i); if(!by[r]){ by[r] = []; roots.push(r); } by[r].push(it.id); });
     var groups = roots.map(function(r){ return by[r]; }).filter(function(g){ return g.length > 1; });

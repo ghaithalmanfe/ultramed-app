@@ -1608,7 +1608,7 @@ async function cloudGet(key, src, run){
         }
       }
       mirrorSave(key, r.value);
-    } else if(r && r.value != null) delete _deviceStale[key]; // (as the write of that same text would)
+    } else if(r && r.value != null){ delete _deviceStale[key]; mirrorOwnerNote(key); } // (as the write of that same text would: this login read it too, v129)
     return r;
   }catch(e){
     if(src) src.cloud = false;

@@ -6076,3 +6076,42 @@ describe('one pace rule everywhere (the owner\'s decision of 17 Nov: on pace fro
     assert.ok(ahead.H.includes('Mariam is on pace to exceed the month\'s target (104%).'));
   });
 });
+
+describe('possible duplicate clinics and the A–Z order (v129, the owner\'s request of 23 Nov)', () => {
+  const grouped = (a, b) => core.possibleDuplicateClinics([{ id: 'a', name: a }, { id: 'b', name: b }]).groups.length > 0;
+  test('the same name typed another way is flagged: spaces, capitals, punctuation, common words, "Al", one typo', () => {
+    [['Smile Dental Clinic', 'smile-dental  clinic'], ['Smile Dental Clinic', 'Smile Dentel Clinic'], ['Smile Dental Clinic', 'Smile Dental Center'],
+      ['Smile Dental Clinic', 'Smile Clinic'], ['Al Noor Dental Clinic', 'Alnoor Dental Clinic'], ['Al Noor Dental Clinic', 'Al-Nour Dental Center'],
+      ['Al Noor Dental Clinic', 'Noor Dental'], ['Dr. Ahmad Clinic', 'Dr Ahmed Clinic'], ['Bayan Dental Centre', 'Bayan Dental Center'],
+      ['Royal Smile Dental', 'Royal Smyle Dental'], ['Hawally Dental Clinik', 'Hawally Dental Clinic'], ['Dnetal Pearl', 'Dental Pearl'],
+      ['عيادة النور', 'عياده النور'], ['عيادة النور', 'مركز النور'], ['عيادة النور للأسنان', 'مركز النور التخصصي لطب الأسنان'], ['Al Noor Specialized Dental Center', 'Alnoor Medical Complex'], ['عيادة د. ريم', 'عياده الدكتور ريم'], ['Clinic ٢', 'Clinic 2']]
+      .forEach(p => assert.ok(grouped(p[0], p[1]), p.join(' | ')));
+  });
+  test('different names are not: two typos, another number (branches), another Arabic name, another word', () => {
+    [['Coral Sample Dental Clinic', 'Opal Sample Dental Clinic'], ['Smile Dental 1', 'Smile Dental 2'], ['Clinic 10', 'Clinic 2'],
+      ['عيادة النور', 'عيادة الياسمين'], ['Bright Smile', 'Bright Style'], ['Bright Care', 'Bright Smile'], ['Dr. Sara Clinic', 'Dr. Sana Clinic'],
+      ['Salam Clinic', 'Islam Clinic'], ['Smile Dental', 'Smile Dental 2'], ['Smile Dental Salmiya', 'Smile Dental Hawally'],
+      ['Dental Clinic', 'Medical Center'], ['Al Salam Hospital', 'Al Salam Dental Clinic']]
+      .forEach(p => assert.ok(!grouped(p[0], p[1]), p.join(' | ')));
+  });
+  test('groups join through a common member, in list order; odd records and short names are left out; nothing is changed', () => {
+    const list = [{ id: 1, name: 'Smile Dental Clinic' }, null, { id: 'x', name: 42 }, { name: 'no id' }, { id: 'q', name: 'Dr.' },
+      { id: 2, name: 'Zenith' }, { id: 3, name: 'Smile Clinic' }, { id: 4, name: 'SMILE dentel' }, { id: '__proto__', name: 'Zenith Dental' }];
+    const before = JSON.stringify(list);
+    const r = core.possibleDuplicateClinics(list);
+    assert.deepEqual(r.groups, [['1', '3', '4'], ['2', '__proto__']]);
+    assert.deepEqual(r.byId['3'], ['1', '4']);
+    assert.equal(Object.getPrototypeOf(r.byId), null);
+    assert.equal(JSON.stringify(list), before);
+    assert.deepEqual(core.possibleDuplicateClinics([]), { byId: Object.assign(Object.create(null)), groups: [] });
+  });
+  test('clinicNameCompare: capitals, accents, spaces and punctuation do not count; numbers in number order', () => {
+    const C = n => ({ id: n, name: n });
+    const az = ['clinic 10', 'Clinic 2', 'Zeta', 'Ámber', 'Beta-Dental', 'عيادة'].map(C).sort(core.clinicNameCompare).map(c => c.name);
+    assert.ok(az.indexOf('Clinic 2') < az.indexOf('clinic 10'), az.join(' | '));
+    assert.ok(az.indexOf('Ámber') < az.indexOf('Beta-Dental') && az.indexOf('Beta-Dental') < az.indexOf('Clinic 2') && az.indexOf('clinic 10') < az.indexOf('Zeta'), az.join(' | '));
+    const cmp = (a, b) => core.clinicNameCompare(C(a), C(b));
+    assert.ok(cmp('Ámber', 'amber') !== 0 && Math.sign(cmp('Ámber', 'amber')) === -Math.sign(cmp('amber', 'Ámber')));   // equal names still sort the same way every time
+    assert.ok(cmp('Beta-Dental', 'beta dentam') < 0 && cmp('beta dentam', 'Beta-Dental') > 0);
+  });
+});
