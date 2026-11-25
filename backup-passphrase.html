@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<!-- Nothing leaves this page and nothing is stored: no network, no other script than the one below (by its hash). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-KrGdC6uOHzO5qRZF8m87FITX3bfvPxUby4zZFpNebr8='; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>عبارة مرور النسخة الاحتياطية — UltraMed</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --dark: #0B2A1B; --green: #1E7A55; --yellow: #F2B705; --card: #EEF4F0; --bad: #9B1C1C; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--dark); font: 17px/1.7 system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif; }
+  main { max-width: 40rem; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .25rem; }
+  p { margin: .5rem 0; }
+  .note { background: var(--card); border-radius: .75rem; padding: .75rem 1rem; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: .75rem; padding: .8rem 1.2rem; background: var(--green); color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #make { width: 100%; margin: .75rem 0; }
+  #copy { background: var(--dark); }
+  #pass { direction: ltr; text-align: left; background: var(--dark); color: #fff; border-radius: .75rem; padding: 1rem; margin: .75rem 0; font: 600 1.25rem/2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .08em; user-select: all; -webkit-user-select: all; }
+  #pass span { display: inline-block; white-space: nowrap; }
+  ol { padding-inline-start: 1.4rem; margin: .75rem 0; }
+  code { font: 600 .95em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--card); border-radius: .3rem; padding: .1rem .35rem; }
+  .warn { border-inline-start: .35rem solid var(--yellow); background: #FFF8E1; border-radius: .5rem; padding: .75rem 1rem; font-weight: 600; }
+  input { width: 100%; font: 1.05rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; direction: ltr; text-align: left; padding: .7rem .8rem; border: 2px solid var(--green); border-radius: .75rem; }
+  .ok { color: var(--green); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .en { direction: ltr; text-align: left; color: #44534B; font-size: .9rem; border-top: 1px solid #D5E0D9; margin-top: 2.5rem; padding-top: 1rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>عبارة مرور النسخة الاحتياطية</h1>
+  <p>بيانات التطبيق تُنسخ كل ليلة نسخةً مشفّرة تُحفظ في GitHub. هذه الصفحة تصنع عبارة المرور التي تُشفَّر بها تلك النسخ.</p>
+  <p class="note">تُصنع العبارة داخل هذا الجهاز فقط: لا تُرسَل إلى أي مكان، ولا تُحفظ في هذه الصفحة، وتختفي عند إغلاقها.</p>
+  <button id="make" type="button">اصنع عبارة مرور</button>
+  <p id="cannot" role="alert"></p>
+
+  <div id="made" hidden>
+    <div id="pass" dir="ltr" lang="en" translate="no"></div>
+    <p><button id="copy" type="button">انسخ العبارة</button> <span id="copied" role="status"></span></p>
+    <ol>
+      <li>احفظها الآن في مدير كلمات المرور.</li>
+      <li>اكتبها على ورقة كما هي — إحدى عشرة مجموعة، في كل مجموعة أربعة أحرف أو أرقام — واحفظ الورقة في مكان آمن.</li>
+      <li>ضعها في GitHub في السرّ المسمّى <code dir="ltr">BACKUP_PASSPHRASE</code>.</li>
+    </ol>
+    <p class="warn">هذه العبارة لا تُسترجَع من أي مكان. إن ضاعت فلن يستطيع أحد فتح النسخ الاحتياطية التي شُفّرت بها.</p>
+  </div>
+
+  <h2>هل نقلتها بلا خطأ؟</h2>
+  <p>اكتب العبارة هنا من الورقة للتأكد. لا فرق بين الأحرف الكبيرة والصغيرة، والشرطات غير لازمة. ما تكتبه يبقى في هذا الجهاز.</p>
+  <input id="check" type="text" dir="ltr" lang="en" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" aria-label="العبارة كما كتبتها على الورقة">
+  <p id="result" role="status"></p>
+
+  <section class="en" lang="en" dir="ltr">
+    <p><strong>Backup passphrase.</strong> This page makes the passphrase that encrypts the nightly backups of the UltraMed app. It is made on this device only: nothing is sent anywhere and nothing is stored. Keep it in a password manager and on paper, then put it in the repository secret <code>BACKUP_PASSPHRASE</code>. It cannot be recovered: without it nobody can open the backups. The box above checks a passphrase typed back from paper. Guide: <code>docs/backup.md</code> in the repository.</p>
+  </section>
+</main>
+<script>
+// The passphrase of the nightly backup, made and checked on this device only.
+// The same format as scripts/backup/nightly/bundle.js (makePassphrase,
+// canonicalPassphrase); tests/backup-nightly.test.js runs this script against
+// it. No network, no storage: the page's Content-Security-Policy allows
+// neither, and allows this script alone (by its hash).
+(function(root){
+  'use strict';
+  var ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';   // no i, l, o, u
+  var LABEL = 'UMBACKUP passphrase v1:';
+  var BODY = 40, CHECK = 4, RANDOM_BYTES = 25;          // 200 random bits, then 20 check bits
+  var cryptoObj = root.crypto;
+
+  function symbols(bytes, n){
+    var out = '', acc = 0, bits = 0, i = 0;
+    while(out.length < n){
+      if(bits < 5){ acc = (acc << 8) | bytes[i++]; bits += 8; }
+      out += ALPHABET.charAt((acc >>> (bits - 5)) & 31);
+      bits -= 5; acc &= (1 << bits) - 1;
+    }
+    return out;
+  }
+  function groups(t){ return t.match(/.{4}/g).join('-'); }
+  function checkChars(body){
+    return cryptoObj.subtle.digest('SHA-256', new root.TextEncoder().encode(LABEL + body)).then(function(d){ return symbols(new Uint8Array(d), CHECK); });
+  }
+  function canMake(){ return !!(cryptoObj && cryptoObj.getRandomValues && cryptoObj.subtle && cryptoObj.subtle.digest && root.TextEncoder); }
+  // → a new passphrase (a promise)
+  function make(){
+    var bytes = new Uint8Array(RANDOM_BYTES);
+    cryptoObj.getRandomValues(bytes);
+    var body = symbols(bytes, BODY);
+    return checkChars(body).then(function(c){ return groups(body + c); });
+  }
+  // what was typed, down to the characters of the alphabet
+  function typed(text){
+    var t = String(text == null ? '' : text);
+    if(t.normalize) t = t.normalize('NFKC');
+    return t.toLowerCase()
+      .replace(/[٠-٩]/g, function(d){ return String(d.charCodeAt(0) - 0x660); }).replace(/[۰-۹]/g, function(d){ return String(d.charCodeAt(0) - 0x6f0); })
+      .replace(/[\s​-‏؜‐-―−﻿_.-]/g, '')
+      .replace(/o/g, '0').replace(/[il]/g, '1');
+  }
+  // → the passphrase as printed, or null when the text is not a whole one (a promise)
+  function canonical(text){
+    var t = typed(text);
+    if(!/^[0-9a-hjkmnp-tv-z]{44}$/.test(t)) return Promise.resolve(null);
+    return checkChars(t.slice(0, BODY)).then(function(c){ return c === t.slice(BODY) ? groups(t) : null; });
+  }
+  root.UMBackupPassphrase = { make: make, canonical: canonical, typed: typed, canMake: canMake };
+
+  var doc = root.document;
+  if(!doc) return;
+  var $ = function(id){ return doc.getElementById(id); };
+  var shown = null, round = 0;
+  function say(el, text, cls){ el.textContent = text; el.className = cls || ''; }
+  function show(p){
+    shown = p;
+    var box = $('pass');
+    while(box.firstChild) box.removeChild(box.firstChild);
+    p.split('-').forEach(function(g, i, all){ var s = doc.createElement('span'); s.textContent = g + (i < all.length - 1 ? '-' : ''); box.appendChild(s); });
+    box.setAttribute('aria-label', p);
+    $('made').hidden = false;
+    say($('copied'), '');
+    $('make').textContent = 'اصنع عبارة أخرى (تلغي المعروضة)';
+    recheck();
+  }
+  function recheck(){
+    var mine = ++round, text = $('check').value, out = $('result');
+    if(!typed(text)){ say(out, ''); return; }
+    canonical(text).then(function(c){
+      if(mine !== round) return;
+      if(!c) say(out, '✗ العبارة ناقصة أو فيها حرف خاطئ. قارنها بالورقة مجموعةً مجموعة.', 'bad');
+      else if(shown && c === shown) say(out, '✓ صحيحة: هي العبارة المعروضة أعلاه نفسها.', 'ok');
+      else if(shown) say(out, '✗ هذه عبارة كاملة، لكنها ليست العبارة المعروضة أعلاه.', 'bad');
+      else say(out, '✓ عبارة كاملة مكتوبة بلا خطأ.', 'ok');
+    });
+  }
+  if(!canMake()){
+    $('make').disabled = true;
+    say($('cannot'), 'هذا المتصفح لا يستطيع صنع العبارة بأمان. افتح الصفحة في متصفح حديث (Chrome أو Safari أو Firefox) وبرابط يبدأ بـ https.', 'bad');
+    return;
+  }
+  $('make').addEventListener('click', function(){ make().then(show); });
+  $('copy').addEventListener('click', function(){
+    if(!shown) return;
+    var done = function(ok){ say($('copied'), ok ? 'نُسخت. الصقها في مدير كلمات المرور أولاً.' : 'لم تُنسخ: اضغط على العبارة مطوّلاً وانسخها.', ok ? 'ok' : 'bad'); };
+    var byHand = function(){
+      try{
+        var r = doc.createRange(); r.selectNodeContents($('pass'));
+        var sel = root.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        done(doc.execCommand('copy'));
+      }catch(e){ done(false); }
+    };
+    if(root.navigator && root.navigator.clipboard && root.navigator.clipboard.writeText) root.navigator.clipboard.writeText(shown).then(function(){ done(true); }, byHand);
+    else byHand();
+  });
+  $('check').addEventListener('input', recheck);
+})(this);
+</script>
+</body>
+</html>

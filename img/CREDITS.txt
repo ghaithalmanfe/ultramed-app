@@ -1,0 +1,45 @@
+Images used by the home screen (www/img)
+
+clinic.webp
+  A dental clinic interior, resized to 900 x 601 and saved as WebP.
+  Source: https://images.unsplash.com/photo-1629909615184-74f495363b67 (Unsplash)
+  Licence: the Unsplash License (https://unsplash.com/license): free to use for commercial and
+  non-commercial purposes, no permission needed, attribution not required.
+
+hand.webp
+  Made from Microsoft's Fluent UI Emoji, 3D style ("Waving hand"):
+  https://github.com/microsoft/fluentui-emoji (assets/Waving hand/3D), resized to 112 x 112.
+  Licence: MIT, as below.
+
+    MIT License
+
+    Copyright (c) Microsoft Corporation.
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+tooth.webp
+  An original drawing made for this app (a glass molar: a see-through tinted body, a thin bright rim,
+  a few inner lines and sparkles), drawn with canvas paths, 256 x 296. No third-party material.
+
+robot.svg
+  An original drawing made for this app (a glossy white robot with a glass visor and glowing green eyes), no third-party
+  material. It illustrates the "Sales advisor" card; the advice itself is worked out by the app from its
+  own figures (no AI service is connected).
+
+The fonts are in www/fonts with their own licence files (OFL-Inter.txt, OFL-IBMPlexSansArabic.txt).
