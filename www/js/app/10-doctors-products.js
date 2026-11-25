@@ -85,35 +85,176 @@ function imgFallback(el){
 }
 function slugify(s){ return UMCore.slugify(s); }
 function toggleBrand(b){ if(openBrands.has(b)) openBrands.delete(b); else openBrands.add(b); renderProducts(); }
+// ---- ADD PRODUCT (v130, the owner's request of 25 Nov: a new product joins the system as it should) ----
+// The sales files name products and brands as text: an invoice line finds its catalog product by name and brand, its
+// selling guide by category, the order lines and the duplicate check by the item code and the barcode. The sheet
+// suggests what the system already knows (the names the sales files invoice, the brands, the categories), fills the
+// brand and the usual invoiced price from the files, files the brand under the catalog's own spelling (said under the
+// field), refuses a name, an item code or a barcode the catalog already has, and asks first (a second tap saves) for
+// a product with no category or a name that says one already in the catalog another way (UMCore.productAddCheck).
+let _addProdAsked = null;            // the draft the sheet's question was asked for: Save again saves it
+const _addProdInFlight = new Set();  // names whose save has had no answer yet (a second save would add it twice)
+let _prodFactsMemo = { k: null, v: null };
+function productFacts(){
+  const periods = UMCore.erpPeriodsOf(erpSales);
+  const k = periods.map(p => p.id + ':' + (p.rows || []).length).join(',');
+  if(_prodFactsMemo.k === k && _prodFactsMemo.v) return _prodFactsMemo.v;
+  const rows = []; periods.forEach(p => UMCore.unpackErpRows(p.rows).forEach(r => rows.push(r)));
+  _prodFactsMemo = { k, v: UMCore.erpProductFacts(rows) };
+  return _prodFactsMemo.v;
+}
+function productCheckCtx(except){ return { products, facts: productFacts(), guides: categoryGuides || {}, except: except || null }; }
 function openAddProduct(){
+  _addProdAsked = null;
+  const facts = productFacts(), vocab = UMCore.productVocab(products, facts, categoryGuides || {});
+  const inCatalog = new Set(products.map(p => p && UMCore.productNameKey(p.name)));
+  const names = Object.keys(facts).filter(k => !inCatalog.has(k)).map(k => facts[k]).sort((a, b) => b.sold - a.sold || a.name.localeCompare(b.name)).slice(0, 400);
+  const opts = list => list.map(v => `<option value="${esc(v)}"></option>`).join('');
   showModal(`
-    <h3 style="margin-top:0;">Add product</h3>
-    <label>Product name</label>
-    <input type="text" id="mProdName" placeholder="e.g. Digital X-ray Sensor">
-    <label>Brand</label>
-    <input type="text" id="mProdBrand" placeholder="e.g. Philips">
-    <label>Price (KD, optional)</label>
-    <input type="text" id="mProdPrice" placeholder="e.g. 12.5">
-    <label>Image URL (optional)</label>
-    <input type="text" id="mProdImg" placeholder="Paste a direct image link">
-    <button class="btn" onclick="submitAddProduct()">Save product</button>
+    <h3 style="margin-top:0;" data-ic="package"><span>Add product</span></h3>
+    <p class="ap-intro"><span>Write it as the sales files and the price list write it: the app finds its sales by name and brand, and its selling guide by category.</span></p>
+    <label for="mProdName">Product name</label>
+    <input type="text" id="mProdName" list="mProdNames" autocomplete="off" placeholder="e.g. Digital X-ray Sensor" oninput="addProdInput('name')">
+    <datalist id="mProdNames">${opts(names.map(x => x.name))}</datalist>
+    <div class="ap-note" id="apNoteName"></div>
+    <label for="mProdBrand">Brand</label>
+    <input type="text" id="mProdBrand" list="mProdBrands" autocomplete="off" placeholder="e.g. Philips" oninput="this.dataset.auto=''; addProdInput()">
+    <datalist id="mProdBrands">${opts(vocab.brands)}</datalist>
+    <div class="ap-note" id="apNoteBrand"></div>
+    <label for="mProdCat">Category</label>
+    <input type="text" id="mProdCat" list="mProdCats" autocomplete="off" placeholder="e.g. Interdental" oninput="addProdInput()">
+    <datalist id="mProdCats">${opts(vocab.cats)}</datalist>
+    <div class="ap-note" id="apNoteCat"></div>
+    <label for="mProdCode">Product code (optional)</label>
+    <input type="text" id="mProdCode" autocomplete="off" placeholder="The item code in the price list" oninput="addProdInput()">
+    <div class="ap-note" id="apNoteCode"></div>
+    <label for="mProdBarcode">Barcode (optional)</label>
+    <input type="text" id="mProdBarcode" inputmode="numeric" autocomplete="off" oninput="addProdInput()">
+    <div class="ap-note" id="apNoteBarcode"></div>
+    <label for="mProdPrice">Price (KD, optional)</label>
+    <input type="text" id="mProdPrice" inputmode="decimal" autocomplete="off" placeholder="e.g. 12.5" oninput="this.dataset.auto=''; addProdInput()">
+    <div class="ap-note" id="apNotePrice"></div>
+    <label for="mProdImg">Image URL (optional)</label>
+    <input type="text" id="mProdImg" autocomplete="off" placeholder="Paste a direct image link">
+    <div id="apAsk"></div>
+    <button class="btn" id="apSave" onclick="submitAddProduct()">Save product</button>
   `);
+  addProdInput();
+}
+function addProdDraft(){
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  return { name: v('mProdName'), brand: v('mProdBrand'), cat: v('mProdCat'), code: v('mProdCode'), barcode: v('mProdBarcode'), price: v('mProdPrice') };
+}
+function apNote(id, text, tone){
+  const el = document.getElementById(id); if(!el) return;
+  el.textContent = text || '';
+  el.className = 'ap-note' + (tone ? ' ' + tone : '');
+}
+function addProdInput(src){
+  const nameEl = document.getElementById('mProdName'); if(!nameEl) return;
+  const facts = productFacts();
+  const sale = facts[UMCore.productNameKey(nameEl.value)] || null;
+  // the brand and the price come from the sales files into a field the person has not typed into (data-auto)
+  let filled = false;
+  const fill = (id, val) => { const el = document.getElementById(id); if(!el || !(el.value === '' || el.dataset.auto === '1')) return false;
+    const t = val == null ? '' : String(val); el.value = t; el.dataset.auto = t ? '1' : ''; return !!t; };
+  if(src === 'name'){ if(fill('mProdBrand', sale ? sale.brand : '')) filled = true; if(fill('mProdPrice', sale && sale.price != null ? sale.price : '')) filled = true; }
+  const autoNow = ['mProdBrand', 'mProdPrice'].some(id => { const el = document.getElementById(id); return el && el.dataset.auto === '1'; });
+  const ck = UMCore.productAddCheck(addProdDraft(), productCheckCtx());
+  const err = f => ck.errors.find(e => e.field === f);
+  const draftName = nameEl.value.trim();
+  // the name
+  const en = err('name');
+  if(en && en.kind === 'name-taken') apNote('apNoteName', 'Already in the catalog', 'bad');
+  else if(sale) apNote('apNoteName', `Sold ${sale.sold} in the sales files${sale.last ? ', last ' + fmtDate(sale.last) : ''}` + ((filled || autoNow) ? ' — brand and price filled in from them' : ''), 'ok');
+  else if(draftName && Object.keys(facts).length) apNote('apNoteName', 'No sale under this exact name in the sales files yet');
+  else apNote('apNoteName', '');
+  // the brand
+  if(ck.brandIs === 'catalog' && ck.renamedFrom) apNote('apNoteBrand', `Filed under the catalog's brand “${ck.brand}”`, 'ok');
+  else if(ck.brandIs === 'files') apNote('apNoteBrand', 'Known from the sales files');
+  else if(ck.brandIs === 'new') apNote('apNoteBrand', 'New brand — not in the catalog or the sales files yet. Check the spelling.', 'warn');
+  else apNote('apNoteBrand', '');
+  // the category
+  const catTyped = (document.getElementById('mProdCat') || {}).value || '';
+  if(!catTyped.trim()) apNote('apNoteCat', draftName ? 'Without a category it is in no selling guide and not in a clinic’s sell guide' : '', draftName ? 'warn' : '');
+  else if(ck.catIs === 'new') apNote('apNoteCat', 'New category — its selling guide starts empty', 'warn');
+  else apNote('apNoteCat', ck.guide ? 'Has a selling guide' : 'This category has no selling guide yet');
+  // the code, the barcode, the price
+  const ec = err('code'), eb = err('barcode'), ep = err('price');
+  if(ec) apNote('apNoteCode', `Already the code of ${ec.product}`, 'bad');
+  else apNote('apNoteCode', ((document.getElementById('mProdCode') || {}).value || '').trim() ? '' : 'Left empty, the app gives it a code of its own');
+  if(eb) apNote('apNoteBarcode', eb.kind === 'barcode-bad' ? 'Digits only — 6 or more' : `Already the barcode of ${eb.product}`, 'bad');
+  else apNote('apNoteBarcode', '');
+  apNote('apNotePrice', ep ? 'Enter a price of 0 or more' : '', ep ? 'bad' : '');
+  // a question asked for an earlier draft is not this draft's
+  if(_addProdAsked !== null && _addProdAsked !== JSON.stringify(addProdDraft())){ _addProdAsked = null; const a = document.getElementById('apAsk'); if(a) a.innerHTML = ''; }
+}
+const AP_FIELD = { name: 'mProdName', code: 'mProdCode', barcode: 'mProdBarcode', price: 'mProdPrice' };
+function addProdErrText(e){
+  if(e.kind === 'name-missing') return 'Enter a product name';
+  if(e.kind === 'name-taken') return 'That product already exists';
+  if(e.kind === 'code-taken') return `Not saved — that product code is already used by ${e.product}`;
+  if(e.kind === 'barcode-bad') return 'Not saved — a barcode is digits only (6 or more)';
+  if(e.kind === 'barcode-taken') return `Not saved — that barcode is already used by ${e.product}`;
+  if(e.kind === 'price-bad') return 'Not saved — enter a price of 0 or more';
+  return 'Not saved';
 }
 async function submitAddProduct(){
-  const name = document.getElementById('mProdName').value.trim();
-  if(!name){ showToast('Enter a product name'); return; }
-  const priceVal = parseFloat(document.getElementById('mProdPrice').value);
-  const dupP = products.find(x=>x.name.toLowerCase()===name.toLowerCase());
-  if(dupP){ showToast('That product already exists'); return; }
+  const draft = addProdDraft(), sig = JSON.stringify(draft);
+  const ck = UMCore.productAddCheck(draft, productCheckCtx());
+  if(ck.errors.length){
+    const e = ck.errors[0];
+    showToast(addProdErrText(e));
+    const f = document.getElementById(AP_FIELD[e.field]); if(f) f.focus();
+    return;
+  }
   // a plain http(s) image link only — no spaces or quote/angle characters a link never has (security review: the
   // render escapes it too, but a clean value never carries an attribute breakout in the first place)
-  const imgVal = document.getElementById('mProdImg').value.trim();
+  const imgVal = ((document.getElementById('mProdImg') || {}).value || '').trim();
   const imgOk = safeUrl(imgVal) && !/[\s"'<>`]/.test(imgVal);
   if(imgVal && !imgOk){ showToast('Image link must be a plain http:// or https:// address'); return; }
-  products.push({id:uid(), name, brand: document.getElementById('mProdBrand').value.trim() || 'Other', price: isNaN(priceVal)?null:priceVal, img: imgOk?imgVal:undefined});
-  const r = await persistTold('products');
+  const nameKey = UMCore.productNameKey(ck.name);
+  if(_addProdInFlight.has(nameKey)){ showToast('Still waiting for the cloud to answer about this product — it may already be saved'); return; }
+  // asked first (a second tap saves): no category, a name that says a product already in the catalog another way
+  if(ck.asks.length && _addProdAsked !== sig){
+    _addProdAsked = sig;
+    const box = document.getElementById('apAsk');
+    if(box) box.innerHTML = `<div class="ap-ask">${ck.asks.map(a => a.kind === 'lookalike'
+      ? `<p>${esc(`Looks like a product already in the catalog: ${a.products.map(n => '“' + n + '”').join(', ')}. Tap Save again to add it as a new product.`)}</p>`
+      : `<p>${esc('No category: this product will be in no selling guide and not in a clinic’s sell guide. Tap Save again to add it without one.')}</p>`).join('')}</div>`;
+    if(box && box.scrollIntoView) try{ box.scrollIntoView({ block: 'nearest' }); }catch(e){} // (the Save button sits in the sheet's foot: the question shows beside it)
+    return;
+  }
+  const prod = { id: ck.code || uid(), name: ck.name, brand: ck.brand, price: ck.price };
+  if(ck.cat) prod.cat = ck.cat;
+  if(ck.barcode) prod.barcode = String(draft.barcode).replace(/[\s-]+/g, '');
+  if(imgOk) prod.img = imgVal;
+  products.push(prod);
+  assignProductKeys();
+  const btn = document.getElementById('apSave'); if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+  _addProdInFlight.add(nameKey);
+  // a save with no answer in time may still land: then the product comes back on the screen (onLate)
+  const late = () => {
+    _addProdInFlight.delete(nameKey);
+    if(!products.some(p => p && p.id === prod.id && p.name === prod.name)){ products.push(prod); assignProductKeys(); }
+    _gapMemo = { k: null, v: [] };
+    if(document.getElementById('productListWrap')) renderProducts();
+    if(document.getElementById('apSave')) closeModal();
+  };
+  const r = await persistTold('products', { onLate: late });
+  if(!r.ok){
+    // not saved: the catalog on screen is the cloud's again; the sheet keeps what was typed
+    products = products.filter(p => p !== prod); assignProductKeys();
+    if(!(r.outcome && (r.outcome.timeout || r.outcome.awaitingSignIn))) _addProdInFlight.delete(nameKey); // (no answer yet: it may still land)
+    if(btn){ btn.disabled = false; btn.textContent = 'Save product'; }
+    saveToast(r, 'products', '');
+    return;
+  }
+  _addProdInFlight.delete(nameKey);
+  _gapMemo = { k: null, v: [] };
   closeModal();
-  renderProducts();
+  openBrands.add(prod.brand);
+  if(document.getElementById('productListWrap')) renderProducts();
   saveToast(r, 'products', 'Product added'); // "added" only when it landed
 }
 

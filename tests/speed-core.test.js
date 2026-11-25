@@ -136,8 +136,10 @@ test('speed (v126): doctorAnalytics with each clinic\'s visits grouped once = ev
 
 test('speed (v126): the catalog match keeps each product\'s tokens and follows a rename', () => {
   const products = parse(F.docs.products);
-  const ref = (name, list) => { const nt = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean); if(!nt.length) return null; let best = null, bestScore = 0;
-    list.forEach(pr => { const pt = ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/); const ov = nt.filter(t => pt.indexOf(t) >= 0).length;
+  // (v130: a number is cut from the letters it touches — "0.5mm" = "0.5 mm" — on both sides, here as in core)
+  const words = s => String(s || '').toLowerCase().replace(/([a-z])(\d)/g, '$1 $2').replace(/(\d)([a-z])/g, '$1 $2').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+  const ref = (name, list) => { const nt = words(name).filter(Boolean); if(!nt.length) return null; let best = null, bestScore = 0;
+    list.forEach(pr => { const pt = words((pr.name || '') + ' ' + (pr.brand || '')); const ov = nt.filter(t => pt.indexOf(t) >= 0).length;
       const score = ov / Math.max(1, Math.max(nt.length, Math.min(pt.length, nt.length + 2))); if(ov >= Math.min(2, nt.length) && score > bestScore){ best = pr; bestScore = score; } }); return bestScore >= 0.5 ? best : null; };
   const names = [...new Set(allRows().map(r => r.product))].slice(0, 300);
   names.forEach(nm => assert.strictEqual(U.matchCatalogProduct(nm, products), ref(nm, products), nm));

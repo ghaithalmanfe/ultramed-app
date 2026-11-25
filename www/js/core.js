@@ -1191,19 +1191,22 @@
   // A product's name and brand as tokens, kept beside the product and worked out again when either changes (v126 speed:
   // every invoice line's product was compared with every product of the catalog, each tokenized again each time).
   var _catToks = new WeakMap();
+  // Words and numbers, a number cut from the letters it touches (v130: an invoice's "0.5mm" is the catalog's "0.5 mm" —
+  // read as one word "5mm" it matched nothing, and the 0.5 mm brush's lines went to the 0.45 mm one)
+  function catWords(s){ return String(s || '').toLowerCase().replace(/([a-z])(\d)/g, '$1 $2').replace(/(\d)([a-z])/g, '$1 $2').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/); }
   function catTokensOf(pr){
     var e = _catToks.get(pr);
     if(e && e.n === pr.name && e.b === pr.brand) return e.t;
-    var t = ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+    var t = catWords((pr.name || '') + ' ' + (pr.brand || ''));
     _catToks.set(pr, { n: pr.name, b: pr.brand, t: t });
     return t;
   }
   function matchCatalogProduct(name, products){
-    var nt = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+    var nt = catWords(name).filter(Boolean);
     if(!nt.length) return null;
     var best = null, bestScore = 0;
     (products || []).forEach(function(pr){
-      var pt = pr && typeof pr === 'object' ? catTokensOf(pr) : ((pr.name || '') + ' ' + (pr.brand || '')).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/);
+      var pt = pr && typeof pr === 'object' ? catTokensOf(pr) : catWords((pr.name || '') + ' ' + (pr.brand || ''));
       var ov = nt.filter(function(t){ return pt.indexOf(t) >= 0; }).length;
       var score = ov / Math.max(1, Math.max(nt.length, Math.min(pt.length, nt.length + 2)));
       if(ov >= Math.min(2, nt.length) && score > bestScore){ best = pr; bestScore = score; }
@@ -6759,6 +6762,136 @@
     });
     return lines.join('\n');
   }
+  // ==== ADDING A PRODUCT THAT JOINS THE SYSTEM (v130, the owner's request of 25 Nov) ====
+  // The sales files name products and brands as text, with no item code: an invoice line finds its catalog product by
+  // its words (matchCatalogProduct — name and brand), its selling guide by the product's category, the order lines and
+  // the duplicate check by the item code and the barcode. A product typed by hand joins all of these only when it is
+  // written as the rest of the system writes it, so the sheet suggests and checks; nothing is merged or renamed without
+  // being shown first.
+  function productNameKey(s){ return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim(); }
+  function productGtin(v){ var d = String(v == null ? '' : v).replace(/\D/g, '').replace(/^0+/, ''); return d.length >= 6 ? d : ''; }
+  // every product the sales files name, once (name as invoiced, its brand, the usual invoiced unit price, how many were
+  // sold and when last) — services, delivery, packaging and marketing lines left out, as the catalog gaps do
+  function erpProductFacts(rows){
+    var by = Object.create(null);
+    (rows || []).forEach(function(r){
+      if(!r) return;
+      var k = productNameKey(r.product);
+      if(!k || NON_PRODUCT_RE.test(r.brand || '') || NON_PRODUCT_RE.test(r.product || '')) return;
+      var a = by[k] || (by[k] = { name: String(r.product).replace(/\s+/g, ' ').trim(), brand: String(r.brand || '').trim(), prices: Object.create(null), sold: 0, last: '' });
+      if(r.type === 'return') return;
+      var u = r.qty > 0 && r.gross > 0 ? Math.round(r.gross / r.qty * 1000) / 1000 : null;
+      if(u != null) a.prices[u] = (a.prices[u] || 0) + 1;
+      a.sold += Number(r.qty) || 0;
+      if(r.date && r.date > a.last) a.last = r.date;
+    });
+    var out = Object.create(null);
+    Object.keys(by).forEach(function(k){ var a = by[k]; out[k] = { name: a.name, brand: a.brand, price: usualUnitPrice(a.prices), sold: a.sold, last: a.last || null }; });
+    return out;
+  }
+  // The brands and categories the system already knows, each once: the catalog's own spelling first (a brand compared
+  // by normBrand, a category without capitals), then the sales files' brands and the selling guides' categories.
+  // `except`: the product being edited (its own spelling is not "the catalog's" — an edit may correct it).
+  function productVocab(products, facts, guides, except){
+    var out = { brands: [], cats: [], brandOf: Object.create(null), fileBrandOf: Object.create(null), catOf: Object.create(null), guideOf: Object.create(null) };
+    (products || []).forEach(function(p){
+      if(!p || typeof p !== 'object' || p === except) return;
+      var b = String(p.brand == null ? '' : p.brand).trim(), bk = b ? normBrand(b) : '';
+      if(bk && !out.brandOf[bk]){ out.brandOf[bk] = b; out.brands.push(b); }
+      var c = String(p.cat == null ? '' : p.cat).trim(), ck = c.toLowerCase();
+      if(ck && !out.catOf[ck]){ out.catOf[ck] = c; out.cats.push(c); }
+    });
+    Object.keys(guides || {}).forEach(function(c){
+      var ck = String(c).trim().toLowerCase();
+      if(!ck) return;
+      out.guideOf[ck] = 1;
+      if(!out.catOf[ck]){ out.catOf[ck] = String(c).trim(); out.cats.push(String(c).trim()); }
+    });
+    Object.keys(facts || {}).forEach(function(k){
+      var b = facts[k].brand, bk = b ? normBrand(b) : '';
+      if(bk && !out.fileBrandOf[bk]) out.fileBrandOf[bk] = b;
+      if(bk && !out.brandOf[bk] && out.brands.indexOf(b) < 0 && !out.brands.some(function(x){ return normBrand(x) === bk; })) out.brands.push(b);
+    });
+    out.brands.sort(function(a, b){ return a.localeCompare(b, 'en', { sensitivity: 'base' }); });
+    out.cats.sort(function(a, b){ return a.localeCompare(b, 'en', { sensitivity: 'base' }); });
+    return out;
+  }
+  // Products whose names say the same product another way: the same letters and digits (spaces, capitals and
+  // punctuation do not count), one letter wrong, missing, extra or two swapped (8+ characters), or the same once the
+  // brand's own name is left out — always with the same numbers ("0.45 mm" and "0.5 mm" are two sizes).
+  function productLookalikes(name, products, brand, except){
+    var fold = function(s){ return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ''); };
+    var digits = function(s){ return String(s == null ? '' : s).replace(/\D+/g, ' ').trim(); };
+    var bare = function(n, b){ var bk = fold(b); var f = fold(n); return bk && bk.length >= 3 && f.indexOf(bk) >= 0 ? f.split(bk).join('') : f; };
+    var k = fold(name), d = digits(name);
+    if(k.length < 4) return [];
+    var exact = productNameKey(name);
+    var out = [];
+    (products || []).forEach(function(p){
+      if(!p || typeof p !== 'object' || p === except) return;
+      if(productNameKey(p.name) === exact) return;   // the very name: refused, not asked
+      if(digits(p.name) !== d) return;
+      var pk = fold(p.name);
+      var same = pk === k || (k.length >= 8 && pk.length >= 8 && dupOneTypo(pk, k));
+      if(!same){ var x = bare(name, brand || p.brand), y = bare(p.name, p.brand || brand); same = x.length >= 4 && x === y; }
+      if(same) out.push(p);
+    });
+    return out;
+  }
+  // What a new (or edited) product would join, what stops it and what is asked first.
+  // draft {name, brand, cat, code, barcode, price}; ctx {products, facts, guides, except}
+  // → { errors: [{field, kind, product?}], asks: [{kind, products?}], name, brand, brandIs: 'catalog'|'files'|'new'|'',
+  //     renamedFrom, cat, catIs: 'catalog'|'guide'|'new'|'', guide: bool, code, barcode, price, sales }
+  function productAddCheck(draft, ctx){
+    var d = draft || {}, c = ctx || {}, products = c.products || [], except = c.except || null;
+    var vocab = productVocab(products, c.facts, c.guides, except);
+    var out = { errors: [], asks: [], name: String(d.name == null ? '' : d.name).replace(/\s+/g, ' ').trim(), brand: '', brandIs: '', renamedFrom: '', cat: '', catIs: '', guide: false,
+      code: String(d.code == null ? '' : d.code).trim(), barcode: '', price: null, sales: null };
+    var key = productNameKey(out.name);
+    if(!key) out.errors.push({ field: 'name', kind: 'name-missing' });
+    out.sales = key && c.facts && c.facts[key] ? c.facts[key] : null;
+    products.forEach(function(p){
+      if(p && typeof p === 'object' && p !== except && key && productNameKey(p.name) === key) out.errors.push({ field: 'name', kind: 'name-taken', product: String(p.name) });
+    });
+    // the brand: the catalog's spelling of the same brand; else as the sales files or the person wrote it
+    var b = String(d.brand == null ? '' : d.brand).trim() || (out.sales && out.sales.brand) || '';
+    var bk = b ? normBrand(b) : '';
+    if(bk && vocab.brandOf[bk]){ out.brand = vocab.brandOf[bk]; out.brandIs = 'catalog'; if(out.brand !== b) out.renamedFrom = b; }
+    else if(bk && vocab.fileBrandOf[bk]){ out.brand = b; out.brandIs = 'files'; }
+    else if(b){ out.brand = b; out.brandIs = 'new'; }
+    else out.brand = 'Other';
+    // the category: the catalog's (or a selling guide's) spelling
+    var cat = String(d.cat == null ? '' : d.cat).trim(), ck = cat.toLowerCase();
+    if(ck && vocab.catOf[ck]){ out.cat = vocab.catOf[ck]; out.catIs = 'catalog'; }
+    else if(cat){ out.cat = cat; out.catIs = 'new'; }
+    out.guide = !!(ck && vocab.guideOf[ck]);
+    if(!cat) out.asks.push({ kind: 'no-category' });
+    // the item code: unique in the catalog (two products under one code misprice orders)
+    if(out.code){
+      var cu = out.code.toUpperCase();
+      products.forEach(function(p){ if(p && typeof p === 'object' && p !== except && p.id != null && String(p.id).trim().toUpperCase() === cu) out.errors.push({ field: 'code', kind: 'code-taken', product: String(p.name || '') }); });
+    }
+    // the barcode: a GTIN, unique in the catalog
+    var rawBc = String(d.barcode == null ? '' : d.barcode).trim();
+    if(rawBc){
+      out.barcode = productGtin(rawBc);
+      if(!out.barcode || /[^\d\s-]/.test(rawBc)) out.errors.push({ field: 'barcode', kind: 'barcode-bad' });
+      else products.forEach(function(p){ if(p && typeof p === 'object' && p !== except && productGtin(p.barcode) === out.barcode) out.errors.push({ field: 'barcode', kind: 'barcode-taken', product: String(p.name || '') }); });
+    }
+    // the price: a number of KD, 0 or more, to the fils
+    var pr = d.price;
+    if(pr !== '' && pr != null){
+      var n = typeof pr === 'number' ? pr : Number(String(pr).replace(/,/g, '').trim());
+      if(!isFinite(n) || n < 0) out.errors.push({ field: 'price', kind: 'price-bad' });
+      else out.price = Math.round(n * 1000) / 1000;
+    } else if(out.sales && out.sales.price != null) out.price = out.sales.price;
+    // a name that says a product already in the catalog another way
+    if(key && !out.errors.some(function(e){ return e.kind === 'name-taken'; })){
+      var like = productLookalikes(out.name, products, out.brand, except);
+      if(like.length) out.asks.push({ kind: 'lookalike', products: like.map(function(p){ return String(p.name || ''); }) });
+    }
+    return out;
+  }
   // Each brand spelling worked out once (v126 speed: a pass over a year's lines asked again for every line); the same
   // answer — a pure function of the text.
   var _normBrands = new Map();
@@ -8471,7 +8604,7 @@
     parseTargetsFile, readXlsx, parseDsrTargets, normBrand,
     normDoctorName, splitDoctorNames, dedupeDoctors, mergeDoctorLists, merge3Record, mergeDoctorLists3, mergeDayPlans3, mergeRecycleBin, mergeRecycleBin3, mergeKeyed3, recordHash, deviceCopyDiff, mergePhotos3, sameFirstName,
     unionDoctorsById, possibleDuplicateDoctors, cleanDayPlans, clinicDupKey, possibleDuplicateClinics, clinicNameCompare, mergeDoctorPair, distinctPair, fitsBytes, snapshotPayload, fillSnapThumbs, trimTeamThumbs,
-    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpShareKept, erpStateKey, erpClinicIndex, erpRowsIn, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
+    unpackErpRows, erpPeriodsOf, erpRevenueRange, erpMtd, erpMonthLines, erpShare, erpShareKept, erpStateKey, erpClinicIndex, erpRowsIn, erpPrepClinics, erpMatcher, erpCtxOf, erpWinsInRange, monthCustomerSales, centsSplit, clinicsMissingFromBackups, clinicNamesFromTasks, erpAddClinicMoves, lostDoctors, crossInvoices, weeklyReport, weeklyHighlights, weeklyStory, weeklyPages, valuePerPerson, clinicInvoices, discountSummary, addDaysStr, arDinar, foldProducts, storyGate, teamSalesLikeForLike, isInternalAccount, monthlyTrend, catalogGaps, productDuplicates, productDuplicatesReport, productNameKey, productGtin, erpProductFacts, productVocab, productLookalikes, productAddCheck, targetOf, kpiScorecard, isGovClinic, KPI_DEFAULTS, KPI_ITEMS, erpAttributedRows, monthAchievement, teamAchievement, dailyDigest,
     monthWorkdays, execDashboard, execWeek, execDrill, planVisitKeys, homeWeeks, homeVisitDays, homeForecastDays, homeKpiMonths,
     visitMonth, visitHome, visitsPartition, visitsAssemble, visitsArchKey, visitsStrayIds, settlePhotoMarks, settlePhotoMark, VISITS_ARCH_PREFIX,
     erpRowsKey, erpSplitForStorage, erpChunkRows, erpChunkKeys, erpAssemble, erpMergeIndex, erpEnforceNoOverlap, ERP_CHUNK_ROWS, ERP_CHUNK_BYTES,
