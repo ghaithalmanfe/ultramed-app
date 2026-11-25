@@ -6122,3 +6122,53 @@ describe('possible duplicate clinics and the A–Z order (v129, the owner\'s req
     assert.ok(cmp('Beta-Dental', 'beta dentam') < 0 && cmp('beta dentam', 'Beta-Dental') > 0);
   });
 });
+
+describe('adding a product that joins the system (v130, the owner\'s request of 25 Nov)', () => {
+  const P = [{ id: 'TP-045', name: 'TePe Interdental Brush 0.45 mm', brand: 'TePe', cat: 'Interdental', barcode: '07317400012345', price: 1.2 },
+    { id: 'PH-1', name: 'Sonicare Brush Head W2', brand: 'Philips', cat: 'Brush heads' }];
+  const rows = [{ product: 'Curaprox CS 5460', brand: 'CURAPROX', qty: 10, gross: 25, type: 'invoice', date: '2026-11-03' },
+    { product: 'curaprox  cs 5460', brand: 'CURAPROX', qty: 4, gross: 10, type: 'invoice', date: '2026-11-10' },
+    { product: 'Curaprox CS 5460', brand: 'CURAPROX', qty: -2, gross: -5, type: 'return', date: '2026-11-11' },
+    { product: 'Delivery charge', brand: 'Services', qty: 1, gross: 2, type: 'invoice', date: '2026-11-04' }];
+  const facts = core.erpProductFacts(rows);
+  const G = { Interdental: { sell: 'x' } };
+  const ck = d => core.productAddCheck(d, { products: P, facts, guides: G });
+  test('the sales files: each product once, its usual invoiced price, how many sold and when last; returns and services left out', () => {
+    assert.deepEqual(Object.keys(facts), ['curaprox cs 5460']);
+    assert.deepEqual(facts['curaprox cs 5460'], { name: 'Curaprox CS 5460', brand: 'CURAPROX', price: 2.5, sold: 14, last: '2026-11-10' });
+  });
+  test('a name the files invoice brings its brand and price; with no category it is asked first', () => {
+    const r = ck({ name: 'curaprox cs 5460' });
+    assert.deepEqual([r.brand, r.brandIs, r.price, r.errors.length, r.asks.map(a => a.kind)], ['CURAPROX', 'files', 2.5, 0, ['no-category']]);
+  });
+  test('the brand is filed under the catalog\'s own spelling, the category under the catalog\'s or a guide\'s', () => {
+    const r = ck({ name: 'TePe Interdental Brush 0.5 mm', brand: 'tepe', cat: 'interdental' });
+    assert.deepEqual([r.brand, r.brandIs, r.renamedFrom, r.cat, r.catIs, r.guide, r.asks.length], ['TePe', 'catalog', 'tepe', 'Interdental', 'catalog', true, 0]);
+    const n = ck({ name: 'X Gel', brand: 'NewCo', cat: 'Gels' });
+    assert.deepEqual([n.brandIs, n.catIs, n.guide], ['new', 'new', false]);
+    const e = core.productAddCheck({ name: 'TePe Interdental Brush 0.45 mm', brand: 'Tepe' }, { products: P, facts, guides: G, except: P[0] });
+    assert.equal(e.brand, 'Tepe');                            // an edit corrects its own spelling: not "the catalog's"
+  });
+  test('the very name, a code or a barcode the catalog has, a barcode that is not digits and a negative price are refused', () => {
+    assert.deepEqual(ck({ name: 'tepe interdental brush 0.45 MM', cat: 'Interdental' }).errors.map(e => e.kind), ['name-taken']);
+    assert.deepEqual(ck({ name: 'Y', cat: 'G', code: ' tp-045 ', barcode: '7317400012345', price: '-1' }).errors.map(e => e.kind), ['code-taken', 'barcode-taken', 'price-bad']);
+    assert.deepEqual(ck({ name: 'Y', cat: 'G', barcode: '12AB' }).errors.map(e => e.kind), ['barcode-bad']);
+    assert.equal(ck({ name: 'Y', cat: 'G', price: '1,250.5' }).price, 1250.5);
+  });
+  test('a name that says a catalog product another way is asked; another size is a new product', () => {
+    assert.deepEqual(ck({ name: 'tepe interdental-brush 0.45mm', cat: 'Interdental' }).asks, [{ kind: 'lookalike', products: ['TePe Interdental Brush 0.45 mm'] }]);
+    assert.deepEqual(ck({ name: 'Interdental Brush 0.45 mm', brand: 'TePe', cat: 'Interdental' }).asks.map(a => a.kind), ['lookalike']);
+    assert.deepEqual(ck({ name: 'TePe Interdental Brush 0.5 mm', cat: 'Interdental' }).asks, []);
+    assert.deepEqual(ck({ name: 'Sonicare Brush Head W3', cat: 'Brush heads' }).asks, []);
+  });
+  test('an invoice\'s "0.5mm" finds the catalog\'s "0.5 mm", not the 0.45 mm brush', () => {
+    const list = P.concat([{ id: 'TP-050', name: 'TePe Interdental Brush 0.5 mm', brand: 'TePe', cat: 'Interdental' }]);
+    assert.equal(core.matchCatalogProduct('TePe Interdental Brush 0.5mm', list).id, 'TP-050');
+    assert.equal(core.matchCatalogProduct('TEPE INTERDENTAL BRUSH 0.45MM', list).id, 'TP-045');
+  });
+  test('the brands and categories known: the catalog\'s spelling first, the files\' brands added once, the guides\' categories', () => {
+    const v = core.productVocab(P, facts, G);
+    assert.deepEqual(v.brands, ['CURAPROX', 'Philips', 'TePe']);
+    assert.deepEqual(v.cats, ['Brush heads', 'Interdental']);
+  });
+});

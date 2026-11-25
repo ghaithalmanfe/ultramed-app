@@ -2842,6 +2842,30 @@
     "Keep": "إبقاء",
     "Kept — this phone now sees them as they are": "أُبقيت — يراها هذا الهاتف الآن كما هي",
     // ---- end of v129 ----
+    // ---- v130: adding a product that joins the system (the owner's request of 25 Nov) ----
+    "Write it as the sales files and the price list write it: the app finds its sales by name and brand, and its selling guide by category.": "اكتبه كما تكتبه ملفات المبيعات وقائمة الأسعار: يجد التطبيق مبيعاته من الاسم والعلامة التجارية، ودليلَ بيعه من الفئة.",
+    "Product code (optional)": "كود المنتج (اختياري)",
+    "Barcode (optional)": "الباركود (اختياري)",
+    "e.g. Interdental": "مثال: Interdental",
+    "e.g. 12.5": "مثال: 12.5",
+    "The item code in the price list": "كود الصنف في قائمة الأسعار",
+    "Already in the catalog": "موجود في الكتالوج",
+    "No sale under this exact name in the sales files yet": "لا مبيعات بهذا الاسم تمامًا في ملفات المبيعات بعد",
+    "Known from the sales files": "معروفة من ملفات المبيعات",
+    "New brand — not in the catalog or the sales files yet. Check the spelling.": "علامة تجارية جديدة — ليست في الكتالوج ولا في ملفات المبيعات بعد. تأكّد من كتابتها.",
+    "Without a category it is in no selling guide and not in a clinic’s sell guide": "بلا فئة لا يظهر في أي دليل بيع ولا في نصائح البيع للعيادات",
+    "New category — its selling guide starts empty": "فئة جديدة — يبدأ دليل بيعها فارغًا",
+    "Has a selling guide": "لها دليل بيع",
+    "This category has no selling guide yet": "لا دليل بيع لهذه الفئة بعد",
+    "Left empty, the app gives it a code of its own": "إن تُرك فارغًا يعطيه التطبيق كودًا خاصًا به",
+    "Digits only — 6 or more": "أرقام فقط — 6 أو أكثر",
+    "Enter a price of 0 or more": "أدخل سعرًا يساوي 0 أو أكثر",
+    "Not saved — a barcode is digits only (6 or more)": "لم يُحفظ — الباركود أرقام فقط (6 أو أكثر)",
+    "Not saved — enter a price of 0 or more": "لم يُحفظ — أدخل سعرًا يساوي 0 أو أكثر",
+    "Still waiting for the cloud to answer about this product — it may already be saved": "ما زلنا ننتظر ردّ السحابة على هذا المنتج — ربما حُفظ بالفعل",
+    "No category: this product will be in no selling guide and not in a clinic’s sell guide. Tap Save again to add it without one.": "بلا فئة: لن يظهر هذا المنتج في أي دليل بيع ولا في نصائح البيع للعيادات. اضغط «حفظ المنتج» مرة أخرى لإضافته بلا فئة.",
+    "Image link must be a plain http:// or https:// address": "رابط الصورة يجب أن يكون عنوانًا عاديًا يبدأ بـ http:// أو https://",
+    // ---- end of v130 ----
   };
 
   // Clinic lists inside coach sentences: "Hilal Dental (never visited), Lotus Clinic (12d) +3 more"
@@ -3388,6 +3412,14 @@
     [/^Possible duplicates \((\d+)\)$/, function (m) { return 'احتمال تكرار (' + m[1] + ')'; }],
     [/^(.+): put back as this phone saw it$/, function (m) { return m[1] + ': أُرجِع كما رآه هذا الهاتف'; }],
     [/^(.+): price put back$/, function (m) { return m[1] + ': أُرجِع السعر'; }],
+    // v130: adding a product (the names, brands and dates inside are data)
+    [/^Sold (\d+(?:\.\d+)?) in the sales files(?:, last (.+?))?( — brand and price filled in from them)?$/, function (m) { return 'بيع منه ' + m[1] + ' في ملفات المبيعات' + (m[2] ? '، آخرها ' + m[2] : '') + (m[3] ? ' — العلامة التجارية والسعر منها' : ''); }],
+    [/^Filed under the catalog's brand “(.+)”$/, function (m) { return 'يُسجَّل تحت علامة الكتالوج «' + m[1] + '»'; }],
+    [/^Already the code of (.+)$/, function (m) { return 'هذا كود ' + m[1]; }],
+    [/^Already the barcode of (.+)$/, function (m) { return 'هذا باركود ' + m[1]; }],
+    [/^Not saved — that product code is already used by (.+)$/, function (m) { return 'لم يُحفظ — كود المنتج هذا مستخدم لـ ' + m[1]; }],
+    [/^Not saved — that barcode is already used by (.+)$/, function (m) { return 'لم يُحفظ — هذا الباركود مستخدم لـ ' + m[1]; }],
+    [/^Looks like a product already in the catalog: (.+)\. Tap Save again to add it as a new product\.$/, function (m) { return 'يبدو كمنتج موجود في الكتالوج: ' + m[1].replace(/“/g, '«').replace(/”/g, '»').replace(/», «/g, '»، «') + '. اضغط «حفظ المنتج» مرة أخرى لإضافته كمنتج جديد.'; }],
   ];
 
   // A leading emoji or arrow ("📞 Call", "→ Clear open tasks…") is decoration:

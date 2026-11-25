@@ -1443,14 +1443,23 @@ function openEditProduct(key){
   if(!p) return;
   const sharing = products.filter(x=>x.id===p.id).length;
   const mySpecs = new Set(p.specialties||[]);
+  const epVocab = UMCore.productVocab(products, productFacts(), categoryGuides || {}, p); // (v130: the brands and categories the system knows)
   showModal(`
     <h3 style="margin-top:0;">Edit product</h3>
     <label>Product name</label>
     <input type="text" id="epName" value="${esc(p.name)}">
     <label>Brand</label>
-    <input type="text" id="epBrand" value="${esc(p.brand||'')}">
+    <input type="text" id="epBrand" list="epBrands" autocomplete="off" value="${esc(p.brand||'')}" oninput="editProdInput('${jsArg(key)}')">
+    <datalist id="epBrands">${epVocab.brands.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+    <div class="ap-note" id="epNoteBrand"></div>
+    <label>Category</label>
+    <input type="text" id="epCat" list="epCats" autocomplete="off" value="${esc(p.cat||'')}" placeholder="e.g. Interdental" oninput="editProdInput('${jsArg(key)}')">
+    <datalist id="epCats">${epVocab.cats.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+    <div class="ap-note" id="epNoteCat"></div>
     <label>Product code</label>
     <input type="text" id="epCode" value="${esc(p.id)}">
+    <label>Barcode (optional)</label>
+    <input type="text" id="epBarcode" inputmode="numeric" autocomplete="off" value="${esc(p.barcode||'')}">
     ${sharing>1?`<p style="color:var(--coral-ink); font-size:12.5px; margin-top:6px;">⚠️ ${sharing} products share this code. Giving each a unique code prevents pricing mistakes.</p>`:''}
     <label>Price (KD)</label>
     <input type="number" step="0.01" min="0" id="epPrice" value="${numAttr(p.price)}">
@@ -1462,6 +1471,19 @@ function openEditProduct(key){
     <button class="btn" onclick="saveEditProduct('${jsArg(key)}')">Save changes</button>
     <button class="btn ghost" onclick="removeProduct('${jsArg(key)}')">Remove product</button>
   `);
+  editProdInput(key);
+}
+// v130: the brand filed under the catalog's own spelling and the category's selling guide, said under the fields
+function editProdInput(key){
+  const p = findProduct(key); if(!p || !document.getElementById('epBrand')) return;
+  const ck = UMCore.productAddCheck({ name: p.name, brand: document.getElementById('epBrand').value, cat: document.getElementById('epCat').value }, productCheckCtx(p));
+  if(ck.brandIs === 'catalog' && ck.renamedFrom) apNote('epNoteBrand', `Filed under the catalog's brand “${ck.brand}”`, 'ok');
+  else if(ck.brandIs === 'new') apNote('epNoteBrand', 'New brand — not in the catalog or the sales files yet. Check the spelling.', 'warn');
+  else apNote('epNoteBrand', '');
+  const cat = document.getElementById('epCat').value.trim();
+  if(!cat) apNote('epNoteCat', 'Without a category it is in no selling guide and not in a clinic’s sell guide', 'warn');
+  else if(ck.catIs === 'new') apNote('epNoteCat', 'New category — its selling guide starts empty', 'warn');
+  else apNote('epNoteCat', ck.guide ? 'Has a selling guide' : 'This category has no selling guide yet');
 }
 async function saveEditProduct(key){
   if(!requireAdmin()) return;
@@ -1474,9 +1496,16 @@ async function saveEditProduct(key){
   const priceRaw = document.getElementById('epPrice').value;
   const price = priceRaw==='' ? null : parseFloat(priceRaw);
   if(price!==null && (isNaN(price) || price<0)){ showToast('Enter a valid price'); return; }
+  // v130: the same checks as Add product — a name, a code or a barcode another product has is refused when it is
+  // changed to it (products that already share one keep it), the brand filed under the catalog's own spelling
+  const bcRaw = (document.getElementById('epBarcode') || {}).value || '';
+  const ck = UMCore.productAddCheck({ name, brand: document.getElementById('epBrand').value, cat: (document.getElementById('epCat') || {}).value || '', code, barcode: bcRaw }, productCheckCtx(p));
+  const changed = { name: UMCore.productNameKey(name) !== UMCore.productNameKey(p.name), code: code.toUpperCase() !== String(p.id == null ? '' : p.id).trim().toUpperCase(), barcode: UMCore.productGtin(bcRaw) !== UMCore.productGtin(p.barcode) };
+  const bad = ck.errors.find(e => e.kind === 'barcode-bad' || (e.kind === 'name-taken' && changed.name) || (e.kind === 'code-taken' && changed.code) || (e.kind === 'barcode-taken' && changed.barcode));
+  if(bad){ showToast(addProdErrText(bad)); return; }
   const oldKey = productKey(p), oldId = p.id;
-  const was = { name: p.name, brand: p.brand, id: p.id, price: p.price, desc: p.desc, specialties: p.specialties };
-  const edit = { name, brand: document.getElementById('epBrand').value.trim() || 'Other', id: code, price: price===null ? null : Math.round(price*100)/100,
+  const was = { name: p.name, brand: p.brand, cat: p.cat, barcode: p.barcode, id: p.id, price: p.price, desc: p.desc, specialties: p.specialties };
+  const edit = { name, brand: ck.brand || 'Other', cat: ck.cat || undefined, barcode: bcRaw.trim() ? bcRaw.replace(/[\s-]+/g, '') : undefined, id: code, price: price===null ? null : Math.round(price*100)/100,
     desc: document.getElementById('epDesc').value.trim(), specialties: Array.from(document.querySelectorAll('#epSpecialtyChips .chip.on')).map(el=>el.dataset.spec) };
   Object.assign(p, edit);
   assignProductKeys();
