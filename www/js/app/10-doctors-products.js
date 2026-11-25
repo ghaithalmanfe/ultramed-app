@@ -222,6 +222,7 @@ async function submitAddProduct(){
     if(box) box.innerHTML = `<div class="ap-ask">${ck.asks.map(a => a.kind === 'lookalike'
       ? `<p>${esc(`Looks like a product already in the catalog: ${a.products.map(n => '“' + n + '”').join(', ')}. Tap Save again to add it as a new product.`)}</p>`
       : `<p>${esc('No category: this product will be in no selling guide and not in a clinic’s sell guide. Tap Save again to add it without one.')}</p>`).join('')}</div>`;
+    if(box && box.scrollIntoView) try{ box.scrollIntoView({ block: 'nearest' }); }catch(e){} // (the Save button sits in the sheet's foot: the question shows beside it)
     return;
   }
   const prod = { id: ck.code || uid(), name: ck.name, brand: ck.brand, price: ck.price };
